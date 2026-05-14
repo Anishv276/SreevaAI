@@ -121,6 +121,11 @@ const JDSkeleton: JDData = {
     keywords: [],
 };
 
+function shouldKeepInterviewQuestions(text: string): boolean {
+    const normalized = text.toLowerCase();
+    return /predefined interview questions|interview questions|sample interview questions|screening questions|question bank|question set/.test(normalized);
+}
+
 // calculateScore is handled by the Python worker scripts/extract_pdf.py for production consistency.
 
 export async function extractJDFromText(text: string, modelOverride?: string): Promise<{
@@ -156,7 +161,9 @@ RULES:
 
 8. employment_type: only if explicitly stated, else null.
 
-9. INTERVIEW QUESTIONS: 4-6 sharp role-specific questions targeting must-have skill depth.
+9. INTERVIEW QUESTIONS: Only generate interview_questions if the JD explicitly includes or requests predefined interview/sample interview questions.
+   If the JD simply describes the role and does NOT ask for questions, return [].
+   Do NOT invent interview questions from the role alone.
 
 10. No data in JD -> null or []. Never invent.
 
@@ -231,9 +238,16 @@ ${text}
             };
         }
 
+        const normalizedData: JDData = {
+            ...validated.data,
+            interview_questions: shouldKeepInterviewQuestions(text)
+                ? validated.data.interview_questions
+                : [],
+        };
+
         console.log("[AI_JD_EXTRACT_SUCCESS]: Extraction complete for", validated.data.job_title);
         return {
-            data: validated.data,
+            data: normalizedData,
             usage: {
                 model,
                 inputTokens: completion.usage?.prompt_tokens ?? 0,

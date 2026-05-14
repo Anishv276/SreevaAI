@@ -58,7 +58,11 @@ function parseStructuredResume(raw: string | null | undefined) {
         ? `${sr.location.city ?? ""}, ${sr.location.state ?? ""}, ${sr.location.country ?? ""}`.replace(/^,\s*|,\s*$/g, "").trim()
         : null,
       redFlags: sr.red_flags ?? [],
-      careerProgression: sr.career_progression?.analysis,
+      careerProgression:
+        sr.career_progression?.analysis ??
+        (sr.career_timeline
+          ? `Progression pattern: ${sr.career_timeline.progression_pattern ?? "unknown"}; job hopping risk: ${sr.career_timeline.job_hopping_risk ?? "unknown"}`
+          : null),
     };
   } catch { return null; }
 }

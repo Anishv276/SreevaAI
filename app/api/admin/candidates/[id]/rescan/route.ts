@@ -9,7 +9,7 @@ import { safeJsonParse } from "@/lib/utils";
 import { getPythonExecutable } from "@/lib/python-exec";
 
 export async function POST(
-    request: Request,
+    _request: Request,
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
@@ -25,6 +25,7 @@ export async function POST(
                 fullName: true,
                 email: true,
                 resumeText: true,
+                resumeData: true,
                 aiReport: true,
                 drive: {
                     select: {
@@ -63,12 +64,31 @@ export async function POST(
             return NextResponse.json({ error: "No resume text found to scan. Please re-upload resume." }, { status: 400 });
         }
 
-        let structuredResume = {};
-        if (application.aiReport) {
-            try {
-                const report = JSON.parse(application.aiReport);
-                structuredResume = report.data || report || {};
-            } catch (e) {}
+        // Step 1: Re-extract the resume using the current prompt (picks up all prompt fixes).
+        // Writing resumeText to a .txt file so the Python script processes it as plain text.
+        const tempResumePath = join(tmpdir(), `rescan_resume_${id}_${Date.now()}.txt`);
+        await writeFile(tempResumePath, resumeText);
+
+        let structuredResume: Record<string, any> = {};
+        try {
+            const extractResult = await new Promise<any>((resolve, reject) => {
+                let out = "", err = "";
+                const proc = spawn(getPythonExecutable(), [
+                    "scripts/extract_pdf.py", tempResumePath, "RESUME", "gpt-5.4-mini"
+                ]);
+                proc.stdout.on("data", (d) => { out += d.toString(); });
+                proc.stderr.on("data", (d) => { err += d.toString(); });
+                proc.on("close", (code) => {
+                    if (code !== 0) reject(new Error(err || `RESUME extraction exited ${code}`));
+                    else {
+                        try { resolve(JSON.parse(out)); }
+                        catch (e) { reject(new Error("Failed to parse RESUME extraction output")); }
+                    }
+                });
+            });
+            structuredResume = extractResult?.data || extractResult || {};
+        } finally {
+            await unlink(tempResumePath).catch(() => {});
         }
 
         const driveRows = await prisma.$queryRawUnsafe<Array<{ extractedDetails: string | null }>>(
@@ -93,7 +113,7 @@ export async function POST(
         const tempInputPath = join(tmpdir(), `rescan_${id}_${Date.now()}.json`);
         await writeFile(tempInputPath, JSON.stringify(scoringInput));
 
-        const pythonProcess = spawn(getPythonExecutable(), ["scripts/extract_pdf.py", tempInputPath, "SCORE"]);
+        const pythonProcess = spawn(getPythonExecutable(), ["scripts/extract_pdf.py", tempInputPath, "SCORE", "gpt-4o-mini"]);
 
         let outputData = "";
         let errorData = "";
@@ -120,6 +140,8 @@ export async function POST(
                 resumeStatus,
                 aiScore: score,
                 aiReport: JSON.stringify(aiResult),
+                // Persist fresh structured resume so future rescans skip re-extraction
+                resumeData: JSON.stringify({ structured: structuredResume }),
                 ...(resumeStatus === "REJECTED" && {
                     interviewStatus: "Not Qualified",
                     hiringStatus: "Not Shortlisted",

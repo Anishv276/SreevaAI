@@ -317,6 +317,15 @@ export function buildHyringResumeViewModel(i: {
   readinessTimeline?: string | null;
   candidatePotential?: string | null;
   decisionReason?: string | null;
+  humanLayer?: {
+    summary?: string;
+    judgment?: string;
+    human_score?: number;
+    human_adjustment?: number;
+    confidence?: number;
+    reasons?: { delta?: number; reason?: string; evidence?: string }[];
+    risk_flags?: string[];
+  } | null;
 }): HyringResumeViewModel {
   const c = i.candidate;
   const b = i.breakdown;
@@ -553,12 +562,13 @@ export function buildHyringResumeViewModel(i: {
     resumeUrl: c.resumeUrl || null,
     hasStructuredResume: nRoles > 0 || i.totalExtractedSkills > 0,
     reviewStrip: (() => {
-      const status = i.normalizedStatus?.toUpperCase();
-      const verdict = status === "REJECTED" || status === "rejected"
+    const status = i.normalizedStatus?.toUpperCase();
+    const verdict = status === "REJECTED" || status === "rejected"
         ? "REJECTED"
         : status === "SHORTLISTED" || status === "shortlisted"
           ? "SHORTLISTED"
           : "BORDERLINE";
+      const human = i.humanLayer;
 
       // Build meaningful decision reason
       let reason = "";
@@ -575,6 +585,18 @@ export function buildHyringResumeViewModel(i: {
         reason = i.primaryGapText && typeof i.primaryGapText === "string" && i.primaryGapText.length > 5
           ? `Borderline fit. Key concern: ${i.primaryGapText}`
           : `Borderline fit. Requires further evaluation.`;
+      }
+
+      const humanReason = human?.summary && human.summary.trim().length > 10
+        ? human.summary.trim()
+        : "";
+      const humanJudgment = human?.judgment && human.judgment.trim().length > 0
+        ? human.judgment.trim().toUpperCase()
+        : "";
+      if (humanReason) {
+        reason = humanJudgment
+          ? `${humanJudgment} by human layer — ${humanReason}`
+          : `Human layer — ${humanReason}`;
       }
 
       return `${verdict} — ${reason}`;

@@ -10,6 +10,19 @@ import { parseDriveScreeningSettings } from "@/lib/screening-criteria";
 import { appendCandidateActivity } from "@/lib/candidate-activity";
 import { getPythonExecutable } from "@/lib/python-exec";
 
+function extractStructuredResume(raw: unknown) {
+    const parsed = safeJsonParse(raw, {});
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const obj = parsed as Record<string, any>;
+    if (obj.structured && typeof obj.structured === "object" && !Array.isArray(obj.structured)) {
+        return obj.structured;
+    }
+    if (obj.resume && typeof obj.resume === "object" && !Array.isArray(obj.resume)) {
+        return obj.resume;
+    }
+    return obj;
+}
+
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
     try {
         const { id } = await params;
@@ -22,6 +35,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                 fullName: true,
                 email: true,
                 resumeText: true,
+                resumeData: true,
                 aiReport: true,
                 drive: {
                     select: {
@@ -58,13 +72,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             return NextResponse.json({ error: "No resume text found to scan. Please re-upload resume." }, { status: 400 });
         }
 
-        let structuredResume = {};
-        if (application.aiReport) {
-            try {
-                const report = JSON.parse(application.aiReport);
-                structuredResume = report.data || report || {};
-            } catch (e) {}
-        }
+        const structuredResume = extractStructuredResume(application.resumeData);
 
         const driveRows = await prisma.$queryRawUnsafe<Array<{ extractedDetails: string | null }>>(
             `
@@ -95,7 +103,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
         let aiResult: any = { score: 0, status: "Pending", reasoning: "Processing failed" };
 
-        const reportModel = "gpt-4o";
+        const reportModel = "gpt-4o-mini";
         console.log(`[AI RE-SCAN] Executing for ${application.email} | threshold=${threshold}`);
 
         const pythonProcess = spawn(getPythonExecutable(), ["scripts/extract_pdf.py", tempInputPath, "SCORE", reportModel]);

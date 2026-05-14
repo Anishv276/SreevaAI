@@ -306,6 +306,7 @@ export default function CandidateProfilePage() {
         const readinessTimeline = report.suitability_analysis?.readiness_timeline || null;
         const candidatePotential = report.candidate_potential?.for_this_role || null;
         const decisionReason = typeof report.decision_reason === "string" ? report.decision_reason : null;
+        const humanLayer = report.human_layer || null;
 
         return buildHyringResumeViewModel({
             candidate: {
@@ -340,6 +341,7 @@ export default function CandidateProfilePage() {
             readinessTimeline,
             candidatePotential,
             decisionReason,
+            humanLayer,
         });
     }, [backHref, candidate, candidatePhotoSrc, mounted, resumeReportData]);
 
@@ -473,4 +475,3 @@ export default function CandidateProfilePage() {
         </>
     );
 }
-

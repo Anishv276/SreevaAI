@@ -10,6 +10,7 @@ import { deleteDriveEmbeddings } from "@/lib/pinecone";
 import { getOrgBillingStatus } from "@/lib/credits";
 import { isDriveCreationLocked } from "@/lib/drive-limits";
 import { normalizeDriveAiConfig } from "@/lib/ai-provider-config";
+import { deriveDriveJdFieldsFromDescription } from "@/lib/drive-jd";
 import { getInterviewQuotaSupportMessage, isOrgRestrictedStatus } from "@/lib/interview-quota";
 import { parseOrgLimitValue } from "@/lib/org-limits";
 import { parseDriveScreeningSettings, sanitizeScreeningCriteria } from "@/lib/screening-criteria";
@@ -234,6 +235,9 @@ export async function POST(request: Request) {
         };
 
         const driveId = generateId("drv", data.title);
+        const jdFields = typeof data.description === "string"
+            ? await deriveDriveJdFieldsFromDescription(data.description)
+            : null;
 
         const drive = await (prisma.drive as any).create({
             data: {
@@ -248,9 +252,10 @@ export async function POST(request: Request) {
                 positions: data.positions || 1,
                 salary: data.salary || null,
                 experience: data.experience || null,
-                skills: data.skills || null,
-                responsibilities: data.responsibilities || null,
+                skills: data.skills || jdFields?.skills || null,
+                responsibilities: data.responsibilities || jdFields?.responsibilities || null,
                 requirements: data.requirements || null,
+                extractedDetails: jdFields?.extractedDetails || null,
                 jdFileName: data.jdFileName || null,
                 jdPreviewUrl: data.jdPreviewUrl?.startsWith("blob:") ? null : (data.jdPreviewUrl || null),
                 screeningCriteria: JSON.stringify(mergedScreeningCriteria),

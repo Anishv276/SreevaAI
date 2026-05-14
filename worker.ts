@@ -13,6 +13,7 @@ import { isInterviewTokenRequired } from "./lib/interview-access";
 import { appendCandidateActivity } from "./lib/candidate-activity";
 import { getPythonExecutable } from "./lib/python-exec";
 import { extractJDFromText } from "./lib/openai";
+import { deriveDriveJdFieldsFromDescription } from "./lib/drive-jd";
 import { deductInterviewQuota, getInterviewQuotaUnits, incrementOrgCreditsUsed } from "./lib/credits";
 import { parseDriveScreeningSettings } from "./lib/screening-criteria";
 import { recordOrgBillingUsage } from "./lib/usage-metrics";
@@ -53,6 +54,7 @@ function parseJsonSafe<T = Record<string, any>>(raw: unknown, fallback: T): T {
 }
 
 function hasJdMustHaves(jd: Record<string, any>): boolean {
+  if (Array.isArray(jd?.criteria) && jd.criteria.length > 0) return true;
   const mustHave = jd?.skills?.must_have;
   return Array.isArray(mustHave) && mustHave.length > 0;
 }
@@ -188,9 +190,14 @@ async function processDriveResumeBatchJob(job: any) {
     const extracted = await extractJDFromText(jdRawText, "gpt-5.4-mini");
     if (hasJdMustHaves(extracted.data || {})) {
       structuredJd = extracted.data || {};
+      const derivedFields = await deriveDriveJdFieldsFromDescription(jdRawText);
       await prisma.drive.update({
         where: { id: driveId },
-        data: { extractedDetails: JSON.stringify(structuredJd) },
+        data: {
+          extractedDetails: JSON.stringify(structuredJd),
+          ...(derivedFields?.skills && !drive.skills?.trim() ? { skills: derivedFields.skills } : {}),
+          ...(derivedFields?.responsibilities && !drive.responsibilities?.trim() ? { responsibilities: derivedFields.responsibilities } : {}),
+        },
       }).catch(() => {});
       if ((extracted.usage?.inputTokens || extracted.usage?.outputTokens)) {
         await recordOrgBillingUsage({
@@ -1305,13 +1312,17 @@ if (isQueueEnabled("jd-extraction")) {
     "jd-extraction",
     async (job) => {
       const { kind, orgOpenAIModel = "gpt-5.4-mini" } = job.data || {};
+      console.log(`[JD-EXTRACTION] Job ${job.id} started`, { kind, model: orgOpenAIModel });
 
       if (kind === "text") {
         const { text } = job.data as { text: string };
         if (!text || !text.trim()) {
           throw new Error("Missing JD text for extraction");
         }
-        return extractJDFromText(text, orgOpenAIModel);
+        console.log(`[JD-EXTRACTION] Job ${job.id} extracting JD from plain text`);
+        const result = await extractJDFromText(text, orgOpenAIModel);
+        console.log(`[JD-EXTRACTION] Job ${job.id} completed text extraction`);
+        return result;
       }
 
       if (kind === "url") {
@@ -1319,6 +1330,7 @@ if (isQueueEnabled("jd-extraction")) {
         if (!url) {
           throw new Error("Missing JD URL for extraction");
         }
+        console.log(`[JD-EXTRACTION] Job ${job.id} fetching JD URL`, { url });
         const { load } = await import("cheerio");
         const response = await fetch(url);
         if (!response.ok) {
@@ -1328,7 +1340,10 @@ if (isQueueEnabled("jd-extraction")) {
         const $ = load(html);
         $("script, style, nav, footer, header, noscript, iframe").remove();
         const text = $("body").text().replace(/\s+/g, " ").trim().slice(0, 15000);
-        return extractJDFromText(text, orgOpenAIModel);
+        console.log(`[JD-EXTRACTION] Job ${job.id} extracted URL text, sending to OpenAI`);
+        const result = await extractJDFromText(text, orgOpenAIModel);
+        console.log(`[JD-EXTRACTION] Job ${job.id} completed URL extraction`);
+        return result;
       }
 
       if (kind === "file") {
@@ -1346,6 +1361,10 @@ if (isQueueEnabled("jd-extraction")) {
         );
         await writeFile(tempFilePath, fileBuffer);
         try {
+          console.log(`[JD-EXTRACTION] Job ${job.id} extracting JD from file`, {
+            fileName,
+            tempFilePath,
+          });
           const pythonProcess = spawn(pythonCmd, [
             "scripts/extract_pdf.py",
             tempFilePath,
@@ -1366,6 +1385,7 @@ if (isQueueEnabled("jd-extraction")) {
               else resolve();
             });
           });
+          console.log(`[JD-EXTRACTION] Job ${job.id} completed file extraction`);
           const parsed = JSON.parse(outputData);
           if (parsed?.error) {
             throw new Error(parsed.error);

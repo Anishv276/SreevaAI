@@ -325,12 +325,43 @@ def normalize_skill(skill):
         "metaads": "metaads",
         "facebookads": "metaads",
         "instagramads": "metaads",
-        # API / protocols
+        # API / protocols — JD phrases and LLM compound tags
         "restapi": "rest",
+        "restapis": "rest",
+        "restfulapi": "rest",
+        "restfulapis": "rest",
         "restful": "rest",
+        "restapidevelopment": "rest",
+        "restapidesign": "rest",
+        "restapiconsumption": "rest",
+        "restapidevelopmentanddesign": "rest",
+        "backendapidevelopment": "rest",
+        "apidevelopment": "rest",
+        "apidesign": "rest",
+        "apiintegration": "rest",
+        "apidesignandintegration": "rest",
         "graphqlapi": "graphql",
+        "graphqlapis": "graphql",
         "grpcapi": "grpc",
         "websocket": "websockets",
+        # DSA / CS fundamentals
+        "datastructuresandalgorithms": "dsa",
+        "datastructures": "dsa",
+        "algorithmsanddatastructures": "dsa",
+        "dsa": "dsa",
+        "algorithms": "dsa",
+        "algorithmicthinking": "dsa",
+        # OOP / Java fundamentals
+        "objectoriented": "oop",
+        "objectorientedprogramming": "oop",
+        "oops": "oop",
+        "oop": "oop",
+        "corejava": "java",
+        "javafundamentals": "java",
+        "javabasics": "java",
+        # Version control extras
+        "versioncontrol": "git",
+        "sourcecontrol": "git",
         # Testing
         "jestjs": "jest",
         "pytestframework": "pytest",
@@ -368,6 +399,12 @@ TRANSFERABLE_SKILLS = {
     "python": ["django", "flask", "fastapi", "datascience", "ml"],
     "java": ["spring", "kotlin", "scala"],
     "spring": ["java", "springboot"],
+    # DSA: any language with work history implies foundational DSA knowledge
+    "dsa": ["java", "python", "javascript", "typescript", "cpp"],
+    # OOP: any OOP language implies OOP concepts
+    "oop": ["java", "python", "javascript", "typescript", "spring", "django"],
+    # REST: node/express/spring/django all build REST APIs
+    "rest": ["node", "express", "spring", "django", "fastapi", "flask"],
     "aws": ["gcp", "azure", "cloudcomputing"],
     "gcp": ["aws", "azure", "cloudcomputing"],
     "azure": ["aws", "gcp", "cloudcomputing"],
@@ -401,6 +438,99 @@ TRANSFERABLE_SKILLS = {
     "zapier": ["n8n", "make", "automation"],
     "rest": ["graphql", "grpc", "api"],
 }
+def _normalise_jd_weights(jd_data):
+    criteria = jd_data.get("criteria", [])
+    if not criteria:
+        return jd_data
+    raw = [max(c.get("weight", 0), 1) for c in criteria]
+    total = sum(raw)
+    if total == 0:
+        return jd_data
+    count = len(raw)
+    # If there are more than 100 criteria, exact normalization with a min-1 floor
+    # is impossible. Fall back to the original weights in that pathological case.
+    if count > 100:
+        return jd_data
+
+    scale = 100.0 / total
+    # Largest-remainder normalization:
+    # 1) scale weights
+    # 2) take floors with a minimum of 1
+    # 3) distribute any remaining points to the largest fractional parts
+    scaled_float = [w * scale for w in raw]
+    scaled = [max(1, int(w)) for w in scaled_float]
+    diff = 100 - sum(scaled)
+    if diff > 0:
+        order = sorted(
+            range(len(scaled_float)),
+            key=lambda i: (scaled_float[i] - int(scaled_float[i]), raw[i]),
+            reverse=True,
+        )
+        for i in order:
+            if diff <= 0:
+                break
+            scaled[i] += 1
+            diff -= 1
+    elif diff < 0:
+        order = sorted(
+            range(len(scaled)),
+            key=lambda i: (scaled[i] - 1, raw[i]),
+            reverse=True,
+        )
+        for i in order:
+            if diff >= 0:
+                break
+            if scaled[i] <= 1:
+                continue
+            scaled[i] -= 1
+            diff += 1
+    for c, w in zip(criteria, scaled):
+        c["weight"] = w
+    jd_data["criteria"] = criteria
+    return jd_data
+
+JD_CANONICAL_SKILL_REFERENCE = """
+Frontend: React | Vue | Angular | Next.js | Nuxt.js | TypeScript | JavaScript | Tailwind CSS
+Backend: Node.js | Express | Django | Flask | FastAPI | Spring | Hibernate | Java
+Mobile: React Native | Flutter | Swift | Kotlin | Android | iOS
+Databases: PostgreSQL | MySQL | MongoDB | Redis | Elasticsearch | SQLite | SQL Server | Cassandra
+Cloud: AWS | GCP | Azure
+DevOps/Infra: Docker | Kubernetes | Terraform | Ansible | Helm | ArgoCD | Jenkins | CI/CD | Linux | Nginx
+AI/ML: Python | TensorFlow | PyTorch | scikit-learn | Hugging Face | LangChain | LLM | GenAI | ML | NLP | Spark | Kafka | Airflow
+BI/Analytics: Power BI | Tableau | Looker | Metabase | Superset | Google Analytics | Excel
+CRM/Marketing: HubSpot | Salesforce | Google Ads | Meta Ads | Zapier | n8n | Make
+API/Protocols: REST | GraphQL | gRPC | WebSockets
+Testing: Jest | Pytest | Cypress | Playwright
+Version control: Git
+Messaging: RabbitMQ | SQS | EventBridge
+""".strip()
+
+RESUME_CANONICAL_SKILL_REFERENCE = """
+react | vue | angular | next | nuxt | typescript | javascript | tailwind | node | express | django | flask | fastapi | spring | hibernate | java | python
+postgres | mongo | elasticsearch | sqlserver | mysql | sqlite | redis | cassandra | aws | gcp | azure | k8s | docker | cicd | linux | nginx
+ai | dl | nlp | llm | genai | ml | datascience | spark | kafka | airflow | scikitlearn | xgboost | lightgbm | tensorflow | pytorch | huggingface | langchain
+powerbi | excel | googleanalytics | looker | tableau | metabase | superset | n8n | zapier | make | reactnative | flutter | swift | kotlin | android | ios
+hubspot | salesforce | googleads | metaads | rest | graphql | grpc | websockets | dsa | oop | git | testing | jest | pytest | cypress | playwright
+rabbitmq | sqs | eventbridge | algolia | solr | apache
+""".strip()
+
+
+def _postprocess_jd_output(jd_data):
+    """
+    Normalize extracted JD JSON before it is persisted.
+    This makes the stored JD safer for deterministic scoring.
+    """
+    if not isinstance(jd_data, dict):
+        return {}
+    jd_data = _normalise_jd_weights(jd_data)
+    scoring_hints = jd_data.get("scoring_hints")
+    if not isinstance(scoring_hints, dict):
+        scoring_hints = {}
+    scoring_hints.setdefault("green_flags_to_reward", [])
+    scoring_hints.setdefault("red_flags_to_watch", [])
+    jd_data["scoring_hints"] = scoring_hints
+    return jd_data
+
 def _as_dict(value):
     """
     Safely coerce a value to a dict.
@@ -468,6 +598,362 @@ def _custom_check_match(check_text, resume_normalized, resume_raw_text):
     if ratio > 0:
         return "mentioned", 0.3
     return "none", 0.0
+
+
+def _build_human_like_adjustment(
+    jd_data,
+    resume_data,
+    score_result,
+    criteria_results,
+    resume_normalized,
+    work_history,
+    resume_raw_text_corpus,
+):
+    """
+    Second-layer human-like rubric.
+    This does not replace the deterministic score; it re-reads the same evidence
+    with recruiter-style judgment about direct proof, adjacency, ownership, and risk.
+    The adjustment is intentionally bounded so the layer can refine, not rewrite,
+    the base score.
+    """
+    jd_role = (
+        jd_data.get("role_level")
+        or _as_dict(jd_data.get("role_context", {})).get("seniority")
+        or "unknown"
+    )
+    jd_role_key = str(jd_role or "").strip().lower()
+    candidate_years = score_result.get("candidate_years")
+    jd_min_years = score_result.get("jd_min_years")
+    jd_keywords = {normalize_skill(k) for k in (jd_data.get("keywords", []) or []) if k}
+
+    def resolve_role_band() -> str:
+        if jd_role_key in ("intern", "junior", "mid", "senior", "lead", "manager"):
+            return jd_role_key
+        if jd_min_years is not None:
+            if jd_min_years <= 1:
+                return "intern"
+            if jd_min_years <= 2:
+                return "junior"
+            if jd_min_years <= 5:
+                return "mid"
+            return "senior"
+        if candidate_years is not None:
+            if candidate_years <= 1:
+                return "intern"
+            if candidate_years <= 2:
+                return "junior"
+            if candidate_years <= 5:
+                return "mid"
+            return "senior"
+        return "mid"
+
+    role_band = resolve_role_band()
+    role_profiles = {
+        "intern": {
+            "direct": 1.00,
+            "adjacent": 0.50,
+            "impact": 1.00,
+            "experience": 0.85,
+            "domain": 0.90,
+            "blocker": 1.05,
+            "max_positive": 10,
+            "max_negative": 15,
+        },
+        "junior": {
+            "direct": 1.00,
+            "adjacent": 0.55,
+            "impact": 1.00,
+            "experience": 0.90,
+            "domain": 0.95,
+            "blocker": 1.10,
+            "max_positive": 10,
+            "max_negative": 16,
+        },
+        "mid": {
+            "direct": 1.05,
+            "adjacent": 0.50,
+            "impact": 1.05,
+            "experience": 0.90,
+            "domain": 1.00,
+            "blocker": 1.15,
+            "max_positive": 9,
+            "max_negative": 18,
+        },
+        "senior": {
+            "direct": 1.15,
+            "adjacent": 0.35,
+            "impact": 1.15,
+            "experience": 0.80,
+            "domain": 1.05,
+            "blocker": 1.20,
+            "max_positive": 8,
+            "max_negative": 18,
+        },
+        "lead": {
+            "direct": 1.20,
+            "adjacent": 0.30,
+            "impact": 1.20,
+            "experience": 0.80,
+            "domain": 1.10,
+            "blocker": 1.25,
+            "max_positive": 8,
+            "max_negative": 20,
+        },
+        "manager": {
+            "direct": 1.20,
+            "adjacent": 0.25,
+            "impact": 1.20,
+            "experience": 0.80,
+            "domain": 1.10,
+            "blocker": 1.25,
+            "max_positive": 8,
+            "max_negative": 20,
+        },
+    }
+    profile = role_profiles.get(role_band, role_profiles["mid"])
+
+    jd_core_skills = []
+    for criterion in (jd_data.get("criteria", []) or []):
+        if criterion.get("category") == "skill":
+            normalized = normalize_skill(criterion.get("name"))
+            if normalized:
+                jd_core_skills.append(normalized)
+    jd_core_skill_hits = [skill for skill in jd_core_skills if skill in resume_normalized]
+    jd_core_skill_misses = [skill for skill in jd_core_skills if skill not in resume_normalized]
+    jd_core_skill_total = len(jd_core_skills)
+    jd_core_skill_hit_count = len(jd_core_skill_hits)
+    jd_core_skill_match_ratio = (jd_core_skill_hit_count / jd_core_skill_total) if jd_core_skill_total else 0.0
+    tech_alignment_clear = jd_core_skill_total == 0 or jd_core_skill_match_ratio >= 0.80
+    tech_alignment_partial = jd_core_skill_total == 0 or jd_core_skill_match_ratio >= 0.50
+
+    adjustment = 0
+    reasons = []
+    strong_evidence = []
+    risk_flags = []
+
+    def add_delta(delta: int, reason: str, evidence: str | None = None):
+        nonlocal adjustment
+        if delta == 0:
+            return
+        adjustment += delta
+        entry = {"delta": delta, "reason": reason}
+        if evidence:
+            entry["evidence"] = evidence
+            if delta > 0:
+                strong_evidence.append({"reason": reason, "evidence": evidence, "delta": delta})
+        reasons.append(entry)
+
+    def job_has_backend_depth(job):
+        techs = {normalize_skill(t) for t in (job.get("technologies_used", []) or []) if t}
+        resp = " ".join(job.get("responsibilities", []) or []).lower()
+        backend_tokens = {
+            "java",
+            "spring",
+            "hibernate",
+            "rest",
+            "node",
+            "express",
+            "django",
+            "flask",
+            "fastapi",
+            "python",
+            "microservices",
+            "api",
+        }
+        return bool(techs & backend_tokens) or any(tok in resp for tok in backend_tokens)
+
+    direct_hits = [c for c in criteria_results if c.get("result") == "meets"]
+    partial_hits = [c for c in criteria_results if c.get("result") in ("partially_meets", "unclear")]
+    strong_direct = [c for c in direct_hits if c.get("ev_type") in ("work_history_outcome", "work_history")]
+    weak_direct = [c for c in direct_hits if c.get("ev_type") in ("project", "listed", "inferred")]
+
+    # 1) Direct must-have evidence carries the most weight.
+    if strong_direct and tech_alignment_partial:
+        direct_names = ", ".join(c.get("criterion", "") for c in strong_direct[:4]) or None
+        if tech_alignment_clear:
+            direct_cap = 4
+            direct_reason = f"Direct must-have evidence is proven in work history and the JD tech stack is a strong match ({role_band} fit)"
+        else:
+            direct_cap = 2
+            direct_reason = f"Direct must-have evidence exists, but the JD tech stack is only partially matched ({role_band} fit)"
+        add_delta(
+            int(round(min(direct_cap, len(strong_direct) * 2) * profile["direct"])),
+            direct_reason,
+            direct_names,
+        )
+    elif strong_direct:
+        direct_names = ", ".join(c.get("criterion", "") for c in strong_direct[:4]) or None
+        risk_flags.append("Direct proof exists, but the candidate is weak on the JD technology stack")
+        add_delta(
+            -2 if role_band in ("intern", "junior") else -3,
+            "Direct proof is present, but it does not line up tightly enough with the JD technology stack",
+            direct_names,
+        )
+    if weak_direct and tech_alignment_partial:
+        weak_names = ", ".join(c.get("criterion", "") for c in weak_direct[:4]) or None
+        add_delta(
+            int(round(min(3, len(weak_direct)) * (0.7 if not tech_alignment_clear else 0.9))),
+            "Some criteria are supported only by weaker evidence",
+            weak_names,
+        )
+
+    # 2) Technology alignment should lead the judgment.
+    if jd_core_skills:
+        if tech_alignment_clear:
+            add_delta(
+                int(round(4 * profile["direct"])),
+                f"Strong direct technology alignment across {jd_core_skill_hit_count}/{jd_core_skill_total} core JD skills",
+                ", ".join(jd_core_skill_hits[:5]),
+            )
+        elif tech_alignment_partial:
+            add_delta(
+                int(round(2 * profile["direct"])),
+                f"Partial technology alignment across {jd_core_skill_hit_count}/{jd_core_skill_total} core JD skills",
+                ", ".join(jd_core_skill_hits[:5]),
+            )
+        elif jd_core_skill_hit_count == 1:
+            risk_flags.append("Only one core JD technology is evidenced")
+            add_delta(
+                -2 if role_band in ("intern", "junior") else -3,
+                "Only one core JD technology is evidenced, which is weaker than the role expects",
+                ", ".join(jd_core_skill_hits[:5]),
+            )
+        else:
+            if "No direct JD technology match" not in risk_flags:
+                risk_flags.append("No direct JD technology match")
+            add_delta(
+                -6 if role_band in ("intern", "junior") else -7,
+                "The resume does not show direct alignment with the JD technology stack",
+                ", ".join(jd_core_skills[:5]),
+            )
+
+    # 3) Adjacent backend proof only reinforces a real technology match.
+    backend_jobs = [job for job in work_history if job_has_backend_depth(job)]
+    backend_jobs_with_impact = [job for job in backend_jobs if job.get("impact_signals")]
+    if backend_jobs and jd_core_skill_hits and tech_alignment_partial:
+        base_backend_delta = 3 if len(backend_jobs) >= 2 else 1
+        add_delta(
+            int(round(base_backend_delta * profile["adjacent"])),
+            f"Multiple backend roles reinforce the technology match ({role_band} fit)",
+            "; ".join(f"{job.get('company')} / {job.get('role')}" for job in backend_jobs[:2]),
+        )
+    if backend_jobs_with_impact and jd_core_skill_hits and tech_alignment_clear:
+        base_backend_impact = 2 if len(backend_jobs_with_impact) >= 2 else 1
+        add_delta(
+            int(round(base_backend_impact * profile["impact"])),
+            f"Backend work included measurable outcomes that reinforce the technology match ({role_band} fit)",
+            "; ".join(job.get("company", "") for job in backend_jobs_with_impact[:2]),
+        )
+
+    # 4) Measurable ownership and impact should move the score up materially.
+    impact_signals = sum(len(job.get("impact_signals", []) or []) for job in work_history)
+    owner_count = sum(1 for job in work_history if job.get("ownership_level") == "owner")
+    if tech_alignment_partial:
+        if impact_signals >= 4 and tech_alignment_clear:
+            add_delta(int(round(3 * profile["impact"])), "Multiple measurable outcomes show the candidate ships real work", f"{impact_signals} impact signals")
+        elif impact_signals >= 2 and tech_alignment_clear:
+            add_delta(int(round(2 * profile["impact"])), "There is enough measurable output to trust the resume narrative", f"{impact_signals} impact signals")
+        elif impact_signals >= 1 and tech_alignment_clear:
+            add_delta(int(round(1 * profile["impact"])), "At least one measurable outcome is present", f"{impact_signals} impact signal")
+        if owner_count >= 2 and tech_alignment_clear:
+            add_delta(int(round(2 * profile["impact"])), "Multiple owner-level roles indicate genuine execution ownership", f"{owner_count} owner-level roles")
+        elif owner_count == 1 and tech_alignment_clear:
+            add_delta(int(round(1 * profile["impact"])), "One owner-level role adds credibility", "1 owner-level role")
+
+    # 5) Experience and freshness.
+    if jd_min_years is not None and candidate_years is not None and tech_alignment_partial:
+        if candidate_years >= jd_min_years:
+            add_delta(int(round(3 * profile["experience"])), "Candidate meets the required experience floor", f"{candidate_years} yrs vs {jd_min_years} yrs required")
+        elif candidate_years + 1 >= jd_min_years:
+            gap_delta = 2 if role_band in ("intern", "junior") else 1 if role_band == "mid" else 0
+            if gap_delta > 0:
+                add_delta(
+                    int(round(gap_delta * profile["experience"])),
+                    f"The experience gap is small and acceptable for a {role_band} role",
+                    f"{candidate_years} yrs vs {jd_min_years} yrs required",
+                )
+
+    # 6) Domain and keyword overlap.
+    domain_skills = resume_data.get("skills", {}).get("domain_skills", []) or []
+    jd_kw_hits = sum(1 for s in domain_skills if s and normalize_skill(s) in jd_keywords)
+    if jd_kw_hits >= 3 and tech_alignment_partial:
+        add_delta(int(round(3 * profile["domain"])), "Domain skills align with JD keywords", f"{jd_kw_hits} overlapping domain skills")
+    elif jd_kw_hits >= 1 and tech_alignment_clear:
+        add_delta(int(round(1 * profile["domain"])), "Some domain alignment is visible", f"{jd_kw_hits} overlapping domain skill")
+
+    # 7) Penalize true blockers, but only when the resume really gives no adjacent proof.
+    missing_must = set(score_result.get("skill_matching", {}).get("missing_must", []) or [])
+    if "Java" in missing_must and "java" not in resume_normalized:
+        risk_flags.append("Java is not evidenced")
+        add_delta(int(round(-5 * profile["blocker"])), "Core Java is absent from the structured evidence", "Java missing")
+    if "Spring Boot" in missing_must and "spring" not in resume_normalized and "springboot" not in resume_normalized:
+        if not backend_jobs and not ({"java", "rest"} <= set(resume_normalized.keys())):
+            risk_flags.append("Spring Boot is not evidenced")
+            add_delta(int(round(-4 * profile["blocker"])), "Spring Boot is missing and there is no adjacent backend proof", "Spring Boot missing")
+    if "Data Structures and Algorithms" in missing_must:
+        if not any(tok in resume_normalized for tok in ("dsa", "algorithm", "algorithms")):
+            add_delta(int(round(-2 * profile["blocker"])), "DSA is still weakly evidenced", "No explicit DSA signal")
+
+    adjustment = max(-1 * profile["max_negative"], min(profile["max_positive"], adjustment))
+    human_score = max(0, min(100, round(score_result["score"] + adjustment)))
+    confidence = 55
+    if strong_direct:
+        confidence += 15
+    if impact_signals >= 2:
+        confidence += 10
+    if backend_jobs:
+        confidence += 10
+    if jd_core_skill_hits:
+        confidence += 3 if len(jd_core_skill_hits) >= 2 else 1
+    if not risk_flags:
+        confidence += 5
+    confidence = max(35, min(95, confidence))
+
+    if human_score >= 75:
+        judgment = "Shortlisted"
+    elif human_score >= 60:
+        judgment = "Borderline"
+    else:
+        judgment = "Rejected"
+
+    summary_bits = []
+    if strong_direct:
+        summary_bits.append(
+            f"Direct proof covers {len(strong_direct)} JD criteria: {', '.join(c.get('criterion', '') for c in strong_direct[:4])}"
+        )
+    if jd_core_skills:
+        summary_bits.append(
+            f"Core JD technology hits: {len(jd_core_skill_hits)} matched, {len(jd_core_skill_misses)} missing"
+        )
+    if backend_jobs:
+        summary_bits.append(
+            f"Backend evidence comes from {len(backend_jobs)} work-history roles: {', '.join(job.get('company', '') for job in backend_jobs[:3])}"
+        )
+    summary_bits.append(f"Role band used for tuning: {role_band}")
+    if strong_evidence:
+        summary_bits.append(
+            "Most useful signals: " + "; ".join(
+                f"{item['reason']} ({item.get('evidence', '')})" for item in strong_evidence[:3]
+            )
+        )
+    if partial_hits:
+        summary_bits.append(
+            f"Partial evidence remains on {', '.join(c.get('criterion', '') for c in partial_hits[:3])}"
+        )
+    if risk_flags:
+        summary_bits.append("Risks: " + "; ".join(risk_flags))
+
+    return {
+        "base_score": score_result["score"],
+        "human_adjustment": adjustment,
+        "human_score": human_score,
+        "confidence": confidence,
+        "judgment": judgment,
+        "strong_evidence": strong_evidence,
+        "reasons": reasons,
+        "risk_flags": risk_flags,
+        "summary": " ".join(summary_bits).strip(),
+    }
 def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
     """
     Deterministic evidence-based scoring engine. LLM never touches this function.
@@ -513,9 +999,26 @@ def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
             name = s["skill"] if isinstance(s, dict) else s
             w = s.get("weight", "high") if isinstance(s, dict) else "high"
             weight_pts = {"critical": 20, "high": 15, "medium": 10}.get(w, 15)
+            # Multi-word phrases (e.g. "Data Structures and Algorithms", "REST APIs") are
+            # not single-token skills — use "responsibility" category so the raw-text word
+            # matching path fires for them instead of exact normalized-key lookup.
+            is_multiword = len(str(name).split()) > 2
+            category = "responsibility" if is_multiword else "skill"
             jd_criteria.append({
-                "id": f"legacy_{name}", "category": "skill", "name": name,
+                "id": f"legacy_{name}", "category": category, "name": name,
                 "priority": w, "weight": weight_pts,
+                "evidence_required": "any", "source_text": name
+            })
+        # Also add good_to_have as medium criteria so they contribute to good_score pool
+        for s in (jd_skills.get("good_to_have", []) or []):
+            name = s["skill"] if isinstance(s, dict) else s
+            if not name:
+                continue
+            is_multiword = len(str(name).split()) > 2
+            category = "responsibility" if is_multiword else "skill"
+            jd_criteria.append({
+                "id": f"legacy_good_{name}", "category": category, "name": name,
+                "priority": "medium", "weight": 8,
                 "evidence_required": "any", "source_text": name
             })
 
@@ -535,7 +1038,7 @@ def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
         evidence_items = []
     domain_skills = resume_skills.get("domain_skills", [])
     skill_evidence_map = {}
-    priority_rank = {"work_history": 4, "project": 3, "listed": 2, "keyword": 1}
+    priority_rank = {"work_history_outcome": 5, "work_history": 4, "project": 3, "listed": 2, "keyword": 1}
     def _add_skill(name, evidence, confidence, source, years=None):
         norm = normalize_skill(str(name))
         if not norm:
@@ -548,7 +1051,7 @@ def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
     for s in (resume_skills.get("technical", []) or []):
         if isinstance(s, dict) and s.get("skill"):
             src = s.get("source_strength", "listed")
-            mapped_src = "work_history" if src in ("work_history_outcome", "work_history") else ("project" if src == "project" else "listed")
+            mapped_src = src if src in ("work_history_outcome", "work_history", "project", "listed", "inferred") else "listed"
             _add_skill(s["skill"], s.get("evidence", ""), "high", mapped_src, s.get("years_of_use"))
             all_resume_skill_names.append(s["skill"])
         elif isinstance(s, str) and s:
@@ -559,7 +1062,7 @@ def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
             tool, conf = s.get("tool"), s.get("confidence", "high")
             if tool and conf != "low":
                 src = s.get("source_strength", "listed")
-                mapped_src = "work_history" if src in ("work_history_outcome", "work_history") else ("project" if src == "project" else "listed")
+                mapped_src = src if src in ("work_history_outcome", "work_history", "project", "listed", "inferred") else "listed"
                 _add_skill(tool, s.get("evidence", ""), conf, mapped_src)
                 all_resume_skill_names.append(tool)
         elif isinstance(s, str) and s:
@@ -567,7 +1070,7 @@ def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
             all_resume_skill_names.append(s)
     for job in work_history:
         company = job.get("company", "work history")
-        src = "work_history" if job.get("impact_strength") in ("high", "medium") else "project"
+        src = "work_history_outcome" if job.get("impact_signals") else ("work_history" if job.get("impact_strength") in ("high", "medium") else "project")
         for tech in (job.get("technologies_used", []) or []):
             if tech and isinstance(tech, str):
                 _add_skill(tech, company, "high", src)
@@ -588,11 +1091,19 @@ def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
         norm = normalize_skill(str(s))
         if norm and norm not in resume_normalized:
             resume_normalized[norm] = s
+    career_timeline = resume_data.get("career_timeline", {})
+    career_progression = _as_dict(resume_data.get("career_progression", {}))
+    career_context = " ".join(filter(None, [
+        career_timeline.get("progression_pattern", ""),
+        career_timeline.get("job_hopping_risk", ""),
+        career_progression.get("analysis", ""),
+    ]))
     resume_raw_text_corpus = " ".join(filter(None, [
         resume_data.get("candidate_summary", ""),
-        resume_data.get("career_progression", {}).get("analysis", ""),
+        career_context,
         " ".join(kw for kw in (resume_data.get("keywords", []) or []) if kw),
         " ".join(" ".join(str(t) for t in (job.get("technologies_used", []) or [])) for job in work_history),
+        " ".join(job.get("business_domain", "") for job in work_history if job.get("business_domain")),
         " ".join(s for s in domain_skills if s),
         " ".join(c.get("claim", "") for c in (resume_data.get("core_claims", []) or [])),
     ])).lower()
@@ -638,6 +1149,67 @@ def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
         matched_evidence_text = ""
         confidence = 0.0
         best_ev_level = 0
+
+        # Experience-category criteria are scored from the resume's total_years,
+        # not from text/skill matching, to avoid treating "3+ years in fintech" like a skill.
+        if ccategory == "experience":
+            cand_yrs = resume_data.get("experience", {}).get("total_years")
+            # Try to parse a minimum/maximum requirement from the criterion name.
+            # Supports "5+ years", "5 years", and "5-7 years" style phrases.
+            req_min = None
+            req_max = None
+            range_match = re.search(r"(\d+)\s*(?:-|to|–|—)\s*(\d+)\s*(?:\+)?\s*years?", cname, re.IGNORECASE)
+            plus_match = re.search(r"(\d+)\s*\+\s*years?", cname, re.IGNORECASE)
+            single_match = re.search(r"(\d+)\s*years?", cname, re.IGNORECASE)
+            if range_match:
+                req_min = int(range_match.group(1))
+                req_max = int(range_match.group(2))
+            elif plus_match:
+                req_min = int(plus_match.group(1))
+            elif single_match:
+                req_min = int(single_match.group(1))
+
+            if cand_yrs is not None and req_min is not None:
+                gap = cand_yrs - req_min
+                if req_max is not None and cand_yrs > req_max + 2:
+                    result, ev_type, confidence = "unclear", "work_history", 0.65
+                elif gap >= 0:
+                    result, ev_type, confidence = "meets", "work_history", 0.90
+                elif gap >= -1:
+                    result, ev_type, confidence = "partially_meets", "work_history", 0.70
+                elif gap >= -2:
+                    result, ev_type, confidence = "unclear", "listed", 0.40
+                else:
+                    result, ev_type, confidence = "does_not_meet", "none", 0.0
+            elif cand_yrs is not None:
+                # If we can’t parse the requirement, give only mild credit rather than a full pass.
+                result, ev_type, confidence = "unclear", "work_history", 0.45
+            # Skip generic matching entirely for experience criteria
+            criteria_results.append({
+                "criterion": cname, "category": ccategory, "priority": cpriority,
+                "weight": cweight, "result": result, "confidence": round(confidence, 2),
+                "evidence": matched_evidence_text, "ev_type": ev_type,
+            })
+            r_mult = RESULT_MULT.get(result, 0.0)
+            e_mult = EVIDENCE_MULT.get(ev_type, 0.15)
+            contribution = cweight * r_mult * e_mult
+            if cpriority == "medium":
+                good_matched_weight += contribution
+            else:
+                must_matched_weight += contribution
+            if result == "meets":
+                (matched_good if cpriority == "medium" else matched_must).append(cname)
+                must_have_details.append({"name": cname, "weight": cpriority, "status": "found", "match_level": "full"})
+            elif result in ("partially_meets", "unclear"):
+                if cpriority != "medium":
+                    partial_must.append(cname)
+                must_have_details.append({"name": cname, "weight": cpriority, "status": "mentioned", "match_level": result})
+            else:
+                if cpriority != "medium":
+                    missing_must.append(cname)
+                must_have_details.append({"name": cname, "weight": cpriority, "status": "not_found", "match_level": "none"})
+            continue
+
         for ev in evidence_items:
             proves = [normalize_skill(p) for p in ev.get("proves", [])]
             ev_text = ev.get("text", "").lower()
@@ -669,7 +1241,11 @@ def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
             level, multiplier = _skill_match_level(norm_cname, resume_normalized, skill_evidence_map, resume_raw_text_corpus)
             if level in ("full", "confirmed"):
                 ev_src_raw = skill_evidence_map.get(norm_cname, {}).get("source", "listed")
-                if ev_src_raw == "work_history":
+                if ev_src_raw == "work_history_outcome":
+                    result = "meets"
+                    ev_type = "work_history_outcome"
+                    confidence = 1.0
+                elif ev_src_raw == "work_history":
                     result = "meets"
                     ev_type = "work_history"
                     confidence = 0.85
@@ -731,7 +1307,10 @@ def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
             if cpriority != "medium":
                 partial_must.append(cname)
             must_have_details.append({"name": cname, "weight": cpriority, "status": "mentioned", "match_level": result})
-            required = False
+        else:
+            if cpriority != "medium":
+                missing_must.append(cname)
+            must_have_details.append({"name": cname, "weight": cpriority, "status": "not_found", "match_level": "none"})
 
     # Custom HR screening checks are handled separately from JD criteria.
     for check in hr_custom_checks:
@@ -882,12 +1461,31 @@ def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
     domain_score = max(0, min(10, domain_score))
     # ── 7. Final score ─────────────────────────────────────────────────────
     total = min(100, max(0, skills_score + exp_score + good_score + career_score + domain_score))
+    human_layer = _build_human_like_adjustment(
+        jd_data,
+        resume_data,
+        {
+            "score": total,
+            "candidate_years": candidate_years,
+            "jd_min_years": jd_min_years,
+            "skill_matching": {"missing_must": missing_must},
+        },
+        criteria_results,
+        resume_normalized,
+        work_history,
+        resume_raw_text_corpus,
+    )
+    adjusted_total = int(human_layer.get("human_score", total))
     # ── 8. Hard rejection gates ────────────────────────────────────────────
     # Criteria-based: reject only if 2+ CRITICAL criteria are "does_not_meet"
     hard_rejected = False
     rejection_reasons = []
     critical_fails = [c for c in criteria_results if c.get("priority") == "critical" and c.get("result") == "does_not_meet"]
-    if len(critical_fails) >= 2:
+    critical_total = len([c for c in criteria_results if c.get("priority") == "critical"])
+    # Hard reject only when ALL critical criteria fail, or all but one in a large critical set.
+    # A threshold of >= 2 was firing on intern JDs where the evidence path was weak,
+    # causing candidates with strong work history to be incorrectly hard-rejected.
+    if critical_total > 0 and len(critical_fails) >= max(2, critical_total):
         hard_rejected = True
         rejection_reasons.append(f"Missing critical requirements: {[c['criterion'] for c in critical_fails]}")
     if custom_required_total > 0 and len(custom_required_missing) / custom_required_total > 0.70:
@@ -907,9 +1505,9 @@ def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
     borderline_floor = max(0, threshold - 10)
     if hard_rejected:
         status = "Rejected"
-    elif total >= threshold:
+    elif adjusted_total >= threshold:
         status = "Shortlisted"
-    elif total >= borderline_floor:
+    elif adjusted_total >= borderline_floor:
         status = "Borderline"
     else:
         status = "Rejected"
@@ -919,7 +1517,9 @@ def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
     total_criteria = len(jd_criteria)
     met_criteria = len([c for c in criteria_results if c["result"] == "meets"])
     return {
-        "score": total,
+        "score": adjusted_total,
+        "base_score": total,
+        "human_layer": human_layer,
         "status": status,
         "breakdown": {
             "skills_score": skills_score, "skills_max": 50,
@@ -947,10 +1547,10 @@ def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
         "jd_min_years": jd_min_years,
     }
 def generate_report_inline(
-    _jd_data, resume_data, jd_raw_text, resume_raw_text, score_result, client, report_model="gpt-4o", screening_criteria=None
+    _jd_data, resume_data, jd_raw_text, resume_raw_text, score_result, client, report_model="gpt-4o-mini", screening_criteria=None
 ):
     """
-    Full-fidelity AI report generation using gpt-4o.
+    Full-fidelity AI report generation using gpt-4o-mini.
     Score and status are LOCKED by the deterministic engine — LLM only writes human-readable analysis.
     Every field the UI renders is produced here directly. No math fallbacks.
     """
@@ -994,6 +1594,10 @@ You CANNOT change the score, status, or breakdown numbers.
 LOCKED SCORING RESULTS (READ ONLY)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Candidate           : {candidate_name}
+Base Score          : {score_result["base_score"]}/100
+Human Layer Score   : {score_result["human_layer"].get("human_score", total)}/100
+Human Adjustment    : {score_result["human_layer"].get("human_adjustment", 0)}
+Human Judgment      : {score_result["human_layer"].get("judgment", "Unknown")}
 Final Score         : {total}/100
 Status              : {status}
 Criteria Match      : {breakdown["skills_score"]}/{breakdown["skills_max"]} pts
@@ -1007,6 +1611,9 @@ Must-have missing  : {json.dumps(missing)}
 Good-to-have hits  : {json.dumps(matched_good)}
 Experience status  : {exp_status} (candidate: {candidate_years} yrs | required: {jd_min_years} yrs)
 {f"HARD REJECTION REASONS: {json.dumps(score_result['rejection_reasons'])}" if score_result["hard_rejected"] else "No hard rejection."}
+Human layer summary: {score_result["human_layer"].get("summary", "")}
+Human layer reasons: {json.dumps(score_result["human_layer"].get("reasons", []))}
+Human layer risks: {json.dumps(score_result["human_layer"].get("risk_flags", []))}
 Per-skill match detail:
 {must_details_str}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1280,16 +1887,22 @@ EXTRACTION RULES:
    - critical criteria get 15-25 points each
    - high criteria get 10-15 points each
    - medium criteria get 5-10 points each
+   - Keep the weights proportional to importance; the Python pipeline will re-normalize before save, but your output should still reflect the intended 100-point split.
 
 5. EVIDENCE REQUIRED:
-   - "work_history" = must be proven in a past job (not just listed)
-   - "project" = can be proven via project or freelance work
-   - "any" = listed skill or mention is sufficient
+   - "work_history" = use when the JD says the candidate must have done it in a real job, including:
+       * any "X+ years of experience in..." requirement
+       * any senior/lead/ownership criterion
+       * any phrase like "production experience", "hands-on experience", or "proven track record"
+       * any critical-priority criterion where listed-only evidence would be too weak
+   - "project" = use when a project/freelance/open-source signal would be acceptable evidence
+   - "any" = use only when a listed skill or simple mention is enough, especially for low-stakes or nice-to-have items
 
-6. CANONICAL SKILL NAMES:
-   React.js/ReactJS → "React" | Node.js/NodeJS → "Node.js" | PostgreSQL/Postgres → "PostgreSQL"
-   AWS/Amazon Web Services → "AWS" | JavaScript/JS → "JavaScript" | TypeScript/TS → "TypeScript"
-   GCP/Google Cloud → "GCP" | Azure/MS Azure → "Azure" | n8n/N8N → "n8n"
+6. CANONICAL SKILL NAMES — use these exact canonical labels in criterion "name" and "keywords" fields.
+   The scoring engine normalises against a strict alias table, so use the canonical form below rather than variants.
+{JD_CANONICAL_SKILL_REFERENCE}
+
+   If the JD uses a variant (e.g. "ReactJS", "Postgres", "k8s", "GCP", "Node"), map it to the canonical form above.
 
 7. NO INVENTION: Do not add skills or tools not mentioned in the JD. If JD says "build APIs", do NOT automatically add Node.js, Python, or Docker unless stated.
 
@@ -1303,6 +1916,42 @@ EXTRACTION RULES:
 
 10. SENIORITY INFERENCE (from responsibilities + experience, NOT title alone):
     intern=0-1yr | junior=1-3yr | mid=3-5yr | senior=5+yr | lead=manages others | manager=explicit management
+
+11. CATEGORY DECISION RULES — use the most specific category that fits:
+    - "skill" = a named technology, language, framework, or tool (React, Python, PostgreSQL, Docker)
+    - "responsibility" = a concrete deliverable or action the person must DO in this role (build dashboards, integrate third-party APIs, write unit tests, debug, test, document, collaborate). Use when the JD says "you will..." or "responsible for..."
+    - "experience" = a stated duration or seniority in a domain ("3+ years in fintech", "senior-level backend experience", "X years of production Java")
+    - "ownership" = explicit autonomy expectation (own the product roadmap, lead the architecture, drive end-to-end delivery). Use ONLY when the JD says the candidate will own or lead something independently.
+    - "domain" = required industry or business context with no specific tool attached (SaaS product experience, B2B sales background, regulated healthcare environment)
+    Do NOT default to "skill" for responsibility, ownership, or domain requirements.
+
+12. EVIDENCE REQUIRED DECISION RULES:
+    - "work_history" = use when the JD implies the candidate must have proven this in a real job:
+        * any criterion with "X+ years of experience in..."
+        * any senior/lead/ownership criterion
+        * any phrase like "proven track record", "production experience", or "hands-on experience"
+        * any critical-priority criterion where listed-only evidence would be too weak
+    - "project" = use when demonstrated ability matters but employment is not required:
+        * portfolio, open-source, freelance, or academic work would be acceptable evidence
+        * junior/intern roles where project evidence is a valid signal
+    - "any" = use only when a listed skill or mention is genuinely sufficient:
+        * tool familiarity
+        * nice-to-have / medium-priority criteria with no experience requirement
+        * simple knowledge signals like "familiarity with Git"
+
+13. SCORING HINTS — extract signals that help rank candidates WITHIN the shortlisted pool:
+    The downstream scorer reads these directly. Do not omit the field.
+    green_flags_to_reward: List 2-5 concrete differentiators that would make a candidate STAND OUT above the minimum bar.
+        Examples: same industry background, exact product type built, valued but not required certifications,
+        experience at a competitor/well-known company, or a directly adjacent stack that reduces onboarding risk.
+        Derive these from: preferred qualifications, bonus points, nice-to-have sections, and the overall role context.
+        Use canonical skill/domain names (same rules as criterion names).
+        If none are clearly implied, return [].
+    red_flags_to_watch: List 2-4 concrete signals that should REDUCE a candidate's domain fit score.
+        Examples: only agency/freelance experience for a product role, only enterprise background for a startup role,
+        or an unrelated domain when domain expertise is central to the role.
+        Derive from: role context, company stage signals, or explicit "we are NOT looking for..." language.
+        If none are clearly implied, return [].
 
 Return ONLY valid JSON. No markdown. No explanation. No hallucination.
 
@@ -1325,6 +1974,10 @@ Return ONLY valid JSON. No markdown. No explanation. No hallucination.
       "source_text": string
     }}
   ],
+  "scoring_hints": {{
+    "green_flags_to_reward": [string],
+    "red_flags_to_watch": [string]
+  }},
   "has_technical_requirements": boolean,
   "keywords": [string]
 }}
@@ -1367,9 +2020,25 @@ RULE 3 — EVIDENCE ITEMS (most important section):
 - For every work role and significant project, extract 1-5 evidence_items.
 - Each evidence_item is ONE specific thing the candidate did or built.
 - The "text" field must be copied or tightly paraphrased from the resume.
-- The "proves" field must list canonical responsibility/skill tags it proves.
-  Examples: "react", "api_integration", "dashboard_building", "team_leadership",
-            "backend_api_development", "data_pipeline", "campaign_management".
+- The "proves" field MUST use CANONICAL SKILL NAMES — the exact same strings the scoring engine
+  matches against (see RULE 5 and the canonical name list below). These are the primary match keys.
+  You MAY also include functional tags AFTER the canonical names, but canonical names come first.
+
+  CANONICAL SKILL KEYS (use these normalized keys exactly; these are what normalize_skill() expects):
+{RESUME_CANONICAL_SKILL_REFERENCE}
+
+  FUNCTIONAL TAGS (add only after canonical names if relevant):
+    "api_integration", "dashboard_building", "team_leadership",
+    "backend_api_development", "data_pipeline", "campaign_management"
+
+  EXAMPLE — a bullet "Built REST APIs in Node.js for the payments service":
+    "proves": ["node", "rest", "backend_api_development"]
+  EXAMPLE — a bullet "Created React dashboards with live PostgreSQL data":
+    "proves": ["react", "postgres", "dashboard_building"]
+
+- Good `proves[]` entries usually include both the canonical skill key and the functional tag when both are supported by the same bullet.
+- Do NOT use snake_case tags alone when the bullet clearly supports a technology match.
+
 - Do NOT create evidence from assumptions.
 - "has_metric" = true only if the text contains explicit numbers, percentages, scale, or business outcomes.
 
@@ -1378,8 +2047,16 @@ RULE 4 — SKILLS SPLIT:
     Examples: Python, JavaScript, TypeScript, React, Vue, Angular, Node.js, FastAPI, Django, TensorFlow.
   tools[] = platforms, SaaS, cloud, databases, DevOps, CRM, analytics, automation.
     Examples: AWS, GCP, Azure, PostgreSQL, MongoDB, Docker, Kubernetes, HubSpot, Salesforce, Power BI, Tableau, n8n.
-  domain_skills[] = functional/business capabilities (NOT tools or languages).
-    Examples: lead generation, SEO, API integration, dashboard development, campaign management, data analysis.
+  domain_skills[] = functional/business CAPABILITIES ONLY — what the candidate can DO, not what they used.
+    These are action-noun phrases that describe a business function, not a named technology.
+    VALID examples: "lead generation", "SEO", "API integration", "dashboard development",
+      "campaign management", "data analysis", "product roadmap ownership",
+      "B2B sales", "content marketing", "revenue operations", "user research"
+    MUST NOT contain: any named tool, database, language, framework, platform, or cloud service.
+    HARD RULE: if it is a named technology, it belongs in technical[] or tools[] — never in domain_skills[].
+    INVALID (these go in technical[] or tools[] instead):
+      "PostgreSQL", "Docker", "AWS", "Python", "React", "MongoDB", "Tableau",
+      "Kubernetes", "Redis", "Airflow", "HubSpot", "Power BI", "n8n"
   Do NOT duplicate the same item across all three lists.
 
 RULE 5 — CANONICAL NAMES:
@@ -1401,19 +2078,67 @@ RULE 6 — WORK HISTORY (extract every role):
   - "Present" = May 2026 for duration_months calculation.
   - duration_months must be calculated from start_date to end_date.
   - ownership_level:
-      owner = "led", "built", "architected", "launched", "founded", "owned", "created", "drove".
-      contributor = "worked on", "assisted", "contributed", "collaborated", "supported".
-      unclear = vague description or tools list only.
+      owner = sole or primary builder/decision-maker. Use only when the bullet clearly reads as
+              the candidate owning the work end-to-end. Strong signals: "led", "built",
+              "architected", "launched", "founded", "owned", "created", "drove", "designed",
+              "implemented" WHEN the sentence is written in first-person ownership style and not
+              "we built". If the bullet is collaborative, do NOT mark owner.
+      contributor = team effort. Use when the bullet says "worked on", "assisted", "contributed",
+                   "collaborated", "supported", "helped", or uses "we" language throughout.
+      unclear = vague description, tools-only list, or cannot determine from text.
   - impact_strength:
       high = ownership + explicit metric/scale/revenue/users/business outcome.
       medium = clear work output, no metric.
       low = vague responsibility or tool list only.
+  - impact_signals[] = extract ONLY strings that contain a measurable outcome, scale, or
+      business result. Each string must have at least one of: a number, a percentage, a
+      named business metric, a user/revenue scale, or a named system/product outcome.
+      INCLUDE only facts like: "reduced API latency by 40%", "served 50k daily active users",
+               "cut deployment time from 2 hours to 15 minutes", "generated $200k pipeline"
+      EXCLUDE generic responsibility text like: "built REST APIs", "worked on dashboards",
+               "improved performance", "responsible for backend", "collaborated with team"
+      If no bullet in the role meets this bar, set impact_signals: [].
+
+RULE 6a — SOURCE STRENGTH (for skills[] and tools[] entries — affects scoring 3×):
+  This is a 3x multiplier. Assign with care.
+  "work_history_outcome" = skill appears in a job responsibility AND the bullet has a
+      measurable outcome, metric, or explicit business result (e.g. "reduced latency by 40%").
+  "work_history"         = skill appears in a job's responsibilities[] or technologies_used[]
+      with an action verb, but NO metric (e.g. "Built REST APIs using Node.js").
+  "project"              = skill only in a personal/academic/freelance project, OR the
+      candidate contributed (not owned) its use in a job.
+  "listed"               = skill appears ONLY in a skills section, with no job or project
+      bullet that mentions it. Default when context is absent.
+  "inferred"             = you can infer the skill was used but the resume never states it.
+      Use sparingly; never upgrade inferred to work_history.
+
+  Decision algorithm (use the highest level that the evidence supports):
+    1. Does any job bullet mention the skill AND contain a number/%, scale, or outcome? → "work_history_outcome"
+    2. Does any job bullet mention the skill with an action verb (built, integrated, deployed, designed, shipped, optimized)? → "work_history"
+    3. Is the skill only in a project section or freelance/personal work? → "project"
+    4. Is the skill only in a "Skills" or "Technologies" list with no job/project reference? → "listed"
+
+  Practical rule:
+    - If the same skill appears in multiple places, pick the strongest source_strength.
+    - If a work bullet has a metric, do NOT downgrade it to listed just because the same skill also appears in the skills section.
+    - If the bullet is clearly a project, do NOT label it work_history.
 
 RULE 7 — EXPERIENCE CALCULATION:
   - total_years = NON-OVERLAPPING sum of professional work history only.
-  - Merge concurrent roles; count overlap once.
+  - Use this algorithm exactly:
+    Step 1. List every professional role with its start_date and end_date (use YYYY-MM).
+            If end_date is "Present", treat it as 2026-05.
+    Step 2. Sort all roles by start_date ascending.
+    Step 3. Merge overlapping date ranges: if role B starts before role A ends,
+            extend A's end to max(A.end, B.end) and discard the B span.
+            Repeat until no ranges overlap.
+    Step 4. Sum the durations of only the merged (non-overlapping) spans in months.
+    Step 5. Exclude any role that is explicitly an internship AND lasted fewer than 6 months.
+    Step 6. Exclude unpaid/academic projects, coursework, and volunteer roles unless
+            the resume explicitly labels them as "freelance", "client work", or "contract".
+    Step 7. Divide the total months by 12. Round to 1 decimal place for total_years.
+            Store the raw month count in total_months.
   - Do NOT include education duration.
-  - Do NOT include projects unless explicitly freelance/paid/client work.
   - seniority_level:
       intern = internship or <1 year total.
       junior = 0-2 years.
@@ -1429,6 +2154,11 @@ RULE 8 — CAREER TIMELINE:
   - Detect unexplained gaps (6+ months between roles with no explanation).
   - job_hopping_risk: "high" if 2+ roles each under 10 months.
   - progression_pattern: growing/lateral/declining/mixed/early_career/unknown.
+
+RULE 8a — CAREER PROGRESSION SUMMARY:
+  - Also populate career_progression.analysis with a 2-3 sentence recruiter-style narrative of the candidate's career arc.
+  - Mention whether the path is linear, a pivot, early-career, or inconsistent.
+  - Use this field as a human-readable alias for older consumers that still expect career progression text.
 
 RULE 9 — CORE CLAIMS (top 3-5):
   - A claim is something the candidate asserts about their capability.
@@ -1585,6 +2315,9 @@ OUTPUT SCHEMA
     "job_hopping_risk": "none" | "low" | "medium" | "high",
     "progression_pattern": "growing" | "lateral" | "declining" | "mixed" | "early_career" | "unknown"
   }},
+  "career_progression": {{
+    "analysis": string
+  }},
   "core_claims": [
     {{
       "claim": string,
@@ -1638,6 +2371,8 @@ Resume:
         resume_raw_text = raw.get("resume_raw_text", "")
         threshold = int(raw.get("threshold", 70))
         screening_criteria = raw.get("screening_criteria", {}) or {}
+        # Normalize older frozen JDs before scoring so the deterministic scorer sees the same shape.
+        jd_data = _postprocess_jd_output(jd_data)
         # -- 1. DETERMINISTIC SCORING (Python) ----------------
         score_result = compute_score(jd_data, resume_data, threshold, screening_criteria)
         # -- 2. HIGH-FIDELITY AI EVALUATION -------------------
@@ -1655,12 +2390,16 @@ Resume:
                 resume_raw_text,
                 score_result,
                 client,
-                report_model=llm_model_override or "gpt-4o",
+                report_model=llm_model_override or "gpt-4o-mini",
                 screening_criteria=screening_criteria,
             )
             # -- 3. ASSEMBLE FINAL OUTPUT -----------------------
             final_data = {
                 "score": score_result["score"],
+                "base_score": score_result["base_score"],
+                "human_layer": score_result["human_layer"],
+                "human_adjustment": score_result["human_layer"].get("human_adjustment", 0),
+                "human_judgment": score_result["human_layer"].get("judgment", "Unknown"),
                 "status": score_result["status"],
                 "breakdown": score_result["breakdown"],
                 "skill_matching": score_result["skill_matching"],
@@ -1669,7 +2408,7 @@ Resume:
                 "rejection_reasons": score_result["rejection_reasons"],
                 "candidate_years": score_result["candidate_years"],
                 "jd_min_years": score_result["jd_min_years"],
-                # Raw resume fields as fallback for UI reads (overridden by **report where gpt-4o produces them)
+                # Raw resume fields as fallback for UI reads (overridden by **report where gpt-4o-mini produces them)
                 "work_history": resume_data.get("work_history", []),
                 "education": resume_data.get("education", []),
                 "core_claims": resume_data.get("core_claims", []),
@@ -1682,18 +2421,18 @@ Resume:
             return {"data": final_data, "usage": report_usage}
         except Exception as e:
             # Fallback reasoning if detailed report fails (still use GPT-4o)
-            return {
-                "data": {
-                    **score_result,
-                    "recruiter_snapshot": f"Automated evaluation completed with score {score_result['score']}.",
-                    "ai_verdict": f"Status: {score_result['status']}. Score: {score_result['score']}.",
+                return {
+                    "data": {
+                        **score_result,
+                        "recruiter_snapshot": f"Automated evaluation completed with score {score_result['score']}.",
+                        "ai_verdict": f"Status: {score_result['status']}. Score: {score_result['score']}.",
                 },
-                "usage": {
-                    "model": "gpt-4o",
-                    "inputTokens": 0,
-                    "outputTokens": 0,
-                    "cachedInputTokens": 0,
-                },
+                    "usage": {
+                        "model": "gpt-4o-mini",
+                        "inputTokens": 0,
+                        "outputTokens": 0,
+                        "cachedInputTokens": 0,
+                    },
             }
     # gpt-5.4-mini for all types unless a model override is provided (fastest, cheapest)
     model = llm_model_override or "gpt-5.4-mini"
@@ -1733,8 +2472,11 @@ Resume:
         completion_tokens = getattr(usage, "completion_tokens", 0) or 0
         prompt_details = getattr(usage, "prompt_tokens_details", None)
         cached_tokens = getattr(prompt_details, "cached_tokens", 0) or 0
+        parsed = json.loads(content)
+        if type_ == "JD":
+            parsed = _postprocess_jd_output(parsed)
         return {
-            "data": json.loads(content),
+            "data": parsed,
             "usage": {
                 "model": model,
                 "inputTokens": prompt_tokens,
@@ -1772,7 +2514,7 @@ if __name__ == "__main__":
                     "usage": data.get(
                         "usage",
                         {
-                            "model": "gpt-4o",
+                            "model": "gpt-4o-mini",
                             "inputTokens": 0,
                             "outputTokens": 0,
                             "cachedInputTokens": 0,

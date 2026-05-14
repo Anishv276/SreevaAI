@@ -8,6 +8,7 @@ import { safeJsonParse } from "@/lib/utils";
 import { getSession } from "@/lib/auth";
 import { parseDriveScreeningSettings, sanitizeScreeningCriteria } from "@/lib/screening-criteria";
 import { isOrgRestrictedStatus } from "@/lib/interview-quota";
+import { deriveDriveJdFieldsFromDescription, shouldBackfillDriveJdFields } from "@/lib/drive-jd";
 
 export const dynamic = "force-dynamic";
 
@@ -27,15 +28,16 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             where: {
                 id
             },
-                select: {
-                    id: true,
-                    title: true,
-                    role: true,
-                    description: true,
+            select: {
+                id: true,
+                title: true,
+                role: true,
+                description: true,
                 department: true,
                 type: true,
                 screeningThreshold: true,
                 screeningCriteria: true,
+                extractedDetails: true,
                 creatorId: true,
                 createdAt: true,
                 updatedAt: true,
@@ -52,22 +54,22 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
                 jdPreviewUrl: true,
                 orgId: true,
                 location: true,
-                    aiName: true,
-                    cartesiaVoiceId: true,
-                    sarvamVoice: true,
-                    sarvamModel: true,
-                    googleModel: true,
-                    googleVoiceName: true,
-                    ttsProvider: true,
-                    organization: {
-                        select: {
-                            status: true,
-                            name: true,
+                aiName: true,
+                cartesiaVoiceId: true,
+                sarvamVoice: true,
+                sarvamModel: true,
+                googleModel: true,
+                googleVoiceName: true,
+                ttsProvider: true,
+                organization: {
+                    select: {
+                        status: true,
+                        name: true,
                         logoUrl: true,
                         industry: true,
                         size: true,
                         website: true,
-                    }
+                    },
                 },
                 _count: {
                     select: { applications: true },
@@ -93,11 +95,21 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             criteria: parsedCriteria.criteria,
         });
 
+        const interviewQuestions = (() => {
+            try {
+                const raw = (drive as any).interviewQuestions;
+                return raw ? JSON.parse(raw) : [];
+            } catch {
+                return [];
+            }
+        })();
+
         return NextResponse.json({
             ...drive,
             orgId: (drive as any).orgId,
             screeningThreshold,
             screeningCriteria,
+            interviewQuestions,
             applicants: (drive as any)._count?.applications || 0,
             aiScreening: {
                 enabled: true,
@@ -162,6 +174,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
             where: { id: driveId },
             select: {
                 orgId: true,
+                description: true,
+                skills: true,
+                responsibilities: true,
+                extractedDetails: true,
                 ttsProvider: true,
                 cartesiaVoiceId: true,
                 sarvamVoice: true,
@@ -224,6 +240,35 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
         if (data.interviewQuestions !== undefined) updateData.interviewQuestions = JSON.stringify(data.interviewQuestions);
         if (data.requirements !== undefined) updateData.requirements = data.requirements;
+
+        const descriptionForBackfill =
+            typeof data.description === "string" && data.description.trim().length > 0
+                ? data.description
+                : typeof existingDrive.description === "string"
+                    ? existingDrive.description
+                    : "";
+
+        if (
+            shouldBackfillDriveJdFields({
+                description: descriptionForBackfill,
+                skills: data.skills !== undefined ? data.skills : (existingDrive as any).skills,
+                responsibilities: data.responsibilities !== undefined ? data.responsibilities : (existingDrive as any).responsibilities,
+                extractedDetails: (existingDrive as any).extractedDetails,
+            })
+        ) {
+            const jdFields = await deriveDriveJdFieldsFromDescription(descriptionForBackfill);
+            if (jdFields) {
+                if ((data.skills === undefined || !String(data.skills || "").trim()) && jdFields.skills) {
+                    updateData.skills = jdFields.skills;
+                }
+                if ((data.responsibilities === undefined || !String(data.responsibilities || "").trim()) && jdFields.responsibilities) {
+                    updateData.responsibilities = jdFields.responsibilities;
+                }
+                if (!(existingDrive as any).extractedDetails || !String((existingDrive as any).extractedDetails || "").trim()) {
+                    updateData.extractedDetails = jdFields.extractedDetails;
+                }
+            }
+        }
         Object.assign(
             updateData,
             normalizeDriveAiConfig({

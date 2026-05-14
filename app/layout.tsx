@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import localFont from "next/font/local";
 import Script from "next/script";
 import "./globals.css";
 import { JobsProvider } from "@/context/jobs-context";
@@ -9,10 +9,22 @@ import { CandidatesProvider } from "@/context/candidates-context";
 import { Toaster } from "@/components/ui/toast-custom";
 import ClarityAnalytics from "@/components/clarity-analytics";
 
-
-const inter = Inter({ 
-  subsets: ["latin"],
-  variable: '--font-inter',
+// Keep the original Inter look, but source it locally so builds stay offline-safe.
+const inter = localFont({
+  src: [
+    {
+      path: "../node_modules/prisma/build/public/assets/inter-latin-400-normal.27ae72da.woff2",
+      weight: "400",
+      style: "normal",
+    },
+    {
+      path: "../node_modules/prisma/build/public/assets/inter-latin-600-normal.87d718a2.woff2",
+      weight: "600",
+      style: "normal",
+    },
+  ],
+  variable: "--font-inter",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -63,9 +75,6 @@ export default function RootLayout({
 
       <head>
         <link rel="icon" href="/Logo.png" />
-        {/* Preconnect to speed up any external font loads — avoids render-blocking */}
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
         <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap" />
       </head>
       <body className="font-sans antialiased" suppressHydrationWarning>
@@ -103,4 +112,3 @@ export default function RootLayout({
     </html>
   );
 }
-
