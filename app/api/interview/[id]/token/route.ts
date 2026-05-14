@@ -38,7 +38,8 @@ export async function POST(
             return NextResponse.json({ error: "Access Denied: Interview session has expired" }, { status: 403 });
         }
 
-        // Enforce exact start time based on slot schedule
+        /* 
+        // Enforce exact start time based on slot schedule (Temporarily disabled for testing)
         if (interview?.scheduledAt) {
             const now = Date.now();
             const slotStart = interview.scheduledAt.getTime();
@@ -54,6 +55,7 @@ export async function POST(
                 return NextResponse.json({ error: "Access Denied: Your interview slot has ended." }, { status: 403 });
             }
         }
+        */
         // -------------------------------------------------
 
         const application = await prisma.application.findUnique({

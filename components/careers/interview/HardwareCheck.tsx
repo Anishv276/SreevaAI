@@ -85,12 +85,14 @@ export function HardwareCheck({
     const [canBeginNow, setCanBeginNow] = useState(false);
 
     useEffect(() => {
+        // Force "Always Ready" for testing as requested
+        setCanBeginNow(true);
         if (!bookedSlot) return;
 
         const updateTimer = () => {
             const now = Date.now();
             const diffMs = bookedSlot - now;
-            setCanBeginNow(diffMs <= 0);
+            // setCanBeginNow(diffMs <= 0); // Bypassed for testing
             setTimeRemainingSeconds(Math.max(0, Math.ceil(diffMs / 1000)));
         };
 

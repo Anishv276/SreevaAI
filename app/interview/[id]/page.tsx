@@ -286,12 +286,10 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 if (data.role) setInterviewRoleLabel(data.role);
                 if (data.company) setBookingCompany(data.company);
                 setSlots(data.slots || []);
+                // Force "check" phase even if no slot is booked for testing purposes
+                setPhase("check");
                 if (data.bookedSlot) {
                     setBookedSlot(data.bookedSlot);
-                    setPhase("check");
-                } else {
-                    const searchParams = window.location.search;
-                    window.location.href = `/interview/${id}/schedule${searchParams}`;
                 }
             })
             .catch(() => {
