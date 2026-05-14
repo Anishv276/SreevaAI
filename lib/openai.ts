@@ -57,6 +57,7 @@ import { z } from "zod";
 const JDSchema = z.object({
     job_title: z.string().default("Unknown Position"),
     department: z.string().nullable().default(null),
+    location: z.string().nullable().default(null),
     work_type: z.enum(["Remote", "Hybrid", "On-site"]).default("On-site"),
     employment_type: z.enum(["Full-time", "Part-time", "Contract", "Internship", "Freelance"]).nullable().default(null),
     role_summary: z.string().default(""),
@@ -105,6 +106,7 @@ type JDData = z.infer<typeof JDSchema>;
 const JDSkeleton: JDData = {
     job_title: "Unknown Position",
     department: null,
+    location: null,
     work_type: "On-site",
     employment_type: null,
     role_summary: "",
@@ -165,13 +167,16 @@ RULES:
    If the JD simply describes the role and does NOT ask for questions, return [].
    Do NOT invent interview questions from the role alone.
 
-10. No data in JD -> null or []. Never invent.
+10. location: Extract the work location / city / region / country if explicitly stated. If absent, return null.
+
+11. No data in JD -> null or []. Never invent.
 
 Return ONLY valid JSON. No markdown, no explanation.
 
 {
   "job_title": "string",
   "department": "string | null",
+  "location": "string | null",
   "work_type": "Remote" | "Hybrid" | "On-site",
   "employment_type": "Full-time" | "Part-time" | "Contract" | "Internship" | "Freelance" | null,
   "role_summary": "string",

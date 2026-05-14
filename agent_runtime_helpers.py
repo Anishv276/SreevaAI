@@ -140,13 +140,25 @@ def _build_recent_context_block(
     lines.append("React naturally to the candidate's last answer. Reference prior context only when it adds meaning.")
     return "\n".join(lines)
 def remove_system_messages(chat_ctx, marker: str) -> None:
-    messages = chat_ctx.messages() if callable(getattr(chat_ctx, "messages", None)) else chat_ctx.messages
-    for old_msg in list(messages):
-        if getattr(old_msg, "role", "") == "system" and marker in (getattr(old_msg, "content", "") or ""):
-            try:
-                messages.remove(old_msg)
-            except (ValueError, AttributeError):
-                pass
+    """
+    Remove matching system instructions from the live chat context.
+
+    LiveKit's ChatContext.messages() returns a new list, so removing from that
+    copy has no effect. Mutate the underlying items list in place instead.
+    """
+    items = getattr(chat_ctx, "items", None)
+    if items is None:
+        return
+
+    def _contains_marker(msg: object) -> bool:
+        if getattr(msg, "role", "") != "system":
+            return False
+        content = getattr(msg, "content", "") or ""
+        if isinstance(content, list):
+            content = " ".join(str(part) for part in content)
+        return marker in str(content)
+
+    items[:] = [msg for msg in list(items) if not _contains_marker(msg)]
 def append_transcript_line(transcript_lines: list[str], speaker: str, text: str) -> None:
     text = re.sub(r"<[^>]+>", "", text).strip()
     clean = " ".join(text.split()).strip()

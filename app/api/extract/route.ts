@@ -10,11 +10,37 @@ import { getSession } from "@/lib/auth";
 import { recordOrgBillingUsage } from "@/lib/usage-metrics";
 import { getPythonExecutable } from "@/lib/python-exec";
 import { queueJdExtraction } from "@/lib/jd-extraction";
+import { deriveDriveJdFieldsFromDescription } from "@/lib/drive-jd";
+import { safeJsonParse } from "@/lib/utils";
 
 const extractQuerySchema = z.object({
     type: z.enum(["JD", "RESUME"]),
     url: z.string().url().optional(),
 });
+
+async function hydrateJdExtraction(payload: { data?: Record<string, any>; text?: string | null }) {
+    const baseData = payload.data && typeof payload.data === "object" ? payload.data : {};
+    const text = typeof payload.text === "string" ? payload.text.trim() : "";
+
+    const looksSparse =
+        Object.keys(baseData).length === 0 ||
+        !String(baseData.job_title || "").trim() ||
+        !String(baseData.role_summary || "").trim();
+
+    if (!text || !looksSparse) return baseData;
+
+    try {
+        const derived = await deriveDriveJdFieldsFromDescription(text);
+        if (!derived?.extractedDetails) return baseData;
+        const derivedData = safeJsonParse(derived.extractedDetails, {});
+        return {
+            ...derivedData,
+            ...baseData,
+        };
+    } catch {
+        return baseData;
+    }
+}
 
 export async function POST(request: Request) {
     try {
@@ -122,7 +148,8 @@ export async function POST(request: Request) {
                             usage,
                         });
                     }
-                    return NextResponse.json({ data, text });
+                    const hydratedData = await hydrateJdExtraction({ data, text });
+                    return NextResponse.json({ data: hydratedData, text });
                 }
             } catch (err: any) {
                 console.error("[SCRAPE_FATAL_ERROR]:", { url, error: err.message });
@@ -176,8 +203,9 @@ export async function POST(request: Request) {
                     usage,
                 });
             }
+            const hydratedData = await hydrateJdExtraction({ data, text: text || null });
             return NextResponse.json({
-                data,
+                data: hydratedData,
                 text: text || null,
                 url: null,
             });

@@ -50,6 +50,7 @@ export const createDriveSchema = z.object({
   requirements: z.string().optional(),
   jdFileName: z.string().nullable().optional(),
   jdPreviewUrl: z.string().nullable().optional(),
+  extractedDetails: z.string().nullable().optional(),
   interviewLanguage: z.string().optional(),
   interviewQuestions: z.array(z.any()).optional(),
   ttsProvider: z.string().optional(),

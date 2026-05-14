@@ -216,6 +216,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         if (data.jdPreviewUrl !== undefined) {
             updateData.jdPreviewUrl = data.jdPreviewUrl?.startsWith("blob:") ? undefined : data.jdPreviewUrl;
         }
+        if (data.extractedDetails !== undefined) {
+            updateData.extractedDetails = typeof data.extractedDetails === "string"
+                ? data.extractedDetails
+                : JSON.stringify(data.extractedDetails);
+        }
 
 
 
@@ -264,7 +269,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
                 if ((data.responsibilities === undefined || !String(data.responsibilities || "").trim()) && jdFields.responsibilities) {
                     updateData.responsibilities = jdFields.responsibilities;
                 }
-                if (!(existingDrive as any).extractedDetails || !String((existingDrive as any).extractedDetails || "").trim()) {
+                if ((data.extractedDetails === undefined || !String(data.extractedDetails || "").trim()) && (!(existingDrive as any).extractedDetails || !String((existingDrive as any).extractedDetails || "").trim())) {
                     updateData.extractedDetails = jdFields.extractedDetails;
                 }
             }

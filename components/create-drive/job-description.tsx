@@ -151,7 +151,10 @@ export function JobDescription({
             responsibilities: "",
             requirements: "",
             experience: "",
-            salary: ""
+            salary: "",
+            location: "",
+            interviewQuestions: [],
+            extractedDetails: null
         }));
     };
     return (

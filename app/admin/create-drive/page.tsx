@@ -83,6 +83,7 @@ function CreateDriveForm() {
     googleModel: null,
     googleVoiceName: null,
     aiName: "Ishitha",
+    extractedDetails: null,
   });
   const [creationMethod, setCreationMethod] = useState<
     null | "manual" | "scan"
@@ -117,6 +118,46 @@ function CreateDriveForm() {
   const billingLocked = isDriveCreationLocked(maxActiveDrives, activeDriveCount);
   const driveCreationLocked =
     !isEditMode && (billingLocked || interviewAccessLocked);
+  const resolveVoiceConfig = (source: any = formDataRef.current) => {
+    const provider = String(adminOrg?.ttsProvider || source?.ttsProvider || "CARTESIA").toUpperCase();
+    return {
+      ...source,
+      ttsProvider: provider,
+      cartesiaVoiceId:
+        provider === "CARTESIA"
+          ? source?.cartesiaVoiceId || adminOrg?.cartesiaVoiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"
+          : null,
+      sarvamVoice:
+        provider === "SARVAM"
+          ? source?.sarvamVoice || adminOrg?.sarvamVoice || "shubh"
+          : null,
+      googleModel:
+        provider === "GOOGLE"
+          ? source?.googleModel || adminOrg?.googleModel || "gemini-3.1-flash-tts-preview"
+          : null,
+      googleVoiceName:
+        provider === "GOOGLE"
+          ? source?.googleVoiceName || adminOrg?.googleVoiceName || "Puck"
+          : null,
+    };
+  };
+  const normalizeLocation = (value: any) => {
+    if (typeof value === "string") return value.trim();
+    if (!value || typeof value !== "object") return "";
+    return [
+      value.formattedAddress,
+      value.address,
+      value.city,
+      value.state,
+      value.region,
+      value.country,
+      value.name,
+    ]
+      .filter((part) => typeof part === "string" && part.trim())
+      .map((part) => String(part).trim())
+      .join(", ");
+  };
+  const displayFormData = resolveVoiceConfig(formData);
   // Keep ref in sync with state for use in async handlers
   useEffect(() => {
     formDataRef.current = formData;
@@ -198,10 +239,7 @@ function CreateDriveForm() {
           const orgRes = await fetch("/api/admin/organization", { cache: "no-store" });
           const orgData = await orgRes.json();
           
-          const orgProvider =
-            (orgData.error ? null : orgData.ttsProvider) ||
-            (drive as any).ttsProvider ||
-            "CARTESIA";
+          const orgProvider = (orgData.error ? null : orgData.ttsProvider) || "CARTESIA";
           setFormData((prev: any) => ({
             ...prev,
             title: drive.title,
@@ -226,7 +264,8 @@ function CreateDriveForm() {
                 : (drive as any).interviewQuestions || [],
             jdFileName: (drive as any).jdFileName || "",
             jdPreviewUrl: (drive as any).jdPreviewUrl || "",
-            // Org is the authority for provider; drive provides the voice ID
+            extractedDetails: (drive as any).extractedDetails || null,
+            // Org provider should drive the dashboard default; saved drive voice is fallback only
             ttsProvider: orgProvider,
             cartesiaVoiceId:
               orgProvider === "CARTESIA"
@@ -272,10 +311,19 @@ function CreateDriveForm() {
         try {
           const data = JSON.parse(draft);
           console.log("CreateDrive Sync - Structured Data:", data);
+          const {
+            ttsProvider: _ttsProvider,
+            cartesiaVoiceId: _cartesiaVoiceId,
+            sarvamVoice: _sarvamVoice,
+            googleModel: _googleModel,
+            googleVoiceName: _googleVoiceName,
+            aiName: _aiName,
+            ...jdData
+          } = data || {};
           setFormData((prev: any) => ({
             ...prev,
-            ...data,
-            description: data.description,
+            ...jdData,
+            description: jdData.description,
           }));
           setCreationMethod("manual");
           setSyncedFromAi(true);
@@ -306,14 +354,15 @@ function CreateDriveForm() {
           skills: "",
           responsibilities: "",
           requirements: "",
-                interviewLanguage: "English",
-                interviewQuestions: [],
+          interviewLanguage: "English",
+          interviewQuestions: [],
           ttsProvider: "",
           cartesiaVoiceId: null,
           sarvamVoice: null,
           googleModel: null,
           googleVoiceName: null,
           aiName: "Ishitha",
+          extractedDetails: null,
         });
         setCreationMethod(null);
         setCurrentStep(0);
@@ -470,8 +519,13 @@ function CreateDriveForm() {
             department: extracted?.department || prev.department,
             workMode: extracted?.work_type || prev.workMode,
             employmentType: extracted?.employment_type || prev.employmentType,
+            location: normalizeLocation(extracted?.location) || prev.location,
             responsibilities: resp,
             requirements: req,
+            interviewQuestions: Array.isArray(extracted?.interview_questions) && extracted.interview_questions.length > 0
+              ? extracted.interview_questions
+              : prev.interviewQuestions,
+            extractedDetails: extracted,
             jdPreviewUrl: r2Url || prev.jdPreviewUrl,
           };
         });
@@ -529,7 +583,7 @@ function CreateDriveForm() {
     return true;
   };
   const autoSaveDrive = async () => {
-    const currentFormData = formDataRef.current;
+    const currentFormData = resolveVoiceConfig(formDataRef.current);
     if (driveCreationLocked && !isEditMode) {
       return;
     }
@@ -557,6 +611,11 @@ function CreateDriveForm() {
       requirements: currentFormData.requirements || "",
       jdFileName: currentFormData.jdFileName || null,
       jdPreviewUrl: currentFormData.jdPreviewUrl,
+      extractedDetails: currentFormData.extractedDetails
+        ? typeof currentFormData.extractedDetails === "string"
+          ? currentFormData.extractedDetails
+          : JSON.stringify(currentFormData.extractedDetails)
+        : null,
 
       interviewLanguage: allowLanguageSelection
         ? currentFormData.interviewLanguage || "English"
@@ -656,7 +715,7 @@ function CreateDriveForm() {
   };
   const prevStep = () => setCurrentStep((prev) => Math.max(prev - 1, 0));
   const handlePublish = async () => {
-    const currentFormData = formDataRef.current;
+    const currentFormData = resolveVoiceConfig(formDataRef.current);
     if (driveCreationLocked && !isEditMode) {
       toast.error(interviewAccessLocked ? getInterviewQuotaSupportMessage("interviews") : "Drive limit reached. Go to Billing to upgrade your plan.");
       return;
@@ -696,6 +755,11 @@ function CreateDriveForm() {
       requirements: currentFormData.requirements,
       jdFileName: currentFormData.jdFileName,
       jdPreviewUrl: currentFormData.jdPreviewUrl,
+      extractedDetails: currentFormData.extractedDetails
+        ? typeof currentFormData.extractedDetails === "string"
+          ? currentFormData.extractedDetails
+          : JSON.stringify(currentFormData.extractedDetails)
+        : null,
 
       interviewLanguage: allowLanguageSelection
         ? currentFormData.interviewLanguage || "English"
@@ -860,7 +924,7 @@ function CreateDriveForm() {
               </div>
             </>
             <JobDescription
-              formData={formData}
+              formData={displayFormData}
               updateFormData={setFormData}
               isAnalyzing={isAnalyzing}
               analysisError={analysisError}
@@ -1018,14 +1082,14 @@ function CreateDriveForm() {
         <div className="p-8">
           {currentStep === 0 && (
             <BasicInfo
-              formData={formData}
+              formData={displayFormData}
               updateFormData={setFormData}
               isAnalyzing={isAnalyzing}
             />
           )}
           {currentStep === 1 && (
             <JobDescription
-              formData={formData}
+              formData={displayFormData}
               updateFormData={setFormData}
               isAnalyzing={isAnalyzing}
               analysisError={analysisError}
@@ -1039,12 +1103,12 @@ function CreateDriveForm() {
           )}
           {currentStep === 2 && (
             <InterviewSetup
-              formData={formData}
+              formData={displayFormData}
               updateFormData={setFormData}
               allowLanguageSelection={allowLanguageSelection}
             />
           )}
-          {currentStep === 3 && <FinalPreview formData={formData} />}
+          {currentStep === 3 && <FinalPreview formData={displayFormData} />}
         </div>
         {/* Footer Actions */}
         <div className="flex justify-between items-center px-8 py-4 bg-white border-t border-gray-100">

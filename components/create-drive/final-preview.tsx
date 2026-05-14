@@ -21,10 +21,11 @@ function countQuestions(value: any) {
 }
 
 export function FinalPreview({ formData, weights }: FinalPreviewProps) {
+    const provider = String(formData.ttsProvider || "CARTESIA").toUpperCase();
     const selectedVoiceId =
-        formData.ttsProvider === "SARVAM"
+        provider === "SARVAM"
             ? formData.sarvamVoice
-            : formData.ttsProvider === "GOOGLE"
+            : provider === "GOOGLE"
                 ? formData.googleVoiceName
                 : formData.cartesiaVoiceId;
 

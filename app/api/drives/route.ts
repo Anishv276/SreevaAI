@@ -255,7 +255,9 @@ export async function POST(request: Request) {
                 skills: data.skills || jdFields?.skills || null,
                 responsibilities: data.responsibilities || jdFields?.responsibilities || null,
                 requirements: data.requirements || null,
-                extractedDetails: jdFields?.extractedDetails || null,
+                extractedDetails: typeof data.extractedDetails === "string"
+                    ? data.extractedDetails
+                    : jdFields?.extractedDetails || null,
                 jdFileName: data.jdFileName || null,
                 jdPreviewUrl: data.jdPreviewUrl?.startsWith("blob:") ? null : (data.jdPreviewUrl || null),
                 screeningCriteria: JSON.stringify(mergedScreeningCriteria),
