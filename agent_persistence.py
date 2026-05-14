@@ -898,7 +898,7 @@ async def generate_interview_summary(
         logger.warning("[SUMMARY] Skipping: missing OPENAI_API_KEY for non-Google summary")
         return
     try:
-        client = build_google_analysis_client() if is_google_model else AsyncOpenAI()
+        client = build_google_analysis_client(allow_fallback=False) if is_google_model else AsyncOpenAI()
         transcript_text = "\n".join(transcript_lines)
         transcript_text = truncate_to_tokens(transcript_text, 2500)
         logger.info(f"[SUMMARY] Generating narrative summary for {app_id}...")
@@ -983,7 +983,7 @@ async def generate_interview_report(
             proctoring_events=proctoring_data.get("events", []) if proctoring_data else [],
             contradictions_found=proctoring_data.get("contradictions", []) if proctoring_data else [],
         )
-        client = build_google_analysis_client() if is_google_model else AsyncOpenAI()
+        client = build_google_analysis_client(allow_fallback=False) if is_google_model else AsyncOpenAI()
         # Strip warmup lines from transcript before sending to report LLM
         # Warmup is the first 4 lines (2 interviewer + 2 candidate exchanges)
         interview_lines = transcript_lines[4:] if len(transcript_lines) > 4 else transcript_lines

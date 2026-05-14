@@ -211,8 +211,6 @@ def build_stage_2_skill_directive(
         return []
 
     jd_must_haves = _brief_values("JD must-haves")
-    jd_strengths = _brief_values("Screening strengths")
-    jd_gaps = _brief_values("Screening gaps")
     resume_context_items = _brief_values("Key projects/work")
 
     skill_anchors = [str(s).strip() for s in skills if str(s).strip()]
@@ -264,8 +262,6 @@ def build_stage_2_skill_directive(
     )
 
     priorities_block = f"ROLE PRIORITIES: {', '.join(jd_must_haves)}\n\n" if jd_must_haves else ""
-    strengths_block = f"ROLE STRENGTHS TO LEVERAGE: {', '.join(jd_strengths)}\n\n" if jd_strengths else ""
-    gaps_block = f"ROLE GAPS TO TEST: {', '.join(jd_gaps)}\n\n" if jd_gaps else ""
 
     return (
         "[DO NOT SAY ALOUD - INTERNAL INTERVIEWER INSTRUCTION]\n"
@@ -276,8 +272,6 @@ def build_stage_2_skill_directive(
         f"{anchors_block}"
         f"{context_block}"
         f"{priorities_block}"
-        f"{strengths_block}"
-        f"{gaps_block}"
         f"DIRECTION: {band_direction}\n\n"
         f"{question_plan_block}"
         "QUESTION STYLE:\n"

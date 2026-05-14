@@ -284,27 +284,43 @@ class GoogleAnalysisClient:
         google_genai = importlib.import_module("google.genai")
         self._client = google_genai.Client(api_key=api_key)
         self.chat = _GoogleChatNamespace(self._client)
-def build_google_analysis_client() -> Any:
+def build_google_analysis_client(*, allow_fallback: bool = False) -> Any:
     try:
         importlib.import_module("google.genai")
     except (ModuleNotFoundError, ImportError) as exc:
+        if not allow_fallback:
+            raise RuntimeError(
+                "google-genai is unavailable. Install or repair the Google SDK dependencies, "
+                "or pass allow_fallback=True to route analysis through OpenAI."
+            ) from exc
         logger.warning(
-            "[GOOGLE_ANALYSIS] google-genai is unavailable; falling back to OpenAI analysis model %s: %s",
+            "[GOOGLE_ANALYSIS] google-genai is unavailable; using OpenAI fallback model %s",
             LLM_MODEL,
-            exc,
         )
         return _FallbackAnalysisClient(fallback_model=LLM_MODEL)
 
     api_key = os.getenv("GOOGLE_API_KEY")
     if not api_key:
-        raise RuntimeError("GOOGLE_API_KEY is not set")
+        if not allow_fallback:
+            raise RuntimeError("GOOGLE_API_KEY is not set")
+        logger.warning(
+            "[GOOGLE_ANALYSIS] GOOGLE_API_KEY is not set; using OpenAI fallback model %s",
+            LLM_MODEL,
+        )
+        return _FallbackAnalysisClient(fallback_model=LLM_MODEL)
+
     try:
+        logger.info("[GOOGLE_ANALYSIS] Using Google Gemini analysis backend")
         return GoogleAnalysisClient(api_key=api_key)
     except (ModuleNotFoundError, ImportError) as exc:
+        if not allow_fallback:
+            raise RuntimeError(
+                "google-genai import failed during client init. Install or repair the Google SDK "
+                "dependencies, or pass allow_fallback=True to route analysis through OpenAI."
+            ) from exc
         logger.warning(
-            "[GOOGLE_ANALYSIS] google-genai import failed during client init; falling back to OpenAI analysis model %s: %s",
+            "[GOOGLE_ANALYSIS] google-genai import failed during init; using OpenAI fallback model %s",
             LLM_MODEL,
-            exc,
         )
         return _FallbackAnalysisClient(fallback_model=LLM_MODEL)
 def build_google_realtime_llm(

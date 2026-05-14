@@ -548,16 +548,8 @@ async def entrypoint(ctx: JobContext):
     evaluation_signal_toggles = _extract_evaluation_signal_toggles(
         context.get("proctoringSignals")
     )
-    extracted_details = context.get("extractedDetails") or "{}"
-    ai_report = context.get("aiReportRaw") or "{}"
-    parsed_ai_report = _coerce_jsonish(ai_report)
-    structured_resume = (
-        _deep_get(parsed_ai_report, "data")
-        or _deep_get(parsed_ai_report, "resume")
-        or _deep_get(parsed_ai_report, "structuredResume")
-        or {}
-    )
-    resume_text_from_db = _compact_text(str(context.get("resumeText") or ""))
+    extracted_details = _coerce_jsonish(context.get("extractedDetails") or "{}")
+    structured_resume = _coerce_jsonish(context.get("resumeData") or "{}")
     def require_db_value(key: str, default: Any = None, required: bool = True):
         value = context.get(key)
         if value is None:
@@ -572,7 +564,7 @@ async def entrypoint(ctx: JobContext):
     candidate_name = require_db_value("fullName")
     candidate_first_name = first_name_from_full_name(candidate_name)
     job_title = require_db_value("jobTitle")
-    job_details = require_db_value("jd")
+
     interview_lang = require_db_value("language")
     time_limit_mins = FIXED_INTERVIEW_DURATION_MINUTES
     # Keep follow-up loops tight so stage transitions happen reliably.
@@ -630,7 +622,7 @@ async def entrypoint(ctx: JobContext):
     if org_tts_provider == "GOOGLE":
         org_google_model = str(require_db_value("googleModel", default=DEFAULT_GOOGLE_TTS_MODEL, required=False) or DEFAULT_GOOGLE_TTS_MODEL)
         org_google_voice_name = str(require_db_value("googleVoiceName", default=DEFAULT_GOOGLE_VOICE_NAME, required=False) or DEFAULT_GOOGLE_VOICE_NAME)
-        analysis_client = build_google_analysis_client()
+        analysis_client = build_google_analysis_client(allow_fallback=False)
         analysis_model = GOOGLE_ANALYSIS_MODEL
         logger.info(
             "[GOOGLE_MODE] Active Google-only runtime selected; DB STT/LLM providers will be ignored"
@@ -689,16 +681,11 @@ async def entrypoint(ctx: JobContext):
     logger.info(
         f"Preparing interview with {candidate_name} for {job_title} in {interview_lang}"
     )
-    resume_block = safe_parse(
-        structured_resume if structured_resume else resume_text_from_db,
-        "No resume data provided.",
-    )
-    ai_report_block = safe_parse(ai_report, "No prior screening data.")
     resume_context = parse_resume_context(
-        structured_resume if structured_resume else {},
-        resume_text_from_db or resume_block,
+        structured_resume,
+        "",
     )
-    candidate_band = infer_candidate_band(resume_context, resume_block)
+    candidate_band = infer_candidate_band(resume_context, "")
     resume_brief = build_resume_brief(candidate_band, resume_context)
     base_coverage_items = [
         *[str(s).strip() for s in resume_context.skills[:6] if str(s).strip()],
@@ -721,9 +708,6 @@ async def entrypoint(ctx: JobContext):
         candidate_band=candidate_band,
         resume_context=resume_context,
         jd_details=extracted_details,
-        jd_text=job_details or "General professional role.",
-        ai_report=ai_report,
-        ai_report_text=ai_report_block,
         resume_brief=resume_brief,
     )
     refresh_candidate_band_context(session_context)
@@ -2590,4 +2574,3 @@ if __name__ == "__main__":
             num_idle_processes=max(1, int(os.getenv("LIVEKIT_IDLE_PROCESSES", "8"))),
         )
     )
-
