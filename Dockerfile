@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Pre-download AI model files for plugins (ai-coustics, turn-detector, etc.)
+# Pre-download AI model files for plugins (turn-detector, etc.)
 RUN python agent.py download-files
 
 # Start the agent in production mode

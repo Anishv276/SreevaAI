@@ -69,6 +69,7 @@ export async function GET(
                         recordingDurationSec: true,
                         recordingManifest: true,
                         snapshots: true,
+                        billingSnapshot: true,
                     }
                 }
             }

@@ -169,17 +169,7 @@ APP_BASE_URL = (
 _DB_POOL: Any = None
 _DB_POOL_INIT_TASK: Any = None
 _PENDING_MANUAL_BILLING: dict[str, list[tuple[str, dict]]] = {}
-_TOOL_ALIAS_CATALOG: dict[str, list[str]] = {
-    "n8n": ["n8n", "nh10", "n h 10", "en 8 en", "nan"],
-    "Apollo.io": ["apollo", "apolo", "apollo io"],
-    "LeadMagic": ["leadmagic", "lead magic", "lead magik"],
-    "Zoho Bigin": ["bigin", "begin", "big in", "zoho begin", "zoho bigin"],
-    "Zoho CRM": ["zoho crm", "joho crm", "zohho crm"],
-    "HubSpot": ["hubspot", "hub spot"],
-    "Salesforce": ["salesforce", "sales farce", "sales force"],
-    "Instantly": ["instantly", "instant ly"],
-    "Clay": ["clay", "kley"],
-}
+
 PROCTORING_WEIGHTS: dict[str, int] = {
     "tab_switch": 5,
     "face_absent": 3,
@@ -189,10 +179,7 @@ _COMPOSITE_RISK_WEIGHTS = {
     "integrity": 0.60,
     "depth": 0.40,
 }
-_MODE_SWITCH_WEIGHTS = {
-    "integrity": 0.70,
-    "depth": 0.30,
-}
+
 def compose_risk_score(
     integrity_risk: int,
     depth_risk: int,
@@ -202,16 +189,4 @@ def compose_risk_score(
         + depth_risk * _COMPOSITE_RISK_WEIGHTS["depth"]
     )
     return max(0, min(100, int(round(weighted))))
-def compose_mode_risk_score(
-    integrity_risk: int,
-    depth_risk: int,
-) -> int:
-    weighted = (
-        integrity_risk * _MODE_SWITCH_WEIGHTS["integrity"]
-        + depth_risk * _MODE_SWITCH_WEIGHTS["depth"]
-    )
-    if integrity_risk >= 15:
-        weighted += 8
-    elif integrity_risk >= 8:
-        weighted += 4
-    return max(0, min(100, int(round(weighted))))
+

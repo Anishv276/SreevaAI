@@ -95,6 +95,24 @@ export type HyringInterviewViewModel = {
   cognitiveInsights: IntelSignalRow[];
   integritySignals: IntelSignalRow[];
   behavioralAnalysis: Record<string, any>;
+  billing: {
+    totalTokens: number;
+    inputTokens: number;
+    outputTokens: number;
+    cachedInputTokens: number;
+    llmCostUsd: number;
+    ttsCostUsd: number;
+    sttCostUsd: number;
+    totalCostUsd: number;
+    sessionDuration: number;
+    ttsCharacters: number;
+    sttAudioSeconds: number;
+    hasData: boolean;
+    totalCostLabel: string;
+    llmCostLabel: string;
+    ttsCostLabel: string;
+    sttCostLabel: string;
+  };
   skills: { name: string; stars: number; status: string; scoreLabel: string; evidence?: string }[];
   /** Ranked 1–3; derived in builder from scores, transcript, proctoring, skills. */
   topStrengths: string[];
@@ -543,6 +561,7 @@ export function buildHyringInterviewViewModel(i: {
   interviewReportCommunication: Record<string, any>;
   interviewReportCognitiveInsights: Record<string, any>;
   interviewReportBehavioralAnalysis: Record<string, any>;
+  interviewBillingSnapshot: Record<string, any>;
   interviewReportSkills: any[];
   interviewSessionRows: { q: number; question: string; answer: string; score: string; reasoning?: string }[];
   interviewQaRows: any[];
@@ -563,11 +582,23 @@ export function buildHyringInterviewViewModel(i: {
   const com = i.interviewReportCommunication || {};
   const cogInsights = i.interviewReportCognitiveInsights || {};
   const behavAnalysis = i.interviewReportBehavioralAnalysis || {};
+  const billing = i.interviewBillingSnapshot || {};
   const scores = i.interviewReportScores || {};
   const toPct = (v: unknown, fallback: number) => {
     const n = Number(v);
     return Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : fallback;
   };
+  const toNum = (v: unknown, fallback = 0) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : fallback;
+  };
+  const formatUsd = (value: number) =>
+    new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      minimumFractionDigits: 4,
+      maximumFractionDigits: 4,
+    }).format(Math.max(0, value || 0));
 
   const technicalPct = toPct(
     scores.technical_score ?? scores.interview_technical_pct ?? (i.interviewScore * 10),
@@ -676,6 +707,20 @@ export function buildHyringInterviewViewModel(i: {
   const engagementVibes = buildEngagementVibes(i.groupedProctoringSignals || []);
   const cognitiveInsights = buildCognitiveFromComm(cogInsights, i.interviewScore, i.wordCount, technicalPct);
   const integritySignals = buildIntegritySignals(proctoringRows);
+  const inputTokens = Math.max(0, Math.round(toNum(billing.inputTokens)));
+  const outputTokens = Math.max(0, Math.round(toNum(billing.outputTokens)));
+  const cachedInputTokens = Math.max(0, Math.round(toNum(billing.cachedInputTokens)));
+  const totalTokens = inputTokens + outputTokens + cachedInputTokens;
+  const llmCostUsd = toNum(billing.llmCostUsd);
+  const ttsCostUsd = toNum(billing.ttsCostUsd);
+  const sttCostUsd = toNum(billing.sttCostUsd);
+  const totalCostUsd = toNum(billing.totalCostUsd, llmCostUsd + ttsCostUsd + sttCostUsd);
+  const billingHasData =
+    totalTokens > 0 ||
+    totalCostUsd > 0 ||
+    toNum(billing.sessionDuration) > 0 ||
+    toNum(billing.ttsCharacters) > 0 ||
+    toNum(billing.sttAudioSeconds) > 0;
 
   const normalizeSkillName = (value: string) =>
     value
@@ -906,6 +951,24 @@ export function buildHyringInterviewViewModel(i: {
     cognitiveInsights,
     integritySignals,
     behavioralAnalysis: behavAnalysis,
+    billing: {
+      totalTokens,
+      inputTokens,
+      outputTokens,
+      cachedInputTokens,
+      llmCostUsd,
+      ttsCostUsd,
+      sttCostUsd,
+      totalCostUsd,
+      sessionDuration: toNum(billing.sessionDuration),
+      ttsCharacters: Math.max(0, Math.round(toNum(billing.ttsCharacters))),
+      sttAudioSeconds: toNum(billing.sttAudioSeconds),
+      hasData: billingHasData,
+      totalCostLabel: formatUsd(totalCostUsd),
+      llmCostLabel: formatUsd(llmCostUsd),
+      ttsCostLabel: formatUsd(ttsCostUsd),
+      sttCostLabel: formatUsd(sttCostUsd),
+    },
     skills,
     topStrengths,
     topRisks,
@@ -1678,6 +1741,51 @@ export function InterviewReportHyring({
                   )}
                 />
               ))}
+            </div>
+          </div>
+        </div>
+
+        <div className={cn(card, "overflow-hidden")}>
+          <div className="flex items-center justify-between gap-3 border-b border-[#E8EAED] px-4 py-3">
+            <div>
+              <p className="text-sm font-extrabold text-[#1A1D22]">Billing usage</p>
+              <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-widest text-[#6B7079]">
+                Tokens and cost captured for this interview session
+              </p>
+            </div>
+            <span
+              className={cn(
+                "rounded-md px-2.5 py-0.5 text-[9px] font-extrabold uppercase tracking-widest",
+                model.billing.hasData ? "bg-[#E6F4EC] text-[#0D4D2E]" : "bg-[#F3F4F6] text-[#6B7079]"
+              )}
+            >
+              {model.billing.hasData ? "Captured" : "No usage"}
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-4">
+            <div className="rounded-xl border border-[#E8EAED] bg-[#FAFBFC] p-3">
+              <p className="text-[9px] font-extrabold uppercase tracking-widest text-[#6B7079]">Total tokens</p>
+              <p className="mt-1 text-lg font-black text-[#1A1D22]">{model.billing.totalTokens.toLocaleString()}</p>
+              <p className="mt-1 text-[11px] text-[#6B7079]">Input + output + cached</p>
+            </div>
+            <div className="rounded-xl border border-[#E8EAED] bg-[#FAFBFC] p-3">
+              <p className="text-[9px] font-extrabold uppercase tracking-widest text-[#6B7079]">Total cost</p>
+              <p className="mt-1 text-lg font-black text-[#1A1D22]">{model.billing.totalCostLabel}</p>
+              <p className="mt-1 text-[11px] text-[#6B7079]">All interview usage</p>
+            </div>
+            <div className="rounded-xl border border-[#E8EAED] bg-[#FAFBFC] p-3">
+              <p className="text-[9px] font-extrabold uppercase tracking-widest text-[#6B7079]">Breakdown</p>
+              <p className="mt-1 text-sm font-extrabold text-[#1A1D22]">{model.billing.inputTokens.toLocaleString()} in</p>
+              <p className="mt-0.5 text-sm font-extrabold text-[#1A1D22]">{model.billing.outputTokens.toLocaleString()} out</p>
+              <p className="mt-0.5 text-sm font-extrabold text-[#1A1D22]">{model.billing.cachedInputTokens.toLocaleString()} cached</p>
+            </div>
+            <div className="rounded-xl border border-[#E8EAED] bg-[#FAFBFC] p-3">
+              <p className="text-[9px] font-extrabold uppercase tracking-widest text-[#6B7079]">Media usage</p>
+              <p className="mt-1 text-sm font-extrabold text-[#1A1D22]">{model.billing.ttsCharacters.toLocaleString()} TTS chars</p>
+              <p className="mt-0.5 text-sm font-extrabold text-[#1A1D22]">{Math.round(model.billing.sttAudioSeconds).toLocaleString()} STT sec</p>
+              <p className="mt-1 text-[11px] text-[#6B7079]">
+                LLM {model.billing.llmCostLabel} · TTS {model.billing.ttsCostLabel} · STT {model.billing.sttCostLabel}
+              </p>
             </div>
           </div>
         </div>

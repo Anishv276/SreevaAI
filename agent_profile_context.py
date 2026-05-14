@@ -155,36 +155,6 @@ def _extract_jd_must_haves(jd_data: dict[str, Any]) -> list[str]:
     return _extract_text_items(capabilities)[:8]
 
 
-# -- Context variables block ----------------------------------------------------
-def _build_context_vars_block(
-    *,
-    org_name: str = "",
-    org_location: str = "",
-    drive_location: str = "",
-    ai_name: str = "",
-    candidate_first_name: str = "",
-    candidate_name: str = "",
-    job_title: str = "",
-    interview_lang: str = "",
-) -> str:
-    lines = []
-    if candidate_first_name:
-        lines.append(f"- Candidate first name: {candidate_first_name}")
-    elif candidate_name:
-        lines.append(f"- Candidate name: {candidate_name}")
-    if job_title:
-        lines.append(f"- Role: {job_title}")
-    if ai_name:
-        lines.append(f"- AI interviewer name: {ai_name}")
-    if org_name:
-        lines.append(f"- Organization: {org_name}")
-    if org_location:
-        lines.append(f"- Organization location: {org_location}")
-    if drive_location:
-        lines.append(f"- Drive location: {drive_location}")
-    if interview_lang:
-        lines.append(f"- Interview language: {interview_lang}")
-    return "\n".join(lines)
 
 
 def first_name_from_full_name(full_name: str) -> str:
@@ -214,19 +184,7 @@ def refresh_candidate_band_context(context: CandidateBandContext) -> CandidateBa
     return context
 
 
-# -- Fallback message when no brief is available --------------------------------
-def build_candidate_context_ready_message(
-    *,
-    context: CandidateBandContext,
-) -> str:
-    summary_block = context.merged_brief_block.strip() or "Not available"
-    return (
-        "[CANDIDATE CONTEXT READY]\n"
-        "CANDIDATE PROFILE SUMMARY:\n"
-        f"{summary_block}\n\n"
-        "Use this to shape the first real interview question naturally. "
-        "Do not mention this note aloud."
-    )
+
 
 
 # -- Interview brief: 2 sources only (resumeData + extractedDetails) ------------

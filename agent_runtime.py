@@ -40,8 +40,6 @@ from agent_utils import (
 )
 from agent_profile_context import (
     CandidateBandContext,
-    _build_context_vars_block,
-    _ensure_resume_context,
     build_merged_interview_brief,
     build_resume_brief,
     first_name_from_full_name,
@@ -79,7 +77,6 @@ from agent_persistence import (
 from agent_runtime_helpers import (
     _build_recent_context_block,
     _sanitize_claim_value,
-    describe_system_messages,
     _single_question_transform,
     remove_system_messages,
     sanitize_candidate_facing_text,
@@ -120,8 +117,6 @@ from livekit.agents import (
     JobProcess,
     inference,
     TurnHandlingOptions,
-    WorkerOptions,
-    cli,
     llm,
     text_transforms,
     tts as lk_tts,
@@ -131,10 +126,6 @@ from livekit.agents.voice.events import ConversationItemAddedEvent
 from livekit.agents.voice import room_io
 from livekit.agents.voice.turn import EndpointingOptions, InterruptionOptions
 from livekit.plugins import cartesia, openai, deepgram, silero, sarvam
-try:
-    from livekit.plugins import ai_coustics
-except ImportError:  # pragma: no cover - optional plugin
-    ai_coustics = None
 from turn_evaluator import run_turn_evaluation
 from trust_engine import apply_turn_decision, apply_proctoring_event, apply_contradiction_resolved, finalize_trust_state
 from contradiction_state import init_contradiction_state, advance_contradiction_state, summarize_contradiction_state
@@ -449,64 +440,9 @@ async def entrypoint(ctx: JobContext):
             "event": "session_start",
         },
     )
-    # --- Real-time Proctoring Sync Helpers ---
-    async def _report_proctoring_realtime(evt_type: str, reason: str, score_delta: int, sev: str = "medium"):
-        """Persist a single violation to the DB in real-time."""
-        if not DATABASE_URL: return
-        try:
-            pool = await get_db_pool()
-            async with pool.acquire() as conn:
-                # Append the new event to the existing proctoringReport.events JSONB array
-                await conn.execute(
-                    """
-                    UPDATE "Interview"
-                    SET "proctoringReport" = jsonb_set(
-                        COALESCE("proctoringReport", '{"events": []}'::jsonb),
-                        '{events}',
-                        COALESCE("proctoringReport"->'events', '[]'::jsonb) || $1::jsonb
-                    ),
-                    "updatedAt" = NOW()
-                    WHERE "applicationId" = $2
-                    """,
-                    json.dumps({
-                        "eventType": evt_type,
-                        "reason": reason,
-                        "timestamp": int(time.time() * 1000),
-                        "severity": sev,
-                        "score_delta": score_delta
-                    }),
-                    app_id
-                )
-        except Exception as e:
-            logger.warning(f"[PROCTOR] Real-time persistence failed: {e}")
-    async def _signal_client_proctoring_violation(evt_type: str, reason: str, sev: str = "medium"):
-        """Send a data packet back to the candidate UI to trigger a toast."""
-        if not ctx.room.local_participant: return
-        try:
-            payload = json.dumps({
-                "type": "proctoring_violation",
-                "eventType": evt_type,
-                "reason": reason,
-                "severity": sev,
-                "timestamp": int(time.time() * 1000)
-            }).encode("utf-8")
-            await ctx.room.local_participant.publish_data(payload, reliable=True)
-        except Exception as e:
-            logger.warning(f"[PROCTOR] Client signaling failed: {e}")
-    async def _signal_client_interview_terminated(reason: str) -> None:
-        """Tell the candidate UI to exit the live room and open the feedback screen."""
-        if not ctx.room.local_participant:
-            return
-        try:
-            payload = json.dumps({
-                "type": "interview_terminated",
-                "reason": reason,
-                "timestamp": int(time.time() * 1000),
-            }).encode("utf-8")
-            await ctx.room.local_participant.publish_data(payload, reliable=True)
-            logger.info(f"[INTERVIEW_END] termination signal sent: {reason}")
-        except Exception as e:
-            logger.warning(f"[INTERVIEW_END] Client termination signal failed: {e}")
+    # Proctoring helpers are provided by agent_runtime_helpers and called with explicit
+    # app_id / ctx arguments where needed. The local closures that were here had zero
+    # call sites and have been removed.
     # Parallelize network-bound work: room connect + DB fetch run concurrently.
     async def connect_with_retry():
         for attempt in range(3):
@@ -910,6 +846,7 @@ async def entrypoint(ctx: JobContext):
     _oai_eval_client = analysis_client  # reused client for per-turn evaluations
     answer_scores: list[dict] = []    # log of all answer quality scores for final DB save
     _topic_depth_history: list[float] = []  # depth scores per answer on current topic (reset on MOVE_ON)
+    _last_action_was_move_on: bool = False  # True after AI pivoted to new topic; resets follow-up counter next turn
     _collapse_stage: int = 0               # 0=none, 1=first probe issued, 2+=repeated collapse (hard flag)
     _last_depth_decay_turn: int = -999     # turn number when depth_decay last fired; -999 = never
     _depth_decay_ever_fired: bool = False  # True once depth_decay has fired at least once
@@ -1285,17 +1222,11 @@ async def entrypoint(ctx: JobContext):
             logger.debug(f"Ignored malformed data packet: {e}")
             return
     # Pre-start all background processing while user is on hardware check.
-    audio_input_options = {}
-    if ai_coustics is not None:
-        audio_input_options["noise_cancellation"] = ai_coustics.audio_enhancement(
-            model=ai_coustics.EnhancerModel.QUAIL_VF_L
-        )
     await session.start(
         agent=agent,
         room=ctx.room,
         room_options=room_io.RoomOptions(
             close_on_disconnect=False,
-            audio_input=room_io.AudioInputOptions(**audio_input_options),
         ),
     )
     # --- Real-time Transcript Streaming is handled by LiveKit automatically ---
@@ -1500,7 +1431,7 @@ async def entrypoint(ctx: JobContext):
                     nonlocal _topic_follow_up_count, environment_risk, integrity_risk, depth_risk, suspicion_score, current_interview_mode, \
                         answer_scores, _claim_index, _contradictions_found, \
                         _topic_depth_history, _trust_state, _contradiction_state, _collapse_stage, \
-                        _last_depth_decay_turn, _depth_decay_ever_fired, _consecutive_low_signal_move_on
+                        _last_depth_decay_turn, _depth_decay_ever_fired, _consecutive_low_signal_move_on, _last_action_was_move_on
                     try:
                         # Step 1: Extract claims and check consistency (before quality eval)
                         # Only runs when contradiction signal is enabled  -  adds 1 LLM call/turn
@@ -1647,6 +1578,14 @@ async def entrypoint(ctx: JobContext):
                             }
                             answer_scores.append(quality_record)
                             # Update depth history and follow-up counter
+                            # If last turn was MOVE_ON (topic pivot), reset counter so the new
+                            # topic starts fresh regardless of what the evaluator returns.
+                            if _last_action_was_move_on:
+                                _topic_follow_up_count = 0
+                                _topic_depth_history = []
+                                _collapse_stage = 0
+                                _last_action_was_move_on = False
+                                logger.info("[FOLLOWUP] New topic detected — counter reset to 0")
                             _topic_depth_history.append(td["quality"]["depth"])
                             collapse_fired = any(
                                 ev.get("signal_name") == "follow_up_collapse"
@@ -1669,6 +1608,7 @@ async def entrypoint(ctx: JobContext):
                                     _topic_follow_up_count = 0
                                     _topic_depth_history = []
                                     _collapse_stage = 0
+                                    _last_action_was_move_on = True
                                 else:
                                     logger.info("[FOLLOWUP] Follow-up %d/%d — continuing PROBE", _topic_follow_up_count, follow_up_depth)
                                     if collapse_fired:
@@ -1679,6 +1619,7 @@ async def entrypoint(ctx: JobContext):
                                 _topic_follow_up_count = 0
                                 _topic_depth_history = []
                                 _collapse_stage = 0
+                                _last_action_was_move_on = True
                             # Update depth_decay cooldown state
                             if any(ev.get("signal_name") == "depth_decay" for ev in signal_events):
                                 _last_depth_decay_turn = turn
@@ -2516,12 +2457,3 @@ async def entrypoint(ctx: JobContext):
             session.shutdown(drain=False)
         except Exception:
             pass
-if __name__ == "__main__":
-    cli.run_app(
-        WorkerOptions(
-            entrypoint_fnc=entrypoint,
-            prewarm_fnc=prewarm,
-            agent_name=AGENT_NAME,
-            num_idle_processes=max(1, int(os.getenv("LIVEKIT_IDLE_PROCESSES", "1"))),
-        )
-    )

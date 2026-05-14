@@ -7,7 +7,6 @@ livekit-plugins-silero==1.5.2
 livekit-plugins-sarvam==1.5.2
 livekit-plugins-google==1.5.2
 livekit-plugins-turn-detector==1.5.2
-livekit-plugins-ai-coustics==0.2.7
 google-genai>=1.73.1
 
 # ── Other ──────────────────────────────────────────────────────────────────────

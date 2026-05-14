@@ -2147,7 +2147,7 @@ function InterviewRoomContent({
                     </div>
                 </motion.div>
                 {latestAiTranscript && (
-                    <div className="w-full max-w-[82rem] mt-10 px-2">
+                    <div className="w-full max-w-[68rem] mt-12 px-2 relative z-20">
                         <AnimatePresence mode="wait">
                             <motion.div
                                 key={latestAiTranscript.id}
@@ -2155,14 +2155,14 @@ function InterviewRoomContent({
                                 animate={{ opacity: 1, y: 0, scale: 1 }}
                                 exit={{ opacity: 0, y: -12, scale: 0.98 }}
                                 transition={{ duration: 0.28, ease: "easeOut" }}
-                                className="w-full rounded-[2rem] border border-white/10 bg-[#2c2c2e]/95 px-10 py-8 shadow-[0_24px_80px_rgba(0,0,0,0.45)]"
+                                className="w-full rounded-[1.75rem] border border-white/10 bg-[#2c2c2e]/95 px-12 py-6 shadow-[0_24px_80px_rgba(0,0,0,0.45)]"
                             >
                                 <div className="flex items-start gap-5 w-full">
-                                    <span className="text-[11px] font-black uppercase tracking-[0.35em] shrink-0 pt-1 text-white/90">
+                                    <span className="text-[10px] font-black uppercase tracking-[0.35em] shrink-0 pt-1 text-white/90">
                                         Ishitha
                                     </span>
                                     <p className={cn(
-                                        "text-[18px] md:text-[20px] font-medium text-white leading-[1.75] tracking-tight whitespace-normal break-words w-full",
+                                        "text-[16px] md:text-[18px] font-medium text-white leading-[1.8] tracking-tight whitespace-normal break-words w-full",
                                         !latestAiTranscript.isFinal && "text-white/75"
                                     )}>
                                         {latestAiTranscript.text}

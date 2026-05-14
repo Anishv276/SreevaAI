@@ -146,6 +146,18 @@ export default function CandidateProfilePage() {
     const interviewReportCommunication = interviewReportData?.communication || {};
     const interviewReportCognitiveInsights = interviewReportData?.cognitive_insights || {};
     const interviewReportBehavioralAnalysis = interviewReportData?.behavioral_analysis || {};
+    const interviewBillingSnapshot = (() => {
+        const raw = candidate?.interview?.billingSnapshot;
+        if (!raw) return {};
+        if (typeof raw === "string") {
+            try {
+                return JSON.parse(raw);
+            } catch {
+                return {};
+            }
+        }
+        return raw;
+    })();
     // Build skill objects from skill_ratings (score per skill) + skills_proof (skill name list)
     const skillRatings: Record<string, number> = interviewReportData?.skill_ratings || {};
     const skillsProof: string[] = Array.isArray(interviewReportData?.skills_proof) ? interviewReportData.skills_proof : [];
@@ -436,6 +448,7 @@ export default function CandidateProfilePage() {
                     interviewReportCommunication,
                     interviewReportCognitiveInsights,
                     interviewReportBehavioralAnalysis,
+                    interviewBillingSnapshot,
                     interviewReportSkills,
                     interviewSessionRows,
                     interviewQaRows,
