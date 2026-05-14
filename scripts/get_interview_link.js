@@ -41,7 +41,7 @@ async function main() {
 
     if (!app && targetName) {
         console.log(`Candidate "${targetName}" not found. Creating a test application...`);
-        
+
         // Find a drive to attach to
         let drive = await prisma.drive.findFirst({
             where: { status: 'ACTIVE' },
@@ -56,7 +56,7 @@ async function main() {
             // Create a dummy drive if none exist
             const org = await prisma.organization.findFirst({ select: { id: true } });
             const user = await prisma.user.findFirst({ select: { id: true } });
-            
+
             if (!org || !user) {
                 console.error("Cannot create test application: No Organization or User found in DB to link to.");
                 return;
@@ -107,7 +107,8 @@ async function main() {
         }
 
         console.log(`\nInterview Link for ${app.fullName}:`);
-        console.log(`https://sreevaai.com/interview/${app.id}`);
+        const baseUrl = process.env.APP_URL || 'https://sreevaai.com';
+        console.log(`${baseUrl}/interview/${app.id}`);
     } else {
         console.log("No candidates found or could be created.");
     }

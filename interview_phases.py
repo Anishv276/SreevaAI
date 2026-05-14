@@ -37,25 +37,23 @@ STAGE_CONFIGS: list[InterviewStageConfig] = [
 def build_greeting_text(candidate_name: str, ai_name: str, job_title: str) -> str:
     """Canonical greeting spoken before warmup begins."""
     return (
-        f"Hi {candidate_name}, it's so good to meet you! I'm {ai_name}, "
-        f"and I've been really looking forward to our chat about the {job_title} role.\n\n"
-        f"How are you feeling today, and how's your day going so far?"
+        f"Hi {candidate_name}, really glad we could connect today. I'm {ai_name}, "
+        f"and I've been looking forward to our conversation about the {job_title} role. "
+        f"How are you doing? Hope the day's been good to you."
     )
 
 
 def build_warmup_directive() -> str:
     """
-    Warmup phase: 2 candidate responses before Stage 1 injects.
+    Warmup phase: 1 candidate response before Stage 1 injects.
     Rapport only — no interview questions, no resume, no JD.
     """
     return (
         "[DO NOT SAY ALOUD — INTERNAL INTERVIEWER INSTRUCTION]\n"
         "[WARMUP PHASE]\n"
-        "This is a 2-exchange warmup. This is NOT the interview. Do not treat it as one.\n\n"
-        "Exchange 1: Candidate responds to the greeting (how are you doing).\n"
-        "  YOUR ONLY JOB: give a short, genuine personal reply. 1-2 sentences. Then ask them one light casual question to keep conversation going (e.g. 'How's your day been so far?').\n"
-        "Exchange 2: Candidate responds to your reply.\n"
-        "  YOUR ONLY JOB: give a warm 1-sentence acknowledgment. Then STOP — the system will inject Stage 1 instructions and you will begin the interview.\n\n"
+        "This is a 1-exchange warmup. This is NOT the interview. Do not treat it as one.\n\n"
+        "The candidate has just responded to your greeting.\n"
+        "  YOUR ONLY JOB: give a short, genuine personal reply. 1-2 sentences. Then STOP — the system will inject Stage 1 instructions and you will begin the interview.\n\n"
         "PERSONAL REPLY OPTIONS (pick one naturally, then add a light casual follow-up):\n"
         "  - 'I'm good, thanks. A bit of a busy day, but it's been a good one so far. Did you have time to grab some water or coffee before we started?'\n"
         "  - 'Doing well, thank you. The day has been moving fast, but I'm glad we're here. Did everything go smoothly on your side getting set up?'\n"
@@ -140,7 +138,11 @@ def build_stage_1_resume_directive(
     elif anchor_type == "education":
         anchor_hint = f"Start from {anchor_item} and ask about a concrete learning or project moment."
     else:
-        anchor_hint = f"Start from {anchor_item} with a concrete, personal question. Do NOT ask 'tell me about yourself'."
+        anchor_hint = (
+            "No resume data available. Ask: 'Walk me through what you've been working on most recently — "
+            "what was your role and what did you personally own in that work?' "
+            "Do NOT ask about their interest in the role. Do NOT ask 'tell me about yourself'."
+        )
 
     fresher_rule = ""
     if band == "fresher":

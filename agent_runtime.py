@@ -79,6 +79,7 @@ from agent_persistence import (
 from agent_runtime_helpers import (
     _build_recent_context_block,
     _sanitize_claim_value,
+    describe_system_messages,
     _single_question_transform,
     remove_system_messages,
     sanitize_candidate_facing_text,
@@ -100,11 +101,12 @@ from agent_runtime_support import (
     STT_MODEL,
     _DB_POOL,
     _DB_POOL_INIT_TASK,
-    _LOG_CONTEXT_FIELDS,
     _TOOL_ALIAS_CATALOG,
     compose_mode_risk_score,
     compose_risk_score,
     logger,
+    reset_log_context,
+    set_log_context,
 )
 from livekit.agents import (
     Agent,
@@ -385,6 +387,7 @@ async def entrypoint(ctx: JobContext):
     app_id = ctx.room.name.replace("interview_", "")
     dispatch_metadata = parse_dispatch_metadata(getattr(ctx.job, "metadata", ""))
     session_log_context: dict[str, Any] = {
+        "session_id": app_id,
         "app_id": app_id,
         "room_name": ctx.room.name,
     }
@@ -400,7 +403,6 @@ async def entrypoint(ctx: JobContext):
         try:
             redis_client = redis_asyncio.from_url(REDIS_URL, decode_responses=True)
             await redis_client.ping()
-            logger.info("[STAGE_CACHE] Redis connected")
         except Exception as e:
             redis_client = None
             logger.warning(f"[STAGE_CACHE] Redis unavailable, using in-memory cache: {e}")
@@ -412,46 +414,23 @@ async def entrypoint(ctx: JobContext):
             if redis_client is not None:
                 await redis_client.hset(stage_cache_key, stage_key, content)
                 await redis_client.expire(stage_cache_key, max(900, int(time_limit_mins * 120)))
-                logger.info(
-                    "[STAGE_CACHE] Redis write ok key=%s field=%s bytes=%d",
-                    stage_cache_key,
-                    stage_key,
-                    len(content.encode("utf-8", errors="ignore")),
-                )
+
                 return
         except Exception as e:
             logger.warning(f"[STAGE_CACHE] Redis write failed for {stage_key}: {e}")
         _LOCAL_STAGE_DIRECTIVE_CACHE.setdefault(app_id, {})[stage_key] = content
-        logger.info(
-            "[STAGE_CACHE] Local fallback write key=%s field=%s bytes=%d",
-            stage_cache_key,
-            stage_key,
-            len(content.encode("utf-8", errors="ignore")),
-        )
+
 
     async def _read_stage_directive(stage_key: str) -> Optional[str]:
         try:
             if redis_client is not None:
                 cached = await redis_client.hget(stage_cache_key, stage_key)
                 if cached:
-                    logger.info(
-                        "[STAGE_CACHE] Redis read hit key=%s field=%s bytes=%d",
-                        stage_cache_key,
-                        stage_key,
-                        len(str(cached).encode("utf-8", errors="ignore")),
-                    )
                     return str(cached)
-                logger.info("[STAGE_CACHE] Redis read miss key=%s field=%s", stage_cache_key, stage_key)
         except Exception as e:
             logger.warning(f"[STAGE_CACHE] Redis read failed for {stage_key}: {e}")
         local_cached = _LOCAL_STAGE_DIRECTIVE_CACHE.get(app_id, {}).get(stage_key)
-        if local_cached:
-            logger.info(
-                "[STAGE_CACHE] Local fallback read hit key=%s field=%s bytes=%d",
-                stage_cache_key,
-                stage_key,
-                len(local_cached.encode("utf-8", errors="ignore")),
-            )
+
         return local_cached
     if dispatch_metadata:
         session_log_context.update({
@@ -462,7 +441,14 @@ async def entrypoint(ctx: JobContext):
             "dispatch_room_name": dispatch_metadata.get("roomName", ctx.room.name),
         })
     ctx.log_context_fields = session_log_context
-    _LOG_CONTEXT_FIELDS.set(session_log_context)
+    log_context_token = set_log_context(session_log_context)
+    logger.info(
+        "[SESSION] interview context loaded",
+        extra={
+            "emit_full_context": True,
+            "event": "session_start",
+        },
+    )
     # --- Real-time Proctoring Sync Helpers ---
     async def _report_proctoring_realtime(evt_type: str, reason: str, score_delta: int, sev: str = "medium"):
         """Persist a single violation to the DB in real-time."""
@@ -550,6 +536,14 @@ async def entrypoint(ctx: JobContext):
     )
     extracted_details = _coerce_jsonish(context.get("extractedDetails") or "{}")
     structured_resume = _coerce_jsonish(context.get("resumeData") or "{}")
+    logger.info("[1/6] RESUME FETCH — resumeData present=%s keys=%s",
+        bool(structured_resume),
+        list(structured_resume.keys()) if isinstance(structured_resume, dict) else "empty",
+    )
+    logger.info("[2/6] JD FETCH — extractedDetails present=%s keys=%s",
+        bool(extracted_details),
+        list(extracted_details.keys()) if isinstance(extracted_details, dict) else "empty",
+    )
     def require_db_value(key: str, default: Any = None, required: bool = True):
         value = context.get(key)
         if value is None:
@@ -584,26 +578,13 @@ async def entrypoint(ctx: JobContext):
     )
     # Stage budgets are initialized once and then dynamically rebalanced after each stage.
     _initialize_stage_budgets_called = False
-    ctx.log_context_fields = session_log_context
-    _LOG_CONTEXT_FIELDS.set(session_log_context)
     started_at = time.perf_counter()
     async def _log_shutdown(reason: str = "") -> None:
         elapsed_sec = round(time.perf_counter() - started_at, 1)
-        logger.info(
-            json.dumps(
-                {
-                    "event": "job_shutdown",
-                    "reason": reason or "unknown",
-                    "app_id": app_id,
-                    "room_name": ctx.room.name,
-                    "candidate": candidate_name,
-                    "job_title": job_title,
-                    "org_id": org_id,
-                    "elapsed_sec": elapsed_sec,
-                },
-                sort_keys=True,
-            )
-        )
+        try:
+            logger.info("[SESSION] shutdown — elapsed=%ss", elapsed_sec)
+        finally:
+            reset_log_context(log_context_token)
     ctx.add_shutdown_callback(_log_shutdown)
     # Org-specific model settings.
     org_tts_provider = str(require_db_value("ttsProvider")).upper()
@@ -651,25 +632,7 @@ async def entrypoint(ctx: JobContext):
             raise RuntimeError(f"Unsupported DB llmProvider: {org_llm_provider}")
         analysis_client = AsyncOpenAI()
         analysis_model = org_llm_model if org_llm_provider == "OPENAI" else LLM_MODEL
-    if org_tts_provider == "GOOGLE":
-        logger.info(
-            "Org models -> GOOGLE runtime model=%s voice=%s analysis=%s",
-            org_google_model,
-            org_google_voice_name,
-            analysis_model,
-        )
-    else:
-        tts_model_for_log = org_sarvam_model if org_tts_provider == "SARVAM" else org_cartesia_model
-        tts_voice_for_log = org_sarvam_voice if org_tts_provider == "SARVAM" else org_cartesia_voice
-        stt_model_for_log = org_sarvam_stt_model if org_stt_provider == "SARVAM" else org_deepgram_model
-        logger.info(
-            "Org models -> STT=%s TTS=%s voice=%s LLM=%s (%s)",
-            stt_model_for_log,
-            tts_model_for_log,
-            tts_voice_for_log,
-            org_llm_model,
-            org_llm_provider,
-        )
+
     # Language Mapping for STT and TTS
     LANGUAGE_MAPPING = {
         "English": {"stt": "en-US", "tts": "en"},
@@ -678,14 +641,13 @@ async def entrypoint(ctx: JobContext):
     lang_codes = LANGUAGE_MAPPING.get(interview_lang)
     if not lang_codes:
         raise RuntimeError(f"Unsupported interview language in DB: {interview_lang}")
-    logger.info(
-        f"Preparing interview with {candidate_name} for {job_title} in {interview_lang}"
-    )
+
     resume_context = parse_resume_context(
         structured_resume,
         "",
     )
     candidate_band = infer_candidate_band(resume_context, "")
+    logger.info("[3/6] BAND CHECKED — band=%s", candidate_band)
     resume_brief = build_resume_brief(candidate_band, resume_context)
     base_coverage_items = [
         *[str(s).strip() for s in resume_context.skills[:6] if str(s).strip()],
@@ -712,11 +674,15 @@ async def entrypoint(ctx: JobContext):
     )
     refresh_candidate_band_context(session_context)
     logger.info(
-        "[CONTEXT] band=%s anchor=%s coverage_items=%d",
+        "[4/6] BRIEF CREATED — band=%s anchor=%s anchor_type=%s skills=%s projects=%d work=%d",
         session_context.candidate_band,
-        str(session_context.resume_brief.get("anchor_item", ""))[:100],
-        len(session_context.coverage_items),
+        str(session_context.resume_brief.get("anchor_item", "NOT STATED"))[:80],
+        session_context.resume_brief.get("anchor_type", "none"),
+        session_context.resume_brief.get("skills", [])[:4],
+        len(session_context.resume_brief.get("projects", [])),
+        len(session_context.resume_brief.get("work_history", session_context.resume_brief.get("internships", []))),
     )
+    logger.info("[4/6] MERGED BRIEF —\n%s", session_context.merged_brief_block or "(empty)")
     await _init_redis_client()
     stage1_directive_cached = build_stage_1_resume_directive(
         band=session_context.candidate_band,
@@ -741,9 +707,14 @@ async def entrypoint(ctx: JobContext):
     await _cache_stage_directive("stage2", stage2_directive_cached)
     await _cache_stage_directive("stage3", stage3_directive_cached)
     await _cache_stage_directive("stage4", stage4_directive_cached)
-    logger.info(
-        "[STAGE_CACHE] All 4 stage directives written to Redis. In-memory variables are primary source."
+    logger.info("[5/6] STAGES CACHED — stage1=%dbytes stage2=%dbytes stage3=%dbytes stage4=%dbytes",
+        len(stage1_directive_cached), len(stage2_directive_cached),
+        len(stage3_directive_cached), len(stage4_directive_cached),
     )
+    logger.info("[STAGE 1 CONTENT]\n%s", stage1_directive_cached)
+    logger.info("[STAGE 2 CONTENT]\n%s", stage2_directive_cached)
+    logger.info("[STAGE 3 CONTENT]\n%s", stage3_directive_cached)
+    logger.info("[STAGE 4 CONTENT]\n%s", stage4_directive_cached)
     voice_layer_prompt = build_voice_layer_prompt(
         candidate_name=candidate_first_name or candidate_name,
         job_title=job_title,
@@ -768,13 +739,9 @@ async def entrypoint(ctx: JobContext):
     chat_ctx.add_message(role="system", content=system_prompt)
     warmup_directive = build_warmup_directive()
     chat_ctx.add_message(role="system", content=warmup_directive)
-    logger.info("[WARMUP] Warmup directive injected into chat context — Stage 1 fires after 2 candidate responses")
+    logger.info("[6/6] WARMUP INJECTED — stage 1 fires after 1 candidate response")
     ctx.proc.userdata["candidate_band_context"] = session_context
-    logger.info(
-        "[SESSION] band=%s anchor=%s",
-        session_context.candidate_band,
-        session_context.resume_brief.get("anchor_item", ""),
-    )
+
     vad_instance = ctx.proc.userdata.get("vad") or build_vad()
     google_mode = org_tts_provider == "GOOGLE"
     if google_mode:
@@ -882,7 +849,7 @@ async def entrypoint(ctx: JobContext):
                     false_interruption_timeout=3.0,
                 ),
             ),
-            "use_tts_aligned_transcript": True,
+            "use_tts_aligned_transcript": False,
             "tts_text_transforms": [
                 "filter_emoji",
                 "filter_markdown",
@@ -917,8 +884,8 @@ async def entrypoint(ctx: JobContext):
     interview_marked_finished = False
     turn_count = 0           # counts assistant turns for state injection cadence
     last_injection_turn = 0  # tracks which turn last received a state injection
-    warmup_responses_received = 0  # counts candidate responses; warmup ends after 2
-    warmup_complete = False  # True after the 2nd candidate response
+    warmup_responses_received = 0  # counts candidate responses; warmup ends after 1
+    warmup_complete = False  # True after the 1st candidate response
     # Stage interview tracker
     _current_stage_index: int = 0        # 0=Resume 1=Skill 2=Situational 3=Behavioral
     _stage_start_time: float = 0.0       # monotonic timestamp when current stage started
@@ -1051,11 +1018,7 @@ async def entrypoint(ctx: JobContext):
                 BEHAVIORAL_RESERVED_SECONDS,
                 int(max(0.0, remaining_for_stages)),
             )
-        logger.info(
-            "[STAGE_TIMING] initial budgets=%s distributed_seconds=%d",
-            _stage_budgets_secs,
-            int(distributed_seconds),
-        )
+
     def _rebalance_remaining_stage_budgets() -> None:
         nonlocal _stage_budgets_secs
         remaining_seconds = _remaining_total_seconds_now()
@@ -1069,12 +1032,7 @@ async def entrypoint(ctx: JobContext):
         rebalanced = _allocate_stage_budgets(remaining_seconds, remaining_indices)
         for idx, secs in rebalanced.items():
             _stage_budgets_secs[idx] = secs
-        logger.info(
-            "[STAGE_TIMING] rebalance current_stage=%d remaining_seconds=%d budgets=%s",
-            _current_stage_index,
-            int(remaining_seconds),
-            {idx: _stage_budgets_secs.get(idx, 0) for idx in sorted(_stage_budgets_secs)},
-        )
+
     def _build_stage_directive_by_index(stage_idx: int) -> Optional[str]:
         stage_directive_builders: dict[int, Any] = {
             1: lambda: stage2_directive_cached or build_stage_2_skill_directive(
@@ -1179,12 +1137,7 @@ async def entrypoint(ctx: JobContext):
         _stage_bridge_pending = False
         if stage_directive:
             chat_ctx.add_message(role="system", content=stage_directive)
-            logger.info(
-                "[STAGE_INJECT] Stage %d (%s) directive injected from cache into chat context (reason=%s)",
-                next_stage_index + 1,
-                next_stage.label,
-                reason,
-            )
+            logger.info("[STAGE %d] ▶ INJECTED — %s (reason=%s)\n%s", _current_stage_index + 1, next_stage.label, reason, stage_directive)
         else:
             logger.warning(
                 "[STAGE_INJECT] No directive found for stage %d (%s) — skipping inject",
@@ -1206,6 +1159,8 @@ async def entrypoint(ctx: JobContext):
             return False
         stage_budget = max(0, int(_stage_budgets_secs.get(_current_stage_index, 0)))
         time_in_stage = max(0.0, now_mono - _stage_start_time)
+        logger.info("[STAGE_TIMER] stage=%d time_in_stage=%.0fs budget=%ds remaining=%.0fs",
+            _current_stage_index + 1, time_in_stage, stage_budget, stage_budget - time_in_stage)
         if time_in_stage < stage_budget:
             return False
         if (
@@ -1651,18 +1606,6 @@ async def entrypoint(ctx: JobContext):
                             )
                         action = td["decision"]["action"]
                         signal_events = td.get("signal_events", [])
-                        if warmup_complete and _stage_start_time > 0:
-                            _advance_stage_if_due(time.monotonic())
-                            stage_budget = max(0, int(_stage_budgets_secs.get(_current_stage_index, 0)))
-                            time_in_stage = max(0.0, time.monotonic() - _stage_start_time)
-                            stage_expired = stage_budget >= 0 and time_in_stage >= stage_budget
-                            if stage_expired and _current_stage_index < len(STAGE_CONFIGS) - 1:
-                                action = "MOVE_ON"
-                                td["decision"]["action"] = "MOVE_ON"
-                                td["decision"]["mode"] = "normal"
-                                td["decision"]["next_goal"] = (
-                                    "Current stage time exhausted. Bridge to the next stage now."
-                                )
                         depth_signal = "SURFACE"
                         quality_avg = (
                             td["quality"]["clarity"] + td["quality"]["depth"] +
@@ -1711,12 +1654,27 @@ async def entrypoint(ctx: JobContext):
                             )
                             if action in ("PROBE", "VERIFY"):
                                 _topic_follow_up_count += 1
-                                if collapse_fired:
-                                    # Probe issued for collapse  -  advance stage so next turn escalates
-                                    _collapse_stage += 1
-                                elif _collapse_stage > 0 and not collapse_fired:
-                                    # No collapse this follow-up  -  candidate recovered, reduce stage
-                                    _collapse_stage = max(0, _collapse_stage - 1)
+                                # Hard cap: after follow_up_depth follow-ups, force pivot to next topic
+                                if _topic_follow_up_count >= follow_up_depth:
+                                    action = "MOVE_ON"
+                                    next_goal = "Follow-up cap reached. Move to the next topic naturally within this stage."
+                                    td["decision"]["action"] = "MOVE_ON"
+                                    td["decision"]["next_goal"] = next_goal
+                                    directive = (
+                                        f"[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
+                                        f"DECISION: MOVE_ON\n"
+                                        f"NEXT MOVE: {next_goal}"
+                                    )
+                                    logger.info("[FOLLOWUP] Cap reached (%d/%d turns) — forcing MOVE_ON to next topic", _topic_follow_up_count, follow_up_depth)
+                                    _topic_follow_up_count = 0
+                                    _topic_depth_history = []
+                                    _collapse_stage = 0
+                                else:
+                                    logger.info("[FOLLOWUP] Follow-up %d/%d — continuing PROBE", _topic_follow_up_count, follow_up_depth)
+                                    if collapse_fired:
+                                        _collapse_stage += 1
+                                    elif _collapse_stage > 0 and not collapse_fired:
+                                        _collapse_stage = max(0, _collapse_stage - 1)
                             else:
                                 _topic_follow_up_count = 0
                                 _topic_depth_history = []
@@ -1882,7 +1840,10 @@ async def entrypoint(ctx: JobContext):
             content = item.text_content
             if role == "assistant":
                 content = sanitize_candidate_facing_text(content)
-            if not content or not role:
+            if not role:
+                return
+            # For user turns: allow empty content — warmup check must fire regardless.
+            if role != "user" and not content:
                 return
             if role == "assistant":
                 if not _candidate_turn_since_last_assistant:
@@ -1891,15 +1852,14 @@ async def entrypoint(ctx: JobContext):
                     return
                 if not llm_spoke_event.is_set():
                     llm_spoke_event.set()
-                    logger.info("[GREETING_GUARD] LLM spoke for first time  -  greeting will skip if not already delivered")
             if role == "user":
                 _answer_received_at = time.perf_counter()
                 _candidate_turn_since_last_assistant = True
-                # ── Phase 1 → Phase 2: warmup ends after 2 candidate responses ──────
+                # ── Phase 1 → Phase 2: warmup ends after 1 candidate response ──────
                 if not warmup_complete:
                     warmup_responses_received += 1
-                    logger.info("[WARMUP] Candidate response %d/2 received", warmup_responses_received)
-                    if warmup_responses_received >= 2:
+                    logger.info("[WARMUP] ✓ DONE — candidate responded, injecting Stage 1")
+                    if warmup_responses_received >= 1:
                         warmup_complete = True
                         remove_system_messages(chat_ctx, "[WARMUP PHASE]")
                         stage1_directive = stage1_directive_cached or build_stage_1_resume_directive(
@@ -1908,9 +1868,7 @@ async def entrypoint(ctx: JobContext):
                         )
                         chat_ctx.add_message(role="system", content=stage1_directive)
                         _stage_start_time = time.monotonic()
-                        logger.info(
-                            "[STAGE_INJECT] Stage 1 (RESUME) directive injected from cache into chat context (reason=warmup_complete)"
-                        )
+                        logger.info("[STAGE 1] ▶ STARTED — anchor=%s", stage1_directive_cached[:80] if stage1_directive_cached else "none")
                 turn_snapshot = turn_count
                 spawn_background_task(
                     _process_user_conversation_item(event, content, role, turn_snapshot),
@@ -2097,9 +2055,14 @@ async def entrypoint(ctx: JobContext):
             _initialize_stage_budgets()
             _initialize_stage_budgets_called = True
         logger.info(
-            "[SESSION_START] app_id=%s candidate=%s role=%s band=%s",
+            "━━━ SESSION START ━━━ app_id=%s | candidate=%s | role=%s | band=%s | org=%s | lang=%s | tts=%s | stt=%s | llm=%s",
             app_id, candidate_name, job_title,
-            getattr(session_context, "candidate_band", "unknown"),
+            session_context.candidate_band,
+            context.get("orgName", ""),
+            interview_lang,
+            org_tts_provider,
+            org_stt_provider,
+            org_llm_model or "google",
         )
         ai_name = context.get("aiName") or "Ishita"
         welcome_text = build_greeting_text(
@@ -2111,17 +2074,7 @@ async def entrypoint(ctx: JobContext):
         spawn_background_task(mark_interview_started(app_id), "mark_interview_started")
         try:
             startup_latency_ms = int((time.perf_counter() - entry_started_at) * 1000)
-            if ready_signal_received_at is not None:
-                ready_to_greeting_ms = int(
-                    (time.perf_counter() - ready_signal_received_at) * 1000
-                )
-                logger.info(
-                    f"[GREETING] Starting welcome (boot={startup_latency_ms}ms, ready_to_greeting={ready_to_greeting_ms}ms)"
-                )
-            else:
-                logger.info(
-                    f"[GREETING] Starting welcome (boot={startup_latency_ms}ms)"
-                )
+            logger.info("[GREETING] ▶ STARTED — boot=%dms", startup_latency_ms)
             # Only deliver scripted welcome if the LLM hasn't already spoken
             # (prevents double-greeting when candidate says hello first)
             if llm_spoke_event.is_set():
@@ -2142,9 +2095,7 @@ async def entrypoint(ctx: JobContext):
                         await session.say(welcome_text, allow_interruptions=False)
                         greeting_delivered = True
                         greeting_delivered_at = time.time()  # Mark when greeting completed
-                        logger.info(
-                            f"[GREETING] Welcome message delivered (attempt {_attempt + 1})"
-                        )
+                        logger.info("[GREETING] ✓ COMPLETED")
                         break
                     except Exception as _tts_err:
                         err_str = str(_tts_err).lower()
@@ -2571,6 +2522,6 @@ if __name__ == "__main__":
             entrypoint_fnc=entrypoint,
             prewarm_fnc=prewarm,
             agent_name=AGENT_NAME,
-            num_idle_processes=max(1, int(os.getenv("LIVEKIT_IDLE_PROCESSES", "8"))),
+            num_idle_processes=max(1, int(os.getenv("LIVEKIT_IDLE_PROCESSES", "1"))),
         )
     )

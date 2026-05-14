@@ -10,7 +10,6 @@ from agent_runtime_support import (
     DEFAULT_GOOGLE_TTS_MODEL,
     DEFAULT_GOOGLE_VOICE_NAME,
     LLM_MODEL,
-    _DB_POOL_INIT_TASK,
     logger,
 )
 _CONTROL_PHRASES = (
@@ -56,6 +55,25 @@ def sanitize_candidate_facing_text(text: str) -> str:
     return result
 
 
+_TTS_PHONETIC_FIXES = [
+    # Remove em/en dashes that cause Cartesia/Sarvam to pause-split surrounding words
+    (re.compile(r"\s*[—–]\s*"), ", "),
+    # Normalize ellipsis to a pause comma so TTS doesn't spell dots
+    (re.compile(r"\.{2,}"), ", "),
+    # Strip residual markdown symbols (backticks, asterisks, underscores) that cause Cartesia
+    # to spell surrounding characters letter-by-letter
+    (re.compile(r"[`*_~]"), ""),
+    # Collapse any resulting double spaces
+    (re.compile(r" {2,}"), " "),
+]
+
+
+def _apply_tts_phonetic_fixes(text: str) -> str:
+    for pattern, replacement in _TTS_PHONETIC_FIXES:
+        text = pattern.sub(replacement, text)
+    return text
+
+
 async def _single_question_transform(text_stream):
     """
     TTS text transform: buffers the full LLM output and:
@@ -68,26 +86,31 @@ async def _single_question_transform(text_stream):
     buffer = ""
     async for chunk in text_stream:
         buffer += chunk
+    logger.debug(f"[TTS_RAW] LLM output before sanitize: {buffer[:300]!r}")
     result = sanitize_candidate_facing_text(buffer)
-    # Only truncate if there are genuinely 2+ questions — never truncate to empty
+    result = _apply_tts_phonetic_fixes(result)
+    # Only truncate if there are genuinely 2+ questions — never truncate to empty.
+    # Split only on sentence-ending punctuation (. ! ?) but track ? separately.
+    # We never cut on ! or . — only cut after the first ? if a second ? follows.
     sentence_pattern = re.compile(r"[^.!?]*[.!?]")
     sentences = sentence_pattern.findall(result)
-    question_count = 0
-    cutoff = 0
+    first_question_cutoff = 0
     pos = 0
     for s in sentences:
         pos += len(s)
-        if s.rstrip().rstrip('"\'').endswith("?"):
-            question_count += 1
-            if question_count == 1:
-                cutoff = pos
-    if cutoff > 0 and "?" in result[cutoff:]:
-        truncated = result[:cutoff].rstrip()
-        # Only apply truncation if result is non-empty after cut
+        stripped = s.rstrip().rstrip('"\'')
+        if stripped.endswith("?") and first_question_cutoff == 0:
+            first_question_cutoff = pos
+    # Only truncate if there is a SECOND question after the first one
+    if first_question_cutoff > 0 and "?" in result[first_question_cutoff:]:
+        truncated = result[:first_question_cutoff].rstrip()
         if truncated:
             result = truncated
             logger.debug(f"[SINGLE_Q] Truncated double question. Original: {buffer[:120]!r}")
     if result:
+        logger.debug(f"[TTS_FINAL] Text sent to TTS: {result[:300]!r}")
+        # Yield the full sanitized text as one chunk — splitting by sentence caused
+        # Cartesia to receive fragments too short to phonemize correctly (letter-spelling).
         yield result
     else:
         # Never fall back to raw text because it can leak internal directives.
@@ -159,6 +182,28 @@ def remove_system_messages(chat_ctx, marker: str) -> None:
         return marker in str(content)
 
     items[:] = [msg for msg in list(items) if not _contains_marker(msg)]
+
+
+def describe_system_messages(chat_ctx, max_items: int = 8) -> list[str]:
+    """Return short human-readable summaries of live system messages."""
+    items = getattr(chat_ctx, "items", None)
+    if items is None:
+        return []
+
+    summaries: list[str] = []
+    for msg in items:
+        if getattr(msg, "role", "") != "system":
+            continue
+        content = getattr(msg, "content", "") or ""
+        if isinstance(content, list):
+            content = " ".join(str(part) for part in content)
+        text = " ".join(str(content).split())
+        if not text:
+            continue
+        summaries.append(text[:140])
+        if len(summaries) >= max_items:
+            break
+    return summaries
 def append_transcript_line(transcript_lines: list[str], speaker: str, text: str) -> None:
     text = re.sub(r"<[^>]+>", "", text).strip()
     clean = " ".join(text.split()).strip()

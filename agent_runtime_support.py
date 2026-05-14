@@ -8,6 +8,33 @@ from dotenv import load_dotenv
 load_dotenv()
 logger = logging.getLogger("interview-agent")
 logger.setLevel(logging.DEBUG)
+
+_SESSION_CONTEXT_KEYS = (
+    "session_id",
+    "app_id",
+    "room_name",
+    "dispatch_application_id",
+    "dispatch_candidate_name",
+    "dispatch_role_label",
+    "dispatch_time_limit_mins",
+    "dispatch_room_name",
+    "org_id",
+    "org_name",
+    "org_location",
+    "drive_location",
+    "candidate",
+    "candidate_first_name",
+    "job_title",
+    "time_limit_mins",
+)
+
+
+def _sanitize_context_value(value: Any) -> Any:
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
+
+
 class JsonFormatter(logging.Formatter):
     def format(self, record):
         log_record = {
@@ -44,8 +71,17 @@ class JsonFormatter(logging.Formatter):
                 "stack_info",
                 "thread",
                 "threadName",
+                "emit_full_context",
             ]:
                 log_record[key] = value
+        if not getattr(record, "emit_full_context", False):
+            for key in _SESSION_CONTEXT_KEYS:
+                if key in log_record and key != "session_id":
+                    log_record.pop(key, None)
+        else:
+            for key in _SESSION_CONTEXT_KEYS:
+                if key in log_record:
+                    log_record[key] = _sanitize_context_value(log_record[key])
         return json.dumps(log_record)
 for handler in logger.handlers[:]:
     logger.removeHandler(handler)
@@ -54,6 +90,17 @@ handler.setFormatter(JsonFormatter())
 logger.addHandler(handler)
 logger.propagate = False
 _LOG_CONTEXT_FIELDS: ContextVar[dict[str, Any]] = ContextVar("log_context_fields", default={})
+
+
+def set_log_context(fields: dict[str, Any]):
+    sanitized = {key: _sanitize_context_value(value) for key, value in fields.items()}
+    return _LOG_CONTEXT_FIELDS.set(sanitized)
+
+
+def reset_log_context(token) -> None:
+    _LOG_CONTEXT_FIELDS.reset(token)
+
+
 class _SessionLogContextFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         for key, value in _LOG_CONTEXT_FIELDS.get({}).items():

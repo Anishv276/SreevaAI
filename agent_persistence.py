@@ -664,7 +664,7 @@ async def get_interview_context(app_id: str):
     if not DATABASE_URL:
         raise RuntimeError("DATABASE_URL is not set")
     query = """
-    SELECT a."fullName", a."resumeText", a."aiReport", d.title, d.role AS "role", d.description, d.skills, d."extractedDetails", d."orgId" AS "orgId",
+    SELECT a."fullName", a."resumeText", a."resumeData", d.title, d.role AS "role", d.description, d.skills, d."extractedDetails", d."orgId" AS "orgId",
            d.location AS "driveLocation", d."interviewLanguage",
            COALESCE(d."ttsProvider", o."ttsProvider") AS "ttsProvider",
            COALESCE(d."cartesiaVoiceId", o."cartesiaVoiceId") AS "cartesiaVoiceId", o."cartesiaModel",
@@ -690,7 +690,7 @@ async def get_interview_context(app_id: str):
             return {
                 "fullName": row["fullName"],
                 "resumeText": row["resumeText"],
-                "aiReportRaw": row["aiReport"],
+                "resumeData": row["resumeData"],
                 "extractedDetails": row["extractedDetails"],
                 "jobTitle": row["role"] or row["title"],
                 "driveTitle": row["title"],

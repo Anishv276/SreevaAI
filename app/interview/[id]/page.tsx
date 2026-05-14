@@ -1413,10 +1413,23 @@ function InterviewRoomContent({
         };
     }, [lkRoom, isInterviewActive]);
     const sanitizeTranscriptText = useCallback((text: string) => {
-        return text
+        let result = text
             .replace(/<wait for response>/gi, "")
+            // Strip bracketed internal directives like [DO NOT SAY ALOUD...] [STAGE 1...]
+            .replace(/\[(?:[^\[\]]|\[[^\]]*\]){0,2000}\]/g, " ")
+            // Strip known control phrase prefixes if they leak unbracketed
+            .replace(/DO NOT SAY ALOUD/gi, " ")
+            .replace(/INTERNAL INTERVIEWER INSTRUCTION/gi, " ")
+            .replace(/NEXT_TURN_DIRECTIVE/gi, " ")
+            .replace(/SHORT_RESPONSE_DIRECTIVE/gi, " ")
+            .replace(/INTERVIEW STATE UPDATE/gi, " ")
+            .replace(/SYSTEM ALERT/gi, " ")
+            .replace(/BEGIN STAGE/gi, " ")
+            .replace(/TRANSITION TO STAGE\s*\d*/gi, " ")
+            .replace(/STAGE\s+\d+\s*[—\-–:]/gi, " ")
             .replace(/\s{2,}/g, " ")
             .trim();
+        return result;
     }, []);
     // Media Control Logic
     const isMicEnabled = localParticipant?.isMicrophoneEnabled ?? false;
@@ -1866,8 +1879,27 @@ function InterviewRoomContent({
                 });
             }
         }
-        return groups.filter(g => !g.isCandidate);
+        return groups;
     }, [sanitizeTranscriptText, transcriptions, localIdentity]);
+    const aiTranscriptGroups = useMemo(
+        () => groupedTranscriptions.filter((group) => !group.isCandidate),
+        [groupedTranscriptions]
+    );
+    const latestAiTranscript = useMemo(() => {
+        if (aiTranscriptGroups.length === 0) return null;
+        const latest = aiTranscriptGroups[aiTranscriptGroups.length - 1];
+        const finalSegs = latest.segments.filter((s) => s.isFinal);
+        const nonFinalSegs = latest.segments.filter((s) => !s.isFinal);
+        const latestNonFinal = nonFinalSegs.length > 0 ? nonFinalSegs[nonFinalSegs.length - 1] : null;
+        const displaySegs = latestNonFinal ? [...finalSegs, latestNonFinal] : finalSegs;
+        const text = sanitizeTranscriptText(displaySegs.map((s) => s.text).join(" "));
+        if (!text) return null;
+        return {
+            id: latest.id,
+            isFinal: latest.segments.every((s) => s.isFinal),
+            text,
+        };
+    }, [aiTranscriptGroups, sanitizeTranscriptText]);
     // Ensure camera is explicitly enabled when interview becomes active
     useEffect(() => {
         if (isInterviewActive && localParticipant && !localParticipant.isCameraEnabled) {
@@ -2054,7 +2086,7 @@ function InterviewRoomContent({
                 </div>
             </div>
             {/* AI Avatar Area */}
-            <div className="flex-1 flex flex-col items-center justify-center p-8 relative">
+            <div className="flex-1 flex flex-col items-center justify-start p-8 relative pt-6">
                 <motion.div
                     animate={{
                         scale: isAiSpeaking ? [1, 1.02, 1] : [1, 1.01, 1],
@@ -2114,6 +2146,33 @@ function InterviewRoomContent({
                         )}
                     </div>
                 </motion.div>
+                {latestAiTranscript && (
+                    <div className="w-full max-w-[82rem] mt-10 px-2">
+                        <AnimatePresence mode="wait">
+                            <motion.div
+                                key={latestAiTranscript.id}
+                                initial={{ opacity: 0, y: 16, scale: 0.98 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                exit={{ opacity: 0, y: -12, scale: 0.98 }}
+                                transition={{ duration: 0.28, ease: "easeOut" }}
+                                className="w-full rounded-[2rem] border border-white/10 bg-[#2c2c2e]/95 px-10 py-8 shadow-[0_24px_80px_rgba(0,0,0,0.45)]"
+                            >
+                                <div className="flex items-start gap-5 w-full">
+                                    <span className="text-[11px] font-black uppercase tracking-[0.35em] shrink-0 pt-1 text-white/90">
+                                        Ishitha
+                                    </span>
+                                    <p className={cn(
+                                        "text-[18px] md:text-[20px] font-medium text-white leading-[1.75] tracking-tight whitespace-normal break-words w-full",
+                                        !latestAiTranscript.isFinal && "text-white/75"
+                                    )}>
+                                        {latestAiTranscript.text}
+                                        {!latestAiTranscript.isFinal && <span className="inline-block ml-1 opacity-50">...</span>}
+                                    </p>
+                                </div>
+                            </motion.div>
+                        </AnimatePresence>
+                    </div>
+                )}
                 {false && (
                     <div className="absolute right-[calc(50%+180px)] bottom-[20%] z-[65] w-[380px] pointer-events-none">
                         <div
@@ -2124,7 +2183,7 @@ function InterviewRoomContent({
                             }}
                         >
                             <AnimatePresence mode="popLayout">
-                                {groupedTranscriptions.slice(-5).reverse().map((group, idx) => {
+                                {aiTranscriptGroups.slice(-5).reverse().map((group, idx) => {
                                     const isGroupFinal = group.segments.every(s => s.isFinal);
                                     // Only combine final segments + the single latest non-final chunk.
                                     // This prevents partial words ("bu", "thr") from stacking visibly.
@@ -2233,47 +2292,6 @@ function InterviewRoomContent({
                 </div>
                 {/* Middle: Transcript + End Interview Button */}
                 <div className="flex flex-col items-center gap-3 ">
-                    {/* Live transcript - left-to-right fade, full sentence visible */}
-                    <div className="hidden">
-                        <AnimatePresence mode="wait">
-                            {groupedTranscriptions.length > 0 && (() => {
-                                const latest = groupedTranscriptions[groupedTranscriptions.length - 1];
-                                const finalSegs = latest.segments.filter(s => s.isFinal);
-                                const nonFinalSegs = latest.segments.filter(s => !s.isFinal);
-                                const latestNonFinal = nonFinalSegs.length > 0 ? nonFinalSegs[nonFinalSegs.length - 1] : null;
-                                const displaySegs = latestNonFinal ? [...finalSegs, latestNonFinal] : finalSegs;
-                                const text = sanitizeTranscriptText(displaySegs.map(s => s.text).join(" "));
-                                const isFinal = latest.segments.every(s => s.isFinal);
-                                if (!text) return null;
-                                return (
-                                    <motion.div
-                                        key={latest.id}
-                                        initial={{ opacity: 0, x: 20 }}
-                                        animate={{ opacity: 1, x: 0 }}
-                                        exit={{ opacity: 0, x: -20 }}
-                                        transition={{ duration: 0.3, ease: "easeOut" }}
-                                        className="flex items-start gap-2 w-full flex-wrap"
-                                    >
-                                        <span className={cn(
-                                            "text-[9px] font-black uppercase tracking-[0.2em] shrink-0",
-                                            latest.isCandidate ? "text-orange-400" : "text-indigo-400"
-                                        )}>
-                                            {latest.isCandidate ? (candidateName || "You") : "Ishitha"}
-                                        </span>
-                                        <span className={cn(
-                                            "text-[13px] font-medium text-zinc-200 leading-snug",
-                                            !isFinal && "text-zinc-400"
-                                        )}>
-                                            {text}
-                                        </span>
-                                        {!isFinal && (
-                                            <span className="text-zinc-600 animate-pulse shrink-0 text-[10px]">?</span>
-                                        )}
-                                    </motion.div>
-                                );
-                            })()}
-                        </AnimatePresence>
-                    </div>
                     <Button
                         variant="destructive"
                         onClick={() => handleFinish("normal")}
@@ -2284,44 +2302,6 @@ function InterviewRoomContent({
                             <LogOut className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                         </span>
                     </Button>
-                </div>
-                {/* Right: Interaction Status */}
-                <div className="absolute bottom-[16rem] left-1/2 -translate-x-1/2 z-[70] w-[min(96vw,80rem)] max-w-none px-4 pointer-events-none">
-                    <AnimatePresence mode="wait">
-                        {groupedTranscriptions.length > 0 && (() => {
-                            const latest = groupedTranscriptions[groupedTranscriptions.length - 1];
-                            const finalSegs = latest.segments.filter(s => s.isFinal);
-                            const nonFinalSegs = latest.segments.filter(s => !s.isFinal);
-                            const latestNonFinal = nonFinalSegs.length > 0 ? nonFinalSegs[nonFinalSegs.length - 1] : null;
-                            const displaySegs = latestNonFinal ? [...finalSegs, latestNonFinal] : finalSegs;
-                            const text = sanitizeTranscriptText(displaySegs.map(s => s.text).join(" "));
-                            const isFinal = latest.segments.every(s => s.isFinal);
-                            if (!text) return null;
-                            return (
-                                <motion.div
-                                    key={latest.id}
-                                    initial={{ opacity: 0, y: 20, scale: 0.95 }}
-                                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                                    exit={{ opacity: 0, y: -20, scale: 0.95 }}
-                                    transition={{ duration: 0.4, ease: [0.23, 1, 0.32, 1] }}
-                                    className="pointer-events-auto"
-                                >
-                                    <div className="bg-[#27272a]/95 backdrop-blur-2xl border border-white/10 px-8 py-5 rounded-[2.25rem] shadow-[0_20px_80px_rgba(0,0,0,0.6)] flex items-center gap-5 group w-full">
-                                        <div className="flex items-start gap-4 min-w-0 w-full">
-                                            <div className={cn(
-                                                "w-2.5 h-2.5 rounded-full shrink-0 mt-2",
-                                                isFinal ? (latest.isCandidate ? "bg-orange-500" : "bg-indigo-500") : "bg-zinc-600 animate-pulse"
-                                            )} />
-                                            <p className="text-[16px] font-medium text-white leading-[1.65] tracking-tight whitespace-normal break-words w-full">
-                                                {text}
-                                                {!isFinal && <span className="inline-block ml-1 opacity-40">...</span>}
-                                            </p>
-                                        </div>
-                                    </div>
-                                </motion.div>
-                            );
-                        })()}
-                    </AnimatePresence>
                 </div>
                 <div className="flex justify-end pr-4">
                     <div className="flex flex-col items-end">
