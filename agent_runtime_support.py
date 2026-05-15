@@ -169,6 +169,7 @@ APP_BASE_URL = (
 _DB_POOL: Any = None
 _DB_POOL_INIT_TASK: Any = None
 _PENDING_MANUAL_BILLING: dict[str, list[tuple[str, dict]]] = {}
+_TOOL_ALIAS_CATALOG: dict[str, str] = {}
 
 PROCTORING_WEIGHTS: dict[str, int] = {
     "tab_switch": 5,
@@ -189,4 +190,11 @@ def compose_risk_score(
         + depth_risk * _COMPOSITE_RISK_WEIGHTS["depth"]
     )
     return max(0, min(100, int(round(weighted))))
+
+
+def compose_mode_risk_score(
+    integrity_risk: int,
+    depth_risk: int,
+) -> int:
+    return compose_risk_score(integrity_risk, depth_risk)
 
