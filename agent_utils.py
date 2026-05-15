@@ -12,27 +12,7 @@ def _safe_float(value: Any) -> Optional[float]:
         return float(text)
     except Exception:
         return None
-def safe_parse(val: Any, fallback: str = "Not provided") -> str:
-    if val is None or val in ("{}", "[]", "null", "None"):
-        return fallback
-    try:
-        import json
-        if isinstance(val, str):
-            parsed = json.loads(val)
-        elif isinstance(val, (dict, list)):
-            parsed = val
-        else:
-            return str(val).strip() or fallback
-        if isinstance(parsed, dict):
-            return "\n".join(f"  {k}: {v}" for k, v in parsed.items() if v)
-        if isinstance(parsed, list):
-            return "\n".join(f"  - {item}" for item in parsed if item)
-        if isinstance(parsed, str):
-            text = parsed.strip()
-            return text or fallback
-        return fallback
-    except Exception:
-        return str(val).strip() or fallback
+
 def parse_dispatch_metadata(metadata: Any) -> dict[str, Any]:
     if not metadata:
         return {}
@@ -127,13 +107,7 @@ def _format_compact_section(title: str, lines: list[str]) -> str:
         clean_lines = ["Not available"]
     body = "\n".join(f"- {line}" for line in clean_lines)
     return f"{title}\n{body}"
-def _normalize_cartesia_model(model: str, default_model: str) -> str:
-    model = _compact_text(model)
-    if not model:
-        return default_model
-    if model.startswith("cartesia/"):
-        return model
-    return f"cartesia/{model}"
+
 def _cartesia_plugin_model(model: str, default_model: str) -> str:
     model = _compact_text(model)
     if not model:

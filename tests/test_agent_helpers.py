@@ -34,9 +34,6 @@ def test_alias_hints_and_basic_text_helpers():
         "- No strong alias hints from context. If unclear, confirm once, then move on."
     )
 
-    assert agent.safe_parse({"name": "Alice", "score": 10}) == "  name: Alice\n  score: 10"
-    assert agent.safe_parse(["one", "two"]) == "  - one\n  - two"
-    assert agent.safe_parse(None) == "Not provided"
 
 
 def test_role_and_name_helpers():

@@ -23,20 +23,10 @@ try:
 except Exception:  # pragma: no cover - optional dependency
     redis_asyncio = None
 from agent_utils import (
-    _as_list,
-    _cartesia_plugin_model,
     _coerce_jsonish,
     _compact_optional,
     _compact_text,
-    _deep_get,
-    _extract_text_items,
-    _first_text,
-    _format_compact_section,
-    _join_items,
-    _normalize_cartesia_model,
-    _safe_float,
     parse_dispatch_metadata,
-    safe_parse,
 )
 from agent_profile_context import (
     CandidateBandContext,

@@ -71,7 +71,7 @@ def build_sarvam_tts(
         "model": model,
         "speaker": voice_id,
         "api_key": api_key,
-        "pace": 1.1,
+        "pace": 1.2,
         "speech_sample_rate": 22050,
         "output_audio_bitrate": "128k",
         "min_buffer_size": 50,
