@@ -334,6 +334,9 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         isMultipleFacesEnabled,
         isIdentityMismatchEnabled,
     ]);
+    const handleAgentDetectedViolation = useCallback((eventType: string, reason: string, severity?: string) => {
+        handleFaceViolation(eventType, reason, severity as "low" | "medium" | "high" | undefined);
+    }, [handleFaceViolation]);
     //  Hardware heartbeat violation handler 
     const handleHardwareViolation = useCallback((eventType: string, reason: string, severity?: "low" | "medium" | "high") => {
         if (eventType === "camera_disabled" && !isCameraDisabledEnabled) return;
@@ -711,6 +714,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             else clearDelayedViolation(tabViolationTimerRef);
         };
         const onWindowFocus = () => clearDelayedViolation(tabViolationTimerRef);
+        const onWindowBlur = () => handleViolation();
         const onFullscreenChange = () => {
             const isFS = !!(document.fullscreenElement || (document as any).webkitFullscreenElement || (document as any).mozFullScreenElement || (document as any).msFullscreenElement);
             if (!isFS) {
@@ -723,7 +727,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             }
         };
         document.addEventListener("visibilitychange", onVisibilityChange);
-        window.addEventListener("blur", handleViolation);
+        window.addEventListener("blur", onWindowBlur);
         window.addEventListener("focus", onWindowFocus);
         document.addEventListener("fullscreenchange", onFullscreenChange);
         document.addEventListener("webkitfullscreenchange", onFullscreenChange);
@@ -731,7 +735,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         document.addEventListener("MSFullscreenChange", onFullscreenChange);
         return () => {
             document.removeEventListener("visibilitychange", onVisibilityChange);
-            window.removeEventListener("blur", handleViolation);
+            window.removeEventListener("blur", onWindowBlur);
             window.removeEventListener("focus", onWindowFocus);
             document.removeEventListener("fullscreenchange", onFullscreenChange);
             document.removeEventListener("webkitfullscreenchange", onFullscreenChange);

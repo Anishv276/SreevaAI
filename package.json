@@ -13,7 +13,7 @@
     "worker:all": "cross-env WORKER_QUEUES=resume-processing,invitation-delivery-queue,backup-queue,interview-finalization,interview-snapshots,jd-upload,jd-extraction tsx worker.ts",
     "clean": "node scripts/clean-next.mjs",
     "prebuild": "npm run clean",
-    "build": "next build",
+    "build": "next build --webpack",
     "typecheck": "npm run clean && tsc --noEmit",
     "start": "next start",
     "lint": "eslint"

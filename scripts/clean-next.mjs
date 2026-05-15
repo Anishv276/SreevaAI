@@ -6,17 +6,29 @@ const nextDir = resolve(process.cwd(), ".next");
 function removePath(target) {
   if (!existsSync(target)) return;
 
-  const stat = lstatSync(target);
-  if (stat.isSymbolicLink() || stat.isFile()) {
-    unlinkSync(target);
-    return;
-  }
-
-  if (stat.isDirectory()) {
-    for (const entry of readdirSync(target)) {
-      removePath(resolve(target, entry));
+  try {
+    const stat = lstatSync(target);
+    if (stat.isSymbolicLink() || stat.isFile()) {
+      try {
+        unlinkSync(target);
+      } catch {
+        // Windows file locks can block removal of stale Next.js artifacts.
+      }
+      return;
     }
-    rmdirSync(target);
+
+    if (stat.isDirectory()) {
+      for (const entry of readdirSync(target)) {
+        removePath(resolve(target, entry));
+      }
+      try {
+        rmdirSync(target);
+      } catch {
+        // If the directory is still busy, leave it in place and let the next build overwrite what it can.
+      }
+    }
+  } catch {
+    // Ignore entries that disappear or remain locked mid-cleanup.
   }
 }
 
@@ -27,9 +39,9 @@ try {
     } catch {
       removePath(nextDir);
     }
-    console.log(`[clean-next] Removed ${nextDir}`);
   }
+  console.log(`[clean-next] Removed ${nextDir}`);
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
-  console.warn(`[clean-next] Could not remove ${nextDir}: ${message}`);
+  console.warn(`[clean-next] Could not remove Next build artifacts: ${message}`);
 }

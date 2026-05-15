@@ -1,0 +1,274 @@
+{
+  "test_1_normalization": [
+    {
+      "input": "ReactJS",
+      "expected": "react",
+      "got": "react",
+      "pass": true
+    },
+    {
+      "input": "NodeJS",
+      "expected": "node",
+      "got": "node",
+      "pass": true
+    },
+    {
+      "input": "Postgresql",
+      "expected": "postgres",
+      "got": "postgres",
+      "pass": true
+    },
+    {
+      "input": "SpringBoot",
+      "expected": "spring",
+      "got": "spring",
+      "pass": true
+    },
+    {
+      "input": "Python3",
+      "expected": "python",
+      "got": "python",
+      "pass": true
+    },
+    {
+      "input": "K8s",
+      "expected": "k8s",
+      "got": "k8s",
+      "pass": true
+    }
+  ],
+  "test_2_match_levels": [
+    {
+      "skill": "Python",
+      "expected_level": "full",
+      "got_level": "full",
+      "multiplier": 1.2,
+      "pass": true
+    },
+    {
+      "skill": "Docker",
+      "expected_level": "confirmed",
+      "got_level": "confirmed",
+      "multiplier": 1.0,
+      "pass": true
+    },
+    {
+      "skill": "React",
+      "expected_level": "mentioned",
+      "got_level": "mentioned",
+      "multiplier": 0.85,
+      "pass": true
+    },
+    {
+      "skill": "Kubernetes",
+      "expected_level": "transferable",
+      "got_level": "transferable",
+      "multiplier": 0.4,
+      "pass": true
+    },
+    {
+      "skill": "Go",
+      "expected_level": "none",
+      "got_level": "none",
+      "multiplier": 0.0,
+      "pass": true
+    }
+  ],
+  "test_3_full_score": {
+    "score": 45,
+    "base_score": 38,
+    "human_layer": {
+      "base_score": 38,
+      "human_adjustment": 7,
+      "human_score": 45,
+      "confidence": 63,
+      "judgment": "Rejected",
+      "strong_evidence": [
+        {
+          "reason": "Strong direct technology alignment across 6/7 core JD skills",
+          "evidence": "python, node, postgres, docker, react",
+          "delta": 4
+        },
+        {
+          "reason": "Candidate meets the required experience floor",
+          "evidence": "3.5 yrs vs 3 yrs required",
+          "delta": 3
+        }
+      ],
+      "reasons": [
+        {
+          "delta": 4,
+          "reason": "Strong direct technology alignment across 6/7 core JD skills",
+          "evidence": "python, node, postgres, docker, react"
+        },
+        {
+          "delta": 3,
+          "reason": "Candidate meets the required experience floor",
+          "evidence": "3.5 yrs vs 3 yrs required"
+        }
+      ],
+      "risk_flags": [],
+      "summary": "Core JD technology hits: 6 matched, 1 missing Role band used for tuning: mid Most useful signals: Strong direct technology alignment across 6/7 core JD skills (python, node, postgres, docker, react); Candidate meets the required experience floor (3.5 yrs vs 3 yrs required) Partial evidence remains on Python, Node.js, PostgreSQL"
+    },
+    "status": "Rejected",
+    "breakdown": {
+      "skills_score": 13,
+      "skills_max": 50,
+      "exp_score": 15,
+      "exp_max": 15,
+      "good_score": 1,
+      "good_max": 10,
+      "career_score": 4,
+      "career_max": 15,
+      "domain_score": 5,
+      "domain_max": 10
+    },
+    "criteria_results": [
+      {
+        "criterion": "Python",
+        "category": "skill",
+        "priority": "critical",
+        "weight": 20,
+        "result": "partially_meets",
+        "confidence": 0.65,
+        "evidence": "",
+        "ev_type": "project"
+      },
+      {
+        "criterion": "Node.js",
+        "category": "skill",
+        "priority": "high",
+        "weight": 15,
+        "result": "partially_meets",
+        "confidence": 0.4,
+        "evidence": "",
+        "ev_type": "listed"
+      },
+      {
+        "criterion": "PostgreSQL",
+        "category": "skill",
+        "priority": "high",
+        "weight": 15,
+        "result": "partially_meets",
+        "confidence": 0.4,
+        "evidence": "",
+        "ev_type": "listed"
+      },
+      {
+        "criterion": "Docker",
+        "category": "skill",
+        "priority": "high",
+        "weight": 10,
+        "result": "partially_meets",
+        "confidence": 0.65,
+        "evidence": "",
+        "ev_type": "project"
+      },
+      {
+        "criterion": "React",
+        "category": "skill",
+        "priority": "medium",
+        "weight": 10,
+        "result": "unclear",
+        "confidence": 0.25,
+        "evidence": "",
+        "ev_type": "inferred"
+      },
+      {
+        "criterion": "Kubernetes",
+        "category": "skill",
+        "priority": "medium",
+        "weight": 5,
+        "result": "partially_meets",
+        "confidence": 0.5,
+        "evidence": "",
+        "ev_type": "listed"
+      },
+      {
+        "criterion": "Redis",
+        "category": "skill",
+        "priority": "medium",
+        "weight": 5,
+        "result": "partially_meets",
+        "confidence": 0.65,
+        "evidence": "",
+        "ev_type": "project"
+      }
+    ],
+    "skill_matching": {
+      "matched_must": [],
+      "missing_must": [],
+      "partial_must": [
+        "Python",
+        "Node.js",
+        "PostgreSQL",
+        "Docker"
+      ],
+      "matched_good": [],
+      "total_must": 7,
+      "match_ratio": 0,
+      "must_have_details": [
+        {
+          "name": "Python",
+          "weight": "critical",
+          "status": "mentioned",
+          "match_level": "partially_meets"
+        },
+        {
+          "name": "Node.js",
+          "weight": "high",
+          "status": "mentioned",
+          "match_level": "partially_meets"
+        },
+        {
+          "name": "PostgreSQL",
+          "weight": "high",
+          "status": "mentioned",
+          "match_level": "partially_meets"
+        },
+        {
+          "name": "Docker",
+          "weight": "high",
+          "status": "mentioned",
+          "match_level": "partially_meets"
+        },
+        {
+          "name": "React",
+          "weight": "medium",
+          "status": "mentioned",
+          "match_level": "unclear"
+        },
+        {
+          "name": "Kubernetes",
+          "weight": "medium",
+          "status": "mentioned",
+          "match_level": "partially_meets"
+        },
+        {
+          "name": "Redis",
+          "weight": "medium",
+          "status": "mentioned",
+          "match_level": "partially_meets"
+        }
+      ]
+    },
+    "top_evidence": [],
+    "gaps_to_probe": [
+      "Python",
+      "Node.js",
+      "PostgreSQL",
+      "Docker"
+    ],
+    "exp_status": "meets",
+    "hard_rejected": false,
+    "rejection_reasons": [],
+    "candidate_years": 3.5,
+    "jd_min_years": 3
+  },
+  "summary": {
+    "test_1_pass": true,
+    "test_2_pass": true,
+    "test_3_pass": true,
+    "all_pass": true
+  }
+}
