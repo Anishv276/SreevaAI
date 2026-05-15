@@ -190,12 +190,32 @@ export async function POST(request: Request) {
             const buffer = Buffer.from(bytes);
             const byteLength = buffer.length;
             console.log("[FILE_EXTRACT_START]:", { name: file.name, size: byteLength, type });
-            const { data, usage, text } = await queueJdExtraction({
-                kind: "file",
-                fileName: file.name,
-                buffer,
-                orgOpenAIModel,
-            });
+
+            const bucket = process.env.R2_JDS_BUCKET || "jds";
+            const fileName = `jds/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+            
+            // Run extraction and R2 upload concurrently
+            const [extractionResult, fileUrl] = await Promise.all([
+                queueJdExtraction({
+                    kind: "file",
+                    fileName: file.name,
+                    buffer,
+                    orgOpenAIModel,
+                }),
+                (async () => {
+                    try {
+                        console.log("[STORAGE_PUSH]: Uploading JD to R2", fileName);
+                        const { putObject } = await import("@/lib/s3");
+                        return await putObject(bucket, fileName, buffer, file.type);
+                    } catch (err: any) {
+                        console.error("[STORAGE_FATAL_ERROR]: JD R2 Upload Failed", err.message);
+                        return null;
+                    }
+                })()
+            ]);
+
+            const { data, usage, text } = extractionResult;
+
             if (orgId && usage) {
                 await recordOrgBillingUsage({
                     orgId,
@@ -207,7 +227,7 @@ export async function POST(request: Request) {
             return NextResponse.json({
                 data: hydratedData,
                 text: text || null,
-                url: null,
+                url: fileUrl,
             });
         }
 

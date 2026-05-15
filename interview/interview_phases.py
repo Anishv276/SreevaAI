@@ -286,7 +286,7 @@ def build_stage_2_skill_directive(
         "  2) Tie that context to a role priority or skill gap\n"
         "  3) Ask what they personally implemented or decided\n"
         "  4) Ask one depth follow-up on tradeoff/debugging/performance or why that skill matters for the role\n"
-        "  5) Move to the next skill when the topic is covered\n\n"
+        "  5) Move to the next skill whedn the topic is covered\n\n"
     )
 
     priorities_block = f"ROLE PRIORITIES: {', '.join(jd_must_haves)}\n\n" if jd_must_haves else ""
