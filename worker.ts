@@ -159,6 +159,12 @@ async function processDriveResumeBatchJob(job: any) {
   const batch = await prisma.resumeBatch.findUnique({ where: { id: batchId } });
   if (!batch) throw new Error(`Batch ${batchId} not found`);
 
+  // Idempotency guard: if this batch already finished, don't process it again.
+  if (String(batch.status || "").toUpperCase() === "COMPLETED") {
+    console.log(`[RESUME-WORKER] Batch ${batchId} is already COMPLETED. Skipping duplicate job run.`);
+    return;
+  }
+
   await prisma.resumeBatch.update({
     where: { id: batchId },
     data: { status: "PROCESSING", processedCount: 0, failedCount: 0 },
@@ -235,6 +241,18 @@ async function processDriveResumeBatchJob(job: any) {
       chunk.map(async (candidate) => {
         let tmpPdfPath: string | null = null;
         try {
+          const existingStatus = String(candidate.resumeStatus || "").toLowerCase();
+          const existingReport = String(candidate.aiReport || "");
+          const alreadyCompleted =
+            (existingStatus === "shortlisted" || existingStatus === "rejected") &&
+            existingReport.includes("\"stage\":\"completed\"");
+          if (alreadyCompleted) {
+            console.log(
+              `[RESUME-WORKER] Candidate ${candidate.id}: already completed in a prior run, skipping.`
+            );
+            return;
+          }
+
           console.log(`[RESUME-WORKER] Candidate ${candidate.id}: waiting -> extracting (25%)`);
           const source = parseJsonSafe<any>(candidate.resumeData, {}).source || {};
           const bucket = String(source.bucket || process.env.R2_RESUMES_BUCKET || "resumes");

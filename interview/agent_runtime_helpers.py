@@ -20,6 +20,8 @@ _CONTROL_PHRASES = (
     "INTERVIEW STATE UPDATE",
     "SYSTEM ALERT",
     "BEGIN STAGE",
+    "TOPIC:NEW",
+    "TOPIC:FOLLOWUP",
 )
 
 
@@ -47,6 +49,8 @@ def sanitize_candidate_facing_text(text: str) -> str:
             or stripped.startswith("[NEXT_TURN_DIRECTIVE")
             or stripped.startswith("[SHORT_RESPONSE_DIRECTIVE")
             or stripped.startswith("[INTERVIEW STATE UPDATE")
+            or stripped.startswith("[TOPIC:NEW")
+            or stripped.startswith("[TOPIC:FOLLOWUP")
         ):
             continue
         cleaned_lines.append(line)
@@ -56,12 +60,15 @@ def sanitize_candidate_facing_text(text: str) -> str:
 
 
 _TTS_PHONETIC_FIXES = [
-    # Remove em/en dashes that cause Cartesia/Sarvam to pause-split surrounding words
+    # Remove em/en dashes that cause TTS to pause-split surrounding words
     (re.compile(r"\s*[—–]\s*"), ", "),
+    # Remove soft-hyphen / mid-word hyphen the LLM inserts (e.g. "respon-sibilities")
+    # Only strip hyphens that are surrounded by letters — keep valid compounds like "well-known"
+    # by replacing letter-hyphen-letter with the letters joined directly.
+    (re.compile(r"(?<=[a-zA-Z])-(?=[a-zA-Z])"), ""),
     # Normalize ellipsis to a pause comma so TTS doesn't spell dots
     (re.compile(r"\.{2,}"), ", "),
-    # Strip residual markdown symbols (backticks, asterisks, underscores) that cause Cartesia
-    # to spell surrounding characters letter-by-letter
+    # Strip residual markdown symbols (backticks, asterisks, underscores, tildes)
     (re.compile(r"[`*_~]"), ""),
     # Collapse any resulting double spaces
     (re.compile(r" {2,}"), " "),
@@ -76,12 +83,8 @@ def _apply_tts_phonetic_fixes(text: str) -> str:
 
 async def _single_question_transform(text_stream):
     """
-    TTS text transform: buffers the full LLM output and:
-    1. Strips internal instruction markers so they are never spoken
-    2. Drops everything after the first complete question (sentence ending in '?')
-       ONLY if a second question exists — never truncates to empty
-    3. Strips the <wait for response> marker so it's not spoken
-    Prevents Ishita from asking two questions in one turn.
+    TTS text transform: buffers the full LLM output, strips internal directives
+    and markdown artifacts, then yields sentence by sentence for clean TTS synthesis.
     """
     buffer = ""
     async for chunk in text_stream:
@@ -89,28 +92,11 @@ async def _single_question_transform(text_stream):
     logger.debug(f"[TTS_RAW] LLM output before sanitize: {buffer[:300]!r}")
     result = sanitize_candidate_facing_text(buffer)
     result = _apply_tts_phonetic_fixes(result)
-    # Only truncate if there are genuinely 2+ questions — never truncate to empty.
-    # Split only on sentence-ending punctuation (. ! ?) but track ? separately.
-    # We never cut on ! or . — only cut after the first ? if a second ? follows.
-    sentence_pattern = re.compile(r"[^.!?]*[.!?]")
-    sentences = sentence_pattern.findall(result)
-    first_question_cutoff = 0
-    pos = 0
-    for s in sentences:
-        pos += len(s)
-        stripped = s.rstrip().rstrip('"\'')
-        if stripped.endswith("?") and first_question_cutoff == 0:
-            first_question_cutoff = pos
-    # Only truncate if there is a SECOND question after the first one
-    if first_question_cutoff > 0 and "?" in result[first_question_cutoff:]:
-        truncated = result[:first_question_cutoff].rstrip()
-        if truncated:
-            result = truncated
-            logger.debug(f"[SINGLE_Q] Truncated double question. Original: {buffer[:120]!r}")
     if result:
         logger.debug(f"[TTS_FINAL] Text sent to TTS: {result[:300]!r}")
-        # Yield the full sanitized text as one chunk — splitting by sentence caused
-        # Cartesia to receive fragments too short to phonemize correctly (letter-spelling).
+        # Yield the full response as one string so Sarvam/Cartesia have full phoneme
+        # context. Splitting into chunks causes garbled consonant-cluster words
+        # (e.g. "bu..ild", "thr-ough") when those words land at the start of a chunk.
         yield result
     else:
         # Never fall back to raw text because it can leak internal directives.

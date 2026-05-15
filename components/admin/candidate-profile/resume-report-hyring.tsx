@@ -391,6 +391,54 @@ function normalizeTextToken(value: unknown): string {
     .trim();
 }
 
+function buildDecisionNoteFallback(args: {
+  candidateName: string;
+  decisionStamp: "SHORTLISTED" | "REJECTED" | "BORDERLINE";
+  topMatchedSkills: { name: string; evidenceNote?: string }[];
+  missingMustHave: string[];
+  candidateYears: number | null;
+  requiredYears: number | null;
+  ownerRoles: Array<{ company?: string; role?: string; technologies_used?: string[] }>;
+}): string {
+  const safeName = args.candidateName?.trim() || "This candidate";
+  const skillList = args.topMatchedSkills.slice(0, 3).map((row) => row.name).filter(Boolean);
+  const primarySkill = skillList[0] || "core role skills";
+  const missingList = args.missingMustHave.slice(0, 2).filter(Boolean);
+  const role = args.ownerRoles[0];
+  const roleCompany = role?.company || "previous role";
+  const roleTitle = role?.role || "engineering role";
+  const roleTech = Array.isArray(role?.technologies_used) ? role!.technologies_used!.slice(0, 2).join(" and ") : "";
+  const yearsText = Number.isFinite(args.candidateYears as number) ? `${args.candidateYears} years` : "the available years";
+  const reqText = Number.isFinite(args.requiredYears as number) ? `${args.requiredYears} years` : "the role requirement";
+
+  if (args.decisionStamp === "SHORTLISTED") {
+    return [
+      `${safeName} is shortlisted because the resume shows direct evidence in ${primarySkill}${skillList.length > 1 ? ` with additional proof in ${skillList.slice(1).join(" and ")}` : ""}.`,
+      `${yearsText} aligns with ${reqText}, and ownership signals are visible from ${roleTitle} at ${roleCompany}${roleTech ? ` using ${roleTech}` : ""}.`,
+      missingList.length > 0
+        ? `The key risk is limited evidence for ${missingList.join(" and ")}, but the overall signal still supports advancement.`
+        : "The evidence repeats across work history, which is stronger than keyword-only profile matching.",
+      `Advance to interview and validate production depth on ${primarySkill}${missingList.length > 0 ? ` and ${missingList[0]}` : ""} before final round.`,
+    ].join(" ");
+  }
+
+  if (args.decisionStamp === "REJECTED") {
+    return [
+      `${safeName} is rejected because the resume does not provide sufficient direct evidence for role-critical requirements${missingList.length > 0 ? `, especially ${missingList.join(" and ")}` : ""}.`,
+      `${yearsText} against ${reqText} and the current ownership signals from ${roleTitle} at ${roleCompany} are below the bar for this role level.`,
+      `The decisive gap is the difference between listed skills and proven production outcomes, even where partial strengths exist in ${primarySkill}.`,
+      "Reconsider only if updated evidence demonstrates clear production ownership, scope, and measurable impact in missing must-have areas.",
+    ].join(" ");
+  }
+
+  return [
+    `${safeName} is currently borderline because evidence is mixed between matched skills like ${primarySkill} and unresolved role-critical gaps${missingList.length > 0 ? ` such as ${missingList.join(" and ")}` : ""}.`,
+    `${yearsText} compared with ${reqText} and the available ownership context from ${roleTitle} at ${roleCompany} are directionally positive but not conclusive.`,
+    "The strongest concern is uneven depth across must-have areas, so the profile is not a clear advance or reject yet.",
+    `Use the next screen to validate production ownership, decision-making, and depth in ${primarySkill}${missingList.length > 0 ? ` and ${missingList[0]}` : ""}.`,
+  ].join(" ");
+}
+
 function tokenMatches(left: unknown, right: unknown): boolean {
   const a = normalizeTextToken(left);
   const b = normalizeTextToken(right);
@@ -1129,6 +1177,52 @@ export function buildHyringResumeViewModel(i: {
     });
   }
 
+  const normalizedStamp = String(i.normalizedStatus || "").toUpperCase();
+  const isRejected = normalizedStamp.includes("REJECT");
+  const minStrengthWeakness = 3;
+  const strengthFallbacks = [
+    {
+      label: "Role signal consistency",
+      body: "The profile has multiple aligned signals across resume sections, which supports a stable screening read instead of a one-line claim.",
+    },
+    {
+      label: "Extracted evidence quality",
+      body: "Structured extraction includes work and skills context that helps verify role relevance beyond keyword-only matching.",
+    },
+    {
+      label: "Actionable interview focus",
+      body: "The current match pattern gives clear areas to validate in interview, which improves screening reliability and decision clarity.",
+    },
+  ];
+  const weaknessFallbacks = [
+    {
+      label: "Evidence completeness",
+      body: "Some parts of the resume still need stronger scope or outcome detail, so confidence is moderate until interview validation.",
+    },
+    {
+      label: "Role-depth uncertainty",
+      body: "Not all required skills show consistent production-grade evidence across roles, which creates decision risk for the final stage.",
+    },
+    {
+      label: "Verification dependency",
+      body: "A few claims remain list-level and need probing for scale, ownership, and measurable impact before finalizing hiring direction.",
+    },
+  ];
+
+  for (const fallback of strengthFallbacks) {
+    if (strengths.length >= minStrengthWeakness) break;
+    if (strengths.some((item) => item.label === fallback.label)) continue;
+    strengths.push(fallback);
+  }
+  for (const fallback of weaknessFallbacks) {
+    if (weaknesses.length >= minStrengthWeakness) break;
+    if (weaknesses.some((item) => item.label === fallback.label)) continue;
+    weaknesses.push(fallback);
+  }
+
+  if (isRejected && strengths.length > 4) strengths.splice(4);
+  if (weaknesses.length > 4) weaknesses.splice(4);
+
   const shorten = (value: string, maxLen = 180) => readableSummaryText(value, maxLen);
   return {
     backHref: i.backHref || "/admin/candidates",
@@ -1182,7 +1276,19 @@ export function buildHyringResumeViewModel(i: {
         return i.decisionReason.trim();
       }
       // Fallback for legacy reports without decision_reason
-      return "AI screening analysis complete. Re-scan to generate the decision note.";
+      return buildDecisionNoteFallback({
+        candidateName: c.fullName || "Candidate",
+        decisionStamp,
+        topMatchedSkills: topMatchedSkills.map((row) => ({ name: row.name, evidenceNote: row.evidenceNote })),
+        missingMustHave,
+        candidateYears: Number.isFinite(candidateYears) ? candidateYears : null,
+        requiredYears: parsedRequiredYears,
+        ownerRoles: ownerRoles.map((row) => ({
+          company: row.company,
+          role: row.role,
+          technologies_used: Array.isArray(row.technologies_used) ? row.technologies_used : [],
+        })),
+      });
     })(),
     feedbackStars: i.matchScore >= 80 ? 5 : i.matchScore >= 65 ? 4 : i.matchScore >= 50 ? 3 : i.matchScore >= 35 ? 2 : 1,
   };

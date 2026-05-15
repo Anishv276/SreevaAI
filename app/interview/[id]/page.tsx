@@ -576,6 +576,19 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             console.warn("Fullscreen exit failed:", err);
         }
     }, []);
+    const stopInterviewMedia = useCallback(() => {
+        const room = lkRoomRef.current;
+        if (!room) return;
+        try {
+            void room.localParticipant.setCameraEnabled(false).catch(() => { });
+        } catch { }
+        try {
+            void room.localParticipant.setMicrophoneEnabled(false).catch(() => { });
+        } catch { }
+        try {
+            room.disconnect();
+        } catch { }
+    }, []);
         const resetToHardwareCheck = useCallback(async (message?: string) => {
         if (launchRecoveryTimerRef.current !== null) {
             window.clearTimeout(launchRecoveryTimerRef.current);
@@ -603,6 +616,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         } else {
             await exitFullscreenMode();
         }
+        stopInterviewMedia();
         setShouldConnect(false);
         setToken(null);
         setServerUrl(null);
@@ -614,7 +628,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         setLaunchTimeoutCheck(0);
         setLaunchRecoveryMessage(null);
         setPhase("check");
-    }, [exitFullscreenMode]);
+    }, [exitFullscreenMode, stopInterviewMedia]);
     // Hard timeout: if agent never becomes ready within 1.5 minutes (90s), show a popup and return to check.
         useEffect(() => {
         if (phase !== "launching") return;
@@ -779,8 +793,9 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     }, [phase, interviewEndsAt, timerExpired]);
     useEffect(() => {
         if (phase !== "completed" && phase !== "finalizing") return;
+        stopInterviewMedia();
         setShouldConnect(false);
-    }, [phase]);
+    }, [phase, stopInterviewMedia]);
     return (
         <div ref={containerRef} className="min-h-screen bg-white text-gray-900 flex flex-col font-sans relative overflow-hidden" style={{ transform: 'translateZ(0)' }}>
             <AnimatePresence mode="wait">
@@ -1358,24 +1373,15 @@ function InterviewRoomContent({
             interviewCompletionHandledRef.current = false;
             return;
         }
-        if (interviewCompletionHandledRef.current) {
-            return;
-        }
         if (hasAgentPresence) {
             autoFinishTriggeredRef.current = true;
-            return;
         }
-        if (autoFinishTriggeredRef.current && connectionState === "connected") {
-            interviewCompletionHandledRef.current = true;
-            setRemoteForceFinish(true);
-        }
-    }, [connectionState, hasAgentPresence, isInterviewActive]);
+    }, [hasAgentPresence, isInterviewActive]);
     useEffect(() => {
         if (!lkRoom || !isInterviewActive) return;
         const handleRoomDisconnected = () => {
             if (interviewCompletionHandledRef.current) return;
-            interviewCompletionHandledRef.current = true;
-            setRemoteForceFinish(true);
+            console.warn("[Interview] LiveKit room disconnected; waiting for explicit termination signal.");
         };
         lkRoom.on(RoomEvent.Disconnected, handleRoomDisconnected);
         return () => {
@@ -1448,10 +1454,61 @@ function InterviewRoomContent({
     const recordingStopResolveRef = useRef<(() => void) | null>(null);
     const recordingStopRejectRef = useRef<((reason?: unknown) => void) | null>(null);
     const recordingLastChunkEndedAtRef = useRef<number | null>(null);
+    const recordingStartTimerRef = useRef<number | null>(null);
     const recordingAbandonedSentRef = useRef(false);
     const transcriptPanelRef = useRef<HTMLDivElement>(null);
+    const buildFinalizeRecordingPayload = useCallback(() => {
+        if (!recordingSessionIdRef.current) return null;
+        const startedAt = recordingStartedAtRef.current ?? Date.now();
+        const durationSec = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
+        return {
+            uploadType: "finalize_chunks",
+            applicationId: id,
+            interviewToken: interviewToken || "",
+            sessionId: recordingSessionIdRef.current,
+            chunkUrls: [...recordingChunkUrlsRef.current],
+            chunkKeys: [...recordingChunkKeysRef.current],
+            chunkCount: recordingChunkIndexRef.current,
+            duration: durationSec,
+            mimeType: recordingMimeTypeRef.current,
+            startedAt: new Date(startedAt).toISOString(),
+        };
+    }, [id, interviewToken]);
+    const sendRecordingFinalizePayload = useCallback((useBeacon: boolean) => {
+        const payload = buildFinalizeRecordingPayload();
+        if (!payload) return false;
+        const body = JSON.stringify(payload);
+        if (useBeacon && typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
+            try {
+                const beaconAccepted = navigator.sendBeacon(
+                    "/api/interview/recording",
+                    new Blob([body], { type: "application/json" })
+                );
+                if (beaconAccepted) {
+                    return true;
+                }
+            } catch {
+                // Fall through to fetch below.
+            }
+        }
+        void fetch("/api/interview/recording", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body,
+            keepalive: useBeacon,
+        }).catch(() => { });
+        return true;
+    }, [buildFinalizeRecordingPayload, id, interviewToken]);
     const markRecordingAbandoned = useCallback((reason: string) => {
-        if (recordingAbandonedSentRef.current || !recordingSessionIdRef.current || !recordingStartedRef.current) return;
+        if (
+            recordingAbandonedSentRef.current ||
+            !recordingSessionIdRef.current ||
+            !recordingStartedRef.current ||
+            recordingFinalizePromiseRef.current ||
+            recordingStopPromiseRef.current
+        ) {
+            return;
+        }
         recordingAbandonedSentRef.current = true;
         const payload = JSON.stringify({
             uploadType: "abandon",
@@ -1473,7 +1530,7 @@ function InterviewRoomContent({
             body: payload,
             keepalive: true,
         }).catch(() => { });
-    }, [id, interviewToken]);
+    }, [buildFinalizeRecordingPayload]);
     const markRecordingFailed = useCallback(async (reason: string) => {
         if (!recordingSessionIdRef.current || !recordingStartedAtRef.current) return;
         const durationSec = Math.max(1, Math.round((Date.now() - recordingStartedAtRef.current) / 1000));
@@ -1493,6 +1550,9 @@ function InterviewRoomContent({
     }, [id, interviewToken]);
     const uploadRecordingChunk = useCallback(async (blob: Blob, chunkIndex: number, chunkStartedAtMs: number, chunkEndedAtMs: number) => {
         if (!blob.size || !recordingSessionIdRef.current) return;
+        console.debug(
+            `[Recording] chunk ${chunkIndex} queued (${blob.size} bytes, ${new Date(chunkStartedAtMs).toISOString()} -> ${new Date(chunkEndedAtMs).toISOString()})`
+        );
         const formData = new FormData();
         formData.append("uploadType", "chunk");
         formData.append("applicationId", id);
@@ -1525,6 +1585,9 @@ function InterviewRoomContent({
                 if (payload?.chunkKey) {
                     recordingChunkKeysRef.current.push(String(payload.chunkKey));
                 }
+                console.debug(
+                    `[Recording] chunk ${chunkIndex} uploaded ${payload?.chunkKey ? `-> ${String(payload.chunkKey)}` : ""}`.trim()
+                );
                 return; // success
             } catch (err) {
                 lastError = err;
@@ -1545,20 +1608,11 @@ function InterviewRoomContent({
             console.warn("[Recording] No uploaded chunks found for finalization.");
             return;
         }
-        const startedAt = recordingStartedAtRef.current ?? Date.now();
-        const durationSec = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
-        const payload = {
-            uploadType: "finalize_chunks",
-            applicationId: id,
-            interviewToken: interviewToken || "",
-            sessionId: recordingSessionIdRef.current,
-            chunkUrls: recordingChunkUrlsRef.current,
-            chunkKeys: recordingChunkKeysRef.current,
-            chunkCount: recordingChunkIndexRef.current,
-            duration: durationSec,
-            mimeType: recordingMimeTypeRef.current,
-            startedAt: new Date(startedAt).toISOString(),
-        };
+        const payload = buildFinalizeRecordingPayload();
+        if (!payload) return;
+        console.debug(
+            `[Recording] finalizing ${payload.chunkUrls.length} chunk(s), ${payload.chunkCount} chunk event(s)`
+        );
         const controller = new AbortController();
         const timeout = window.setTimeout(() => controller.abort(), 60_000);
         const promise = fetch("/api/interview/recording", {
@@ -1571,13 +1625,14 @@ function InterviewRoomContent({
                 const body = await res.json().catch(() => ({}));
                 throw new Error(body?.error || "Chunk finalize failed");
             }
+            console.debug(`[Recording] finalize request accepted for ${payload.sessionId}`);
         }).finally(() => {
             window.clearTimeout(timeout);
             recordingFinalizePromiseRef.current = null;
         });
         recordingFinalizePromiseRef.current = promise;
         await promise;
-    }, [id, interviewToken]);
+    }, [buildFinalizeRecordingPayload, id, interviewToken]);
     const cleanupRecordingResources = useCallback(() => {
         if (recordingAudioContextRef.current) {
             recordingAudioContextRef.current.close().catch(() => { });
@@ -1598,6 +1653,10 @@ function InterviewRoomContent({
         recordingStopResolveRef.current = null;
         recordingStopRejectRef.current = null;
         recordingLastChunkEndedAtRef.current = null;
+        if (recordingStartTimerRef.current !== null) {
+            window.clearTimeout(recordingStartTimerRef.current);
+            recordingStartTimerRef.current = null;
+        }
         recordingStartedRef.current = false;
         recordingStartedAtRef.current = null;
     }, []);
@@ -1706,11 +1765,12 @@ function InterviewRoomContent({
         mediaRecorderRef.current = recorder;
         recordingStartedRef.current = true;
         // Use a tiny delay to ensure audio graph is stable before starting
-        setTimeout(() => {
+        recordingStartTimerRef.current = window.setTimeout(() => {
             if (recorder.state === "inactive") {
                 recorder.start(5000);
                 console.log("[Recording] Browser recorder started with isolated tracks.");
             }
+            recordingStartTimerRef.current = null;
         }, 500);
     }, [agentAudioTrack, localCameraTrack, localParticipant, uploadRecordingChunk]);
     const stopBrowserRecording = useCallback(async () => {
@@ -1960,12 +2020,20 @@ function InterviewRoomContent({
         if (document.fullscreenElement) {
             document.exitFullscreen().catch(() => { });
         }
-        // We don't await stopBrowserRecording forever.
-        // It has its own 5s timeout now, but we want to move UI fast.
-        stopBrowserRecording().catch((err) => {
+        // Keep the room alive while the final chunk upload / merge completes.
+        // If we disconnect too early, the finalize request can get cut off and
+        // the merged recording never reaches the DB.
+        const stopTimeoutMs = 15000;
+        const stopPromise = stopBrowserRecording().catch((err) => {
             console.warn("[Recording] background stop failed:", err);
         });
         onFinalizing();
+        await Promise.race([
+            stopPromise,
+            new Promise<void>((resolve) => {
+                window.setTimeout(resolve, stopTimeoutMs);
+            }),
+        ]);
         setTimeout(() => {
             try { lkRoom?.disconnect(); } catch (_) { }
             onFinish(reason);
@@ -1979,11 +2047,15 @@ function InterviewRoomContent({
         const handlePageHide = () => {
             if (!isInterviewActive) return;
             if (!recordingStartedRef.current) return;
-            markRecordingAbandoned("pagehide_before_finalize");
+            if (recordingChunkUrlsRef.current.length > 0) {
+                sendRecordingFinalizePayload(true);
+            } else {
+                markRecordingAbandoned("pagehide_before_finalize");
+            }
         };
         window.addEventListener("pagehide", handlePageHide);
         return () => window.removeEventListener("pagehide", handlePageHide);
-    }, [isInterviewActive, markRecordingAbandoned]);
+    }, [isInterviewActive, markRecordingAbandoned, sendRecordingFinalizePayload]);
     useEffect(() => {
         if (!timerExpired || !isInterviewActive) return;
         void handleFinish("normal");
@@ -2056,7 +2128,7 @@ function InterviewRoomContent({
                 </div>
             </div>
             {/* AI Avatar Area */}
-            <div className="flex-1 flex flex-col items-center justify-start p-8 relative pt-6">
+            <div className="flex-1 flex flex-col items-center justify-center px-8 pt-20 pb-10 relative">
                 <motion.div
                     animate={{
                         scale: isAiSpeaking ? [1, 1.02, 1] : [1, 1.01, 1],
@@ -2117,7 +2189,7 @@ function InterviewRoomContent({
                     </div>
                 </motion.div>
                 {latestAiTranscript && (
-                    <div className="w-full max-w-[68rem] mt-12 px-2 relative z-20">
+                    <div className="w-full max-w-[68rem] mt-16 md:mt-24 px-2 relative z-20">
                         <AnimatePresence mode="wait">
                             <motion.div
                                 key={latestAiTranscript.id}
@@ -2261,7 +2333,7 @@ function InterviewRoomContent({
                     </button>
                 </div>
                 {/* Middle: Transcript + End Interview Button */}
-                <div className="flex flex-col items-center gap-3 ">
+                <div className="flex flex-col items-center gap-3">
                     <Button
                         variant="destructive"
                         onClick={() => handleFinish("normal")}

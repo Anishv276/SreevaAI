@@ -682,7 +682,11 @@ def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
             if norm_cname in proves or norm_cname in ev_text:
                 if ev_level > best_ev_level:
                     best_ev_level = ev_level
-                    confidence = float(ev.get("confidence", 0.7))
+                    conf_val = ev.get("confidence", 0.7)
+                    if isinstance(conf_val, str):
+                        confidence = {"high": 1.0, "medium": 0.7, "low": 0.4}.get(conf_val.lower(), 0.7)
+                    else:
+                        confidence = float(conf_val)
                     matched_evidence_text = ev.get("text", "")
                     if ev_level >= 5:
                         result = "meets"

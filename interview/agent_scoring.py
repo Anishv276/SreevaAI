@@ -5,7 +5,7 @@ import time
 import urllib.request
 from typing import Optional
 from interview.agent_persistence import _extract_openai_completion_usage, persist_org_manual_billing_usage
-from interview.agent_runtime_support import APP_BASE_URL, LLM_MODEL, logger
+from interview.agent_runtime_support import APP_BASE_URL, LLM_MODEL, WORKER_SYNC_TOKEN, logger
 async def score_answer_quality(
     candidate_answer: str,
     last_question: str,
@@ -343,6 +343,7 @@ async def notify_sync_engine(app_id: str):
                 headers={
                     "Content-Type": "application/json",
                     "User-Agent": "hr-updates-agent/1.0",
+                    "x-internal-sync-token": str(WORKER_SYNC_TOKEN or ""),
                 },
                 data=b"{}",
             )

@@ -26,6 +26,57 @@ from extraction_resume_JD_score_report.prompts import (
     RESUME_SYSTEM_PROMPT,
 )
 
+def _is_weak_decision_reason(text: str) -> bool:
+    normalized = " ".join(str(text or "").strip().lower().split())
+    if not normalized:
+        return True
+    weak_markers = [
+        "ai screening analysis complete",
+        "re-scan to generate the decision note",
+        "report generation failed",
+        "decision note unavailable",
+        "no decision note",
+    ]
+    if any(marker in normalized for marker in weak_markers):
+        return True
+    sentences = [s.strip() for s in str(text).replace("!", ".").replace("?", ".").split(".") if s.strip()]
+    return len(sentences) < 3
+
+def _build_decision_reason_fallback(score_result: dict, resume_data: dict) -> str:
+    status = str(score_result.get("status", "Borderline")).strip() or "Borderline"
+    name = str(resume_data.get("full_name") or "This candidate").strip() or "This candidate"
+    skill_matching = score_result.get("skill_matching", {}) or {}
+    matched = [str(x).strip() for x in (skill_matching.get("matched_must", []) or []) if str(x).strip()]
+    missing = [str(x).strip() for x in (skill_matching.get("missing_must", []) or []) if str(x).strip()]
+    candidate_years = score_result.get("candidate_years")
+    jd_min_years = score_result.get("jd_min_years")
+    top_skill = matched[0] if matched else "core role skills"
+    matched_tail = f", plus {', '.join(matched[1:3])}" if len(matched) > 1 else ""
+    years_text = f"{candidate_years} years" if isinstance(candidate_years, (int, float)) else "the available years"
+    req_text = f"{jd_min_years} years required" if isinstance(jd_min_years, (int, float)) else "the role requirement"
+    primary_gap = ", ".join(missing[:2]) if missing else "critical must-have depth"
+
+    if status.lower() == "shortlisted":
+        return (
+            f"{name} is shortlisted because the resume shows direct evidence for {top_skill}{matched_tail} in role-relevant delivery. "
+            f"The profile indicates {years_text} against {req_text}, with ownership signals that support advancing this candidate. "
+            f"The only material risk is {primary_gap if missing else 'confirming production-grade depth in interview rather than list-level familiarity'}. "
+            f"Advance to the technical round and validate architecture decisions, delivery scope, and measurable outcomes for {top_skill}."
+        )
+    if status.lower() == "rejected":
+        return (
+            f"{name} is rejected because the resume does not provide sufficient direct evidence for role-critical requirements, especially {primary_gap}. "
+            f"The profile shows {years_text} versus {req_text}, and current ownership evidence is below the bar for this role level. "
+            f"The decisive gap is the difference between listed skills and proven delivery outcomes in required areas, despite partial positives in {top_skill}. "
+            "Reconsider only if updated evidence shows clear production ownership, scope, and measurable impact for the missing must-have requirements."
+        )
+    return (
+        f"{name} is currently borderline because matched strengths such as {top_skill} are offset by unresolved gaps like {primary_gap}. "
+        f"The profile shows {years_text} against {req_text}, but ownership depth is not yet strong enough for a clear advance decision. "
+        "The main concern is inconsistent evidence quality across must-have skills, so the current signal remains mixed. "
+        f"Use the next round as a decision gate to verify production depth, delivery scope, and decision ownership in {top_skill}."
+    )
+
 
 def _get_client() -> OpenAI:
     api_key = os.getenv("OPENAI_API_KEY", "")
@@ -55,6 +106,23 @@ def _call_llm(client: OpenAI, system: str, user: str, model: str) -> tuple[dict,
         "outputTokens": getattr(usage, "completion_tokens", 0) or 0,
         "cachedInputTokens": getattr(getattr(usage, "prompt_tokens_details", None), "cached_tokens", 0) or 0,
     }
+
+
+def _load_score_payload(json_text_or_path: str) -> str:
+    """
+    SCORE mode historically received a temp JSON file path from the worker.
+    The split pipeline also supports raw JSON text for compatibility with older
+    callers and direct tests.
+    """
+    candidate = str(json_text_or_path or "").strip()
+    if not candidate:
+        return "{}"
+
+    if os.path.exists(candidate) and os.path.isfile(candidate):
+        with open(candidate, "r", encoding="utf-8") as fh:
+            return fh.read()
+
+    return candidate
 
 
 class DocumentParser:
@@ -102,9 +170,14 @@ class DocumentParser:
     def _run_score(self, client: OpenAI, json_text: str, model_override: str | None) -> dict:
         """SCORE mode: deterministic scoring + AI report (mirrors extract_pdf.py SCORE branch)."""
         try:
-            raw = json.loads(json_text)
-        except Exception:
-            raw = {}
+            payload_str = _load_score_payload(json_text)
+            raw = json.loads(payload_str)
+        except json.JSONDecodeError as e:
+            print(json.dumps({"error": f"Invalid JSON payload for SCORE: {str(e)}", "code": "JSON_DECODE_ERROR"}))
+            sys.exit(1)
+        except Exception as e:
+            print(json.dumps({"error": f"Failed to load SCORE payload: {str(e)}", "code": "PAYLOAD_LOAD_ERROR"}))
+            sys.exit(1)
 
         jd_data = raw.get("jd", {})
         resume_data = raw.get("resume", {})
@@ -193,6 +266,9 @@ class DocumentParser:
                 **report,
                 "experience_assessment": report.get("experience_assessment") or report.get("experience_analysis") or {},
             }
+            decision_reason = str(final_data.get("decision_reason") or "").strip()
+            if _is_weak_decision_reason(decision_reason):
+                final_data["decision_reason"] = _build_decision_reason_fallback(score_result, resume_data)
             return {"data": final_data, "usage": report_usage}
 
         except Exception as exc:

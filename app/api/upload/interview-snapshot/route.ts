@@ -9,7 +9,9 @@ export async function POST(request: Request) {
         const { imageDataUrl, candidateName, applicationId, interviewToken, label } = body;
         const requireInterviewToken = isInterviewTokenRequired();
         
-        console.log(`[SNAPSHOT_API] Processing for AppID: ${applicationId}`);
+        if (process.env.DEBUG_INTERVIEW_API === "true") {
+            console.debug(`[SNAPSHOT_API] Processing for AppID: ${applicationId}`);
+        }
 
         if (!imageDataUrl || !applicationId || (requireInterviewToken && !interviewToken)) {
             return NextResponse.json({ error: "Missing required fields (imageDataUrl, applicationId, or interviewToken)" }, { status: 400 });

@@ -85,7 +85,9 @@ export const deleteObject = async (bucket: string, key: string) => {
       throw new Error("S3_UPLOAD_FAILED: Cloudflare R2 is not configured. Please set R2_ENDPOINT in your environment.");
     }
     await getR2Client().send(command);
-        console.log(`Successfully deleted ${normalizedKey} from bucket ${bucket}`);
+        if (process.env.S3_DELETE_LOGS === "true") {
+            console.log(`Successfully deleted ${normalizedKey} from bucket ${bucket}`);
+        }
         return true;
     } catch (error) {
         console.error(`R2 Deletion Error [${bucket}/${key}]:`, error);

@@ -13,6 +13,6 @@ if __name__ == "__main__":
             entrypoint_fnc=entrypoint,
             prewarm_fnc=prewarm,
             agent_name=AGENT_NAME,
-            num_idle_processes=max(1, int(os.getenv("LIVEKIT_IDLE_PROCESSES", "8"))),
+            num_idle_processes=max(1, int(os.getenv("LIVEKIT_IDLE_PROCESSES", "1"))),
         )
     )

@@ -39,7 +39,12 @@ function parseStoredEvents(raw: unknown): ProctoringEvent[] {
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
+    let body;
+    try {
+      body = await req.json();
+    } catch (e) {
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
     const result = proctoringSignalSchema.safeParse(body);
     if (!result.success) {
       return NextResponse.json(

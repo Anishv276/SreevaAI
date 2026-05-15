@@ -1,4 +1,4 @@
-import base64
+﻿import base64
 import os
 import sys
 import asyncio
@@ -17,7 +17,6 @@ import uuid
 import re
 import traceback
 from openai import AsyncOpenAI
-from collections.abc import AsyncGenerator, AsyncIterable
 try:
     import redis.asyncio as redis_asyncio  # type: ignore[import-untyped]
 except Exception:  # pragma: no cover - optional dependency
@@ -25,12 +24,12 @@ except Exception:  # pragma: no cover - optional dependency
 from interview.agent_utils import (
     _coerce_jsonish,
     _compact_optional,
-    _compact_text,
     parse_dispatch_metadata,
 )
 from interview.agent_profile_context import (
     CandidateBandContext,
     build_merged_interview_brief,
+    build_stage_seeds,
     build_resume_brief,
     first_name_from_full_name,
     infer_candidate_band,
@@ -129,103 +128,52 @@ from interview.prompt_layers import (
 from interview.turn_decision import classify_short_utterance
 from interview.probe_strategy import build_short_utterance_directive
 
-_TTS_MIN_FLUSH_WORDS = 8
-_TTS_MAX_FLUSH_WORDS = 22
-_TTS_SENTENCE_ENDINGS = {".", "?", "!"}
-_TTS_ATTACH_LEFT = {".", ",", "?", "!", ":", ";", "%", ")", "]", "}", "”", "’", '"', "'"}
-_TTS_WORD_TOKEN_RE = re.compile(r"[A-Za-z0-9]+(?:[’'\-][A-Za-z0-9]+)*")
-_TTS_TOKEN_RE = re.compile(r"[A-Za-z0-9]+(?:[’'\-][A-Za-z0-9]+)*|[^\w\s]", re.UNICODE)
 _LOCAL_STAGE_DIRECTIVE_CACHE: dict[str, dict[str, str]] = {}
 
 GREETING_FIXED_SECONDS = 60
 WARMUP_FIXED_SECONDS = 120
 NO_NEW_QUESTION_CUTOFF_SECONDS = 15
-BEHAVIORAL_RESERVED_SECONDS = NO_NEW_QUESTION_CUTOFF_SECONDS
+# Stage time split out of the ~17 min available after greeting + warmup:
+# Resume 25% (~4.5 min), Skill 30% (~5 min), Situational 25% (~4.5 min), Behavioral 20% (~3.5 min)
+BEHAVIORAL_RESERVED_SECONDS = 210   # 3.5 min — real behavioral stage, not just a 15s guard
 STAGE_PERCENT_SPLIT: dict[str, float] = {
-    "skill": 0.35,
+    "skill": 0.30,
     "situational": 0.25,
 }
 
 
-def _append_tts_token(text: str, token: str) -> str:
-    if not text:
-        return token
-
-    if token in _TTS_ATTACH_LEFT:
-        return text + token
-
-    if text[-1] in "([{\"“‘'":
-        return text + token
-
-    return text + " " + token
-
-
-def _rewrite_tts_text(text: str) -> str:
-    return _compact_text(text)
-
-
 class InterviewAgent(Agent):
-    async def tts_node(
-        self, text: AsyncIterable[str], model_settings: Any
-    ) -> AsyncGenerator[Any, None]:
+    async def tts_node(self, text, model_settings):
+        # Buffer the entire text stream into one string before sending to TTS.
+        # All TTS engines (Sarvam, Cartesia, Google) split text into sentence
+        # chunks internally. The first word of each chunk has no phoneme context,
+        # causing consonant-cluster words (build, through, quite, strength) to be
+        # synthesized letter-by-letter. Sending one complete string gives the TTS
+        # engine full context for every word.
+        full_text = ""
+        async for chunk in text:
+            full_text += chunk
+
+        if not full_text.strip():
+            return
+
         activity = self._get_activity_or_raise()
-        if activity.tts is None:
-            raise RuntimeError(
-                "`tts_node` called but no TTS node is available. If audio output is not needed, disable it using "
-                "`session.output.set_audio_enabled(False)`."
-            )
+        tts_engine = activity.tts
+        if tts_engine is None:
+            return
 
         conn_options = activity.session.conn_options.tts_conn_options
-        buffer_text = ""
-        buffer_word_count = 0
 
-        async def _synthesize_segment(segment_text: str) -> AsyncGenerator[Any, None]:
-            rewritten = _rewrite_tts_text(segment_text)
-            if not rewritten:
-                return
-
-            async with activity.tts.synthesize(
-                rewritten, conn_options=conn_options
-            ) as tts_stream:
-                async for audio in tts_stream:
-                    yield audio.frame
-
-        async def _flush_buffer() -> AsyncGenerator[Any, None]:
-            nonlocal buffer_text, buffer_word_count
-            if not buffer_text.strip():
-                buffer_text = ""
-                buffer_word_count = 0
-                return
-
-            segment = buffer_text
-            buffer_text = ""
-            buffer_word_count = 0
-
-            async for frame in _synthesize_segment(segment):
-                yield frame
-
-        async for chunk in text:
-            chunk = _compact_text(chunk)
-            if not chunk:
-                continue
-
-            for token in _TTS_TOKEN_RE.findall(chunk):
-                if _TTS_WORD_TOKEN_RE.fullmatch(token):
-                    buffer_word_count += 1
-
-                buffer_text = _append_tts_token(buffer_text, token)
-
-                if buffer_word_count >= _TTS_MAX_FLUSH_WORDS:
-                    async for frame in _flush_buffer():
-                        yield frame
-                    continue
-
-                if buffer_word_count >= _TTS_MIN_FLUSH_WORDS and token in _TTS_SENTENCE_ENDINGS:
-                    async for frame in _flush_buffer():
-                        yield frame
-
-        async for frame in _flush_buffer():
-            yield frame
+        if tts_engine.capabilities.streaming:
+            async with tts_engine.stream(conn_options=conn_options) as stream:
+                stream.push_text(full_text)
+                stream.end_input()
+                async for ev in stream:
+                    yield ev.frame
+        else:
+            async with tts_engine.synthesize(full_text, conn_options=conn_options) as stream:
+                async for ev in stream:
+                    yield ev.frame
 
 
 def prewarm(proc: JobProcess):
@@ -614,33 +562,11 @@ async def entrypoint(ctx: JobContext):
         band=session_context.candidate_band,
         resume_brief=session_context.resume_brief,
     )
-    stage2_directive_cached = build_stage_2_skill_directive(
-        band=session_context.candidate_band,
-        resume_brief=session_context.resume_brief,
-        context_brief=session_context.merged_brief_block,
-    )
-    stage3_directive_cached = build_stage_3_situational_directive(
-        band=session_context.candidate_band,
-        context_brief=session_context.merged_brief_block,
-    )
-    stage4_directive_cached = build_stage_4_behavioral_directive(
-        band=session_context.candidate_band,
-        context_brief=session_context.merged_brief_block,
-    )
-    # Write all 4 stages to Redis for failover. In-memory variables are the primary source —
-    # no read-back needed since we just built them.
+    # Stages 2-4 are built dynamically at injection time so they reflect what was
+    # actually covered in prior stages. Only stage 1 is cached — it has no prior context.
     await _cache_stage_directive("stage1", stage1_directive_cached)
-    await _cache_stage_directive("stage2", stage2_directive_cached)
-    await _cache_stage_directive("stage3", stage3_directive_cached)
-    await _cache_stage_directive("stage4", stage4_directive_cached)
-    logger.info("[5/6] STAGES CACHED — stage1=%dbytes stage2=%dbytes stage3=%dbytes stage4=%dbytes",
-        len(stage1_directive_cached), len(stage2_directive_cached),
-        len(stage3_directive_cached), len(stage4_directive_cached),
-    )
+    logger.info("[5/6] STAGE 1 CACHED — %dbytes", len(stage1_directive_cached))
     logger.info("[STAGE 1 CONTENT]\n%s", stage1_directive_cached)
-    logger.info("[STAGE 2 CONTENT]\n%s", stage2_directive_cached)
-    logger.info("[STAGE 3 CONTENT]\n%s", stage3_directive_cached)
-    logger.info("[STAGE 4 CONTENT]\n%s", stage4_directive_cached)
     voice_layer_prompt = build_voice_layer_prompt(
         candidate_name=candidate_first_name or candidate_name,
         job_title=job_title,
@@ -778,8 +704,6 @@ async def entrypoint(ctx: JobContext):
             "use_tts_aligned_transcript": False,
             "tts_text_transforms": [
                 "filter_emoji",
-                "filter_markdown",
-                _single_question_transform,
                 text_transforms.replace({
                     "HR": "H R",
                     "SaaS": "sass",
@@ -791,6 +715,7 @@ async def entrypoint(ctx: JobContext):
                     "DevOps": "dev ops",
                     "LiveKit": "Live Kit",
                 }),
+                _single_question_transform,
             ],
             "aec_warmup_duration": 2.5,
         }
@@ -963,23 +888,93 @@ async def entrypoint(ctx: JobContext):
             _stage_budgets_secs[idx] = secs
 
     def _build_stage_directive_by_index(stage_idx: int) -> Optional[str]:
-        stage_directive_builders: dict[int, Any] = {
-            1: lambda: stage2_directive_cached or build_stage_2_skill_directive(
+        # All stages built fresh at injection time — read actual transcript
+        # to know what was covered in prior stages so nothing repeats.
+        rb = session_context.resume_brief
+
+        # Collect every word Ishita and the candidate said (lowercased for matching)
+        all_transcript_text = " ".join(
+            l.split(":", 1)[-1].strip().lower()
+            for l in transcript_lines
+        )
+
+        def _covered_keywords(sources: list[str]) -> list[str]:
+            # Match on first meaningful word chunk of each item (before " - ")
+            # Also try individual words for short skill names like "n8n", "python"
+            found = []
+            for item in sources:
+                short = str(item).split(" - ")[0].strip()
+                kw = short.lower()
+                if not kw:
+                    continue
+                # Match if the keyword appears as a whole word in transcript
+                import re as _re
+                pattern = _re.compile(r'\b' + _re.escape(kw) + r'\b')
+                if pattern.search(all_transcript_text):
+                    found.append(short)
+            return found
+
+        def _get_list(attr: str) -> list[str]:
+            if isinstance(rb, dict):
+                return list(rb.get(attr, []) or [])
+            return list(getattr(rb, attr, None) or [])
+
+        all_skills = _get_list("skills")
+        all_projects = _get_list("projects")
+        all_work = _get_list("work_history")
+
+        # Build fresh stage seeds at injection time so they reflect actual coverage
+        def _fresh_seeds() -> str:
+            covered_so_far = _covered_keywords(all_projects + all_work)
+            return build_stage_seeds(
+                candidate_name=candidate_first_name or candidate_name,
+                job_title=job_title,
+                candidate_band=session_context.candidate_band,
+                resume_context=resume_context,
+                jd_details=extracted_details,
+                covered_topics=covered_so_far,
+            )
+
+        if stage_idx == 1:
+            covered_in_s1 = _covered_keywords(all_skills + all_projects)
+            logger.info(
+                "[STAGE 2 BUILD] covered_in_stage1=%s | fresh_skills will be derived",
+                covered_in_s1,
+            )
+            return build_stage_2_skill_directive(
                 band=session_context.candidate_band,
-                resume_brief=session_context.resume_brief,
+                resume_brief=rb,
                 context_brief=session_context.merged_brief_block,
-            ),
-            2: lambda: stage3_directive_cached or build_stage_3_situational_directive(
+                covered_in_stage1=covered_in_s1,
+            )
+
+        if stage_idx == 2:
+            all_covered = _covered_keywords(all_skills + all_projects + all_work)
+            seeds = _fresh_seeds()
+            logger.info(
+                "[STAGE 3 BUILD] covered_so_far=%s",
+                all_covered,
+            )
+            return build_stage_3_situational_directive(
                 band=session_context.candidate_band,
-                context_brief=session_context.merged_brief_block,
-            ),
-            3: lambda: stage4_directive_cached or build_stage_4_behavioral_directive(
+                context_brief=seeds,
+                covered_topics=all_covered,
+            )
+
+        if stage_idx == 3:
+            all_covered = _covered_keywords(all_skills + all_projects + all_work)
+            seeds = _fresh_seeds()
+            logger.info(
+                "[STAGE 4 BUILD] covered_so_far=%s",
+                all_covered,
+            )
+            return build_stage_4_behavioral_directive(
                 band=session_context.candidate_band,
-                context_brief=session_context.merged_brief_block,
-            ),
-        }
-        builder = stage_directive_builders.get(stage_idx)
-        return builder() if builder else None
+                context_brief=seeds,
+                covered_topics=all_covered,
+            )
+
+        return None
     def _topics_for_stage(stage_idx: int) -> list[str]:
         stage_name = ""
         if 0 <= stage_idx < len(STAGE_CONFIGS):
@@ -1088,9 +1083,14 @@ async def entrypoint(ctx: JobContext):
             return False
         stage_budget = max(0, int(_stage_budgets_secs.get(_current_stage_index, 0)))
         time_in_stage = max(0.0, now_mono - _stage_start_time)
-        logger.info("[STAGE_TIMER] stage=%d time_in_stage=%.0fs budget=%ds remaining=%.0fs",
-            _current_stage_index + 1, time_in_stage, stage_budget, stage_budget - time_in_stage)
+        remaining_in_stage = stage_budget - time_in_stage
+        logger.info("[STAGE_TIMER] stage=%d time_in_stage=%.0fs budget=%ds countdown=%.0fs",
+            _current_stage_index + 1, time_in_stage, stage_budget, remaining_in_stage)
         if time_in_stage < stage_budget:
+            return False
+        # Budget expired — wait until candidate finishes speaking before injecting
+        if is_candidate_speaking:
+            logger.info("[STAGE_TIMER] Budget expired but candidate is speaking — waiting")
             return False
         if (
             _behavioral_stage_idx is not None
@@ -1314,13 +1314,10 @@ async def entrypoint(ctx: JobContext):
                         "question from the current stage objective. Do not keep explaining."
                     ),
                 )
-            speaker = "Candidate"
-            append_transcript_line(speaker, content)
-            logger.info(f"[TRANSCRIPT] {speaker}: {content[:60]}...")
             # Inject structured recent Q&A context for callbacks and contradiction detection.
             if _last_interviewer_question and turn_snapshot > 1:
                 recent_context = _build_recent_context_block(
-                    transcript_lines, _last_interviewer_question, n_exchanges=3
+                    transcript_lines, _last_interviewer_question, n_exchanges=1
                 )
                 if recent_context:
                     remove_system_messages(chat_ctx, "[RECENT_CONTEXT]")
@@ -1495,6 +1492,12 @@ async def entrypoint(ctx: JobContext):
                                 f"NEXT MOVE: {_fallback_next}"
                             )
                         action = td["decision"]["action"]
+                        # Guard: evaluator cannot MOVE_ON on the very first answer to a new topic.
+                        # follow_ups == 0 means we haven't asked a single follow-up yet — force PROBE.
+                        if action == "MOVE_ON" and follow_ups == 0:
+                            action = "PROBE"
+                            td["decision"]["action"] = "PROBE"
+                            logger.info("[FOLLOWUP] Evaluator returned MOVE_ON on first answer — overriding to PROBE (follow_up_count=0)")
                         signal_events = td.get("signal_events", [])
                         depth_signal = "SURFACE"
                         quality_avg = (
@@ -1505,12 +1508,12 @@ async def entrypoint(ctx: JobContext):
                             depth_signal = "DEEP"
                         elif quality_avg >= 4.5:
                             depth_signal = "SPECIFIC"
-                        if action == "MOVE_ON" and quality_avg < 3.5:
+                        if quality_avg < 3.5:
                             _consecutive_low_signal_move_on += 1
                         else:
                             _consecutive_low_signal_move_on = 0
                         if (
-                            _consecutive_low_signal_move_on >= 2
+                            _consecutive_low_signal_move_on >= 3
                             and warmup_complete
                             and _stage_start_time > 0
                             and _current_stage_index < len(STAGE_CONFIGS) - 1
@@ -1552,10 +1555,21 @@ async def entrypoint(ctx: JobContext):
                             )
                             if action in ("PROBE", "VERIFY"):
                                 _topic_follow_up_count += 1
-                                # Hard cap: after follow_up_depth follow-ups, force pivot to next topic
-                                if _topic_follow_up_count >= follow_up_depth:
+                                # Quality-based exhaustion: move on when topic is genuinely exhausted.
+                                # A topic is exhausted when:
+                                #   (a) hard cap hit (absolute safety net), OR
+                                #   (b) 2+ follow-ups AND last 2 answers were both low quality (< 4.0)
+                                #       meaning candidate has nothing more to give on this thread
+                                last_two_low = (
+                                    len(_topic_depth_history) >= 2
+                                    and _topic_depth_history[-1] < 4.0
+                                    and _topic_depth_history[-2] < 4.0
+                                )
+                                hard_cap_hit = _topic_follow_up_count >= follow_up_depth
+                                if hard_cap_hit or (last_two_low and _topic_follow_up_count >= 2):
+                                    reason_note = "cap" if hard_cap_hit else "quality exhausted"
                                     action = "MOVE_ON"
-                                    next_goal = "Follow-up cap reached. Move to the next topic naturally within this stage."
+                                    next_goal = "This thread is exhausted. Pivot naturally to the next topic within this stage — no announcement."
                                     td["decision"]["action"] = "MOVE_ON"
                                     td["decision"]["next_goal"] = next_goal
                                     directive = (
@@ -1563,13 +1577,13 @@ async def entrypoint(ctx: JobContext):
                                         f"DECISION: MOVE_ON\n"
                                         f"NEXT MOVE: {next_goal}"
                                     )
-                                    logger.info("[FOLLOWUP] Cap reached (%d/%d turns) — forcing MOVE_ON to next topic", _topic_follow_up_count, follow_up_depth)
+                                    logger.info("[FOLLOWUP] Moving on (%s, follow_ups=%d) — topic exhausted", reason_note, _topic_follow_up_count)
                                     _topic_follow_up_count = 0
                                     _topic_depth_history = []
                                     _collapse_stage = 0
                                     _last_action_was_move_on = True
                                 else:
-                                    logger.info("[FOLLOWUP] Follow-up %d/%d — continuing PROBE", _topic_follow_up_count, follow_up_depth)
+                                    logger.info("[FOLLOWUP] Follow-up %d — continuing PROBE (quality=%.1f)", _topic_follow_up_count, quality_avg)
                                     if collapse_fired:
                                         _collapse_stage += 1
                                     elif _collapse_stage > 0 and not collapse_fired:
@@ -1708,13 +1722,11 @@ async def entrypoint(ctx: JobContext):
                                 f"If they stall or contradict again, note it internally and continue."
                             )
                         # Remove previous directive to keep context clean
-                        messages = chat_ctx.messages() if callable(getattr(chat_ctx, "messages", None)) else chat_ctx.messages
-                        for old_msg in list(messages):
-                            if getattr(old_msg, "role", "") == "system" and "[NEXT_TURN_DIRECTIVE" in (getattr(old_msg, "content", "") or ""):
-                                try:
-                                    messages.remove(old_msg)
-                                except (ValueError, AttributeError):
-                                    pass
+                        remove_system_messages(chat_ctx, "[NEXT_TURN_DIRECTIVE")
+                        # On MOVE_ON, also clear RECENT_CONTEXT so the LLM doesn't
+                        # keep referencing the old topic and re-probe it next turn.
+                        if action == "MOVE_ON":
+                            remove_system_messages(chat_ctx, "[RECENT_CONTEXT")
                         logger.info(
                             "[DIRECTIVE] action=%s mode=%s turn=%d collapse_stage=%d",
                             td["decision"]["action"], td["decision"]["mode"],
@@ -1732,13 +1744,33 @@ async def entrypoint(ctx: JobContext):
     @session.on("conversation_item_added")
     def on_conversation_item_added(event) -> None:
         nonlocal session_start_time, turn_count, last_injection_turn, \
-            _last_interviewer_question, _topic_follow_up_count, \
+            _last_interviewer_question, _topic_follow_up_count, _topic_depth_history, _last_action_was_move_on, \
             _question_asked_at, _answer_received_at, warmup_responses_received, warmup_complete, llm_spoke_event, _stage_start_time, _candidate_turn_since_last_assistant
         try:
             item = event.item
             role = getattr(item, "role", None)
             content = item.text_content
             if role == "assistant":
+                # Read topic signal from raw LLM output BEFORE sanitization strips it.
+                raw_content = content or ""
+                _topic_tag = None
+                for _raw_line in raw_content.splitlines():
+                    _stripped = _raw_line.strip()
+                    if _stripped.startswith("[TOPIC:NEW"):
+                        _topic_tag = "NEW"
+                        break
+                    elif _stripped.startswith("[TOPIC:FOLLOWUP"):
+                        _topic_tag = "FOLLOWUP"
+                        break
+                if _topic_tag == "NEW":
+                    _topic_follow_up_count = 0
+                    _topic_depth_history = []
+                    _last_action_was_move_on = False
+                    logger.info("[TOPIC_SIGNAL] Ishita signaled NEW TOPIC — follow-up counter reset")
+                elif _topic_tag == "FOLLOWUP":
+                    logger.info("[TOPIC_SIGNAL] Ishita signaled FOLLOWUP — counter stays at %d", _topic_follow_up_count)
+                else:
+                    logger.debug("[TOPIC_SIGNAL] No topic tag in assistant response — counter unchanged (%d)", _topic_follow_up_count)
                 content = sanitize_candidate_facing_text(content)
             if not role:
                 return
@@ -1769,6 +1801,11 @@ async def entrypoint(ctx: JobContext):
                         chat_ctx.add_message(role="system", content=stage1_directive)
                         _stage_start_time = time.monotonic()
                         logger.info("[STAGE 1] ▶ STARTED — anchor=%s", stage1_directive_cached[:80] if stage1_directive_cached else "none")
+                # Append candidate response to transcript before background processing
+                candidate_text = content.replace("<wait for response>", "").strip()
+                if candidate_text:
+                    append_transcript_line("Candidate", candidate_text)
+                    logger.info(f"[TRANSCRIPT] Candidate: {candidate_text[:60]}...")
                 turn_snapshot = turn_count
                 spawn_background_task(
                     _process_user_conversation_item(event, content, role, turn_snapshot),
@@ -1797,7 +1834,8 @@ async def entrypoint(ctx: JobContext):
                 _question_asked_at = time.perf_counter()
                 _candidate_turn_since_last_assistant = False
                 turn_count += 1
-                # ── Stage advance check (time-budgeted) ────────────────────────
+            # ── Stage advance check on every turn (assistant or candidate) ──────
+            if warmup_complete:
                 _advance_stage_if_due(time.monotonic())
             # --- Periodic auto-save every 5 turns to prevent data loss ---
             if len(transcript_lines) > 0:
@@ -2035,17 +2073,12 @@ async def entrypoint(ctx: JobContext):
     finished_task = asyncio.create_task(interview_finished_event.wait())
     disconnected_task = asyncio.create_task(disconnect_event.wait())
     total_seconds = time_limit_mins * 60
-    # Timed intervention flags
-    candidate_questions_asked = False
-    wrap_up_signal_sent = False
     # Fixed inactivity timing so the candidate always gets the same experience.
     # 50s silence -> warning, 60s silence -> end call.
     INACTIVITY_WARNING_SECS = 50
     INACTIVITY_END_SECS = 60
-    CANDIDATE_Q_TRIGGER_SECS = max(10, min(120, int(total_seconds * 0.2)))
-    FINAL_THANKS_TRIGGER_SECS = 10
+    FINAL_THANKS_TRIGGER_SECS = 15
     final_timeout_announced = False
-    MIN_CANDIDATE_LINES_FOR_WRAPUP = 3
     inactivity_nudge_count = 0
     async def _deliver_nudge(text: str) -> None:
         await session.say(text, allow_interruptions=True)
@@ -2096,6 +2129,7 @@ async def entrypoint(ctx: JobContext):
         ]
         return generic_nudges[inactivity_nudge_count % len(generic_nudges)]
     session_loop_start = time.monotonic()
+    _last_periodic_stage_check = time.monotonic()
     while True:
         elapsed = time.monotonic() - session_loop_start
         remaining = total_seconds - elapsed
@@ -2103,6 +2137,14 @@ async def entrypoint(ctx: JobContext):
             break
         if remaining <= 0:
             break
+        # ── Periodic stage advance: fires every 10s unconditionally ──────────
+        # The event-driven check fires on assistant turns only, which may be
+        # infrequent or missing with some TTS/STT providers. This guarantees
+        # stage budgets are enforced even during continuous conversation.
+        _now = time.monotonic()
+        if warmup_complete and _now - _last_periodic_stage_check >= 10.0:
+            _advance_stage_if_due(_now)
+            _last_periodic_stage_check = _now
         if (
             remaining <= NO_NEW_QUESTION_CUTOFF_SECONDS
             and not _final_no_new_question_guard
@@ -2120,66 +2162,18 @@ async def entrypoint(ctx: JobContext):
                 "[TIMING] Activated final no-new-question guard (remaining=%.1fs)",
                 remaining,
             )
-        # --- 2-3 min remaining: wrap-up / candidate questions nudge ---
-        # Fire when close to the end. Tailor text based on how much the candidate said.
-        candidate_line_count = sum(
-            1 for line in transcript_lines if line.startswith("Candidate:")
-        )
-        if (
-            not candidate_questions_asked
-            and remaining <= CANDIDATE_Q_TRIGGER_SECS
-            and not is_agent_speaking
-        ):
-            candidate_questions_asked = True
-            if not wrap_up_signal_sent:
-                wrap_up_signal_sent = True
-                chat_ctx.add_message(
-                    role="system",
-                    content="[SYSTEM ALERT: TIME LOW] The interview is approaching the time limit. Please conclude the current topic and transition to closing. Do not start new technical questions."
-                )
-            if candidate_line_count >= MIN_CANDIDATE_LINES_FOR_WRAPUP:
-                # Normal wrapup - we had a real conversation
-                candidate_q_text = (
-                    f"We are coming up on time, {candidate_first_name or candidate_name}. "
-                    "Before we wrap up - is there anything you want to make sure you have said, "
-                    "or anything you want to ask me about the role?"
-                )
-            else:
-                # Short/thin session - do not pretend we covered a lot
-                candidate_q_text = (
-                    f"We are nearly at time, {candidate_first_name or candidate_name}. "
-                    "Is there anything you would like to add, or anything you want to ask me?"
-                )
-            try:
-                await session.say(candidate_q_text)
-                logger.info(
-                    f"[TIMING] Candidate-questions nudge delivered (candidate_lines={candidate_line_count})"
-                )
-            except Exception as e:
-                logger.warning(
-                    f"[TIMING] Failed to deliver candidate-questions nudge: {e}"
-                )
-        # --- Final 10 seconds: strict timeout announcement + force close ---
+        # --- Final 15 seconds: thank you and close ---
         if remaining <= FINAL_THANKS_TRIGGER_SECS:
             if not final_timeout_announced:
                 final_timeout_announced = True
                 try:
                     await session.say(
-                        f"We have reached the end of the interview time, {candidate_first_name or candidate_name}. "
-                        "I need to close the session now. Thank you for your time.",
+                        f"Thank you for your time today, {candidate_first_name or candidate_name}. That's all from my side. All the best.",
                         allow_interruptions=True,
                     )
                 except Exception as e:
                     logger.warning(f"[TIMING] Final timeout announcement failed: {e}")
             break
-        # --- Strict Inactivity Handling ---
-        # Suppressed after wrap-up nudge to avoid piling on messages near end.
-        # 1. 30s: Initial warm nudge
-        # 2. 60s: Termination warning
-        # 3. 70s: Final exit
-        if candidate_questions_asked:
-            await asyncio.sleep(1)
-            continue
         inactivity_elapsed = (
             (time.monotonic() - awaiting_candidate_since)
             if awaiting_candidate_response and awaiting_candidate_since is not None

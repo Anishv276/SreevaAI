@@ -218,7 +218,7 @@ TRANSFERABLE_SKILLS: dict[str, list[str]] = {
     "spring": ["java", "springboot"],
     "dsa": ["java", "python", "javascript", "typescript", "cpp"],
     "oop": ["java", "python", "javascript", "typescript", "spring", "django"],
-    "rest": ["node", "express", "spring", "django", "fastapi", "flask"],
+    "rest": ["node", "express", "spring", "django", "fastapi", "flask", "graphql", "grpc", "api"],
     "aws": ["gcp", "azure", "cloudcomputing"],
     "gcp": ["aws", "azure", "cloudcomputing"],
     "azure": ["aws", "gcp", "cloudcomputing"],

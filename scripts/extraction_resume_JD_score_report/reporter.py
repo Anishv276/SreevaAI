@@ -194,6 +194,8 @@ OUTPUT FIELD INSTRUCTIONS
                     "FORBIDDEN words anywhere in output: 'strong communicator', 'team player', 'passionate', 'motivated', 'fast learner', 'detail-oriented', 'has experience with'. "
                     "REQUIRED evidence pattern: 'At [Company], [built/led/owned] [specific thing] using [tool] — [outcome/scale/metric]'. "
                     "TONE: Professional, factual, constructive. Rejected candidates get honest specific gaps, not unkind language. "
+                    "DECISION BRIEF STYLE: Write decision_reason as a strict hiring recommendation, not a generic summary. "
+                    "Avoid soft hedging terms and avoid motivational language. Use direct pass/fail reasoning tied to role requirements. "
                     "BIAS: Zero tolerance. No inference from name, nationality, gender, age, or education prestige alone. "
                     "fit_radar values are YOUR independent analytical judgment — do not copy score breakdown numbers. "
                     "Output ONLY valid JSON. No markdown. No code fences. No extra text outside the JSON object."

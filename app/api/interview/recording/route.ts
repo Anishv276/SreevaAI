@@ -345,7 +345,9 @@ export async function POST(req: Request) {
     try {
         const contentType = req.headers.get("content-type") || "";
         const contentLength = req.headers.get("content-length") || "unknown";
-        console.log(`[RECORDING_API] Incoming Request: ${contentType}, length: ${contentLength}`);
+        if (process.env.DEBUG_INTERVIEW_API === "true") {
+            console.debug(`[RECORDING_API] Incoming Request: ${contentType}, length: ${contentLength}`);
+        }
 
         const bucket = process.env.R2_INTERVIEW_BUCKET || "interview";
         const requireInterviewToken = isInterviewTokenRequired();
@@ -391,6 +393,9 @@ export async function POST(req: Request) {
 
                 const chunkKey = `${INTERVIEW_CANDIDATES_PREFIX}/${safeCandidate}/recordings/.chunks/${sessionId}/part-${String(chunkIndex).padStart(6, "0")}.webm`;
                 const chunkUrl = await uploadWithRetry(bucket, chunkKey, buffer, mimeType);
+                console.debug(
+                    `[RECORDING_CHUNK] app=${applicationId} session=${sessionId} chunk=${chunkIndex} bytes=${recording.size} key=${chunkKey}`
+                );
 
                 await prisma.interview.upsert({
                     where: { applicationId },
@@ -504,6 +509,10 @@ export async function POST(req: Request) {
 
             if (uploadType === "abandon") {
                 const reason = String(body?.reason || "recording_session_abandoned").slice(0, 200);
+                const current = await getManifest(applicationId);
+                if (current.mergeFinished) {
+                    return NextResponse.json({ success: true, uploadType: "abandon", ignored: true });
+                }
                 await tryUpdateRecordingState({
                     applicationId,
                     status: "ABANDONED",
@@ -569,6 +578,15 @@ export async function POST(req: Request) {
             const startedAt = parseDateValue(body?.startedAt);
             const completedAt = new Date();
 
+            const currentManifest = await getManifest(applicationId);
+            if (currentManifest.mergeFinished) {
+                return NextResponse.json({
+                    success: true,
+                    uploadType: "finalize_chunks",
+                    alreadyFinalized: true,
+                });
+            }
+
             await tryUpdateRecordingState({
                 applicationId,
                 status: "FINALIZING",
@@ -604,11 +622,17 @@ export async function POST(req: Request) {
                 }
 
                 if (resolvedChunkKeys.length) {
+                    console.debug(
+                        `[RECORDING_MERGE] app=${applicationId} session=${effectiveSessionId} using ${resolvedChunkKeys.length} stored chunk(s)`
+                    );
                     for (const chunkKey of resolvedChunkKeys) {
                         const buf = await getObjectBuffer(bucket, chunkKey);
                         buffers.push(buf);
                     }
                 } else {
+                    console.debug(
+                        `[RECORDING_MERGE] app=${applicationId} session=${effectiveSessionId} using ${chunkUrls.length} url chunk(s)`
+                    );
                     for (const chunkUrl of chunkUrls) {
                         const response = await fetch(chunkUrl);
                         if (!response.ok) {
@@ -627,6 +651,9 @@ export async function POST(req: Request) {
                 const finalSessionId = resolved.sessionId || sessionId || crypto.randomUUID();
                 const finalKey = `${INTERVIEW_CANDIDATES_PREFIX}/${safeCandidate}/recordings/${Date.now()}-interview-${finalSessionId}.webm`;
                 const recordingUrl = await uploadWithRetry(bucket, finalKey, finalBuffer, mimeType);
+                console.debug(
+                    `[RECORDING_MERGE] app=${applicationId} session=${finalSessionId} merged=${buffers.length} finalKey=${finalKey}`
+                );
 
                 await persistRecordingComplete({
                     applicationId,
@@ -653,6 +680,9 @@ export async function POST(req: Request) {
                     Array.from(cleanupKeys).map(async (key: string) => {
                         await deleteObject(bucket, key).catch(() => { });
                     })
+                );
+                console.debug(
+                    `[RECORDING_CLEANUP] app=${applicationId} session=${finalSessionId} deleted=${cleanupKeys.size}`
                 );
 
                 try {

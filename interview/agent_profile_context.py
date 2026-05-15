@@ -411,31 +411,49 @@ def refresh_candidate_band_context(context: CandidateBandContext) -> CandidateBa
 
 def _extract_jd_must_haves(jd_data: dict[str, Any]) -> list[str]:
     """
-    Extract must-have skills strictly from extractedDetails JSON. No text fallback.
+    Extract must-have skills from extractedDetails JSON.
+    Tries multiple key paths to handle different JD schema shapes.
     Returns at most 8 items to keep the prompt concise.
     """
-    must_have_entries = _as_list(_deep_get(jd_data, "skills.must_have"))
-    capabilities: list[str] = []
+    def _parse_entries(entries: list) -> list[str]:
+        out: list[str] = []
+        for item in entries:
+            if isinstance(item, dict):
+                skill = _first_text(item.get("skill"), item.get("name"), item.get("title"))
+                why = _first_text(item.get("why_needed"), item.get("reason"), item.get("description"))
+                if skill and why:
+                    out.append(f"{skill} ({why})")
+                elif skill:
+                    out.append(skill)
+                elif why:
+                    out.append(why)
+            else:
+                text = _first_text(item)
+                if text:
+                    out.append(text)
+        return out
 
-    for item in must_have_entries:
-        if isinstance(item, dict):
-            skill = _first_text(item.get("skill"))
-            why = _first_text(item.get("why_needed"))
-            if skill and why:
-                capabilities.append(f"{skill} ({why})")
-            elif skill:
-                capabilities.append(skill)
-            elif why:
-                capabilities.append(why)
-        else:
-            text = _first_text(item)
-            if text:
-                capabilities.append(text)
+    # Path 1: skills.must_have (original schema)
+    entries = _as_list(_deep_get(jd_data, "skills.must_have"))
+    capabilities = _parse_entries(entries)
 
-    # Fallback: pull from top-level requirements if skills.must_have is empty.
+    # Path 2: criteria (your actual JD schema from extractedDetails)
     if not capabilities:
-        requirements = _extract_text_items(_deep_get(jd_data, "requirements"))
-        capabilities.extend(requirements)
+        entries = _as_list(_deep_get(jd_data, "criteria"))
+        capabilities = _parse_entries(entries)
+
+    # Path 3: criteria.must_have
+    if not capabilities:
+        entries = _as_list(_deep_get(jd_data, "criteria.must_have"))
+        capabilities = _parse_entries(entries)
+
+    # Path 4: top-level requirements
+    if not capabilities:
+        capabilities = _extract_text_items(_deep_get(jd_data, "requirements"))
+
+    # Path 5: keywords as last resort
+    if not capabilities:
+        capabilities = _extract_text_items(_deep_get(jd_data, "keywords"))
 
     return _extract_text_items(capabilities)[:8]
 
@@ -512,3 +530,54 @@ def build_merged_interview_brief(
         f"Interview strategy: {band_strategy}",
     ]
     return _format_compact_section("INTERVIEW BRIEF", lines).strip()
+
+
+# ---------------------------------------------------------------------------
+# Public API: build_stage_seeds
+# Condensed scenario/behavioral seeds for Stage 3 & 4 — NOT the full brief.
+# Replaces injecting the raw merged_brief_block verbatim into later stages.
+# ---------------------------------------------------------------------------
+
+def build_stage_seeds(
+    *,
+    candidate_name: str,
+    job_title: str,
+    candidate_band: str,
+    resume_context: ResumeContext,
+    jd_details: Any,
+    covered_topics: Optional[list[str]] = None,
+) -> str:
+    """
+    Build a tight scenario-seed block for Stage 3 (situational) and Stage 4 (behavioral).
+    Contains only what those stages need: role, band, top projects NOT yet covered, JD must-haves.
+    Does NOT repeat the full brief — that's already in the evaluation layer.
+    """
+    jd_data = _coerce_jsonish(jd_details)
+    jd_must_haves = _extract_jd_must_haves(jd_data)
+    covered = set(str(t).lower().strip() for t in (covered_topics or []))
+
+    # Pick top projects/roles that haven't been covered in earlier stages
+    all_items = resume_context.projects + resume_context.work_history
+    fresh_items = [
+        item for item in all_items
+        if not any(c in str(item).lower() for c in covered if len(c) > 4)
+    ][:3]
+    # If everything was covered, fall back to all items (still useful as scenario seeds)
+    seed_items = fresh_items or all_items[:3]
+
+    safe_name = (candidate_name or "Candidate").strip()
+    safe_role = (job_title or "the role").strip()
+
+    lines = [
+        f"Candidate: {safe_name}  |  Role: {safe_role}  |  Band: {candidate_band}",
+        f"Current role: {resume_context.current_role or 'Not specified'}",
+    ]
+    if jd_must_haves:
+        lines.append(f"JD must-haves to probe: {_join_items(jd_must_haves, 5)}")
+    if seed_items:
+        lines.append("Scenario seeds (use these — do NOT re-ask what was already covered in Stage 1/2):")
+        for item in seed_items:
+            lines.append(f"  - {str(item).strip()}")
+    if covered_topics:
+        lines.append(f"Already covered in earlier stages: {', '.join(list(covered)[:5])}")
+    return "\n".join(lines).strip()
