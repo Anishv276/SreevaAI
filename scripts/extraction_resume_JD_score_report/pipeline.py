@@ -6,13 +6,20 @@ the state dict flows through, making failures easy to trace and recover.
 """
 from __future__ import annotations
 import json
+import os
 import sys
 from typing import TypedDict, Optional
+
+# Ensure the parent `scripts/` directory is on sys.path so sibling packages resolve
+_scripts_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _scripts_dir not in sys.path:
+    sys.path.insert(0, _scripts_dir)
 
 from extraction_resume_JD_score_report.extractor import DocumentExtractor
 from extraction_resume_JD_score_report.parser import DocumentParser
 from extraction_resume_JD_score_report.scorer import ScoringEngine
-from extraction_resume_JD_score_report.reporter import ReportGenerator
+# reporter.py exposes generate_report_inline() — called internally via DocumentParser.
+# No class-level import needed here.
 
 
 # ---------------------------------------------------------------------------
@@ -177,3 +184,65 @@ class HRPipeline:
         sys.stderr.write("--- [100%] Scoring complete! ---\n")
         sys.stderr.flush()
         return final_res
+
+
+# ---------------------------------------------------------------------------
+# CLI entry point — called by extract_pdf.py via `from pipeline import main`
+# Mirrors the exact stdout JSON contract the Node.js worker expects.
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+    """
+    CLI entry point. Reads arguments from sys.argv, delegates to HRPipeline,
+    and prints the result as JSON to stdout.
+
+    Usage (called by the Node worker via subprocess):
+        python extract_pdf.py <file_path> <doc_type> [model_override] [screening_criteria_json]
+
+    Doc types:
+        JD      → Extract and parse a Job Description PDF.
+        RESUME  → Extract and parse a Resume PDF.
+        SCORE   → Score a candidate against a JD (input is JSON text, not a file).
+    """
+    import json as _json
+
+    args = sys.argv[1:]
+    if len(args) < 2:
+        _json.dump({"error": "Usage: extract_pdf.py <file_path> <doc_type> [model] [criteria_json]"}, sys.stdout)
+        sys.exit(1)
+
+    file_path = args[0]
+    doc_type = args[1].upper()
+    model_override = args[2] if len(args) > 2 and args[2] else None
+    screening_criteria: dict | None = None
+
+    if len(args) > 3 and args[3]:
+        try:
+            screening_criteria = _json.loads(args[3])
+        except Exception:
+            pass  # Invalid JSON — treat as None, don't crash the pipeline.
+
+    pipeline = HRPipeline()
+
+    if doc_type == "SCORE":
+        # file_path is actually the raw JSON text for SCORE mode.
+        result = pipeline.run_score(
+            json_text=file_path,
+            model_override=model_override,
+            screening_criteria=screening_criteria,
+        )
+    else:
+        result = pipeline.run_jd_or_resume(
+            file_path=file_path,
+            doc_type=doc_type,
+            model_override=model_override,
+        )
+
+    if result.get("error"):
+        sys.stderr.write(f"[PIPELINE ERROR] {result['error']}\n")
+        sys.stderr.flush()
+        _json.dump(result, sys.stdout)
+        sys.exit(1)
+
+    _json.dump(result, sys.stdout)
+    sys.stdout.flush()

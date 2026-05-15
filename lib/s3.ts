@@ -1,22 +1,30 @@
 import { S3Client, PutObjectCommand, GetObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 
-const r2Endpoint = process.env.R2_ENDPOINT;
-const r2AccessKey = process.env.R2_ACCESS_KEY_ID;
-const r2SecretKey = process.env.R2_SECRET_ACCESS_KEY;
+let _r2Client: S3Client | null = null;
 
-if (!r2Endpoint || !r2AccessKey || !r2SecretKey) {
-  console.warn("WARNING: S3/R2 configuration is incomplete. Uploads and deletions will fail until R2_ENDPOINT, R2_ACCESS_KEY_ID, and R2_SECRET_ACCESS_KEY are set in .env.");
-}
+export const getR2Client = () => {
+  if (_r2Client) return _r2Client;
+  
+  const r2Endpoint = process.env.R2_ENDPOINT;
+  const r2AccessKey = process.env.R2_ACCESS_KEY_ID;
+  const r2SecretKey = process.env.R2_SECRET_ACCESS_KEY;
 
-const r2Client = new S3Client({
-  region: "auto",
-  endpoint: r2Endpoint || "",
-  forcePathStyle: true,
-  credentials: {
-    accessKeyId: r2AccessKey || "",
-    secretAccessKey: r2SecretKey || "",
-  },
-});
+  if (!r2Endpoint || !r2AccessKey || !r2SecretKey) {
+    console.warn("WARNING: S3/R2 configuration is incomplete. Uploads and deletions will fail until R2_ENDPOINT, R2_ACCESS_KEY_ID, and R2_SECRET_ACCESS_KEY are set in .env.");
+  }
+
+  _r2Client = new S3Client({
+    region: "auto",
+    endpoint: r2Endpoint || "",
+    forcePathStyle: true,
+    credentials: {
+      accessKeyId: r2AccessKey || "",
+      secretAccessKey: r2SecretKey || "",
+    },
+  });
+
+  return _r2Client;
+};
 
 /**
  * Standard upload function compatible with both JD and RESUME flows
@@ -33,7 +41,7 @@ export const putObject = async (bucket: string, key: string, body: Buffer, conte
     if (!process.env.R2_ENDPOINT) {
       throw new Error("S3_UPLOAD_FAILED: Cloudflare R2 is not configured. Please set R2_ENDPOINT in your environment.");
     }
-    await r2Client.send(command);
+    await getR2Client().send(command);
 
     // Construct the public URL based on the BUCKET TYPE
     let publicUrlBase = "";
@@ -76,7 +84,7 @@ export const deleteObject = async (bucket: string, key: string) => {
         if (!process.env.R2_ENDPOINT) {
       throw new Error("S3_UPLOAD_FAILED: Cloudflare R2 is not configured. Please set R2_ENDPOINT in your environment.");
     }
-    await r2Client.send(command);
+    await getR2Client().send(command);
         console.log(`Successfully deleted ${normalizedKey} from bucket ${bucket}`);
         return true;
     } catch (error) {
@@ -121,7 +129,7 @@ export const getPresignedUploadUrl = async (bucket: string, key: string, content
     });
 
     // Valid for 10 minutes
-    return await getSignedUrl(r2Client, command, { expiresIn: 600 });
+    return await getSignedUrl(getR2Client(), command, { expiresIn: 600 });
 };
 
 export const uploadToR2 = putObject;
@@ -139,7 +147,7 @@ export const getObjectBuffer = async (bucket: string, key: string): Promise<Buff
     Bucket: bucket,
     Key: key.startsWith("/") ? key.slice(1) : key,
   });
-  const response = await r2Client.send(command);
+  const response = await getR2Client().send(command);
   if (!response.Body) {
     throw new Error(`R2 object has no body: ${bucket}/${key}`);
   }
@@ -157,7 +165,7 @@ export const listObjects = async (bucket: string, prefix: string): Promise<Liste
     Bucket: bucket,
     Prefix: prefix,
   });
-  const response = await r2Client.send(command);
+  const response = await getR2Client().send(command);
   return (response.Contents || [])
     .map((item) => ({
       key: String(item.Key || ""),

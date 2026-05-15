@@ -38,6 +38,7 @@ if (!process.env.REDIS_URL) {
   console.error('â Œ FATAL: REDIS_URL is missing from environment variables!');
   process.exit(1);
 }
+void redisConnection.connect().catch(() => {}); // force-connect before BullMQ workers start
 const pythonCmd = getPythonExecutable();
 
 const DRIVE_BATCH_SIZE = 5;
@@ -116,34 +117,37 @@ async function setDriveCandidateStage(
   resumeStatus: string
 ) {
   const payload = JSON.stringify({ processing: { stage, progress } });
-  const app = await prisma.application.findFirst({
-    where: {
-      resumeUrl: {
-        contains: `candidateId=${candidateId}`,
-      },
-    },
-    select: { id: true },
-  });
+
+  // Always update ResumeCandidates first (never fails)
   await prisma.resumeCandidate.update({
     where: { id: candidateId },
-    data: {
-      resumeStatus,
-      aiScore: progress,
-      aiReport: payload,
-    },
+    data: { resumeStatus, aiScore: progress, aiReport: payload },
   });
+
+  // Find linked Application. Upload API stores candidateId inside resumeData JSON.
+  // Search both resumeUrl and resumeData to be resilient across all upload flows.
+  let app: { id: string } | null = null;
+  try {
+    app = await prisma.application.findFirst({
+      where: {
+        OR: [
+          { resumeUrl: { contains: candidateId } },
+          { resumeData: { contains: candidateId } },
+        ],
+      },
+      select: { id: true },
+    });
+  } catch {
+    // Ignore lookup errors — ResumeCandidates is already updated above.
+  }
+
   if (app?.id) {
     await prisma.application.update({
       where: { id: app.id },
-      data: {
-        resumeStatus,
-        aiScore: progress,
-        aiReport: payload,
-      },
+      data: { resumeStatus, aiScore: progress, aiReport: payload },
     });
   }
 }
-
 async function processDriveResumeBatchJob(job: any) {
   const { batchId, driveId, orgId } = job.data || {};
   if (!batchId || !driveId || !orgId) {
@@ -239,7 +243,18 @@ async function processDriveResumeBatchJob(job: any) {
 
           await setDriveCandidateStage(candidate.id, "extracting", 25, "processing");
 
-          const pdfBuffer = await getObjectBuffer(bucket, key);
+          // Download PDF from R2 — fast-fail if key was deleted
+          let pdfBuffer: Buffer;
+          try {
+            pdfBuffer = await getObjectBuffer(bucket, key);
+          } catch (r2Err: any) {
+            const msg = String((r2Err as any)?.message || r2Err || '');
+            if (msg.includes('does not exist') || msg.includes('NoSuchKey') || msg.includes('404') || msg.includes('specified key')) {
+              console.error(`[RESUME-WORKER] R2 key missing for candidate ${candidate.id}: ${key}`);
+              throw Object.assign(new Error(`R2 key no longer exists: ${key}`), { noRetry: true });
+            }
+            throw r2Err;
+          }
           tmpPdfPath = join(tmpdir(), `drive_resume_${candidate.id}_${Date.now()}.pdf`);
           await writeFile(tmpPdfPath, pdfBuffer);
 
@@ -287,7 +302,10 @@ async function processDriveResumeBatchJob(job: any) {
           const finalStatus = finalScore >= threshold ? "shortlisted" : "rejected";
           const app = await prisma.application.findFirst({
             where: {
-              resumeUrl: { contains: `candidateId=${candidate.id}` },
+              OR: [
+                { resumeUrl: { contains: candidate.id } },
+                { resumeData: { contains: candidate.id } },
+              ],
             },
             select: { id: true },
           });
@@ -805,6 +823,7 @@ if (isQueueEnabled("resume-processing")) {
     lockDuration: 15 * 60 * 1000, // Scoring + extraction can exceed 60s on slower machines
     stalledInterval: 5 * 60 * 1000, // Check for stalled jobs every 5 min to reduce Redis writes
     maxStalledCount: 1,
+    drainDelay: 300, // Poll every 300ms — ensures jobs are picked up even if pub/sub event missed
     removeOnComplete: { count: 0 }, // Delete immediately — keeps 0 completed jobs
     removeOnFail: { count: 10 } // KEEP ONLY 10 FAILURES FOR DEBUGGING
   }));

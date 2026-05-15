@@ -722,8 +722,11 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                                                 "bg-rose-50 text-rose-700"
                                                     )}>
                                                         {isWaiting || isProcessing ? (
-                                                            <div className="w-full h-1.5 bg-orange-200 rounded-full overflow-hidden mt-0.5 mb-0.5">
-                                                                <div className={cn("h-full transition-all duration-500", isWaiting ? "bg-slate-400" : "bg-orange-500")} style={{ width: `${Math.max(progressValue, isWaiting ? 5 : 0)}%` }} />
+                                                            <div className="w-full h-1.5 bg-orange-100 rounded-full overflow-hidden mt-0.5 mb-0.5">
+                                                                {isWaiting
+                                                                    ? <div className="h-full w-1/3 bg-slate-400 rounded-full animate-[slide_1.5s_ease-in-out_infinite]" style={{ animationName: 'slideX', background: 'linear-gradient(90deg,transparent,#94a3b8,transparent)', backgroundSize: '200% 100%', animation: 'shimmer 1.5s infinite' }} />
+                                                                    : <div className="h-full bg-orange-500 transition-all duration-500 rounded-full" style={{ width: `${Math.max(progressValue, 8)}%` }} />
+                                                                }
                                                             </div>
                                                         ) : isFailed ? "Failed" : (score ? `${score}%` : "No score")}
                                                     </Badge>
@@ -739,7 +742,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                                         statusKey === "rejected" ? "bg-rose-50 text-rose-700" :
                                                             statusKey === "shortlisted" ? "bg-emerald-50 text-emerald-700" : "bg-slate-50 text-slate-500"
                                                     )}>
-                                                        {isWaiting || isProcessing ? `${stageLabel || "Processing"} ${progressValue}%` : statusKey === "rejected" ? "Rejected" : statusKey === "shortlisted" ? "Shortlisted" : statusLabel}
+                                                        {isWaiting ? "Queued..." : isProcessing ? `${stageLabel || "Processing"} ${progressValue}%` : statusKey === "rejected" ? "Rejected" : statusKey === "shortlisted" ? "Shortlisted" : statusLabel}
                                                     </Badge>
                                                 </div>
                                             </TableCell>
@@ -771,8 +774,8 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                             </TableCell>
                                             <TableCell className="py-5 text-center" onClick={(e) => e.stopPropagation()}>
                                                 {isWaiting || isProcessing ? (
-                                                    <div className="inline-flex h-8 w-8 items-center justify-center rounded-full text-orange-500 bg-orange-50">
-                                                        <Loader2 className={cn("h-4 w-4", isWaiting ? "animate-pulse text-slate-500" : "animate-spin")} />
+                                                    <div className={cn("inline-flex h-8 w-8 items-center justify-center rounded-full", isWaiting ? "text-slate-400 bg-slate-50" : "text-orange-500 bg-orange-50")}>
+                                                        <Loader2 className="h-4 w-4 animate-spin" />
                                                     </div>
                                                 ) : isFailed ? (
                                                     <span
