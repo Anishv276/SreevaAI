@@ -49,28 +49,35 @@ _PROBE_FAMILIES: dict[str, dict[str, str]] = {
 
 
 _SIGNAL_TO_FAMILY = [
+    # 1. CONTRADICTION: Candidate said two things that logically conflict (e.g. "I know Python" vs "I never used Python").
     ("contradiction", "clarification"),
+
+    # 2. FOLLOW_UP_COLLAPSE: (Anti-Cheat) Candidate gave a perfect 1st answer but can't handle follow-ups.
     ("follow_up_collapse", "follow_up_collapse_staged"),
+
+    # 3. RESUME_CLAIM_MISMATCH: The answer conflicts with facts found in their uploaded resume.
     ("resume_claim_mismatch", "evidence"),
+
+    # 4. EXAMPLE_EVASION: Candidate is talking in theories and avoiding giving a real-life example.
     ("example_evasion", "evidence"),
+
+    # 5. LATENCY_MISMATCH: (Anti-Cheat) Candidate answered way too fast for a complex question (suggests reading from a script).
     ("latency_mismatch", "compression"),
+
+    # 6. OWNERSHIP_AMBIGUITY: Candidate keeps saying "We" or "The Team" to hide their lack of personal contribution.
     ("ownership_ambiguity", "ownership"),
+
+    # 7. DEPTH_DECAY: Candidate is getting tired or "running out of juice" on this topic.
     ("depth_decay", "normal"),
+
+    # 8. COMPLEXITY_LATENCY_MISMATCH: Candidate struggled with a simple question but answered a hard one instantly.
     ("complexity_latency_mismatch", "evidence"),
 ]
 
 
 _MODE_ALIASES = {
     "specificity": "evidence",
-    "depth": "depth",
-    "ownership": "ownership",
     "contradiction": "clarification",
-    "clarification": "clarification",
-    "compression": "compression",
-    "evidence": "evidence",
-    "verification": "verification",
-    "rapport": "rapport",
-    "follow_up_collapse_staged": "follow_up_collapse_staged",
 }
 
 _SHORT_UTTERANCE_FAMILIES = {
@@ -141,8 +148,7 @@ def route(
     signals: SignalFlags,
     depth_signal: str,
     topic_follow_up_count: int,
-    max_follow_ups: int = 3,
-    contradiction_detected: bool = False,
+    max_follow_ups: int = 2,
     llm_action: str = "MOVE_ON",
     llm_probe_mode: str | None = None,
 ) -> tuple[str, str, str]:
@@ -159,8 +165,6 @@ def route(
     if topic_follow_up_count >= max_follow_ups:
         return ("MOVE_ON", "normal", _family_goal("normal"))
 
-    if contradiction_detected:
-        return ("VERIFY", "clarification", _family_goal("clarification"))
 
     for flag, family in _SIGNAL_TO_FAMILY:
         if signals.get(flag):

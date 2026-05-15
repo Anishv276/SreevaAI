@@ -327,14 +327,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 }],
             }),
         }).catch(() => { });
-        // 3. Signal agent via data channel (optional - agent can adjust)
-        const room = lkRoomRef.current;
-        if (room?.localParticipant) {
-            try {
-                const data = new TextEncoder().encode(JSON.stringify({ type: "face_proctoring_violation", eventType, timestamp: Date.now() }));
-                room.localParticipant.publishData(data, { reliable: true }).catch(() => { });
-            } catch { }
-        }
     }, [
         id,
         interviewToken,
@@ -367,14 +359,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 }],
             }),
         }).catch(() => { });
-        // 3. Signal agent via data channel
-        const room = lkRoomRef.current;
-        if (room?.localParticipant) {
-            try {
-                const data = new TextEncoder().encode(JSON.stringify({ type: "hardware_violation", eventType, timestamp: Date.now() }));
-                room.localParticipant.publishData(data, { reliable: true }).catch(() => { });
-            } catch { }
-        }
     }, [id, interviewToken, isCameraDisabledEnabled, isMicrophoneDisabledEnabled]);
     //  Connection violation handler 
     const handleConnectionViolation = useCallback((eventType: string, reason: string, severity?: "low" | "medium" | "high") => {
@@ -402,15 +386,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             }),
         }).catch(() => { });
     }, [id, interviewToken, isConnectionLostEnabled]);
-    // -- Generic Agent-Detected Violation handler (Syncs Agent events to Candidate UI) --
-    const handleAgentDetectedViolation = useCallback((eventType: string, reason: string, severity?: string) => {
-        // This is called when the Agent sends a 'proctoring_violation' packet over the data channel
-        if (SHOW_BACKGROUND_PROCTORING_ALERTS) {
-            setSoundViolationAlert({ eventType, reason, severity: severity ?? "medium" });
-            if (soundViolationTimerRef.current) clearTimeout(soundViolationTimerRef.current);
-            soundViolationTimerRef.current = setTimeout(() => setSoundViolationAlert(null), 8000);
-        }
-    }, []);
     const submitSupportRequest = useCallback(async () => {
         const normalizedName = supportForm.name.trim();
         const normalizedEmail = supportForm.email.trim().toLowerCase();
@@ -729,16 +704,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         }]
                     })
                 }).catch(() => { });
-                // Also signal to agent if possible via data channel
-                const room = lkRoomRef.current;
-                if (room?.localParticipant) {
-                    const encoder = new TextEncoder();
-                    const data = encoder.encode(JSON.stringify({
-                        type: "tab_violation",
-                        timestamp: Date.now()
-                    }));
-                    room.localParticipant.publishData(data, { reliable: true }).catch(() => { });
-                }
             }, 250);
         };
         const onVisibilityChange = () => {
@@ -750,6 +715,21 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             const isFS = !!(document.fullscreenElement || (document as any).webkitFullscreenElement || (document as any).mozFullScreenElement || (document as any).msFullscreenElement);
             if (!isFS) {
                 setIsFullscreenViolation(true);
+                // Fullscreen exit stored as tab_switch eventType with distinct reason in DB
+                fetch('/api/interview/proctoring', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        applicationId: id,
+                        interviewToken: interviewToken,
+                        events: [{
+                            eventType: 'tab_switch',
+                            severity: 'medium',
+                            timestamp: Date.now(),
+                            reason: 'Fullscreen Exited'
+                        }]
+                    })
+                }).catch(() => { });
                 handleViolation();
             } else {
                 setIsFullscreenViolation(false);

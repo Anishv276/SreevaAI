@@ -121,8 +121,6 @@ async def run_turn_evaluation(
         if _is_signal_enabled(signal_toggles, str(event.get("signal_name", "")))
     ]
     signals = build_signal_flags(signal_events)
-    contradiction_enabled = _is_signal_enabled(signal_toggles, "contradiction")
-    effective_contradiction_detected = contradiction_detected and contradiction_enabled
 
     # Route to action/mode/goal
     action, mode, next_goal = route(
@@ -130,7 +128,6 @@ async def run_turn_evaluation(
         depth_signal=llm_decision.get("depth_signal", "SURFACE"),
         topic_follow_up_count=topic_follow_up_count,
         max_follow_ups=max_follow_ups,
-        contradiction_detected=effective_contradiction_detected,
         llm_action=llm_decision.get("action", "MOVE_ON"),
         llm_probe_mode=llm_decision.get("probe_mode"),
     )

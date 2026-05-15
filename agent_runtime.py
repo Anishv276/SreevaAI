@@ -827,7 +827,9 @@ async def entrypoint(ctx: JobContext):
     suspicion_score = 0      # composite risk score used only for mode switching
     current_interview_mode = "normal"  # normal / pressure / verification / deep
     proctoring_events: list = []       # timeline of risk signals for final report
-    _face_absent_streak = 0            # repeated absence is stronger than a single blip
+    # Note: browser-side proctoring (face, tab, hardware) is recorded directly
+    # to the DB via /api/interview/proctoring. The agent does NOT process these
+    # signals — only behavioral/intelligence signals influence the agent.
     ready_event = asyncio.Event()
     ready_signal_received_at: Optional[float] = None
     # Per-turn decision engine state
@@ -1129,16 +1131,9 @@ async def entrypoint(ctx: JobContext):
     def on_data_received(*event_args):
         nonlocal \
             interview_marked_finished, \
-            ready_signal_received_at, \
-            environment_risk, \
-            integrity_risk, \
-            depth_risk, \
-            suspicion_score, \
-            proctoring_events, \
-            _trust_state
+            ready_signal_received_at
         try:
             raw_data = None
-            # Helper functions moved to entrypoint scope to prevent NameError
             if not event_args:
                 return
             # Compatibility across LiveKit Python event shapes:
@@ -1178,36 +1173,10 @@ async def entrypoint(ctx: JobContext):
                 interview_marked_finished = True
                 interview_finished_event.set()
                 disconnect_event.set()  # Resolve hang
-            elif payload.get("type") == "proctor_event":
-                # Phase 5: Browser-side proctoring signals (tab switch, face absent, etc.)
-                if not any(evaluation_signal_toggles.values()):
-                    logger.debug(
-                        "[PROCTOR] Browser proctor event ignored because plan disables proctoring signals"
-                    )
-                    return
-                event_name = payload.get("event")
-                event_weight = PROCTORING_WEIGHTS.get(event_name, 0)
-                if event_name == "face_absent":
-                    _face_absent_streak += 1
-                    if _face_absent_streak < 2:
-                        event_weight = 0
-                elif event_name != "face_absent":
-                    _face_absent_streak = 0
-                if event_weight > 0:
-                    environment_risk = min(100, environment_risk + event_weight)
-                    refresh_composite_risk()
-                    _evt = {
-                        "event": event_name,
-                        "timestamp": time.time(),
-                        "risk_bucket": "environment",
-                        "score_delta": event_weight,
-                        "score_after": suspicion_score,
-                    }
-                    proctoring_events.append(_evt)
-                    _trust_state = apply_proctoring_event(_trust_state, _evt)
-                    logger.info(
-                        f"[PROCTOR] {event_name} from browser. score={suspicion_score}"
-                    )
+            # All browser-side proctoring signals (tab_switch, face_absence,
+            # multiple_faces, camera_disabled, microphone_disabled) are stored
+            # directly to the DB via /api/interview/proctoring by the frontend.
+            # The agent is NOT involved in processing these signals.
         except Exception as e:
             logger.debug(f"Ignored malformed data packet: {e}")
             return
