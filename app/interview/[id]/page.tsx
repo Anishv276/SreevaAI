@@ -682,7 +682,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             clearDelayedViolation(tabViolationTimerRef);
             return;
         }
-        const handleViolation = () => {
+        const handleViolation = (specificReason?: string) => {
             if (tabViolationTimerRef.current !== null) return;
             tabViolationTimerRef.current = window.setTimeout(() => {
                 tabViolationTimerRef.current = null;
@@ -700,7 +700,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                             eventType: "tab_switch",
                             severity: "medium",
                             timestamp: Date.now(),
-                            reason: document.hidden ? "Tab Switched" : "Window Blurred"
+                            reason: specificReason || (document.hidden ? "Tab Switched" : "Window Blurred")
                         }]
                     })
                 }).catch(() => { });
@@ -715,22 +715,8 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             const isFS = !!(document.fullscreenElement || (document as any).webkitFullscreenElement || (document as any).mozFullScreenElement || (document as any).msFullscreenElement);
             if (!isFS) {
                 setIsFullscreenViolation(true);
-                // Fullscreen exit stored as tab_switch eventType with distinct reason in DB
-                fetch('/api/interview/proctoring', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        applicationId: id,
-                        interviewToken: interviewToken,
-                        events: [{
-                            eventType: 'tab_switch',
-                            severity: 'medium',
-                            timestamp: Date.now(),
-                            reason: 'Fullscreen Exited'
-                        }]
-                    })
-                }).catch(() => { });
-                handleViolation();
+                // Trigger violation with specific reason (handles DB logging + UI state)
+                handleViolation("Fullscreen Exited");
             } else {
                 setIsFullscreenViolation(false);
                 clearDelayedViolation(tabViolationTimerRef);
