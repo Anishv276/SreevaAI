@@ -29,7 +29,7 @@ export async function proxy(req: NextRequest) {
     requestHeaders.set("x-pathname", pathname);
 
     // Public paths - no auth needed
-    const publicPaths = ["/careers", "/org", "/api/auth", "/api/invitations", "/invite", "/interview", "/_next", "/favicon"];
+    const publicPaths = ["/careers", "/org", "/api/auth", "/api/invitations", "/api/stream", "/invite", "/interview", "/_next", "/favicon"];
     if (publicPaths.some(p => pathname.startsWith(p))) {
         const res = NextResponse.next({ request: { headers: requestHeaders } });
         return await refreshSessionCookie(req, res);

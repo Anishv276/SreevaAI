@@ -1661,21 +1661,37 @@ OUTPUT FIELD INSTRUCTIONS
    - "result": "pass" | "partial" | "fail"
    - "note": 1 sharp sentence. For pass: what evidence. For partial: what transfers and what's missing. For fail: what day-1 impact this creates.
 3. strengths (3–5 items)
-   - "point": headline — specific capability, NOT a personality trait. E.g. "Owns full React/Node.js product stack independently"
-   - "evidence": "At [Company], [verb] [specific thing] using [tool] — [outcome/scale/metric]"
-   - Derive from: owner-level roles, high impact_strength, validated core_claims, high skill_depth
-   - BANNED words: communicator, team player, passionate, motivated, fast learner, detail-oriented
-4. concerns (3–5 items)
-   - "point": specific gap headline. E.g. "No production Kubernetes experience in a role requiring day-1 cluster ownership"
-   - "missing_skills": exact skill names from the JD must-have list
-   - "impact": "This matters because [specific thing they cannot do on day 1 without it]"
-   - Derive from: missing_must list, uncertain_areas, contributor/unclear ownership, low impact_strength roles
+   - Write from the recruiter’s point of view: what I would lead with in a hiring-manager pitch.
+   - Each point must be specific, evidence-backed, and tied to this JD. If it does not help explain why the candidate fits this role, do not include it.
+   - "point": a concrete strength headline, not a personality trait or resume summary. E.g. "Direct backend fit for Java/Spring Boot roles" or "Production API delivery with measurable impact"
+   - "evidence": one sentence that names the company, what they built/delivered, the tool/stack, and the result/scale.
+   - Prefer evidence from real work history over skills lists or generic claims.
+   - Best strengths are things that answer: "What would I tell the hiring manager this person genuinely brings to the table?"
+   - BANNED words: communicator, team player, passionate, motivated, fast learner, detail-oriented, strong communicator, proven, hardworking
+   - Do NOT use vague praise that could apply to any candidate.
+   - Do NOT mention strengths that are not connected to the JD.
+4. concerns (2–4 items)
+   - Write from the recruiter’s risk-check point of view: what could blow up if I move this person forward without verifying it.
+   - Every risk must be specific, evidence-backed, and opinionated. Do NOT write "no major blockers" or any generic filler.
+   - Each risk must follow this structure:
+     - "point": 4–6 word title for the risk flag.
+     - "what_the_risk_is": plain-language description of the gap or concern.
+     - "impact_level": exactly one of "Dealbreaker", "Moderate", "Low", or "Watch".
+     - "why_it_matters": one sentence on how this risk affects role performance or hiring confidence.
+     - "recommended_action": exactly what the recruiter should do next.
+     - "suggested_interview_question": one specific question to surface this risk if needed.
+     - "missing_skills": exact skill names from the JD must-have list when relevant.
+     - "impact": brief recruiter-facing summary of the risk in plain English.
+   - If the automated scan found no hard blockers, still surface the soft risks the recruiter should stay aware of.
+   - Derive from: missing_must list, uncertain_areas, contributor/unclear ownership, low impact_strength roles, integrity signals, job-hopping risk, weak direct stack match, and candidate-vs-JD seniority mismatch.
+   - Do NOT write generic warnings that could apply to any resume.
+   - Every risk must tell the recruiter what to do about it.
 5. fit_radar (object — all values 0–100, used directly in the radar chart)
    - "essentials": % of must-have skills confirmed with evidence (not just listed). Base on must-have match depth.
    - "experience": % experience fit. 100=meets/exceeds, 80=1yr short, 60=2yr short, 40=3yr short, 20=4+yr short.
    - "domain": % domain/contextual fit. Rate how well their industry background, domain skills, and JD scoring hints align.
    - "skills": % breadth of relevant technical skills confirmed across work history + projects (not just listed).
-   - "confidence": your overall evidence confidence. How much of their resume is backed by verifiable specifics vs vague claims? 100=everything evidenced, 50=mixed, 20=mostly vague.
+   - "evidence": % of the resume backed by strong proof signals: quantified outcomes, ownership, repeated work-history use, and role-relevant depth. 100=heavy proof, 50=mixed, 20=mostly listed-only.
    Each value must be independently justified — do NOT copy the score breakdown numbers directly.
 6. skill_match_rows (array — 6–12 items, used in the "Skill signals" card)
    For each confirmed technical skill (from matched_must + matched_good + strong tools):
@@ -1758,14 +1774,23 @@ Return ONLY valid JSON matching this EXACT schema. No markdown. No code fences. 
     {{"point":"string","evidence":"string"}}
   ],
   "concerns": [
-    {{"point":"string","missing_skills":["string"],"impact":"string"}}
+    {{
+      "point":"string",
+      "what_the_risk_is":"string",
+      "impact_level":"Dealbreaker|Moderate|Low|Watch",
+      "why_it_matters":"string",
+      "recommended_action":"string",
+      "suggested_interview_question":"string",
+      "missing_skills":["string"],
+      "impact":"string"
+    }}
   ],
   "fit_radar": {{
     "essentials": 0,
     "experience": 0,
     "domain": 0,
     "skills": 0,
-    "confidence": 0
+    "evidence": 0
   }},
   "skill_match_rows": [
     {{"name":"string","stars":0,"evidence_note":"string"}}
@@ -2393,6 +2418,26 @@ Resume:
                 report_model=llm_model_override or "gpt-4o-mini",
                 screening_criteria=screening_criteria,
             )
+            fit_radar = _as_dict(report.get("fit_radar", {}))
+            if not fit_radar:
+                fit_radar = {}
+            if "evidence" not in fit_radar and "confidence" in fit_radar:
+                fit_radar["evidence"] = fit_radar.get("confidence")
+            if "evidence" not in fit_radar:
+                career_max = max(1, int(score_result["breakdown"].get("career_max", 15) or 15))
+                fit_radar["evidence"] = min(100, round((score_result["breakdown"].get("career_score", 0) / career_max) * 100))
+            if "essentials" not in fit_radar:
+                skills_max = max(1, int(score_result["breakdown"].get("skills_max", 50) or 50))
+                fit_radar["essentials"] = min(100, round((score_result["breakdown"].get("skills_score", 0) / skills_max) * 100))
+            if "experience" not in fit_radar:
+                exp_max = max(1, int(score_result["breakdown"].get("exp_max", 15) or 15))
+                fit_radar["experience"] = min(100, round((score_result["breakdown"].get("exp_score", 0) / exp_max) * 100))
+            if "domain" not in fit_radar:
+                domain_max = max(1, int(score_result["breakdown"].get("domain_max", 10) or 10))
+                fit_radar["domain"] = min(100, round((score_result["breakdown"].get("domain_score", 0) / domain_max) * 100))
+            if "skills" not in fit_radar:
+                match_ratio = score_result.get("skill_matching", {}).get("match_ratio", 0)
+                fit_radar["skills"] = min(100, round(float(match_ratio) if match_ratio is not None else 0))
             # -- 3. ASSEMBLE FINAL OUTPUT -----------------------
             final_data = {
                 "score": score_result["score"],
@@ -2408,6 +2453,7 @@ Resume:
                 "rejection_reasons": score_result["rejection_reasons"],
                 "candidate_years": score_result["candidate_years"],
                 "jd_min_years": score_result["jd_min_years"],
+                "fit_radar": fit_radar,
                 # Raw resume fields as fallback for UI reads (overridden by **report where gpt-4o-mini produces them)
                 "work_history": resume_data.get("work_history", []),
                 "education": resume_data.get("education", []),

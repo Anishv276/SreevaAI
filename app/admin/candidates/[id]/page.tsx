@@ -16,7 +16,7 @@ function toTextList(value: unknown): string[] {
         if (typeof item === "number" || typeof item === "boolean") return String(item);
         if (typeof item !== "object") return "";
         const obj = item as Record<string, unknown>;
-        const keys = ["point", "text", "summary", "reasoning", "evidence", "note", "label", "description", "message", "title", "name"];
+        const keys = ["point", "text", "summary", "reasoning", "evidence", "note", "label", "description", "message", "title", "name", "skill", "tool"];
         for (const key of keys) {
             const candidate = obj[key];
             if (typeof candidate === "string" && candidate.trim()) return candidate.trim();
@@ -40,6 +40,50 @@ function toTextList(value: unknown): string[] {
 function firstText(value: unknown, fallback = ""): string {
     const list = toTextList(value);
     return list[0] || fallback;
+}
+
+function normalizeReportLines(values: string[]): string[] {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const value of values) {
+        const line = String(value || "").replace(/\s+/g, " ").trim();
+        if (!line) continue;
+        const key = line.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(line);
+    }
+    return out;
+}
+
+function isGenericReportCardLine(text: string): boolean {
+    const s = String(text || "").toLowerCase().trim();
+    if (!s) return true;
+    return [
+        "cross-check against the hiring bar for this role",
+        "no major automated blockers",
+        "ai screening analysis ready",
+        "screening analysis ready",
+        "strong fit",
+        "review",
+        "needs review",
+        "no major must-have gaps surfaced",
+        "i do not see major must-have gaps",
+        "candidate has",
+        "document review focuses",
+        "scores are model estimates",
+    ].some((needle) => s === needle || s.includes(needle));
+}
+
+function safeJsonParse(value: unknown, fallback: any = {}): any {
+    if (!value) return fallback;
+    if (typeof value === "object") return value;
+    if (typeof value !== "string") return fallback;
+    try {
+        return JSON.parse(value);
+    } catch {
+        return fallback;
+    }
 }
 
 export default function CandidateProfilePage() {
@@ -251,30 +295,107 @@ export default function CandidateProfilePage() {
             return {};
         }
     })();
+    const resumeReportPayload: any = (() => {
+        const raw = resumeReportData;
+        if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+            if (raw.data && typeof raw.data === "object" && !Array.isArray(raw.data)) {
+                return raw.data;
+            }
+            if (raw.report && typeof raw.report === "object" && !Array.isArray(raw.report)) {
+                return raw.report;
+            }
+        }
+        return raw || {};
+    })();
+    const structuredResumeData: any = (() => {
+        const raw = candidate?.resumeData;
+        const parsed = safeJsonParse(raw, {});
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            if (parsed.structured && typeof parsed.structured === "object" && !Array.isArray(parsed.structured)) {
+                return parsed.structured;
+            }
+            if (parsed.resume && typeof parsed.resume === "object" && !Array.isArray(parsed.resume)) {
+                return parsed.resume;
+            }
+            return parsed;
+        }
+        return {};
+    })();
+    const structuredJdData: any = (() => {
+        const raw = candidate?.drive?.extractedDetails;
+        const parsed = safeJsonParse(raw, {});
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            if (parsed.data && typeof parsed.data === "object" && !Array.isArray(parsed.data)) {
+                return parsed.data;
+            }
+            return parsed;
+        }
+        return {};
+    })();
     const resumeReportModel = useMemo(() => {
-        const report = resumeReportData || {};
+        const report = resumeReportPayload || {};
+        const resumeStruct = structuredResumeData || {};
         const fullName = candidate?.fullName || "Candidate";
-        // strengths: [{point, evidence}] — combine both so evidence shows in the card
-        const strengths = (() => {
-            const raw = report.strengths || report.core_claims || report.decision_breakdown || [];
-            if (Array.isArray(raw) && raw.length && typeof raw[0] === "object" && raw[0]?.point) {
-                return raw.map((s: any) => s.evidence ? `${s.point} — ${s.evidence}` : s.point).filter(Boolean);
-            }
-            return toTextList(raw);
-        })();
-        // concerns: [{point, impact}] — combine both so impact reason shows
-        const concerns = (() => {
-            const raw = report.concerns || report.gaps || report.rejection_reasons || report.uncertain_areas || [];
-            if (Array.isArray(raw) && raw.length && typeof raw[0] === "object" && raw[0]?.point) {
-                return raw.map((s: any) => s.impact ? `${s.point} — ${s.impact}` : s.point).filter(Boolean);
-            }
-            return toTextList(raw);
-        })();
-        const integrityLines = toTextList(report.integrity_signals || report.red_flags || []);
-        const workHistory = Array.isArray(report.work_history_annotated)
+        const decisionBreakdown = Array.isArray(report.decision_breakdown) ? report.decision_breakdown : [];
+        const skillRows = Array.isArray(report.skill_match_rows) ? report.skill_match_rows : [];
+        const integritySignals = Array.isArray(report.integrity_signals) ? report.integrity_signals : [];
+        const strengths = normalizeReportLines([
+            ...toTextList(report.strengths).map((line) => line.replace(/\s*—\s*$/, "").trim()),
+            ...decisionBreakdown
+                .filter((row: any) => String(row?.result || "").toLowerCase() === "pass")
+                .map((row: any) => {
+                    const criteria = firstText(row?.criteria || row?.criterion || row?.name);
+                    const candidateHas = firstText(row?.candidate_has || row?.candidateHas || row?.note);
+                    if (!criteria) return "";
+                    const evidence = candidateHas && !/^yes\b/i.test(candidateHas)
+                        ? candidateHas.replace(/^yes\s*[—:-]?\s*/i, "").trim()
+                        : "";
+                    return evidence ? `${criteria} — ${evidence}` : `${criteria} — evidenced in the extracted resume data`;
+                }),
+            ...skillRows
+                .filter((row: any) => Number(row?.stars ?? 0) >= 4)
+                .map((row: any) => {
+                    const skill = firstText(row?.name || row?.skill);
+                    if (!skill) return "";
+                    const note = firstText(row?.evidence_note || row?.evidence || "");
+                    return note ? `${skill} — ${note}` : `${skill} — strong evidence in work history`;
+                }),
+            report?.experience_assessment?.quality
+                ? `Experience fit — ${String(report.experience_assessment.quality).trim()}`
+                : "",
+            report?.project_relevance?.reasoning
+                ? `Project relevance — ${String(report.project_relevance.reasoning).trim()}`
+                : "",
+        ].filter(Boolean).filter((line) => !isGenericReportCardLine(String(line))));
+        const concerns = normalizeReportLines([
+            ...toTextList(report.concerns).map((line) => line.replace(/\s*—\s*$/, "").trim()),
+            ...decisionBreakdown
+                .filter((row: any) => String(row?.result || "").toLowerCase() !== "pass")
+                .map((row: any) => {
+                    const criteria = firstText(row?.criteria || row?.criterion || row?.name);
+                    const note = firstText(row?.note || row?.impact || row?.candidate_has);
+                    if (!criteria) return "";
+                    return note ? `${criteria} — ${note}` : `${criteria} — verify this in interview`;
+                }),
+            ...integritySignals
+                .filter((sig: any) => String(sig?.level || "").toLowerCase() !== "low")
+                .map((sig: any) => {
+                    const label = firstText(sig?.label || sig?.summary || sig?.details);
+                    const summary = firstText(sig?.summary || sig?.details || "");
+                    if (!label) return "";
+                    return summary ? `${label} — ${summary}` : `${label} — verify before shortlist`;
+                }),
+                ...normalizeReportLines([
+                ...toTextList(report.rejection_reasons || []),
+                ...toTextList(report.uncertain_areas || []),
+            ]).map((line) => line.includes("—") ? line : `${line} — verify before moving forward`),
+        ].filter(Boolean).filter((line) => !isGenericReportCardLine(String(line))));
+        const workHistory = (Array.isArray(report.work_history_annotated) && report.work_history_annotated.length > 0)
             ? report.work_history_annotated
             : Array.isArray(report.work_history)
                 ? report.work_history
+                : Array.isArray(resumeStruct.work_history)
+                    ? resumeStruct.work_history
                 : [];
         const educationList = Array.isArray(report.education) ? report.education : [];
         const skillDepth = toTextList(report.skill_depth);
@@ -287,7 +408,7 @@ export default function CandidateProfilePage() {
                 : Math.min(100, Math.max(0, Math.round(score)));
         // Experience years: prefer scored result, fall back to AI assessment
         const experienceYears: number | null = (() => {
-            const v = report.candidate_years ?? report.experience_assessment?.years ?? null;
+            const v = report.candidate_years ?? report.experience_assessment?.years ?? resumeStruct?.experience?.total_years ?? null;
             const n = Number(v);
             return Number.isFinite(n) && n >= 0 ? n : null;
         })();
@@ -315,6 +436,24 @@ export default function CandidateProfilePage() {
         // AI-direct fields from gpt-4o report
         const aiRadar = report.fit_radar || null;
         const aiSkillRows = Array.isArray(report.skill_match_rows) ? report.skill_match_rows : null;
+        const aiDecisionBreakdown = Array.isArray(report.decision_breakdown) ? report.decision_breakdown : null;
+        const aiStrengthsData = Array.isArray(report.strengths) ? report.strengths : null;
+        const aiConcernsData = Array.isArray(report.concerns) ? report.concerns : null;
+        const aiIntegritySignalsData = Array.isArray(report.integrity_signals) ? report.integrity_signals : null;
+        const aiSeniorityAlignment = report.seniority_alignment || null;
+        const aiCareerProgressionData = report.career_progression_details || null;
+        const candidatePotentialReasoning = report.candidate_potential?.reasoning || null;
+        const missingMustSkills: string[] = (() => {
+            const fromMatching = report?.skill_matching?.missing_must;
+            if (Array.isArray(fromMatching) && fromMatching.length > 0) {
+                return fromMatching.map((s: any) => String(s || "").trim()).filter(Boolean);
+            }
+            // Fallback: pull missing_skills off concerns array
+            const fromConcerns = Array.isArray(report?.concerns)
+                ? report.concerns.flatMap((c: any) => Array.isArray(c?.missing_skills) ? c.missing_skills : [])
+                : [];
+            return fromConcerns.map((s: any) => String(s || "").trim()).filter(Boolean);
+        })();
         const readinessTimeline = report.suitability_analysis?.readiness_timeline || null;
         const candidatePotential = report.candidate_potential?.for_this_role || null;
         const decisionReason = typeof report.decision_reason === "string" ? report.decision_reason : null;
@@ -336,9 +475,6 @@ export default function CandidateProfilePage() {
             hasResumeText: Boolean(candidate?.resumeText),
             matchScore: score,
             summary,
-            strengthLines: strengths,
-            weaknessLines: concerns,
-            redFlagLines: integrityLines,
             primaryGapText,
             normalizedStatus: String(candidate?.resumeStatus || "pending"),
             interviewStageLabel: String(report.status || candidate?.resumeStatus || "Screened"),
@@ -348,14 +484,35 @@ export default function CandidateProfilePage() {
             totalExtractedSkills: matchedSkillsCount,
             mustHaveBarPct,
             techSkillSample: skillDepth.slice(0, 14),
+            structuredResumeData,
+            structuredJdData,
+            experienceReadout: report.experience_assessment?.vs_required || null,
             aiRadar,
             aiSkillRows,
+            missingMustSkills,
             readinessTimeline,
             candidatePotential,
+            candidatePotentialReasoning,
             decisionReason,
+            seniorityAlignment: aiSeniorityAlignment,
+            decisionBreakdown: aiDecisionBreakdown,
+            strengthsData: aiStrengthsData,
+            concernsData: aiConcernsData,
+            integritySignalsData: aiIntegritySignalsData,
+            careerProgressionData: aiCareerProgressionData,
             humanLayer,
+            skillMatching: report.skill_matching || null,
+            behavioralSignals: Array.isArray(report.behavioral_signals)
+                ? report.behavioral_signals
+                : Array.isArray(report.cultural_signals)
+                    ? report.cultural_signals
+                    : null,
+            resumeParseConfidence: typeof structuredResumeData?.parse_confidence === "string"
+                ? structuredResumeData.parse_confidence
+                : null,
+            reportConfidence: Number(report?.human_layer?.confidence ?? report?.confidence ?? 0) || null,
         });
-    }, [backHref, candidate, candidatePhotoSrc, mounted, resumeReportData]);
+    }, [backHref, candidate, candidatePhotoSrc, mounted, resumeReportPayload, structuredResumeData, structuredJdData]);
 
 
     const formatDuration = (totalSeconds: number) => {

@@ -1,5 +1,8 @@
 import { prisma } from "@/lib/prisma";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 export async function GET(request: Request) {
     const encoder = new TextEncoder();
     
@@ -15,6 +18,9 @@ export async function GET(request: Request) {
 
             let lastCheck = new Date();
             let closed = false;
+
+            // Open the SSE connection immediately so the client gets a stable stream.
+            send({ type: "CONNECTED" });
 
             const checkForUpdates = async () => {
                 if (closed) return;

@@ -26,6 +26,7 @@ export async function GET(
                 aiScore: true,
                 aiReport: true,
                 resumeText: true,
+                resumeData: true,
                 resumeStatus: true,
                 interviewStatus: true,
                 hiringStatus: true,
@@ -36,7 +37,9 @@ export async function GET(
                         title: true,
                         department: true,
                         orgId: true,
-                        role: true
+                        role: true,
+                        description: true,
+                        extractedDetails: true,
                     }
                 },
                 interview: {
