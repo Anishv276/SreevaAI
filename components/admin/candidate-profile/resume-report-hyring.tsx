@@ -230,12 +230,9 @@ export type HyringResumeViewModel = {
   fitRadar: { essentials: number; impact: number; domain: number; skills: number; evidence: number };
   fitRadarNotes: RadarNotes;
   aiSummaryPoints: { label: string; body: string; tone: "emerald" | "amber" | "rose" }[];
-  recruiterSignals: {
-    scopeSignals: { label: string; body: string }[];
-    riskFlags: { label: string; body: string }[];
-    behavioralSignals: { label: string; body: string }[];
-    reportConfidence: number;
-  };
+  strengths: { label: string; body: string }[];
+  weaknesses: { label: string; body: string }[];
+  decisionStamp: "SHORTLISTED" | "REJECTED" | "BORDERLINE";
   rubricRows: IntelSignalRow[];
   skillMatching?: unknown;
   skillMatchRows: {
@@ -246,47 +243,11 @@ export type HyringResumeViewModel = {
     category?: string;
     evidenceNote?: string;
   }[];
-  careerLines: { label: string; body: string; time: string; integrityLevel?: "Low" | "Medium" | "High" }[];
+  careerLines: { label: string; body: string; time: string }[];
   resumeUrl: string | null;
   hasStructuredResume: boolean;
   reviewStrip: string;
   feedbackStars: number;
-  intelligenceStrip: {
-    readiness: string;
-    potential: string;
-    potentialReasoning: string;
-    seniorityLabel: string;
-    jdSeniorityLabel: string;
-    seniorityGap: number;
-  };
-  requirementsBreakdown: {
-    criteria: string;
-    required: string;
-    candidateHas: string;
-    result: "pass" | "partial" | "fail";
-    note: string;
-  }[];
-  strengthsRows: { point: string; evidence: string }[];
-  concernsRows: {
-    point: string;
-    whatTheRiskIs: string;
-    impactLevel: "Dealbreaker" | "Moderate" | "Low" | "Watch" | "";
-    whyItMatters: string;
-    recommendedAction: string;
-    suggestedInterviewQuestion: string;
-    missingSkills: string[];
-    impact: string;
-  }[];
-  integritySignals: { level: "Low" | "Medium" | "High"; label: string; summary: string }[];
-  careerProgression: {
-    pattern: string;
-    roleFlow: string;
-    companyTypes: string;
-    tenureAvg: string;
-    patternNote: string;
-    companyNote: string;
-    tenureNote: string;
-  } | null;
 };
 
 function tagFromPct(p: number): "GOOD" | "AVERAGE" | "WEAK" {
@@ -327,7 +288,7 @@ function buildResumeAiSummaryPoints(model: Pick<
     {
       label: "Red flags",
       body: readableSummaryText(model.comparison.watchoutBody || model.fitRadarNotes.evidence, 220),
-      tone: "amber",
+      tone: "rose",
     },
   ];
 }
@@ -482,40 +443,9 @@ export function buildHyringResumeViewModel(i: {
   aiSkillRows?: { name: string; stars: number; evidence_note?: string }[] | null;
   missingMustSkills?: string[] | null;
   skillMatching?: unknown;
-  readinessTimeline?: string | null;
   candidatePotential?: string | null;
-  candidatePotentialReasoning?: string | null;
   decisionReason?: string | null;
-  seniorityAlignment?: { candidate_level?: number; jd_level?: number; candidate_label?: string; jd_label?: string } | null;
-  decisionBreakdown?: { criteria?: string; required?: string; candidate_has?: string; result?: string; note?: string }[] | null;
-  strengthsData?: { point?: string; evidence?: string }[] | null;
-  concernsData?: {
-    point?: string;
-    label?: string;
-    title?: string;
-    what_the_risk_is?: string;
-    whatTheRiskIs?: string;
-    risk?: string;
-    description?: string;
-    impact_level?: string;
-    impactLevel?: string;
-    why_it_matters?: string;
-    whyItMatters?: string;
-    recommended_action?: string;
-    recommendedAction?: string;
-    suggested_interview_question?: string;
-    suggestedInterviewQuestion?: string;
-    impact?: string;
-    missing_skills?: string[];
-  }[] | null;
-  integritySignalsData?: { level?: string; label?: string; summary?: string; details?: string }[] | null;
-  careerProgressionData?: {
-    pattern?: string; role_flow?: string; company_types?: string;
-    tenure_avg?: string; pattern_note?: string; company_note?: string; tenure_note?: string;
-  } | null;
-  behavioralSignals?: { label?: string; body?: string; summary?: string; evidence?: string }[] | null;
   resumeParseConfidence?: string | null;
-  reportConfidence?: number | null;
   humanLayer?: {
     summary?: string;
     judgment?: string;
@@ -799,6 +729,12 @@ export function buildHyringResumeViewModel(i: {
       watchoutBody,
     },
   });
+  const decisionStamp: HyringResumeViewModel["decisionStamp"] =
+    i.normalizedStatus?.toLowerCase() === "shortlisted"
+      ? "SHORTLISTED"
+      : i.normalizedStatus?.toLowerCase() === "rejected"
+        ? "REJECTED"
+        : "BORDERLINE";
 
   const rubricRows: IntelSignalRow[] = [
     {
@@ -1051,7 +987,11 @@ export function buildHyringResumeViewModel(i: {
     start_year?: string;
     end_year?: string;
     is_current?: boolean;
+    ownership_level?: string;
+    impact_strength?: string;
+    duration_months?: number;
     recruiter_summary?: string;
+    technologies_used?: string[];
     responsibilities?: string[];
     impact_signals?: string[];
   }>;
@@ -1074,7 +1014,21 @@ export function buildHyringResumeViewModel(i: {
     const when = [startFmt, endFmt].filter(Boolean).join(" – ");
     const label = `${r.role || "Role"} @ ${r.company || " "}`;
     // Prefer AI-annotated recruiter_summary; fall back to responsibilities / impact signals from raw parse
-    const body = r.recruiter_summary
+    const scopeParts = [
+      r.ownership_level ? `${r.ownership_level} ownership` : "",
+      r.impact_strength ? `${r.impact_strength} impact` : "",
+      typeof r.duration_months === "number" && Number.isFinite(r.duration_months) ? `${r.duration_months} months` : "",
+      Array.isArray(r.technologies_used) && r.technologies_used.length > 0
+        ? `Tech: ${r.technologies_used.slice(0, 3).join(", ")}`
+        : "",
+    ].filter(Boolean);
+    const scopeText = scopeParts.join(" · ");
+    const body = [
+      scopeText,
+      r.recruiter_summary
+    ]
+      .filter(Boolean)
+      .join(" · ")
       || (Array.isArray(r.responsibilities) && r.responsibilities.length > 0
         ? r.responsibilities.slice(0, 3).join(" ")
         : "")
@@ -1091,200 +1045,92 @@ export function buildHyringResumeViewModel(i: {
     });
   }
 
-  // Integrity signals per-company — attach level to career lines
-  const integrityByCompany: Record<string, "Low" | "Medium" | "High"> = {};
-  for (const sig of (i.integritySignalsData || [])) {
-    const lvl = String(sig.level || "").trim() as "Low" | "Medium" | "High";
-    if (lvl === "Medium" || lvl === "High") {
-      const details = String(sig.details || sig.summary || "").toLowerCase();
-      for (const row of history) {
-        const co = (row.company || "").toLowerCase();
-        if (co && details.includes(co)) {
-          integrityByCompany[co] = lvl;
-        }
-      }
-    }
-  }
-  const careerLinesWithIntegrity = careerLines.map((line) => {
-    const co = line.label.split("@")[1]?.trim().toLowerCase() || "";
-    return integrityByCompany[co] ? { ...line, integrityLevel: integrityByCompany[co] } : line;
-  });
+  const strengths: HyringResumeViewModel["strengths"] = [];
+  const weaknesses: HyringResumeViewModel["weaknesses"] = [];
+  const topMatchedSkills = skillMatchRows.filter((row) => row.matched).slice(0, 3);
 
-  // Intelligence strip
-  const seniorityAlignment = i.seniorityAlignment || null;
-  const seniorityGap = seniorityAlignment
-    ? (Number(seniorityAlignment.candidate_level ?? 0) - Number(seniorityAlignment.jd_level ?? 0))
-    : 0;
-  const intelligenceStrip = {
-    readiness: String(i.readinessTimeline || "Not assessed").trim(),
-    potential: String(i.candidatePotential || "").trim(),
-    potentialReasoning: String(i.candidatePotentialReasoning || "").trim(),
-    seniorityLabel: String(seniorityAlignment?.candidate_label || "").trim(),
-    jdSeniorityLabel: String(seniorityAlignment?.jd_label || "").trim(),
-    seniorityGap,
-  };
-
-  // Requirements breakdown
-  const requirementsBreakdown = (i.decisionBreakdown || [])
-    .filter((row) => row.criteria)
-    .map((row) => {
-      const result = String(row.result || "").toLowerCase();
-      return {
-        criteria: String(row.criteria || "").trim(),
-        required: String(row.required || "Must-have").trim(),
-        candidateHas: String(row.candidate_has || "—").trim(),
-        result: (result === "pass" ? "pass" : result === "partial" ? "partial" : "fail") as "pass" | "partial" | "fail",
-        note: String(row.note || "").trim(),
-      };
+  if (topMatchedSkills.length > 0) {
+    const strongNames = topMatchedSkills.map((row) => row.name).join(", ");
+    const evidence = topMatchedSkills.find((row) => row.evidenceNote)?.evidenceNote || "Evidence found in the extracted resume";
+    strengths.push({
+      label: "Evidence-backed skill match",
+      body: `${strongNames} are surfaced as matched skills with resume evidence, which is the same kind of must-have-based scoring structured hiring tools use.`,
     });
+    strengths.push({
+      label: "Clear proof signal",
+      body: evidence,
+    });
+  }
 
-  // Strengths & concerns
-  const strengthsRows = (i.strengthsData || [])
-    .filter((r) => r.point)
-    .map((r) => ({ point: String(r.point || "").trim(), evidence: String(r.evidence || "").trim() }));
-  const concernsRows = (i.concernsData || [])
-    .map((r) => ({
-      point: String(r.point || r.label || r.title || "").trim(),
-      whatTheRiskIs: String(r.what_the_risk_is || r.whatTheRiskIs || r.risk || r.description || "").trim(),
-      impactLevel: (String(r.impact_level || r.impactLevel || "").trim() as "Dealbreaker" | "Moderate" | "Low" | "Watch" | ""),
-      whyItMatters: String(r.why_it_matters || r.whyItMatters || "").trim(),
-      recommendedAction: String(r.recommended_action || r.recommendedAction || "").trim(),
-      suggestedInterviewQuestion: String(r.suggested_interview_question || r.suggestedInterviewQuestion || "").trim(),
-      missingSkills: uniqueNonEmpty(Array.isArray(r.missing_skills) ? r.missing_skills : []),
-      impact: String(r.impact || "").trim(),
-    }))
-    .filter((r) => r.point || r.whatTheRiskIs || r.impact || r.whyItMatters);
+  const ownerRoles = history.filter((row) => row.ownership_level === "owner" && row.impact_strength === "high").slice(0, 2);
+  if (ownerRoles.length > 0) {
+    const firstRole = ownerRoles[0];
+    strengths.push({
+      label: "Owner-level delivery",
+      body: `${firstRole.role || "A prior role"} at ${firstRole.company || "a previous company"} shows ownership and high impact, which is a strong positive signal for role readiness.`,
+    });
+  }
 
-  // Integrity signals for standalone display
-  const integritySignals = (i.integritySignalsData || [])
-    .map((s) => ({
-      level: (String(s.level || "Low").trim()) as "Low" | "Medium" | "High",
-      label: String(s.label || "").trim(),
-      summary: String(s.summary || s.details || "").trim(),
-    }))
-    .filter((s) => s.label);
+  if (Number.isFinite(candidateYears) && parsedRequiredYears != null && candidateYears >= parsedRequiredYears) {
+    strengths.push({
+      label: "Experience alignment",
+      body: `${candidateYears} years of experience meets or exceeds the ${parsedRequiredYears} year requirement, so the seniority bar is covered.`,
+    });
+  } else if (fitRadar.evidence >= 60) {
+    strengths.push({
+      label: "Evidence density",
+      body: "The report shows repeated work-history and project proof rather than a resume that is mostly just a skill list.",
+    });
+  }
 
-  // Career progression
-  const cpd = i.careerProgressionData;
-  const careerProgression = cpd && cpd.pattern ? {
-    pattern: String(cpd.pattern || "").trim(),
-    roleFlow: String(cpd.role_flow || "").trim(),
-    companyTypes: String(cpd.company_types || "").trim(),
-    tenureAvg: String(cpd.tenure_avg || "").trim(),
-    patternNote: String(cpd.pattern_note || "").trim(),
-    companyNote: String(cpd.company_note || "").trim(),
-    tenureNote: String(cpd.tenure_note || "").trim(),
-  } : null;
+  if (missingMustHave.length > 0) {
+    weaknesses.push({
+      label: `Missing must-have: ${missingMustHave[0]}`,
+      body: `The resume does not clearly evidence ${missingMustHave[0]}, and scorecards usually treat must-haves as the first pass/fail filter.`,
+    });
+  }
+
+  if (Number.isFinite(candidateYears) && parsedRequiredYears != null && candidateYears < parsedRequiredYears) {
+    weaknesses.push({
+      label: "Experience gap",
+      body: `${candidateYears} years are shown against ${parsedRequiredYears} required, so this needs either stronger adjacent depth or a role-level exception.`,
+    });
+  }
+
+  if (fitRadar.evidence < 55) {
+    weaknesses.push({
+      label: "Proof depth",
+      body: "Some signals still read as listed skills or light evidence rather than repeated production use, so depth should be verified in interview.",
+    });
+  }
+
+  if (fitRadar.skills < 55) {
+    weaknesses.push({
+      label: "Narrow skill breadth",
+      body: "The broader skill mix looks thinner than the role typically wants, which can limit flexibility once the candidate is on the job.",
+    });
+  }
+
+  while (strengths.length < 3 && topMatchedSkills.length > strengths.length) {
+    const row = topMatchedSkills[strengths.length];
+    if (!row) break;
+    strengths.push({
+      label: row.name,
+      body: row.evidenceNote || "Matched in the extracted resume evidence.",
+    });
+  }
+
+  while (weaknesses.length < 3 && skillMatchRows.some((row) => !row.matched)) {
+    const gap = skillMatchRows.find((row) => !row.matched);
+    if (!gap) break;
+    weaknesses.push({
+      label: `${gap.name} gap`,
+      body: gap.evidenceNote || "This required skill is not clearly evidenced in the resume.",
+    });
+    break;
+  }
 
   const shorten = (value: string, maxLen = 180) => readableSummaryText(value, maxLen);
-  const scopeSignals = (() => {
-    const rows = (Array.isArray(i.combinedWorkHistory) ? i.combinedWorkHistory : []) as Array<{
-      company?: string;
-      role?: string;
-      company_type?: string;
-      duration_months?: number;
-      ownership_level?: string;
-      impact_strength?: string;
-      recruiter_summary?: string;
-      technologies_used?: string[];
-      overlap_note?: string | null;
-    }>;
-    return rows.slice(0, 4).map((row) => {
-      const label = shorten(`${row.role || "Role"} @ ${row.company || "Company"}`, 44);
-      const parts = [
-        row.company_type ? row.company_type : "",
-        row.ownership_level ? `${row.ownership_level} ownership` : "",
-        row.impact_strength ? `${row.impact_strength} impact` : "",
-        typeof row.duration_months === "number" && Number.isFinite(row.duration_months) ? `${row.duration_months} months` : "",
-      ].filter(Boolean);
-      const tech = Array.isArray(row.technologies_used) && row.technologies_used.length > 0
-        ? `Tech: ${row.technologies_used.slice(0, 3).join(", ")}`
-        : "";
-      const summary = row.recruiter_summary ? shorten(row.recruiter_summary, 180) : "";
-      const overlap = row.overlap_note ? shorten(String(row.overlap_note), 120) : "";
-      const body = shorten([parts.join(" · "), tech, summary, overlap].filter(Boolean).join(" · "), 210);
-      return { label, body };
-    }).filter((row) => row.label && row.body);
-  })();
-  const riskFlags = (() => {
-    const rows: { label: string; body: string }[] = [];
-    for (const flag of (i.humanLayer?.risk_flags || []).slice(0, 3)) {
-      const label = shorten(String(flag || "Risk"), 44);
-      const body = shorten(String(flag || "Verify this in interview"), 210);
-      if (label && body && !rows.some((item) => item.label === label)) rows.push({ label, body });
-    }
-    for (const row of concernsRows.slice(0, 3)) {
-      const label = shorten(row.point || row.whatTheRiskIs || "Risk", 44);
-      const details = [
-        row.whatTheRiskIs ? `What the risk is: ${row.whatTheRiskIs}` : "",
-        row.impactLevel ? `Impact level: ${row.impactLevel}` : "",
-        row.whyItMatters ? `Why it matters: ${row.whyItMatters}` : "",
-        row.recommendedAction ? `Recommended action: ${row.recommendedAction}` : "",
-        row.suggestedInterviewQuestion ? `Suggested interview question: ${row.suggestedInterviewQuestion}` : "",
-        row.missingSkills.length > 0 ? `Missing skills: ${row.missingSkills.join(", ")}` : "",
-        row.impact ? `Impact: ${row.impact}` : "",
-      ].filter(Boolean);
-      const body = shorten(details.join("\n"), 320);
-      if (label && body) rows.push({ label, body });
-    }
-    if (rows.length < 3) {
-      for (const miss of (i.missingMustSkills || []).slice(0, 3)) {
-        const label = shorten(`Verify ${miss}`, 44);
-        const body = `The JD expects ${miss}. Confirm direct evidence before shortlisting.`;
-        if (!rows.some((item) => item.label === label)) rows.push({ label, body });
-      }
-    }
-    if (rows.length < 3) {
-      for (const row of requirementsBreakdown.filter((r) => r.result !== "pass").slice(0, 3)) {
-        const label = shorten(row.criteria || "Requirement gap", 44);
-        const body = shorten(`${row.note || row.candidateHas || "Verify this gap"} — ask the candidate for exact evidence.`, 210);
-        if (label && body && !rows.some((item) => item.label === label)) rows.push({ label, body });
-      }
-    }
-    if (rows.length < 3) {
-      for (const sig of integritySignals.slice(0, 2)) {
-        const label = shorten(sig.label || "Integrity check", 44);
-        const body = shorten(sig.summary || "Verify before shortlist", 210);
-        if (label && body && !rows.some((item) => item.label === label)) rows.push({ label, body });
-      }
-    }
-    if (rows.length < 3) {
-      const jobHop = (careerProgression?.tenureNote || "").toLowerCase();
-      if (jobHop && !rows.some((item) => /tenure|stability|job/i.test(item.label))) {
-        rows.push({ label: "Career stability", body: shorten(careerProgression?.tenureNote || "Verify tenure and role overlap", 210) });
-      }
-    }
-    return rows.slice(0, 3);
-  })();
-  const behavioralSignals = (() => {
-    const raw = Array.isArray(i.behavioralSignals) ? i.behavioralSignals : [];
-    return raw
-      .map((item) => {
-        const src = item as Record<string, unknown>;
-        const label = shorten(String(src?.label || src?.title || src?.type || "Behavior"), 44);
-        const body = shorten(String(src?.body || src?.summary || src?.evidence || ""), 210);
-        return label && body ? { label, body } : null;
-      })
-      .filter(Boolean) as { label: string; body: string }[];
-  })();
-  const reportConfidence = Math.max(
-    0,
-    Math.min(
-      100,
-      Math.round(
-        Number(
-          i.reportConfidence ??
-            i.humanLayer?.confidence ??
-            (String(i.resumeParseConfidence || "").toLowerCase() === "high"
-              ? 82
-              : String(i.resumeParseConfidence || "").toLowerCase() === "medium"
-                ? 72
-                : 60),
-        ) || 60,
-      ),
-    ),
-  );
-
   return {
     backHref: i.backHref || "/admin/candidates",
     processing: !i.hasResumeText && !i.hasAiReport,
@@ -1316,64 +1162,118 @@ export function buildHyringResumeViewModel(i: {
     fitRadar,
     fitRadarNotes,
     aiSummaryPoints,
-    recruiterSignals: {
-      scopeSignals,
-      riskFlags,
-      behavioralSignals,
-      reportConfidence,
-    },
+    strengths,
+    weaknesses,
+    decisionStamp,
     rubricRows,
     skillMatchRows,
-    careerLines: careerLinesWithIntegrity,
+    careerLines,
     resumeUrl: c.resumeUrl || null,
     hasStructuredResume: nRoles > 0 || i.totalExtractedSkills > 0,
     reviewStrip: (() => {
-    const status = i.normalizedStatus?.toUpperCase();
-    const verdict = status === "REJECTED" || status === "rejected"
+      const status = i.normalizedStatus?.toUpperCase();
+      const verdict = status === "REJECTED" || status === "rejected"
         ? "REJECTED"
         : status === "SHORTLISTED" || status === "shortlisted"
           ? "SHORTLISTED"
           : "BORDERLINE";
       const human = i.humanLayer;
+      const verdictWord = verdict === "SHORTLISTED" ? "Shortlisted" : verdict === "REJECTED" ? "Rejected" : "Borderline";
 
-      // Build meaningful decision reason
-      let reason = "";
-      if (i.decisionReason && typeof i.decisionReason === "string" && i.decisionReason.length > 10) {
-        reason = i.decisionReason;
-      } else if (verdict === "SHORTLISTED") {
-        const match = i.matchScore >= 80 ? "Strong match" : i.matchScore >= 65 ? "Good match" : "Moderate match";
-        reason = `${match} with required skills. Recommend interview.`;
-      } else if (verdict === "REJECTED") {
-        reason = i.primaryGapText && typeof i.primaryGapText === "string" && i.primaryGapText.length > 5
-          ? `Missing key skills: ${i.primaryGapText}`
-          : "Does not meet core requirements for this role.";
-      } else {
-        reason = i.primaryGapText && typeof i.primaryGapText === "string" && i.primaryGapText.length > 5
-          ? `Borderline fit. Key concern: ${i.primaryGapText}`
-          : `Borderline fit. Requires further evaluation.`;
-      }
-
+      // Human review always wins
       const humanReason = human?.summary && human.summary.trim().length > 10
         ? human.summary.trim()
         : "";
-      const humanJudgment = human?.judgment && human.judgment.trim().length > 0
-        ? human.judgment.trim().toUpperCase()
-        : "";
       if (humanReason) {
-        reason = humanJudgment
-          ? `${humanJudgment} by human layer — ${humanReason}`
-          : `Human layer — ${humanReason}`;
+        return `${verdictWord} by human reviewer: ${humanReason}`.replace(/\s+/g, " ").trim();
       }
 
-      return `${verdict} — ${reason}`;
+      const score = Math.round(i.matchScore);
+      const fmtList = (arr: string[], n = 3) => {
+        const slice = arr.slice(0, n);
+        if (slice.length <= 1) return slice.join("");
+        if (slice.length === 2) return `${slice[0]} and ${slice[1]}`;
+        return `${slice.slice(0, -1).join(", ")} and ${slice[slice.length - 1]}`;
+      };
+      const yrs = (n: number) => `${n} yr${n === 1 ? "" : "s"}`;
+
+      const provenNames = skillMatchRows
+        .filter((row) => row.matched && (row.source === "work_history" || row.source === "project"))
+        .map((row) => row.name);
+      const listedNames = skillMatchRows
+        .filter((row) => row.matched && row.source === "listed")
+        .map((row) => row.name);
+      const mustHaveCovered = Math.max(0, nReq - missingMustHave.length);
+
+      const expPhrase = Number.isFinite(candidateYears) && parsedRequiredYears != null
+        ? candidateYears >= parsedRequiredYears
+          ? `${yrs(candidateYears)} of experience meets the ${yrs(parsedRequiredYears)} bar`
+          : `${yrs(candidateYears)} of experience falls short of the ${yrs(parsedRequiredYears)} bar`
+        : "";
+
+      const ownerPhrase = ownerRoles.length > 0
+        ? `owner-level delivery at ${ownerRoles[0].company || "a prior company"}${ownerRoles[0].role ? ` as ${ownerRoles[0].role}` : ""}`
+        : "";
+
+      if (verdict === "SHORTLISTED") {
+        const evidencePhrase = provenNames.length > 0
+          ? `${fmtList(provenNames, 4)} ${provenNames.length === 1 ? "is" : "are"} backed by work-history or project proof`
+          : listedNames.length > 0
+            ? `${fmtList(listedNames, 4)} ${listedNames.length === 1 ? "is" : "are"} listed on the resume`
+            : directMatches.length > 0
+              ? `the JD stack (${fmtList(directMatches, 3)}) shows up in the extracted data`
+              : "the overall profile aligns with the JD";
+        const coverageClause = nReq > 0
+          ? `, covering ${mustHaveCovered} of ${nReq} must-have${nReq === 1 ? "" : "s"}`
+          : "";
+        const supportClauses = [expPhrase, ownerPhrase].filter(Boolean);
+        const supportSentence = supportClauses.length > 0
+          ? ` The ${supportClauses.join(" and ")}.`
+          : "";
+        const watchout = missingMustHave.length > 0
+          ? ` Verify ${fmtList(missingMustHave, 2)} in interview, as ${missingMustHave.length === 1 ? "it is" : "they are"} not clearly evidenced in the resume.`
+          : fitRadar.evidence < 55
+            ? " Confirm production-level depth in interview, as the proof signal is still thin."
+            : "";
+        return `Shortlisted at ${score}/100 fit because ${evidencePhrase}${coverageClause}.${supportSentence}${watchout}`.replace(/\s+/g, " ").trim();
+      }
+
+      if (verdict === "REJECTED") {
+        const gapPhrase = missingMustHave.length > 0
+          ? `${fmtList(missingMustHave, 3)} ${missingMustHave.length === 1 ? "is" : "are"} not evidenced in the resume`
+          : i.primaryGapText && typeof i.primaryGapText === "string" && i.primaryGapText.length > 5
+            ? `the resume is missing ${i.primaryGapText}`
+            : "the resume does not meet the core requirements for this role";
+        const coverageClause = nReq > 0
+          ? `, with only ${mustHaveCovered} of ${nReq} must-have${nReq === 1 ? "" : "s"} covered`
+          : "";
+        const supportBits: string[] = [];
+        if (expPhrase && Number.isFinite(candidateYears) && parsedRequiredYears != null && candidateYears < parsedRequiredYears) {
+          supportBits.push(expPhrase);
+        }
+        if (fitRadar.evidence < 50) {
+          supportBits.push("the resume reads more as listed skills than applied work");
+        }
+        const supportSentence = supportBits.length > 0 ? ` On top of that, ${supportBits.join(" and ")}.` : "";
+        return `Rejected at ${score}/100 fit because ${gapPhrase}${coverageClause}.${supportSentence} Do not advance unless the missing evidence is resolved.`.replace(/\s+/g, " ").trim();
+      }
+
+      // BORDERLINE
+      const positiveClause = provenNames.length > 0
+        ? `${fmtList(provenNames, 3)} ${provenNames.length === 1 ? "is" : "are"} backed by evidence`
+        : listedNames.length > 0
+          ? `${fmtList(listedNames, 3)} ${listedNames.length === 1 ? "is" : "are"} listed on the resume`
+          : "some relevant signal is present";
+      const negativeClause = missingMustHave.length > 0
+        ? `${fmtList(missingMustHave, 2)} ${missingMustHave.length === 1 ? "is" : "are"} not evidenced`
+        : "depth of proof is still uncertain";
+      const coverageClause = nReq > 0
+        ? ` (${mustHaveCovered} of ${nReq} must-have${nReq === 1 ? "" : "s"} covered)`
+        : "";
+      const expClause = expPhrase ? `, and ${expPhrase}` : "";
+      return `Borderline at ${score}/100 fit: ${positiveClause}, but ${negativeClause}${coverageClause}${expClause}. Verify the missing evidence in interview before advancing.`.replace(/\s+/g, " ").trim();
     })(),
     feedbackStars: i.matchScore >= 80 ? 5 : i.matchScore >= 65 ? 4 : i.matchScore >= 50 ? 3 : i.matchScore >= 35 ? 2 : 1,
-    intelligenceStrip,
-    requirementsBreakdown,
-    strengthsRows,
-    concernsRows,
-    integritySignals,
-    careerProgression,
   };
 }
 
@@ -1467,62 +1367,24 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
                   </div>
                 </div>
               </div>
-              <div className="flex flex-col items-center gap-2 rounded-3xl bg-white px-6 py-5 shadow-[0_10px_30px_rgba(0,0,0,0.04)] ring-1 ring-black/5 sm:min-w-[260px]">
-                <p className="text-[10px] font-black uppercase tracking-[0.24em] text-[#6B7079]">Fit snapshot</p>
-                <SemicircleGauge value={model.fitPercent} fitLabel={model.fitLabel} />
+              {model.decisionStamp === "SHORTLISTED" || model.decisionStamp === "REJECTED" ? (
+                <div className="flex shrink-0 items-center justify-center lg:mx-2">
+                  <img
+                    src={model.decisionStamp === "REJECTED" ? "/images/stamps/rejected.png" : "/images/stamps/shortlisted.png"}
+                    alt={model.decisionStamp === "REJECTED" ? "Rejected" : "Shortlisted"}
+                    className="h-[138px] w-[138px] -rotate-6 object-contain mix-blend-multiply"
+                  />
+                </div>
+              ) : null}
+              <div className="flex flex-col items-center gap-2 rounded-3xl bg-white px-5 py-5 shadow-[0_10px_30px_rgba(0,0,0,0.04)] ring-1 ring-black/5 sm:min-w-[260px]">
+                <p className="self-start text-[10px] font-black uppercase tracking-[0.24em] text-[#6B7079]">Fit snapshot</p>
+                <div className="flex flex-col items-center gap-4 sm:items-center">
+                  <SemicircleGauge value={model.fitPercent} fitLabel={model.fitLabel} />
+                </div>
               </div>
             </div>
           </div>
         </motion.div>
-
-        {/* Intelligence Strip */}
-        {(model.intelligenceStrip.readiness !== "Not assessed" || model.intelligenceStrip.potential || model.intelligenceStrip.seniorityLabel) && (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            {/* Readiness */}
-            {model.intelligenceStrip.readiness !== "Not assessed" && (
-              <div className={cn(card, "flex items-start gap-3 border-none p-4 shadow-sm", model.intelligenceStrip.readiness.toLowerCase().startsWith("immediately") ? "bg-emerald-50" : model.intelligenceStrip.readiness.toLowerCase().includes("month") ? "bg-amber-50" : "bg-slate-50")}>
-                <Activity className={cn("mt-0.5 h-5 w-5 shrink-0", model.intelligenceStrip.readiness.toLowerCase().startsWith("immediately") ? "text-emerald-600" : "text-amber-600")} />
-                <div className="min-w-0">
-                  <p className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-[#5C6370]">Readiness</p>
-                  <p className="mt-0.5 text-[12px] font-bold text-[#1A1D22] leading-snug">{model.intelligenceStrip.readiness}</p>
-                </div>
-              </div>
-            )}
-            {/* Potential */}
-            {model.intelligenceStrip.potential && (
-              <div className={cn(card, "flex items-start gap-3 border-none p-4 shadow-sm", model.intelligenceStrip.potential === "High" ? "bg-emerald-50" : model.intelligenceStrip.potential === "Low" ? "bg-rose-50" : "bg-amber-50")}>
-                <Zap className={cn("mt-0.5 h-5 w-5 shrink-0", model.intelligenceStrip.potential === "High" ? "text-emerald-600" : model.intelligenceStrip.potential === "Low" ? "text-rose-600" : "text-amber-600")} />
-                <div className="min-w-0">
-                  <p className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-[#5C6370]">Candidate potential</p>
-                  <p className={cn("mt-0.5 text-[12px] font-black", model.intelligenceStrip.potential === "High" ? "text-emerald-700" : model.intelligenceStrip.potential === "Low" ? "text-rose-700" : "text-amber-700")}>{model.intelligenceStrip.potential}</p>
-                  {model.intelligenceStrip.potentialReasoning && (
-                    <p className="mt-0.5 text-[11px] leading-snug text-[#3D434D]">{model.intelligenceStrip.potentialReasoning}</p>
-                  )}
-                </div>
-              </div>
-            )}
-            {/* Seniority Alignment */}
-            {(model.intelligenceStrip.seniorityLabel || model.intelligenceStrip.jdSeniorityLabel) && (
-              <div className={cn(card, "flex items-start gap-3 border-none p-4 shadow-sm", Math.abs(model.intelligenceStrip.seniorityGap) <= 1 ? "bg-emerald-50" : "bg-amber-50")}>
-                <Shield className={cn("mt-0.5 h-5 w-5 shrink-0", Math.abs(model.intelligenceStrip.seniorityGap) <= 1 ? "text-emerald-600" : "text-amber-600")} />
-                <div className="min-w-0">
-                  <p className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-[#5C6370]">Seniority alignment</p>
-                  <div className="mt-0.5 flex flex-wrap items-center gap-1">
-                    {model.intelligenceStrip.seniorityLabel && (
-                      <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-bold text-[#1A1D22] shadow-sm ring-1 ring-black/5">{model.intelligenceStrip.seniorityLabel}</span>
-                    )}
-                    {model.intelligenceStrip.jdSeniorityLabel && (
-                      <>
-                        <span className="text-[10px] text-[#8C9299]">vs</span>
-                        <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-bold text-[#5C6370] shadow-sm ring-1 ring-black/5">{model.intelligenceStrip.jdSeniorityLabel} needed</span>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Main Analysis Sections */}
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
@@ -1578,11 +1440,13 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
               </div>
             <div className="flex-1 space-y-3 overflow-y-auto pr-1">
               {model.aiSummaryPoints.map((item, j) => (
-                <div
+                  <div
                   key={`${item.label}-${j}`}
                   className={cn(
                     "rounded-2xl border px-3 py-3 shadow-sm transition-colors",
-                    item.tone === "emerald"
+                    item.label === "Red flags"
+                      ? "border-[#fc2d2d] bg-[#fff3f3]"
+                      : item.tone === "emerald"
                       ? "border-[#D5EAD8] bg-[#F6FBF7]"
                       : item.tone === "amber"
                         ? "border-[#F4E0BF] bg-[#FFF9F1]"
@@ -1593,7 +1457,9 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
                     <span
                       className={cn(
                         "rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.2em]",
-                        item.tone === "emerald"
+                        item.label === "Red flags"
+                          ? "bg-[#fc2d2d] text-white"
+                          : item.tone === "emerald"
                           ? "bg-[#0D4D2E] text-white"
                           : item.tone === "amber"
                             ? "bg-[#B86A00] text-white"
@@ -1602,218 +1468,79 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
                     >
                       {item.label}
                     </span>
-                    <span className="text-[10px] font-bold text-[#6B7079]">
-                      {j === 0 ? "Direct match" : j === 1 ? "Experience" : j === 2 ? "Applied proof" : "Watchout"}
+                    <span className={cn("text-[10px] font-bold", item.label === "Red flags" ? "text-[#fc2d2d]" : "text-[#6B7079]")}>
+                      {j === 0 ? "Direct match" : j === 1 ? "Experience" : j === 2 ? "Applied proof" : "Red flags"}
                     </span>
                   </div>
-                  <p className="text-[13px] leading-6 text-[#1A1D22]">{item.body}</p>
+                  <p className={cn("text-[13px] leading-6", item.label === "Red flags" ? "text-[#d10f0f]" : "text-[#1A1D22]")}>{item.body}</p>
                 </div>
               ))}
             </div>
           </div>
         </div>
 
-        <div className={cn(card, "border-none bg-white p-0 shadow-md overflow-hidden")}>
-          <div className="flex items-center justify-between border-b border-[#E8EAED]/50 bg-gray-50 px-4 py-3">
-            <div>
-              <p className="text-sm font-extrabold text-[#1A1D22]">Recruiter snapshot</p>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className={cn(card, "border-none bg-white p-0 shadow-md overflow-hidden")}>
+            <div className="border-b border-emerald-100 bg-emerald-50/70 px-4 py-3">
+              <p className="text-sm font-extrabold text-emerald-800">Strengths</p>
+              <p className="mt-0.5 text-[10px] font-medium uppercase tracking-widest text-emerald-700/80">
+                Evidence-based: matched skills, ownership, and repeated proof in work history
+              </p>
             </div>
-            <span
-              className={cn(
-                "shrink-0 rounded-md px-2.5 py-0.5 text-[9px] font-extrabold uppercase tracking-widest shadow-sm",
-                model.recruiterSignals.reportConfidence >= 80
-                  ? "bg-[#E6F4EC] text-[#0D4D2E]"
-                  : model.recruiterSignals.reportConfidence >= 60
-                    ? "bg-[#FFF4E8] text-[#B86A00]"
-                    : "bg-[#FDECEC] text-[#B42318]"
+            <div className="space-y-2 p-3">
+              {model.strengths.length > 0 ? (
+                model.strengths.map((item, idx) => (
+                  <div key={`strength-${idx}`} className="rounded-lg border border-emerald-100/80 bg-white px-3 py-2.5 transition-colors hover:bg-emerald-50/30">
+                    <p className="text-[12px] font-bold text-[#1A1D22]">{item.label}</p>
+                    <p className="mt-0.5 text-[11px] leading-relaxed text-[#3D434D]">{item.body}</p>
+                  </div>
+                ))
+              ) : (
+                <p className="px-3 py-2 text-[11px] leading-5 text-[#6B7079]">No strengths could be confidently derived from the available evidence yet.</p>
               )}
-            >
-              Report confidence {model.recruiterSignals.reportConfidence}%
-            </span>
+            </div>
           </div>
 
-          <div className="p-4">
-            <div className="mt-3 grid gap-3 lg:grid-cols-2">
-              <div className="rounded-2xl border border-white/80 bg-white px-3 py-2.5 shadow-sm">
-                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#6B7079]">Scope signals</p>
-                <div className="mt-2 space-y-2">
-                  {model.recruiterSignals.scopeSignals.length > 0 ? (
-                    model.recruiterSignals.scopeSignals.map((item, idx) => (
-                      <div key={`scope-${idx}`} className="rounded-xl border border-[#EEF0F3] bg-[#FAFBFC] px-2.5 py-2">
-                        <p className="text-[11px] font-bold text-[#1A1D22]">{item.label}</p>
-                        <p className="mt-0.5 text-[11px] leading-5 text-[#3D434D]">{item.body}</p>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-[11px] leading-5 text-[#6B7079]">No scope signals extracted yet.</p>
-                  )}
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-white/80 bg-white px-3 py-2.5 shadow-sm">
-                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#6B7079]">Risk flags</p>
-                <div className="mt-2 space-y-2">
-                  {model.recruiterSignals.riskFlags.length > 0 ? (
-                    model.recruiterSignals.riskFlags.map((item, idx) => (
-                      <div key={`risk-${idx}`} className="rounded-xl border border-amber-100 bg-amber-50/60 px-2.5 py-2">
-                        <p className="text-[11px] font-bold text-[#1A1D22]">{item.label}</p>
-                        <p className="mt-0.5 whitespace-pre-wrap text-[11px] leading-5 text-[#5C6370]">{item.body}</p>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-[11px] leading-5 text-[#6B7079]">No major risk flags extracted yet.</p>
-                  )}
-                </div>
-              </div>
-
+          <div className={cn(card, "border border-[#fc2d2d] bg-white p-0 shadow-md overflow-hidden")}>
+            <div className="border-b border-[#fc2d2d] bg-[#fc2d2d] px-4 py-3">
+              <p className="text-sm font-extrabold text-white">Weaknesses</p>
+              <p className="mt-0.5 text-[10px] font-medium uppercase tracking-widest text-white/90">
+                Based on missing must-haves, weaker proof, and evidence gaps
+              </p>
             </div>
-
-            {model.recruiterSignals.behavioralSignals.length > 0 && (
-              <div className="mt-3 rounded-2xl border border-white/80 bg-white px-3 py-2.5 shadow-sm">
-                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#6B7079]">Behavioral / cultural signals</p>
-                <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                  {model.recruiterSignals.behavioralSignals.map((item, idx) => (
-                    <div key={`behavior-${idx}`} className="rounded-xl border border-[#EEF0F3] bg-[#FAFBFC] px-2.5 py-2">
-                      <p className="text-[11px] font-bold text-[#1A1D22]">{item.label}</p>
-                      <p className="mt-0.5 text-[11px] leading-5 text-[#3D434D]">{item.body}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            <div className="space-y-2 p-3">
+              {model.weaknesses.length > 0 ? (
+                model.weaknesses.map((item, idx) => (
+                  <div key={`weakness-${idx}`} className="rounded-lg border border-[#fc2d2d] bg-[#fff3f3] px-3 py-2.5 transition-colors hover:bg-[#ffe1e1]">
+                    <p className="text-[12px] font-bold text-[#fc2d2d]">{item.label}</p>
+                    <p className="mt-0.5 text-[11px] leading-relaxed text-[#d10f0f]">{item.body}</p>
+                  </div>
+                ))
+              ) : (
+                <p className="px-3 py-2 text-[11px] leading-5 text-[#fc2d2d]">No clear weaknesses surfaced from the current evidence.</p>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Requirements Scorecard */}
-        {model.requirementsBreakdown.length > 0 && (
-          <div className={cn(card, "border-none bg-white p-0 shadow-md overflow-hidden")}>
-            <div className="flex items-center justify-between border-b border-[#E8EAED]/50 bg-gray-50 px-4 py-3">
-              <p className="text-sm font-extrabold text-[#1A1D22]">Requirements scorecard</p>
-              <div className="flex items-center gap-1.5 text-[10px] font-bold">
-                <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-emerald-700">{model.requirementsBreakdown.filter(r => r.result === "pass").length} pass</span>
-                <span className="rounded-full bg-amber-50 px-2 py-0.5 text-amber-700">{model.requirementsBreakdown.filter(r => r.result === "partial").length} partial</span>
-                <span className="rounded-full bg-rose-50 px-2 py-0.5 text-rose-700">{model.requirementsBreakdown.filter(r => r.result === "fail").length} fail</span>
-              </div>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-[12px]">
-                <thead>
-                  <tr className="border-b border-[#E8EAED]/50 bg-[#FAFBFC]">
-                    <th className="px-4 py-2 text-left text-[10px] font-extrabold uppercase tracking-[0.18em] text-[#6B7079]">Requirement</th>
-                    <th className="px-3 py-2 text-left text-[10px] font-extrabold uppercase tracking-[0.18em] text-[#6B7079]">Type</th>
-                    <th className="px-3 py-2 text-left text-[10px] font-extrabold uppercase tracking-[0.18em] text-[#6B7079]">Candidate has</th>
-                    <th className="px-3 py-2 text-left text-[10px] font-extrabold uppercase tracking-[0.18em] text-[#6B7079]">Note</th>
-                    <th className="px-3 py-2 text-center text-[10px] font-extrabold uppercase tracking-[0.18em] text-[#6B7079]">Result</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {model.requirementsBreakdown.map((row, k) => (
-                    <tr key={k} className={cn("border-b border-[#E8EAED]/30 transition-colors hover:bg-slate-50", k % 2 === 0 ? "bg-white" : "bg-[#FAFBFC]")}>
-                      <td className="px-4 py-2.5 font-semibold text-[#1A1D22]">{row.criteria}</td>
-                      <td className="px-3 py-2.5">
-                        <span className={cn("rounded-full px-2 py-0.5 text-[9px] font-extrabold uppercase", row.required === "Must-have" ? "bg-[#1A1D22] text-white" : row.required === "Experience" ? "bg-sky-100 text-sky-800" : "bg-slate-100 text-slate-700")}>
-                          {row.required}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2.5 text-[#3D434D] max-w-[200px] truncate">{row.candidateHas}</td>
-                      <td className="px-3 py-2.5 text-[#5C6370] max-w-[200px] truncate">{row.note || "—"}</td>
-                      <td className="px-3 py-2.5 text-center">
-                        <span className={cn("rounded-full px-2.5 py-0.5 text-[9px] font-black uppercase tracking-[0.15em]", row.result === "pass" ? "bg-emerald-100 text-emerald-800" : row.result === "partial" ? "bg-amber-100 text-amber-800" : "bg-rose-100 text-rose-800")}>
-                          {row.result}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* Strengths & Concerns */}
-        {(model.strengthsRows.length > 0 || model.concernsRows.length > 0) && (
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            {/* Strengths */}
-            {model.strengthsRows.length > 0 && (
-              <div className={cn(card, "border-none bg-white p-0 shadow-md overflow-hidden")}>
-                <div className="border-b border-emerald-100 bg-emerald-50/60 px-4 py-3">
-                  <p className="text-sm font-extrabold text-emerald-800">Strengths</p>
-                </div>
-                <div className="space-y-2 p-3">
-                  {model.strengthsRows.map((s, k) => (
-                    <div key={k} className="rounded-lg border border-emerald-100/80 bg-white px-3 py-2.5 hover:bg-emerald-50/30 transition-colors">
-                      <p className="text-[12px] font-bold text-[#1A1D22]">{s.point}</p>
-                      {s.evidence && <p className="mt-0.5 text-[11px] leading-relaxed text-[#3D434D]">{s.evidence}</p>}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            {/* Concerns */}
-            {model.concernsRows.length > 0 && (
-              <div className={cn(card, "border-none bg-white p-0 shadow-md overflow-hidden")}>
-                <div className="border-b border-amber-100 bg-amber-50/60 px-4 py-3">
-                  <p className="text-sm font-extrabold text-amber-800">Concerns</p>
-                </div>
-                <div className="space-y-2 p-3">
-                  {model.concernsRows.map((c, k) => (
-                    <div key={k} className="rounded-lg border border-amber-100/80 bg-white px-3 py-2.5 hover:bg-amber-50/30 transition-colors">
-                      <div className="flex flex-wrap items-start justify-between gap-2">
-                        <p className="text-[12px] font-bold text-[#1A1D22]">{c.point || c.whatTheRiskIs}</p>
-                        {c.impactLevel && (
-                          <span className={cn(
-                            "shrink-0 rounded-full px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-[0.14em]",
-                            c.impactLevel === "Dealbreaker"
-                              ? "bg-rose-100 text-rose-800"
-                              : c.impactLevel === "Moderate"
-                                ? "bg-amber-100 text-amber-800"
-                                : c.impactLevel === "Low"
-                                  ? "bg-sky-100 text-sky-800"
-                                  : "bg-slate-100 text-slate-700"
-                          )}>
-                            {c.impactLevel}
-                          </span>
-                        )}
-                      </div>
-                      <div className="mt-1 space-y-0.5 text-[11px] leading-relaxed text-[#5C6370]">
-                        {c.whatTheRiskIs && <p><span className="font-semibold text-[#1A1D22]">What the risk is:</span> {c.whatTheRiskIs}</p>}
-                        {c.whyItMatters && <p><span className="font-semibold text-[#1A1D22]">Why it matters:</span> {c.whyItMatters}</p>}
-                        {c.recommendedAction && <p><span className="font-semibold text-[#1A1D22]">Recommended action:</span> {c.recommendedAction}</p>}
-                        {c.suggestedInterviewQuestion && <p><span className="font-semibold text-[#1A1D22]">Suggested question:</span> {c.suggestedInterviewQuestion}</p>}
-                        {c.missingSkills.length > 0 && <p><span className="font-semibold text-[#1A1D22]">Missing skills:</span> {c.missingSkills.join(", ")}</p>}
-                        {c.impact && <p><span className="font-semibold text-[#1A1D22]">Impact:</span> {c.impact}</p>}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
         {/* Detailed Lists */}
-        <div className="grid min-h-0 grid-cols-1 gap-4 lg:grid-cols-12">
+        <div className="grid min-h-0 grid-cols-1 gap-6 lg:grid-cols-12">
           <div className="lg:col-span-7">
-            <div className={cn(card, "flex h-[420px] min-h-0 min-w-0 flex-col overflow-hidden border-none bg-white p-0 shadow-md")}>
-              <div className="border-b border-[#E8EAED]/50 px-4 py-3 bg-gray-50">
-                <p className="text-sm font-extrabold">Career timeline</p>
+            <div className={cn(card, "flex h-[420px] min-h-0 min-w-0 flex-col overflow-hidden border border-[#DDE1E5] bg-white p-0 shadow-[0_8px_24px_rgba(0,0,0,0.05)]")}>
+              <div className="border-b border-[#D7DBE0] bg-[#FAFBFC] px-4 py-3">
+                <p className="text-sm font-extrabold text-[#1A1D22]">Career timeline</p>
               </div>
-              <div className="flex-1 space-y-3 overflow-y-auto p-3">
+              <div className="flex-1 space-y-3 overflow-y-auto p-4">
                 {model.careerLines.map((line, k) => (
                   <div
                     key={k}
-                    className="flex gap-2 rounded-lg border border-[#E8EAED]/50 bg-white p-2.5 transition-colors hover:bg-slate-50"
+                    className="flex gap-2 rounded-xl border border-[#E2E6EB] bg-white p-3 transition-colors hover:bg-slate-50"
                   >
                     <Link2 className="mt-0.5 h-4 w-4 shrink-0 text-black" />
                     <div className="min-w-0 flex-1">
                       <div className="mb-0.5 flex flex-wrap items-center gap-1.5">
                         <span className="text-[10px] font-bold text-[#6B7079]">Experience</span>
                         <span className="text-[9px] text-[#8C9299]">{line.time}</span>
-                        {line.integrityLevel && line.integrityLevel !== "Low" && (
-                          <span className={cn("rounded-full px-1.5 py-0.5 text-[8px] font-extrabold uppercase", line.integrityLevel === "High" ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-700")}>
-                            {line.integrityLevel} integrity flag
-                          </span>
-                        )}
                       </div>
                       <p className="text-[12px] font-bold text-[#1A1D22]">{line.label}</p>
                       <p className="whitespace-pre-wrap text-[12px] leading-relaxed text-[#3D434D]">{line.body}</p>
@@ -1824,8 +1551,8 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
             </div>
           </div>
           <div className="min-h-0 lg:col-span-5">
-            <div className={cn(card, "flex h-[420px] min-h-0 flex-col overflow-hidden border-none bg-white p-0 shadow-md")}>
-              <div className="flex items-center justify-between border-b border-[#E8EAED]/50 px-4 py-3 bg-gray-50">
+            <div className={cn(card, "flex h-[420px] min-h-0 flex-col overflow-hidden border border-[#DDE1E5] bg-white p-0 shadow-[0_8px_24px_rgba(0,0,0,0.05)]")}>
+              <div className="flex items-center justify-between border-b border-[#D7DBE0] bg-[#FAFBFC] px-4 py-3">
                 <div>
                   <h3 className="text-sm font-extrabold text-[#1A1D22]">Skill signals</h3>
                   <p className="mt-0.5 text-[10px] font-medium uppercase tracking-widest text-[#6B7079]">
@@ -1845,7 +1572,7 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
                   );
                 })()}
               </div>
-              <div className="flex-1 overflow-y-auto p-3">
+              <div className="flex-1 overflow-y-auto p-4">
                 {(() => {
                   const matched = model.skillMatchRows.filter((r) => r.matched);
                   const missing = model.skillMatchRows.filter((r) => !r.matched);
@@ -1876,7 +1603,7 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
                               return (
                                 <div
                                   key={`m-${s.name}-${j}`}
-                                  className="flex items-center justify-between gap-3 rounded-lg border border-[#EEF0F3]/70 bg-white px-3 py-2 transition-colors hover:bg-slate-50"
+                                  className="flex items-center justify-between gap-3 rounded-xl border border-[#E2E6EB] bg-white px-3 py-2.5 transition-colors hover:bg-slate-50"
                                 >
                                   <div className="min-w-0 flex-1">
                                     <div className="flex items-center gap-1.5">
@@ -1912,15 +1639,15 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
                             {missing.map((s, j) => (
                               <div
                                 key={`x-${s.name}-${j}`}
-                                className="flex items-center justify-between gap-3 rounded-lg border border-amber-100 bg-amber-50/40 px-3 py-2"
+                                className="flex items-center justify-between gap-3 rounded-xl border border-[#fc2d2d] bg-[#fff3f3] px-3 py-2"
                               >
                                   <div className="min-w-0 flex-1">
-                                    <p className="truncate text-[12px] font-semibold text-[#1A1D22]">{s.name}</p>
+                                    <p className="truncate text-[12px] font-semibold text-[#fc2d2d]">{s.name}</p>
                                     {s.evidenceNote && (
-                                      <p className="mt-0.5 truncate text-[10px] font-medium text-[#6B7079]">{s.evidenceNote}</p>
+                                      <p className="mt-0.5 truncate text-[10px] font-medium text-[#d10f0f]">{s.evidenceNote}</p>
                                     )}
                                   </div>
-                                <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-extrabold text-amber-800">
+                                <span className="shrink-0 rounded-full bg-[#fc2d2d] px-2 py-0.5 text-[10px] font-extrabold text-white">
                                   Missing
                                 </span>
                               </div>
@@ -1938,53 +1665,6 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
             </div>
           </div>
         </div>
-
-        {/* Career Progression */}
-        {model.careerProgression && (
-          <div className={cn(card, "border-none bg-white p-0 shadow-md overflow-hidden")}>
-            <div className="flex items-center gap-3 border-b border-[#E8EAED]/50 bg-gray-50 px-4 py-3">
-              <p className="text-sm font-extrabold text-[#1A1D22]">Career progression</p>
-              <span className="rounded-full bg-[#1A1D22] px-2.5 py-0.5 text-[9px] font-black uppercase tracking-[0.15em] text-white">
-                {model.careerProgression.pattern}
-              </span>
-              {model.careerProgression.tenureAvg && (
-                <span className="rounded-full bg-[#F1F2F4] px-2.5 py-0.5 text-[9px] font-bold text-[#5C6370]">
-                  {model.careerProgression.tenureAvg}
-                </span>
-              )}
-              {model.careerProgression.companyTypes && (
-                <span className="hidden rounded-full bg-[#F1F2F4] px-2.5 py-0.5 text-[9px] font-bold text-[#5C6370] sm:inline">
-                  {model.careerProgression.companyTypes}
-                </span>
-              )}
-            </div>
-            <div className="px-4 py-3 space-y-3">
-              {model.careerProgression.roleFlow && (
-                <p className="text-[13px] font-semibold text-[#1A1D22] leading-relaxed">{model.careerProgression.roleFlow}</p>
-              )}
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                {model.careerProgression.patternNote && (
-                  <div className="rounded-xl border border-[#E8EAED]/60 bg-[#FAFBFC] px-3 py-2.5">
-                    <p className="mb-0.5 text-[9px] font-extrabold uppercase tracking-[0.18em] text-[#6B7079]">Pattern</p>
-                    <p className="text-[11px] leading-snug text-[#1A1D22]">{model.careerProgression.patternNote}</p>
-                  </div>
-                )}
-                {model.careerProgression.companyNote && (
-                  <div className="rounded-xl border border-[#E8EAED]/60 bg-[#FAFBFC] px-3 py-2.5">
-                    <p className="mb-0.5 text-[9px] font-extrabold uppercase tracking-[0.18em] text-[#6B7079]">Company track</p>
-                    <p className="text-[11px] leading-snug text-[#1A1D22]">{model.careerProgression.companyNote}</p>
-                  </div>
-                )}
-                {model.careerProgression.tenureNote && (
-                  <div className="rounded-xl border border-[#E8EAED]/60 bg-[#FAFBFC] px-3 py-2.5">
-                    <p className="mb-0.5 text-[9px] font-extrabold uppercase tracking-[0.18em] text-[#6B7079]">Stability</p>
-                    <p className="text-[11px] leading-snug text-[#1A1D22]">{model.careerProgression.tenureNote}</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Decision Section */}
         <div className="rounded-3xl border border-[#DDE1E5] bg-gradient-to-r from-gray-100 via-white to-gray-50 p-[1px] shadow-lg">

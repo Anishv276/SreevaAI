@@ -42,39 +42,6 @@ function firstText(value: unknown, fallback = ""): string {
     return list[0] || fallback;
 }
 
-function normalizeReportLines(values: string[]): string[] {
-    const seen = new Set<string>();
-    const out: string[] = [];
-    for (const value of values) {
-        const line = String(value || "").replace(/\s+/g, " ").trim();
-        if (!line) continue;
-        const key = line.toLowerCase();
-        if (seen.has(key)) continue;
-        seen.add(key);
-        out.push(line);
-    }
-    return out;
-}
-
-function isGenericReportCardLine(text: string): boolean {
-    const s = String(text || "").toLowerCase().trim();
-    if (!s) return true;
-    return [
-        "cross-check against the hiring bar for this role",
-        "no major automated blockers",
-        "ai screening analysis ready",
-        "screening analysis ready",
-        "strong fit",
-        "review",
-        "needs review",
-        "no major must-have gaps surfaced",
-        "i do not see major must-have gaps",
-        "candidate has",
-        "document review focuses",
-        "scores are model estimates",
-    ].some((needle) => s === needle || s.includes(needle));
-}
-
 function safeJsonParse(value: unknown, fallback: any = {}): any {
     if (!value) return fallback;
     if (typeof value === "object") return value;
@@ -336,60 +303,6 @@ export default function CandidateProfilePage() {
         const report = resumeReportPayload || {};
         const resumeStruct = structuredResumeData || {};
         const fullName = candidate?.fullName || "Candidate";
-        const decisionBreakdown = Array.isArray(report.decision_breakdown) ? report.decision_breakdown : [];
-        const skillRows = Array.isArray(report.skill_match_rows) ? report.skill_match_rows : [];
-        const integritySignals = Array.isArray(report.integrity_signals) ? report.integrity_signals : [];
-        const strengths = normalizeReportLines([
-            ...toTextList(report.strengths).map((line) => line.replace(/\s*—\s*$/, "").trim()),
-            ...decisionBreakdown
-                .filter((row: any) => String(row?.result || "").toLowerCase() === "pass")
-                .map((row: any) => {
-                    const criteria = firstText(row?.criteria || row?.criterion || row?.name);
-                    const candidateHas = firstText(row?.candidate_has || row?.candidateHas || row?.note);
-                    if (!criteria) return "";
-                    const evidence = candidateHas && !/^yes\b/i.test(candidateHas)
-                        ? candidateHas.replace(/^yes\s*[—:-]?\s*/i, "").trim()
-                        : "";
-                    return evidence ? `${criteria} — ${evidence}` : `${criteria} — evidenced in the extracted resume data`;
-                }),
-            ...skillRows
-                .filter((row: any) => Number(row?.stars ?? 0) >= 4)
-                .map((row: any) => {
-                    const skill = firstText(row?.name || row?.skill);
-                    if (!skill) return "";
-                    const note = firstText(row?.evidence_note || row?.evidence || "");
-                    return note ? `${skill} — ${note}` : `${skill} — strong evidence in work history`;
-                }),
-            report?.experience_assessment?.quality
-                ? `Experience fit — ${String(report.experience_assessment.quality).trim()}`
-                : "",
-            report?.project_relevance?.reasoning
-                ? `Project relevance — ${String(report.project_relevance.reasoning).trim()}`
-                : "",
-        ].filter(Boolean).filter((line) => !isGenericReportCardLine(String(line))));
-        const concerns = normalizeReportLines([
-            ...toTextList(report.concerns).map((line) => line.replace(/\s*—\s*$/, "").trim()),
-            ...decisionBreakdown
-                .filter((row: any) => String(row?.result || "").toLowerCase() !== "pass")
-                .map((row: any) => {
-                    const criteria = firstText(row?.criteria || row?.criterion || row?.name);
-                    const note = firstText(row?.note || row?.impact || row?.candidate_has);
-                    if (!criteria) return "";
-                    return note ? `${criteria} — ${note}` : `${criteria} — verify this in interview`;
-                }),
-            ...integritySignals
-                .filter((sig: any) => String(sig?.level || "").toLowerCase() !== "low")
-                .map((sig: any) => {
-                    const label = firstText(sig?.label || sig?.summary || sig?.details);
-                    const summary = firstText(sig?.summary || sig?.details || "");
-                    if (!label) return "";
-                    return summary ? `${label} — ${summary}` : `${label} — verify before shortlist`;
-                }),
-                ...normalizeReportLines([
-                ...toTextList(report.rejection_reasons || []),
-                ...toTextList(report.uncertain_areas || []),
-            ]).map((line) => line.includes("—") ? line : `${line} — verify before moving forward`),
-        ].filter(Boolean).filter((line) => !isGenericReportCardLine(String(line))));
         const workHistory = (Array.isArray(report.work_history_annotated) && report.work_history_annotated.length > 0)
             ? report.work_history_annotated
             : Array.isArray(report.work_history)
@@ -428,7 +341,6 @@ export default function CandidateProfilePage() {
             firstText(report.reasoning) ||
             "AI screening analysis ready.";
         const primaryGapText =
-            firstText(concerns) ||
             firstText(report.decision_reason) ||
             firstText(report.recruiter_snapshot) ||
             "No top gap listed yet.";
@@ -436,13 +348,6 @@ export default function CandidateProfilePage() {
         // AI-direct fields from gpt-4o report
         const aiRadar = report.fit_radar || null;
         const aiSkillRows = Array.isArray(report.skill_match_rows) ? report.skill_match_rows : null;
-        const aiDecisionBreakdown = Array.isArray(report.decision_breakdown) ? report.decision_breakdown : null;
-        const aiStrengthsData = Array.isArray(report.strengths) ? report.strengths : null;
-        const aiConcernsData = Array.isArray(report.concerns) ? report.concerns : null;
-        const aiIntegritySignalsData = Array.isArray(report.integrity_signals) ? report.integrity_signals : null;
-        const aiSeniorityAlignment = report.seniority_alignment || null;
-        const aiCareerProgressionData = report.career_progression_details || null;
-        const candidatePotentialReasoning = report.candidate_potential?.reasoning || null;
         const missingMustSkills: string[] = (() => {
             const fromMatching = report?.skill_matching?.missing_must;
             if (Array.isArray(fromMatching) && fromMatching.length > 0) {
@@ -454,7 +359,6 @@ export default function CandidateProfilePage() {
                 : [];
             return fromConcerns.map((s: any) => String(s || "").trim()).filter(Boolean);
         })();
-        const readinessTimeline = report.suitability_analysis?.readiness_timeline || null;
         const candidatePotential = report.candidate_potential?.for_this_role || null;
         const decisionReason = typeof report.decision_reason === "string" ? report.decision_reason : null;
         const humanLayer = report.human_layer || null;
@@ -490,27 +394,13 @@ export default function CandidateProfilePage() {
             aiRadar,
             aiSkillRows,
             missingMustSkills,
-            readinessTimeline,
             candidatePotential,
-            candidatePotentialReasoning,
             decisionReason,
-            seniorityAlignment: aiSeniorityAlignment,
-            decisionBreakdown: aiDecisionBreakdown,
-            strengthsData: aiStrengthsData,
-            concernsData: aiConcernsData,
-            integritySignalsData: aiIntegritySignalsData,
-            careerProgressionData: aiCareerProgressionData,
             humanLayer,
             skillMatching: report.skill_matching || null,
-            behavioralSignals: Array.isArray(report.behavioral_signals)
-                ? report.behavioral_signals
-                : Array.isArray(report.cultural_signals)
-                    ? report.cultural_signals
-                    : null,
             resumeParseConfidence: typeof structuredResumeData?.parse_confidence === "string"
                 ? structuredResumeData.parse_confidence
                 : null,
-            reportConfidence: Number(report?.human_layer?.confidence ?? report?.confidence ?? 0) || null,
         });
     }, [backHref, candidate, candidatePhotoSrc, mounted, resumeReportPayload, structuredResumeData, structuredJdData]);
 
