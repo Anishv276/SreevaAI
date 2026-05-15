@@ -1487,7 +1487,7 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
               </div>
               <span
                 className={cn(
-                  "shrink-0 rounded-md px-2.5 py-0.5 text-[9px] font-extrabold uppercase tracking-widest shadow-sm",
+                  "mt-1 shrink-0 rounded-md px-2.5 py-0.5 text-[9px] font-extrabold uppercase tracking-widest shadow-sm",
                   model.fitPercent >= 80
                     ? "bg-[#E6F4EC] text-[#0D4D2E]"
                     : model.fitPercent >= 60
@@ -1498,12 +1498,13 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
                 {model.fitPercent >= 80 ? "Strong fit" : model.fitPercent >= 60 ? "Review" : "Needs review"}
               </span>
             </div>
-            <div className="flex-1 space-y-3 overflow-y-auto pr-1">
+            <div className="flex-1 space-y-4 overflow-y-auto pr-1">
               {model.aiSummaryPoints.map((item, j) => (
                 <div
                   key={`${item.label}-${j}`}
                   className={cn(
                     "rounded-2xl border px-3 py-3 shadow-sm transition-colors",
+                    item.label === "Red flags" ? "mt-1" : "",
                     item.label === "Red flags"
                       ? "border-red-200 bg-red-50/50"
                       : item.tone === "emerald"
@@ -1513,7 +1514,7 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
                           : "border-red-200 bg-red-50/50"
                   )}
                 >
-                  <div className="mb-1 flex items-center gap-2">
+                  <div className="mb-2 flex items-center gap-2">
                     <span
                       className={cn(
                         "rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.2em]",
@@ -1521,15 +1522,12 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
                           ? "bg-red-100 text-red-700"
                           : item.tone === "emerald"
                             ? "bg-[#0D4D2E] text-white"
-                            : item.tone === "amber"
-                              ? "bg-[#B86A00] text-white"
-                              : "bg-red-100 text-red-700"
+                        : item.tone === "amber"
+                          ? "bg-[#B86A00] text-white"
+                        : "bg-red-100 text-red-700"
                       )}
                     >
                       {item.label}
-                    </span>
-                    <span className={cn("text-[10px] font-bold", item.label === "Red flags" ? "text-red-600" : "text-[#6B7079]")}>
-                      {j === 0 ? "Direct match" : j === 1 ? "Experience" : j === 2 ? "Applied proof" : "Red flags"}
                     </span>
                   </div>
                   <p className={cn("text-[13px] leading-6", item.label === "Red flags" ? "text-red-900" : "text-[#1A1D22]")}>{item.body}</p>
@@ -1560,20 +1558,15 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
             </div>
             <div className="border-b border-emerald-100 bg-emerald-50/70 px-4 py-3">
               <p className="text-sm font-semibold text-emerald-800">Strengths</p>
-              <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-widest text-emerald-900/90">
-                Evidence-based: matched skills, ownership, and repeated proof in work history
-              </p>
             </div>
             <div className="space-y-2 p-3">
               {model.strengths.length > 0 ? (
                 model.strengths.map((item, idx) => (
-                  <div key={`strength-${idx}`} className="group relative rounded-lg border border-emerald-100/80 bg-white px-3 py-2.5 transition-all hover:bg-emerald-50/30">
-                    <div className="flex items-start gap-2">
-                      <div className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-emerald-500" />
-                      <div>
-                        <p className="text-[12px] font-bold text-[#1A1D22]">{item.label}</p>
-                        <p className="mt-0.5 text-[11px] leading-relaxed text-[#3D434D]">{item.body}</p>
-                      </div>
+                  <div key={`strength-${idx}`} className="flex items-start gap-2 rounded-lg border border-emerald-100/80 bg-white px-3 py-2.5 transition-colors hover:bg-emerald-50/30">
+                    <div className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
+                    <div className="min-w-0">
+                      <p className="text-[12px] font-semibold text-[#1A1D22]">{item.label}</p>
+                      <p className="mt-0.5 text-[11px] leading-relaxed text-[#3D434D]">{item.body}</p>
                     </div>
                   </div>
                 ))
@@ -1603,20 +1596,15 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
             </div>
             <div className="border-b border-red-100 bg-red-50 px-4 py-3">
               <p className="text-sm font-semibold text-red-900">Weaknesses</p>
-              <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-widest text-red-700/80">
-                Based on missing must-haves, weaker proof, and evidence gaps
-              </p>
             </div>
             <div className="space-y-2 p-3">
               {model.weaknesses.length > 0 ? (
                 model.weaknesses.map((item, idx) => (
-                  <div key={`weakness-${idx}`} className="group relative rounded-lg border border-red-100 bg-red-50/30 px-3 py-2.5 transition-all hover:bg-red-50/60">
-                    <div className="flex items-start gap-2">
-                      <div className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-red-500" />
-                      <div>
-                        <p className="text-[12px] font-bold text-red-900">{item.label}</p>
-                        <p className="mt-0.5 text-[11px] leading-relaxed text-red-800">{item.body}</p>
-                      </div>
+                  <div key={`weakness-${idx}`} className="flex items-start gap-2 rounded-lg border border-red-100 bg-red-50/30 px-3 py-2.5 transition-colors hover:bg-red-50/60">
+                    <div className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" />
+                    <div className="min-w-0">
+                      <p className="text-[12px] font-semibold text-red-900">{item.label}</p>
+                      <p className="mt-0.5 text-[11px] leading-relaxed text-red-800">{item.body}</p>
                     </div>
                   </div>
                 ))
@@ -1789,10 +1777,10 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
         </div>
 
         {/* Decision Section */}
-        <div className={cn(
-          "rounded-3xl border p-[1.5px] shadow-2xl transition-all duration-500",
-          model.decisionStamp === "SHORTLISTED"
-            ? "border-emerald-200 bg-gradient-to-br from-emerald-100 via-white to-emerald-50 shadow-emerald-200/40"
+          <div className={cn(
+            "rounded-3xl border p-[1.5px] shadow-2xl transition-all duration-500",
+            model.decisionStamp === "SHORTLISTED"
+              ? "border-emerald-200 bg-gradient-to-br from-emerald-100 via-white to-emerald-50 shadow-emerald-200/40"
             : model.decisionStamp === "REJECTED"
               ? "border-red-200 bg-gradient-to-br from-red-100 via-white to-red-50 shadow-red-200/40"
               : "border-[#DDE1E5] bg-gradient-to-r from-gray-100 via-white to-gray-50 shadow-gray-200/40"
@@ -1815,16 +1803,23 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
                 )}>
                   Why {model.decisionStamp === "SHORTLISTED" ? "Shortlisted" : model.decisionStamp === "REJECTED" ? "Rejected" : "Borderline"}
                 </p>
-                <div className="mt-2 space-y-1.5">
-                  {model.reviewStrip.split(/(?<=\.)\s+/).map((sentence, idx) => (
-                    <p key={idx} className={cn(
-                      "text-[13px] leading-relaxed",
-                      idx === 0 ? "font-semibold text-[#1A1D22]" : "font-normal text-[#3A3F4A]"
-                    )}>
-                      {sentence}
-                    </p>
-                  ))}
-                </div>
+                <p className="mt-3 text-[13px] leading-7 text-[#1A1D22] whitespace-pre-wrap">
+                  {(() => {
+                    const parts = model.reviewStrip
+                      .split(/(?<=\.)\s+/)
+                      .map((sentence) => sentence.trim())
+                      .filter(Boolean);
+
+                    if (parts.length === 0) return model.reviewStrip;
+
+                    return (
+                      <>
+                        <strong>{parts[0]} </strong>
+                        {parts.slice(1).join(" ")}
+                      </>
+                    );
+                  })()}
+                </p>
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-3">
