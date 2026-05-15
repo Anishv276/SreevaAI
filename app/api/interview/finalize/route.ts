@@ -8,7 +8,6 @@ import { isInterviewTokenRequired } from "@/lib/interview-access";
 import { generateInterviewReport } from "@/lib/interview-analysis";
 import {
   deductInterviewQuota,
-  getInterviewQuotaUnits,
   incrementOrgCreditsUsed,
 } from "@/lib/credits";
 import { recordOrgBillingUsage } from "@/lib/usage-metrics";
@@ -351,7 +350,7 @@ export async function POST(req: Request) {
       applicationId
     );
 
-    // Deduct one interview only when the session crosses the 5-minute quota threshold.
+    // Deduct one interview for each completed session and add minute-based credit usage.
     try {
       const appForOrg = await prisma.application.findUnique({
         where: { id: applicationId },
@@ -359,11 +358,8 @@ export async function POST(req: Request) {
       });
       const orgId = appForOrg?.drive?.orgId;
       if (orgId) {
-        const quotaUnits = resolvedDuration !== null && !isNaN(resolvedDuration as number)
-          ? getInterviewQuotaUnits(resolvedDuration)
-          : 0;
-        if (isNewCompletion && quotaUnits > 0) {
-          await deductInterviewQuota(orgId, quotaUnits);
+        if (isNewCompletion) {
+          await deductInterviewQuota(orgId, 1);
         }
         if (isNewCompletion && resolvedDuration !== null && !isNaN(resolvedDuration as number)) {
           const creditsDelta = Math.round(((resolvedDuration || 0) / 60) * 100) / 100;

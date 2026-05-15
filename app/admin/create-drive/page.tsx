@@ -109,6 +109,7 @@ function CreateDriveForm() {
   const analysisAbortRef = useRef<AbortController | null>(null);
   const hasInitialLoadedRef = useRef<string | null>(null);
   const formDataRef = useRef<any>(formData);
+  const jdPersistedUrlRef = useRef<string | null>(null);
   const activeDriveCount =
     organization?.activeDriveCount ?? getActiveDriveCount(jobs);
   const maxActiveDrives = organization?.maxActiveDrives;
@@ -158,9 +159,18 @@ function CreateDriveForm() {
       .join(", ");
   };
   const displayFormData = resolveVoiceConfig(formData);
+  const getPersistedJdUrl = (source: any = formDataRef.current) => {
+    const candidateUrl = jdPersistedUrlRef.current || source?.jdPreviewUrl;
+    return typeof candidateUrl === "string" && !candidateUrl.startsWith("blob:")
+      ? candidateUrl
+      : null;
+  };
   // Keep ref in sync with state for use in async handlers
   useEffect(() => {
     formDataRef.current = formData;
+    if (typeof formData.jdPreviewUrl === "string" && !formData.jdPreviewUrl.startsWith("blob:")) {
+      jdPersistedUrlRef.current = formData.jdPreviewUrl;
+    }
   }, [formData]);
   // Cleanup blob URLs to prevent memory leaks
   useEffect(() => {
@@ -416,7 +426,7 @@ function CreateDriveForm() {
           setAnalysisError("Failed to extract JD details.");
           return;
         }
-        const { data: extracted, text, url: r2Url } = responseData;
+          const { data: extracted, text, url: r2Url } = responseData;
         if (!extracted && !text && !r2Url) {
           console.error("Extraction error response:", responseData);
           setAnalysisError(
@@ -425,6 +435,9 @@ function CreateDriveForm() {
           return;
         }
         console.log("Analysis success:", extracted);
+        if (typeof r2Url === "string" && !r2Url.startsWith("blob:")) {
+          jdPersistedUrlRef.current = r2Url;
+        }
         // Map extracted JD schema to form fields
         setFormData((prev: any) => {
           const experience = extracted?.experience;
@@ -587,6 +600,13 @@ function CreateDriveForm() {
     if (driveCreationLocked && !isEditMode) {
       return;
     }
+    const pendingJdUpload =
+      Boolean(currentFormData.jdFile) ||
+      (typeof currentFormData.jdPreviewUrl === "string" && currentFormData.jdPreviewUrl.startsWith("blob:"));
+    if (isAnalyzing || (pendingJdUpload && !getPersistedJdUrl(currentFormData))) {
+      toast.error("Please wait for the JD upload to finish before saving.");
+      return;
+    }
     // Collect data
     let parsedQuestions = currentFormData.interviewQuestions || [];
     if (typeof parsedQuestions === "string") {
@@ -610,7 +630,7 @@ function CreateDriveForm() {
       responsibilities: currentFormData.responsibilities || "",
       requirements: currentFormData.requirements || "",
       jdFileName: currentFormData.jdFileName || null,
-      jdPreviewUrl: currentFormData.jdPreviewUrl,
+      jdPreviewUrl: getPersistedJdUrl(currentFormData),
       extractedDetails: currentFormData.extractedDetails
         ? typeof currentFormData.extractedDetails === "string"
           ? currentFormData.extractedDetails
@@ -720,6 +740,13 @@ function CreateDriveForm() {
       toast.error(interviewAccessLocked ? getInterviewQuotaSupportMessage("interviews") : "Drive limit reached. Go to Billing to upgrade your plan.");
       return;
     }
+    const pendingJdUpload =
+      Boolean(currentFormData.jdFile) ||
+      (typeof currentFormData.jdPreviewUrl === "string" && currentFormData.jdPreviewUrl.startsWith("blob:"));
+    if (isAnalyzing || (pendingJdUpload && !getPersistedJdUrl(currentFormData))) {
+      toast.error("Please wait for the JD upload to finish before publishing.");
+      return;
+    }
     setIsSavingDraft(true);
     const description = currentFormData.description?.trim() || "";
     if (!description) {
@@ -754,7 +781,7 @@ function CreateDriveForm() {
       responsibilities: currentFormData.responsibilities,
       requirements: currentFormData.requirements,
       jdFileName: currentFormData.jdFileName,
-      jdPreviewUrl: currentFormData.jdPreviewUrl,
+      jdPreviewUrl: getPersistedJdUrl(currentFormData),
       extractedDetails: currentFormData.extractedDetails
         ? typeof currentFormData.extractedDetails === "string"
           ? currentFormData.extractedDetails

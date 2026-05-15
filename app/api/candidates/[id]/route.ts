@@ -209,8 +209,8 @@ export async function PATCH(
 
         if (isRejected) {
             dataToUpdate.resumeStatus = "rejected";
-            dataToUpdate.interviewStatus = "Not Qualified";
-            dataToUpdate.hiringStatus = "Not Shortlisted";
+            dataToUpdate.interviewStatus = "not qualified";
+            dataToUpdate.hiringStatus = "not hired";
         }
 
         if (isHired) {
@@ -221,8 +221,8 @@ export async function PATCH(
 
         if (isNotHired) {
             dataToUpdate.resumeStatus = "rejected";
-            dataToUpdate.interviewStatus = "Not Qualified";
-            dataToUpdate.hiringStatus = "Not Hired";
+            dataToUpdate.interviewStatus = "not qualified";
+            dataToUpdate.hiringStatus = "not hired";
         }
 
         const updated = await prisma.application.update({

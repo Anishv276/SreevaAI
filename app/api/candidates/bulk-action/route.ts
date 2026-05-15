@@ -78,8 +78,8 @@ export async function POST(request: Request) {
                 where: { id: { in: validIds } },
                 data: {
                     resumeStatus: "rejected",
-                    interviewStatus: "Not Qualified",
-                    hiringStatus: "Not Shortlisted",
+                    interviewStatus: "not qualified",
+                    hiringStatus: "not hired",
                 },
             });
 

@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
-import localFont from "next/font/local";
+import { Inter } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
 import { JobsProvider } from "@/context/jobs-context";
@@ -9,20 +9,9 @@ import { CandidatesProvider } from "@/context/candidates-context";
 import { Toaster } from "@/components/ui/toast-custom";
 import ClarityAnalytics from "@/components/clarity-analytics";
 
-// Keep the original Inter look, but source it locally so builds stay offline-safe.
-const inter = localFont({
-  src: [
-    {
-      path: "../node_modules/prisma/build/public/assets/inter-latin-400-normal.27ae72da.woff2",
-      weight: "400",
-      style: "normal",
-    },
-    {
-      path: "../node_modules/prisma/build/public/assets/inter-latin-600-normal.87d718a2.woff2",
-      weight: "600",
-      style: "normal",
-    },
-  ],
+const inter = Inter({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800", "900"],
   variable: "--font-inter",
   display: "swap",
 });

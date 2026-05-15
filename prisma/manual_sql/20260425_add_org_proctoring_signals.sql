@@ -1,2 +1,0 @@
-ALTER TABLE "Organization"
-  ADD COLUMN IF NOT EXISTS "proctoringSignals" JSONB NOT NULL DEFAULT '{"tab_switch":true,"camera_disabled":true,"microphone_disabled":true,"connection_lost":true,"duplicate_ip":true,"face_absence":true,"multiple_faces":true,"identity_mismatch":true,"ownership_ambiguity":true,"example_evasion":true,"latency_mismatch":true,"resume_claim_mismatch":true,"ownership_clarified":true,"example_given":true,"strong_under_pressure":true,"follow_up_collapse":true,"contradiction":true,"contradiction_resolved":true}'::jsonb;

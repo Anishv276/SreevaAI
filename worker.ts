@@ -14,7 +14,7 @@ import { appendCandidateActivity } from "./lib/candidate-activity";
 import { getPythonExecutable } from "./lib/python-exec";
 import { extractJDFromText } from "./lib/openai";
 import { deriveDriveJdFieldsFromDescription } from "./lib/drive-jd";
-import { deductInterviewQuota, getInterviewQuotaUnits, incrementOrgCreditsUsed } from "./lib/credits";
+import { deductInterviewQuota, incrementOrgCreditsUsed } from "./lib/credits";
 import { parseDriveScreeningSettings } from "./lib/screening-criteria";
 import { recordOrgBillingUsage } from "./lib/usage-metrics";
 // Load environment variables
@@ -1145,10 +1145,7 @@ if (isQueueEnabled("interview-finalization")) {
             : 0;
 
         if (orgId && isNewCompletion) {
-          const quotaUnits = getInterviewQuotaUnits(fallbackDurationSec);
-          if (quotaUnits > 0) {
-            await deductInterviewQuota(orgId, quotaUnits);
-          }
+          await deductInterviewQuota(orgId, 1);
           if (fallbackDurationSec > 0) {
             const creditsDelta = Math.round((fallbackDurationSec / 60) * 100) / 100;
             if (creditsDelta > 0) {

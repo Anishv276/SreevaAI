@@ -87,6 +87,12 @@ interface OrgDetail {
 
     usageMetrics?: Record<string, unknown> | null;
 
+    interviewQuotaTotal?: number;
+
+    interviewQuotaUsed?: number;
+
+    creditsUsed?: number;
+
     ttsProvider?: string;
 
     cartesiaVoiceId?: string;
@@ -1132,6 +1138,32 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
 
                         </div>
 
+                        <div className="grid gap-4 border-t border-gray-100 bg-gray-50/50 px-6 py-5 md:grid-cols-3">
+                            <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+                                <div className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Interview quota used</div>
+                                <div className="mt-2 text-3xl font-black text-gray-900">{Number(org?.interviewQuotaUsed || 0).toLocaleString()}</div>
+                                <div className="mt-1 text-xs font-bold text-gray-500 uppercase tracking-wider">
+                                    1 interview is deducted after each completed session.
+                                </div>
+                            </div>
+                            <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+                                <div className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Credits used</div>
+                                <div className="mt-2 text-3xl font-black text-gray-900">{Number(org?.creditsUsed || 0).toFixed(2)}</div>
+                                <div className="mt-1 text-xs font-bold text-gray-500 uppercase tracking-wider">
+                                    1 minute = 1 credit.
+                                </div>
+                            </div>
+                            <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+                                <div className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Interview quota remaining</div>
+                                <div className="mt-2 text-3xl font-black text-gray-900">
+                                    {Math.max(0, Number(org?.interviewQuotaTotal || 0) - Number(org?.interviewQuotaUsed || 0)).toLocaleString()}
+                                </div>
+                                <div className="mt-1 text-xs font-bold text-gray-500 uppercase tracking-wider">
+                                    Current org balance.
+                                </div>
+                            </div>
+                        </div>
+
                     </div>
 
                 </div>
@@ -1143,8 +1175,6 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
     );
 
 }
-
-
 
 
 

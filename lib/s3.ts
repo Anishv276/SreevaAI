@@ -42,12 +42,12 @@ export const putObject = async (bucket: string, key: string, body: Buffer, conte
     if (bucketName.includes("logo")) {
         publicUrlBase = process.env.NEXT_PUBLIC_R2_LOGOS_URL || "";
     } else if (bucketName.includes("jd")) {
-        publicUrlBase = process.env.NEXT_PUBLIC_R2_JDS_URL || "";
+        publicUrlBase = process.env.NEXT_PUBLIC_R2_JDS_URL || "https://pub-e4a8b24775c741f6a650def856cfec9f.r2.dev";
     } else if (bucketName.includes("interview")) {
         publicUrlBase = process.env.NEXT_PUBLIC_R2_INTERVIEW_URL || "https://pub-e4a8b24775c741f6a650def856cfec9f.r2.dev";
     } else {
         // Default to Resumes
-        publicUrlBase = process.env.NEXT_PUBLIC_R2_RESUMES_URL || "";
+        publicUrlBase = process.env.NEXT_PUBLIC_R2_RESUMES_URL || "https://pub-e4a8b24775c741f6a650def856cfec9f.r2.dev";
     }
 
     return `${publicUrlBase.replace(/\/$/, '')}/${key}`;

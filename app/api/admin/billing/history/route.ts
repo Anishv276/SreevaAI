@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession, isAdminRole, isSuperAdminRole } from "@/lib/auth";
-import { getInterviewQuotaUnits } from "@/lib/credits";
 
 function normalizeStatus(value?: string | null) {
   const v = String(value || "").trim().toLowerCase().replace(/[_\s]+/g, "-");
@@ -62,7 +61,7 @@ export async function GET(request: Request) {
           id: row.id,
           candidate: row.application?.fullName || "Unknown Candidate",
           role: row.application?.drive?.role || row.application?.drive?.title || "Unknown Role",
-          interviews: getInterviewQuotaUnits(durationSec),
+          interviews: 1,
           creditsUsed: Math.round((durationSec / 60) * 100) / 100,
           status: normalizeStatus(row.status),
           date,

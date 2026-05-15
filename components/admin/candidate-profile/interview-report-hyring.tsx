@@ -721,7 +721,6 @@ export function buildHyringInterviewViewModel(i: {
     toNum(billing.sessionDuration) > 0 ||
     toNum(billing.ttsCharacters) > 0 ||
     toNum(billing.sttAudioSeconds) > 0;
-
   const normalizeSkillName = (value: string) =>
     value
       .replace(/\b(question|q\d+|round|interview|asked|asked about)\b/gi, "")
@@ -986,11 +985,12 @@ export function buildHyringInterviewViewModel(i: {
     recordingDurationSec: i.recordingDurationSec,
     snapshots: (() => {
       const s = c.interview?.snapshots || c.assessment?.snapshots;
-      if (Array.isArray(s)) return s.map(String).filter(Boolean);
+      const unique = (items: string[]) => Array.from(new Set(items));
+      if (Array.isArray(s)) return unique(s.map(String).filter(Boolean));
       if (typeof s === "string") {
         try {
           const p = JSON.parse(s);
-          return Array.isArray(p) ? p.map(String).filter(Boolean) : [];
+          return Array.isArray(p) ? unique(p.map(String).filter(Boolean)) : [];
         } catch {
           return [];
         }
@@ -1744,52 +1744,6 @@ export function InterviewReportHyring({
             </div>
           </div>
         </div>
-
-        <div className={cn(card, "overflow-hidden")}>
-          <div className="flex items-center justify-between gap-3 border-b border-[#E8EAED] px-4 py-3">
-            <div>
-              <p className="text-sm font-extrabold text-[#1A1D22]">Billing usage</p>
-              <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-widest text-[#6B7079]">
-                Tokens and cost captured for this interview session
-              </p>
-            </div>
-            <span
-              className={cn(
-                "rounded-md px-2.5 py-0.5 text-[9px] font-extrabold uppercase tracking-widest",
-                model.billing.hasData ? "bg-[#E6F4EC] text-[#0D4D2E]" : "bg-[#F3F4F6] text-[#6B7079]"
-              )}
-            >
-              {model.billing.hasData ? "Captured" : "No usage"}
-            </span>
-          </div>
-          <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-4">
-            <div className="rounded-xl border border-[#E8EAED] bg-[#FAFBFC] p-3">
-              <p className="text-[9px] font-extrabold uppercase tracking-widest text-[#6B7079]">Total tokens</p>
-              <p className="mt-1 text-lg font-black text-[#1A1D22]">{model.billing.totalTokens.toLocaleString()}</p>
-              <p className="mt-1 text-[11px] text-[#6B7079]">Input + output + cached</p>
-            </div>
-            <div className="rounded-xl border border-[#E8EAED] bg-[#FAFBFC] p-3">
-              <p className="text-[9px] font-extrabold uppercase tracking-widest text-[#6B7079]">Total cost</p>
-              <p className="mt-1 text-lg font-black text-[#1A1D22]">{model.billing.totalCostLabel}</p>
-              <p className="mt-1 text-[11px] text-[#6B7079]">All interview usage</p>
-            </div>
-            <div className="rounded-xl border border-[#E8EAED] bg-[#FAFBFC] p-3">
-              <p className="text-[9px] font-extrabold uppercase tracking-widest text-[#6B7079]">Breakdown</p>
-              <p className="mt-1 text-sm font-extrabold text-[#1A1D22]">{model.billing.inputTokens.toLocaleString()} in</p>
-              <p className="mt-0.5 text-sm font-extrabold text-[#1A1D22]">{model.billing.outputTokens.toLocaleString()} out</p>
-              <p className="mt-0.5 text-sm font-extrabold text-[#1A1D22]">{model.billing.cachedInputTokens.toLocaleString()} cached</p>
-            </div>
-            <div className="rounded-xl border border-[#E8EAED] bg-[#FAFBFC] p-3">
-              <p className="text-[9px] font-extrabold uppercase tracking-widest text-[#6B7079]">Media usage</p>
-              <p className="mt-1 text-sm font-extrabold text-[#1A1D22]">{model.billing.ttsCharacters.toLocaleString()} TTS chars</p>
-              <p className="mt-0.5 text-sm font-extrabold text-[#1A1D22]">{Math.round(model.billing.sttAudioSeconds).toLocaleString()} STT sec</p>
-              <p className="mt-1 text-[11px] text-[#6B7079]">
-                LLM {model.billing.llmCostLabel} · TTS {model.billing.ttsCostLabel} · STT {model.billing.sttCostLabel}
-              </p>
-            </div>
-          </div>
-        </div>
-
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <div className={cn(card, "flex flex-col overflow-hidden")}>
             <div className="flex items-center justify-between border-b border-[#E8EAED] px-4 py-3">
@@ -2006,7 +1960,7 @@ export function InterviewReportHyring({
               </div>
               {model.snapshots.length > 0 && (
                 <div className="grid grid-cols-4 gap-1 p-2">
-                  {model.snapshots.slice(0, 4).map((src) => (
+                  {Array.from(new Set(model.snapshots)).slice(0, 4).map((src) => (
                     <div key={src} className="relative aspect-video w-full overflow-hidden rounded border border-[#E8EAED]">
                       <img src={src} alt="" className="h-full w-full object-cover" />
                     </div>
@@ -2024,3 +1978,5 @@ export function InterviewReportHyring({
     </div>
   );
 }
+
+

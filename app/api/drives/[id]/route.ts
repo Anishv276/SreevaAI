@@ -214,7 +214,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
         if (data.jdFileName !== undefined) updateData.jdFileName = data.jdFileName;
         if (data.jdPreviewUrl !== undefined) {
-            updateData.jdPreviewUrl = data.jdPreviewUrl?.startsWith("blob:") ? undefined : data.jdPreviewUrl;
+            const persistedJdUrl = data.jdPreviewUrl?.startsWith("blob:")
+                ? (existingDrive as any).jdPreviewUrl || null
+                : (data.jdPreviewUrl || null);
+            if (persistedJdUrl !== null) {
+                updateData.jdPreviewUrl = persistedJdUrl;
+            }
         }
         if (data.extractedDetails !== undefined) {
             updateData.extractedDetails = typeof data.extractedDetails === "string"

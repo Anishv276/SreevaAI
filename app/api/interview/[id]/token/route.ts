@@ -144,6 +144,17 @@ export async function POST(
             canSubscribe: true,
         });
 
+        // -- STATUS UPDATE: Interview is now in progress ----------
+        try {
+            await prisma.application.update({
+                where: { id: applicationId },
+                data: { interviewStatus: "in progress" }
+            });
+        } catch (statusErr) {
+            console.warn("[TOKEN_API] Failed to update interview status to in progress:", statusErr);
+        }
+        // ---------------------------------------------------------
+
         return NextResponse.json({
             token: await at.toJwt(),
             url: serverUrl,

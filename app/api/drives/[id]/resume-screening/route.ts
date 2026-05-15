@@ -115,13 +115,15 @@ export async function POST(
         },
       });
 
+      const downloadUrl = `/api/drives/${driveId}/resume-screening/download?candidateId=${candidate.id}`;
+
       await prisma.application.create({
         data: {
           id: generateId("app", `${candidate.fullName}-${batch.id}-${index}`),
           fullName: candidate.fullName,
           email: "",
           phone: "",
-          resumeUrl: `/api/drives/${driveId}/resume-screening/download?candidateId=${candidate.id}`,
+          resumeUrl: uploadedUrl,
           aiScore: 0,
           aiReport: buildProgressState(0, "waiting"),
           resumeText: null,
@@ -130,6 +132,8 @@ export async function POST(
               bucket: RESUME_BUCKET,
               key,
               url: uploadedUrl,
+              candidateId: candidate.id,
+              downloadUrl,
             },
           }),
           driveId,

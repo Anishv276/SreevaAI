@@ -67,9 +67,9 @@ export async function POST(request: Request) {
         // Pick PUBLIC DOMAIN based on TYPE
         let publicUrlBase = "";
         if (isJD) {
-            publicUrlBase = process.env.NEXT_PUBLIC_R2_JDS_URL || "";
+            publicUrlBase = process.env.NEXT_PUBLIC_R2_JDS_URL || "https://pub-e4a8b24775c741f6a650def856cfec9f.r2.dev";
         } else {
-            publicUrlBase = process.env.NEXT_PUBLIC_R2_RESUMES_URL || "";
+            publicUrlBase = process.env.NEXT_PUBLIC_R2_RESUMES_URL || "https://pub-e4a8b24775c741f6a650def856cfec9f.r2.dev";
         }
             
         const publicUrl = `${publicUrlBase.replace(/\/$/, '')}/${key}`;

@@ -53,7 +53,9 @@ export function getInterviewQuotaUnits(durationSeconds: number): number {
         return 0;
     }
 
-    return durationSeconds > INTERVIEW_QUOTA_THRESHOLD_SECONDS ? 1 : 0;
+    // Every completed interview consumes one interview slot.
+    // We still keep the duration guard so incomplete/empty sessions do not deduct quota.
+    return 1;
 }
 
 export async function getOrgBillingStatus(orgId: string): Promise<BillingStatus> {
@@ -83,7 +85,7 @@ export async function getOrgBillingStatus(orgId: string): Promise<BillingStatus>
         interviewQuotaUsed,
         interviewQuotaRemaining,
         creditsUsed,
-        minutesUsed: Math.round(creditsUsed),
+        minutesUsed: creditsUsed,
         hasSufficientInterviews: interviewQuotaRemaining > 0,
     };
 }

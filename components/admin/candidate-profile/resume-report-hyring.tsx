@@ -130,9 +130,9 @@ function ResumeRadarPlot({
           const ox = cx + rOuter * Math.cos(ax);
           const oy = cy + rOuter * Math.sin(ax);
           const pct = Math.round(values[def.key]);
-          
+
           return (
-            <g 
+            <g
               key={def.key}
               onMouseEnter={() => setHover(def.key)}
               onMouseLeave={() => setHover(null)}
@@ -140,7 +140,7 @@ function ResumeRadarPlot({
             >
               {/* Hit Area */}
               <circle cx={ox} cy={oy} r="10" fill="none" pointerEvents="all" />
-              
+
               <text
                 x={ox}
                 y={oy - 1.5}
@@ -532,8 +532,8 @@ export function buildHyringResumeViewModel(i: {
   const evidenceFallback = structuredEvidenceItems.length > 0
     ? Math.min(100, Math.round(((evidenceSignalCount * 2 + workHistoryImpactCount) / Math.max(1, structuredEvidenceItems.length * 2 + structuredWorkHistory.length)) * 100))
     : (workHistoryRows.length > 0
-        ? Math.round(Math.min(100, ((strongWorkHistoryRows.length * 2) / Math.max(1, workHistoryRows.length)) * 100))
-        : 0);
+      ? Math.round(Math.min(100, ((strongWorkHistoryRows.length * 2) / Math.max(1, workHistoryRows.length)) * 100))
+      : 0);
 
   const domainSignals = uniqueNonEmpty([
     ...extractStringList(structuredSkills.domain_skills),
@@ -547,11 +547,11 @@ export function buildHyringResumeViewModel(i: {
 
   const essentialsFallback = aiSkillRows.length > 0
     ? Math.round(
-        (
-          aiSkillRows.filter((row: any) => Math.max(1, Math.min(5, Number(row?.stars ?? 0))) >= 4).length +
-          aiSkillRows.filter((row: any) => Math.max(1, Math.min(5, Number(row?.stars ?? 0))) === 3).length * 0.55
-        ) / Math.max(1, aiSkillRows.length) * 100,
-      )
+      (
+        aiSkillRows.filter((row: any) => Math.max(1, Math.min(5, Number(row?.stars ?? 0))) >= 4).length +
+        aiSkillRows.filter((row: any) => Math.max(1, Math.min(5, Number(row?.stars ?? 0))) === 3).length * 0.55
+      ) / Math.max(1, aiSkillRows.length) * 100,
+    )
     : skillsExtractedFallback;
 
   const experienceText = String(i.experienceReadout || "").trim() || String((resumeStruct as Record<string, any>)?.experience_assessment?.vs_required || "").trim();
@@ -1111,8 +1111,8 @@ export function buildHyringResumeViewModel(i: {
     });
   }
 
-  while (strengths.length < 3 && topMatchedSkills.length > strengths.length) {
-    const row = topMatchedSkills[strengths.length];
+  while (strengths.length < 4 && topMatchedSkills.length > strengths.length) {
+    const row = topMatchedSkills.find(s => !strengths.some(st => st.label.includes(s.name)));
     if (!row) break;
     strengths.push({
       label: row.name,
@@ -1120,14 +1120,13 @@ export function buildHyringResumeViewModel(i: {
     });
   }
 
-  while (weaknesses.length < 3 && skillMatchRows.some((row) => !row.matched)) {
-    const gap = skillMatchRows.find((row) => !row.matched);
-    if (!gap) break;
+  while (weaknesses.length < 4) {
+    const nextGap = skillMatchRows.find(row => !row.matched && !weaknesses.some(w => w.label.includes(row.name)));
+    if (!nextGap) break;
     weaknesses.push({
-      label: `${gap.name} gap`,
-      body: gap.evidenceNote || "This required skill is not clearly evidenced in the resume.",
+      label: `${nextGap.name} gap`,
+      body: nextGap.evidenceNote || "This required skill is not clearly evidenced in the resume.",
     });
-    break;
   }
 
   const shorten = (value: string, maxLen = 180) => readableSummaryText(value, maxLen);
@@ -1320,28 +1319,37 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
   return (
     <div className={cn("w-full transition-colors duration-500", bgPage)}>
       <MeshGradient />
-      
-      <motion.div 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.4 }}
-        className="mx-auto w-full max-w-6xl space-y-6 px-4 pb-16 pt-16 sm:px-6 sm:pt-20"
-      >
+
+      <div className="mx-auto w-full max-w-6xl space-y-6 px-4 pb-16 pt-4 sm:px-6 sm:pt-6">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#DDE1E5] pb-4">
           <div className="flex items-center gap-4">
             <BackButton />
             <div>
-              <h1 className="text-xl font-black tracking-tight text-[#1A1D22]">Resume Screening</h1>
+              <h1 className="text-xl font-semibold tracking-tight text-[#1A1D22]">Resume Screening</h1>
             </div>
           </div>
         </div>
 
         {/* Candidate Header Card */}
-        <motion.div 
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className={cn(card, "overflow-hidden border-none bg-white p-0 shadow-[0_4px_20px_rgba(0,0,0,0.03)]")}
-        >
+        <div className={cn(card, "relative overflow-hidden border-none bg-white p-0 shadow-[0_4px_20px_rgba(0,0,0,0.03)]")}>
+          {/* Corner Crosses */}
+          <div className="pointer-events-none absolute -left-1 -top-1 h-3 w-3 text-slate-300">
+            <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
+            <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
+          </div>
+          <div className="pointer-events-none absolute -right-1 -top-1 h-3 w-3 text-slate-300">
+            <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
+            <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
+          </div>
+          <div className="pointer-events-none absolute -bottom-1 -left-1 h-3 w-3 text-slate-300">
+            <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
+            <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
+          </div>
+          <div className="pointer-events-none absolute -bottom-1 -right-1 h-3 w-3 text-slate-300">
+            <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
+            <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
+          </div>
+
           <div className="bg-gradient-to-br from-white via-white to-[#FFF4EC]/30 px-4 py-5 sm:px-6">
             <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-center">
               <div className="flex min-w-0 flex-1 gap-4 sm:gap-5">
@@ -1384,14 +1392,31 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
               </div>
             </div>
           </div>
-        </motion.div>
+        </div>
 
         {/* Main Analysis Sections */}
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-          <div className={cn(card, "flex flex-col border-none bg-white shadow-md lg:col-span-4")}>
+          <div className={cn(card, "relative flex flex-col overflow-hidden border-none bg-white shadow-md lg:col-span-4")}>
+            {/* Corner Crosses */}
+            <div className="pointer-events-none absolute -left-1 -top-1 h-3 w-3 text-slate-300">
+              <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
+              <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
+            </div>
+            <div className="pointer-events-none absolute -right-1 -top-1 h-3 w-3 text-slate-300">
+              <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
+              <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
+            </div>
+            <div className="pointer-events-none absolute -bottom-1 -left-1 h-3 w-3 text-slate-300">
+              <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
+              <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
+            </div>
+            <div className="pointer-events-none absolute -bottom-1 -right-1 h-3 w-3 text-slate-300">
+              <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
+              <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
+            </div>
             <div className="flex items-center justify-between border-b border-[#E8EAED]/50 px-4 py-3">
               <div className="min-w-0">
-                <p className="text-sm font-extrabold text-[#1A1D22]">Fit radar</p>
+                <p className="text-sm font-semibold text-[#1A1D22]">Fit radar</p>
               </div>
               <span className="rounded-md bg-[#F1F2F4] px-2.5 py-0.5 text-[9px] font-extrabold uppercase text-[#1A1D22] shadow-sm">
                 {model.fitLabel}
@@ -1401,7 +1426,7 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
               <ResumeRadarPlot values={model.fitRadar} notes={model.fitRadarNotes} onHoverChange={setRadarHovered} />
             </div>
             <div className="mx-3 mb-3 rounded-2xl border border-[#E8EAED]/70 bg-[#FAFBFC] px-3 py-2">
-              <p className="text-[10px] font-black uppercase tracking-[0.22em] text-[#6B7079]">
+              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#1A1D22]">
                 {radarHovered
                   ? `${RESUME_RADAR_LABELS.find((item) => item.key === radarHovered)?.label} is ${Math.round(model.fitRadar[radarHovered])}%`
                   : "Hover to see the analysis"}
@@ -1414,13 +1439,30 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
             </div>
           </div>
 
-          <div className={cn(card, "flex max-h-[520px] flex-col overflow-hidden border-none bg-white shadow-md lg:col-span-8")}>
+          <div className={cn(card, "relative flex max-h-[520px] flex-col overflow-hidden border-none bg-white shadow-md lg:col-span-8")}>
+            {/* Corner Crosses */}
+            <div className="pointer-events-none absolute -left-1 -top-1 h-3 w-3 text-slate-300">
+              <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
+              <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
+            </div>
+            <div className="pointer-events-none absolute -right-1 -top-1 h-3 w-3 text-slate-300">
+              <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
+              <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
+            </div>
+            <div className="pointer-events-none absolute -bottom-1 -left-1 h-3 w-3 text-slate-300">
+              <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
+              <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
+            </div>
+            <div className="pointer-events-none absolute -bottom-1 -right-1 h-3 w-3 text-slate-300">
+              <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
+              <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
+            </div>
             <div className="mb-3 flex items-start justify-between gap-3">
               <div className="flex items-center gap-2 text-[#0D4D2E]">
                 <Sparkles className="h-4 w-4" />
                 <div>
-                  <p className="text-sm font-extrabold">AI Summary</p>
-                  <p className="text-[10px] font-medium uppercase tracking-widest text-[#6B7079]">
+                  <p className="text-sm font-semibold">AI Summary</p>
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-[#1A1D22]">
                     Recruiter-friendly analysis from extracted resume data
                   </p>
                 </div>
@@ -1432,25 +1474,25 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
                     ? "bg-[#E6F4EC] text-[#0D4D2E]"
                     : model.fitPercent >= 60
                       ? "bg-[#FFF4E8] text-[#B86A00]"
-                      : "bg-[#FDECEC] text-[#B42318]"
+                      : "bg-red-50/50 text-red-700 border border-red-100/50"
                 )}
-                >
-                  {model.fitPercent >= 80 ? "Strong fit" : model.fitPercent >= 60 ? "Review" : "Needs review"}
-                </span>
-              </div>
+              >
+                {model.fitPercent >= 80 ? "Strong fit" : model.fitPercent >= 60 ? "Review" : "Needs review"}
+              </span>
+            </div>
             <div className="flex-1 space-y-3 overflow-y-auto pr-1">
               {model.aiSummaryPoints.map((item, j) => (
-                  <div
+                <div
                   key={`${item.label}-${j}`}
                   className={cn(
                     "rounded-2xl border px-3 py-3 shadow-sm transition-colors",
                     item.label === "Red flags"
-                      ? "border-[#fc2d2d] bg-[#fff3f3]"
+                      ? "border-red-200 bg-red-50/50"
                       : item.tone === "emerald"
-                      ? "border-[#D5EAD8] bg-[#F6FBF7]"
-                      : item.tone === "amber"
-                        ? "border-[#F4E0BF] bg-[#FFF9F1]"
-                        : "border-[#F6C9C9] bg-[#FFF7F7]"
+                        ? "border-[#D5EAD8] bg-[#F6FBF7]"
+                        : item.tone === "amber"
+                          ? "border-[#F4E0BF] bg-[#FFF9F1]"
+                          : "border-red-200 bg-red-50/50"
                   )}
                 >
                   <div className="mb-1 flex items-center gap-2">
@@ -1458,21 +1500,21 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
                       className={cn(
                         "rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.2em]",
                         item.label === "Red flags"
-                          ? "bg-[#fc2d2d] text-white"
+                          ? "bg-red-100 text-red-700"
                           : item.tone === "emerald"
-                          ? "bg-[#0D4D2E] text-white"
-                          : item.tone === "amber"
-                            ? "bg-[#B86A00] text-white"
-                            : "bg-[#B42318] text-white"
+                            ? "bg-[#0D4D2E] text-white"
+                            : item.tone === "amber"
+                              ? "bg-[#B86A00] text-white"
+                              : "bg-red-100 text-red-700"
                       )}
                     >
                       {item.label}
                     </span>
-                    <span className={cn("text-[10px] font-bold", item.label === "Red flags" ? "text-[#fc2d2d]" : "text-[#6B7079]")}>
+                    <span className={cn("text-[10px] font-bold", item.label === "Red flags" ? "text-red-600" : "text-[#6B7079]")}>
                       {j === 0 ? "Direct match" : j === 1 ? "Experience" : j === 2 ? "Applied proof" : "Red flags"}
                     </span>
                   </div>
-                  <p className={cn("text-[13px] leading-6", item.label === "Red flags" ? "text-[#d10f0f]" : "text-[#1A1D22]")}>{item.body}</p>
+                  <p className={cn("text-[13px] leading-6", item.label === "Red flags" ? "text-red-900" : "text-[#1A1D22]")}>{item.body}</p>
                 </div>
               ))}
             </div>
@@ -1480,19 +1522,41 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
         </div>
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <div className={cn(card, "border-none bg-white p-0 shadow-md overflow-hidden")}>
+          <div className={cn(card, "relative border-none bg-white p-0 shadow-md overflow-hidden")}>
+            {/* Corner Crosses */}
+            <div className="pointer-events-none absolute -left-1 -top-1 h-3 w-3 text-slate-300">
+              <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
+              <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
+            </div>
+            <div className="pointer-events-none absolute -right-1 -top-1 h-3 w-3 text-slate-300">
+              <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
+              <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
+            </div>
+            <div className="pointer-events-none absolute -bottom-1 -left-1 h-3 w-3 text-slate-300">
+              <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
+              <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
+            </div>
+            <div className="pointer-events-none absolute -bottom-1 -right-1 h-3 w-3 text-slate-300">
+              <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
+              <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
+            </div>
             <div className="border-b border-emerald-100 bg-emerald-50/70 px-4 py-3">
-              <p className="text-sm font-extrabold text-emerald-800">Strengths</p>
-              <p className="mt-0.5 text-[10px] font-medium uppercase tracking-widest text-emerald-700/80">
+              <p className="text-sm font-semibold text-emerald-800">Strengths</p>
+              <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-widest text-emerald-900/90">
                 Evidence-based: matched skills, ownership, and repeated proof in work history
               </p>
             </div>
             <div className="space-y-2 p-3">
               {model.strengths.length > 0 ? (
                 model.strengths.map((item, idx) => (
-                  <div key={`strength-${idx}`} className="rounded-lg border border-emerald-100/80 bg-white px-3 py-2.5 transition-colors hover:bg-emerald-50/30">
-                    <p className="text-[12px] font-bold text-[#1A1D22]">{item.label}</p>
-                    <p className="mt-0.5 text-[11px] leading-relaxed text-[#3D434D]">{item.body}</p>
+                  <div key={`strength-${idx}`} className="group relative rounded-lg border border-emerald-100/80 bg-white px-3 py-2.5 transition-all hover:bg-emerald-50/30">
+                    <div className="flex items-start gap-2">
+                      <div className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-emerald-500" />
+                      <div>
+                        <p className="text-[12px] font-bold text-[#1A1D22]">{item.label}</p>
+                        <p className="mt-0.5 text-[11px] leading-relaxed text-[#3D434D]">{item.body}</p>
+                      </div>
+                    </div>
                   </div>
                 ))
               ) : (
@@ -1501,23 +1565,45 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
             </div>
           </div>
 
-          <div className={cn(card, "border border-[#fc2d2d] bg-white p-0 shadow-md overflow-hidden")}>
-            <div className="border-b border-[#fc2d2d] bg-[#fc2d2d] px-4 py-3">
-              <p className="text-sm font-extrabold text-white">Weaknesses</p>
-              <p className="mt-0.5 text-[10px] font-medium uppercase tracking-widest text-white/90">
+          <div className={cn(card, "relative border border-red-100 bg-white p-0 shadow-md overflow-hidden")}>
+            {/* Corner Crosses */}
+            <div className="pointer-events-none absolute -left-1 -top-1 h-3 w-3 text-red-200">
+              <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
+              <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
+            </div>
+            <div className="pointer-events-none absolute -right-1 -top-1 h-3 w-3 text-red-200">
+              <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
+              <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
+            </div>
+            <div className="pointer-events-none absolute -bottom-1 -left-1 h-3 w-3 text-red-200">
+              <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
+              <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
+            </div>
+            <div className="pointer-events-none absolute -bottom-1 -right-1 h-3 w-3 text-red-200">
+              <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
+              <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
+            </div>
+            <div className="border-b border-red-100 bg-red-50 px-4 py-3">
+              <p className="text-sm font-semibold text-red-900">Weaknesses</p>
+              <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-widest text-red-700/80">
                 Based on missing must-haves, weaker proof, and evidence gaps
               </p>
             </div>
             <div className="space-y-2 p-3">
               {model.weaknesses.length > 0 ? (
                 model.weaknesses.map((item, idx) => (
-                  <div key={`weakness-${idx}`} className="rounded-lg border border-[#fc2d2d] bg-[#fff3f3] px-3 py-2.5 transition-colors hover:bg-[#ffe1e1]">
-                    <p className="text-[12px] font-bold text-[#fc2d2d]">{item.label}</p>
-                    <p className="mt-0.5 text-[11px] leading-relaxed text-[#d10f0f]">{item.body}</p>
+                  <div key={`weakness-${idx}`} className="group relative rounded-lg border border-red-100 bg-red-50/30 px-3 py-2.5 transition-all hover:bg-red-50/60">
+                    <div className="flex items-start gap-2">
+                      <div className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-red-500" />
+                      <div>
+                        <p className="text-[12px] font-bold text-red-900">{item.label}</p>
+                        <p className="mt-0.5 text-[11px] leading-relaxed text-red-800">{item.body}</p>
+                      </div>
+                    </div>
                   </div>
                 ))
               ) : (
-                <p className="px-3 py-2 text-[11px] leading-5 text-[#fc2d2d]">No clear weaknesses surfaced from the current evidence.</p>
+                <p className="px-3 py-2 text-[11px] leading-5 text-red-600">No clear weaknesses surfaced from the current evidence.</p>
               )}
             </div>
           </div>
@@ -1528,7 +1614,7 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
           <div className="lg:col-span-7">
             <div className={cn(card, "flex h-[420px] min-h-0 min-w-0 flex-col overflow-hidden border border-[#DDE1E5] bg-white p-0 shadow-[0_8px_24px_rgba(0,0,0,0.05)]")}>
               <div className="border-b border-[#D7DBE0] bg-[#FAFBFC] px-4 py-3">
-                <p className="text-sm font-extrabold text-[#1A1D22]">Career timeline</p>
+                <p className="text-sm font-semibold text-[#1A1D22]">Career timeline</p>
               </div>
               <div className="flex-1 space-y-3 overflow-y-auto p-4">
                 {model.careerLines.map((line, k) => (
@@ -1550,12 +1636,30 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
               </div>
             </div>
           </div>
+          {/* Skill Signals Section */}
           <div className="min-h-0 lg:col-span-5">
             <div className={cn(card, "flex h-[420px] min-h-0 flex-col overflow-hidden border border-[#DDE1E5] bg-white p-0 shadow-[0_8px_24px_rgba(0,0,0,0.05)]")}>
+              {/* Corner Crosses */}
+              <div className="pointer-events-none absolute -left-1 -top-1 h-3 w-3 text-slate-300">
+                <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
+                <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
+              </div>
+              <div className="pointer-events-none absolute -right-1 -top-1 h-3 w-3 text-slate-300">
+                <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
+                <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
+              </div>
+              <div className="pointer-events-none absolute -bottom-1 -left-1 h-3 w-3 text-slate-300">
+                <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
+                <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
+              </div>
+              <div className="pointer-events-none absolute -bottom-1 -right-1 h-3 w-3 text-slate-300">
+                <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
+                <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
+              </div>
               <div className="flex items-center justify-between border-b border-[#D7DBE0] bg-[#FAFBFC] px-4 py-3">
                 <div>
-                  <h3 className="text-sm font-extrabold text-[#1A1D22]">Skill signals</h3>
-                  <p className="mt-0.5 text-[10px] font-medium uppercase tracking-widest text-[#6B7079]">
+                  <h3 className="text-sm font-semibold text-[#1A1D22]">Skill signals</h3>
+                  <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-widest text-[#1A1D22]">
                     Extracted from resume evidence and JD match data
                   </p>
                 </div>
@@ -1639,15 +1743,15 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
                             {missing.map((s, j) => (
                               <div
                                 key={`x-${s.name}-${j}`}
-                                className="flex items-center justify-between gap-3 rounded-xl border border-[#fc2d2d] bg-[#fff3f3] px-3 py-2"
+                                className="flex items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2"
                               >
-                                  <div className="min-w-0 flex-1">
-                                    <p className="truncate text-[12px] font-semibold text-[#fc2d2d]">{s.name}</p>
-                                    {s.evidenceNote && (
-                                      <p className="mt-0.5 truncate text-[10px] font-medium text-[#d10f0f]">{s.evidenceNote}</p>
-                                    )}
-                                  </div>
-                                <span className="shrink-0 rounded-full bg-[#fc2d2d] px-2 py-0.5 text-[10px] font-extrabold text-white">
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate text-[12px] font-semibold text-red-600">{s.name}</p>
+                                  {s.evidenceNote && (
+                                    <p className="mt-0.5 truncate text-[10px] font-medium text-red-900">{s.evidenceNote}</p>
+                                  )}
+                                </div>
+                                <span className="shrink-0 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-extrabold text-red-700">
                                   Missing
                                 </span>
                               </div>
@@ -1667,18 +1771,49 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
         </div>
 
         {/* Decision Section */}
-        <div className="rounded-3xl border border-[#DDE1E5] bg-gradient-to-r from-gray-100 via-white to-gray-50 p-[1px] shadow-lg">
-          <div className="flex items-center justify-between gap-3 rounded-[calc(1.5rem-1px)] bg-white px-5 py-4">
-            <div className="min-w-0">
-              <p className="text-[10px] font-extrabold uppercase tracking-widest text-[#5C6370]">Decision note</p>
-              <p className="mt-1 text-[12px] font-medium text-[#1A1D22]">{model.reviewStrip}</p>
+        <div className={cn(
+          "rounded-3xl border p-[1.5px] shadow-2xl transition-all duration-500",
+          model.decisionStamp === "SHORTLISTED"
+            ? "border-emerald-200 bg-gradient-to-br from-emerald-100 via-white to-emerald-50 shadow-emerald-200/40"
+            : model.decisionStamp === "REJECTED"
+              ? "border-red-200 bg-gradient-to-br from-red-100 via-white to-red-50 shadow-red-200/40"
+              : "border-[#DDE1E5] bg-gradient-to-r from-gray-100 via-white to-gray-50 shadow-gray-200/40"
+        )}>
+          <div className="flex flex-col gap-4 rounded-[calc(1.5rem-1.5px)] bg-white/60 backdrop-blur-sm px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 flex-1 items-start gap-4">
+              <div className={cn(
+                "mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl shadow-sm",
+                model.decisionStamp === "SHORTLISTED" ? "bg-emerald-600 text-white" :
+                  model.decisionStamp === "REJECTED" ? "bg-red-100 text-red-700" : "bg-slate-800 text-white"
+              )}>
+                {model.decisionStamp === "SHORTLISTED" ? <Shield className="h-5 w-5" /> :
+                  model.decisionStamp === "REJECTED" ? <Zap className="h-5 w-5" /> : <Activity className="h-5 w-5" />}
+              </div>
+              <div className="min-w-0">
+                <p className={cn(
+                  "text-[10px] font-semibold uppercase tracking-[0.2em]",
+                  model.decisionStamp === "SHORTLISTED" ? "text-emerald-700" :
+                    model.decisionStamp === "REJECTED" ? "text-red-800" : "text-[#5C6370]"
+                )}>
+                  AI Decision Note
+                </p>
+                <p className="mt-1 text-[13px] font-bold leading-relaxed text-[#1A1D22]">
+                  {model.reviewStrip}
+                </p>
+              </div>
             </div>
-            <span className="shrink-0 rounded-full bg-black px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.24em] text-white shadow-md">
-              Final read
-            </span>
+            <div className="flex shrink-0 items-center gap-3">
+              <div className={cn(
+                "rounded-xl px-4 py-2 text-[11px] font-black uppercase tracking-widest shadow-sm",
+                model.decisionStamp === "SHORTLISTED" ? "bg-emerald-600 text-white" :
+                  model.decisionStamp === "REJECTED" ? "bg-red-100 text-red-700" : "bg-black text-white"
+              )}>
+                {model.decisionStamp}
+              </div>
+            </div>
           </div>
         </div>
-      </motion.div>
+      </div>
     </div>
   );
 }

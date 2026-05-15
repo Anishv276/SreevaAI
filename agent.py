@@ -4,8 +4,8 @@ import os
 import sys
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-from agent_runtime import entrypoint, prewarm
-from agent_runtime_support import AGENT_NAME
+from interview.agent_runtime import entrypoint, prewarm
+from interview.agent_runtime_support import AGENT_NAME
 from livekit.agents import WorkerOptions, cli
 if __name__ == "__main__":
     cli.run_app(

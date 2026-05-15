@@ -29,6 +29,18 @@ function getResumeCandidateIdFromResumeUrl(resumeUrl?: string | null) {
     return match ? decodeURIComponent(match[1]) : null;
 }
 
+function getResumeCandidateIdFromResumeData(resumeData?: string | null) {
+    if (!resumeData) return null;
+    try {
+        const parsed = JSON.parse(resumeData);
+        const candidateId = parsed?.source?.candidateId;
+        return typeof candidateId === "string" && candidateId.trim() ? candidateId.trim() : null;
+    } catch {
+        const match = String(resumeData).match(/"candidateId"\s*:\s*"([^"]+)"/i);
+        return match ? match[1] : null;
+    }
+}
+
 function resolveAction(
     app: {
         resumeStatus: string | null;
@@ -157,11 +169,18 @@ export async function POST(request: Request) {
                 const applicationsFromResumeCandidates = await prisma.application.findMany({
                     where: {
                         drive: { orgId },
-                        OR: resumeCandidates.map((candidate) => ({
-                            resumeUrl: {
-                                contains: `candidateId=${candidate.id}`,
+                        OR: resumeCandidates.flatMap((candidate) => ([
+                            {
+                                resumeUrl: {
+                                    contains: `candidateId=${candidate.id}`,
+                                },
                             },
-                        })),
+                            {
+                                resumeData: {
+                                    contains: `"candidateId":"${candidate.id}"`,
+                                },
+                            },
+                        ])),
                     },
                     select: {
                         id: true,
@@ -170,6 +189,7 @@ export async function POST(request: Request) {
                         resumeStatus: true,
                         hiringStatus: true,
                         resumeUrl: true,
+                        resumeData: true,
                         drive: {
                             select: {
                                 id: true,
@@ -183,7 +203,7 @@ export async function POST(request: Request) {
 
                 const byResumeCandidateId = new Map<string, BulkEmailTarget>();
                 for (const app of applicationsFromResumeCandidates) {
-                    const candidateId = getResumeCandidateIdFromResumeUrl(app.resumeUrl);
+                    const candidateId = getResumeCandidateIdFromResumeData(app.resumeData) || getResumeCandidateIdFromResumeUrl(app.resumeUrl);
                     if (!candidateId || byResumeCandidateId.has(candidateId)) continue;
                     byResumeCandidateId.set(candidateId, {
                         id: app.id,
