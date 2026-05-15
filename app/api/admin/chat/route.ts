@@ -652,7 +652,7 @@ ${semanticContext || "No semantic matches found - rely on tools for accurate dat
                 const parsed = JSON.parse(candidate.aiReport);
                 reportSummary = {
                   recruiterSnapshot:  parsed.recruiter_snapshot,
-                  aiVerdict:          parsed.ai_verdict,
+                  decisionReason:     parsed.decision_reason,
                   strengths:          parsed.strengths?.slice(0, 5),
                   concerns:           parsed.concerns?.slice(0, 5),
                   candidatePotential: parsed.candidate_potential,

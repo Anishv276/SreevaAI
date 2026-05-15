@@ -336,7 +336,6 @@ export default function CandidateProfilePage() {
         const summary =
             firstText(report.recruiter_snapshot) ||
             firstText(report.decision_reason) ||
-            firstText(report.ai_verdict) ||
             firstText(report.summary) ||
             firstText(report.reasoning) ||
             "AI screening analysis ready.";

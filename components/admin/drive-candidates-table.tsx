@@ -742,7 +742,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                                         statusKey === "rejected" ? "bg-rose-50 text-rose-700" :
                                                             statusKey === "shortlisted" ? "bg-emerald-50 text-emerald-700" : "bg-slate-50 text-slate-500"
                                                     )}>
-                                                        {isWaiting ? "Queued..." : isProcessing ? `${stageLabel || "Processing"} ${progressValue}%` : statusKey === "rejected" ? "Rejected" : statusKey === "shortlisted" ? "Shortlisted" : statusLabel}
+                                                        {isWaiting ? "Waiting 0%" : isProcessing ? `${stageLabel || "Processing"} ${progressValue}%` : statusKey === "rejected" ? "Rejected" : statusKey === "shortlisted" ? "Shortlisted" : statusLabel}
                                                     </Badge>
                                                 </div>
                                             </TableCell>

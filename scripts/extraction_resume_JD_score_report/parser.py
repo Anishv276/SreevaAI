@@ -166,6 +166,10 @@ class DocumentParser:
                 match_ratio = score_result.get("skill_matching", {}).get("match_ratio", 0)
                 fit_radar["skills"] = min(100, round(float(match_ratio) if match_ratio is not None else 0))
 
+            # Prevent the LLM from hallucinating keys that overwrite our deterministic scoring engine
+            for key in ["score", "base_score", "human_layer", "human_adjustment", "human_judgment", "status", "breakdown", "skill_matching", "exp_status", "hard_rejected", "rejection_reasons", "candidate_years", "jd_min_years", "fit_radar", "work_history", "education", "core_claims", "uncertain_areas", "skill_depth"]:
+                report.pop(key, None)
+
             final_data = {
                 "score": score_result["score"],
                 "base_score": score_result["base_score"],
@@ -196,7 +200,7 @@ class DocumentParser:
                 "data": {
                     **score_result,
                     "recruiter_snapshot": f"Automated evaluation completed with score {score_result['score']}.",
-                    "ai_verdict": f"Status: {score_result['status']}. Score: {score_result['score']}. Report generation failed: {exc}",
+                    "decision_reason": f"Report generation failed — {score_result['status']} at score {score_result['score']}. Error: {exc}",
                 },
                 "usage": {"model": report_model, "inputTokens": 0, "outputTokens": 0, "cachedInputTokens": 0},
             }

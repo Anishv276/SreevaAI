@@ -136,16 +136,17 @@ OUTPUT FIELD INSTRUCTIONS
    - "relevance": rate how relevant the experience domain is to THIS specific JD. E.g. "Strong — 2 of 3 companies were in same vertical"
 6. candidate_potential
        - "for_this_role": "High" | "Medium" | "Low"
-7. decision_reason (string — EXACTLY 1 sentence)
-   - The single most decisive reason for {status}.
-   - Shortlisted: what clinches it. Borderline: what tips it. Rejected: the hard stopper.
-   - No hedging. No softening. E.g. "5 of 6 must-haves confirmed across 3 owner-level roles with production metrics."
-8. ai_verdict (string — 3–5 sentences)
-   - Expert synthesis for HR. Combine: capability summary, must-have match quality, deepest evidence signal, recommendation.
-   - Name companies and skills. Every sentence grounded in resume evidence.
-   - State plainly why shortlisted OR why not.
-   - For borderline: state exactly what would push them to shortlisted.
-   - Call out any claim that needs interview verification.
+7. decision_reason (string — EXACTLY 3–4 sentences, this is the ONLY decision signal HR will read)
+   This is the "why shortlisted / why rejected / why borderline" card. Write it so an HR manager reading ONLY this paragraph understands exactly what makes this candidate worth advancing or not.
+   STRUCTURE (all 4 sentences must be present):
+   - Sentence 1: The decisive verdict — what clinches shortlist, or what hard-blocks rejection. Name the top skill(s) and WHERE they were proven (company name + scope/metric). E.g. "At Razorpay, [Name] owned the full payments backend in Go, handling 2M+ daily transactions — directly matching 5 of 6 must-haves."
+   - Sentence 2: Experience and ownership quality — years, seniority level, whether they were building or assisting, company type context. E.g. "With 6 years across two product startups, they held engineering lead responsibilities rather than support roles."
+   - Sentence 3: The strongest differentiator OR the most important gap (whichever is most decision-relevant). Be specific. E.g. "The distributed systems depth — Kafka, Kubernetes, and Redis — is confirmed across three separate roles, not just listed."
+   - Sentence 4: One concrete recommendation for the HR manager. Shortlisted: what to probe in interview. Borderline: what evidence would push them to shortlisted. Rejected: what would need to change for reconsideration. E.g. "Advance to technical screen; probe the system design ownership on the payment reconciliation project."
+   RULES:
+   - Every sentence must name a company, tool, project, or metric — no floating claims.
+   - FORBIDDEN: "strong background", "passionate", "experienced in", "has worked with", "proficient", score numbers.
+   - Tone: direct, professional, like a senior recruiter briefing a hiring manager in 30 seconds.
 9. recruiter_snapshot is ALSO used as the "Screening summary" card bullets.
     Write it so it naturally splits into 3 bullet-sized insights when split on ". " — each sentence should stand alone.
     Return ONLY valid JSON matching this EXACT schema. No markdown. No code fences. No extra keys.
@@ -177,8 +178,7 @@ OUTPUT FIELD INSTRUCTIONS
     }}
   ],
   "candidate_potential": {{"for_this_role":"High|Medium|Low"}},
-  "decision_reason": "string",
-  "ai_verdict": "string"
+  "decision_reason": "string"
 }}
 """
     completion = client.chat.completions.create(

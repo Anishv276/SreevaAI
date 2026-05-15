@@ -1170,107 +1170,19 @@ export function buildHyringResumeViewModel(i: {
     resumeUrl: c.resumeUrl || null,
     hasStructuredResume: nRoles > 0 || i.totalExtractedSkills > 0,
     reviewStrip: (() => {
-      const status = i.normalizedStatus?.toUpperCase();
-      const verdict = status === "REJECTED" || status === "rejected"
-        ? "REJECTED"
-        : status === "SHORTLISTED" || status === "shortlisted"
-          ? "SHORTLISTED"
-          : "BORDERLINE";
-      const human = i.humanLayer;
-      const verdictWord = verdict === "SHORTLISTED" ? "Shortlisted" : verdict === "REJECTED" ? "Rejected" : "Borderline";
-
       // Human review always wins
-      const humanReason = human?.summary && human.summary.trim().length > 10
-        ? human.summary.trim()
-        : "";
+      const human = i.humanLayer;
+      const humanReason = human?.summary && human.summary.trim().length > 10 ? human.summary.trim() : "";
       if (humanReason) {
+        const verdictWord = decisionStamp === "SHORTLISTED" ? "Shortlisted" : decisionStamp === "REJECTED" ? "Rejected" : "Borderline";
         return `${verdictWord} by human reviewer: ${humanReason}`.replace(/\s+/g, " ").trim();
       }
-
-      const score = Math.round(i.matchScore);
-      const fmtList = (arr: string[], n = 3) => {
-        const slice = arr.slice(0, n);
-        if (slice.length <= 1) return slice.join("");
-        if (slice.length === 2) return `${slice[0]} and ${slice[1]}`;
-        return `${slice.slice(0, -1).join(", ")} and ${slice[slice.length - 1]}`;
-      };
-      const yrs = (n: number) => `${n} yr${n === 1 ? "" : "s"}`;
-
-      const provenNames = skillMatchRows
-        .filter((row) => row.matched && (row.source === "work_history" || row.source === "project"))
-        .map((row) => row.name);
-      const listedNames = skillMatchRows
-        .filter((row) => row.matched && row.source === "listed")
-        .map((row) => row.name);
-      const mustHaveCovered = Math.max(0, nReq - missingMustHave.length);
-
-      const expPhrase = Number.isFinite(candidateYears) && parsedRequiredYears != null
-        ? candidateYears >= parsedRequiredYears
-          ? `${yrs(candidateYears)} of experience meets the ${yrs(parsedRequiredYears)} bar`
-          : `${yrs(candidateYears)} of experience falls short of the ${yrs(parsedRequiredYears)} bar`
-        : "";
-
-      const ownerPhrase = ownerRoles.length > 0
-        ? `owner-level delivery at ${ownerRoles[0].company || "a prior company"}${ownerRoles[0].role ? ` as ${ownerRoles[0].role}` : ""}`
-        : "";
-
-      if (verdict === "SHORTLISTED") {
-        const evidencePhrase = provenNames.length > 0
-          ? `${fmtList(provenNames, 4)} ${provenNames.length === 1 ? "is" : "are"} backed by work-history or project proof`
-          : listedNames.length > 0
-            ? `${fmtList(listedNames, 4)} ${listedNames.length === 1 ? "is" : "are"} listed on the resume`
-            : directMatches.length > 0
-              ? `the JD stack (${fmtList(directMatches, 3)}) shows up in the extracted data`
-              : "the overall profile aligns with the JD";
-        const coverageClause = nReq > 0
-          ? `, covering ${mustHaveCovered} of ${nReq} must-have${nReq === 1 ? "" : "s"}`
-          : "";
-        const supportClauses = [expPhrase, ownerPhrase].filter(Boolean);
-        const supportSentence = supportClauses.length > 0
-          ? ` The ${supportClauses.join(" and ")}.`
-          : "";
-        const watchout = missingMustHave.length > 0
-          ? ` Verify ${fmtList(missingMustHave, 2)} in interview, as ${missingMustHave.length === 1 ? "it is" : "they are"} not clearly evidenced in the resume.`
-          : fitRadar.evidence < 55
-            ? " Confirm production-level depth in interview, as the proof signal is still thin."
-            : "";
-        return `Shortlisted at ${score}/100 fit because ${evidencePhrase}${coverageClause}.${supportSentence}${watchout}`.replace(/\s+/g, " ").trim();
+      // AI decision_reason is the primary signal
+      if (i.decisionReason && i.decisionReason.trim().length > 10) {
+        return i.decisionReason.trim();
       }
-
-      if (verdict === "REJECTED") {
-        const gapPhrase = missingMustHave.length > 0
-          ? `${fmtList(missingMustHave, 3)} ${missingMustHave.length === 1 ? "is" : "are"} not evidenced in the resume`
-          : i.primaryGapText && typeof i.primaryGapText === "string" && i.primaryGapText.length > 5
-            ? `the resume is missing ${i.primaryGapText}`
-            : "the resume does not meet the core requirements for this role";
-        const coverageClause = nReq > 0
-          ? `, with only ${mustHaveCovered} of ${nReq} must-have${nReq === 1 ? "" : "s"} covered`
-          : "";
-        const supportBits: string[] = [];
-        if (expPhrase && Number.isFinite(candidateYears) && parsedRequiredYears != null && candidateYears < parsedRequiredYears) {
-          supportBits.push(expPhrase);
-        }
-        if (fitRadar.evidence < 50) {
-          supportBits.push("the resume reads more as listed skills than applied work");
-        }
-        const supportSentence = supportBits.length > 0 ? ` On top of that, ${supportBits.join(" and ")}.` : "";
-        return `Rejected at ${score}/100 fit because ${gapPhrase}${coverageClause}.${supportSentence} Do not advance unless the missing evidence is resolved.`.replace(/\s+/g, " ").trim();
-      }
-
-      // BORDERLINE
-      const positiveClause = provenNames.length > 0
-        ? `${fmtList(provenNames, 3)} ${provenNames.length === 1 ? "is" : "are"} backed by evidence`
-        : listedNames.length > 0
-          ? `${fmtList(listedNames, 3)} ${listedNames.length === 1 ? "is" : "are"} listed on the resume`
-          : "some relevant signal is present";
-      const negativeClause = missingMustHave.length > 0
-        ? `${fmtList(missingMustHave, 2)} ${missingMustHave.length === 1 ? "is" : "are"} not evidenced`
-        : "depth of proof is still uncertain";
-      const coverageClause = nReq > 0
-        ? ` (${mustHaveCovered} of ${nReq} must-have${nReq === 1 ? "" : "s"} covered)`
-        : "";
-      const expClause = expPhrase ? `, and ${expPhrase}` : "";
-      return `Borderline at ${score}/100 fit: ${positiveClause}, but ${negativeClause}${coverageClause}${expClause}. Verify the missing evidence in interview before advancing.`.replace(/\s+/g, " ").trim();
+      // Fallback for legacy reports without decision_reason
+      return "AI screening analysis complete. Re-scan to generate the decision note.";
     })(),
     feedbackStars: i.matchScore >= 80 ? 5 : i.matchScore >= 65 ? 4 : i.matchScore >= 50 ? 3 : i.matchScore >= 35 ? 2 : 1,
   };
@@ -1795,11 +1707,18 @@ export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
                   model.decisionStamp === "SHORTLISTED" ? "text-emerald-700" :
                     model.decisionStamp === "REJECTED" ? "text-red-800" : "text-[#5C6370]"
                 )}>
-                  AI Decision Note
+                  Why {model.decisionStamp === "SHORTLISTED" ? "Shortlisted" : model.decisionStamp === "REJECTED" ? "Rejected" : "Borderline"}
                 </p>
-                <p className="mt-1 text-[13px] font-bold leading-relaxed text-[#1A1D22]">
-                  {model.reviewStrip}
-                </p>
+                <div className="mt-2 space-y-1.5">
+                  {model.reviewStrip.split(/(?<=\.)\s+/).map((sentence, idx) => (
+                    <p key={idx} className={cn(
+                      "text-[13px] leading-relaxed",
+                      idx === 0 ? "font-semibold text-[#1A1D22]" : "font-normal text-[#3A3F4A]"
+                    )}>
+                      {sentence}
+                    </p>
+                  ))}
+                </div>
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-3">
