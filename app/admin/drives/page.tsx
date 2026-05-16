@@ -286,7 +286,7 @@ export default function DrivesPage() {
                                 className="group cursor-pointer w-full"
                             >
                                 <div className="relative h-full overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.05)] transition-all duration-300 hover:-translate-y-1 hover:border-slate-300 hover:shadow-[0_18px_44px_rgba(15,23,42,0.10)] flex flex-col">
-                                    <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-orange-600 via-orange-400 to-orange-600" />
+
 
                                     {/* Card Header */}
                                     <div className="relative p-4 pb-3.5">
@@ -296,7 +296,7 @@ export default function DrivesPage() {
                                             </div>
                                             <DropdownMenu>
                                                 <DropdownMenuTrigger asChild>
-                                                    <Button variant="secondary" size="icon" className="h-8.5 w-8.5 rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm transition-all hover:border-slate-300 hover:text-slate-800">
+                                                    <Button variant="ghost" size="icon" className="h-8.5 w-8.5 rounded-xl text-slate-400 hover:text-slate-900 hover:bg-slate-100 transition-all">
                                                         <MoreHorizontal className="h-4 w-4" />
                                                     </Button>
                                                 </DropdownMenuTrigger>

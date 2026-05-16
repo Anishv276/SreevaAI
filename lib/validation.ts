@@ -6,7 +6,6 @@ export const driveIdSchema = z.object({
 
 export const createDriveSchema = z.object({
   title: z.preprocess((val) => (typeof val === 'string' && val.trim() !== '') ? val : "Untitled Drive", z.string().min(1).max(200)),
-  description: z.string().max(50000).optional().default(""),
   role: z.string().optional(),
   department: z.preprocess((val) => (typeof val === 'string' && val.trim() !== '') ? val : "General", z.string().min(1)),
   employmentType: z.preprocess((val) => {
@@ -43,11 +42,6 @@ export const createDriveSchema = z.object({
     const n = Number(val);
     return isNaN(n) ? 1 : n;
   }, z.coerce.number().int().min(1).optional()).default(1),
-  salary: z.string().optional(),
-  experience: z.string().optional(),
-  skills: z.string().optional(),
-  responsibilities: z.string().optional(),
-  requirements: z.string().optional(),
   jdFileName: z.string().nullable().optional(),
   jdPreviewUrl: z.string().nullable().optional(),
   extractedDetails: z.string().nullable().optional(),

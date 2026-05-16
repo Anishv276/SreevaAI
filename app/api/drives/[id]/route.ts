@@ -8,7 +8,7 @@ import { safeJsonParse } from "@/lib/utils";
 import { getSession } from "@/lib/auth";
 import { parseDriveScreeningSettings, sanitizeScreeningCriteria } from "@/lib/screening-criteria";
 import { isOrgRestrictedStatus } from "@/lib/interview-quota";
-import { deriveDriveJdFieldsFromDescription, shouldBackfillDriveJdFields } from "@/lib/drive-jd";
+import { deriveFieldsFromExtractedDetails } from "@/lib/drive-jd";
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +32,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
                 id: true,
                 title: true,
                 role: true,
-                description: true,
                 department: true,
                 type: true,
                 screeningThreshold: true,
@@ -43,11 +42,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
                 updatedAt: true,
                 positions: true,
                 workMode: true,
-                experience: true,
-                responsibilities: true,
-                requirements: true,
-                salary: true,
-                skills: true,
                 interviewLanguage: true,
                 interviewQuestions: true,
                 jdFileName: true,
@@ -174,9 +168,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
             where: { id: driveId },
             select: {
                 orgId: true,
-                description: true,
-                skills: true,
-                responsibilities: true,
                 extractedDetails: true,
                 ttsProvider: true,
                 cartesiaVoiceId: true,
@@ -198,7 +189,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         const updateData: any = {};
 
         if (data.title !== undefined) updateData.title = data.title;
-        if (data.description !== undefined) updateData.description = data.description ?? "";
         if (data.role !== undefined) updateData.role = data.role;
         if (data.department !== undefined) updateData.department = data.department;
         if (data.employmentType !== undefined || data.type !== undefined) {
@@ -207,10 +197,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         if (data.workMode !== undefined) updateData.workMode = data.workMode;
         if (data.location !== undefined) updateData.location = data.location;
         if (positions !== undefined) updateData.positions = positions;
-        if (data.salary !== undefined) updateData.salary = data.salary;
-        if (data.experience !== undefined) updateData.experience = data.experience;
-        if (data.skills !== undefined) updateData.skills = data.skills;
-        if (data.responsibilities !== undefined) updateData.responsibilities = data.responsibilities;
 
         if (data.jdFileName !== undefined) updateData.jdFileName = data.jdFileName;
         if (data.jdPreviewUrl !== undefined) {
@@ -221,13 +207,24 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
                 updateData.jdPreviewUrl = persistedJdUrl;
             }
         }
+
+        // When extractedDetails changes, re-derive all text fields from it
         if (data.extractedDetails !== undefined) {
-            updateData.extractedDetails = typeof data.extractedDetails === "string"
+            const extractedStr = typeof data.extractedDetails === "string"
                 ? data.extractedDetails
                 : JSON.stringify(data.extractedDetails);
+            updateData.extractedDetails = extractedStr;
+            try {
+                const parsed = JSON.parse(extractedStr);
+                const derived = deriveFieldsFromExtractedDetails(parsed);
+                updateData.description = derived.description || "";
+                updateData.skills = derived.skills;
+                updateData.responsibilities = derived.responsibilities;
+                updateData.requirements = derived.requirements;
+                updateData.experience = derived.experience;
+                updateData.salary = derived.salary;
+            } catch { /* keep existing values if parse fails */ }
         }
-
-
 
         if (data.screeningThreshold !== undefined || (data as any).screeningCriteria !== undefined) {
             if (data.screeningThreshold !== undefined) updateData.screeningThreshold = data.screeningThreshold;
@@ -244,41 +241,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
             updateData.screeningCriteria = JSON.stringify(mergedCriteria);
         }
 
-        // Add new interview fields to PATCH
-
         if (data.interviewLanguage !== undefined) updateData.interviewLanguage = data.interviewLanguage;
-
         if (data.interviewQuestions !== undefined) updateData.interviewQuestions = JSON.stringify(data.interviewQuestions);
-        if (data.requirements !== undefined) updateData.requirements = data.requirements;
 
-        const descriptionForBackfill =
-            typeof data.description === "string" && data.description.trim().length > 0
-                ? data.description
-                : typeof existingDrive.description === "string"
-                    ? existingDrive.description
-                    : "";
-
-        if (
-            shouldBackfillDriveJdFields({
-                description: descriptionForBackfill,
-                skills: data.skills !== undefined ? data.skills : (existingDrive as any).skills,
-                responsibilities: data.responsibilities !== undefined ? data.responsibilities : (existingDrive as any).responsibilities,
-                extractedDetails: (existingDrive as any).extractedDetails,
-            })
-        ) {
-            const jdFields = await deriveDriveJdFieldsFromDescription(descriptionForBackfill);
-            if (jdFields) {
-                if ((data.skills === undefined || !String(data.skills || "").trim()) && jdFields.skills) {
-                    updateData.skills = jdFields.skills;
-                }
-                if ((data.responsibilities === undefined || !String(data.responsibilities || "").trim()) && jdFields.responsibilities) {
-                    updateData.responsibilities = jdFields.responsibilities;
-                }
-                if ((data.extractedDetails === undefined || !String(data.extractedDetails || "").trim()) && (!(existingDrive as any).extractedDetails || !String((existingDrive as any).extractedDetails || "").trim())) {
-                    updateData.extractedDetails = jdFields.extractedDetails;
-                }
-            }
-        }
         Object.assign(
             updateData,
             normalizeDriveAiConfig({

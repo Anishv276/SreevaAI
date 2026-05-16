@@ -13,7 +13,6 @@ import { isInterviewTokenRequired } from "./lib/interview-access";
 import { appendCandidateActivity } from "./lib/candidate-activity";
 import { getPythonExecutable } from "./lib/python-exec";
 import { extractJDFromText } from "./lib/openai";
-import { deriveDriveJdFieldsFromDescription } from "./lib/drive-jd";
 import { parseDriveScreeningSettings } from "./lib/screening-criteria";
 import { recordOrgBillingUsage } from "./lib/usage-metrics";
 // Load environment variables
@@ -62,20 +61,26 @@ function hasJdMustHaves(jd: Record<string, any>): boolean {
 function buildJdRawText(drive: {
   title?: string | null;
   role?: string | null;
-  description?: string | null;
-  responsibilities?: string | null;
-  requirements?: string | null;
-  skills?: string | null;
-  experience?: string | null;
+  extractedDetails?: string | null;
 }) {
   const parts: string[] = [];
   if (drive.title?.trim()) parts.push(`Title: ${drive.title.trim()}`);
   if (drive.role?.trim()) parts.push(`Role: ${drive.role.trim()}`);
-  if (drive.description?.trim()) parts.push(drive.description.trim());
-  if (drive.responsibilities?.trim()) parts.push(`Responsibilities:\n${drive.responsibilities.trim()}`);
-  if (drive.requirements?.trim()) parts.push(`Requirements:\n${drive.requirements.trim()}`);
-  if (drive.skills?.trim()) parts.push(`Skills:\n${drive.skills.trim()}`);
-  if (drive.experience?.trim()) parts.push(`Experience:\n${drive.experience.trim()}`);
+  try {
+    const ex = drive.extractedDetails ? JSON.parse(drive.extractedDetails) : {};
+    if (ex.role_summary?.trim()) parts.push(ex.role_summary.trim());
+    if (Array.isArray(ex.responsibilities) && ex.responsibilities.length > 0)
+      parts.push(`Responsibilities:\n${ex.responsibilities.join("\n")}`);
+    if (Array.isArray(ex.requirements) && ex.requirements.length > 0)
+      parts.push(`Requirements:\n${ex.requirements.join("\n")}`);
+    const mustHave = Array.isArray(ex.skills?.must_have)
+      ? ex.skills.must_have.map((s: any) => (typeof s === "object" ? s.skill : s)).filter(Boolean)
+      : [];
+    if (mustHave.length > 0) parts.push(`Skills:\n${mustHave.join(", ")}`);
+    const minExp = ex.experience?.min_years;
+    const maxExp = ex.experience?.max_years;
+    if (typeof minExp === "number") parts.push(`Experience: ${minExp}${maxExp ? `-${maxExp}` : "+"}+ years`);
+  } catch { /* ignore parse errors */ }
   return parts.join("\n\n").trim();
 }
 
@@ -173,11 +178,6 @@ async function processDriveResumeBatchJob(job: any) {
     where: { id: driveId },
     select: {
       extractedDetails: true,
-      description: true,
-      responsibilities: true,
-      requirements: true,
-      skills: true,
-      experience: true,
       role: true,
       title: true,
       screeningThreshold: true,
@@ -199,14 +199,9 @@ async function processDriveResumeBatchJob(job: any) {
     const extracted = await extractJDFromText(jdRawText, "gpt-5.4-mini");
     if (hasJdMustHaves(extracted.data || {})) {
       structuredJd = extracted.data || {};
-      const derivedFields = await deriveDriveJdFieldsFromDescription(jdRawText);
       await prisma.drive.update({
         where: { id: driveId },
-        data: {
-          extractedDetails: JSON.stringify(structuredJd),
-          ...(derivedFields?.skills && !drive.skills?.trim() ? { skills: derivedFields.skills } : {}),
-          ...(derivedFields?.responsibilities && !drive.responsibilities?.trim() ? { responsibilities: derivedFields.responsibilities } : {}),
-        },
+        data: { extractedDetails: JSON.stringify(structuredJd) },
       }).catch(() => {});
       if ((extracted.usage?.inputTokens || extracted.usage?.outputTokens)) {
         await recordOrgBillingUsage({
@@ -714,7 +709,6 @@ if (isQueueEnabled("resume-processing")) {
         where: { id: drive.id },
         select: {
           title: true,
-          description: true,
           extractedDetails: true,
           screeningThreshold: true,
           screeningCriteria: true,
@@ -1036,7 +1030,6 @@ if (isQueueEnabled("backup-queue")) {
             title: true,
             role: true,
             department: true,
-            description: true,
             type: true,
             screeningThreshold: true,
             creatorId: true,
@@ -1044,11 +1037,6 @@ if (isQueueEnabled("backup-queue")) {
             updatedAt: true,
             positions: true,
             workMode: true,
-            experience: true,
-            responsibilities: true,
-            requirements: true,
-            salary: true,
-            skills: true,
             extractedDetails: true,
             interviewLanguage: true,
             interviewQuestions: true,

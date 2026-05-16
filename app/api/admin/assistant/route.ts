@@ -546,7 +546,7 @@ async function summarizeCandidate(message: string, orgId: string, history: any[]
             ]
         },
         include: {
-            drive: { select: { title: true, description: true } },
+            drive: { select: { title: true } },
             interview: true
         }
     });

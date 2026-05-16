@@ -29,7 +29,6 @@ export async function GET(request: Request) {
                         department: true,
                         workMode: true,
                         type: true,
-                        salary: true,
                     }
                 },
                 interview: {

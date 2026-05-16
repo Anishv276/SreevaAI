@@ -650,12 +650,36 @@ async def persist_interview_billing_snapshot(
         logger.info(f"[USAGE] Saved interview billing snapshot for {app_id}")
     except Exception as e:
         logger.error(f"[USAGE] Failed to save interview billing snapshot for {app_id}: {e}")
+def _build_jd_from_extracted(extracted_json: str | None) -> str:
+    if not extracted_json:
+        return ""
+    try:
+        data = json.loads(extracted_json) if isinstance(extracted_json, str) else extracted_json
+        parts = []
+        if data.get("role_summary"):
+            parts.append(f"Description: {data['role_summary']}")
+        if data.get("responsibilities"):
+            r = data["responsibilities"]
+            parts.append("Responsibilities:\n" + ("\n".join(f"- {x}" for x in r) if isinstance(r, list) else str(r)))
+        if data.get("requirements"):
+            req = data["requirements"]
+            parts.append("Requirements:\n" + ("\n".join(f"- {x}" for x in req) if isinstance(req, list) else str(req)))
+        if data.get("skills"):
+            s = data["skills"]
+            parts.append("Skills: " + (", ".join(s) if isinstance(s, list) else str(s)))
+        if data.get("experience"):
+            parts.append(f"Experience: {data['experience']}")
+        return "\n\n".join(parts)
+    except Exception:
+        return ""
+
+
 async def get_interview_context(app_id: str):
     """Fetch Candidate and Job Description context from PostgreSQL via asyncpg."""
     if not DATABASE_URL:
         raise RuntimeError("DATABASE_URL is not set")
     query = """
-    SELECT a."fullName", a."resumeText", a."resumeData", d.title, d.role AS "role", d.description, d.skills, d."extractedDetails", d."orgId" AS "orgId",
+    SELECT a."fullName", a."resumeText", a."resumeData", d.title, d.role AS "role", d."extractedDetails", d."orgId" AS "orgId",
            d.location AS "driveLocation", d."interviewLanguage", d."interviewQuestions",
            COALESCE(d."ttsProvider", o."ttsProvider") AS "ttsProvider",
            COALESCE(d."cartesiaVoiceId", o."cartesiaVoiceId") AS "cartesiaVoiceId", o."cartesiaModel",
@@ -685,7 +709,7 @@ async def get_interview_context(app_id: str):
                 "extractedDetails": row["extractedDetails"],
                 "jobTitle": row["role"] or row["title"],
                 "driveTitle": row["title"],
-                "jd": f"Description: {row['description']}\nSkills: {row['skills']}",
+                "jd": _build_jd_from_extracted(row["extractedDetails"]),
                 "orgId": row["orgId"],
                 "orgName": row["orgName"],
                 "orgLocation": row["orgLocation"],

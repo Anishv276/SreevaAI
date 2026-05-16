@@ -38,7 +38,6 @@ export async function GET(
                         department: true,
                         orgId: true,
                         role: true,
-                        description: true,
                         extractedDetails: true,
                     }
                 },

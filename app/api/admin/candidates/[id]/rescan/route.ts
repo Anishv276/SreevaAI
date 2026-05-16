@@ -31,7 +31,6 @@ export async function POST(
                     select: {
                         id: true,
                         title: true,
-                        description: true,
                         screeningThreshold: true,
                         orgId: true,
                     }
@@ -44,13 +43,7 @@ export async function POST(
         }
 
         const drive = application.drive;
-        const jdText = drive.description?.trim();
 
-        if (!jdText) {
-            return NextResponse.json({ 
-                error: "Job Description is missing. Cannot re-scan." 
-            }, { status: 400 });
-        }
 
         let resumeText = application.resumeText || "";
         if (!resumeText && application.aiReport) {
@@ -102,6 +95,17 @@ export async function POST(
         );
 
         const threshold = Number(drive.screeningThreshold ?? 60);
+        const jdText = (() => {
+            try {
+                const d = driveRows?.[0]?.extractedDetails ? JSON.parse(driveRows[0].extractedDetails) : null;
+                if (!d) return "";
+                const parts: string[] = [];
+                if (d.role_summary) parts.push(d.role_summary);
+                if (d.responsibilities) parts.push(Array.isArray(d.responsibilities) ? d.responsibilities.join(", ") : String(d.responsibilities));
+                if (d.skills) parts.push(Array.isArray(d.skills) ? d.skills.join(", ") : String(d.skills));
+                return parts.join("\n");
+            } catch { return ""; }
+        })();
         const scoringInput = {
             resume: structuredResume,
             jd: safeJsonParse(driveRows?.[0]?.extractedDetails, {}),

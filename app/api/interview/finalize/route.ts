@@ -375,9 +375,6 @@ export async function POST(req: Request) {
             select: {
               id: true,
               title: true,
-              description: true,
-              requirements: true,
-              skills: true,
               orgId: true,
             },
           },

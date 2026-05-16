@@ -41,7 +41,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                     select: {
                         id: true,
                         title: true,
-                        description: true,
                         screeningThreshold: true,
                         screeningCriteria: true,
                         orgId: true,
@@ -93,7 +92,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             resume: structuredResume,
             jd: safeJsonParse(driveRows?.[0]?.extractedDetails, {}),
             resume_raw_text: resumeText,
-            jd_raw_text: application.drive.description || "",
+            jd_raw_text: (() => {
+                try {
+                    const d = driveRows?.[0]?.extractedDetails ? JSON.parse(driveRows[0].extractedDetails) : null;
+                    if (!d) return "";
+                    const parts: string[] = [];
+                    if (d.role_summary) parts.push(d.role_summary);
+                    if (d.responsibilities) parts.push(Array.isArray(d.responsibilities) ? d.responsibilities.join(", ") : String(d.responsibilities));
+                    if (d.skills) parts.push(Array.isArray(d.skills) ? d.skills.join(", ") : String(d.skills));
+                    return parts.join("\n");
+                } catch { return ""; }
+            })(),
             threshold,
             screening_criteria: screeningSettings.criteria,
         };

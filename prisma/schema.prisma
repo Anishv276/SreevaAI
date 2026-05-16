@@ -97,7 +97,6 @@ model Drive {
   id                 String        @id
   title              String
   role               String?
-  description        String
   department         String
   type               String        @default("Full-time")
   screeningThreshold Int           @default(0)
@@ -106,11 +105,6 @@ model Drive {
   updatedAt          DateTime      @updatedAt
   positions          Int?          @default(1)
   workMode           String?
-  experience         String?
-  responsibilities   String?
-  requirements       String?
-  salary             String?
-  skills             String?
   screeningCriteria  String?       @default("{}")
   extractedDetails   String?       @default("{}")
   interviewLanguage  String?       @default("English")
