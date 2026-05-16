@@ -37,6 +37,11 @@ export const createDriveSchema = z.object({
     return val;
   }, z.string().optional()),
   location: z.string().optional(),
+  deadline: z.preprocess((val) => {
+    if (typeof val !== "string") return val ?? undefined;
+    const trimmed = val.trim();
+    return trimmed ? trimmed : null;
+  }, z.union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/), z.null()]).optional()),
   positions: z.preprocess((val) => {
     if (val === null || val === undefined || val === "") return 1;
     const n = Number(val);

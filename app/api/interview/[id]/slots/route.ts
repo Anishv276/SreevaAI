@@ -24,7 +24,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         const bookedSlot = app.interview?.scheduledAt ? app.interview.scheduledAt.getTime() : null;
 
         const now = new Date();
-        const end = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+        const driveDeadline = app.drive?.deadline ? new Date(app.drive.deadline) : null;
+        const fallbackEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+        const end = driveDeadline && !Number.isNaN(driveDeadline.getTime()) ? driveDeadline : fallbackEnd;
 
         // Get existing slots for the entire org to enforce org-level concurrency
         const existingSlots = await prismaAny.interviewSlot.findMany({

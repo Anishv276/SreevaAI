@@ -38,9 +38,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         const endTime = new Date(startTime.getTime() + 20 * 60000);
         const orgId = app.drive?.orgId;
         const driveId = app.drive?.id;
+        const driveDeadline = app.drive?.deadline ? new Date(app.drive.deadline) : null;
 
         if (!orgId || !driveId) {
             return NextResponse.json({ error: "Incomplete application data" }, { status: 400 });
+        }
+
+        if (driveDeadline && !Number.isNaN(driveDeadline.getTime()) && startTime.getTime() > driveDeadline.getTime()) {
+            return NextResponse.json({ error: "This drive deadline has passed. Please contact HR for a new schedule link." }, { status: 400 });
         }
 
         const bookingResult = await prismaAny.$transaction(async (tx: any) => {

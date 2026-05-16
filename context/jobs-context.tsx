@@ -20,6 +20,7 @@ export type Job = {
     workMode?: string;
     slug?: string;
     role?: string;
+    deadline?: string | null;
     createdAt: string;
 };
 

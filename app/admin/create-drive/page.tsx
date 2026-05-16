@@ -22,10 +22,12 @@ import {
   ChevronRight,
   Loader2,
   Lock,
+  CalendarDays,
 } from "lucide-react";
 import { useAdminOrg } from "@/context/admin-org-context";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PremiumDatePicker } from "@/components/ui/premium-date-picker";
 
 export default function CreateDrivePage() {
   return (
@@ -50,6 +52,7 @@ function CreateDriveForm() {
     department: "",
     workMode: "",
     location: "",
+    deadline: "",
     employmentType: "",
     interviewLanguage: "English",
     interviewQuestions: [],
@@ -100,6 +103,16 @@ function CreateDriveForm() {
       .filter((part) => typeof part === "string" && part.trim())
       .map((part) => String(part).trim())
       .join(", ");
+  };
+
+  const formatDateForInput = (value?: string | null) => {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
   };
 
   const displayFormData = resolveVoiceConfig(formData);
@@ -168,6 +181,7 @@ function CreateDriveForm() {
             department: drive.department,
             workMode: (drive as any).workMode || "",
             location: (drive as any).location || "",
+            deadline: formatDateForInput((drive as any).deadline || null),
             employmentType: drive.type,
             interviewLanguage: (drive as any).interviewLanguage || "English",
             interviewQuestions: typeof (drive as any).interviewQuestions === "string"
@@ -216,8 +230,8 @@ function CreateDriveForm() {
     if (!isEditMode && !searchParams.get("id")) {
       const method = searchParams.get("method");
       if (method !== "ai-chat") {
-        setFormData({
-          title: "", role: "", department: "", workMode: "", location: "", employmentType: "",
+          setFormData({
+          title: "", role: "", department: "", workMode: "", location: "", deadline: "", employmentType: "",
           interviewLanguage: "English", interviewQuestions: [], ttsProvider: "",
           cartesiaVoiceId: null, sarvamVoice: null, googleModel: null, googleVoiceName: null,
           aiName: "Ishitha", extractedDetails: null,
@@ -327,6 +341,7 @@ function CreateDriveForm() {
       employmentType: currentFormData.employmentType || "",
       workMode: currentFormData.workMode || "",
       location: currentFormData.location || "",
+      deadline: currentFormData.deadline || null,
       jdFileName: currentFormData.jdFileName || null,
       jdPreviewUrl: getPersistedJdUrl(currentFormData),
       extractedDetails: currentFormData.extractedDetails ? typeof currentFormData.extractedDetails === "string" ? currentFormData.extractedDetails : JSON.stringify(currentFormData.extractedDetails) : null,
@@ -504,6 +519,22 @@ function CreateDriveForm() {
                   )}
                 />
               </div>
+            </div>
+            <div className="mt-4 space-y-2 max-w-md">
+              <Label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest">
+                Application Deadline
+                <span className="text-[#F97316] ml-0.5">*</span>
+              </Label>
+              <PremiumDatePicker
+                value={formData.deadline || ""}
+                onChange={(date) => setFormData((prev: any) => ({ ...prev, deadline: date }))}
+                placeholder="Select application deadline"
+                disabledBeforeToday={true}
+                className={cn(isAnalyzing && !formData.deadline && "opacity-95")}
+              />
+              <p className="text-[11px] text-gray-400 font-medium">
+                Candidates can book interview slots only up to this date.
+              </p>
             </div>
             {isAnalyzing && (
               <p className="mt-2 text-[11px] text-orange-500 font-medium flex items-center gap-1.5">

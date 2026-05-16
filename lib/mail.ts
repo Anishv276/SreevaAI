@@ -13,6 +13,7 @@ export async function sendApplicationStatusEmail({
     interviewLink,
     scheduledAt,
     scheduledTimeZone,
+    schedulingDeadline,
 }: {
     email: string;
     fullName: string;
@@ -24,6 +25,7 @@ export async function sendApplicationStatusEmail({
     interviewLink?: string;
     scheduledAt?: Date;
     scheduledTimeZone?: string;
+    schedulingDeadline?: Date;
 }): Promise<MailResult> {
     const orgName = orgNameProp || "Our Team";
     console.log(`[MAIL DEBUG] Incoming status: "${status}"`);
@@ -31,6 +33,14 @@ export async function sendApplicationStatusEmail({
     const isHired = s === 'HIRED';
     const isConfirmed = s === 'CONFIRMED';
     const isAccepted = s === 'SHORTLISTED' || s === 'ACCEPTED' || s === 'INTERVIEW' || isHired;
+    const schedulingDeadlineLabel = schedulingDeadline
+        ? schedulingDeadline.toLocaleDateString('en-US', {
+            weekday: 'short',
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+        })
+        : null;
 
     const subject = isHired
         ? `Offer Letter: You've been selected for ${jobTitle}!`
@@ -97,6 +107,7 @@ export async function sendApplicationStatusEmail({
                 <div style="text-align: center;">
                     <a href="${interviewLink}" style="background-color: #F97316; color: white; padding: 14px 35px; text-decoration: none; border-radius: 12px; font-weight: 800; font-size: 15px; display: inline-block; box-shadow: 0 4px 12px rgba(249,115,22,0.25);">Schedule AI Interview</a>
                 </div>
+                ${schedulingDeadlineLabel ? `<p style="color: #9CA3AF; font-size: 12px; margin-top: 16px; text-align: center;">Please schedule your interview on or before <strong>${schedulingDeadlineLabel}</strong>.</p>` : ""}
                 <p style="color: #9CA3AF; font-size: 11px; margin-top: 20px; text-align: center;">Note: Please ensure you choose a time where you will be in a quiet environment with a working camera and microphone.</p>
             </div>
             <p style="color: #4B5563; font-size: 14px;">Our recruitment team will review the interview recording and reach out to you within 24-48 hours.</p>

@@ -52,13 +52,20 @@ export async function upsertCandidateEmbedding(
     metadata: CandidateMetadata
 ) {
     try {
-        await pineconeIndex.upsert([
-            {
-                id,
-                values: vector,
-                metadata: metadata as any,
-            },
-        ] as any);
+        if (!Array.isArray(vector) || vector.length === 0) {
+            console.warn(`[PINECONE_UPSERT_SKIP]: Empty vector for ${metadata.fullName} (${metadata.type})`);
+            return;
+        }
+
+        await pineconeIndex.upsert({
+            records: [
+                {
+                    id,
+                    values: vector,
+                    metadata: metadata as any,
+                },
+            ],
+        } as any);
         console.log(`[PINECONE_UPSERT_SUCCESS]: ${metadata.fullName} (${metadata.type})`);
     } catch (error: any) {
         console.error("[PINECONE_UPSERT_ERROR]:", error.message);

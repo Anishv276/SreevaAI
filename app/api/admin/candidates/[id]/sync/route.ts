@@ -59,51 +59,60 @@ export async function POST(
             aiScore: app.aiScore ?? 0,
         };
 
-        // Index Resume
-        if (app.resumeText) {
-            const vector = await getEmbedding(app.resumeText);
-            await upsertCandidateEmbedding(`${app.id}-resume`, vector, {
-                ...sharedMeta,
-                contentChunk: app.resumeText.substring(0, 3000),
-                type: "resume",
+        const sources = [
+            {
+                key: "resume",
+                text: app.resumeText,
                 createdAt: app.createdAt.toISOString(),
-            });
-        }
-
-        // Index Transcript
-        if (app.interview?.interviewTranscript) {
-            const vector = await getEmbedding(app.interview.interviewTranscript);
-            await upsertCandidateEmbedding(`${app.id}-transcript`, vector, {
-                ...sharedMeta,
-                contentChunk: app.interview.interviewTranscript.substring(0, 3000),
-                type: "transcript",
-                createdAt: app.interview.createdAt.toISOString(),
-            });
-        }
-
-        // Index AI Summary
-        if (app.interview?.aiSummary) {
-            const vector = await getEmbedding(app.interview.aiSummary);
-            await upsertCandidateEmbedding(`${app.id}-summary`, vector, {
-                ...sharedMeta,
-                contentChunk: app.interview.aiSummary.substring(0, 3000),
-                type: "summary",
-                createdAt: app.interview.createdAt.toISOString(),
-            });
-        }
-
-        // Index AI Report
-        if (app.aiReport) {
-            const vector = await getEmbedding(app.aiReport);
-            await upsertCandidateEmbedding(`${app.id}-report`, vector, {
-                ...sharedMeta,
-                contentChunk: app.aiReport.substring(0, 3000),
-                type: "report",
+            },
+            {
+                key: "transcript",
+                text: app.interview?.interviewTranscript,
+                createdAt: app.interview?.createdAt?.toISOString() || app.createdAt.toISOString(),
+            },
+            {
+                key: "summary",
+                text: app.interview?.aiSummary,
+                createdAt: app.interview?.createdAt?.toISOString() || app.createdAt.toISOString(),
+            },
+            {
+                key: "report",
+                text: app.aiReport,
                 createdAt: app.createdAt.toISOString(),
+            },
+        ] as const;
+
+        let indexedCount = 0;
+        let skippedCount = 0;
+
+        for (const source of sources) {
+            const text = typeof source.text === "string" ? source.text.trim() : "";
+            if (!text) {
+                skippedCount += 1;
+                continue;
+            }
+
+            const vector = await getEmbedding(text);
+            await upsertCandidateEmbedding(`${app.id}-${source.key}`, vector, {
+                ...sharedMeta,
+                contentChunk: text.substring(0, 3000),
+                type: source.key,
+                createdAt: source.createdAt,
+            });
+            indexedCount += 1;
+        }
+
+        if (indexedCount === 0) {
+            console.log(`[SYNC_ENGINE]: No indexable text found for ${app.fullName}; Pinecone sync skipped.`);
+            return NextResponse.json({
+                success: true,
+                indexedCount,
+                skippedCount,
+                message: "No indexable content available",
             });
         }
 
-        return NextResponse.json({ success: true });
+        return NextResponse.json({ success: true, indexedCount, skippedCount });
     } catch (error: any) {
         console.error("[SYNC_ENGINE_ERROR]:", error.message);
         return NextResponse.json({ error: error.message }, { status: 500 });

@@ -14,6 +14,13 @@ import { getInterviewQuotaSupportMessage, isOrgRestrictedStatus } from "@/lib/in
 import { parseOrgLimitValue } from "@/lib/org-limits";
 import { parseDriveScreeningSettings, sanitizeScreeningCriteria } from "@/lib/screening-criteria";
 
+function normalizeDeadlineDate(deadline?: string | null) {
+    if (!deadline) return null;
+    const parsed = new Date(`${deadline}T23:59:59.999`);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed;
+}
+
 export async function GET(request: Request) {
     try {
         const session = await getSession();
@@ -90,6 +97,7 @@ export async function GET(request: Request) {
                     jdPreviewUrl: true,
                     orgId: true,
                     location: true,
+                    deadline: true,
                     aiName: true,
                     cartesiaVoiceId: true,
                     sarvamVoice: true,
@@ -246,6 +254,7 @@ export async function POST(request: Request) {
                 jdPreviewUrl: data.jdPreviewUrl?.startsWith("blob:") ? null : (data.jdPreviewUrl || null),
                 screeningCriteria: JSON.stringify(mergedScreeningCriteria),
                 screeningThreshold: data.screeningThreshold ?? 60,
+                deadline: normalizeDeadlineDate(data.deadline as string | null | undefined),
 
                 // Interview configuration
                 interviewLanguage: data.interviewLanguage || "English",

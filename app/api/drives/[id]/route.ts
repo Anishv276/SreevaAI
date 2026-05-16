@@ -9,6 +9,13 @@ import { getSession } from "@/lib/auth";
 import { parseDriveScreeningSettings, sanitizeScreeningCriteria } from "@/lib/screening-criteria";
 import { isOrgRestrictedStatus } from "@/lib/interview-quota";
 
+function normalizeDeadlineDate(deadline?: string | null) {
+    if (!deadline) return null;
+    const parsed = new Date(`${deadline}T23:59:59.999`);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed;
+}
+
 export const dynamic = "force-dynamic";
 
 /**
@@ -41,6 +48,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
                 updatedAt: true,
                 positions: true,
                 workMode: true,
+                deadline: true,
                 interviewLanguage: true,
                 interviewQuestions: true,
                 jdFileName: true,
@@ -195,6 +203,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         }
         if (data.workMode !== undefined) updateData.workMode = data.workMode;
         if (data.location !== undefined) updateData.location = data.location;
+        if (data.deadline !== undefined) updateData.deadline = normalizeDeadlineDate(data.deadline as string | null | undefined);
         if (positions !== undefined) updateData.positions = positions;
 
         if (data.jdFileName !== undefined) updateData.jdFileName = data.jdFileName;

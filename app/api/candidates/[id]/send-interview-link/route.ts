@@ -100,7 +100,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
             fullName: application.fullName,
             jobTitle: application.drive?.title || "Unknown Role",
             status: "SHORTLISTED",
-            interviewLink
+            interviewLink,
+            schedulingDeadline: (application.drive as any)?.deadline || undefined,
         });
 
         if (!mailResult.success) {
