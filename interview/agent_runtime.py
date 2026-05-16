@@ -310,7 +310,8 @@ async def entrypoint(ctx: JobContext):
         return task
     def append_transcript_line(speaker: str, text: str) -> None:
         from interview.agent_runtime_helpers import append_transcript_line as _atl
-        _atl(transcript_lines, speaker, text)
+        elapsed = int(max(0, time.time() - session_start_time)) if session_start_time else 0
+        _atl(transcript_lines, f"{speaker}[{elapsed}]", text)
     # Room name is available before connecting - derive app_id early so we can
     # fire the DB fetch in parallel with the room connect handshake.
     app_id = ctx.room.name.replace("interview_", "")
@@ -410,6 +411,14 @@ async def entrypoint(ctx: JobContext):
     )
     extracted_details = _coerce_jsonish(context.get("extractedDetails") or "{}")
     structured_resume = _coerce_jsonish(context.get("resumeData") or "{}")
+    _raw_interview_questions = context.get("interviewQuestions")
+    _interview_questions: list = []
+    if _raw_interview_questions:
+        try:
+            _parsed = json.loads(_raw_interview_questions) if isinstance(_raw_interview_questions, str) else _raw_interview_questions
+            _interview_questions = _parsed if isinstance(_parsed, list) else []
+        except Exception:
+            _interview_questions = []
     logger.info("[1/6] RESUME FETCH — resumeData present=%s keys=%s",
         bool(structured_resume),
         list(structured_resume.keys()) if isinstance(structured_resume, dict) else "empty",
@@ -418,6 +427,13 @@ async def entrypoint(ctx: JobContext):
         bool(extracted_details),
         list(extracted_details.keys()) if isinstance(extracted_details, dict) else "empty",
     )
+    if _interview_questions:
+        logger.info("[2.5/6] CUSTOM QUESTIONS — count=%d questions=%s",
+            len(_interview_questions),
+            [str(q)[:120] for q in _interview_questions],
+        )
+    else:
+        logger.info("[2.5/6] CUSTOM QUESTIONS — none configured for this drive")
     def require_db_value(key: str, default: Any = None, required: bool = True):
         value = context.get(key)
         if value is None:
@@ -545,6 +561,7 @@ async def entrypoint(ctx: JobContext):
         resume_context=resume_context,
         jd_details=extracted_details,
         resume_brief=resume_brief,
+        custom_questions=_interview_questions or None,
     )
     refresh_candidate_band_context(session_context)
     logger.info(
@@ -561,6 +578,7 @@ async def entrypoint(ctx: JobContext):
     stage1_directive_cached = build_stage_1_resume_directive(
         band=session_context.candidate_band,
         resume_brief=session_context.resume_brief,
+        custom_questions=_interview_questions or None,
     )
     # Stages 2-4 are built dynamically at injection time so they reflect what was
     # actually covered in prior stages. Only stage 1 is cached — it has no prior context.
@@ -762,6 +780,9 @@ async def entrypoint(ctx: JobContext):
     _trust_state = init_trust_state()  # session-level trust engine state
     _contradiction_state = init_contradiction_state()  # explicit contradiction lifecycle state
     _active_eval_task: Optional[asyncio.Task[Any]] = None  # track active eval to prevent stale injects
+    # Running log of topics already covered — injected into every directive so the AI
+    # never re-explores something already discussed, across all stages.
+    _discussed_log: list[str] = []
     # Cross-turn consistency engine state
     _claim_index: dict[str, list[dict]] = {}  # claims indexed by type for contradiction checks
     _contradictions_found: list[dict] = [] # all detected contradictions for final report
@@ -936,6 +957,7 @@ async def entrypoint(ctx: JobContext):
                 resume_brief=rb,
                 context_brief=session_context.merged_brief_block,
                 covered_in_stage1=covered_in_s1,
+                custom_questions=_interview_questions or None,
             )
 
         if stage_idx == 2:
@@ -949,6 +971,7 @@ async def entrypoint(ctx: JobContext):
                 band=session_context.candidate_band,
                 context_brief=seeds,
                 covered_topics=all_covered,
+                custom_questions=_interview_questions or None,
             )
 
         if stage_idx == 3:
@@ -962,6 +985,7 @@ async def entrypoint(ctx: JobContext):
                 band=session_context.candidate_band,
                 context_brief=seeds,
                 covered_topics=all_covered,
+                custom_questions=_interview_questions or None,
             )
 
         return None
@@ -1520,13 +1544,14 @@ async def entrypoint(ctx: JobContext):
                             quality_record = {
                                 "clarity": td["quality"]["clarity"],
                                 "depth": td["quality"]["depth"],
-                                "specificity": td["quality"]["specificity"],
-                                "grounding": td["quality"]["grounding"],
+                                "fluency": td["quality"].get("fluency", 0),
+                                "confidence": td["quality"].get("confidence", 0),
                                 "overall": quality_avg,
                                 "signals": [event["signal_name"] for event in signal_events if event.get("signal_name")],
                                 "concerns": [event["signal_name"] for event in signal_events if event.get("score_delta", 0.0) < 0],
                                 "turn": turn,
                                 "question": question,
+                                "answer": answer,
                             }
                             answer_scores.append(quality_record)
                             # Update depth history and follow-up counter
@@ -1556,8 +1581,16 @@ async def entrypoint(ctx: JobContext):
                                     and _topic_depth_history[-2] < 4.0
                                 )
                                 hard_cap_hit = _topic_follow_up_count >= follow_up_depth
-                                if hard_cap_hit or (last_two_low and _topic_follow_up_count >= 2):
-                                    reason_note = "cap" if hard_cap_hit else "quality exhausted"
+                                # If candidate gave one vague answer (quality < 5.0) and we already
+                                # probed once, that's enough — move on rather than rephrase the same question.
+                                one_probe_vague = (
+                                    _topic_follow_up_count >= 1
+                                    and len(_topic_depth_history) >= 1
+                                    and _topic_depth_history[-1] < 5.0
+                                    and quality_avg < 5.0
+                                )
+                                if hard_cap_hit or (last_two_low and _topic_follow_up_count >= 2) or one_probe_vague:
+                                    reason_note = "cap" if hard_cap_hit else ("one_probe_vague" if one_probe_vague else "quality exhausted")
                                     action = "MOVE_ON"
                                     next_goal = "This thread is exhausted. Pivot naturally to the next topic within this stage — no announcement."
                                     td["decision"]["action"] = "MOVE_ON"
@@ -1711,6 +1744,19 @@ async def entrypoint(ctx: JobContext):
                                 f"If they clarify convincingly, accept it and move on. "
                                 f"If they stall or contradict again, note it internally and continue."
                             )
+                        # On MOVE_ON, log what was just discussed so all future turns remember it.
+                        if action == "MOVE_ON" and question and answer:
+                            topic_line = question.split("?")[0].strip()[:80]
+                            answer_gist = " ".join(answer.split()[:20])
+                            _discussed_log.append(f"- {topic_line}: {answer_gist}")
+                        # Build the "already covered" block — injected into every directive.
+                        if _discussed_log:
+                            covered_block = (
+                                "\n[INTERVIEW MEMORY — DO NOT RE-ASK THESE, reference naturally if relevant]\n"
+                                + "\n".join(_discussed_log[-8:])
+                                + "\n"
+                            )
+                            directive = directive + covered_block
                         # Remove previous directive to keep context clean
                         remove_system_messages(chat_ctx, "[NEXT_TURN_DIRECTIVE")
                         # On MOVE_ON, also clear RECENT_CONTEXT so the LLM doesn't
@@ -2217,7 +2263,7 @@ async def entrypoint(ctx: JobContext):
         # Tailor the goodbye to how much content was actually exchanged.
         # Avoid "we covered a lot" if the candidate barely spoke.
         candidate_turns_final = sum(
-            1 for line in transcript_lines if line.startswith("Candidate:")
+            1 for line in transcript_lines if re.match(r"^Candidate(\[\d+\])?:", line)
         )
         if candidate_turns_final >= 4:
             goodbye_text = (

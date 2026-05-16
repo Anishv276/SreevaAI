@@ -266,10 +266,9 @@ class _TranscriptTurnBuilder:
         line = raw_line.strip()
         if not line:
             return
-        if line.startswith("Interviewer:"):
-            self.add_block("Interviewer", line[len("Interviewer:"):].strip())
-        elif line.startswith("Candidate:"):
-            self.add_block("Candidate", line[len("Candidate:"):].strip())
+        m = re.match(r"^(Interviewer|Candidate)(\[\d+\])?:\s*", line)
+        if m:
+            self.add_block(m.group(1), line[m.end():].strip())
         else:
             self.add_block("Interviewer", line)
 

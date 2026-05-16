@@ -4,56 +4,24 @@ import { join } from "path";
 import { spawn } from "child_process";
 import { v4 as uuidv4 } from "uuid";
 import os from "os";
-import { z } from "zod";
 import { extractionLimiter } from "@/lib/rate-limit";
 import { getSession } from "@/lib/auth";
 import { recordOrgBillingUsage } from "@/lib/usage-metrics";
 import { getPythonExecutable } from "@/lib/python-exec";
-import { queueJdExtraction } from "@/lib/jd-extraction";
-import { deriveDriveJdFieldsFromDescription } from "@/lib/drive-jd";
-import { safeJsonParse } from "@/lib/utils";
-
-const extractQuerySchema = z.object({
-    type: z.enum(["JD", "RESUME"]),
-    url: z.string().url().optional(),
-});
-
-async function hydrateJdExtraction(payload: { data?: Record<string, any>; text?: string | null }) {
-    const baseData = payload.data && typeof payload.data === "object" ? payload.data : {};
-    const text = typeof payload.text === "string" ? payload.text.trim() : "";
-
-    const looksSparse =
-        Object.keys(baseData).length === 0 ||
-        !String(baseData.job_title || "").trim() ||
-        !String(baseData.role_summary || "").trim();
-
-    if (!text || !looksSparse) return baseData;
-
-    try {
-        const derived = await deriveDriveJdFieldsFromDescription(text);
-        if (!derived?.extractedDetails) return baseData;
-        const derivedData = safeJsonParse(derived.extractedDetails, {});
-        return {
-            ...derivedData,
-            ...baseData,
-        };
-    } catch {
-        return baseData;
-    }
-}
+import { enqueueJdExtraction } from "@/lib/jd-extraction";
 
 export async function POST(request: Request) {
     try {
         // -- RATE LIMITING -------------------
         const ip = request.headers.get("x-forwarded-for") || "unknown";
         const { success, remaining, reset } = await extractionLimiter.check(ip);
-        
+
         if (!success) {
-            return NextResponse.json({ 
+            return NextResponse.json({
                 error: "Too many extraction attempts. Please try again later.",
                 code: "RATE_LIMIT_EXCEEDED",
                 resetAt: new Date(reset).toISOString()
-            }, { 
+            }, {
                 status: 429,
                 headers: {
                     'X-RateLimit-Limit': '10000',
@@ -81,10 +49,10 @@ export async function POST(request: Request) {
             formData = await request.formData();
         } catch (parseError: any) {
             console.error("[EXTRACTION_PARSE_ERROR]", parseError);
-            return NextResponse.json({ 
+            return NextResponse.json({
                 error: "File size is larger than supported limit.",
                 code: "FILE_PARSE_ERROR",
-                details: parseError.message 
+                details: parseError.message
             }, { status: 400 });
         }
         const file = formData.get("file") as File | null;
@@ -114,9 +82,10 @@ export async function POST(request: Request) {
         const isJd = typeRaw === "JD";
 
         if (isJd) {
-            try {
-                if (url) {
-                    console.log("[SCRAPE_START]: Fetching URL:", url);
+            if (url) {
+                console.log("[SCRAPE_START]: Fetching URL:", url);
+                let text: string;
+                try {
                     const { load } = await import("cheerio");
                     const response = await fetch(url);
                     if (!response.ok) {
@@ -125,43 +94,23 @@ export async function POST(request: Request) {
                     }
                     const html = await response.text();
                     const $ = load(html);
-
-                    // Remove non-content elements
                     $("script, style, nav, footer, header, noscript, iframe").remove();
-
-                    const text = $("body")
-                        .text()
-                        .replace(/\s+/g, " ")
-                        .trim()
-                        .slice(0, 15000); // Increased limit as Cheerio is cleaner
-
+                    text = $("body").text().replace(/\s+/g, " ").trim().slice(0, 15000);
                     console.log("[SCRAPE_SUCCESS]: Text extracted, length:", text.length);
-                    const { data, usage } = await queueJdExtraction({
-                        kind: "text",
-                        text,
-                        orgOpenAIModel,
-                    });
-                    if (orgId && usage) {
-                        await recordOrgBillingUsage({
-                            orgId,
-                            feature: "jdExtraction",
-                            usage,
-                        });
-                    }
-                    const hydratedData = await hydrateJdExtraction({ data, text });
-                    return NextResponse.json({ data: hydratedData, text });
+                } catch (err: any) {
+                    console.error("[SCRAPE_FATAL_ERROR]:", { url, error: err.message });
+                    return NextResponse.json({ error: "Failed to scrape JD from URL" }, { status: 500 });
                 }
-            } catch (err: any) {
-                console.error("[SCRAPE_FATAL_ERROR]:", { url, error: err.message });
-                return NextResponse.json({ error: "Failed to scrape JD from URL" }, { status: 500 });
+
+                const jobId = await enqueueJdExtraction({ kind: "text", text, orgOpenAIModel });
+                console.log(`[JD-EXTRACT] Enqueued URL extraction job ${jobId}`);
+                return NextResponse.json({ jobId }, { status: 202 });
             }
-        }
 
-        if (!file) {
-            return NextResponse.json({ error: "File required" }, { status: 400 });
-        }
+            if (!file) {
+                return NextResponse.json({ error: "File required" }, { status: 400 });
+            }
 
-        if (isJd) {
             const MAX_SIZE = 20 * 1024 * 1024;
             if (file.size > MAX_SIZE) {
                 return NextResponse.json({
@@ -188,22 +137,15 @@ export async function POST(request: Request) {
 
             const bytes = await file.arrayBuffer();
             const buffer = Buffer.from(bytes);
-            const byteLength = buffer.length;
-            console.log("[FILE_EXTRACT_START]:", { name: file.name, size: byteLength, type });
+            console.log("[FILE_EXTRACT_START]:", { name: file.name, size: buffer.length, type });
 
-            const bucket = process.env.R2_JDS_BUCKET || "jds";
-            const fileName = `jds/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-            
-            // Run extraction and R2 upload concurrently
-            const [extractionResult, fileUrl] = await Promise.all([
-                queueJdExtraction({
-                    kind: "file",
-                    fileName: file.name,
-                    buffer,
-                    orgOpenAIModel,
-                }),
+            // Upload to R2 and enqueue extraction concurrently
+            const [jobId, fileUrl] = await Promise.all([
+                enqueueJdExtraction({ kind: "file", fileName: file.name, buffer, orgOpenAIModel }),
                 (async () => {
                     try {
+                        const bucket = process.env.R2_JDS_BUCKET || "jds";
+                        const fileName = `jds/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
                         console.log("[STORAGE_PUSH]: Uploading JD to R2", fileName);
                         const { putObject } = await import("@/lib/s3");
                         return await putObject(bucket, fileName, buffer, file.type);
@@ -214,29 +156,21 @@ export async function POST(request: Request) {
                 })()
             ]);
 
-            const { data, usage, text } = extractionResult;
-
-            if (orgId && usage) {
-                await recordOrgBillingUsage({
-                    orgId,
-                    feature: "jdExtraction",
-                    usage,
-                });
-            }
-            const hydratedData = await hydrateJdExtraction({ data, text: text || null });
-            return NextResponse.json({
-                data: hydratedData,
-                text: text || null,
-                url: fileUrl,
-            });
+            console.log(`[JD-EXTRACT] Enqueued file extraction job ${jobId}`);
+            return NextResponse.json({ jobId, url: fileUrl }, { status: 202 });
         }
 
-        // -- SERVER-SIDE VALIDATION ---------------------------
-        const MAX_SIZE = 20 * 1024 * 1024; // Increased to 20MB
+        // -- RESUME path (unchanged: direct Python spawn) --
+
+        if (!file) {
+            return NextResponse.json({ error: "File required" }, { status: 400 });
+        }
+
+        const MAX_SIZE = 20 * 1024 * 1024;
         if (file.size > MAX_SIZE) {
-            return NextResponse.json({ 
-                error: "File size exceeds 20MB limit.", 
-                code: "FILE_TOO_LARGE" 
+            return NextResponse.json({
+                error: "File size exceeds 20MB limit.",
+                code: "FILE_TOO_LARGE"
             }, { status: 413 });
         }
 
@@ -247,14 +181,13 @@ export async function POST(request: Request) {
 
         const currentAllowed = allowedTypes[type as keyof typeof allowedTypes] || [];
         const isMimeAllowed = currentAllowed.some(t => file.type.includes(t) || (t.endsWith("/*") && file.type.startsWith(t.split("/")[0])));
-        
+
         if (!isMimeAllowed) {
-             // Fallback: check extension if MIME is missing
              const validExts = /\.(pdf|docx|txt)$/i;
              if (!file.name.match(validExts)) {
-                return NextResponse.json({ 
-                    error: `Invalid file type for ${type}.`, 
-                    code: "INVALID_FILE_TYPE" 
+                return NextResponse.json({
+                    error: `Invalid file type for ${type}.`,
+                    code: "INVALID_FILE_TYPE"
                 }, { status: 415 });
              }
         }
@@ -271,12 +204,8 @@ export async function POST(request: Request) {
         let outputData = "";
         let errorData = "";
 
-        const bucket = isJd 
-            ? (process.env.R2_JDS_BUCKET || "jds")
-            : (process.env.R2_RESUMES_BUCKET || "resumes");
-
-        const prefix = isJd ? "jds/" : "resumes/";
-        const fileName = `${prefix}${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+        const bucket = process.env.R2_RESUMES_BUCKET || "resumes";
+        const fileName = `resumes/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
 
         let fileUrl: string | null = null;
 
@@ -286,13 +215,10 @@ export async function POST(request: Request) {
         pythonProcess.stdout.on("data", (data) => { outputData += data.toString(); });
         pythonProcess.stderr.on("data", (data) => { errorData += data.toString(); });
 
-        // R2 upload and Python extraction run in parallel - they don't depend on each other
         const [exitCode] = await Promise.all([
-            // Python PDF/LLM extraction
             new Promise<number>((resolve) => {
                 let settled = false;
 
-                // Safety timeout: 120s - OpenAI itself can take 30-40s on large prompts
                 const timeout = setTimeout(() => {
                     if (settled) return;
                     settled = true;
@@ -302,14 +228,13 @@ export async function POST(request: Request) {
                 }, 120000);
 
                 pythonProcess.on("close", (code) => {
-                    if (settled) return; // Timeout already resolved - ignore late close event
+                    if (settled) return;
                     settled = true;
                     clearTimeout(timeout);
                     console.log("[PYTHON_EXTRACT_END]: Exit code", code);
                     resolve(code ?? 1);
                 });
             }),
-            // R2 upload (runs concurrently)
             (async () => {
                 try {
                     console.log("[STORAGE_PUSH]: Uploading to R2", fileName);
@@ -318,27 +243,21 @@ export async function POST(request: Request) {
                     console.log("[STORAGE_SUCCESS]:", { type, fileName, url: fileUrl });
                 } catch (storageErr: any) {
                     console.error("[STORAGE_FATAL_ERROR]:", { type, fileName, error: storageErr.message });
-                    if (isJd) {
-                        throw { code: "STORAGE_VULNERABILITY", message: storageErr.message };
-                    }
                 }
             })(),
         ]);
 
-        // Cleanup temp file (after upload is attempted)
         await unlink(tempFilePath).catch(() => { });
 
         if (exitCode !== 0) {
             console.error("[EXTRACTION_FAILED]: Python script returned non-zero exit code", { exitCode, stderr: errorData, stdout: outputData });
             let pythonError = "Document processing failed.";
-            // Python emits JSON errors to either stdout or stderr
             for (const raw of [outputData, errorData]) {
                 if (!raw?.trim()) continue;
                 try {
                     const parsed = JSON.parse(raw.trim());
                     if (parsed?.error) { pythonError = parsed.error; break; }
                 } catch {
-                    // not JSON — use as plain text fallback
                     const last = raw.trim().split("\n").pop()?.trim();
                     if (last) pythonError = last;
                 }
@@ -352,7 +271,6 @@ export async function POST(request: Request) {
         try {
             const result = JSON.parse(outputData);
 
-            // Check if Python returned an error object
             if (result.error) {
                 console.error("[EXTRACTION_PYTHON_ERROR]:", result);
                 return NextResponse.json({
@@ -361,16 +279,6 @@ export async function POST(request: Request) {
                 }, { status: 422 });
             }
 
-            if (isJd) {
-                const jdCandidateText =
-                    typeof result?.data?.role_summary === "string" && result.data.role_summary.trim()
-                        ? result.data.role_summary
-                        : typeof result?.text === "string" && result.text.trim()
-                            ? result.text
-                            : "";
-            }
-
-            // Guard: ensure we got meaningful text back for JD/RESUME types
             if (result.text && typeof result.text === 'string' && result.text.length < 100) {
                 return NextResponse.json({
                     error: "Could not extract sufficient text from this document. Please ensure the file is not empty or a scanned image.",
@@ -378,11 +286,10 @@ export async function POST(request: Request) {
                 }, { status: 422 });
             }
 
-            const feature = isJd ? "jdExtraction" : type === "RESUME" ? "resumeExtraction" : null;
-            if (feature && orgId && result.usage) {
+            if (orgId && result.usage) {
                 await recordOrgBillingUsage({
                     orgId,
-                    feature,
+                    feature: "resumeExtraction",
                     usage: {
                         model: result.usage.model || "gpt-5.4-mini",
                         inputTokens: result.usage.inputTokens || 0,
@@ -394,7 +301,7 @@ export async function POST(request: Request) {
 
             return NextResponse.json({
                 ...result,
-                url: fileUrl || null  // null if R2 upload failed (only for non-critical assets)
+                url: fileUrl || null
             });
         } catch (e: any) {
             const preview = outputData.length > 200 ? outputData.slice(0, 200) + "..." : outputData;
@@ -407,10 +314,10 @@ export async function POST(request: Request) {
 
     } catch (error: any) {
         console.error("General Extraction Error:", error);
-        return NextResponse.json({ 
+        return NextResponse.json({
             error: "An unexpected error occurred while processing your request.",
             code: "INTERNAL_SERVER_ERROR",
-            details: error.message 
+            details: error.message
         }, { status: 500 });
     }
 }

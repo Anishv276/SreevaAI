@@ -139,15 +139,16 @@ export default function DrivesPage() {
             {/* Header */}
             <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between mb-8">
                 <div className="flex items-center gap-5 group">
-                    <div className="h-12 w-1.5 bg-slate-900 rounded-full shadow-[0_0_15px_rgba(15,23,42,0.15)]" />
+                    <div className="h-12 w-1.5 bg-orange-600 rounded-full shadow-[0_0_15px_rgba(234,88,12,0.3)]" />
                     <div className="space-y-1">
                         <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 tracking-tight">Active Jobs</h1>
                         <div className="flex items-center gap-3">
                             <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-pulse" />
-                            <p className="text-gray-400 font-bold text-[11px] uppercase tracking-widest">{pagination.total || 0} Total Campaigns</p>
+                            <p className="text-gray-400 font-bold text-[11px] uppercase tracking-widest">{pagination.total || 0} Total Jobs</p>
                         </div>
                     </div>
                 </div>
+
 
                 <div className="flex items-center gap-3 flex-wrap">
                     {driveCreationLocked ? (
@@ -178,7 +179,7 @@ export default function DrivesPage() {
                         </div>
                     ) : (
                         <Link href="/admin/create-drive">
-                            <Button className="bg-slate-950 hover:bg-slate-800 transition-all duration-300 h-12 px-6 font-bold rounded-2xl text-white shadow-lg shadow-slate-900/10">
+                            <Button className="bg-orange-600 hover:bg-orange-700 transition-all duration-300 h-12 px-6 font-bold rounded-2xl text-white shadow-lg shadow-orange-600/10">
                                 <Plus className="h-5 w-5 mr-2" />
                                 New Job
                             </Button>
@@ -186,6 +187,7 @@ export default function DrivesPage() {
                     )}
                 </div>
             </div>
+
 
             {/* Filters */}
             <div className="bg-white p-3 rounded-[1.75rem] border border-slate-200 shadow-sm">
@@ -216,7 +218,7 @@ export default function DrivesPage() {
             </div>
 
             {/* Cards Grid */}
-            <div className="grid w-full grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-[repeat(2,480px)] justify-start">
+            <div className="grid w-full grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {isLoading ? (
                     <div className="col-span-full flex w-full flex-col items-center justify-center py-24 min-h-[320px]">
                         <Loader2 className="h-10 w-10 text-slate-500 animate-spin mb-3" />
@@ -248,7 +250,7 @@ export default function DrivesPage() {
                                             })}
                                             target="_blank"
                                             rel="noreferrer"
-                                        className="text-[12px] font-bold text-slate-700 hover:text-slate-900 uppercase tracking-widest"
+                                            className="text-[12px] font-bold text-slate-700 hover:text-slate-900 uppercase tracking-widest"
                                         >
                                             Contact Support
                                         </a>
@@ -260,7 +262,7 @@ export default function DrivesPage() {
                                 </div>
                             ) : (
                                 <Link href="/admin/create-drive">
-                                    <Button className="bg-slate-950 hover:bg-slate-800 transition-all duration-300 h-14 px-10 font-bold rounded-2xl text-white shadow-lg shadow-slate-900/10 gap-3 group">
+                                    <Button className="bg-orange-600 hover:bg-orange-700 transition-all duration-300 h-14 px-10 font-bold rounded-2xl text-white shadow-lg shadow-orange-600/10 gap-3 group">
                                         <Plus className="h-5 w-5" />
                                         Create New Job
                                         <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
@@ -284,7 +286,7 @@ export default function DrivesPage() {
                                 className="group cursor-pointer w-full"
                             >
                                 <div className="relative h-full overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.05)] transition-all duration-300 hover:-translate-y-1 hover:border-slate-300 hover:shadow-[0_18px_44px_rgba(15,23,42,0.10)] flex flex-col">
-                                    <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-slate-900 via-slate-700 to-slate-900" />
+                                    <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-orange-600 via-orange-400 to-orange-600" />
 
                                     {/* Card Header */}
                                     <div className="relative p-4 pb-3.5">
@@ -390,15 +392,12 @@ export default function DrivesPage() {
 
             {/* Pagination */}
             {!isLoading && jobs.length > 0 && (
-                <div className="flex items-center justify-between px-4 py-6 border-t border-slate-200 bg-white rounded-2xl shadow-sm">
-                    <p className="text-[13px] font-medium text-gray-500">
-                        Showing <span className="text-gray-900 font-bold">{(pagination.page - 1) * pagination.limit + 1}</span> to <span className="text-gray-900 font-bold">{Math.min(pagination.page * pagination.limit, pagination.total)}</span> of <span className="text-gray-900 font-bold">{pagination.total}</span> jobs
-                    </p>
-                    <div className="flex gap-3">
+                <div className="mt-10 py-6 border-t border-slate-200">
+                    <div className="flex items-center justify-center gap-4 mb-6">
                         <Button
                             variant="outline"
                             size="sm"
-                            className="h-10 px-6 rounded-xl border-slate-200 bg-white text-slate-500 font-bold hover:bg-slate-50 hover:text-slate-900 disabled:opacity-30 transition-all"
+                            className="h-10 px-8 rounded-xl border-slate-200 bg-white text-slate-600 font-bold hover:bg-slate-50 disabled:opacity-30 transition-all"
                             disabled={pagination.page <= 1 || isLoading}
                             onClick={() => handlePageChange(pagination.page - 1)}
                         >
@@ -407,13 +406,16 @@ export default function DrivesPage() {
                         <Button
                             variant="outline"
                             size="sm"
-                            className="h-10 px-6 rounded-xl border-slate-200 bg-white text-slate-500 font-bold hover:bg-slate-50 hover:text-slate-900 disabled:opacity-30 transition-all"
+                            className="h-10 px-8 rounded-xl border-slate-200 bg-white text-slate-600 font-bold hover:bg-slate-50 disabled:opacity-30 transition-all"
                             disabled={pagination.page >= pagination.totalPages || isLoading}
                             onClick={() => handlePageChange(pagination.page + 1)}
                         >
                             Next <ChevronRight className="h-4 w-4 ml-2" />
                         </Button>
                     </div>
+                    <p className="text-center text-[12px] font-medium text-gray-400">
+                        Showing <span className="text-gray-900 font-bold">{(pagination.page - 1) * pagination.limit + 1}</span> to <span className="text-gray-900 font-bold">{Math.min(pagination.page * pagination.limit, pagination.total)}</span> of <span className="text-gray-900 font-bold">{pagination.total}</span> jobs
+                    </p>
                 </div>
             )}
 

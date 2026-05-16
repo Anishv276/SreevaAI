@@ -14,7 +14,6 @@ import { appendCandidateActivity } from "./lib/candidate-activity";
 import { getPythonExecutable } from "./lib/python-exec";
 import { extractJDFromText } from "./lib/openai";
 import { deriveDriveJdFieldsFromDescription } from "./lib/drive-jd";
-import { deductInterviewQuota, incrementOrgCreditsUsed } from "./lib/credits";
 import { parseDriveScreeningSettings } from "./lib/screening-criteria";
 import { recordOrgBillingUsage } from "./lib/usage-metrics";
 // Load environment variables
@@ -1142,23 +1141,6 @@ if (isQueueEnabled("interview-finalization")) {
       }
       console.log(`[JOB] Finalizing interview for ${applicationId}`);
       try {
-        const interviewBefore = await prisma.interview.findUnique({
-          where: { applicationId },
-          select: {
-            completedAt: true,
-            recordingDurationSec: true,
-            interviewDuration: true,
-            startedAt: true,
-            application: {
-              select: {
-                drive: {
-                  select: { orgId: true },
-                },
-              },
-            },
-          },
-        });
-
         const updateData: any = { updatedAt: new Date() };
         if (recordingUrl) {
           updateData.interviewRecordingUrl = recordingUrl;
@@ -1189,28 +1171,8 @@ if (isQueueEnabled("interview-finalization")) {
           await persistInterviewUpdateRaw({ applicationId, recordingUrl, transcript, interviewStatus });
         }
 
-        const orgId = interviewBefore?.application?.drive?.orgId;
-        const isNewCompletion = !interviewBefore?.completedAt && interviewStatus === "COMPLETED";
-        const resolvedDurationSec = Number(
-          interviewBefore?.recordingDurationSec ??
-          interviewBefore?.interviewDuration ??
-          0
-        );
-        const fallbackDurationSec = Number.isFinite(resolvedDurationSec) && resolvedDurationSec > 0
-          ? resolvedDurationSec
-          : interviewBefore?.startedAt
-            ? Math.max(1, Math.round((Date.now() - new Date(interviewBefore.startedAt).getTime()) / 1000))
-            : 0;
-
-        if (orgId && isNewCompletion) {
-          await deductInterviewQuota(orgId, 1);
-          if (fallbackDurationSec > 0) {
-            const creditsDelta = Math.round((fallbackDurationSec / 60) * 100) / 100;
-            if (creditsDelta > 0) {
-              await incrementOrgCreditsUsed(orgId, creditsDelta);
-            }
-          }
-        }
+        // Billing deduction is handled atomically in /api/interview/finalize to prevent
+        // double-billing. Worker only handles recording/transcript persistence.
 
         if (appStatus) {
           await prisma.$executeRawUnsafe(

@@ -16,7 +16,6 @@ type BillingStatus = {
   interviewQuotaUsed: number;
   interviewQuotaRemaining: number;
   creditsUsed: number;
-  minutesUsed: number;
   hasSufficientInterviews: boolean;
 };
 
@@ -51,7 +50,6 @@ export function BillingContent({
     interviewQuotaUsed: 0,
     interviewQuotaRemaining: 0,
     creditsUsed: 0,
-    minutesUsed: 0,
     hasSufficientInterviews: true,
   });
   const [statusLoading, setStatusLoading] = React.useState(true);
@@ -83,7 +81,6 @@ export function BillingContent({
           interviewQuotaUsed: Number(data.interviewQuotaUsed ?? 0),
           interviewQuotaRemaining: Number(data.interviewQuotaRemaining ?? 0),
           creditsUsed: Number(data.creditsUsed ?? 0),
-          minutesUsed: Number(data.minutesUsed ?? 0),
           hasSufficientInterviews: Boolean(data.hasSufficientInterviews ?? true),
         });
       } catch (error) {
@@ -169,7 +166,6 @@ export function BillingContent({
   const animPct = useCount(interviewUsedPct, [interviewUsedPct]);
 
   const animCreditUsed = useCount(status.creditsUsed, [status.creditsUsed]);
-
   const ringR = 88;
   const ringC = 2 * Math.PI * ringR;
   const ringDash = ringC * (animPct / 100);
@@ -315,16 +311,14 @@ export function BillingContent({
                   Live usage
                 </div>
               </div>
-
               <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 24 }}>
                 <span style={{ fontSize: 36, fontWeight: 800, color: INK, letterSpacing: "-0.03em" }}>
                   {statusLoading ? "..." : animCreditUsed.toFixed(0)}
                 </span>
                 <span style={{ fontSize: 13, color: MUTED }}>credits used</span>
               </div>
-
               <div style={{ display: "grid", gap: 12, marginTop: 18 }}>
-                <Fact label="Credits used" value={status.creditsUsed.toFixed(2)} sub={`${status.minutesUsed.toLocaleString()} min consumed`} />
+                <Fact label="Credits used" value={status.creditsUsed.toFixed(2)} sub="minutes consumed" />
               </div>
             </div>
           ) : (

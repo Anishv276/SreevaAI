@@ -51,7 +51,19 @@ def build_warmup_directive() -> str:
 # Goal: understand what this person actually built and owned, not what's on paper
 # ---------------------------------------------------------------------------
 
-def build_stage_1_resume_directive(*, band: str, resume_brief: _BriefType) -> str:
+def _build_custom_questions_block(custom_questions: list[str] | None, stage_label: str) -> str:
+    """Return a directive block for custom questions, or empty string if none."""
+    cqs = [q.strip() for q in (custom_questions or []) if q.strip()]
+    if not cqs:
+        return ""
+    items = "\n".join(f"  {i+1}. {q}" for i, q in enumerate(cqs))
+    return (
+        f"\nCUSTOM QUESTIONS (recruiter-mandated — weave naturally into {stage_label} or defer to a later stage, "
+        f"but ALL must be asked before the interview ends):\n{items}\n"
+    )
+
+
+def build_stage_1_resume_directive(*, band: str, resume_brief: _BriefType, custom_questions: list[str] | None = None) -> str:
     if hasattr(resume_brief, "anchor_item"):
         anchor = resume_brief.anchor_item or "their most recent work"
         anchor_type = resume_brief.anchor_type or "project"
@@ -103,6 +115,7 @@ def build_stage_1_resume_directive(*, band: str, resume_brief: _BriefType) -> st
         ),
     }.get(band, "Probe for real ownership and specific decisions, not summaries.")
 
+    cq_block = _build_custom_questions_block(custom_questions, "STAGE 1")
     return (
         f"[DO NOT SAY ALOUD][STAGE 1: RESUME]\n\n"
         f"GOAL: Understand what {'' if band != 'fresher' else 'this fresher '}candidate actually built and owned — "
@@ -110,7 +123,8 @@ def build_stage_1_resume_directive(*, band: str, resume_brief: _BriefType) -> st
         f"OPENING MOVE: {opening}\n\n"
         f"AVAILABLE MATERIAL (work through this — don't rotate mechanically, follow what's interesting):\n"
         f"{material}\n\n"
-        f"YOUR INSTINCT FOR THIS CANDIDATE:\n{band_instinct}\n\n"
+        f"YOUR INSTINCT FOR THIS CANDIDATE:\n{band_instinct}\n"
+        f"{cq_block}\n"
         f"HOW TO MOVE:\n"
         f"  → Start with the anchor. Pull on whatever they say — a tool they mention, a decision they made, something that broke.\n"
         f"  → When a thread is exhausted or they've said 'I don't know'/'I forgot' twice on the same topic, move to the next item.\n"
@@ -132,6 +146,7 @@ def build_stage_2_skill_directive(
     resume_brief: _BriefType,
     context_brief: str = "",
     covered_in_stage1: list[str] | None = None,
+    custom_questions: list[str] | None = None,
 ) -> str:
     if hasattr(resume_brief, "skills"):
         skills: list[str] = list(resume_brief.skills or [])
@@ -175,12 +190,14 @@ def build_stage_2_skill_directive(
         "senior": "Probe strategic choices behind each skill. How did they influence others to adopt or change approaches?",
     }.get(band, "Probe real usage and ownership of each skill.")
 
+    cq_block = _build_custom_questions_block(custom_questions, "STAGE 2")
     return (
         f"[DO NOT SAY ALOUD][STAGE 2: SKILL]\n\n"
         f"GOAL: Understand HOW DEEP this candidate actually goes on the skills that matter for this role.\n"
         f"Not 'do you know X' — you already know they claimed it. You want the real story behind it.\n\n"
         f"YOUR INSTINCT: {band_instinct}\n\n"
-        f"SKILL MATERIAL:\n{skills_block}\n\n"
+        f"SKILL MATERIAL:\n{skills_block}\n"
+        f"{cq_block}\n"
         f"HOW TO MOVE:\n"
         f"  → Pick the most relevant skill first. Ask where/how they used it in something real.\n"
         f"  → Follow what's interesting — a failure, a tradeoff, something they had to figure out.\n"
@@ -201,6 +218,7 @@ def build_stage_3_situational_directive(
     band: str,
     context_brief: str = "",
     covered_topics: list[str] | None = None,
+    custom_questions: list[str] | None = None,
 ) -> str:
     seeds = context_brief.strip() or "Use the projects and skills already discussed."
     covered_note = (
@@ -229,12 +247,14 @@ def build_stage_3_situational_directive(
         ),
     }.get(band, "Build a realistic scenario from their background. Test decision quality, not knowledge.")
 
+    cq_block = _build_custom_questions_block(custom_questions, "STAGE 3")
     return (
         f"[DO NOT SAY ALOUD][STAGE 3: SITUATIONAL]\n\n"
         f"GOAL: Test how this candidate thinks when something goes wrong or gets ambiguous — not what they know.\n\n"
         f"YOUR INSTINCT:\n{band_instinct}\n\n"
         f"{covered_note}"
-        f"SCENARIO MATERIAL (anchor your scenario to one of these — make it feel real, not hypothetical):\n{seeds}\n\n"
+        f"SCENARIO MATERIAL (anchor your scenario to one of these — make it feel real, not hypothetical):\n{seeds}\n"
+        f"{cq_block}\n"
         f"HOW TO MOVE:\n"
         f"  → Set the scene briefly. Make it specific to something they've actually done.\n"
         f"  → Ask what they'd do FIRST and WHY — you want their decision logic, not the full plan.\n"
@@ -254,6 +274,7 @@ def build_stage_4_behavioral_directive(
     band: str,
     context_brief: str = "",
     covered_topics: list[str] | None = None,
+    custom_questions: list[str] | None = None,
 ) -> str:
     context = context_brief.strip() or "Use what was discussed in earlier stages."
     covered_note = (
@@ -283,12 +304,14 @@ def build_stage_4_behavioral_directive(
         ),
     }.get(band, "Ask for a concrete moment: conflict, failure, or collaboration under real pressure.")
 
+    cq_block = _build_custom_questions_block(custom_questions, "STAGE 4")
     return (
         f"[DO NOT SAY ALOUD][STAGE 4: BEHAVIORAL]\n\n"
         f"GOAL: Find one real human moment that reveals how this candidate actually behaves — not how they describe themselves.\n\n"
         f"YOUR INSTINCT:\n{band_instinct}\n\n"
         f"{covered_note}"
-        f"CONTEXT FROM EARLIER STAGES (use this to make the opener feel personal, not generic):\n{context}\n\n"
+        f"CONTEXT FROM EARLIER STAGES (use this to make the opener feel personal, not generic):\n{context}\n"
+        f"{cq_block}\n"
         f"HOW TO MOVE:\n"
         f"  → Open by referencing something real from their background — a project, a tool, a situation they mentioned.\n"
         f"  → Ask what actually happened — not 'tell me about a time', but something more specific to what you heard.\n"

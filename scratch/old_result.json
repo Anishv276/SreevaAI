@@ -1,0 +1,150 @@
+{
+  "billing": {
+    "chatbot": {
+      "byModel": {},
+      "cachedInputTokens": 0,
+      "costUsd": 0.0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "runs": 0,
+      "sessionDuration": 0,
+      "sttAudioSeconds": 0.0,
+      "sttByModel": {},
+      "sttCostUsd": 0.0,
+      "sttRuns": 0,
+      "ttsByModel": {},
+      "ttsCharacters": 0,
+      "ttsCostUsd": 0.0,
+      "ttsRuns": 0
+    },
+    "general": {
+      "byModel": {},
+      "cachedInputTokens": 0,
+      "costUsd": 0.0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "runs": 0,
+      "sessionDuration": 0,
+      "sttAudioSeconds": 0.0,
+      "sttByModel": {},
+      "sttCostUsd": 0.0,
+      "sttRuns": 0,
+      "ttsByModel": {},
+      "ttsCharacters": 0,
+      "ttsCostUsd": 0.0,
+      "ttsRuns": 0
+    },
+    "interview": {
+      "byModel": {
+        "openai:gpt-4o-mini": {
+          "cachedInputTokens": 1000,
+          "costUsd": 0.02542,
+          "inputTokens": 12500,
+          "model": "gpt-4o-mini",
+          "outputTokens": 700,
+          "provider": "openai",
+          "runs": 6,
+          "sessionDuration": 120.0
+        }
+      },
+      "cachedInputTokens": 1000,
+      "costUsd": 0.02542,
+      "inputTokens": 12500,
+      "outputTokens": 700,
+      "runs": 6,
+      "sessionDuration": 120.0,
+      "sttAudioSeconds": 55.0,
+      "sttByModel": {
+        "deepgram:nova-3": {
+          "audioSeconds": 55.0,
+          "costUsd": 0.007058333333333333,
+          "model": "nova-3",
+          "provider": "DEEPGRAM",
+          "runs": 1
+        }
+      },
+      "sttCostUsd": 0.007058333333333333,
+      "sttRuns": 1,
+      "ttsByModel": {
+        "cartesia:sonic-english": {
+          "characters": 1500,
+          "costUsd": 0.045,
+          "model": "sonic-english",
+          "provider": "CARTESIA",
+          "runs": 1
+        }
+      },
+      "ttsCharacters": 1500,
+      "ttsCostUsd": 0.045,
+      "ttsRuns": 1
+    },
+    "interviewReport": {
+      "byModel": {},
+      "cachedInputTokens": 0,
+      "costUsd": 0.0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "runs": 0,
+      "sessionDuration": 0,
+      "sttAudioSeconds": 0.0,
+      "sttByModel": {},
+      "sttCostUsd": 0.0,
+      "sttRuns": 0,
+      "ttsByModel": {},
+      "ttsCharacters": 0,
+      "ttsCostUsd": 0.0,
+      "ttsRuns": 0
+    },
+    "jdExtraction": {
+      "byModel": {},
+      "cachedInputTokens": 0,
+      "costUsd": 0.0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "runs": 0,
+      "sessionDuration": 0,
+      "sttAudioSeconds": 0.0,
+      "sttByModel": {},
+      "sttCostUsd": 0.0,
+      "sttRuns": 0,
+      "ttsByModel": {},
+      "ttsCharacters": 0,
+      "ttsCostUsd": 0.0,
+      "ttsRuns": 0
+    },
+    "resumeExtraction": {
+      "byModel": {},
+      "cachedInputTokens": 0,
+      "costUsd": 0.0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "runs": 0,
+      "sessionDuration": 0,
+      "sttAudioSeconds": 0.0,
+      "sttByModel": {},
+      "sttCostUsd": 0.0,
+      "sttRuns": 0,
+      "ttsByModel": {},
+      "ttsCharacters": 0,
+      "ttsCostUsd": 0.0,
+      "ttsRuns": 0
+    },
+    "resumeReport": {
+      "byModel": {},
+      "cachedInputTokens": 0,
+      "costUsd": 0.0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "runs": 0,
+      "sessionDuration": 0,
+      "sttAudioSeconds": 0.0,
+      "sttByModel": {},
+      "sttCostUsd": 0.0,
+      "sttRuns": 0,
+      "ttsByModel": {},
+      "ttsCharacters": 0,
+      "ttsCostUsd": 0.0,
+      "ttsRuns": 0
+    }
+  }
+}

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { interviewFinalizationQueue } from "@/lib/queue";
 import { prisma } from "@/lib/prisma";
 import { interviewFinalizeSchema } from "@/lib/validation";
@@ -89,41 +90,6 @@ function buildInterviewTurns(transcript: string): Array<{
   return turns;
 }
 
-function normalizeReportTurns(interviewTurns: Array<{
-  turn?: number;
-  question?: string;
-  answer?: string;
-}>) {
-  return interviewTurns
-    .map((turn, idx) => {
-      const question = String(turn.question || "").trim();
-      const answer = String(turn.answer || "").trim();
-      const shortAnswer = answer || "Candidate response was not captured clearly.";
-      const reasoning = answer
-        ? "Transcript captured for this answer; analytical reasoning was not generated."
-        : "Candidate response was not captured clearly.";
-      const lowConfidence = answer.length < 40 ? "Confidence: Low -- brief answer" : "Confidence: Medium -- transcript-backed";
-      const score = !answer
-        ? "--"
-        : /i don't know|i do not know|not sure|no idea|not good at/i.test(answer)
-          ? "0/10"
-          : answer.length < 25
-            ? "1/10"
-            : answer.length < 80
-              ? "3/10"
-              : "5/10";
-
-      return {
-        q: Number(turn.turn || idx + 1),
-        question: question || `Question ${idx + 1}`,
-        answer: shortAnswer,
-        reasoning,
-        score,
-        confidence: lowConfidence,
-      };
-    })
-    .filter((row) => row.question || row.reasoning || row.answer);
-}
 
 async function persistInterviewUpdateRaw(params: {
   applicationId: string;
@@ -350,26 +316,51 @@ export async function POST(req: Request) {
       applicationId
     );
 
-    // Deduct one interview for each completed session and add minute-based credit usage.
-    try {
-      const appForOrg = await prisma.application.findUnique({
-        where: { id: applicationId },
-        select: { drive: { select: { orgId: true } } }
-      });
-      const orgId = appForOrg?.drive?.orgId;
-      if (orgId) {
-        if (isNewCompletion) {
-          await deductInterviewQuota(orgId, 1);
-        }
-        if (isNewCompletion && resolvedDuration !== null && !isNaN(resolvedDuration as number)) {
-          const creditsDelta = Math.round(((resolvedDuration || 0) / 60) * 100) / 100;
-          if (creditsDelta > 0) {
-            await incrementOrgCreditsUsed(orgId, creditsDelta);
+    // Deduct one interview quota and record minute-based credit usage.
+    // Uses an atomic "mark-and-deduct" to prevent double-billing regardless of
+    // whether the agent already set completedAt before this endpoint was called.
+    // Only fires if billingSnapshot->billedAt is not yet set on this Interview row.
+    if (finalInterviewStatus === "COMPLETED") {
+      try {
+        const appForOrg = await prisma.application.findUnique({
+          where: { id: applicationId },
+          select: { drive: { select: { orgId: true } } }
+        });
+        const orgId = appForOrg?.drive?.orgId;
+        if (orgId) {
+          // Atomically mark the interview as billed — returns the row only if not already billed.
+          const marked = await prisma.$queryRaw<Array<{ id: string }>>(
+            Prisma.sql`
+              UPDATE "Interview"
+              SET "billingSnapshot" = jsonb_set(
+                COALESCE("billingSnapshot", '{}'::jsonb),
+                '{billedAt}',
+                to_jsonb(extract(epoch from now())::bigint)
+              ),
+              "updatedAt" = NOW()
+              WHERE "applicationId" = ${applicationId}
+                AND ("billingSnapshot" IS NULL OR "billingSnapshot"->'billedAt' IS NULL)
+              RETURNING id
+            `
+          );
+          if (marked.length > 0) {
+            // This is the first and only time we bill for this interview.
+            await deductInterviewQuota(orgId, 1);
+            const dur = resolvedDuration ?? 0;
+            if (Number.isFinite(dur) && dur > 0) {
+              const creditsDelta = Math.round((dur / 60) * 100) / 100;
+              if (creditsDelta > 0) {
+                await incrementOrgCreditsUsed(orgId, creditsDelta);
+              }
+            }
+            console.log(`[FINALIZE] Billing deducted for ${applicationId} org=${orgId} dur=${resolvedDuration}s`);
+          } else {
+            console.log(`[FINALIZE] Billing already deducted for ${applicationId} — skipping`);
           }
         }
+      } catch (creditError) {
+        console.error("[FINALIZE] Billing deduction failed:", creditError);
       }
-    } catch (creditError) {
-      console.error("[FINALIZE] Billing deduction failed:", creditError);
     }
 
     try {
@@ -472,19 +463,6 @@ export async function POST(req: Request) {
             report,
             durationSeconds: durationForReport,
           });
-
-          const turnRows = normalizeReportTurns(interviewTurns.length > 0 ? interviewTurns : buildInterviewTurns(transcriptForReport));
-          if (report && (!Array.isArray(report.qa_blocks) || (report.qa_blocks?.length ?? 0) === 0)) {
-            report!.qa_blocks = turnRows.map((row) => ({
-              q: row.q,
-              title: row.question,
-              tags: ["Transcript", "Interview"],
-              score: row.score,
-              scoreColor: row.score === "--" ? "text-gray-300" : "text-orange-500",
-              verdict: row.reasoning,
-              confidence: row.confidence,
-            }));
-          }
 
           await persistInterviewReportRaw({
             applicationId,

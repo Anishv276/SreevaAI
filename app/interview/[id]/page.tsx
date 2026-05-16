@@ -12,7 +12,6 @@ import { HardwareCheck } from "@/components/careers/interview/HardwareCheck";
 import { FaceProctoring } from "@/components/careers/interview/FaceProctoring";
 import { HardwareHeartbeat } from "@/components/careers/interview/HardwareHeartbeat";
 import { ConnectionProctoring } from "@/components/careers/interview/ConnectionProctoring";
-import { collectDeviceFingerprint } from "@/lib/device-fingerprint";
 import { FIXED_INTERVIEW_DURATION_MINUTES } from "@/lib/drive-limits";
 import { useSearchParams } from "next/navigation";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
@@ -22,10 +21,7 @@ import {
     RoomAudioRenderer,
     useLocalParticipant,
     useTracks,
-    AudioVisualizer,
     TrackReference,
-    ControlBar,
-    useParticipantInfo,
     useConnectionState,
     useVoiceAssistant,
     useRoomContext,
@@ -97,107 +93,10 @@ function getAttachableTrack(trackRef: TrackReference): AttachableTrack | null {
     }
     return candidate;
 }
-type VoiceOutputProfile = {
-    targetRms: number;
-    maxGain: number;
-    limiter: number;
-    compression: number;
-};
 
-const INTERVIEW_WEB_VOICE_PROFILE: VoiceOutputProfile = {
-    targetRms: 0.07,
-    maxGain: 1.45,
-    limiter: 0.9,
-    compression: 1.1,
-};
-
-function clamp(value: number, min: number, max: number): number {
-    return Math.min(max, Math.max(min, value));
-}
-
-function computeRms(timeDomainData: Float32Array): number {
-    let sum = 0;
-    for (let i = 0; i < timeDomainData.length; i += 1) {
-        const sample = timeDomainData[i] || 0;
-        sum += sample * sample;
-    }
-    return Math.sqrt(sum / Math.max(1, timeDomainData.length));
-}
-
-const InterviewVoiceOutputProcessor = memo(function InterviewVoiceOutputProcessor({
-    audioTrack,
-}: {
-    audioTrack: MediaStreamTrack | null;
-}) {
-    const audioContextRef = useRef<AudioContext | null>(null);
-    const rafRef = useRef<number | null>(null);
-
-    useEffect(() => {
-        if (!audioTrack) {
-            return;
-        }
-
-        const AudioContextClass = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-        if (!AudioContextClass) {
-            return;
-        }
-
-        const audioCtx = audioContextRef.current || new AudioContextClass();
-        audioContextRef.current = audioCtx;
-
-        const source = audioCtx.createMediaStreamSource(new MediaStream([audioTrack]));
-        const analyser = audioCtx.createAnalyser();
-        analyser.fftSize = 1024;
-
-        source.connect(analyser);
-
-        const rmsBuffer = new Float32Array(analyser.fftSize);
-        const updateNormalization = () => {
-            if (audioCtx.state === "closed") return;
-            analyser.getFloatTimeDomainData(rmsBuffer);
-            const currentRms = computeRms(rmsBuffer);
-            rafRef.current = window.setTimeout(updateNormalization, 50);
-        };
-
-        void audioCtx.resume().catch(() => { });
-        rafRef.current = window.setTimeout(updateNormalization, 50);
-
-        return () => {
-            if (rafRef.current !== null) {
-                window.clearTimeout(rafRef.current);
-                rafRef.current = null;
-            }
-            try {
-                source.disconnect();
-            } catch { }
-            try {
-                analyser.disconnect();
-            } catch { }
-            audioContextRef.current?.close().catch(() => { });
-            audioContextRef.current = null;
-        };
-    }, [audioTrack]);
-
-    useEffect(() => {
-        return () => {
-            if (rafRef.current !== null) {
-                window.clearTimeout(rafRef.current);
-                rafRef.current = null;
-            }
-            audioContextRef.current?.close().catch(() => { });
-            audioContextRef.current = null;
-        };
-    }, []);
-
-    return null;
-});
 function InterviewContent({ id, params }: { id: string, params: Promise<{ id: string }> }) {
     const [phase, setPhase] = useState<"loading" | "check" | "launching" | "interview" | "finalizing" | "completed">("loading");
-    const [slots, setSlots] = useState<any[]>([]);
     const [bookedSlot, setBookedSlot] = useState<number | null>(null);
-    const [selectedDate, setSelectedDate] = useState<string | null>(null);
-    const [currentMonthDate, setCurrentMonthDate] = useState<Date>(new Date());
-    const [bookingCompany, setBookingCompany] = useState<string>("Company");
     const [endMode, setEndMode] = useState<"normal" | "timeout">("normal");
     const [token, setToken] = useState<string | null>(null);
     const [serverUrl, setServerUrl] = useState<string | null>(null);
@@ -244,8 +143,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     //  Connection Proctoring 
     const [connectionAlert, setConnectionAlert] = useState<{ eventType: string; reason: string } | null>(null);
     const connectionAlertTimerRef = useRef<NodeJS.Timeout | null>(null);
-    const [soundViolationAlert, setSoundViolationAlert] = useState<{ eventType: string; reason: string; severity: string } | null>(null);
-    const soundViolationTimerRef = useRef<NodeJS.Timeout | null>(null);
     const [proctoringSignals, setProctoringSignals] = useState(DEFAULT_PROCTORING_SIGNALS);
     const [supportDialogOpen, setSupportDialogOpen] = useState(false);
     const [instructionsDialogOpen, setInstructionsDialogOpen] = useState(false);
@@ -290,8 +187,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             .then(data => {
                 if (!isMounted) return;
                 if (data.role) setInterviewRoleLabel(data.role);
-                if (data.company) setBookingCompany(data.company);
-                setSlots(data.slots || []);
                 // Force "check" phase even if no slot is booked for testing purposes
                 setPhase("check");
                 if (data.bookedSlot) {
@@ -493,10 +388,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     }, [candidateDisplayName]);
     const isExitUnlocked = phase === "completed" || timerExpired;
     const isInterviewLocked = (phase === "interview") && !isExitUnlocked;
-    const stopTracks = (stream: MediaStream | null) => {
-        if (!stream) return;
-        stream.getTracks().forEach((track) => track.stop());
-    };
     const handleRemoteAgentAudioTrack = useCallback((track: MediaStreamTrack | null) => {
         // Handled by child component
     }, []);
@@ -1258,29 +1149,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                                 </p>
                                 <p className="text-[11px] font-bold text-zinc-300 leading-tight mt-0.5">
                                     {connectionAlert.reason}
-                                </p>
-                            </div>
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-            {/* -- Sound Anomaly Alert (Synced from AI Agent) ----------------- */}
-            <AnimatePresence>
-                {SHOW_BACKGROUND_PROCTORING_ALERTS && soundViolationAlert && phase === "interview" && (
-                    <motion.div
-                        initial={{ opacity: 0, y: -40 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -40 }}
-                        className="fixed top-44 left-1/2 -translate-x-1/2 z-[230] pointer-events-none"
-                    >
-                        <div className="flex items-center gap-4 bg-zinc-950/90 backdrop-blur-2xl border border-red-500/40 rounded-[2rem] px-6 py-4 shadow-[0_25px_50px_-12px_rgba(239,68,68,0.5)] max-w-sm">
-                            <div className="w-10 h-10 rounded-2xl bg-red-500/10 flex items-center justify-center shrink-0 border border-red-500/20">
-                                <MicOff className="w-5 h-5 text-red-500" />
-                            </div>
-                            <div>
-                                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-red-500">Sound Anomaly</p>
-                                <p className="text-[12px] font-bold text-white leading-tight mt-1 tracking-tight">
-                                    {soundViolationAlert.reason}
                                 </p>
                             </div>
                         </div>
@@ -2168,7 +2036,6 @@ function InterviewRoomContent({
         <div className="flex-1 flex flex-col h-full w-full relative bg-[#121214] text-white overflow-hidden">
             {/* Ambient Background Glow */}
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,_rgba(249,115,22,0.04)_0%,_transparent_50%)] pointer-events-none" />
-            {isInterviewActive && <InterviewVoiceOutputProcessor audioTrack={agentAudioTrack} />}
             {/* Role Context - TOP LEFT */}
             <div className="absolute top-10 left-10 z-[60]">
                 <div className="flex items-center gap-4 bg-zinc-900/90 px-6 py-4 rounded-[2rem] border border-white/5 shadow-2xl">

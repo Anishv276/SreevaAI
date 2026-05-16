@@ -470,6 +470,7 @@ def build_merged_interview_brief(
     resume_context: ResumeContext,
     jd_details: Any,
     resume_brief: Optional[ResumeBrief] = None,
+    custom_questions: Optional[list] = None,
 ) -> str:
     """
     Assemble the INTERVIEW BRIEF block that is injected into the AI system prompt.
@@ -529,6 +530,16 @@ def build_merged_interview_brief(
         f"First anchor: {safe_anchor_type} — {safe_anchor_item}",
         f"Interview strategy: {band_strategy}",
     ]
+
+    _cqs = [str(q).strip() for q in (custom_questions or []) if str(q).strip()]
+    if _cqs:
+        lines.append(
+            f"Custom questions ({len(_cqs)} — MUST cover all before interview ends): "
+            + " | ".join(f"{i+1}. {q}" for i, q in enumerate(_cqs))
+        )
+    else:
+        lines.append("Custom questions: none")
+
     return _format_compact_section("INTERVIEW BRIEF", lines).strip()
 
 

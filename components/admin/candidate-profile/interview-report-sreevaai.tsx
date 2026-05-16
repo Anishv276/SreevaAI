@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useRef, useState, type ReactNode } from "react";
 import dynamic from "next/dynamic";
@@ -118,7 +118,7 @@ export type SreevaAIInterviewViewModel = {
   topStrengths: string[];
   topRisks: string[];
   transcript: { from: "ai" | "user"; text: string; time?: string; qBadge?: QBadge; bad?: boolean; seekSeconds?: number; seekLabel?: string }[];
-  questionAnalysis: { id: number; question: string; answer: string; reasoning: string; score: string; qBadge: QBadge; bad: boolean }[];
+  questionAnalysis: { id: number; question: string; answer: string; score: string; qBadge: QBadge; bad: boolean; scoreBreakdown: { clarity: number; depth: number; fluency: number; confidence: number } | null }[];
   videoUrl: string | null;
   recordingDurationSec: number | null;
   snapshots: string[];
@@ -261,60 +261,115 @@ function buildCognitiveFromComm(
     const n = Number(v);
     return Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : fb;
   };
+  const toS = (v: unknown): string => String(v || "").trim();
 
-  // Real cognitive insights from AI report (GPT-4o analyzed the transcript)
-  const clarityN = toN(cogInsights.clarity, 60);
-  const depthN = toN(cogInsights.depth_of_knowledge, 62);
-  const probN = toN(cogInsights.problem_solving, technicalPct);
-  const logN = toN(cogInsights.logical_thinking, 65);
-  const cogSummary = String(cogInsights.summary || "").trim();
+  const clarityN   = toN(cogInsights.clarity,           60);
+  const depthN     = toN(cogInsights.depth_of_knowledge, 62);
+  const probN      = toN(cogInsights.problem_solving,    technicalPct);
+  const logN       = toN(cogInsights.logical_thinking,   65);
+  const fluencyN   = toN(cogInsights.fluency,            toN(cogInsights.depth_of_knowledge, 62));
+  const confidN    = toN(cogInsights.confidence,         toN(cogInsights.logical_thinking,   65));
+  const cogSummary = toS(cogInsights.summary);
+
+  // Build a 2-line details array: [earned reason, missed reason] for each card.
+  // If the AI didn't return the field, fall back to a generic but honest placeholder.
+  const lines = (
+    score: number,
+    earnedKey: string,
+    missedKey: string,
+    earnedFallback: string,
+    missedFallback: string,
+    includeOverall = false,
+  ): string[] => {
+    const earned = toS(cogInsights[earnedKey]) || earnedFallback;
+    const missed = toS(cogInsights[missedKey]) || missedFallback;
+    const out: string[] = [
+      `✓ ${earned}`,
+      `✗ ${missed}`,
+    ];
+    if (includeOverall && cogSummary) out.push(`Overall: ${cogSummary}`);
+    return out;
+  };
 
   return [
     {
       id: "c1",
       label: "Clarity",
       icon: "activity",
-      details: [`Clarity score: ${clarityN}/100.`, "How clearly the candidate articulated and expressed ideas across all answers."],
-      ...cognitiveLabel(clarityN)
+      details: lines(
+        clarityN,
+        "clarity_earned",
+        "clarity_missed",
+        `Scored ${clarityN}/100 — candidate articulated ideas with reasonable structure across answers.`,
+        `Points lost where answers required re-probing or circled without reaching a clear conclusion.`,
+      ),
+      ...cognitiveLabel(clarityN),
     },
     {
       id: "c2",
       label: "Confidence",
       icon: "zap",
-      details: [`Confidence score: ${logN}/100.`, "Assertiveness, decisiveness, and certainty demonstrated in responses."],
-      ...cognitiveLabel(logN)
+      details: lines(
+        confidN,
+        "confidence_earned",
+        "confidence_missed",
+        `Scored ${confidN}/100 — showed direct positioning and commitment on areas of familiarity.`,
+        `Points lost where heavy hedging ("I think maybe", "not 100% sure") replaced definitive answers.`,
+      ),
+      ...cognitiveLabel(confidN),
     },
     {
       id: "c3",
       label: "Fluency",
       icon: "star",
-      details: [`Fluency score: ${depthN}/100.`, "Smooth delivery and coherent expression of thoughts."],
-      ...cognitiveLabel(depthN)
+      details: lines(
+        fluencyN,
+        "fluency_earned",
+        "fluency_missed",
+        `Scored ${fluencyN}/100 — thoughts connected naturally with reasonable pacing and transitions.`,
+        `Points lost where delivery became fragmented, mid-sentence restarts, or ideas were left incomplete.`,
+      ),
+      ...cognitiveLabel(fluencyN),
     },
     {
       id: "c4",
       label: "Depth of knowledge",
       icon: "search",
-      details: [`Depth score: ${depthN}/100.`, "Level of technical understanding and detail demonstrated in interview answers."],
-      ...cognitiveLabel(depthN)
+      details: lines(
+        depthN,
+        "depth_earned",
+        "depth_missed",
+        `Scored ${depthN}/100 — demonstrated applied understanding beyond surface definitions in key areas.`,
+        `Points lost where answers stayed at definition level without examples, trade-offs, or application.`,
+      ),
+      ...cognitiveLabel(depthN),
     },
     {
       id: "c5",
       label: "Problem solving",
       icon: "box",
-      details: [`Problem solving score: ${probN}/100.`, "Quality of approach to technical challenges — methodology, reasoning, consideration of edge cases."],
-      ...cognitiveLabel(probN)
+      details: lines(
+        probN,
+        "problem_solving_earned",
+        "problem_solving_missed",
+        `Scored ${probN}/100 — showed structured breakdown and reasoning in at least some technical scenarios.`,
+        `Points lost where candidate jumped to solution without stating assumptions or considering edge cases.`,
+      ),
+      ...cognitiveLabel(probN),
     },
     {
       id: "c6",
       label: "Logical thinking",
       icon: "git-branch",
-      details: [
-        `Logical thinking score: ${logN}/100.`,
-        "Structure, coherence, and consistency of reasoning across all responses.",
-        cogSummary ? `Overall: ${cogSummary}` : undefined
-      ].filter(Boolean) as string[],
-      ...cognitiveLabel(logN)
+      details: lines(
+        logN,
+        "logical_thinking_earned",
+        "logical_thinking_missed",
+        `Scored ${logN}/100 — reasoning was sequenced coherently across most responses.`,
+        `Points lost where conclusions didn't follow from stated reasoning or answers drifted off-point.`,
+        true,
+      ),
+      ...cognitiveLabel(logN),
     },
   ];
 }
@@ -521,34 +576,179 @@ function SkillRatingsContainer({ skills }: { skills: { name: string; stars: numb
   );
 }
 
-function _formatSignalSummary(signal: any): string {
-  // Recovery signals get a positive prefix
-  const isRecovery = signal.signal === "ownership_clarified" || signal.signal === "example_given" || signal.signal === "contradiction_resolved";
-  const prefix = isRecovery ? "✓ " : "● ";
+const BEHAVIORAL_SECTION_CONFIG: Record<string, {
+  label: string;
+  tone: "risk" | "neutral" | "positive" | "flag";
+  description: string;
+}> = {
+  engagement_signals:      { label: "Engagement",             tone: "neutral",  description: "How actively the candidate participated" },
+  consistency_signals:     { label: "Consistency & Claims",   tone: "neutral",  description: "Resume claims vs. what was said in the interview" },
+  communication_patterns:  { label: "Communication",          tone: "neutral",  description: "How clearly and directly the candidate communicated" },
+  confidence_indicators:   { label: "Confidence",             tone: "neutral",  description: "Genuine vs. surface-level confidence" },
+  integrity_flags:         { label: "Integrity Flags",        tone: "flag",     description: "Behavioral or proctoring anomalies that need review" },
+  strengths_observed:      { label: "Strengths Observed",     tone: "positive", description: "What the candidate demonstrably did well" },
+  concerns_noted:          { label: "Concerns Noted",         tone: "risk",     description: "Gaps, evasions, or patterns that warrant scrutiny" },
+  proctoring_signals_detected: { label: "Behavioral Signals", tone: "flag",     description: "AI-detected behavioral patterns from the session" },
+};
 
-  // Use the LLM-generated interpretation from the backend if available
-  if (signal.interpretation) {
-    // Extract first sentence only for one-liner display
-    const firstSentence = signal.interpretation.split('.')[0] + '.';
-    return prefix + firstSentence.trim();
+const SIGNAL_LABEL_MAP: Record<string, string> = {
+  ownership_ambiguity:        "Ownership Ambiguity",
+  example_evasion:            "Example Evasion",
+  resume_claim_mismatch:      "Resume Claim Mismatch",
+  follow_up_collapse:         "Follow-up Collapse",
+  latency_mismatch:           "Response Timing Anomaly",
+  complexity_latency_mismatch:"Complexity-Timing Mismatch",
+  ownership_clarified:        "Ownership Clarified",
+  example_given:              "Concrete Example Provided",
+  contradiction:              "Factual Contradiction",
+  contradiction_resolved:     "Contradiction Resolved",
+  depth_decay:                "Depth Decay",
+  strong_under_pressure:      "Strong Under Pressure",
+};
+
+const RECOVERY_SIGNALS = new Set(["ownership_clarified", "example_given", "contradiction_resolved", "strong_under_pressure"]);
+
+function BehavioralBullet({ text, tone }: { text: string; tone: "risk" | "neutral" | "positive" | "flag" }) {
+  const dotColor = {
+    risk:     "bg-rose-500",
+    flag:     "bg-amber-500",
+    positive: "bg-emerald-500",
+    neutral:  "bg-slate-400",
+  }[tone];
+  return (
+    <li className="flex gap-2.5 items-start">
+      <span className={`mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full ${dotColor}`} />
+      <span className="text-[13px] leading-relaxed text-[#1A1D22]">{text}</span>
+    </li>
+  );
+}
+
+function ProctoringSignalCard({ signal }: { signal: any }) {
+  const [expanded, setExpanded] = useState(false);
+  const isRecovery = RECOVERY_SIGNALS.has(signal.signal);
+  const label = SIGNAL_LABEL_MAP[signal.signal] || signal.signal.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase());
+  const confidencePct = Math.round((signal.confidence ?? 0) * 100);
+
+  return (
+    <div className={`rounded-2xl border ${isRecovery ? "border-emerald-200 bg-emerald-50/60" : "border-amber-200 bg-amber-50/50"} overflow-hidden`}>
+      <button
+        type="button"
+        onClick={() => setExpanded(e => !e)}
+        className="w-full flex items-start justify-between gap-3 px-4 py-3 text-left hover:bg-black/[0.02] transition-colors"
+      >
+        <div className="flex items-start gap-2.5 min-w-0">
+          <span className={`mt-[3px] shrink-0 text-[15px] ${isRecovery ? "text-emerald-600" : "text-amber-600"}`}>
+            {isRecovery ? "✓" : "●"}
+          </span>
+          <div className="min-w-0">
+            <p className={`text-[13px] font-bold leading-snug ${isRecovery ? "text-emerald-900" : "text-amber-900"}`}>{label}</p>
+            <p className="text-[12px] leading-snug text-[#475467] mt-0.5">{signal.interpretation}</p>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-2 pt-0.5">
+          {signal.count > 1 && (
+            <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${isRecovery ? "bg-emerald-100 border-emerald-200 text-emerald-700" : "bg-amber-100 border-amber-200 text-amber-700"}`}>
+              ×{signal.count}
+            </span>
+          )}
+          <span className="text-[10px] font-bold text-[#6B7079]">{confidencePct}%</span>
+          <ChevronDown className={`h-3.5 w-3.5 text-[#6B7079] transition-transform ${expanded ? "rotate-180" : ""}`} />
+        </div>
+      </button>
+
+      {expanded && (
+        <div className="border-t border-black/[0.06] px-4 py-3 space-y-2">
+          {signal.turns?.length > 0 && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[10px] font-black uppercase tracking-widest text-[#6B7079]">Detected at turn</span>
+              {signal.turns.map((t: number) => (
+                <span key={t} className="text-[10px] font-bold bg-white border border-[#E8EAED] rounded px-1.5 py-0.5 text-[#1A1D22]">#{t}</span>
+              ))}
+            </div>
+          )}
+          {signal.evidence && (
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-[#6B7079] mb-1">Evidence</p>
+              <p className="text-[12px] leading-relaxed text-[#344054] bg-white rounded-lg border border-[#E8EAED] px-3 py-2">{signal.evidence}</p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BehavioralSignalsPanel({ analysis }: { analysis: Record<string, any> }) {
+  if (!analysis || Object.keys(analysis).length === 0) {
+    return <p className="text-[13px] text-[#6B7079] italic">No behavioral analysis available for this session.</p>;
   }
 
-  // Fallback for signals without LLM interpretation
-  const fallbacks: Record<string, string> = {
-    ownership_ambiguity: "Candidate uses team language without demonstrating personal ownership",
-    example_evasion: "Candidate gave theoretical answer when asked for concrete example",
-    resume_claim_mismatch: "Resume claims lack concrete project details or hands-on evidence",
-    follow_up_collapse: "Strong first answer but follow-up lost depth and specifics sharply",
-    latency_mismatch: "Follow-up answer unnaturally compressed — suggests evasion or guessing",
-    complexity_latency_mismatch: "Complex question answered too fast, simple question too slow",
-    ownership_clarified: "Initially used team language but clarified personal ownership when probed",
-    example_given: "Initially gave theoretical answer but provided concrete example when asked",
-    contradiction: "Candidate made conflicting statements about a verifiable fact — needs recruiter review",
-    contradiction_resolved: "Candidate clarified and resolved a contradiction convincingly when probed",
-    depth_decay: "Answer quality declined progressively across topics — may indicate fatigue or rehearsed early answers",
-  };
+  const summary = analysis.summary;
+  const SECTION_ORDER = [
+    "engagement_signals", "consistency_signals", "communication_patterns",
+    "confidence_indicators", "integrity_flags", "strengths_observed",
+    "concerns_noted", "proctoring_signals_detected",
+  ];
 
-  return prefix + (fallbacks[signal.signal] || `Signal detected: ${signal.signal}`);
+  return (
+    <div className="space-y-5">
+      {/* Summary card */}
+      {summary && (
+        <div className="rounded-2xl border border-[#E0E7FF] bg-[#F5F7FF] px-4 py-3.5">
+          <p className="text-[10px] font-black uppercase tracking-[0.15em] text-[#6366F1] mb-1.5">Overall Assessment</p>
+          <p className="text-[13.5px] leading-relaxed text-[#1E1B4B] font-medium">{summary}</p>
+        </div>
+      )}
+
+      {/* Sections in fixed order */}
+      {SECTION_ORDER.map(key => {
+        const value = analysis[key];
+        if (!Array.isArray(value) || value.length === 0) return null;
+        const config = BEHAVIORAL_SECTION_CONFIG[key];
+        if (!config) return null;
+
+        const isSignalObjects = typeof value[0] === "object" && value[0] !== null && "signal" in value[0];
+
+        const headerColor = {
+          risk:     "text-rose-600",
+          flag:     "text-amber-600",
+          positive: "text-emerald-600",
+          neutral:  "text-[#344054]",
+        }[config.tone];
+
+        const borderColor = {
+          risk:     "border-rose-100",
+          flag:     "border-amber-100",
+          positive: "border-emerald-100",
+          neutral:  "border-[#E8EAED]",
+        }[config.tone];
+
+        return (
+          <div key={key} className={`rounded-2xl border ${borderColor} bg-white overflow-hidden`}>
+            <div className="px-4 pt-3.5 pb-2.5 border-b border-[#F2F4F7]">
+              <p className={`text-[11px] font-black uppercase tracking-[0.15em] ${headerColor}`}>{config.label}</p>
+              <p className="text-[11px] text-[#98A2B3] mt-0.5">{config.description}</p>
+            </div>
+            <div className="px-4 py-3">
+              {isSignalObjects ? (
+                <div className="space-y-2">
+                  {value.map((signal: any, idx: number) => (
+                    <ProctoringSignalCard key={idx} signal={signal} />
+                  ))}
+                </div>
+              ) : (
+                <ul className="space-y-2.5">
+                  {value.map((bullet: string, idx: number) => (
+                    <BehavioralBullet key={idx} text={bullet} tone={config.tone} />
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 export function buildSreevaAIInterviewViewModel(i: {
@@ -776,12 +976,25 @@ export function buildSreevaAIInterviewViewModel(i: {
   const transcript: SreevaAIInterviewViewModel["transcript"] = [];
   const questionAnalysis: SreevaAIInterviewViewModel["questionAnalysis"] = [];
 
-  // ── Transcript: always built from DB interviewTranscript (raw "Interviewer:/Candidate:" lines) ──
+  // ── Transcript: always built from DB interviewTranscript ──
+  // Supports both legacy "Speaker: text" and timestamped "Speaker[N]: text" formats.
   if (i.interviewTranscript) {
     i.interviewTranscript.split(/\n+/).forEach((line) => {
       const t = line.trim();
       if (!t) return;
-      if (/^interviewer:/i.test(t)) {
+      const m = t.match(/^(interviewer|candidate)\[(\d+)\]:\s*/i);
+      if (m) {
+        const elapsedSec = parseInt(m[2], 10);
+        const mins = Math.floor(elapsedSec / 60);
+        const from = m[1].toLowerCase() === "interviewer" ? "ai" : "user";
+        transcript.push({
+          from,
+          text: t.replace(m[0], ""),
+          time: `${mins}m`,
+          seekSeconds: elapsedSec,
+          seekLabel: `${mins}m`,
+        });
+      } else if (/^interviewer:/i.test(t)) {
         transcript.push({ from: "ai", text: t.replace(/^interviewer:\s*/i, ""), time: "—" });
       } else if (/^candidate:/i.test(t)) {
         transcript.push({ from: "user", text: t.replace(/^candidate:\s*/i, ""), time: "—" });
@@ -792,22 +1005,28 @@ export function buildSreevaAIInterviewViewModel(i: {
     transcript.push({ from: "ai", text: "No transcript is available for this session yet.", time: "—" });
   }
 
-  // ── Question Analysis: built from qa_blocks (scores + real question text + answer) ──
+  // ── Question Analysis: built from qa_blocks ──
   const rows = i.interviewQaRows?.length ? i.interviewQaRows : i.interviewSessionRows;
   (rows as any[]).forEach((row, idx) => {
     const q = String(row?.question || row?.title || "").trim() || `Question ${idx + 1}`;
     const a = String(row?.answer || "").trim();
-    const reasoning = String(row?.reasoning || row?.verdict || row?.analysis_reasoning || "").trim();
     const score = String(row?.score || "--").trim();
     const { q: b, bad } = scoreToBadge(score);
+    const sb = row?.score_breakdown ?? null;
+    const scoreBreakdown = sb && typeof sb === "object" ? {
+            clarity:    Math.max(0, Math.min(10, Number(sb.clarity    ?? 0))),
+      depth:      Math.max(0, Math.min(10, Number(sb.depth      ?? 0))),
+      fluency:    Math.max(0, Math.min(10, Number(sb.fluency    ?? 0))),
+      confidence: Math.max(0, Math.min(10, Number(sb.confidence ?? 0))),
+    } : null;
     questionAnalysis.push({
       id: idx,
       question: q,
       answer: a || "—",
-      reasoning: reasoning || "No score breakdown available.",
       score,
       qBadge: b,
       bad,
+      scoreBreakdown,
     });
   });
 
@@ -974,10 +1193,14 @@ export function buildSreevaAIInterviewViewModel(i: {
     transcript: (() => {
       const duration = i.recordingDurationSec || 0;
       if (!duration || transcript.length === 0) return transcript;
+      const hasTimestamps = transcript.some(l => typeof l.seekSeconds === "number");
+      if (hasTimestamps) return transcript;
+      // Fallback for legacy transcripts with no embedded timestamps: interpolate by index.
       const lastIndex = Math.max(1, transcript.length - 1);
       return transcript.map((line, idx) => {
         const seekSeconds = Math.max(0, Math.min(duration, Math.round((idx / lastIndex) * duration)));
-        return { ...line, seekSeconds, seekLabel: formatClockTime(seekSeconds) };
+        const mins = Math.floor(seekSeconds / 60);
+        return { ...line, seekSeconds, seekLabel: `${mins}m` };
       });
     })(),
     questionAnalysis,
@@ -1550,8 +1773,10 @@ function QuestionAnalysisCard({
                         type="button"
                         onClick={() => {
                           if (typeof line.seekSeconds === "number" && playerRef.current?.plyr) {
-                            playerRef.current.plyr.currentTime = line.seekSeconds;
-                            void playerRef.current.plyr.play?.();
+                            const plyr = playerRef.current.plyr;
+                            const wasPlaying = !plyr.paused;
+                            plyr.currentTime = line.seekSeconds;
+                            if (wasPlaying) void plyr.play?.();
                           }
                         }}
                         className="text-[9px] font-semibold text-[#6B7079] hover:text-[#0B5FFF]"
@@ -1600,7 +1825,24 @@ function QuestionAnalysisCard({
                   )}
                   <div className="mt-2 rounded-xl bg-[#FAFBFC] p-3">
                     <p className="text-[9px] font-extrabold uppercase tracking-widest text-[#6B7079]">Score breakdown</p>
-                    <p className="mt-1 text-[11px] leading-5 text-[#1A1D22]">{item.reasoning}</p>
+                    {item.scoreBreakdown ? (
+                      <p className="mt-1.5 flex flex-wrap gap-x-3 text-[11px] font-semibold text-[#6B7079]">
+                        {([
+                          ["Clarity",    item.scoreBreakdown.clarity],
+                          ["Depth",      item.scoreBreakdown.depth],
+                          ["Fluency",    item.scoreBreakdown.fluency],
+                          ["Confidence", item.scoreBreakdown.confidence],
+                        ] as [string, number][]).map(([label, val], i, arr) => (
+                          <span key={label}>
+                            {label}{" "}
+                            <span className={val >= 8 ? "text-emerald-600" : val < 4 ? "text-rose-600" : "text-orange-500"}>{val}</span>
+                            {i < arr.length - 1 && <span className="text-[#D0D5DD]">{" · "}</span>}
+                          </span>
+                        ))}
+                      </p>
+                    ) : (
+                      <p className="mt-1 text-[11px] text-[#6B7079]">Score detail not available.</p>
+                    )}
                   </div>
                 </div>
               ))
@@ -1838,66 +2080,7 @@ export function InterviewReportSreevaAI({
                     </div>
                   )}
                   {intel === "behavioral" && (
-                    <div className="space-y-4">
-                      {model.behavioralAnalysis && Object.entries(model.behavioralAnalysis).map(([key, value]) => {
-                        if (key === "summary") {
-                          return (
-                            <div key={key} className="rounded-lg bg-blue-50 p-3 border border-blue-200">
-                              <p className="text-[12px] font-semibold text-blue-900 mb-1">Overall Assessment</p>
-                              <p className="text-[13px] leading-relaxed text-blue-800">{value}</p>
-                            </div>
-                          );
-                        }
-                        if (key === "overview") {
-                          return (
-                            <div key={key} className="rounded-lg bg-gray-50 p-3 border border-gray-200">
-                              <p className="text-[13px] leading-relaxed text-gray-700">{value}</p>
-                            </div>
-                          );
-                        }
-                        if (Array.isArray(value) && value.length > 0) {
-                          const labels: Record<string, string> = {
-                            engagement_signals: "Engagement Signals",
-                            consistency_signals: "Consistency & Resume Alignment",
-                            communication_patterns: "Communication Patterns",
-                            confidence_indicators: "Confidence Indicators",
-                            integrity_flags: "Integrity Flags & Red Flags",
-                            strengths_observed: "Behavioral Strengths",
-                            concerns_noted: "Behavioral Concerns",
-                            proctoring_signals_detected: "Proctoring Signals Detected"
-                          };
-
-                          const isSignalObjects = value.length > 0 && typeof value[0] === 'object' && 'signal' in value[0];
-
-                          return (
-                            <div key={key}>
-                              <p className="text-[11px] font-extrabold uppercase tracking-widest text-[#6B7079] mb-2">{labels[key]}</p>
-
-                              {isSignalObjects ? (
-                                <ul className="space-y-1.5">
-                                  {value.map((signal: any, idx: number) => (
-                                    <li key={idx} className="flex gap-2.5 text-[13px] leading-snug text-[#1A1D22]">
-                                      <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
-                                      <span>{_formatSignalSummary(signal)}</span>
-                                    </li>
-                                  ))}
-                                </ul>
-                              ) : (
-                                <ul className="space-y-1.5">
-                                  {value.map((bullet: string, idx: number) => (
-                                    <li key={idx} className="flex gap-2.5 text-[13px] leading-snug text-[#1A1D22]">
-                                      <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-[#1E9D55]" />
-                                      <span>{bullet}</span>
-                                    </li>
-                                  ))}
-                                </ul>
-                              )}
-                            </div>
-                          );
-                        }
-                        return null;
-                      })}
-                    </div>
+                    <BehavioralSignalsPanel analysis={model.behavioralAnalysis} />
                   )}
                   {intel === "cognitive" && (
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

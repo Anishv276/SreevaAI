@@ -148,11 +148,11 @@ def _build_recent_context_block(
     i = len(transcript_lines) - 1
     while i >= 0 and len(exchanges) < n_exchanges:
         line = transcript_lines[i]
-        if line.startswith("Candidate:"):
-            candidate_text = line[len("Candidate:"):].strip()
+        if re.match(r"^Candidate(\[\d+\])?:", line):
+            candidate_text = re.sub(r"^Candidate(\[\d+\])?:\s*", "", line)
             for j in range(i - 1, max(i - 6, -1), -1):
-                if transcript_lines[j].startswith("Interviewer:"):
-                    interviewer_text = transcript_lines[j][len("Interviewer:"):].strip()
+                if re.match(r"^Interviewer(\[\d+\])?:", transcript_lines[j]):
+                    interviewer_text = re.sub(r"^Interviewer(\[\d+\])?:\s*", "", transcript_lines[j])
                     exchanges.insert(0, {"q": interviewer_text, "a": candidate_text})
                     i = j - 1
                     break

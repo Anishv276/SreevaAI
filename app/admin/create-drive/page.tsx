@@ -419,14 +419,57 @@ function CreateDriveForm() {
         body: data,
         signal: controller.signal,
       });
-      if (res.ok) {
+      if (res.ok || res.status === 202) {
         const responseData = await res.json().catch(() => null);
         if (!responseData) {
           console.error("Extraction error response:", {});
           setAnalysisError("Failed to extract JD details.");
           return;
         }
-          const { data: extracted, text, url: r2Url } = responseData;
+
+        // Async worker path: poll until done
+        let extracted: any = null;
+        let text: string | null = null;
+        let r2Url: string | null = responseData.url ?? null;
+
+        if (responseData.jobId) {
+          const jobId = responseData.jobId as string;
+          console.log("JD extraction queued, polling jobId:", jobId);
+          const POLL_INTERVAL = 2000;
+          const MAX_WAIT = 120000;
+          const deadline = Date.now() + MAX_WAIT;
+          while (Date.now() < deadline) {
+            await new Promise((r) => setTimeout(r, POLL_INTERVAL));
+            if (controller.signal.aborted) return;
+            const poll = await fetch(`/api/extract/status/${jobId}`, { signal: controller.signal });
+            const pollData = await poll.json().catch(() => null);
+            if (!pollData) continue;
+            if (pollData.status === "completed") {
+              extracted = pollData.data;
+              text = pollData.text ?? null;
+              break;
+            }
+            if (pollData.status === "failed") {
+              setAnalysisError(pollData.error || "Extraction failed.");
+              return;
+            }
+            if (pollData.status === "not_found") {
+              setAnalysisError("Extraction job expired. Please try again.");
+              return;
+            }
+            // still processing — keep polling
+          }
+          if (!extracted) {
+            setAnalysisError("Extraction timed out. Please try again.");
+            return;
+          }
+        } else {
+          // Legacy sync path (RESUME or future)
+          extracted = responseData.data;
+          text = responseData.text ?? null;
+          r2Url = responseData.url ?? null;
+        }
+
         if (!extracted && !text && !r2Url) {
           console.error("Extraction error response:", responseData);
           setAnalysisError(

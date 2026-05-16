@@ -81,9 +81,23 @@ OUTPUT SCHEMA (JSON):
   },
   "cognitive_insights": {
     "clarity": number (0-100, how clearly the candidate expressed and articulated ideas across all answers),
+    "clarity_earned": "One sentence — exactly what the candidate did that earned this score. Reference a specific answer or pattern from the transcript.",
+    "clarity_missed": "One sentence — exactly what reduced the score. What was vague, unclear, or poorly articulated? Reference a specific moment.",
     "depth_of_knowledge": number (0-100, level of technical depth, detail, and understanding demonstrated in answers),
+    "depth_earned": "One sentence — what demonstrated genuine depth. Specific topic or answer that showed real understanding.",
+    "depth_missed": "One sentence — where depth was missing. Surface-level answers, avoided follow-ups, or gaps in understanding.",
     "problem_solving": number (0-100, quality of approach to solving technical problems — methodology, step-by-step reasoning, consideration of edge cases),
+    "problem_solving_earned": "One sentence — what showed structured problem-solving. Specific approach, breakdown, or reasoning demonstrated.",
+    "problem_solving_missed": "One sentence — what was missing. Skipped steps, no edge cases considered, jumped to solution without reasoning.",
     "logical_thinking": number (0-100, structure, coherence, and consistency of reasoning across responses),
+    "logical_thinking_earned": "One sentence — where reasoning was structured and coherent. Specific example of logical flow.",
+    "logical_thinking_missed": "One sentence — where reasoning broke down. Inconsistency, contradiction, or incoherent flow in a specific answer.",
+    "fluency": number (0-100, smooth conversational delivery — natural flow of thought expression, not just speech),
+    "fluency_earned": "One sentence — what made delivery fluent. Natural pacing, connected thoughts, coherent transitions.",
+    "fluency_missed": "One sentence — what disrupted fluency. Fragmented delivery, restarts, or disjointed transitions in a specific answer.",
+    "confidence": number (0-100, assertiveness and certainty in responses — penalise heavy hedging and backtracking),
+    "confidence_earned": "One sentence — where the candidate was assertive and certain. Specific answer where they held their position or gave a direct claim.",
+    "confidence_missed": "One sentence — where confidence dropped. Heavy hedging, backtracking, or giving up under questioning.",
     "summary": "Brief summary of candidate's cognitive strengths and gaps based on interview performance"
   },
   "behavioral_analysis": {
@@ -170,12 +184,17 @@ Guidelines:
 3. Integrity: Factor in proctoring events (tab switching, face detection issues).
 4. Logic: Ensure the rationale directly cites evidence from the transcript.
 5. Communication: Score based ONLY on what the candidate actually said in the transcript. Do not penalise accents, natural pauses, or occasional fillers. The goal is whether HR can easily understand this person and whether communication issues affected answer quality.
-6. Cognitive Insights:
-   - Clarity: Rate how well ideas were expressed. Did the candidate articulate concepts clearly and concisely?
-   - Depth of knowledge: Did answers show sufficient technical understanding? Did they go deep or stay surface-level?
-   - Problem solving: How did they approach technical challenges? Did they break down problems, consider edge cases, explain reasoning?
-   - Logical thinking: Were responses structured logically? Did ideas flow coherently? Was reasoning consistent across answers?
-   - All cognitive scores should be 0-100 and based ONLY on evidence from the interview transcript.
+6. Cognitive Insights (CRITICAL — all fields required):
+   - Every category needs FOUR fields: the score (0-100), _earned (why they got it), _missed (why they lost it), and the shared summary.
+   - _earned: One sentence citing a specific interview moment that RAISED the score. Name the topic or answer. Example: "Correctly walked through a binary search implementation step-by-step without prompting."
+   - _missed: One sentence citing a specific interview moment that LOWERED the score. Name the gap or failure. Example: "When asked about time complexity, gave vague answer ('it depends') without explaining which case or why."
+   - Clarity: Did they express ideas without the interviewer needing to re-ask or re-probe? Penalise rambling, circular answers, or needing 2-3 attempts to make a point.
+   - Depth of knowledge: Did answers go beyond surface definitions? Penalise when candidate only gave textbook definitions without application or examples.
+   - Problem solving: Did they decompose the problem, state assumptions, consider edge cases? Penalise jumping to a solution without reasoning.
+   - Logical thinking: Were ideas sequenced coherently? Did their conclusion follow from their reasoning? Penalise contradictions, non-sequiturs, or answers that drifted off-topic.
+   - Fluency: Did thoughts connect naturally? Penalise fragmented delivery, mid-sentence restarts, or disjointed transitions between ideas.
+   - Confidence: Did they commit to answers and defend positions? Penalise heavy hedging ("I think maybe", "I'm not 100% sure but"), backtracking, or abandoning correct positions under light questioning.
+   - All scores 0-100, based ONLY on evidence from the transcript. Do not invent moments. If a category had no test moment, score conservatively and note it in _missed.
 
 7. Behavioral Analysis (CRITICAL - Comprehensive Signal Synthesis):
    CRITICAL: This is NOT a score or metric. Synthesize ALL behavioral and intelligence signals into a narrative that explains WHAT HAPPENED during the interview.

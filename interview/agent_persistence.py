@@ -4,6 +4,7 @@ import json
 import os
 import time
 from typing import Any, Optional
+from pydantic import BaseModel, Field
 from urllib.parse import parse_qsl, urlencode, urlunparse, urlparse
 from interview.agent_profile_context import build_interview_turns
 from interview.agent_providers import build_google_analysis_client
@@ -150,57 +151,77 @@ _DEEPGRAM_STT_USD_PER_MIN: dict[str, float] = {
     "nova-3": 0.0077,
     "nova-3-general": 0.0077,
 }
-def _empty_billing_feature() -> dict[str, Any]:
-    return {
-        "runs": 0,
-        "inputTokens": 0,
-        "cachedInputTokens": 0,
-        "outputTokens": 0,
-        "sessionDuration": 0,
-        "costUsd": 0.0,
-        "ttsRuns": 0,
-        "ttsCharacters": 0,
-        "ttsCostUsd": 0.0,
-        "sttRuns": 0,
-        "sttAudioSeconds": 0.0,
-        "sttCostUsd": 0.0,
-        "byModel": {},
-        "ttsByModel": {},
-        "sttByModel": {},
-    }
-def _coerce_billing_metrics(value: Any) -> dict[str, Any]:
-    features = [
-        "interview",
-        "resumeExtraction",
-        "jdExtraction",
-        "chatbot",
-        "resumeReport",
-        "interviewReport",
-        "general",
-    ]
-    out = {feature: _empty_billing_feature() for feature in features}
-    incoming = _coerce_jsonish(value)
-    for feature in features:
-        src = _coerce_jsonish(incoming.get(feature))
-        if not src:
-            continue
-        dst = out[feature]
-        dst["runs"] = int(src.get("runs", 0))
-        dst["inputTokens"] = int(src.get("inputTokens", 0))
-        dst["cachedInputTokens"] = int(src.get("cachedInputTokens", 0))
-        dst["outputTokens"] = int(src.get("outputTokens", 0))
-        dst["sessionDuration"] = float(src.get("sessionDuration", 0))
-        dst["costUsd"] = float(src.get("costUsd", 0))
-        dst["ttsRuns"] = int(src.get("ttsRuns", 0))
-        dst["ttsCharacters"] = int(src.get("ttsCharacters", 0))
-        dst["ttsCostUsd"] = float(src.get("ttsCostUsd", 0))
-        dst["sttRuns"] = int(src.get("sttRuns", 0))
-        dst["sttAudioSeconds"] = float(src.get("sttAudioSeconds", 0))
-        dst["sttCostUsd"] = float(src.get("sttCostUsd", 0))
-        dst["byModel"] = _coerce_jsonish(src.get("byModel"))
-        dst["ttsByModel"] = _coerce_jsonish(src.get("ttsByModel"))
-        dst["sttByModel"] = _coerce_jsonish(src.get("sttByModel"))
-    return out
+# ── Pydantic Billing Models (replaces _empty_billing_feature + _coerce_billing_metrics) ──
+class _ModelBilling(BaseModel):
+    provider: str = "unknown"
+    model: str = "unknown"
+    runs: int = 0
+    inputTokens: int = 0
+    cachedInputTokens: int = 0
+    outputTokens: int = 0
+    sessionDuration: float = 0.0
+    costUsd: float = 0.0
+    characters: int = 0
+    audioSeconds: float = 0.0
+
+class _FeatureBilling(BaseModel):
+    runs: int = 0
+    inputTokens: int = 0
+    cachedInputTokens: int = 0
+    outputTokens: int = 0
+    sessionDuration: float = 0.0
+    costUsd: float = 0.0
+    ttsRuns: int = 0
+    ttsCharacters: int = 0
+    ttsCostUsd: float = 0.0
+    sttRuns: int = 0
+    sttAudioSeconds: float = 0.0
+    sttCostUsd: float = 0.0
+    byModel: dict[str, _ModelBilling] = Field(default_factory=dict)
+    ttsByModel: dict[str, _ModelBilling] = Field(default_factory=dict)
+    sttByModel: dict[str, _ModelBilling] = Field(default_factory=dict)
+
+class _OrgBilling(BaseModel):
+    interview: _FeatureBilling = Field(default_factory=_FeatureBilling)
+    resumeExtraction: _FeatureBilling = Field(default_factory=_FeatureBilling)
+    jdExtraction: _FeatureBilling = Field(default_factory=_FeatureBilling)
+    chatbot: _FeatureBilling = Field(default_factory=_FeatureBilling)
+    interviewReport: _FeatureBilling = Field(default_factory=_FeatureBilling)
+    resumeReport: _FeatureBilling = Field(default_factory=_FeatureBilling)
+
+def _merge_llm_into_bucket(
+    bucket: _FeatureBilling,
+    llm_totals: dict,
+    llm_by_model: dict,
+) -> None:
+    """Merge LLM usage from a session into a feature bucket using O(1) hash lookups."""
+    if not llm_by_model and not llm_totals:
+        return
+    bucket.runs += 1
+    bucket.inputTokens += int(llm_totals.get("inputTokens", 0) or 0)
+    bucket.cachedInputTokens += int(llm_totals.get("inputCachedTokens", 0) or 0)
+    bucket.outputTokens += int(llm_totals.get("outputTokens", 0) or 0)
+    bucket.sessionDuration += float(llm_totals.get("sessionDuration", 0) or 0)
+    session_cost = 0.0
+    for model_key, raw in llm_by_model.items():
+        row = _coerce_jsonish(raw)
+        model_name = str(row.get("model", "") or "unknown").strip()
+        input_t = int(row.get("inputTokens", 0) or 0)
+        cached_t = int(row.get("inputCachedTokens", 0) or 0)
+        output_t = int(row.get("outputTokens", 0) or 0)
+        session_dur = float(row.get("sessionDuration", 0) or 0)
+        cost = _estimate_openai_cost(model_name, input_t, cached_t, output_t)
+        session_cost += cost
+        if model_key not in bucket.byModel:
+            bucket.byModel[model_key] = _ModelBilling(provider=row.get("provider", "unknown"), model=model_name)
+        mb = bucket.byModel[model_key]
+        mb.runs += 1
+        mb.inputTokens += input_t
+        mb.cachedInputTokens += cached_t
+        mb.outputTokens += output_t
+        mb.sessionDuration += session_dur
+        mb.costUsd += cost
+    bucket.costUsd += session_cost
 def _estimate_openai_cost(model_name: str, input_tokens: int, cached_tokens: int, output_tokens: int) -> float:
     rates = _OPENAI_MODEL_RATES.get(model_name.strip().lower())
     if not rates:
@@ -251,14 +272,20 @@ def _estimate_stt_cost_usd(provider_name: str, model_name: str, audio_seconds: f
             usd_per_min = _DEEPGRAM_STT_USD_PER_MIN["nova-3"]
         return (seconds / 60.0) * usd_per_min
     return 0.0
-def merge_interview_billing(
+def merge_feature_billing(
     existing: dict[str, Any],
+    feature: str,
     session_summary: dict[str, Any],
     tts_config: Optional[dict[str, Any]] = None,
     stt_config: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
+    """Pydantic-based billing merger for any of the 6 supported features.
+    Replaces merge_interview_billing. Uses O(1) hash-map lookups, no nested loops.
+    """
     merged = dict(existing)
-    billing = _coerce_billing_metrics(merged.get("billing"))
+    org = _OrgBilling.model_validate(_coerce_jsonish(merged.get("billing")))
+    bucket: _FeatureBilling = getattr(org, feature)
+
     llm_summary = _coerce_jsonish(session_summary.get("llm"))
     llm_totals = _coerce_jsonish(llm_summary.get("totals"))
     llm_by_model = _coerce_jsonish(llm_summary.get("byModel"))
@@ -268,147 +295,111 @@ def merge_interview_billing(
     stt_summary = _coerce_jsonish(session_summary.get("stt"))
     stt_totals = _coerce_jsonish(stt_summary.get("totals"))
     stt_by_model = _coerce_jsonish(stt_summary.get("byModel"))
+
     llm_has_usage = bool(llm_by_model) or bool(llm_totals)
     tts_total_chars = int(tts_totals.get("charactersCount", 0) or tts_totals.get("inputTokens", 0) or 0)
-    tts_has_usage = bool(tts_by_model) or tts_total_chars > 0
     stt_total_audio_seconds = float(stt_totals.get("audioDuration", 0) or 0.0)
+    tts_has_usage = bool(tts_by_model) or tts_total_chars > 0
     stt_has_usage = bool(stt_by_model) or stt_total_audio_seconds > 0
+
     if not llm_has_usage and not tts_has_usage and not stt_has_usage:
-        merged["billing"] = billing
+        merged["billing"] = org.model_dump()
         return merged
-    interview_bucket = billing["interview"]
+
     if llm_has_usage:
-        interview_bucket["runs"] = int(interview_bucket.get("runs", 0)) + 1
-        interview_bucket["inputTokens"] = int(interview_bucket.get("inputTokens", 0)) + int(
-            llm_totals.get("inputTokens", 0) or 0
-        )
-        interview_bucket["cachedInputTokens"] = int(interview_bucket.get("cachedInputTokens", 0)) + int(
-            llm_totals.get("inputCachedTokens", 0) or 0
-        )
-        interview_bucket["outputTokens"] = int(interview_bucket.get("outputTokens", 0)) + int(
-            llm_totals.get("outputTokens", 0) or 0
-        )
-        interview_bucket["sessionDuration"] = float(interview_bucket.get("sessionDuration", 0)) + float(
-            llm_totals.get("sessionDuration", 0) or 0
-        )
-        by_model = _coerce_jsonish(interview_bucket.get("byModel"))
-        session_cost = 0.0
-        for model_key, raw in llm_by_model.items():
-            model_row = _coerce_jsonish(raw)
-            model_name = str(model_row.get("model", "") or "unknown").strip()
-            input_tokens = int(model_row.get("inputTokens", 0) or 0)
-            cached_tokens = int(model_row.get("inputCachedTokens", 0) or 0)
-            output_tokens = int(model_row.get("outputTokens", 0) or 0)
-            session_duration = float(model_row.get("sessionDuration", 0) or 0)
-            model_cost = _estimate_openai_cost(model_name, input_tokens, cached_tokens, output_tokens)
-            session_cost += model_cost
-            current = _coerce_jsonish(by_model.get(model_key))
-            current["runs"] = int(current.get("runs", 0)) + 1
-            current["inputTokens"] = int(current.get("inputTokens", 0)) + input_tokens
-            current["cachedInputTokens"] = int(current.get("cachedInputTokens", 0)) + cached_tokens
-            current["outputTokens"] = int(current.get("outputTokens", 0)) + output_tokens
-            current["sessionDuration"] = float(current.get("sessionDuration", 0)) + session_duration
-            current["costUsd"] = float(current.get("costUsd", 0.0)) + model_cost
-            by_model[model_key] = current
-        interview_bucket["byModel"] = by_model
-        interview_bucket["costUsd"] = float(interview_bucket.get("costUsd", 0.0)) + session_cost
-    session_tts_chars = 0
-    session_tts_cost = 0.0
-    tts_by_model_bucket = _coerce_jsonish(interview_bucket.get("ttsByModel"))
+        _merge_llm_into_bucket(bucket, llm_totals, llm_by_model)
+
+    # ── TTS ──
     default_tts_provider = str((tts_config or {}).get("provider", "") or "").strip().upper()
     default_tts_model = str((tts_config or {}).get("model", "") or "").strip()
+    session_tts_chars, session_tts_cost = 0, 0.0
     for _, raw in tts_by_model.items():
-        model_row = _coerce_jsonish(raw)
-        provider = str(model_row.get("provider", "") or default_tts_provider).strip().upper()
-        model_name = str(model_row.get("model", "") or default_tts_model).strip()
+        row = _coerce_jsonish(raw)
+        provider = str(row.get("provider", "") or default_tts_provider).strip().upper()
+        model_name = str(row.get("model", "") or default_tts_model).strip()
         if provider not in {"SARVAM", "CARTESIA"} and default_tts_provider in {"SARVAM", "CARTESIA"}:
             provider = default_tts_provider
         if (not model_name or model_name == "unknown") and default_tts_model:
             model_name = default_tts_model
-        chars = int(model_row.get("charactersCount", 0) or model_row.get("inputTokens", 0) or 0)
+        chars = int(row.get("charactersCount", 0) or row.get("inputTokens", 0) or 0)
         if chars <= 0:
             continue
         session_tts_chars += chars
-        model_cost = _estimate_tts_cost_usd(provider, model_name, chars)
-        session_tts_cost += model_cost
+        cost = _estimate_tts_cost_usd(provider, model_name, chars)
+        session_tts_cost += cost
         model_key = f"{provider.lower() or 'unknown'}:{_normalize_tts_model_name(model_name) or 'unknown'}"
-        current = _coerce_jsonish(tts_by_model_bucket.get(model_key))
-        current["provider"] = provider or "UNKNOWN"
-        current["model"] = model_name or "unknown"
-        current["runs"] = int(current.get("runs", 0)) + 1
-        current["characters"] = int(current.get("characters", 0)) + chars
-        current["costUsd"] = float(current.get("costUsd", 0.0)) + model_cost
-        tts_by_model_bucket[model_key] = current
-    if session_tts_chars == 0:
-        fallback_chars = int(tts_totals.get("charactersCount", 0) or tts_totals.get("inputTokens", 0) or 0)
-        if fallback_chars > 0:
-            session_tts_chars = fallback_chars
-            provider = default_tts_provider or "UNKNOWN"
-            model_name = default_tts_model or "unknown"
-            model_cost = _estimate_tts_cost_usd(provider, model_name, fallback_chars)
-            session_tts_cost += model_cost
-            model_key = f"{provider.lower() or 'unknown'}:{_normalize_tts_model_name(model_name) or 'unknown'}"
-            current = _coerce_jsonish(tts_by_model_bucket.get(model_key))
-            current["provider"] = provider
-            current["model"] = model_name
-            current["runs"] = int(current.get("runs", 0)) + 1
-            current["characters"] = int(current.get("characters", 0)) + fallback_chars
-            current["costUsd"] = float(current.get("costUsd", 0.0)) + model_cost
-            tts_by_model_bucket[model_key] = current
+        if model_key not in bucket.ttsByModel:
+            bucket.ttsByModel[model_key] = _ModelBilling(provider=provider or "UNKNOWN", model=model_name or "unknown")
+        mb = bucket.ttsByModel[model_key]
+        mb.runs += 1; mb.characters += chars; mb.costUsd += cost
+    if session_tts_chars == 0 and tts_total_chars > 0:
+        session_tts_chars = tts_total_chars
+        provider = default_tts_provider or "UNKNOWN"
+        model_name = default_tts_model or "unknown"
+        cost = _estimate_tts_cost_usd(provider, model_name, tts_total_chars)
+        session_tts_cost += cost
+        model_key = f"{provider.lower() or 'unknown'}:{_normalize_tts_model_name(model_name) or 'unknown'}"
+        if model_key not in bucket.ttsByModel:
+            bucket.ttsByModel[model_key] = _ModelBilling(provider=provider, model=model_name)
+        mb = bucket.ttsByModel[model_key]
+        mb.runs += 1; mb.characters += tts_total_chars; mb.costUsd += cost
     if session_tts_chars > 0:
-        interview_bucket["ttsRuns"] = int(interview_bucket.get("ttsRuns", 0)) + 1
-        interview_bucket["ttsCharacters"] = int(interview_bucket.get("ttsCharacters", 0)) + session_tts_chars
-        interview_bucket["ttsCostUsd"] = float(interview_bucket.get("ttsCostUsd", 0.0)) + session_tts_cost
-        interview_bucket["ttsByModel"] = tts_by_model_bucket
-    session_stt_seconds = 0.0
-    session_stt_cost = 0.0
-    stt_by_model_bucket = _coerce_jsonish(interview_bucket.get("sttByModel"))
+        bucket.ttsRuns += 1
+        bucket.ttsCharacters += session_tts_chars
+        bucket.ttsCostUsd += session_tts_cost
+
+    # ── STT ──
     default_stt_provider = str((stt_config or {}).get("provider", "") or "").strip().upper()
     default_stt_model = str((stt_config or {}).get("model", "") or "").strip()
+    session_stt_seconds, session_stt_cost = 0.0, 0.0
     for _, raw in stt_by_model.items():
-        model_row = _coerce_jsonish(raw)
-        provider = str(model_row.get("provider", "") or default_stt_provider).strip().upper()
-        model_name = str(model_row.get("model", "") or default_stt_model).strip()
+        row = _coerce_jsonish(raw)
+        provider = str(row.get("provider", "") or default_stt_provider).strip().upper()
+        model_name = str(row.get("model", "") or default_stt_model).strip()
         if provider not in {"SARVAM", "DEEPGRAM"} and default_stt_provider in {"SARVAM", "DEEPGRAM"}:
             provider = default_stt_provider
         if (not model_name or model_name == "unknown") and default_stt_model:
             model_name = default_stt_model
-        seconds = float(model_row.get("audioDuration", 0) or 0.0)
+        seconds = float(row.get("audioDuration", 0) or 0.0)
         if seconds <= 0:
             continue
         session_stt_seconds += seconds
-        model_cost = _estimate_stt_cost_usd(provider, model_name, seconds)
-        session_stt_cost += model_cost
+        cost = _estimate_stt_cost_usd(provider, model_name, seconds)
+        session_stt_cost += cost
         model_key = f"{provider.lower() or 'unknown'}:{_normalize_stt_model_name(model_name) or 'unknown'}"
-        current = _coerce_jsonish(stt_by_model_bucket.get(model_key))
-        current["provider"] = provider or "UNKNOWN"
-        current["model"] = model_name or "unknown"
-        current["runs"] = int(current.get("runs", 0)) + 1
-        current["audioSeconds"] = float(current.get("audioSeconds", 0.0)) + seconds
-        current["costUsd"] = float(current.get("costUsd", 0.0)) + model_cost
-        stt_by_model_bucket[model_key] = current
+        if model_key not in bucket.sttByModel:
+            bucket.sttByModel[model_key] = _ModelBilling(provider=provider or "UNKNOWN", model=model_name or "unknown")
+        mb = bucket.sttByModel[model_key]
+        mb.runs += 1; mb.audioSeconds += seconds; mb.costUsd += cost
     if session_stt_seconds == 0 and stt_total_audio_seconds > 0:
         session_stt_seconds = stt_total_audio_seconds
         provider = default_stt_provider or "UNKNOWN"
         model_name = default_stt_model or "unknown"
-        model_cost = _estimate_stt_cost_usd(provider, model_name, stt_total_audio_seconds)
-        session_stt_cost += model_cost
+        cost = _estimate_stt_cost_usd(provider, model_name, stt_total_audio_seconds)
+        session_stt_cost += cost
         model_key = f"{provider.lower() or 'unknown'}:{_normalize_stt_model_name(model_name) or 'unknown'}"
-        current = _coerce_jsonish(stt_by_model_bucket.get(model_key))
-        current["provider"] = provider
-        current["model"] = model_name
-        current["runs"] = int(current.get("runs", 0)) + 1
-        current["audioSeconds"] = float(current.get("audioSeconds", 0.0)) + stt_total_audio_seconds
-        current["costUsd"] = float(current.get("costUsd", 0.0)) + model_cost
-        stt_by_model_bucket[model_key] = current
+        if model_key not in bucket.sttByModel:
+            bucket.sttByModel[model_key] = _ModelBilling(provider=provider, model=model_name)
+        mb = bucket.sttByModel[model_key]
+        mb.runs += 1; mb.audioSeconds += stt_total_audio_seconds; mb.costUsd += cost
     if session_stt_seconds > 0:
-        interview_bucket["sttRuns"] = int(interview_bucket.get("sttRuns", 0)) + 1
-        interview_bucket["sttAudioSeconds"] = float(interview_bucket.get("sttAudioSeconds", 0.0)) + session_stt_seconds
-        interview_bucket["sttCostUsd"] = float(interview_bucket.get("sttCostUsd", 0.0)) + session_stt_cost
-        interview_bucket["sttByModel"] = stt_by_model_bucket
-    billing["interview"] = interview_bucket
-    merged["billing"] = billing
+        bucket.sttRuns += 1
+        bucket.sttAudioSeconds += session_stt_seconds
+        bucket.sttCostUsd += session_stt_cost
+
+    merged["billing"] = org.model_dump()
     return merged
+
+# Keep old name as alias so existing callers (persist_org_usage_metrics) still work
+def merge_interview_billing(
+    existing: dict[str, Any],
+    session_summary: dict[str, Any],
+    tts_config: Optional[dict[str, Any]] = None,
+    stt_config: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    """Backward-compat alias — delegates to merge_feature_billing for the 'interview' feature."""
+    return merge_feature_billing(existing, "interview", session_summary, tts_config, stt_config)
+
 async def persist_org_manual_billing_usage(
     org_id: Optional[str], feature: str, usage: dict[str, Any]
 ) -> None:
@@ -665,7 +656,7 @@ async def get_interview_context(app_id: str):
         raise RuntimeError("DATABASE_URL is not set")
     query = """
     SELECT a."fullName", a."resumeText", a."resumeData", d.title, d.role AS "role", d.description, d.skills, d."extractedDetails", d."orgId" AS "orgId",
-           d.location AS "driveLocation", d."interviewLanguage",
+           d.location AS "driveLocation", d."interviewLanguage", d."interviewQuestions",
            COALESCE(d."ttsProvider", o."ttsProvider") AS "ttsProvider",
            COALESCE(d."cartesiaVoiceId", o."cartesiaVoiceId") AS "cartesiaVoiceId", o."cartesiaModel",
            o."sarvamModel", COALESCE(d."sarvamVoice", o."sarvamVoice") AS "sarvamVoice",
@@ -716,6 +707,7 @@ async def get_interview_context(app_id: str):
                 "llmModel": row["llmModel"],
                 "llmTemperature": row["llmTemperature"],
                 "proctoringSignals": row["proctoringSignals"],
+                "interviewQuestions": row["interviewQuestions"],
             }
         except Exception as e:
             last_error = e
@@ -1067,27 +1059,24 @@ async def generate_interview_report(
             report_data = {"skills_covered": [], "skill_ratings": {}, "role_fit": 0, "top_strengths": [], "concerns": []}
 
         # Build qa_blocks from interview-only scores
-        # Transcript Q&A is read directly from DB interviewTranscript on the frontend
         qa_blocks = []
         for idx, score in enumerate(interview_scores, 1):
             q_text = score.get("question", "").strip()
-            overall_pct = int(score.get("overall", 0) * 10)
+            overall_score = round(score.get("overall", 0), 1)
             qa_blocks.append({
                 "q": idx,
                 "question": q_text or f"Question {idx}",
                 "title": q_text or f"Question {idx}",
-                "score": overall_pct,
-                "reasoning": (
-                    f"Clarity: {score.get('clarity', 0)}/10 · "
-                    f"Depth: {score.get('depth', 0)}/10 · "
-                    f"Fluency: {score.get('fluency', 0)}/10 · "
-                    f"Confidence: {score.get('confidence', 0)}/10"
-                ),
-                "verdict": (
-                    f"Clarity: {score.get('clarity', 0)}/10  "
-                    f"Depth: {score.get('depth', 0)}/10  "
-                    f"Fluency: {score.get('fluency', 0)}/10"
-                ),
+                "answer": score.get("answer", ""),
+                "score": f"{overall_score}/10",
+                "score_breakdown": {
+                    "clarity":    score.get("clarity",    0),
+                    "depth":      score.get("depth",      0),
+                    "fluency":    score.get("fluency",    0),
+                    "confidence": score.get("confidence", 0),
+                },
+                "signals":  score.get("signals", []),
+                "concerns": score.get("concerns", []),
             })
 
         skills_covered = report_data.get("skills_covered", [])
@@ -1135,75 +1124,7 @@ async def generate_interview_report(
         logger.info(f"[REPORT] Generated report for {app_id}: score={technical_score}, skills={len(report_data.get('skills_covered', []))}")
     except Exception as e:
         logger.error(f"[REPORT] Generation failed for {app_id}: {e}", exc_info=True)
-async def generate_interview_state_summary(
-    transcript_lines: list,
-    candidate_name: str,
-    job_title: str,
-    client,
-    org_id: Optional[str] = None,
-    turn_count: int = 0,
-    total_turns_expected: int = 20,
-    seconds_remaining: Optional[float] = None,
-    llm_model: str = LLM_MODEL,
-) -> str:
-    """Generate a concise mid-interview state summary for dynamic context injection."""
-    if len(transcript_lines) < 4:
-        return ""
-    last_lines = transcript_lines[-12:]
-    transcript_text = "\n".join(transcript_lines[-40:])
-    pct_done = int((turn_count / max(total_turns_expected, 1)) * 100)
-    try:
-        completion = await asyncio.wait_for(
-            client.chat.completions.create(
-                model=llm_model,
-                temperature=0.1,
-                max_tokens=500,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are an interview supervisor monitoring a live AI interview. "
-                            "Your job is to give Ishita (the AI interviewer) a DIRECT, ACTIONABLE status update. "
-                            "Be blunt - this is an internal coaching note, not a polite summary. "
-                            "Write in second person to Ishita. No filler. No pleasantries.\n\n"
-                            "ALWAYS include ALL of these sections:\n\n"
-                            "1. TOPIC STATUS: List each mandatory area as [COVERED], [THIN], or [UNTOUCHED]. "
-                            "COVERED = candidate gave a substantive answer (3+ sentences or a specific real example with details). "
-                            "THIN = topic was raised but answer was vague or surface-level. "
-                            "UNTOUCHED = never raised.\n\n"
-                            "2. STUCK ALERT: If Ishita has asked 2 or more follow-ups on the SAME topic without moving on, "
-                            "say: 'MOVE ON NOW - stuck on [topic]. Next question: [EXACT QUESTION to ask about next untouched area]'\n\n"
-                            "3. NEXT ACTION: One specific instruction - exactly what Ishita should do or ask next. "
-                            "If the last answer was DEEP (had real specifics, numbers, or tradeoffs), say 'DEPTH SIGNAL - go one level deeper on [topic] before moving on.' "
-                            "If the last answer was SURFACE (vague, no specifics, no numbers), say 'SURFACE ANSWER - push specificity probe on [topic] before moving.' "
-                            "Otherwise give standard coverage guidance.\n\n"
-                            "4. PACE WARNING: If more than 60% of the interview is done and fewer than half the areas are covered, "
-                            "say 'PACE CRITICAL - accelerate now.'\n\n"
-                            "5. ANSWER DEPTH: Rate the candidate's most recent answer as one of: "
-                            "[SURFACE] = generic, no specifics, no numbers, no proper nouns; "
-                            "[SPECIFIC] = named a real project/tool/company OR gave a number; "
-                            "[DEEP] = named specifics AND explained reasoning, tradeoff, or failure. "
-                            "Output on its own line: 'ANSWER_DEPTH: [SURFACE|SPECIFIC|DEEP]'"
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": (
-                            f"CANDIDATE: {candidate_name} | ROLE: {job_title}\n"
-                            f"INTERVIEW PROGRESS: ~{pct_done}% done (turn {turn_count})"
-                            + f"\n\nRECENT TRANSCRIPT (last 40 lines, for coverage/pace):\n{transcript_text}\n\n"
-                            f"LAST 12 LINES (for stuck detection):\n{chr(10).join(last_lines)}"
-                        ),
-                    },
-                ],
-            ),
-            timeout=10.0,
-        )
-        await persist_org_manual_billing_usage(org_id, "interview", _extract_openai_completion_usage(completion))
-        return completion.choices[0].message.content or ""
-    except Exception as e:
-        logger.warning(f"[STATE_INJECT] State summary generation failed: {e}")
-        return ""
+
 def _extract_openai_completion_usage(completion: Any) -> dict[str, Any]:
     usage = getattr(completion, "usage", None)
     prompt_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
@@ -1217,35 +1138,36 @@ def _extract_openai_completion_usage(completion: Any) -> dict[str, Any]:
         "cachedInputTokens": cached_tokens,
         "outputTokens": completion_tokens,
     }
+
 def merge_manual_billing_usage(existing: dict[str, Any], feature: str, usage: dict[str, Any]) -> dict[str, Any]:
-    merged = dict(existing)
-    billing = _coerce_billing_metrics(merged.get("billing"))
-    if feature not in billing:
-        feature = "general"
+    """Merge a manual LLM usage record for a given feature into the org billing dict.
+    Delegates to merge_feature_billing (Pydantic-based). Removes dead 'general' fallback.
+    """
+    _VALID_FEATURES = {"interview", "resumeExtraction", "jdExtraction", "chatbot", "interviewReport", "resumeReport"}
+    if feature not in _VALID_FEATURES:
+        feature = "interview"  # safe fallback — 'general' is removed
     model_name = str(usage.get("model", "unknown") or "unknown")
-    model_key = f"openai:{model_name}"
-    input_tokens = int(usage.get("inputTokens", 0) or 0)
-    cached_tokens = int(usage.get("cachedInputTokens", 0) or 0)
-    output_tokens = int(usage.get("outputTokens", 0) or 0)
-    session_duration = float(usage.get("sessionDuration", 0) or 0)
-    model_cost = _estimate_openai_cost(model_name, input_tokens, cached_tokens, output_tokens)
-    bucket = billing[feature]
-    bucket["runs"] = int(bucket.get("runs", 0)) + 1
-    bucket["inputTokens"] = int(bucket.get("inputTokens", 0)) + input_tokens
-    bucket["cachedInputTokens"] = int(bucket.get("cachedInputTokens", 0)) + cached_tokens
-    bucket["outputTokens"] = int(bucket.get("outputTokens", 0)) + output_tokens
-    bucket["sessionDuration"] = float(bucket.get("sessionDuration", 0)) + session_duration
-    bucket["costUsd"] = float(bucket.get("costUsd", 0.0)) + model_cost
-    by_model = _coerce_jsonish(bucket.get("byModel"))
-    current = _coerce_jsonish(by_model.get(model_key))
-    current["runs"] = int(current.get("runs", 0)) + 1
-    current["inputTokens"] = int(current.get("inputTokens", 0)) + input_tokens
-    current["cachedInputTokens"] = int(current.get("cachedInputTokens", 0)) + cached_tokens
-    current["outputTokens"] = int(current.get("outputTokens", 0)) + output_tokens
-    current["sessionDuration"] = float(current.get("sessionDuration", 0)) + session_duration
-    current["costUsd"] = float(current.get("costUsd", 0.0)) + model_cost
-    by_model[model_key] = current
-    bucket["byModel"] = by_model
-    billing[feature] = bucket
-    merged["billing"] = billing
-    return merged
+    session_summary = {
+        "llm": {
+            "sessions": 1,
+            "totals": {
+                "inputTokens": int(usage.get("inputTokens", 0) or 0),
+                "inputCachedTokens": int(usage.get("cachedInputTokens", 0) or 0),
+                "outputTokens": int(usage.get("outputTokens", 0) or 0),
+                "sessionDuration": float(usage.get("sessionDuration", 0) or 0),
+            },
+            "byModel": {
+                f"openai:{model_name}": {
+                    "provider": "openai",
+                    "model": model_name,
+                    "inputTokens": int(usage.get("inputTokens", 0) or 0),
+                    "inputCachedTokens": int(usage.get("cachedInputTokens", 0) or 0),
+                    "outputTokens": int(usage.get("outputTokens", 0) or 0),
+                    "sessionDuration": float(usage.get("sessionDuration", 0) or 0),
+                }
+            },
+        },
+        "tts": {"sessions": 0, "totals": {}, "byModel": {}},
+        "stt": {"sessions": 0, "totals": {}, "byModel": {}},
+    }
+    return merge_feature_billing(existing, feature, session_summary)
