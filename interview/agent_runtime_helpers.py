@@ -59,6 +59,30 @@ def sanitize_candidate_facing_text(text: str) -> str:
     return result
 
 
+# Acronym replacements that must only fire on whole words (word-boundary aware).
+# text_transforms.replace does case-insensitive substring matching which corrupts
+# normal words: "build" -> "bU Ild", "through" -> "tH Rough", "quite" -> "qU Ite".
+_ACRONYM_REPLACEMENTS = [
+    (re.compile(r"\bHR\b"), "H R"),
+    (re.compile(r"\bAPI\b"), "A P I"),
+    (re.compile(r"\bSQL\b"), "sequel"),
+    (re.compile(r"\bURL\b"), "U R L"),
+    (re.compile(r"\bUI\b"), "U I"),
+    (re.compile(r"\bUX\b"), "U X"),
+    (re.compile(r"\bSaaS\b"), "sass"),
+    (re.compile(r"\bDevOps\b"), "dev ops"),
+    (re.compile(r"\bLiveKit\b"), "Live Kit"),
+]
+
+
+async def _tts_acronym_transform(text_stream):
+    async for chunk in text_stream:
+        result = chunk
+        for pattern, replacement in _ACRONYM_REPLACEMENTS:
+            result = pattern.sub(replacement, result)
+        yield result
+
+
 _TTS_PHONETIC_FIXES = [
     # Remove em/en dashes that cause TTS to pause-split surrounding words
     (re.compile(r"\s*[—–]\s*"), ", "),

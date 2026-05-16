@@ -66,7 +66,7 @@ export type IntelSignalRow = {
 type IntelId = "integrity" | "behavioral" | "cognitive";
 type QBadge = "FAIR" | "AVERAGE" | "STRONG" | "PENDING";
 
-export type HyringInterviewViewModel = {
+export type SreevaAIInterviewViewModel = {
   backHref: string;
   fullName: string;
   displayAvatar: string;
@@ -551,7 +551,7 @@ function _formatSignalSummary(signal: any): string {
   return prefix + (fallbacks[signal.signal] || `Signal detected: ${signal.signal}`);
 }
 
-export function buildHyringInterviewViewModel(i: {
+export function buildSreevaAIInterviewViewModel(i: {
   backHref?: string;
   candidate: { fullName?: string; createdAt?: string; location?: string; interview?: any; assessment?: any; drive?: { role?: string; title?: string } };
   mounted: boolean;
@@ -577,7 +577,7 @@ export function buildHyringInterviewViewModel(i: {
   recordingDurationSec: number | null;
   formatDuration: (n: number) => string;
   communicationStatus: string;
-}): HyringInterviewViewModel {
+}): SreevaAIInterviewViewModel {
   const c = i.candidate;
   const com = i.interviewReportCommunication || {};
   const cogInsights = i.interviewReportCognitiveInsights || {};
@@ -689,7 +689,7 @@ export function buildHyringInterviewViewModel(i: {
     commSummary: String(com.summary || "").trim(),
   };
 
-  const proctoringRows: HyringInterviewViewModel["proctoringRows"] = (i.groupedProctoringSignals || []).slice(0, 8).map((g) => ({
+  const proctoringRows: SreevaAIInterviewViewModel["proctoringRows"] = (i.groupedProctoringSignals || []).slice(0, 8).map((g) => ({
     key: g.key,
     label: g.label.replace(/\b\w/g, (ch) => ch.toUpperCase()),
     value: `${g.count} time${g.count === 1 ? "" : "s"}`,
@@ -773,8 +773,8 @@ export function buildHyringInterviewViewModel(i: {
       scoreLabel: "—",
     });
   }
-  const transcript: HyringInterviewViewModel["transcript"] = [];
-  const questionAnalysis: HyringInterviewViewModel["questionAnalysis"] = [];
+  const transcript: SreevaAIInterviewViewModel["transcript"] = [];
+  const questionAnalysis: SreevaAIInterviewViewModel["questionAnalysis"] = [];
 
   // ── Transcript: always built from DB interviewTranscript (raw "Interviewer:/Candidate:" lines) ──
   if (i.interviewTranscript) {
@@ -1011,7 +1011,7 @@ export function SemicircleGauge({ value, fitLabel }: { value: number; fitLabel: 
     <div className="relative flex h-28 w-44 flex-col items-center justify-end">
       <svg viewBox="0 0 200 100" className="h-24 w-44">
         <defs>
-          <linearGradient id="gHyring" x1="0%" y1="0%" x2="100%" y2="0%">
+          <linearGradient id="gSreevaAI" x1="0%" y1="0%" x2="100%" y2="0%">
             <stop offset="0%" stopColor="#E53935" />
             <stop offset="50%" stopColor="#F6C344" />
             <stop offset="100%" stopColor="#1E9D55" />
@@ -1021,7 +1021,7 @@ export function SemicircleGauge({ value, fitLabel }: { value: number; fitLabel: 
         <path
           d="M 20 100 A 80 80 0 0 1 180 100"
           fill="none"
-          stroke="url(#gHyring)"
+          stroke="url(#gSreevaAI)"
           strokeWidth="14"
           strokeLinecap="round"
           strokeDasharray={`${visible} ${rest}`}
@@ -1057,14 +1057,14 @@ export function Donut({
             cy="50"
             r="40"
             fill="none"
-            stroke="url(#donGradHyring)"
+            stroke="url(#donGradSreevaAI)"
             strokeWidth="9"
             strokeLinecap="round"
             strokeDasharray={`${dash} ${c - dash}`}
             strokeDashoffset="0"
           />
           <defs>
-            <linearGradient id="donGradHyring" x1="0" y1="0" x2="1" y2="1">
+            <linearGradient id="donGradSreevaAI" x1="0" y1="0" x2="1" y2="1">
               <stop offset="0%" stopColor="#1E9D55" />
               <stop offset="50%" stopColor="#F0A12A" />
               <stop offset="100%" stopColor="#1E6FD6" />
@@ -1186,7 +1186,7 @@ function Radar5Plot({ values }: { values: { pronunciation: number; grammar: numb
   );
 }
 
-export function CommunicationScoreCard({ comm }: { comm: HyringInterviewViewModel["comm"] }) {
+export function CommunicationScoreCard({ comm }: { comm: SreevaAIInterviewViewModel["comm"] }) {
   const avg = Math.round(
     COMM_LABELS.reduce((s, { key }) => s + Math.max(0, Math.min(100, Number(comm[key]) || 0)), 0) / COMM_LABELS.length
   );
@@ -1213,7 +1213,7 @@ export function CommunicationScoreCard({ comm }: { comm: HyringInterviewViewMode
   );
 }
 
-export function CommunicationScoreCardDonut({ comm }: { comm: HyringInterviewViewModel["comm"] }) {
+export function CommunicationScoreCardDonut({ comm }: { comm: SreevaAIInterviewViewModel["comm"] }) {
   const metrics = [
     {
       key: "clarity",
@@ -1299,7 +1299,7 @@ export function CommunicationScoreCardDonut({ comm }: { comm: HyringInterviewVie
   );
 }
 
-export function CommunicationScoreCardDonutLive({ comm }: { comm: HyringInterviewViewModel["comm"] }) {
+export function CommunicationScoreCardDonutLive({ comm }: { comm: SreevaAIInterviewViewModel["comm"] }) {
   const metrics = [
     {
       key: "clarity",
@@ -1483,8 +1483,8 @@ function QuestionAnalysisCard({
   transcript,
   questions,
 }: {
-  transcript: HyringInterviewViewModel["transcript"];
-  questions: HyringInterviewViewModel["questionAnalysis"];
+  transcript: SreevaAIInterviewViewModel["transcript"];
+  questions: SreevaAIInterviewViewModel["questionAnalysis"];
 }) {
   const playerRef = useRef<any>(null);
   return (
@@ -1645,17 +1645,17 @@ function TabStrip({ value, onChange }: { value: IntelId; onChange: (v: IntelId) 
 }
 
 /** Page background + card shell — shared with candidate resume and interview report */
-export const HYRING_REPORT_PAGE_BG = "bg-[#EEF0F3]";
-export const HYRING_REPORT_CARD = "rounded-2xl border border-[#DDE1E5] bg-white shadow-sm";
-const bgPage = HYRING_REPORT_PAGE_BG;
-const card = HYRING_REPORT_CARD;
+export const SREEVAAI_REPORT_PAGE_BG = "bg-[#EEF0F3]";
+export const SREEVAAI_REPORT_CARD = "rounded-2xl border border-[#DDE1E5] bg-white shadow-sm";
+const bgPage = SREEVAAI_REPORT_PAGE_BG;
+const card = SREEVAAI_REPORT_CARD;
 
-export function InterviewReportHyring({
+export function InterviewReportSreevaAI({
   model,
   showHeader = true,
   headerActions,
 }: {
-  model: HyringInterviewViewModel;
+  model: SreevaAIInterviewViewModel;
   showHeader?: boolean;
   headerActions?: ReactNode;
 }) {

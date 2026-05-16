@@ -14,14 +14,14 @@ import {
   Activity,
 } from "lucide-react";
 import {
-  HYRING_REPORT_CARD,
-  HYRING_REPORT_PAGE_BG,
+  SREEVAAI_REPORT_CARD,
+  SREEVAAI_REPORT_PAGE_BG,
   SemicircleGauge,
   fitLabelFromPct,
-} from "./interview-report-hyring";
-import type { IntelIconKey, IntelSignalRow } from "./interview-report-hyring";
+} from "./interview-report-sreevaai";
+import type { IntelIconKey, IntelSignalRow } from "./interview-report-sreevaai";
 
-const card = HYRING_REPORT_CARD;
+const card = SREEVAAI_REPORT_CARD;
 const bgPage = "bg-white relative overflow-hidden";
 
 const MeshGradient = () => (
@@ -200,7 +200,7 @@ function ResumeRadarPlot({
   );
 }
 
-export type HyringResumeViewModel = {
+export type SreevaAIResumeViewModel = {
   backHref: string;
   processing: boolean;
   fullName: string;
@@ -257,7 +257,7 @@ function tagFromPct(p: number): "GOOD" | "AVERAGE" | "WEAK" {
 }
 
 function buildResumeAiSummaryPoints(model: Pick<
-  HyringResumeViewModel,
+  SreevaAIResumeViewModel,
   "fitRadarNotes"
 > & {
   comparison: {
@@ -447,9 +447,9 @@ function tokenMatches(left: unknown, right: unknown): boolean {
 }
 
 /**
- * Flattens existing candidate-page resume signals into a Hyring-mirror view model.
+ * Flattens existing candidate-page resume signals into a SreevaAI-mirror view model.
  */
-export function buildHyringResumeViewModel(i: {
+export function buildSreevaAIResumeViewModel(i: {
   candidate: {
     fullName?: string;
     createdAt?: string;
@@ -503,7 +503,7 @@ export function buildHyringResumeViewModel(i: {
     reasons?: { delta?: number; reason?: string; evidence?: string }[];
     risk_flags?: string[];
   } | null;
-}): HyringResumeViewModel {
+}): SreevaAIResumeViewModel {
   const c = i.candidate;
   const b = i.breakdown;
   const skM = Math.max(1, Number(b?.skills_max ?? 45));
@@ -777,7 +777,7 @@ export function buildHyringResumeViewModel(i: {
       watchoutBody,
     },
   });
-  const decisionStamp: HyringResumeViewModel["decisionStamp"] =
+  const decisionStamp: SreevaAIResumeViewModel["decisionStamp"] =
     i.normalizedStatus?.toLowerCase() === "shortlisted"
       ? "SHORTLISTED"
       : i.normalizedStatus?.toLowerCase() === "rejected"
@@ -816,8 +816,8 @@ export function buildHyringResumeViewModel(i: {
   ];
 
   // Build matched + missing skill rows. Prefer structured report skill_matching, then AI skill_match_rows, then resume skills.
-  const skillMatchRows: HyringResumeViewModel["skillMatchRows"] = (() => {
-    const matchedRows: HyringResumeViewModel["skillMatchRows"] = [];
+  const skillMatchRows: SreevaAIResumeViewModel["skillMatchRows"] = (() => {
+    const matchedRows: SreevaAIResumeViewModel["skillMatchRows"] = [];
     const details = Array.isArray(skillMatching.must_have_details) ? skillMatching.must_have_details : [];
     const matchedMust = Array.isArray(skillMatching.matched_must) ? skillMatching.matched_must : [];
     const matchedGood = Array.isArray(skillMatching.matched_good) ? skillMatching.matched_good : [];
@@ -854,7 +854,7 @@ export function buildHyringResumeViewModel(i: {
         source: mappedSource,
         category: firstLine(detail?.category || detail?.priority || ""),
         evidenceNote: noteSource || (matched ? "Evidence found in extracted resume data" : "Missing from the extracted resume"),
-      } as HyringResumeViewModel["skillMatchRows"][number];
+      } as SreevaAIResumeViewModel["skillMatchRows"][number];
     };
 
     if (details.length > 0) {
@@ -993,7 +993,7 @@ export function buildHyringResumeViewModel(i: {
       });
     }
 
-    const missingRows: HyringResumeViewModel["skillMatchRows"] = [];
+    const missingRows: SreevaAIResumeViewModel["skillMatchRows"] = [];
     const missingNames = missingMust.length > 0 ? missingMust : (Array.isArray(i.missingMustSkills) ? i.missingMustSkills : []);
     for (const name of missingNames.slice(0, 8)) {
       const clean = String(name || "").trim();
@@ -1008,14 +1008,14 @@ export function buildHyringResumeViewModel(i: {
       });
     }
 
-    const deduped = [...matchedRows, ...missingRows].reduce<HyringResumeViewModel["skillMatchRows"]>((acc, row) => {
+    const deduped = [...matchedRows, ...missingRows].reduce<SreevaAIResumeViewModel["skillMatchRows"]>((acc, row) => {
       const key = row.name.toLowerCase();
       if (acc.some((item) => item.name.toLowerCase() === key)) return acc;
       acc.push(row);
       return acc;
     }, []);
 
-    const priority = (row: HyringResumeViewModel["skillMatchRows"][number]) => {
+    const priority = (row: SreevaAIResumeViewModel["skillMatchRows"][number]) => {
       if (row.matched && row.depth === "deep" && row.source === "work_history") return 0;
       if (row.matched && row.depth === "deep") return 1;
       if (row.matched && row.depth === "working" && row.source === "work_history") return 2;
@@ -1056,7 +1056,7 @@ export function buildHyringResumeViewModel(i: {
     return d;
   };
 
-  let careerLines: HyringResumeViewModel["careerLines"] = history.slice(0, 8).map((r, idx) => {
+  let careerLines: SreevaAIResumeViewModel["careerLines"] = history.slice(0, 8).map((r, idx) => {
     const startFmt = formatWorkDate(r.start_date || r.start_year);
     const endFmt = r.is_current ? "Present" : formatWorkDate(r.end_date || r.end_year);
     const when = [startFmt, endFmt].filter(Boolean).join(" – ");
@@ -1093,8 +1093,8 @@ export function buildHyringResumeViewModel(i: {
     });
   }
 
-  const strengths: HyringResumeViewModel["strengths"] = [];
-  const weaknesses: HyringResumeViewModel["weaknesses"] = [];
+  const strengths: SreevaAIResumeViewModel["strengths"] = [];
+  const weaknesses: SreevaAIResumeViewModel["weaknesses"] = [];
   const topMatchedSkills = skillMatchRows.filter((row) => row.matched).slice(0, 3);
 
   if (topMatchedSkills.length > 0) {
@@ -1294,9 +1294,9 @@ export function buildHyringResumeViewModel(i: {
   };
 }
 
-type ResumeReportHyringProps = { model: HyringResumeViewModel; onBack?: () => void };
+type ResumeReportSreevaAIProps = { model: SreevaAIResumeViewModel; onBack?: () => void };
 
-export function ResumeReportHyring({ model, onBack }: ResumeReportHyringProps) {
+export function ResumeReportSreevaAI({ model, onBack }: ResumeReportSreevaAIProps) {
   const [radarHovered, setRadarHovered] = useState<RadarKey | null>(null);
 
   const BackButton = () => {

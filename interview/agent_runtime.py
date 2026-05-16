@@ -67,6 +67,7 @@ from interview.agent_runtime_helpers import (
     _build_recent_context_block,
     _sanitize_claim_value,
     _single_question_transform,
+    _tts_acronym_transform,
     remove_system_messages,
     sanitize_candidate_facing_text,
 )
@@ -107,7 +108,6 @@ from livekit.agents import (
     inference,
     TurnHandlingOptions,
     llm,
-    text_transforms,
     tts as lk_tts,
 )
 from livekit.agents.metrics import AgentSessionUsage
@@ -704,17 +704,7 @@ async def entrypoint(ctx: JobContext):
             "use_tts_aligned_transcript": False,
             "tts_text_transforms": [
                 "filter_emoji",
-                text_transforms.replace({
-                    "HR": "H R",
-                    "SaaS": "sass",
-                    "API": "A P I",
-                    "SQL": "sequel",
-                    "URL": "U R L",
-                    "UI": "U I",
-                    "UX": "U X",
-                    "DevOps": "dev ops",
-                    "LiveKit": "Live Kit",
-                }),
+                _tts_acronym_transform,
                 _single_question_transform,
             ],
             "aec_warmup_duration": 2.5,

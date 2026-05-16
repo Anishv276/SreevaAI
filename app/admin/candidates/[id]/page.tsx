@@ -6,8 +6,8 @@ import { useParams, useSearchParams } from "next/navigation";
 import { FileText, Sparkles, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { InterviewReportHyring, buildHyringInterviewViewModel } from "@/components/admin/candidate-profile/interview-report-hyring";
-import { ResumeReportHyring, buildHyringResumeViewModel } from "@/components/admin/candidate-profile/resume-report-hyring";
+import { InterviewReportSreevaAI, buildSreevaAIInterviewViewModel } from "@/components/admin/candidate-profile/interview-report-sreevaai";
+import { ResumeReportSreevaAI, buildSreevaAIResumeViewModel } from "@/components/admin/candidate-profile/resume-report-sreevaai";
 
 function toTextList(value: unknown): string[] {
     const toLine = (item: unknown): string => {
@@ -362,7 +362,7 @@ export default function CandidateProfilePage() {
         const decisionReason = typeof report.decision_reason === "string" ? report.decision_reason : null;
         const humanLayer = report.human_layer || null;
 
-        return buildHyringResumeViewModel({
+        return buildSreevaAIResumeViewModel({
             candidate: {
                 fullName,
                 createdAt: candidate?.createdAt,
@@ -439,7 +439,7 @@ export default function CandidateProfilePage() {
     if (reportMode === "resume") {
         return (
             <div className="min-h-screen bg-slate-50">
-                <ResumeReportHyring model={resumeReportModel} />
+                <ResumeReportSreevaAI model={resumeReportModel} />
             </div>
         );
     }
@@ -469,7 +469,7 @@ export default function CandidateProfilePage() {
 
     return (
         <>
-            <InterviewReportHyring
+            <InterviewReportSreevaAI
                 showHeader={true}
                 headerActions={
                     <Button
@@ -484,7 +484,7 @@ export default function CandidateProfilePage() {
                         Resume report
                     </Button>
                 }
-                model={buildHyringInterviewViewModel({
+                model={buildSreevaAIInterviewViewModel({
                     backHref,
                     candidate,
                     mounted,
@@ -518,7 +518,7 @@ export default function CandidateProfilePage() {
                     <DialogTitle className="sr-only">Resume Report</DialogTitle>
                     <div className="h-[95vh] overflow-y-auto">
                         {candidate?.fullName && (candidate?.aiReport || candidate?.resumeText) ? (
-                            <ResumeReportHyring model={resumeReportModel} onBack={() => setResumeReportOpen(false)} />
+                            <ResumeReportSreevaAI model={resumeReportModel} onBack={() => setResumeReportOpen(false)} />
                         ) : (
                             <div className="flex h-full items-center justify-center rounded-2xl bg-white p-8 text-center shadow-lg">
                                 <div>
