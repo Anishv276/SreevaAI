@@ -47,50 +47,74 @@ export async function sendApplicationStatusEmail({
         : isConfirmed
             ? `Interview Booked: Your AI Interview for ${jobTitle}`
             : isAccepted
-                ? `Action Required: Schedule your AI Interview for ${jobTitle}`
-                : `Update regarding your application for ${jobTitle}`;
+            ? `Action Required: Schedule your AI Interview for ${jobTitle}`
+            : `Update regarding your application for ${jobTitle}`;
+
+    const baseCard = "max-width: 640px; margin: 0 auto; background: #ffffff; border: 1px solid #e5e7eb; border-radius: 24px; overflow: hidden; box-shadow: 0 20px 60px rgba(15, 23, 42, 0.08);";
+    const sectionP = "margin: 0;";
+    const mutedText = "color: #64748b;";
+    const heading = "color: #0f172a; font-weight: 900; letter-spacing: -0.03em; margin: 0;";
+    const orangeBtn = "background: linear-gradient(135deg, #f97316 0%, #ea580c 100%); color: #ffffff; text-decoration: none; font-weight: 800; display: inline-block; border-radius: 14px; padding: 14px 28px; box-shadow: 0 12px 24px rgba(249, 115, 22, 0.22);";
+    const darkBtn = "background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); color: #ffffff; text-decoration: none; font-weight: 800; display: inline-block; border-radius: 14px; padding: 14px 28px; box-shadow: 0 12px 24px rgba(15, 23, 42, 0.16);";
 
     const html = isHired ? `
-        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 12px; background-color: #ffffff;">
+        <div style="font-family: Inter, Arial, sans-serif; ${baseCard}">
             <div style="text-align: center; margin-bottom: 25px;">
                 <div style="display: inline-block; background-color: #ECFDF5; padding: 12px; border-radius: 16px;">
                     <span style="font-size: 32px;">🎉</span>
                 </div>
             </div>
-            <h1 style="color: #111827; text-align: center; font-size: 24px; font-weight: 800; margin-bottom: 10px;">You're Hired, ${fullName}!</h1>
-            <p style="color: #4B5563; text-align: center; font-size: 16px; line-height: 1.5;">We are delighted to inform you that you have been <strong>selected</strong> for the <strong>${jobTitle}</strong> position. Welcome to the team!</p>
-            <div style="background-color: #F0FDF4; border-radius: 16px; padding: 20px; margin: 30px 0; border: 1px solid #D1FAE5; text-align: center;">
-            <p style="color: #065F46; font-size: 14px; font-weight: 600; margin: 0;">Our team will reach out to you shortly with the next steps including your offer letter and onboarding details.</p>
+            <div style="padding: 28px 30px 30px;">
+            <p style="display:inline-block; margin: 0 0 16px; padding: 8px 12px; border-radius: 999px; background: #ecfdf5; color: #047857; font-size: 11px; font-weight: 900; letter-spacing: 0.16em; text-transform: uppercase;">Offer Update</p>
+            <h1 style="${heading}; text-align: center; font-size: 28px; margin-bottom: 12px;">You're Hired, ${fullName}!</h1>
+            <p style="${mutedText}; text-align: center; font-size: 16px; line-height: 1.7; margin: 0 auto 20px; max-width: 520px;">We are delighted to let you know that you have been selected for the <strong>${jobTitle}</strong> position. Welcome to the team.</p>
+            <div style="background: #f8fafc; border-radius: 18px; padding: 18px; margin: 24px 0; border: 1px solid #e2e8f0; text-align: center;">
+            <p style="color: #0f172a; font-size: 14px; font-weight: 800; margin: 0 0 6px;">Next steps</p>
+            <p style="color: #475569; font-size: 14px; font-weight: 500; margin: 0;">Our team will reach out shortly with your offer letter and onboarding details.</p>
             </div>
-            <p style="color: #9CA3AF; font-size: 12px; margin-bottom: 5px;">Best Regards,</p>
-            <p style="color: #374151; font-weight: 700; margin-top: 0;">${orgName} Recruitment Team</p>
+            <p style="color: #94a3b8; font-size: 12px; margin: 22px 0 4px;">Best Regards,</p>
+            <p style="color: #334155; font-weight: 800; margin: 0;">${orgName} Recruitment Team</p>
+            </div>
         </div>
     ` : isConfirmed ? `
-        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #E5E7EB; border-radius: 18px; background-color: #ffffff;">
-            <div style="text-align: center; margin-bottom: 22px;">
-                <div style="display: inline-block; background-color: #ECFDF5; padding: 14px; border-radius: 18px;">
-                    <span style="font-size: 26px;">📌</span>
+        <div style="font-family: Inter, Arial, sans-serif; ${baseCard}">
+            <div style="background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 55%, #fff 100%); padding: 26px 30px 22px; border-bottom: 1px solid #fed7aa;">
+                <div style="text-align: center; margin-bottom: 16px;">
+                    <div style="display: inline-block; background: rgba(255,255,255,0.8); border: 1px solid rgba(249,115,22,0.18); padding: 14px; border-radius: 18px;">
+                        <span style="font-size: 26px;">📌</span>
+                    </div>
                 </div>
+                <p style="display:inline-block; margin: 0 auto 12px; padding: 8px 12px; border-radius: 999px; background: #fff7ed; color: #c2410c; font-size: 11px; font-weight: 900; letter-spacing: 0.16em; text-transform: uppercase;">Interview Booked</p>
+                <h1 style="${heading}; text-align: center; font-size: 28px; margin-bottom: 8px;">Interview Slot Confirmed</h1>
+                <p style="${mutedText}; text-align: center; font-size: 15px; line-height: 1.7; margin: 0 auto; max-width: 520px;">Hi ${fullName}, your AI interview for the <strong>${jobTitle}</strong> position is booked. Everything you need to join is below.</p>
             </div>
-            <h1 style="color: #111827; text-align: center; font-size: 26px; font-weight: 800; margin-bottom: 12px;">Interview Slot Confirmed</h1>
-            <p style="color: #4B5563; text-align: center; font-size: 16px; line-height: 1.6; margin-bottom: 18px;">Hi ${fullName}, your AI Voice Interview for the <strong>${jobTitle}</strong> position is booked.</p>
-            <div style="background-color: #F9FAFB; border-radius: 18px; padding: 22px; margin: 24px 0; border: 1px solid #F3F4F6;">
-                <h3 style="color: #111827; font-size: 13px; font-weight: 800; margin-top: 0; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 12px; text-align: center;">Booked Time</h3>
-                <p style="color: #111827; font-size: 18px; font-weight: 800; margin-bottom: 18px; text-align: center;">
+            <div style="padding: 24px 30px 30px;">
+                <div style="background: #f8fafc; border-radius: 20px; padding: 20px; border: 1px solid #e2e8f0; margin-bottom: 18px;">
+                    <p style="color: #64748b; font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.16em; margin: 0 0 10px; text-align: center;">Booked Time</p>
+                    <p style="color: #0f172a; font-size: 20px; font-weight: 900; margin: 0; text-align: center; line-height: 1.4;">
                     ${scheduledAt ? scheduledAt.toLocaleString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', ...(scheduledTimeZone ? { timeZone: scheduledTimeZone } : {}) }) : 'Your selected time'}
-                </p>
-                <div style="text-align: center; margin-bottom: 14px;">
-                    <a href="${interviewLink}" style="background-color: #111827; color: white; padding: 14px 34px; text-decoration: none; border-radius: 12px; font-weight: 800; font-size: 15px; display: inline-block;">Open Interview</a>
+                    </p>
                 </div>
-                <p style="color: #6B7280; font-size: 12px; margin-top: 8px; text-align: center;">Use this link to enter the interview page. Hardware check is available now, and the start button will unlock at the correct time.</p>
+                <div style="text-align: center; margin: 18px 0 16px;">
+                    <a href="${interviewLink}" style="${darkBtn}">Open Interview</a>
+                </div>
+                <div style="background: #fff7ed; border: 1px solid #fed7aa; border-radius: 18px; padding: 16px 18px;">
+                    <p style="color: #9a3412; font-size: 12px; font-weight: 900; margin: 0 0 6px; text-transform: uppercase; letter-spacing: 0.08em;">Before you join</p>
+                    <p style="color: #7c2d12; font-size: 14px; line-height: 1.7; margin: 0;">Please finish the hardware check first. When your interview window opens, the start button will unlock automatically.</p>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px;">
+                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 16px; padding: 14px;">
+                        <p style="color: #64748b; font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.14em; margin: 0 0 6px;">Tip 1</p>
+                        <p style="color: #0f172a; font-size: 13px; font-weight: 700; line-height: 1.5; margin: 0;">Use a stable internet connection.</p>
+                    </div>
+                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 16px; padding: 14px;">
+                        <p style="color: #64748b; font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.14em; margin: 0 0 6px;">Tip 2</p>
+                        <p style="color: #0f172a; font-size: 13px; font-weight: 700; line-height: 1.5; margin: 0;">Keep your camera and mic ready.</p>
+                    </div>
+                </div>
+                <p style="color: #94a3b8; font-size: 12px; margin: 18px 0 4px; text-align: center;">Best Regards,</p>
+                <p style="color: #334155; font-weight: 800; margin: 0; text-align: center;">${orgName} Recruitment Team</p>
             </div>
-            <div style="background-color: #FFF7ED; border: 1px solid #FED7AA; border-radius: 16px; padding: 16px 18px; margin: 24px 0;">
-                <p style="color: #9A3412; font-size: 13px; font-weight: 700; margin: 0 0 6px; text-transform: uppercase; letter-spacing: 0.06em;">What to expect</p>
-                <p style="color: #7C2D12; font-size: 14px; line-height: 1.6; margin: 0;">You can complete the hardware check before your slot begins. When your interview window opens, the <strong>Begin Interview</strong> button will activate automatically.</p>
-            </div>
-            <hr style="border: none; border-top: 1px solid #F3F4F6; margin: 24px 0;" />
-            <p style="color: #9CA3AF; font-size: 12px; margin-bottom: 5px;">Best Regards,</p>
-            <p style="color: #374151; font-weight: 700; margin-top: 0;">${orgName} Recruitment Team</p>
         </div>
     ` : isAccepted ? `
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 12px; background-color: #ffffff;">

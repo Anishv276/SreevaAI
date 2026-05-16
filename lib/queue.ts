@@ -55,4 +55,15 @@ export const jdUploadQueue = new Queue('jd-upload', {
   defaultJobOptions
 });
 
+// 6. Handles background recording chunk merge + R2 upload (CPU/memory heavy, no HTTP timeout)
+export const interviewRecordingQueue = new Queue('interview-recording', {
+  connection: redisConnection,
+  defaultJobOptions: {
+    attempts: 3,
+    backoff: { type: 'exponential', delay: 2000 },
+    removeOnComplete: true,
+    removeOnFail: { count: 20 },
+  }
+});
+
 export default redisConnection;

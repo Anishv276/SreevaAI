@@ -3,6 +3,30 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { getRangeWindow } from "@/lib/date-utils";
 
+function candidateRatingToScore(value: unknown): number {
+    if (typeof value === "number" && Number.isFinite(value)) {
+        return Math.max(1, Math.min(5, Math.round(value)));
+    }
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+        const feeling = (value as { overallFeeling?: unknown }).overallFeeling;
+        switch (String(feeling || "").trim()) {
+            case "Terrible":
+                return 1;
+            case "Okay":
+                return 2;
+            case "Good":
+                return 3;
+            case "Great":
+                return 4;
+            case "Loved it":
+                return 5;
+            default:
+                return 0;
+        }
+    }
+    return 0;
+}
+
 
 export async function GET(req: NextRequest) {
     try {
@@ -42,7 +66,7 @@ export async function GET(req: NextRequest) {
         };
 
         // Single query for all application/interview stats using FILTER
-        const [appStats, driveStats, feedbackStats] = await Promise.all([
+        const [appStats, driveStats, interviewRatings] = await Promise.all([
             prisma.$queryRaw`
                 SELECT
                     COUNT(*) FILTER (WHERE a."createdAt" >= ${start})::INT AS applications,
@@ -77,9 +101,9 @@ export async function GET(req: NextRequest) {
                 FROM "Drive"
                 WHERE "orgId" = ${orgId}
             ` as Promise<DriveStatsRow[]>,
-            prisma.interview.aggregate({
+            prisma.interview.findMany({
                 where: { application: { drive: { orgId } } },
-                _avg: { candidateRating: true }
+                select: { candidateRating: true }
             })
         ]);
 
@@ -99,6 +123,12 @@ export async function GET(req: NextRequest) {
         const screenedInPeriod = Number(s.screenedInPeriod);
         const shortlisted = Number(s.shortlisted);
         const liveInterviews = Number(s.liveInterviews);
+        const ratingValues = interviewRatings
+            .map((row) => candidateRatingToScore(row.candidateRating))
+            .filter((score) => score > 0);
+        const avgRating = ratingValues.length > 0
+            ? ratingValues.reduce((sum, score) => sum + score, 0) / ratingValues.length
+            : 0;
 
         return NextResponse.json({
             activeDrives: Number(d.activeDrives),
@@ -118,7 +148,7 @@ export async function GET(req: NextRequest) {
             dropOffRate: (interviewed + liveInterviews) > 0 ? Math.round((liveInterviews / (interviewed + liveInterviews)) * 100) : 0,
             needsReview: Number(s.needsReview),
             liveInterviews,
-            avgRating: feedbackStats._avg.candidateRating || 0,
+            avgRating,
             invited: Number(s.invited),
         });
     } catch (error: any) {

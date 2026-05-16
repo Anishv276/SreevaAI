@@ -68,8 +68,8 @@ interface Org {
     llmModel?: string;
     ttsProvider?: string;
     cartesiaModel?: string;
+    elevenlabsModel?: string;
     sarvamModel?: string;
-    googleModel?: string;
     sttProvider?: string;
     deepgramModel?: string;
     sarvamSttModel?: string;
@@ -255,7 +255,12 @@ export default function OrgsPage() {
     };
     const getSetupModel = (org: Org, type: 'LLM' | 'TTS' | 'STT') => {
         if (type === 'LLM') return org.llmModel;
-        if (type === 'TTS') return org.ttsProvider === 'SARVAM' ? org.sarvamModel : org.ttsProvider === 'GOOGLE' ? org.googleModel : org.cartesiaModel;
+        if (type === 'TTS') {
+            const provider = (org.ttsProvider || "").toUpperCase();
+            if (provider === 'SARVAM') return org.sarvamModel;
+            if (provider === 'ELEVENLABS') return org.elevenlabsModel || 'eleven_turbo_v2_5';
+            return org.cartesiaModel;
+        }
         if (type === 'STT') return org.sttProvider === 'SARVAM' ? org.sarvamSttModel : org.deepgramModel;
         return null;
     };

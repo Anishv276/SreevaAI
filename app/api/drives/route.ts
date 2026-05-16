@@ -1,9 +1,8 @@
-import { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { createDriveSchema, bulkDeleteSchema, driveQuerySchema } from "@/lib/validation";
+import { createDriveSchema, bulkDeleteSchema } from "@/lib/validation";
 import { getSession } from "@/lib/auth";
-import { safeJsonParse, sanitizeObject } from "@/lib/utils";
+import { sanitizeObject } from "@/lib/utils";
 import { generateId } from "@/lib/ids";
 import { deleteUrlTargets } from "@/lib/delete-utils";
 import { deleteDriveEmbeddings } from "@/lib/pinecone";
@@ -26,7 +25,6 @@ export async function GET(request: Request) {
         const session = await getSession();
         if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
         const { searchParams } = new URL(request.url);
-        const type = searchParams.get("type");
         const search = searchParams.get("search") || "";
         const page = parseInt(searchParams.get("page") || "1");
         const limit = parseInt(searchParams.get("limit") || "10");
@@ -59,15 +57,10 @@ export async function GET(request: Request) {
             where.orgId = (session as any).orgId;
         }
 
-        if (type && type !== "all") {
-            where.type = { equals: type, mode: "insensitive" };
-        }
-
         // Search filters
         if (search) {
             where.OR = [
                 { title: { contains: search, mode: "insensitive" } },
-                { department: { contains: search, mode: "insensitive" } },
                 { role: { contains: search, mode: "insensitive" } }
             ];
         }
@@ -82,29 +75,19 @@ export async function GET(request: Request) {
                     id: true,
                     title: true,
                     role: true,
-                    department: true,
-                    type: true,
                     screeningThreshold: true,
                     creatorId: true,
                     createdAt: true,
                     updatedAt: true,
-                    positions: true,
-                    workMode: true,
                     screeningCriteria: true,
                     interviewLanguage: true,
                     interviewQuestions: true,
                     jdFileName: true,
                     jdPreviewUrl: true,
                     orgId: true,
-                    location: true,
                     deadline: true,
                     aiName: true,
-                    cartesiaVoiceId: true,
-                    sarvamVoice: true,
-                    sarvamModel: true,
-                    googleModel: true,
-                    googleVoiceName: true,
-                    ttsProvider: true,
+                    voiceId: true,
                     _count: {
                         select: { applications: true },
                     },
@@ -209,13 +192,7 @@ export async function POST(request: Request) {
 
         const data = result.data;
         const aiConfig = normalizeDriveAiConfig({
-            next: {
-                ttsProvider: data.ttsProvider,
-                cartesiaVoiceId: data.cartesiaVoiceId,
-                sarvamVoice: data.sarvamVoice,
-                googleModel: data.googleModel,
-                googleVoiceName: data.googleVoiceName,
-            },
+            next: { voiceId: data.voiceId },
         });
         const screeningCriteria = (() => {
             const raw = data.screeningCriteria;
@@ -243,11 +220,6 @@ export async function POST(request: Request) {
                 id: driveId,
                 title: data.title,
                 role: data.role || null,
-                department: data.department,
-                type: data.employmentType || data.type || "Full-time",
-                workMode: data.workMode || null,
-                location: data.location || null,
-                positions: data.positions || 1,
                 extractedDetails: data.extractedDetails || null,
 
                 jdFileName: data.jdFileName || null,

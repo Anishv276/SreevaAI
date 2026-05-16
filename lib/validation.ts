@@ -7,56 +7,17 @@ export const driveIdSchema = z.object({
 export const createDriveSchema = z.object({
   title: z.preprocess((val) => (typeof val === 'string' && val.trim() !== '') ? val : "Untitled Drive", z.string().min(1).max(200)),
   role: z.string().optional(),
-  department: z.preprocess((val) => (typeof val === 'string' && val.trim() !== '') ? val : "General", z.string().min(1)),
-  employmentType: z.preprocess((val) => {
-    if (!val || val === "" || typeof val !== "string") return "Full-time";
-    const lower = val.toLowerCase();
-    if (lower.includes("full") || lower.includes("permanent")) return "Full-time";
-    if (lower.includes("part")) return "Part-time";
-    if (lower.includes("contract")) return "Contract";
-    if (lower.includes("intern")) return "Internship";
-    if (lower.includes("freelance")) return "Freelance";
-    return "Full-time"; // Fallback to default
-  }, z.string().optional()).default("Full-time"),
-  type: z.preprocess((val) => {
-    if (!val || val === "" || typeof val !== "string") return undefined;
-    const lower = val.toLowerCase();
-    if (lower.includes("full") || lower.includes("permanent")) return "Full-time";
-    if (lower.includes("part")) return "Part-time";
-    if (lower.includes("contract")) return "Contract";
-    if (lower.includes("intern")) return "Internship";
-    if (lower.includes("freelance")) return "Freelance";
-    return val;
-  }, z.string().optional()),
-  workMode: z.preprocess((val) => {
-    if (!val || val === "" || typeof val !== "string") return undefined;
-    const lower = val.toLowerCase();
-    if (lower.includes("remote")) return "Remote";
-    if (lower.includes("hybrid")) return "Hybrid";
-    if (lower.includes("site") || lower.includes("office") || lower.includes("present")) return "On-site";
-    return val;
-  }, z.string().optional()),
-  location: z.string().optional(),
   deadline: z.preprocess((val) => {
     if (typeof val !== "string") return val ?? undefined;
     const trimmed = val.trim();
     return trimmed ? trimmed : null;
   }, z.union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/), z.null()]).optional()),
-  positions: z.preprocess((val) => {
-    if (val === null || val === undefined || val === "") return 1;
-    const n = Number(val);
-    return isNaN(n) ? 1 : n;
-  }, z.coerce.number().int().min(1).optional()).default(1),
   jdFileName: z.string().nullable().optional(),
   jdPreviewUrl: z.string().nullable().optional(),
   extractedDetails: z.string().nullable().optional(),
   interviewLanguage: z.string().optional(),
   interviewQuestions: z.array(z.any()).optional(),
-  ttsProvider: z.string().optional(),
-  cartesiaVoiceId: z.string().nullable().optional(),
-  sarvamVoice: z.string().nullable().optional(),
-  googleModel: z.string().nullable().optional(),
-  googleVoiceName: z.string().nullable().optional(),
+  voiceId: z.string().nullable().optional(),
   aiName: z.string().optional(),
   screeningThreshold: z.coerce.number().int().optional(),
   screeningCriteria: z.union([z.string(), z.record(z.string(), z.any())]).optional(),

@@ -8,9 +8,9 @@ import { canUseRecruiterAssistant } from "@/lib/org-plans";
 async function getOrgOpenAIModel(orgId: string): Promise<string> {
     const org = await prisma.organization.findUnique({
         where: { id: orgId },
-        select: { llmProvider: true, llmModel: true },
+        select: { llmModel: true },
     });
-    if ((org?.llmProvider || "OPENAI") === "OPENAI" && org?.llmModel) {
+    if (org?.llmModel) {
         return org.llmModel;
     }
     return "gpt-4.1-mini";
@@ -455,7 +455,6 @@ async function getDrives(orgId: string) {
             select: {
                 id: true,
                 title: true,
-                department: true,
                 createdAt: true,
                 _count: { select: { applications: true } }
             }
@@ -467,7 +466,7 @@ async function getDrives(orgId: string) {
     
     let response = `**Drives (${drives.length}):**\n`;
     response += drives.slice(0, 5).map((d: any) => 
-        `• **${d.title}** (${d._count.applications} candidates) - ${d.department}`
+        `• **${d.title}** (${d._count.applications} candidates) - ${d.title}`
     ).join('\n');
     
     return {
@@ -490,7 +489,7 @@ async function filterByDrive(message: string, orgId: string) {
             orgId,
             OR: [
                 { title: { contains: driveName, mode: 'insensitive' } },
-                { department: { contains: driveName, mode: 'insensitive' } }
+                { role: { contains: driveName, mode: 'insensitive' } }
             ]
         }
     });

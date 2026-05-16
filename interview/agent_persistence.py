@@ -7,7 +7,6 @@ from typing import Any, Optional
 from pydantic import BaseModel, Field
 from urllib.parse import parse_qsl, urlencode, urlunparse, urlparse
 from interview.agent_profile_context import build_interview_turns
-from interview.agent_providers import build_google_analysis_client
 from behavioral_analysis import synthesize_behavioral_report
 from interview.agent_runtime_support import (
 
@@ -144,6 +143,9 @@ _SARVAM_TTS_INR_PER_10K_CHARS: dict[str, float] = {
 _CARTESIA_TTS_DEFAULT_USD_PER_MILLION_CHARS = float(
     os.environ.get("CARTESIA_TTS_USD_PER_MILLION_CHARS", "30.0")
 )
+_ELEVENLABS_TTS_DEFAULT_USD_PER_MILLION_CHARS = float(
+    os.environ.get("ELEVENLABS_TTS_USD_PER_MILLION_CHARS", "30.0")
+)
 _SARVAM_STT_INR_PER_HOUR: dict[str, float] = {
     "saaras:v3": 30.0,
 }
@@ -251,6 +253,8 @@ def _estimate_tts_cost_usd(provider_name: str, model_name: str, characters: int)
         return inr_cost / max(_BILLING_INR_PER_USD, 1e-6)
     if provider == "CARTESIA":
         return (chars / 1_000_000.0) * _CARTESIA_TTS_DEFAULT_USD_PER_MILLION_CHARS
+    if provider == "ELEVENLABS":
+        return (chars / 1_000_000.0) * _ELEVENLABS_TTS_DEFAULT_USD_PER_MILLION_CHARS
     return 0.0
 def _normalize_stt_model_name(model_name: str) -> str:
     return str(model_name or "").strip().lower()
@@ -317,7 +321,7 @@ def merge_feature_billing(
         row = _coerce_jsonish(raw)
         provider = str(row.get("provider", "") or default_tts_provider).strip().upper()
         model_name = str(row.get("model", "") or default_tts_model).strip()
-        if provider not in {"SARVAM", "CARTESIA"} and default_tts_provider in {"SARVAM", "CARTESIA"}:
+        if provider not in {"SARVAM", "CARTESIA", "ELEVENLABS"} and default_tts_provider in {"SARVAM", "CARTESIA", "ELEVENLABS"}:
             provider = default_tts_provider
         if (not model_name or model_name == "unknown") and default_tts_model:
             model_name = default_tts_model
@@ -681,16 +685,14 @@ async def get_interview_context(app_id: str):
     query = """
     SELECT a."fullName", a."resumeText", a."resumeData", d.title, d.role AS "role", d."extractedDetails", d."orgId" AS "orgId",
            d.location AS "driveLocation", d."interviewLanguage", d."interviewQuestions",
-           COALESCE(d."ttsProvider", o."ttsProvider") AS "ttsProvider",
-           COALESCE(d."cartesiaVoiceId", o."cartesiaVoiceId") AS "cartesiaVoiceId", o."cartesiaModel",
-           o."sarvamModel", COALESCE(d."sarvamVoice", o."sarvamVoice") AS "sarvamVoice",
-           o."googleModel", o."googleVoiceName",
+           COALESCE(d."voiceId", o."voiceId") AS "voiceId",
            COALESCE(d."aiName", 'Ishitha') AS "aiName", o.name AS "orgName", o.location AS "orgLocation",
-           o."sttProvider", o."deepgramModel", o."sarvamSttModel",
-           o."llmProvider", o."llmModel", o."llmTemperature", o."proctoringSignals"
+           o."deepgramModel", o."llmModel", o."llmTemperature", o."proctoringSignals",
+           ev.provider AS "voiceProvider", ev.model AS "voiceModel"
     FROM "Application" a
     JOIN "Drive" d ON a."driveId" = d.id
     LEFT JOIN "Organization" o ON d."orgId" = o.id
+    LEFT JOIN "EngineVoice" ev ON ev.id = COALESCE(d."voiceId", o."voiceId")
     WHERE a.id = $1
     LIMIT 1
     """
@@ -716,18 +718,11 @@ async def get_interview_context(app_id: str):
                 "driveLocation": row["driveLocation"],
                 "language": row["interviewLanguage"],
                 "timeLimit": FIXED_INTERVIEW_DURATION_MINUTES,
-                "ttsProvider": row["ttsProvider"],
-                "cartesiaVoiceId": row["cartesiaVoiceId"],
-                "cartesiaModel": row["cartesiaModel"],
-                "sarvamModel": row["sarvamModel"],
-                "sarvamVoice": row["sarvamVoice"],
-                "googleModel": row["googleModel"],
-                "googleVoiceName": row["googleVoiceName"],
+                "voiceId": row["voiceId"],
+                "voiceProvider": row["voiceProvider"],
+                "voiceModel": row["voiceModel"],
                 "aiName": row["aiName"],
-                "sttProvider": row["sttProvider"],
                 "deepgramModel": row["deepgramModel"],
-                "sarvamSttModel": row["sarvamSttModel"],
-                "llmProvider": row["llmProvider"],
                 "llmModel": row["llmModel"],
                 "llmTemperature": row["llmTemperature"],
                 "proctoringSignals": row["proctoringSignals"],
@@ -878,8 +873,102 @@ async def persist_answer_scores(app_id: str, answer_scores: list[dict]) -> None:
             )
     except Exception as e:
         logger.error(f"[SCORE] Failed to persist answer scores for {app_id}: {e}")
-async def update_interview_status(app_id: str):
-    """Mark the application as COMPLETED via asyncpg."""
+async def deduct_interview_billing(app_id: str, duration_seconds: Optional[float] = None) -> None:
+    """
+    Atomically deduct one interview quota slot and record minute-based credit usage.
+    Uses billingSnapshot->billedAt as an idempotency guard — safe to call multiple times.
+    """
+    if not DATABASE_URL:
+        return
+    try:
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            # Resolve org_id
+            row = await conn.fetchrow(
+                """
+                SELECT d."orgId", i."interviewDuration", i."recordingDurationSec"
+                FROM "Interview" i
+                JOIN "Application" a ON a.id = i."applicationId"
+                JOIN "Drive" d ON d.id = a."driveId"
+                WHERE a.id = $1
+                LIMIT 1
+                """,
+                app_id,
+            )
+            if not row:
+                logger.warning(f"[BILLING] No interview row found for {app_id} — skipping billing")
+                return
+
+            org_id = row["orgId"]
+            if not org_id:
+                logger.warning(f"[BILLING] No orgId for {app_id} — skipping billing")
+                return
+
+            # Resolve duration: prefer explicit arg, then DB columns
+            dur = duration_seconds
+            if not dur or dur <= 0:
+                dur = float(row["interviewDuration"] or 0)
+            if not dur or dur <= 0:
+                dur = float(row["recordingDurationSec"] or 0)
+
+            # Atomic mark-and-deduct — returns the row only if not already billed
+            marked = await conn.fetch(
+                """
+                UPDATE "Interview"
+                SET "billingSnapshot" = jsonb_set(
+                    COALESCE("billingSnapshot", '{}'::jsonb),
+                    '{billedAt}',
+                    to_jsonb(extract(epoch from now())::bigint)
+                ),
+                "updatedAt" = NOW()
+                WHERE "applicationId" = $1
+                  AND ("billingSnapshot" IS NULL OR "billingSnapshot"->'billedAt' IS NULL)
+                RETURNING id
+                """,
+                app_id,
+            )
+
+            if not marked:
+                logger.info(f"[BILLING] Already billed for {app_id} — skipping")
+                return
+
+            # Deduct one interview slot from quota
+            await conn.execute(
+                """
+                UPDATE "Organization"
+                SET "interviewQuotaUsed" = COALESCE("interviewQuotaUsed", 0) + 1,
+                    "updatedAt" = NOW()
+                WHERE id = $1
+                """,
+                org_id,
+            )
+
+            # Record minute-based credit usage (1 credit = 1 minute)
+            if dur > 0:
+                credits_delta = round((dur / 60) * 100) / 100
+                if credits_delta > 0:
+                    await conn.execute(
+                        """
+                        UPDATE "Organization"
+                        SET "creditsUsed" = COALESCE("creditsUsed", 0) + $1,
+                            "updatedAt" = NOW()
+                        WHERE id = $2
+                        """,
+                        credits_delta,
+                        org_id,
+                    )
+                    logger.info(f"[BILLING] Deducted 1 quota + {credits_delta:.2f} credits for {app_id} org={org_id} dur={dur:.0f}s")
+                else:
+                    logger.info(f"[BILLING] Deducted 1 quota (no credits — dur={dur:.0f}s) for {app_id} org={org_id}")
+            else:
+                logger.warning(f"[BILLING] Deducted 1 quota but duration unknown for {app_id} org={org_id}")
+
+    except Exception as e:
+        logger.error(f"[BILLING] Failed to deduct billing for {app_id}: {e}")
+
+
+async def update_interview_status(app_id: str, duration_seconds: Optional[float] = None):
+    """Mark the application as COMPLETED via asyncpg and deduct billing."""
     if not DATABASE_URL:
         return
     try:
@@ -898,6 +987,9 @@ async def update_interview_status(app_id: str):
             logger.info(f"[INTERVIEW] App {app_id} marked as COMPLETED.")
     except Exception as e:
         logger.error(f"[INTERVIEW] Failed to update interview status: {e}")
+
+    # Deduct billing after marking completed (idempotent — safe to retry)
+    await deduct_interview_billing(app_id, duration_seconds=duration_seconds)
 async def generate_interview_summary(
     app_id: str,
     transcript_lines: list,
@@ -906,15 +998,14 @@ async def generate_interview_summary(
     llm_model: str = LLM_MODEL,
 ):
     """Generate a high-quality AI narrative summary after the interview completes."""
-    is_google_model = str(llm_model).lower().startswith("gemini")
     if not transcript_lines or not DATABASE_URL:
         logger.warning("[SUMMARY] Skipping: missing transcript or DATABASE_URL")
         return
-    if not is_google_model and not os.environ.get("OPENAI_API_KEY"):
-        logger.warning("[SUMMARY] Skipping: missing OPENAI_API_KEY for non-Google summary")
+    if not os.environ.get("OPENAI_API_KEY"):
+        logger.warning("[SUMMARY] Skipping: missing OPENAI_API_KEY")
         return
     try:
-        client = build_google_analysis_client(allow_fallback=False) if is_google_model else AsyncOpenAI()
+        client = AsyncOpenAI()
         transcript_text = "\n".join(transcript_lines)
         transcript_text = truncate_to_tokens(transcript_text, 2500)
         logger.info(f"[SUMMARY] Generating narrative summary for {app_id}...")
@@ -980,12 +1071,11 @@ async def generate_interview_report(
     llm_model: str = LLM_MODEL,
 ):
     """Generate structured interview report with scores, skills, and behavioral analysis."""
-    is_google_model = str(llm_model).lower().startswith("gemini")
     if not transcript_lines or not DATABASE_URL:
         logger.warning("[REPORT] Skipping: missing transcript or DATABASE_URL")
         return
-    if not is_google_model and not os.environ.get("OPENAI_API_KEY"):
-        logger.warning("[REPORT] Skipping: missing OPENAI_API_KEY for non-Google report")
+    if not os.environ.get("OPENAI_API_KEY"):
+        logger.warning("[REPORT] Skipping: missing OPENAI_API_KEY")
         return
     try:
         # Exclude warmup turns from all scoring — they skew every average
@@ -999,7 +1089,7 @@ async def generate_interview_report(
             proctoring_events=proctoring_data.get("events", []) if proctoring_data else [],
             contradictions_found=proctoring_data.get("contradictions", []) if proctoring_data else [],
         )
-        client = build_google_analysis_client(allow_fallback=False) if is_google_model else AsyncOpenAI()
+        client = AsyncOpenAI()
         # Strip warmup lines from transcript before sending to report LLM
         # Warmup is the first 4 lines (2 interviewer + 2 candidate exchanges)
         interview_lines = transcript_lines[4:] if len(transcript_lines) > 4 else transcript_lines

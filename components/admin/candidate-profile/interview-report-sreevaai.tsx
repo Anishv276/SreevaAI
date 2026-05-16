@@ -1136,7 +1136,7 @@ export function buildSreevaAIInterviewViewModel(i: {
     aiBullets.push(`No integrity or environment issues detected — session ran cleanly with no proctoring flags.`);
   }
 
-  return {
+    return {
     backHref: i.backHref || "/admin/candidates",
     fullName: c.fullName || "Candidate",
     displayAvatar: i.displayAvatar,
@@ -1158,6 +1158,22 @@ export function buildSreevaAIInterviewViewModel(i: {
       feedbackStars: (() => {
         const r = c.interview?.candidateRating;
         if (typeof r === "number" && r > 0) return Math.max(0, Math.min(5, r));
+        if (r && typeof r === "object" && !Array.isArray(r)) {
+          switch (String((r as { overallFeeling?: unknown }).overallFeeling || "").trim()) {
+            case "Terrible":
+              return 1;
+            case "Okay":
+              return 2;
+            case "Good":
+              return 3;
+            case "Great":
+              return 4;
+            case "Loved it":
+              return 5;
+            default:
+              return 4.2;
+          }
+        }
         return 4.2;
       })(),
     },

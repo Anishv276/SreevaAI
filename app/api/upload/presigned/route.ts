@@ -41,7 +41,7 @@ export async function POST(request: Request) {
             if (!driveId) {
                 return NextResponse.json({ error: "driveId is required for resume uploads" }, { status: 400 });
             }
-            const drive = await prisma.drive.findUnique({
+            const drive = await (prisma.drive as any).findUnique({
                 where: { id: driveId },
                 select: { status: true }
             });

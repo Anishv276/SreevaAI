@@ -83,7 +83,6 @@ export async function POST(req: NextRequest) {
         industry: true,
         size: true,
         plan: true,
-        llmProvider: true,
         llmModel: true,
       },
     });
@@ -93,10 +92,7 @@ export async function POST(req: NextRequest) {
         { status: 403 }
       );
     }
-    const orgOpenAIModel =
-      (org?.llmProvider || "OPENAI") === "OPENAI" && org?.llmModel
-        ? org.llmModel
-        : "gpt-4.1-mini";
+    const orgOpenAIModel = org?.llmModel || "gpt-4.1-mini";
 
     const { messages } = await req.json();
     const userMessage = messages[messages.length - 1]?.content ?? "";
@@ -138,7 +134,7 @@ export async function POST(req: NextRequest) {
         type: "function",
         function: {
           name: "get_drives_overview",
-          description: "List all recruitment drives with title, department, screening threshold, interview enabled flag, and application count. Use for 'show drives', 'all jobs', 'open positions', or drive-level summaries.",
+          description: "List all recruitment drives with title, role, screening threshold, interview enabled flag, and application count. Use for 'show drives', 'all jobs', 'open positions', or drive-level summaries.",
           parameters: { type: "object", properties: {} },
         },
       },
@@ -443,9 +439,8 @@ ${semanticContext || "No semantic matches found - rely on tools for accurate dat
           const drives = await prisma.drive.findMany({
             where: { orgId },
             select: {
-              id: true, title: true, department: true, role: true,
+              id: true, title: true, role: true,
               screeningThreshold: true,
-              positions: true, workMode: true,
               createdAt: true,
               _count: { select: { applications: true } },
             },
@@ -465,9 +460,8 @@ ${semanticContext || "No semantic matches found - rely on tools for accurate dat
               title: { contains: args.name, mode: "insensitive" },
             },
             select: {
-              id: true, title: true, department: true, role: true,
+              id: true, title: true, role: true,
               screeningThreshold: true,
-              positions: true, workMode: true,
               createdAt: true,
               _count: { select: { applications: true } },
             },

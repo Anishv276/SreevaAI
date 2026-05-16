@@ -1,6 +1,9 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
 import { Brain, Mic, Languages } from "lucide-react";
 import { ScreeningConfig } from "./screening-settings";
-import { CARTESIA_VOICES, GOOGLE_VOICES, SARVAM_VOICES } from "@/lib/constants/voices";
+import { ALL_VOICES, type Voice } from "@/lib/constants/voices";
 
 interface FinalPreviewProps {
     formData: any;
@@ -21,16 +24,27 @@ function countQuestions(value: any) {
 }
 
 export function FinalPreview({ formData, weights }: FinalPreviewProps) {
-    const provider = String(formData.ttsProvider || "CARTESIA").toUpperCase();
-    const selectedVoiceId =
-        provider === "SARVAM"
-            ? formData.sarvamVoice
-            : provider === "GOOGLE"
-                ? formData.googleVoiceName
-                : formData.cartesiaVoiceId;
+    const [voices, setVoices] = useState<Voice[]>(ALL_VOICES);
 
-    const selectedVoice = [...CARTESIA_VOICES, ...SARVAM_VOICES, ...GOOGLE_VOICES].find(
-        (v) => v.id === selectedVoiceId
+    useEffect(() => {
+        const loadVoices = async () => {
+            try {
+                const res = await fetch("/api/voices", { cache: "no-store" });
+                if (!res.ok) return;
+                const data = await res.json();
+                if (Array.isArray(data?.voices) && data.voices.length > 0) {
+                    setVoices(data.voices);
+                }
+            } catch {
+                // keep static fallback
+            }
+        };
+        void loadVoices();
+    }, []);
+
+    const selectedVoice = useMemo(
+        () => voices.find((v) => v.id === formData.voiceId),
+        [voices, formData.voiceId]
     );
 
     const interviewQuestionsCount = countQuestions(formData.interviewQuestions);

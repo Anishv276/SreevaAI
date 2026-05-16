@@ -99,13 +99,11 @@ interface OrgDetail {
 
     cartesiaModel?: string;
 
+    elevenlabsModel?: string;
+
     sarvamModel?: string;
 
     sarvamVoice?: string;
-
-    googleModel?: string;
-
-    googleVoiceName?: string;
 
     sttProvider?: string;
 
@@ -948,13 +946,9 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                                         billing?.ttsByModel,
 
                                         (org?.ttsProvider || "").toUpperCase() === "SARVAM"
-
                                             ? (org?.sarvamModel || "bulbul:v3")
-
-                                            : (org?.ttsProvider || "").toUpperCase() === "GOOGLE"
-
-                                                ? (org?.googleModel || "gemini-3.1-flash-tts-preview")
-
+                                            : (org?.ttsProvider || "").toUpperCase() === "ELEVENLABS"
+                                                ? (org?.elevenlabsModel || "eleven_turbo_v2_5")
                                                 : (org?.cartesiaModel || "cartesia/sonic-3"),
 
                                     )
@@ -1175,6 +1169,3 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
     );
 
 }
-
-
-

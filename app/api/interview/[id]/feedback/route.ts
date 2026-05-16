@@ -8,12 +8,11 @@ export async function POST(
 ) {
     try {
         const { id } = await params;
-        const { rating, feedback, interviewToken } = await request.json();
+        const body = await request.json();
+        const rating = body.rating ?? body.ratingData;
+        const feedback = body.feedback ?? body.notes;
+        const { interviewToken } = body;
         const requireInterviewToken = isInterviewTokenRequired();
-
-        if (typeof rating !== "number" || rating < 1 || rating > 5) {
-            return NextResponse.json({ error: "Invalid rating" }, { status: 400 });
-        }
 
         // -- AUTHENTICATION --------------------------------
         const interview = await prisma.interview.findFirst({
@@ -36,8 +35,8 @@ export async function POST(
                 ]
             },
             data: {
-                candidateRating: rating,
-                candidateFeedback: feedback || "",
+                candidateRating: rating && typeof rating === "object" && !Array.isArray(rating) ? rating : {},
+                candidateFeedback: typeof feedback === "string" ? feedback : "",
             },
         });
 

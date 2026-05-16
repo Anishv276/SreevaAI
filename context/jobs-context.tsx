@@ -8,16 +8,13 @@ import { formatOrgLimitValue } from "@/lib/org-limits";
 export type Job = {
     id: string;
     title: string;
-    department: string;
     applicants: number;
     description?: string;
     salary?: string;
-    type?: string;
     experience?: string;
     responsibilities?: string;
     requirements?: string;
     skills?: string;
-    workMode?: string;
     slug?: string;
     role?: string;
     deadline?: string | null;
@@ -44,7 +41,7 @@ interface JobsContextType {
     organization: OrganizationSettings | null;
     addJob: (job: Omit<Job, "id" | "applicants" | "createdAt">) => Promise<Job>;
     deleteJob: (id: string) => Promise<void>;
-    fetchJobs: (page?: number, limit?: number, search?: string, status?: string, type?: string, startDate?: string, endDate?: string) => Promise<void>;
+    fetchJobs: (page?: number, limit?: number, search?: string, startDate?: string, endDate?: string) => Promise<void>;
     updateJob: (id: string, data: any) => Promise<Job>;
     bulkDeleteJobs: (ids: string[]) => Promise<void>;
 }
@@ -70,7 +67,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     const hasLoadedOnceRef = useRef({ admin: false, careers: false });
     const inFlightRef = useRef<Promise<void> | null>(null);
 
-    const fetchJobs = async (page: number = 1, limit: number = 10, search: string = "", status: string = "all", type: string = "all", startDate: string = "", endDate: string = "") => {
+    const fetchJobs = async (page: number = 1, limit: number = 10, search: string = "", startDate: string = "", endDate: string = "") => {
         if (inFlightRef.current) {
             await inFlightRef.current;
             return;
@@ -78,7 +75,7 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
 
         const requestPromise = (async () => {
             try {
-                let url = `/api/drives?page=${page}&limit=${limit}&search=${encodeURIComponent(search)}&status=${status}&type=${type}&startDate=${startDate}&endDate=${endDate}`;
+                let url = `/api/drives?page=${page}&limit=${limit}&search=${encodeURIComponent(search)}&startDate=${startDate}&endDate=${endDate}`;
                 if (orgIdFromUrl) {
                     url += `&orgId=${orgIdFromUrl}`;
                 }

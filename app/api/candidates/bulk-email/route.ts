@@ -19,7 +19,6 @@ type BulkEmailTarget = {
         id: string;
         title: string;
         orgId: string | null;
-        status: string;
     } | null;
 };
 
@@ -130,7 +129,6 @@ export async function POST(request: Request) {
                         id: true,
                         title: true,
                         orgId: true,
-                        status: true,
                     },
                 },
             },
@@ -195,7 +193,6 @@ export async function POST(request: Request) {
                                 id: true,
                                 title: true,
                                 orgId: true,
-                                status: true,
                             },
                         },
                     },
@@ -246,12 +243,6 @@ export async function POST(request: Request) {
             if (!app.email) {
                 console.warn(`[bulk-email] Skipping ${app.id} - no email address`);
                 skipReasons.push(`${app.fullName || app.id}: Missing email address`);
-                continue;
-            }
-
-            if (app.drive?.status && app.drive.status !== "ACTIVE") {
-                console.warn(`[bulk-email] Skipping ${app.id} - drive is ${app.drive.status}`);
-                skipReasons.push(`${app.fullName || app.email}: Drive is ${app.drive.status.toLowerCase()}.`);
                 continue;
             }
 

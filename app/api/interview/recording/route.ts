@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { deleteObject, getKeyFromUrl, getObjectBuffer, listObjects, putObject } from "@/lib/s3";
-import { interviewFinalizationQueue } from "@/lib/queue";
+import { interviewFinalizationQueue, interviewRecordingQueue } from "@/lib/queue";
 import { prisma } from "@/lib/prisma";
 import crypto from "crypto";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
@@ -599,137 +599,44 @@ export async function POST(req: Request) {
                 },
             });
 
-            const buffers: Buffer[] = [];
+            // ── Queue the merge job and return immediately ──────────────────────
+            // The heavy work (download all chunks, Buffer.concat, re-upload to R2)
+            // now happens in the background worker — no HTTP timeout risk.
+            let recordingJobId: string | number | undefined;
             try {
-                const safeCandidate = await getCandidateFolder(applicationId);
-                const resolved = await resolveChunkKeys({
-                    bucket,
-                    applicationId,
-                    safeCandidate,
-                    sessionId,
-                    chunkUrls,
-                    chunkKeys,
-                    chunkCount,
-                });
-                const resolvedChunkKeys = resolved.keys;
-                const effectiveSessionId = resolved.sessionId || sessionId;
-
-                if (!resolvedChunkKeys.length && chunkCount) {
-                    const fallbackChunkKeys = Array.from({ length: chunkCount }, (_, index) => (
-                        `${INTERVIEW_CANDIDATES_PREFIX}/${safeCandidate}/recordings/.chunks/${effectiveSessionId}/part-${String(index + 1).padStart(6, "0")}.webm`
-                    ));
-                    resolvedChunkKeys.push(...fallbackChunkKeys);
-                }
-
-                if (resolvedChunkKeys.length) {
-                    console.debug(
-                        `[RECORDING_MERGE] app=${applicationId} session=${effectiveSessionId} using ${resolvedChunkKeys.length} stored chunk(s)`
-                    );
-                    for (const chunkKey of resolvedChunkKeys) {
-                        const buf = await getObjectBuffer(bucket, chunkKey);
-                        buffers.push(buf);
-                    }
-                } else {
-                    console.debug(
-                        `[RECORDING_MERGE] app=${applicationId} session=${effectiveSessionId} using ${chunkUrls.length} url chunk(s)`
-                    );
-                    for (const chunkUrl of chunkUrls) {
-                        const response = await fetch(chunkUrl);
-                        if (!response.ok) {
-                            throw new Error(`Failed to fetch recording chunk: ${chunkUrl}`);
-                        }
-                        const bytes = await response.arrayBuffer();
-                        buffers.push(Buffer.from(bytes));
-                    }
-                }
-
-                if (!buffers.length) {
-                    throw new Error("No chunk payloads were available to merge");
-                }
-
-                const finalBuffer = Buffer.concat(buffers);
-                const finalSessionId = resolved.sessionId || sessionId || crypto.randomUUID();
-                const finalKey = `${INTERVIEW_CANDIDATES_PREFIX}/${safeCandidate}/recordings/${Date.now()}-interview-${finalSessionId}.webm`;
-                const recordingUrl = await uploadWithRetry(bucket, finalKey, finalBuffer, mimeType);
-                console.debug(
-                    `[RECORDING_MERGE] app=${applicationId} session=${finalSessionId} merged=${buffers.length} finalKey=${finalKey}`
-                );
-
-                await persistRecordingComplete({
-                    applicationId,
-                    recordingUrl,
-                    durationSec,
-                    mimeType,
-                    startedAt,
-                    completedAt,
-                });
-
-                // Best-effort chunk cleanup to keep R2 clean.
-                const cleanupKeys = new Set<string>();
-                chunkUrls.forEach((url: string) => {
-                    const key = getKeyFromUrl(url);
-                    if (key) cleanupKeys.add(key);
-                });
-                chunkKeys.forEach((key: string) => {
-                    if (key) cleanupKeys.add(key);
-                });
-                resolvedChunkKeys.forEach((key: string) => {
-                    if (key) cleanupKeys.add(key);
-                });
-                await Promise.all(
-                    Array.from(cleanupKeys).map(async (key: string) => {
-                        await deleteObject(bucket, key).catch(() => { });
-                    })
-                );
-                console.debug(
-                    `[RECORDING_CLEANUP] app=${applicationId} session=${finalSessionId} deleted=${cleanupKeys.size}`
-                );
-
-                try {
-                    const job = await interviewFinalizationQueue.add(
-                        "finalize-interview",
-                        { applicationId, recordingUrl },
-                        {
-                            attempts: 5,
-                            backoff: { type: "exponential", delay: 1000 },
-                            removeOnComplete: true,
-                            removeOnFail: 200,
-                        }
-                    );
-                    jobId = job.id;
-                } catch (jobError) {
-                    console.warn("[API] Background job queuing failed:", jobError);
-                }
-
-                return NextResponse.json({
-                    success: true,
-                    uploadType: "finalize_chunks",
-                    queued: !!jobId,
-                    jobId,
-                    recordingUrl,
-                    recordingKey: finalKey,
-                    chunkCount: buffers.length,
-                });
-            } catch (finalizeErr: any) {
-                await tryUpdateRecordingState({
-                    applicationId,
-                    status: "FAILED",
-                    mimeType,
-                    startedAt,
-                    completedAt: new Date(),
-                    durationSec,
-                    manifest: {
+                const job = await interviewRecordingQueue.add(
+                    "merge-recording",
+                    {
+                        applicationId,
                         sessionId,
-                        mergeStarted: true,
-                        mergeFinished: false,
+                        chunkUrls,
+                        chunkKeys,
+                        chunkCount,
+                        durationSec,
+                        mimeType,
+                        startedAt: startedAt?.toISOString() || null,
+                        completedAt: completedAt.toISOString(),
                     },
-                    error: finalizeErr?.message || "chunk_finalize_failed",
-                });
-                return NextResponse.json(
-                    { error: "Failed to finalize chunks", details: finalizeErr?.message || String(finalizeErr) },
-                    { status: 500 }
+                    {
+                        attempts: 3,
+                        backoff: { type: "exponential", delay: 2000 },
+                        removeOnComplete: true,
+                        removeOnFail: { count: 20 },
+                    }
                 );
+                recordingJobId = job.id;
+                console.log(`[RECORDING] Queued merge job ${recordingJobId} for ${applicationId} (${chunkUrls.length || chunkKeys.length || chunkCount || 0} chunks)`);
+            } catch (jobError) {
+                console.error("[RECORDING] Failed to queue merge job:", jobError);
+                return NextResponse.json({ error: "Failed to queue recording merge job" }, { status: 500 });
             }
+
+            return NextResponse.json({
+                success: true,
+                uploadType: "finalize_chunks",
+                queued: true,
+                jobId: recordingJobId,
+            });
         }
     } catch (error: any) {
         console.error("[API_RECORD_SAVE_ERROR]:", error);

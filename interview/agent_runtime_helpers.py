@@ -2,16 +2,8 @@ import json
 import re
 import time
 from typing import Any
-from openai import AsyncOpenAI
 from interview.agent_persistence import get_db_pool
-from interview.agent_runtime_support import (
-    CARTESIA_MODEL,
-    CARTESIA_VOICE_ID,
-    DEFAULT_GOOGLE_TTS_MODEL,
-    DEFAULT_GOOGLE_VOICE_NAME,
-    LLM_MODEL,
-    logger,
-)
+from interview.agent_runtime_support import logger
 _CONTROL_PHRASES = (
     "DO NOT SAY ALOUD",
     "INTERNAL INTERVIEWER INSTRUCTION",
@@ -313,62 +305,3 @@ def build_language_codes(interview_lang: str) -> dict[str, str]:
     if not lang_codes:
         raise RuntimeError(f"Unsupported interview language in DB: {interview_lang}")
     return lang_codes
-def select_org_runtime_models(context: dict[str, Any], org_tts_provider: str) -> dict[str, Any]:
-    org_tts_provider = str(org_tts_provider).upper()
-    org_cartesia_model: Any = None
-    org_cartesia_voice: Any = None
-    org_sarvam_model: Any = None
-    org_sarvam_voice: Any = None
-    org_google_model: Any = None
-    org_google_voice_name: Any = None
-    org_deepgram_model: Any = None
-    org_sarvam_stt_model: Any = None
-    org_llm_model: Any = None
-    org_llm_temperature: float = 0.4
-    org_stt_provider: str = "GOOGLE" if org_tts_provider == "GOOGLE" else ""
-    org_llm_provider: str = "GOOGLE" if org_tts_provider == "GOOGLE" else ""
-    if org_tts_provider == "GOOGLE":
-        org_google_model = str(require_db_value(context, "googleModel", default=DEFAULT_GOOGLE_TTS_MODEL, required=False) or DEFAULT_GOOGLE_TTS_MODEL)
-        org_google_voice_name = str(require_db_value(context, "googleVoiceName", default=DEFAULT_GOOGLE_VOICE_NAME, required=False) or DEFAULT_GOOGLE_VOICE_NAME)
-        analysis_client = AsyncOpenAI()
-        analysis_model = context.get("analysisModel") or context.get("llmModel") or LLM_MODEL
-    else:
-        org_stt_provider = str(require_db_value(context, "sttProvider")).upper()
-        org_llm_provider = str(require_db_value(context, "llmProvider")).upper()
-        org_llm_model = require_db_value(context, "llmModel")
-        org_llm_temperature = float(require_db_value(context, "llmTemperature"))
-        if org_tts_provider == "CARTESIA":
-            org_cartesia_model = str(require_db_value(context, "cartesiaModel", default=CARTESIA_MODEL, required=False) or CARTESIA_MODEL)
-            org_cartesia_voice = str(require_db_value(context, "cartesiaVoiceId", default=CARTESIA_VOICE_ID, required=False) or CARTESIA_VOICE_ID)
-        elif org_tts_provider == "SARVAM":
-            org_sarvam_model = str(require_db_value(context, "sarvamModel", default="bulbul:v2", required=False) or "bulbul:v2")
-            org_sarvam_voice = str(require_db_value(context, "sarvamVoice", default="anushka", required=False) or "anushka")
-        else:
-            raise RuntimeError(f"Unsupported DB ttsProvider: {org_tts_provider}")
-        if org_stt_provider == "DEEPGRAM":
-            org_deepgram_model = str(require_db_value(context, "deepgramModel"))
-        elif org_stt_provider == "SARVAM":
-            org_sarvam_stt_model = str(require_db_value(context, "sarvamSttModel"))
-        else:
-            raise RuntimeError(f"Unsupported DB sttProvider: {org_stt_provider}")
-        if org_llm_provider not in {"OPENAI", "SARVAM"}:
-            raise RuntimeError(f"Unsupported DB llmProvider: {org_llm_provider}")
-        analysis_client = AsyncOpenAI()
-        analysis_model = org_llm_model if org_llm_provider == "OPENAI" else LLM_MODEL
-    return {
-        "org_tts_provider": org_tts_provider,
-        "org_cartesia_model": org_cartesia_model,
-        "org_cartesia_voice": org_cartesia_voice,
-        "org_sarvam_model": org_sarvam_model,
-        "org_sarvam_voice": org_sarvam_voice,
-        "org_google_model": org_google_model,
-        "org_google_voice_name": org_google_voice_name,
-        "org_deepgram_model": org_deepgram_model,
-        "org_sarvam_stt_model": org_sarvam_stt_model,
-        "org_llm_model": org_llm_model,
-        "org_llm_temperature": org_llm_temperature,
-        "org_stt_provider": org_stt_provider,
-        "org_llm_provider": org_llm_provider,
-        "analysis_client": analysis_client,
-        "analysis_model": analysis_model,
-    }

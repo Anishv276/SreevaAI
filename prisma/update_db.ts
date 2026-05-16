@@ -1,38 +1,43 @@
-import { PrismaClient } from '@prisma/client'
+import { PrismaClient } from "@prisma/client";
 
-const prisma = new PrismaClient()
+const prisma = new PrismaClient();
 
 async function main() {
-  console.log('🚀 Starting database migration...')
-  
+  console.log("Starting database migration...");
+
   try {
-    // Add aiSummary column if it doesn't exist
     await prisma.$executeRawUnsafe(`
-      ALTER TABLE "Interview" 
+      ALTER TABLE "Interview"
       ADD COLUMN IF NOT EXISTS "aiSummary" TEXT;
-    `)
-    console.log('✅ Column "aiSummary" ensured.')
+    `);
+    console.log('Column "aiSummary" ensured.');
 
     await prisma.$executeRawUnsafe(`
       ALTER TABLE "Interview"
       ADD COLUMN IF NOT EXISTS "interviewTurns" JSONB NOT NULL DEFAULT '[]'::jsonb;
-    `)
-    console.log('✅ Column "interviewTurns" ensured.')
+    `);
+    console.log('Column "interviewTurns" ensured.');
 
-    // Add aiScore column if it doesn't exist
     await prisma.$executeRawUnsafe(`
-      ALTER TABLE "Interview" 
+      ALTER TABLE "Interview"
       ADD COLUMN IF NOT EXISTS "aiScore" INTEGER;
-    `)
-    console.log('✅ Column "aiScore" ensured.')
+    `);
+    console.log('Column "aiScore" ensured.');
 
-    console.log('🎉 Database migration completed successfully!')
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "Interview"
+      ALTER COLUMN "candidateRating" TYPE JSONB
+      USING to_jsonb("candidateRating");
+    `);
+    console.log('Column "candidateRating" converted to JSONB.');
+
+    console.log("Database migration completed successfully.");
   } catch (error) {
-    console.error('❌ Migration failed:', error)
-    process.exit(1)
+    console.error("Migration failed:", error);
+    process.exit(1);
   } finally {
-    await prisma.$disconnect()
+    await prisma.$disconnect();
   }
 }
 
-main()
+main();

@@ -220,6 +220,9 @@ export async function GET(request: Request) {
 
         const toEffectiveStatus = (org: Record<string, any>) => {
             const status = String(org.status || "ACTIVE").toUpperCase();
+            if (status === "CLOSED") {
+                return "CLOSED";
+            }
             const statusControl = normalizeOrgStatusControl(org.statusControl);
             if (statusControl === ORG_STATUS_CONTROL_MANUAL) {
                 return "SUSPENDED";
@@ -260,9 +263,9 @@ export async function POST(request: Request) {
             maxActiveDrives,
             interviewQuotaTotal,
             proctoringSignals,
-            ttsProvider, cartesiaVoiceId, cartesiaModel, sarvamModel, sarvamVoice, googleModel, googleVoiceName,
-            sttProvider, deepgramModel, sarvamSttModel,
-            llmProvider, llmModel, llmTemperature,
+            voiceId, allowedVoices,
+            deepgramModel,
+            llmModel, llmTemperature,
             location
         } = body;
 
@@ -300,7 +303,7 @@ export async function POST(request: Request) {
                 ? normalizeProctoringSignals(proctoringSignals)
                 : undefined;
 
-        console.log("[SuperAdmin] Provisioning Org with AI Config:", { ttsProvider, sttProvider });
+        console.log("[SuperAdmin] Provisioning Org with AI Config:", { voiceId, llmModel });
 
         // Create org + admin in a transaction
         const result = await prisma.$transaction(async (tx) => {
@@ -327,21 +330,7 @@ export async function POST(request: Request) {
             Object.assign(
                 orgData,
                 normalizeOrgAiConfig({
-                    next: {
-                        ttsProvider,
-                        cartesiaVoiceId,
-                        cartesiaModel,
-                        sarvamModel,
-                        sarvamVoice,
-                        googleModel,
-                        googleVoiceName,
-                        sttProvider,
-                        deepgramModel,
-                        sarvamSttModel,
-                        llmProvider,
-                        llmModel,
-                        llmTemperature,
-                    },
+                    next: { voiceId, allowedVoices, deepgramModel, llmModel, llmTemperature },
                 })
             );
 

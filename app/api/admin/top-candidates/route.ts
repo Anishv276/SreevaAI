@@ -35,7 +35,7 @@ export async function GET(req: Request) {
                 aiScore: true,
                 resumeStatus: true,
                 hiringStatus: true,
-                drive: { select: { title: true, department: true, role: true } },
+                drive: { select: { title: true, role: true } },
                 interview: {
                     select: {
                         status: true,
@@ -72,7 +72,6 @@ export async function GET(req: Request) {
                 name: app.fullName || "Unnamed Candidate",
                 initials,
                 role: app.drive.role || app.drive.title,
-                department: app.drive.department,
                 driveTitle: app.drive.title,
                 interviewScore: app.aiScore,
                 resumeScore: null,

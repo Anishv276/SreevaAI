@@ -1,7 +1,7 @@
 "use client";
 import { Suspense, useState, use, useEffect, useRef, useCallback, memo, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Star, Sparkles, Mic2, ShieldCheck, ShieldAlert, Zap, ChevronLeft, ChevronRight, Send, Loader2, Video, VideoOff, MicOff, PhoneOff, CheckCircle2, ArrowRight, Camera, Mic, AlertCircle, LogOut, Eye, EyeOff, Users, Volume2, WifiOff, User, ChevronDown, MessageSquare, LifeBuoy } from "lucide-react";
+import { Sparkles, Mic2, ShieldCheck, ShieldAlert, Zap, ChevronLeft, ChevronRight, Send, Loader2, Video, VideoOff, MicOff, PhoneOff, CheckCircle2, ArrowRight, Camera, Mic, AlertCircle, LogOut, Eye, EyeOff, Users, Volume2, WifiOff, User, ChevronDown, MessageSquare, LifeBuoy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
@@ -12,6 +12,7 @@ import { HardwareCheck } from "@/components/careers/interview/HardwareCheck";
 import { FaceProctoring } from "@/components/careers/interview/FaceProctoring";
 import { HardwareHeartbeat } from "@/components/careers/interview/HardwareHeartbeat";
 import { ConnectionProctoring } from "@/components/careers/interview/ConnectionProctoring";
+import { CandidateRatingForm } from "@/components/careers/interview/CandidateRatingForm";
 import { FIXED_INTERVIEW_DURATION_MINUTES } from "@/lib/drive-limits";
 import { useSearchParams } from "next/navigation";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
@@ -2397,115 +2398,25 @@ function TimeoutThankYouView({ candidateName }: { candidateName: string }) {
     );
 }
 function CompletionView({ id, interviewToken }: { id: string; interviewToken: string }) {
-    const [step, setStep] = useState<"feedback" | "thanks">("feedback");
-    const [rating, setRating] = useState(0);
-    const [hoverRating, setHoverRating] = useState(0);
-    const [feedback, setFeedback] = useState("");
-    const [isSubmitting, setIsSubmitting] = useState(false);
-    const handleSubmit = async () => {
-        if (rating === 0) return;
-        setIsSubmitting(true);
-        try {
-            await fetch(`/api/interview/${id}/feedback`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    rating,
-                    feedback,
-                    interviewToken
-                }),
-            });
-            setStep("thanks");
-        } catch (err) {
-            console.error("Feedback submission failed:", err);
-        } finally {
-            setIsSubmitting(false);
-        }
-    };
     return (
-        <div className="w-full max-w-xl mx-auto px-6 font-sans">
-            <AnimatePresence mode="wait">
-                {step === "feedback" && (
-                    <motion.div
-                        key="feedback"
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -10 }}
-                        className="bg-white border border-gray-100 rounded-[2.5rem] p-10 shadow-[0_8px_30px_rgba(0,0,0,0.04)]"
-                    >
-                        <div className="mb-10 text-center">
-                            <h2 className="text-3xl font-bold text-gray-900 tracking-tight mb-2">Thank you for submitting</h2>
-                            <p className="text-[12px] font-bold text-gray-400 uppercase tracking-widest">How was your interview experience?</p>
-                        </div>
-                        <div className="flex justify-center gap-2 mb-10">
-                            {[1, 2, 3, 4, 5].map((star) => (
-                                <button
-                                    key={star}
-                                    onMouseEnter={() => setHoverRating(star)}
-                                    onMouseLeave={() => setHoverRating(0)}
-                                    onClick={() => setRating(star)}
-                                    className="p-1 transition-transform active:scale-90"
-                                >
-                                    <Star
-                                        className={cn(
-                                            "w-10 h-10 transition-all duration-200",
-                                            (hoverRating || rating) >= star
-                                                ? "text-orange-500 fill-orange-500 scale-110"
-                                                : "text-gray-200"
-                                        )}
-                                    />
-                                </button>
-                            ))}
-                        </div>
-                        <div className="space-y-6">
-                            <textarea
-                                value={feedback}
-                                onChange={(e) => setFeedback(e.target.value)}
-                                placeholder="Tell us more about your experience (optional)..."
-                                className="w-full h-32 bg-gray-50/50 border border-gray-100 focus:border-orange-500/30 focus:bg-white rounded-2xl p-5 text-sm font-medium text-gray-700 placeholder:text-gray-400 outline-none transition-all resize-none shadow-inner"
-                            />
-                            <Button
-                                onClick={handleSubmit}
-                                disabled={rating === 0 || isSubmitting}
-                                className={cn(
-                                    "w-full h-16 rounded-2xl font-bold uppercase tracking-widest text-[12px] transition-all shadow-lg",
-                                    rating > 0
-                                        ? "bg-gray-900 text-white hover:bg-black shadow-gray-900/10"
-                                        : "bg-gray-100 text-gray-400 cursor-not-allowed border-none shadow-none"
-                                )}
-                            >
-                                {isSubmitting ? (
-                                    <Loader2 className="w-5 h-5 animate-spin" />
-                                ) : (
-                                    "Submit Feedback"
-                                )}
-                            </Button>
-                        </div>
-                    </motion.div>
-                )}
-                {step === "thanks" && (
-                    <motion.div
-                        key="thanks"
-                        initial={{ opacity: 0, scale: 0.98 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        className="text-center"
-                    >
-                        <div className="bg-white border border-gray-100 rounded-[2.5rem] p-12 shadow-[0_8px_30px_rgba(0,0,0,0.04)]">
-                            <div className="w-20 h-20 bg-green-50 rounded-3xl flex items-center justify-center mx-auto mb-8">
-                                <CheckCircle2 className="w-10 h-10 text-green-500" />
-                            </div>
-                            <h2 className="text-3xl font-bold text-gray-900 tracking-tight mb-3">Thank you</h2>
-                            <p className="text-gray-500 font-medium text-base mb-10 leading-relaxed">
-                                Your response has been recorded. <br />
-                                We will get back to you soon.
-                            </p>
-                            <p className="text-xs font-bold uppercase tracking-widest text-gray-400">
-                                Your feedback has been submitted.
-                            </p>
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-        </div>
+        <CandidateRatingForm
+            title="Candidate Rating"
+            subtitle="Share how the interview felt so we can improve the AI."
+            onSubmit={async (payload) => {
+                await fetch(`/api/interview/${id}/feedback`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        rating: {
+                            overallFeeling: payload.overallFeeling,
+                            aiQuestions: payload.aiQuestions,
+                            understanding: payload.understanding,
+                        },
+                        feedback: payload.notes,
+                        interviewToken,
+                    }),
+                });
+            }}
+        />
     );
 }

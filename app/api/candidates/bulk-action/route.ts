@@ -117,12 +117,6 @@ export async function POST(request: Request) {
                             _count: { select: { applications: { where: { hiringStatus: { equals: "hired", mode: "insensitive" } } } } }
                         }
                     });
-                    if (driveStats && driveStats.positions && driveStats._count.applications >= driveStats.positions) {
-                        await prisma.drive.update({
-                            where: { id: dId },
-                            data: { status: "CLOSED" }
-                        });
-                    }
                 }
             } catch (err) {
                 console.error("Auto-close bulk drive error:", err);

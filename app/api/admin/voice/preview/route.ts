@@ -3,8 +3,8 @@ import { createVoicePreviewResponse } from "@/lib/voice-preview";
 
 export async function POST(req: NextRequest) {
   try {
-    const { voiceId, transcript, modelId, provider } = await req.json();
-    return await createVoicePreviewResponse({ provider, voiceId, transcript, modelId });
+    const { voiceId, transcript } = await req.json();
+    return await createVoicePreviewResponse({ voiceId, transcript });
   } catch (err) {
     console.error("[VoicePreview] Internal error:", err);
     return new Response(JSON.stringify({ error: "Internal Server Error" }), {

@@ -18,8 +18,3 @@ export const OPENAI_LLM_MODELS: ModelOption[] = [
   { value: "gpt-5.1", label: "gpt-5.1" },
   { value: "gpt-5-nano", label: "gpt-5-nano" },
 ];
-
-export const GEMINI_LLM_MODELS: ModelOption[] = [
-  { value: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
-  { value: "gemini-1.5-pro", label: "Gemini 1.5 Pro" },
-];

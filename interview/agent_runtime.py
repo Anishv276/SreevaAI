@@ -48,15 +48,10 @@ from interview.interview_phases import (
 )
 from interview.agent_providers import (
     build_cartesia_tts,
-    build_google_analysis_client,
-    build_google_realtime_llm,
-    build_google_tts,
+    build_elevenlabs_tts,
     build_llm,
-    build_sarvam_llm,
-    build_sarvam_stt,
     build_sarvam_tts,
     build_stt,
-    build_tts,
     build_vad,
 )
 from interview.agent_persistence import (
@@ -74,14 +69,10 @@ from interview.agent_runtime_helpers import (
 from interview.agent_runtime_support import (
     AGENT_NAME,
     APP_BASE_URL,
-    CARTESIA_MODEL,
-    CARTESIA_VOICE_ID,
     DATABASE_URL,
-    DEFAULT_GOOGLE_TTS_MODEL,
-    DEFAULT_GOOGLE_VOICE_NAME,
-    GOOGLE_ANALYSIS_MODEL,
-    GOOGLE_REALTIME_MODEL,
+    DEFAULT_VOICE_ID,
     LLM_MODEL,
+    VOICE_REGISTRY,
     FIXED_INTERVIEW_DURATION_MINUTES,
     PROCTORING_WEIGHTS,
     REDIS_URL,
@@ -192,7 +183,7 @@ def prewarm(proc: JobProcess):
     except Exception as e:
         logger.warning(f"Failed to prewarm default STT: {e}")
     try:
-        proc.userdata["default_tts"] = build_tts()
+        proc.userdata["default_tts"] = build_cartesia_tts()
         logger.info("Default TTS prewarmed.")
     except Exception as e:
         logger.warning(f"Failed to prewarm default TTS: {e}")
@@ -477,51 +468,34 @@ async def entrypoint(ctx: JobContext):
             reset_log_context(log_context_token)
     ctx.add_shutdown_callback(_log_shutdown)
     # Org-specific model settings.
-    org_tts_provider = str(require_db_value("ttsProvider")).upper()
-    org_cartesia_model: Optional[str] = None
-    org_cartesia_voice: Optional[str] = None
-    org_sarvam_model: Optional[str] = None
-    org_sarvam_voice: Optional[str] = None
-    org_google_model: Optional[str] = None
-    org_google_voice_name: Optional[str] = None
-    org_deepgram_model: Optional[str] = None
-    org_sarvam_stt_model: Optional[str] = None
-    org_llm_model: Optional[str] = None
-    org_llm_temperature: float = 0.4
-    org_stt_provider: str = "GOOGLE" if org_tts_provider == "GOOGLE" else ""
-    org_llm_provider: str = "GOOGLE" if org_tts_provider == "GOOGLE" else ""
-    if org_tts_provider == "GOOGLE":
-        org_google_model = str(require_db_value("googleModel", default=DEFAULT_GOOGLE_TTS_MODEL, required=False) or DEFAULT_GOOGLE_TTS_MODEL)
-        org_google_voice_name = str(require_db_value("googleVoiceName", default=DEFAULT_GOOGLE_VOICE_NAME, required=False) or DEFAULT_GOOGLE_VOICE_NAME)
-        analysis_client = build_google_analysis_client(allow_fallback=False)
-        analysis_model = GOOGLE_ANALYSIS_MODEL
-        logger.info(
-            "[GOOGLE_MODE] Active Google-only runtime selected; DB STT/LLM providers will be ignored"
-        )
+    # Resolve voice → provider + model from registry.
+    voice_id = str(require_db_value("voiceId", default=DEFAULT_VOICE_ID, required=False) or DEFAULT_VOICE_ID)
+    voice_entry = VOICE_REGISTRY.get(voice_id)
+    if voice_entry:
+        org_tts_provider = voice_entry["provider"]
+        org_tts_model = voice_entry["model"]
     else:
-        org_stt_provider = str(require_db_value("sttProvider")).upper()
-        org_llm_provider = str(require_db_value("llmProvider")).upper()
-        org_llm_model = require_db_value("llmModel")
-        org_llm_temperature = float(require_db_value("llmTemperature"))
-        if org_tts_provider == "CARTESIA":
-            # cartesiaModel may be null at org level when drive overrides ttsProvider to CARTESIA
-            org_cartesia_model = str(require_db_value("cartesiaModel", default=CARTESIA_MODEL, required=False) or CARTESIA_MODEL)
-            org_cartesia_voice = str(require_db_value("cartesiaVoiceId", default=CARTESIA_VOICE_ID, required=False) or CARTESIA_VOICE_ID)
-        elif org_tts_provider == "SARVAM":
-            org_sarvam_model = str(require_db_value("sarvamModel", default="bulbul:v2", required=False) or "bulbul:v2")
-            org_sarvam_voice = str(require_db_value("sarvamVoice", default="anushka", required=False) or "anushka")
+        db_provider = str(context.get("voiceProvider") or "").strip().upper()
+        db_model = str(context.get("voiceModel") or "").strip()
+        if db_provider in {"CARTESIA", "SARVAM", "ELEVENLABS"}:
+            org_tts_provider = db_provider
+            if db_model:
+                org_tts_model = db_model
+            elif db_provider == "SARVAM":
+                org_tts_model = "bulbul:v3"
+            elif db_provider == "ELEVENLABS":
+                org_tts_model = "eleven_turbo_v2_5"
+            else:
+                org_tts_model = "cartesia/sonic-3"
         else:
-            raise RuntimeError(f"Unsupported DB ttsProvider: {org_tts_provider}")
-        if org_stt_provider == "DEEPGRAM":
-            org_deepgram_model = str(require_db_value("deepgramModel"))
-        elif org_stt_provider == "SARVAM":
-            org_sarvam_stt_model = str(require_db_value("sarvamSttModel"))
-        else:
-            raise RuntimeError(f"Unsupported DB sttProvider: {org_stt_provider}")
-        if org_llm_provider not in {"OPENAI", "SARVAM"}:
-            raise RuntimeError(f"Unsupported DB llmProvider: {org_llm_provider}")
-        analysis_client = AsyncOpenAI()
-        analysis_model = org_llm_model if org_llm_provider == "OPENAI" else LLM_MODEL
+            fallback_voice = VOICE_REGISTRY[DEFAULT_VOICE_ID]
+            org_tts_provider = fallback_voice["provider"]
+            org_tts_model = fallback_voice["model"]
+    org_deepgram_model: str = str(require_db_value("deepgramModel", default=STT_MODEL, required=False) or STT_MODEL)
+    org_llm_model: str = str(require_db_value("llmModel", default=LLM_MODEL, required=False) or LLM_MODEL)
+    org_llm_temperature: float = float(require_db_value("llmTemperature", default=0.7, required=False) or 0.7)
+    analysis_client = AsyncOpenAI()
+    analysis_model = org_llm_model
 
     # Language Mapping for STT and TTS
     LANGUAGE_MAPPING = {
@@ -613,120 +587,60 @@ async def entrypoint(ctx: JobContext):
     ctx.proc.userdata["candidate_band_context"] = session_context
 
     vad_instance = ctx.proc.userdata.get("vad") or build_vad()
-    google_mode = org_tts_provider == "GOOGLE"
-    if google_mode:
-        voice_to_use = org_google_voice_name or DEFAULT_GOOGLE_VOICE_NAME
-        logger.info(
-            f"[TTS] Using Google Gemini realtime runtime  -  voice={voice_to_use}"
+    stt_plugin = build_stt(language_code=lang_codes["stt"], model=org_deepgram_model)
+    if org_tts_provider == "SARVAM":
+        logger.info(f"[TTS] Using Sarvam — voice={voice_id} model={org_tts_model}")
+        tts_plugin = build_sarvam_tts(
+            language=lang_codes["tts"],
+            model=org_tts_model,
+            voice_id=voice_id,
         )
-        llm_plugin = build_google_realtime_llm(
-            model=str(org_google_model or DEFAULT_GOOGLE_TTS_MODEL),
-            voice_name=voice_to_use,
-            language=lang_codes["stt"],
+    elif org_tts_provider == "ELEVENLABS":
+        logger.info(f"[TTS] Using ElevenLabs — voice={voice_id} model={org_tts_model}")
+        tts_plugin = build_elevenlabs_tts(
+            language=lang_codes["tts"],
+            model=org_tts_model,
+            voice_id=voice_id,
         )
-        turn_detector = "realtime_llm"
-        session_kwargs = {
-            "vad": vad_instance,
-            "llm": llm_plugin,
-            "turn_handling": TurnHandlingOptions(
-                turn_detection=turn_detector,
-                interruption=InterruptionOptions(
-                    enabled=True,
-                    mode="adaptive",
-                    min_duration=1.5,
-                    min_words=4,
-                    discard_audio_if_uninterruptible=False,
-                    resume_false_interruption=True,
-                    false_interruption_timeout=3.0,
-                ),
-            ),
-            "use_tts_aligned_transcript": False,
-            "aec_warmup_duration": 2.5,
-        }
     else:
-        if org_stt_provider == "SARVAM":
-            if org_sarvam_stt_model is None:
-                raise RuntimeError("DB config missing sarvamSttModel for SARVAM")
-            stt_plugin = build_sarvam_stt(
-                language=lang_codes["stt"], model=org_sarvam_stt_model
-            )
-        else:
-            if org_deepgram_model is None:
-                raise RuntimeError("DB config missing deepgramModel for DEEPGRAM")
-            stt_plugin = build_stt(
-                language_code=lang_codes["stt"], model=org_deepgram_model
-            )
-        if org_tts_provider == "SARVAM":
-            if org_sarvam_model is None or org_sarvam_voice is None:
-                raise RuntimeError("DB config missing sarvamModel/sarvamVoice for SARVAM")
-            sarvam_tts = build_sarvam_tts(
-                language=lang_codes["tts"],
-                model=org_sarvam_model,
-                voice_id=org_sarvam_voice,
-            )
-            # Keep a Cartesia fallback ready so a Sarvam websocket hiccup does not
-            # tear down the whole interview session.
-            if org_cartesia_model is not None and org_cartesia_voice is not None:
-                cartesia_tts = build_cartesia_tts(
-                    language=lang_codes["tts"],
-                    model=org_cartesia_model,
-                    voice_id=org_cartesia_voice,
-                )
-                tts_plugin = lk_tts.FallbackAdapter(
-                    [sarvam_tts, cartesia_tts], max_retry_per_tts=1
-                )
-            else:
-                tts_plugin = sarvam_tts
-        else:
-            if org_cartesia_model is None or org_cartesia_voice is None:
-                raise RuntimeError(
-                    "DB config missing cartesiaModel/cartesiaVoiceId for CARTESIA"
-                )
-            logger.info(f"[TTS] Using Cartesia  -  model={org_cartesia_model} voice={org_cartesia_voice}")
-            tts_plugin = build_tts(
-                language=lang_codes["tts"],
-                model=org_cartesia_model,
-                voice_id=org_cartesia_voice,
-            )
-        if org_llm_provider == "SARVAM":
-            llm_plugin = build_sarvam_llm(model=str(org_llm_model))
-        else:
-            llm_plugin = build_llm(model=str(org_llm_model), temperature=org_llm_temperature)
-        turn_detector = ctx.proc.userdata.get("turn_detector")
-        session_kwargs = {
-            "vad": vad_instance,
-            "stt": stt_plugin,
-            "llm": llm_plugin,
-            "tts": tts_plugin,
-            "turn_handling": TurnHandlingOptions(
-                turn_detection=turn_detector,
-                endpointing=EndpointingOptions(
-                    # Slightly longer endpointing to avoid cutting candidates mid-thought.
-                    min_delay=1.5,
-                    max_delay=3.0,
-                    mode="dynamic",
-                ),
-                interruption=InterruptionOptions(
-                    enabled=True,
-                    mode="adaptive",
-                    # Sensitivity tuning: ignore short noises/backchannels.
-                    # Only stop if candidate speaks for > 1.5s and > 4 words.
-                    min_duration=1.5,
-                    min_words=4,
-                    # Keep buffered speech during AEC warmup to avoid dropping input.
-                    discard_audio_if_uninterruptible=False,
-                    resume_false_interruption=True,
-                    false_interruption_timeout=3.0,
-                ),
+        logger.info(f"[TTS] Using Cartesia — voice={voice_id} model={org_tts_model}")
+        tts_plugin = build_cartesia_tts(
+            language=lang_codes["tts"],
+            model=org_tts_model,
+            voice_id=voice_id,
+        )
+    llm_plugin = build_llm(model=org_llm_model, temperature=org_llm_temperature)
+    turn_detector = ctx.proc.userdata.get("turn_detector")
+    session_kwargs = {
+        "vad": vad_instance,
+        "stt": stt_plugin,
+        "llm": llm_plugin,
+        "tts": tts_plugin,
+        "turn_handling": TurnHandlingOptions(
+            turn_detection=turn_detector,
+            endpointing=EndpointingOptions(
+                min_delay=1.5,
+                max_delay=3.0,
+                mode="dynamic",
             ),
-            "use_tts_aligned_transcript": False,
-            "tts_text_transforms": [
-                "filter_emoji",
-                _tts_acronym_transform,
-                _single_question_transform,
-            ],
-            "aec_warmup_duration": 2.5,
-        }
+            interruption=InterruptionOptions(
+                enabled=True,
+                mode="adaptive",
+                min_duration=1.5,
+                min_words=4,
+                discard_audio_if_uninterruptible=False,
+                resume_false_interruption=True,
+                false_interruption_timeout=3.0,
+            ),
+        ),
+        "use_tts_aligned_transcript": False,
+        "tts_text_transforms": [
+            "filter_emoji",
+            _tts_acronym_transform,
+            _single_question_transform,
+        ],
+        "aec_warmup_duration": 2.5,
+    }
     latest_session_usage: Optional[AgentSessionUsage] = None
     session = AgentSession(**session_kwargs)
     @session.on("session_usage_updated")
@@ -843,6 +757,11 @@ async def entrypoint(ctx: JobContext):
             0.0,
             total_seconds_local - GREETING_FIXED_SECONDS - WARMUP_FIXED_SECONDS,
         )
+        logger.info(
+            "┌─ STAGE BUDGET INIT ─────────────────────────────────────────\n"
+            "│  total=%ds  greeting=%ds  warmup=%ds  available_for_stages=%ds",
+            int(total_seconds_local), GREETING_FIXED_SECONDS, WARMUP_FIXED_SECONDS, int(distributed_seconds),
+        )
         _stage_budgets_secs = {cfg.index: 0 for cfg in STAGE_CONFIGS}
         remaining_for_stages = float(distributed_seconds)
         resume_budget_seconds = 0
@@ -854,6 +773,7 @@ async def entrypoint(ctx: JobContext):
                 resume_budget_seconds = int(max(0.0, remaining_for_stages))
             _stage_budgets_secs[_resume_stage_idx] = resume_budget_seconds
             remaining_for_stages = max(0.0, remaining_for_stages - resume_budget_seconds)
+            logger.info("│  Stage 1 Resume:      %ds (%dm)", resume_budget_seconds, resume_budget_seconds // 60)
 
         skill_budget_seconds = 0
         if _skill_stage_idx is not None:
@@ -864,6 +784,7 @@ async def entrypoint(ctx: JobContext):
                 skill_budget_seconds = int(max(0.0, remaining_for_stages))
             _stage_budgets_secs[_skill_stage_idx] = skill_budget_seconds
             remaining_for_stages = max(0.0, remaining_for_stages - skill_budget_seconds)
+            logger.info("│  Stage 2 Skill:       %ds (%dm)", skill_budget_seconds, skill_budget_seconds // 60)
 
         situational_budget_seconds = 0
         if _situational_stage_idx is not None:
@@ -875,12 +796,22 @@ async def entrypoint(ctx: JobContext):
                 situational_budget_seconds = int(available_for_situational)
             _stage_budgets_secs[_situational_stage_idx] = situational_budget_seconds
             remaining_for_stages = max(0.0, remaining_for_stages - situational_budget_seconds)
+            logger.info("│  Stage 3 Situational: %ds (%dm)", situational_budget_seconds, situational_budget_seconds // 60)
 
         if _behavioral_stage_idx is not None:
-            _stage_budgets_secs[_behavioral_stage_idx] = min(
-                BEHAVIORAL_RESERVED_SECONDS,
-                int(max(0.0, remaining_for_stages)),
-            )
+            behavioral_budget = min(BEHAVIORAL_RESERVED_SECONDS, int(max(0.0, remaining_for_stages)))
+            _stage_budgets_secs[_behavioral_stage_idx] = behavioral_budget
+            logger.info("│  Stage 4 Behavioral:  %ds (%dm)", behavioral_budget, behavioral_budget // 60)
+
+        stage_starts_at = GREETING_FIXED_SECONDS + WARMUP_FIXED_SECONDS
+        logger.info(
+            "│  Expected timeline: Greeting 0:00 → Warmup 1:00 → Stage1 3:00 → "
+            "Stage2 %d:00 → Stage3 %d:00 → Stage4 %d:00\n"
+            "└─────────────────────────────────────────────────────────────",
+            (stage_starts_at + resume_budget_seconds) // 60,
+            (stage_starts_at + resume_budget_seconds + skill_budget_seconds) // 60,
+            (stage_starts_at + resume_budget_seconds + skill_budget_seconds + situational_budget_seconds) // 60,
+        )
 
     def _rebalance_remaining_stage_budgets() -> None:
         nonlocal _stage_budgets_secs
@@ -1023,27 +954,52 @@ async def entrypoint(ctx: JobContext):
         return list(dict.fromkeys([t for t in topics if t]))[:6]
     def _advance_stage(reason: str, now_mono: float) -> bool:
         nonlocal _current_stage_index, _stage_start_time, _stage_bridge_pending
-        if not warmup_complete or _current_stage_index >= len(STAGE_CONFIGS) - 1 or _stage_start_time <= 0:
-            return False
         stage_budget = max(0, int(_stage_budgets_secs.get(_current_stage_index, 0)))
         time_in_stage = max(0.0, now_mono - _stage_start_time)
-        if _stage_bridge_pending:
+
+        # Guard checks — log each one so we know exactly why advance was blocked
+        if not warmup_complete:
+            logger.info("[STAGE_ADVANCE] ✗ BLOCKED — warmup not complete (reason=%s)", reason)
             return False
+        if _current_stage_index >= len(STAGE_CONFIGS) - 1:
+            logger.info("[STAGE_ADVANCE] ✗ BLOCKED — already at last stage %d (reason=%s)", _current_stage_index + 1, reason)
+            return False
+        if _stage_start_time <= 0:
+            logger.info("[STAGE_ADVANCE] ✗ BLOCKED — stage start time not set (reason=%s)", reason)
+            return False
+        if _stage_bridge_pending:
+            logger.info("[STAGE_ADVANCE] ✗ BLOCKED — bridge already pending, skipping duplicate advance (reason=%s)", reason)
+            return False
+
         _stage_bridge_pending = True
         next_stage_index = _current_stage_index + 1
         remaining_now = _remaining_total_seconds_now()
+
         if (
             _behavioral_stage_idx is not None
             and next_stage_index == _behavioral_stage_idx
             and remaining_now <= NO_NEW_QUESTION_CUTOFF_SECONDS
         ):
             logger.info(
-                "[STAGE] Skipping behavioral stage because only %.1fs remain",
-                remaining_now,
+                "[STAGE_ADVANCE] ✗ BLOCKED — behavioral stage skipped, only %.1fs remain (need >%ds) (reason=%s)",
+                remaining_now, NO_NEW_QUESTION_CUTOFF_SECONDS, reason,
             )
+            _stage_bridge_pending = False
             return False
+
         stage_cfg = STAGE_CONFIGS[_current_stage_index]
         next_stage = STAGE_CONFIGS[next_stage_index]
+
+        logger.info(
+            "┌─ STAGE TRANSITION ──────────────────────────────────────────\n"
+            "│  FROM: Stage %d (%s)  →  TO: Stage %d (%s)\n"
+            "│  time_in_stage=%ds  budget=%ds  remaining_total=%.0fs\n"
+            "│  reason=%s",
+            _current_stage_index + 1, stage_cfg.label,
+            next_stage_index + 1, next_stage.label,
+            int(time_in_stage), stage_budget, remaining_now, reason,
+        )
+
         remove_system_messages(chat_ctx, f"[STAGE {_current_stage_index + 1}:")
         stage_directive = _build_stage_directive_by_index(next_stage_index)
         session_context.stage_history.append(
@@ -1071,24 +1027,25 @@ async def entrypoint(ctx: JobContext):
         _current_stage_index = next_stage_index
         _stage_start_time = now_mono
         _stage_bridge_pending = False
+
         if stage_directive:
             chat_ctx.add_message(role="system", content=stage_directive)
-            logger.info("[STAGE %d] ▶ INJECTED — %s (reason=%s)\n%s", _current_stage_index + 1, next_stage.label, reason, stage_directive)
+            logger.info(
+                "│  ✓ DIRECTIVE INJECTED into chat context (%d chars)\n"
+                "│  Preview: %s\n"
+                "└─────────────────────────────────────────────────────────────",
+                len(stage_directive), stage_directive[:120].replace("\n", " "),
+            )
         else:
             logger.warning(
-                "[STAGE_INJECT] No directive found for stage %d (%s) — skipping inject",
-                next_stage_index + 1,
-                next_stage.label,
+                "│  ✗ NO DIRECTIVE BUILT for stage %d (%s) — stage will fire but AI has no guidance\n"
+                "└─────────────────────────────────────────────────────────────",
+                next_stage_index + 1, next_stage.label,
             )
+
         _rebalance_remaining_stage_budgets()
-        logger.info(
-            "[STAGE] Advanced to stage %d (%s) after %ds (budget=%ds, reason=%s)",
-            _current_stage_index,
-            next_stage.label,
-            int(time_in_stage),
-            stage_budget,
-            reason,
-        )
+        new_budgets = {STAGE_CONFIGS[i].label: _stage_budgets_secs.get(i, 0) for i in range(len(STAGE_CONFIGS))}
+        logger.info("[STAGE_ADVANCE] ✓ Now on Stage %d (%s) | rebalanced budgets: %s", _current_stage_index + 1, next_stage.label, new_budgets)
         return True
     def _advance_stage_if_due(now_mono: float) -> bool:
         if not warmup_complete or _current_stage_index >= len(STAGE_CONFIGS) - 1 or _stage_start_time <= 0:
@@ -1096,8 +1053,12 @@ async def entrypoint(ctx: JobContext):
         stage_budget = max(0, int(_stage_budgets_secs.get(_current_stage_index, 0)))
         time_in_stage = max(0.0, now_mono - _stage_start_time)
         remaining_in_stage = stage_budget - time_in_stage
-        logger.info("[STAGE_TIMER] stage=%d time_in_stage=%.0fs budget=%ds countdown=%.0fs",
-            _current_stage_index + 1, time_in_stage, stage_budget, remaining_in_stage)
+        stage_label = STAGE_CONFIGS[_current_stage_index].label if _current_stage_index < len(STAGE_CONFIGS) else "?"
+        logger.info(
+            "[STAGE_TIMER] Stage %d (%s) | elapsed=%ds / budget=%ds | countdown=%.0fs%s",
+            _current_stage_index + 1, stage_label, int(time_in_stage), stage_budget, remaining_in_stage,
+            " ← OVERDUE" if remaining_in_stage < 0 else "",
+        )
         if time_in_stage < stage_budget:
             return False
         # Budget expired — wait until candidate finishes speaking before injecting
@@ -1566,6 +1527,13 @@ async def entrypoint(ctx: JobContext):
                                 ev.get("signal_name") == "follow_up_collapse"
                                 for ev in signal_events
                             )
+                            stage_label_now = STAGE_CONFIGS[_current_stage_index].label if _current_stage_index < len(STAGE_CONFIGS) else "?"
+                            logger.info(
+                                "[TURN] Stage=%d(%s) | evaluator=%s | quality=%.1f | follow_ups=%d/%d | depth_history=%s",
+                                _current_stage_index + 1, stage_label_now, action, quality_avg,
+                                _topic_follow_up_count, follow_up_depth,
+                                [round(x, 1) for x in _topic_depth_history[-4:]],
+                            )
                             if action in ("PROBE", "VERIFY"):
                                 _topic_follow_up_count += 1
                                 # Quality-based exhaustion: move on when topic is genuinely exhausted.
@@ -1582,7 +1550,25 @@ async def entrypoint(ctx: JobContext):
                                 if hard_cap_hit or (last_two_low and _topic_follow_up_count >= 2):
                                     reason_note = "cap" if hard_cap_hit else "quality exhausted"
                                     action = "MOVE_ON"
-                                    next_goal = "This thread is exhausted. Pivot naturally to the next topic within this stage — no announcement."
+                                    # Fix 2: if cap hit + low quality, force stage advance immediately
+                                    # (don't wait for time budget to expire)
+                                    stage_advance_forced = False
+                                    if hard_cap_hit and quality_avg < 4.0 and _current_stage_index < len(STAGE_CONFIGS) - 1:
+                                        stage_advance_forced = _advance_stage("followup_cap_low_quality", time.monotonic())
+                                        if stage_advance_forced:
+                                            logger.info("[FOLLOWUP] Cap + low quality — forcing stage advance to stage %d", _current_stage_index + 1)
+                                    # Fix 3: inject next stage name + specific opening topic in MOVE_ON directive
+                                    next_stage_idx = _current_stage_index + 1
+                                    if not stage_advance_forced and next_stage_idx < len(STAGE_CONFIGS):
+                                        next_stage_label = STAGE_CONFIGS[next_stage_idx].label
+                                        next_topic_hint = (uncovered_topics[0] if uncovered_topics else f"a key skill for the {job_title} role")
+                                        next_goal = (
+                                            f"This thread is exhausted. Acknowledge briefly and move on. "
+                                            f"If enough time remains in this stage, ask about {next_topic_hint}. "
+                                            f"If this stage is nearly done, bridge naturally into the {next_stage_label} stage."
+                                        )
+                                    else:
+                                        next_goal = "This thread is exhausted. Acknowledge briefly and move to the next topic — no announcement."
                                     td["decision"]["action"] = "MOVE_ON"
                                     td["decision"]["next_goal"] = next_goal
                                     directive = (
@@ -1789,10 +1775,16 @@ async def entrypoint(ctx: JobContext):
                         _topic_tag = "FOLLOWUP"
                         break
                 if _topic_tag == "NEW":
-                    _topic_follow_up_count = 0
-                    _topic_depth_history = []
-                    _last_action_was_move_on = False
-                    logger.info("[TOPIC_SIGNAL] Ishita signaled NEW TOPIC — follow-up counter reset")
+                    # Only reset if the system evaluator also agreed this was a MOVE_ON.
+                    # If the evaluator said PROBE, the AI is mislabeling a sub-topic pivot
+                    # as a new topic — dampen the reset to prevent infinite loops within one job.
+                    if _last_action_was_move_on:
+                        _topic_follow_up_count = 0
+                        _topic_depth_history = []
+                        _last_action_was_move_on = False
+                        logger.info("[TOPIC_SIGNAL] Ishita signaled NEW TOPIC + evaluator confirmed MOVE_ON — counter reset")
+                    else:
+                        logger.info("[TOPIC_SIGNAL] Ishita signaled NEW TOPIC but evaluator said PROBE — treating as FOLLOWUP, counter stays at %d", _topic_follow_up_count)
                 elif _topic_tag == "FOLLOWUP":
                     logger.info("[TOPIC_SIGNAL] Ishita signaled FOLLOWUP — counter stays at %d", _topic_follow_up_count)
                 else:
@@ -1826,7 +1818,15 @@ async def entrypoint(ctx: JobContext):
                         )
                         chat_ctx.add_message(role="system", content=stage1_directive)
                         _stage_start_time = time.monotonic()
-                        logger.info("[STAGE 1] ▶ STARTED — anchor=%s", stage1_directive_cached[:80] if stage1_directive_cached else "none")
+                        stage1_budget = _stage_budgets_secs.get(0, 0)
+                        logger.info(
+                            "┌─ STAGE 1 INJECTED (Resume) ─────────────────────────────────\n"
+                            "│  budget=%ds (%dm) | directive_len=%d chars\n"
+                            "│  Preview: %s\n"
+                            "└─────────────────────────────────────────────────────────────",
+                            stage1_budget, stage1_budget // 60, len(stage1_directive),
+                            stage1_directive[:120].replace("\n", " "),
+                        )
                 # Append candidate response to transcript before background processing
                 candidate_text = content.replace("<wait for response>", "").strip()
                 if candidate_text:
@@ -2025,8 +2025,8 @@ async def entrypoint(ctx: JobContext):
             context.get("orgName", ""),
             interview_lang,
             org_tts_provider,
-            org_stt_provider,
-            org_llm_model or "google",
+            "DEEPGRAM",
+            org_llm_model,
         )
         ai_name = context.get("aiName") or "Ishita"
         welcome_text = build_greeting_text(
@@ -2334,25 +2334,13 @@ async def entrypoint(ctx: JobContext):
     )
     # Save answer quality scores
     await persist_answer_scores(app_id, answer_scores)
-    selected_tts_model = (
-        str(org_google_model or DEFAULT_GOOGLE_TTS_MODEL)
-        if org_tts_provider == "GOOGLE"
-        else org_sarvam_model
-        if org_tts_provider == "SARVAM"
-        else org_cartesia_model
-    )
-    selected_stt_model = (
-        str(org_google_model or DEFAULT_GOOGLE_TTS_MODEL)
-        if org_tts_provider == "GOOGLE"
-        else org_sarvam_stt_model if org_stt_provider == "SARVAM" else org_deepgram_model
-    )
     await persist_org_usage_metrics(
         org_id,
         latest_session_usage or session.usage,
         tts_provider=org_tts_provider,
-        tts_model=selected_tts_model,
-        stt_provider=org_stt_provider,
-        stt_model=selected_stt_model,
+        tts_model=org_tts_model,
+        stt_provider="DEEPGRAM",
+        stt_model=org_deepgram_model,
     )
     # ðŸ¤- AI Scorecard (NEW)
     if session_start_time:
@@ -2407,16 +2395,17 @@ async def entrypoint(ctx: JobContext):
             job_title=job_title,
             duration_seconds=(time.time() - session_start_time) if session_start_time else None,
             tts_provider=org_tts_provider,
-            tts_model=selected_tts_model,
-            stt_provider=org_stt_provider,
-            stt_model=selected_stt_model,
+            tts_model=org_tts_model,
+            stt_provider="DEEPGRAM",
+            stt_model=org_deepgram_model,
         )
     except Exception as e:
         logger.error(f"[USAGE] Failed to persist interview billing snapshot for {app_id}: {e}")
     await flush_pending_manual_billing(org_id)
     # Sync with dashboard: Application COMPLETED
     if finished_task.done():
-        await update_interview_status(app_id)
+        _agent_dur = (time.time() - session_start_time) if session_start_time else None
+        await update_interview_status(app_id, duration_seconds=_agent_dur)
         # âš¡ Trigger Pinecone Sync immediately
         await notify_sync_engine(app_id)
     # Cancel any leftover fire-and-forget work so job teardown is instant.

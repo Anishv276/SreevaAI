@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useRef, useEffect, type MouseEvent as ReactMouseEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import { Switch } from "@/components/ui/switch";
-import { Mic, ShieldAlert, Languages, Plus, Trash2, HelpCircle, BrainCircuit, ChevronDown, Globe, Play, Pause, RefreshCw, AudioLines, Search } from "lucide-react";
+import { Plus, Trash2, BrainCircuit, ChevronDown, Globe, Play, Pause, RefreshCw, AudioLines, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { CARTESIA_VOICES, DEFAULT_GOOGLE_TTS_MODEL, GOOGLE_VOICES, SARVAM_VOICES } from "@/lib/constants/voices";
+import { toast } from "@/components/ui/toast-custom";
+import { ALL_VOICES, DEFAULT_VOICE_ID, type Voice } from "@/lib/constants/voices";
 
 interface InterviewProps {
     formData: any;
@@ -34,6 +34,7 @@ export function InterviewSetup({ formData, updateFormData, allowLanguageSelectio
     const [voiceSearch, setVoiceSearch] = useState("");
     const [loadingVoiceId, setLoadingVoiceId] = useState<string | null>(null);
     const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
+    const [voices, setVoices] = useState<Voice[]>(ALL_VOICES);
     const voiceDropdownRef = useRef<HTMLDivElement>(null);
     const audioRef = useRef<HTMLAudioElement | null>(null);
     const audioContextRef = useRef<AudioContext | null>(null);
@@ -90,6 +91,20 @@ export function InterviewSetup({ formData, updateFormData, allowLanguageSelectio
     };
 
     useEffect(() => {
+        const loadVoices = async () => {
+            try {
+                const res = await fetch("/api/voices", { cache: "no-store" });
+                if (!res.ok) return;
+                const data = await res.json();
+                if (Array.isArray(data?.voices) && data.voices.length > 0) {
+                    setVoices(data.voices);
+                }
+            } catch {
+                // Keep static fallback list
+            }
+        };
+        void loadVoices();
+
         const handleClickOutside = (event: globalThis.MouseEvent) => {
             if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
                 setShowLangDropdown(false);
@@ -110,57 +125,33 @@ export function InterviewSetup({ formData, updateFormData, allowLanguageSelectio
     }, []);
 
     const getAiNameForVoice = (voiceId: string) => {
-        const voices = [...CARTESIA_VOICES, ...SARVAM_VOICES, ...GOOGLE_VOICES];
         const selected = voices.find(v => v.id === voiceId);
         if (!selected) return "Ishitha";
-        
         return selected.gender === "male" ? "Ishaan" : "Ishitha";
     };
 
-    const getVoicesForProvider = (provider?: string) => {
-        const normalized = (provider || "CARTESIA").toUpperCase();
-        if (normalized === "SARVAM") return SARVAM_VOICES;
-        if (normalized === "GOOGLE") return GOOGLE_VOICES;
-        return CARTESIA_VOICES;
-    };
+    const currentVoiceId = formData.voiceId || DEFAULT_VOICE_ID;
 
-    const getVoiceIdForProvider = (provider?: string) => {
-        const normalized = (provider || "CARTESIA").toUpperCase();
-        if (normalized === "SARVAM") return formData.sarvamVoice || "shubh";
-        if (normalized === "GOOGLE") return formData.googleVoiceName || "Puck";
-        return formData.cartesiaVoiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc";
-    };
-
-    const getModelForProvider = (provider?: string) => {
-        const normalized = (provider || "CARTESIA").toUpperCase();
-        if (normalized === "SARVAM") return formData.sarvamModel || "bulbul:v3";
-        if (normalized === "GOOGLE") return formData.googleModel || DEFAULT_GOOGLE_TTS_MODEL;
-        return formData.cartesiaModel || "cartesia/sonic-3";
+    const getAvailableVoices = () => {
+        const whitelist: string[] = Array.isArray(formData.allowedVoices) ? formData.allowedVoices : [];
+        if (whitelist.length === 0) return voices;
+        return voices.filter(v => whitelist.includes(v.id));
     };
 
     const handleVoiceChange = (voiceId: string) => {
-        const provider = formData.ttsProvider || "CARTESIA";
         const newName = getAiNameForVoice(voiceId);
-        
-        updateFormData((prev: any) => ({
-            ...prev,
-            [provider === "CARTESIA" ? "cartesiaVoiceId" : provider === "SARVAM" ? "sarvamVoice" : "googleVoiceName"]: voiceId,
-            aiName: newName
-        }));
+        updateFormData((prev: any) => ({ ...prev, voiceId, aiName: newName }));
     };
 
-    const playSample = async (e?: ReactMouseEvent, overrideVoiceId?: string, overrideProvider?: string, overrideName?: string) => {
+    const playSample = async (e?: ReactMouseEvent, overrideVoiceId?: string, overrideName?: string) => {
         if (e) {
             e.preventDefault();
             e.stopPropagation();
         }
 
-        const provider = overrideProvider || formData.ttsProvider || "CARTESIA";
-        const voiceId = overrideVoiceId || getVoiceIdForProvider(provider);
-        const modelId = getModelForProvider(provider);
+        const voiceId = overrideVoiceId || currentVoiceId;
         const aiName = overrideName || formData.aiName || "Ishitha";
-        
-        // Handle stop if already playing the same voice
+
         if (activeAudio && overrideVoiceId && overrideVoiceId === playingVoiceId) {
             stopCurrentPreview();
             return;
@@ -174,17 +165,14 @@ export function InterviewSetup({ formData, updateFormData, allowLanguageSelectio
 
         setPreviewLoading(true);
         if (overrideVoiceId) setLoadingVoiceId(overrideVoiceId);
-        
+
         try {
             stopCurrentPreview();
 
-            // Send the selected provider explicitly so the server uses the matching API key.
-            const endpoint = "/api/admin/voice/preview";
-
-            const res = await fetch(endpoint, {
+            const res = await fetch("/api/admin/voice/preview", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ provider, voiceId, modelId, transcript })
+                body: JSON.stringify({ voiceId, transcript })
             });
 
             if (!res.ok) {
@@ -193,7 +181,8 @@ export function InterviewSetup({ formData, updateFormData, allowLanguageSelectio
             }
 
             const arrayBuffer = await res.arrayBuffer();
-                const mimeType = provider === "CARTESIA" ? "audio/mpeg" : "audio/wav";
+            const voice = voices.find(v => v.id === voiceId);
+            const mimeType = voice?.provider === "SARVAM" ? "audio/wav" : "audio/mpeg";
 
             try {
                 const blob = new Blob([arrayBuffer], { type: mimeType });
@@ -255,7 +244,7 @@ export function InterviewSetup({ formData, updateFormData, allowLanguageSelectio
             }
         } catch (err: any) {
             console.error("Playback error:", err);
-            alert(err?.message || "Could not play voice sample.");
+            toast.error(err?.message || "Could not play voice sample.");
             setLoadingVoiceId(null);
             setPlayingVoiceId(null);
         } finally {
@@ -357,13 +346,7 @@ export function InterviewSetup({ formData, updateFormData, allowLanguageSelectio
                             </div>
                             
                             <div className="flex-1 space-y-5 w-full">
-                                {!formData.ttsProvider ? (
-                                    <div className="space-y-3 animate-pulse">
-                                        <div className="h-4 w-40 bg-gray-100 rounded-full" />
-                                        <div className="h-11 w-full bg-gray-100 rounded-xl" />
-                                    </div>
-                                ) : (
-                                    <div className="space-y-2">
+                                <div className="space-y-2">
                                         <div className="flex items-center justify-between">
                                             <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest block leading-none">Voice</label>
                                         </div>
@@ -374,14 +357,14 @@ export function InterviewSetup({ formData, updateFormData, allowLanguageSelectio
                                                 {/* Mini Preview for current selection - Now on the left */}
                                                 <button
                                                     type="button"
-                                                    disabled={previewLoading || !getVoiceIdForProvider(formData.ttsProvider)}
+                                                    disabled={previewLoading || !currentVoiceId}
                                                     onClick={(e) => playSample(e)}
                                                     className="h-11 w-11 rounded-xl bg-gray-900 hover:bg-gray-800 text-white flex items-center justify-center transition-all disabled:opacity-50 flex-shrink-0"
                                                     title="Preview current selection"
                                                 >
                                                     {previewLoading ? (
                                                         <RefreshCw className="h-4 w-4 animate-spin" />
-                                                    ) : (playingVoiceId === getVoiceIdForProvider(formData.ttsProvider) && !loadingVoiceId) ? (
+                                                    ) : (playingVoiceId === currentVoiceId && !loadingVoiceId) ? (
                                                         <Pause className="h-4 w-4 fill-white" />
                                                     ) : (
                                                         <Play className="h-4 w-4 fill-white ml-0.5" />
@@ -397,22 +380,12 @@ export function InterviewSetup({ formData, updateFormData, allowLanguageSelectio
                                                         <AudioLines className="w-4 h-4 text-orange-500 flex-shrink-0" />
                                                         <div className="flex flex-col items-start min-w-0">
                                                             <span className="truncate w-full text-left">
-                                                                {(() => {
-                                                                    const currentId = getVoiceIdForProvider(formData.ttsProvider);
-                                                                    const voices = getVoicesForProvider(formData.ttsProvider);
-                                                                    const found = voices.find(v => v.id === currentId);
-                                                                    return found ? found.name : "Select a voice";
-                                                                })()}
+                                                                {voices.find(v => v.id === currentVoiceId)?.name || "Select a voice"}
                                                             </span>
                                                             <div className="flex gap-1 overflow-hidden">
-                                                                {(() => {
-                                                                    const currentId = getVoiceIdForProvider(formData.ttsProvider);
-                                                                    const voices = getVoicesForProvider(formData.ttsProvider);
-                                                                    const found = voices.find(v => v.id === currentId);
-                                                                    return found?.tags?.slice(0, 2).map((tag: string) => (
-                                                                        <span key={tag} className="text-[7px] text-gray-400 bg-gray-50 px-1 rounded border border-gray-100 uppercase tracking-tighter">{tag}</span>
-                                                                    ));
-                                                                })()}
+                                                                {voices.find(v => v.id === currentVoiceId)?.tags?.slice(0, 2).map((tag: string) => (
+                                                                    <span key={tag} className="text-[7px] text-gray-400 bg-gray-50 px-1 rounded border border-gray-100 uppercase tracking-tighter">{tag}</span>
+                                                                ))}
                                                             </div>
                                                         </div>
                                                     </div>
@@ -441,8 +414,8 @@ export function InterviewSetup({ formData, updateFormData, allowLanguageSelectio
 
                                                     {/* Scrollable List */}
                                                     <div className="overflow-y-auto flex-1 custom-scrollbar">
-                                                        {getVoicesForProvider(formData.ttsProvider)
-                                                            .filter((v) => 
+                                                        {getAvailableVoices()
+                                                            .filter((v) =>
                                                                 v.name.toLowerCase().includes(voiceSearch.toLowerCase()) || 
                                                                 v.description.toLowerCase().includes(voiceSearch.toLowerCase()) ||
                                                                 v.tags?.some(t => t.toLowerCase().includes(voiceSearch.toLowerCase()))
@@ -457,14 +430,14 @@ export function InterviewSetup({ formData, updateFormData, allowLanguageSelectio
                                                                         setVoiceSearch("");
                                                                     }}
                                                                     className={`w-full p-3 text-left hover:bg-orange-50/50 transition-all border-b border-gray-50 last:border-0 group flex items-center justify-between gap-4 ${
-                                                                        (getVoiceIdForProvider(formData.ttsProvider)) === v.id 
+                                                                        currentVoiceId === v.id 
                                                                         ? 'bg-orange-50/30' : ''
                                                                     }`}
                                                                 >
                                                                     <div className="flex items-center gap-3 flex-1 min-w-0">
                                                                         {/* Inline Preview Button - Now on the left */}
                                                                         <div 
-                                                                            onClick={(e) => playSample(e, v.id, v.provider, getAiNameForVoice(v.id))}
+                                                                            onClick={(e) => playSample(e, v.id, getAiNameForVoice(v.id))}
                                                                             className={`h-8 w-8 rounded-lg flex items-center justify-center transition-all flex-shrink-0 ${
                                                                                 loadingVoiceId === v.id || (playingVoiceId === v.id && !loadingVoiceId)
                                                                                 ? 'bg-orange-600 text-white shadow-sm' 
@@ -483,7 +456,7 @@ export function InterviewSetup({ formData, updateFormData, allowLanguageSelectio
                                                                         <div className="flex-1 min-w-0 space-y-0.5">
                                                                             <div className="flex items-center gap-2">
                                                                                 <span className={`text-[13px] font-bold tracking-tight font-sans ${
-                                                                                    (getVoiceIdForProvider(formData.ttsProvider)) === v.id 
+                                                                                    currentVoiceId === v.id 
                                                                                     ? 'text-orange-600' : 'text-gray-900 group-hover:text-orange-600'
                                                                                 }`}>
                                                                                     {v.name}
@@ -508,8 +481,7 @@ export function InterviewSetup({ formData, updateFormData, allowLanguageSelectio
                                                 </div>
                                             )}
                                         </div>
-                                    </div>
-                                )}
+                                </div>
                             </div>
                         </div>
                     </div>

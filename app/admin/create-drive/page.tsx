@@ -49,18 +49,10 @@ function CreateDriveForm() {
   const [formData, setFormData] = useState<any>({
     title: "",
     role: "",
-    department: "",
-    workMode: "",
-    location: "",
     deadline: "",
-    employmentType: "",
     interviewLanguage: "English",
     interviewQuestions: [],
-    ttsProvider: "",
-    cartesiaVoiceId: null,
-    sarvamVoice: null,
-    googleModel: null,
-    googleVoiceName: null,
+    voiceId: null,
     aiName: "Ishitha",
     extractedDetails: null,
   });
@@ -84,26 +76,7 @@ function CreateDriveForm() {
   const billingLocked = isDriveCreationLocked(maxActiveDrives, activeDriveCount);
   const driveCreationLocked = !isEditMode && (billingLocked || interviewAccessLocked);
 
-  const resolveVoiceConfig = (source: any = formDataRef.current) => {
-    const provider = String(adminOrg?.ttsProvider || source?.ttsProvider || "CARTESIA").toUpperCase();
-    return {
-      ...source,
-      ttsProvider: provider,
-      cartesiaVoiceId: provider === "CARTESIA" ? source?.cartesiaVoiceId || adminOrg?.cartesiaVoiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc" : null,
-      sarvamVoice: provider === "SARVAM" ? source?.sarvamVoice || adminOrg?.sarvamVoice || "shubh" : null,
-      googleModel: provider === "GOOGLE" ? source?.googleModel || adminOrg?.googleModel || "gemini-3.1-flash-tts-preview" : null,
-      googleVoiceName: provider === "GOOGLE" ? source?.googleVoiceName || adminOrg?.googleVoiceName || "Puck" : null,
-    };
-  };
 
-  const normalizeLocation = (value: any) => {
-    if (typeof value === "string") return value.trim();
-    if (!value || typeof value !== "object") return "";
-    return [value.formattedAddress, value.address, value.city, value.state, value.region, value.country, value.name]
-      .filter((part) => typeof part === "string" && part.trim())
-      .map((part) => String(part).trim())
-      .join(", ");
-  };
 
   const formatDateForInput = (value?: string | null) => {
     if (!value) return "";
@@ -115,7 +88,7 @@ function CreateDriveForm() {
     return `${year}-${month}-${day}`;
   };
 
-  const displayFormData = resolveVoiceConfig(formData);
+  const displayFormData = formData;
 
   const getPersistedJdUrl = (source: any = formDataRef.current) => {
     const candidateUrl = jdPersistedUrlRef.current || source?.jdPreviewUrl;
@@ -140,15 +113,10 @@ function CreateDriveForm() {
         .then((res) => res.json())
         .then((data) => {
           if (data.error) return;
-          const orgProvider = data.ttsProvider || "CARTESIA";
           setFormData((prev: any) => ({
             ...prev,
-            location: prev.location || data.location || "",
-            ttsProvider: orgProvider,
-            cartesiaVoiceId: orgProvider === "CARTESIA" ? data.cartesiaVoiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc" : null,
-            sarvamVoice: orgProvider === "SARVAM" ? data.sarvamVoice || "shubh" : null,
-            googleModel: orgProvider === "GOOGLE" ? data.googleModel || "gemini-3.1-flash-tts-preview" : null,
-            googleVoiceName: orgProvider === "GOOGLE" ? data.googleVoiceName || "Puck" : null,
+            voiceId: data.voiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
+            allowedVoices: Array.isArray(data.allowedVoices) ? data.allowedVoices : [],
           }));
         })
         .catch(() => {});
@@ -173,16 +141,11 @@ function CreateDriveForm() {
           hasInitialLoadedRef.current = driveId;
           const orgRes = await fetch("/api/admin/organization", { cache: "no-store" });
           const orgData = await orgRes.json();
-          const orgProvider = (orgData.error ? null : orgData.ttsProvider) || "CARTESIA";
           setFormData((prev: any) => ({
             ...prev,
             title: drive.title,
             role: (drive as any).role || drive.title,
-            department: drive.department,
-            workMode: (drive as any).workMode || "",
-            location: (drive as any).location || "",
             deadline: formatDateForInput((drive as any).deadline || null),
-            employmentType: drive.type,
             interviewLanguage: (drive as any).interviewLanguage || "English",
             interviewQuestions: typeof (drive as any).interviewQuestions === "string"
               ? JSON.parse((drive as any).interviewQuestions)
@@ -190,11 +153,8 @@ function CreateDriveForm() {
             jdFileName: (drive as any).jdFileName || "",
             jdPreviewUrl: (drive as any).jdPreviewUrl || "",
             extractedDetails: (drive as any).extractedDetails || null,
-            ttsProvider: orgProvider,
-            cartesiaVoiceId: orgProvider === "CARTESIA" ? (drive as any).cartesiaVoiceId || orgData.cartesiaVoiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc" : null,
-            sarvamVoice: orgProvider === "SARVAM" ? (drive as any).sarvamVoice || orgData.sarvamVoice || "shubh" : null,
-            googleModel: orgProvider === "GOOGLE" ? (drive as any).googleModel || orgData.googleModel || "gemini-3.1-flash-tts-preview" : null,
-            googleVoiceName: orgProvider === "GOOGLE" ? (drive as any).googleVoiceName || orgData.googleVoiceName || "Puck" : null,
+            voiceId: (drive as any).voiceId || (!orgData.error && orgData.voiceId) || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
+            allowedVoices: !orgData.error && Array.isArray(orgData.allowedVoices) ? orgData.allowedVoices : [],
             aiName: (drive as any).aiName || "Ishitha",
           }));
         } catch (err) {
@@ -214,7 +174,7 @@ function CreateDriveForm() {
       if (draft) {
         try {
           const data = JSON.parse(draft);
-          const { ttsProvider: _a, cartesiaVoiceId: _b, sarvamVoice: _c, googleModel: _d, googleVoiceName: _e, aiName: _f, ...jdData } = data || {};
+          const { voiceId: _a, allowedVoices: _b, aiName: _c, ...jdData } = data || {};
           setFormData((prev: any) => ({ ...prev, ...jdData }));
           localStorage.removeItem("jd_draft");
           toast.success("Job Description synced from AI Assistant!");
@@ -230,11 +190,10 @@ function CreateDriveForm() {
     if (!isEditMode && !searchParams.get("id")) {
       const method = searchParams.get("method");
       if (method !== "ai-chat") {
-          setFormData({
-          title: "", role: "", department: "", workMode: "", location: "", deadline: "", employmentType: "",
-          interviewLanguage: "English", interviewQuestions: [], ttsProvider: "",
-          cartesiaVoiceId: null, sarvamVoice: null, googleModel: null, googleVoiceName: null,
-          aiName: "Ishitha", extractedDetails: null,
+        setFormData({
+          title: "", role: "", deadline: "",
+          interviewLanguage: "English", interviewQuestions: [],
+          voiceId: null, aiName: "Ishitha", extractedDetails: null,
         });
         setIsAnalyzing(false);
         setAnalysisError(null);
@@ -295,10 +254,6 @@ function CreateDriveForm() {
           ...prev,
           title: `${extracted?.job_title || prev.role || "New"} Recruitment Drive`,
           role: extracted?.job_title || prev.role || "",
-          department: extracted?.department || prev.department,
-          workMode: extracted?.work_type || prev.workMode,
-          employmentType: extracted?.employment_type || prev.employmentType,
-          location: normalizeLocation(extracted?.location) || prev.location,
           interviewQuestions: Array.isArray(extracted?.interview_questions) && extracted.interview_questions.length > 0
             ? extracted.interview_questions : prev.interviewQuestions,
           extractedDetails: extracted,
@@ -320,9 +275,13 @@ function CreateDriveForm() {
   };
 
   const handlePublish = async () => {
-    const currentFormData = resolveVoiceConfig(formDataRef.current);
+    const currentFormData = formDataRef.current;
     if (driveCreationLocked && !isEditMode) {
       toast.error(interviewAccessLocked ? getInterviewQuotaSupportMessage("interviews") : "Drive limit reached. Go to Billing to upgrade your plan.");
+      return;
+    }
+    if (!String(currentFormData.deadline || "").trim()) {
+      toast.error("Please fill the application deadline.");
       return;
     }
     const pendingJdUpload = Boolean(currentFormData.jdFile) || (typeof currentFormData.jdPreviewUrl === "string" && currentFormData.jdPreviewUrl.startsWith("blob:"));
@@ -337,21 +296,13 @@ function CreateDriveForm() {
       title: currentFormData.title || "Untitled Drive",
       description: currentFormData.description || "",
       role: currentFormData.role || "",
-      department: currentFormData.department || "",
-      employmentType: currentFormData.employmentType || "",
-      workMode: currentFormData.workMode || "",
-      location: currentFormData.location || "",
       deadline: currentFormData.deadline || null,
       jdFileName: currentFormData.jdFileName || null,
       jdPreviewUrl: getPersistedJdUrl(currentFormData),
       extractedDetails: currentFormData.extractedDetails ? typeof currentFormData.extractedDetails === "string" ? currentFormData.extractedDetails : JSON.stringify(currentFormData.extractedDetails) : null,
       interviewLanguage: allowLanguageSelection ? currentFormData.interviewLanguage || "English" : "English",
       interviewQuestions: parsedQuestions,
-      ttsProvider: currentFormData.ttsProvider || "CARTESIA",
-      cartesiaVoiceId: currentFormData.ttsProvider === "SARVAM" || currentFormData.ttsProvider === "GOOGLE" ? null : currentFormData.cartesiaVoiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
-      sarvamVoice: (currentFormData.ttsProvider || "CARTESIA") === "SARVAM" ? currentFormData.sarvamVoice || "shubh" : null,
-      googleModel: currentFormData.ttsProvider === "GOOGLE" ? currentFormData.googleModel || "gemini-3.1-flash-tts-preview" : null,
-      googleVoiceName: currentFormData.ttsProvider === "GOOGLE" ? currentFormData.googleVoiceName || "Puck" : null,
+      voiceId: currentFormData.voiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
       aiName: currentFormData.aiName || "Ishitha",
     };
     try {

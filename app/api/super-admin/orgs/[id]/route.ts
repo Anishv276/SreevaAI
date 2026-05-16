@@ -80,9 +80,8 @@ export async function PATCH(
             name, plan, status, logoUrl, slug, location, maxActiveDrives,
             proctoringSignals,
             adminName, adminEmail,
-            ttsProvider, cartesiaVoiceId, cartesiaModel, sarvamModel, sarvamVoice, googleModel, googleVoiceName,
-            sttProvider, deepgramModel, sarvamSttModel,
-            llmProvider, llmModel, llmTemperature,
+            voiceId, allowedVoices,
+            llmModel, llmTemperature,
             usageMetrics,
             interviewQuotaTotal,
             interviewQuotaTopUp,
@@ -101,17 +100,8 @@ export async function PATCH(
                 interviewQuotaTotal: true,
                 interviewQuotaUsed: true,
                 plan: true,
-                ttsProvider: true,
-                cartesiaModel: true,
-                cartesiaVoiceId: true,
-                sarvamModel: true,
-                sarvamVoice: true,
-                googleModel: true,
-                googleVoiceName: true,
-                sttProvider: true,
-                deepgramModel: true,
-                sarvamSttModel: true,
-                llmProvider: true,
+                voiceId: true,
+                allowedVoices: true,
                 llmModel: true,
                 llmTemperature: true,
             },
@@ -168,17 +158,8 @@ export async function PATCH(
             proctoringSignals === undefined &&
             adminName === undefined &&
             adminEmail === undefined &&
-            ttsProvider === undefined &&
-            cartesiaVoiceId === undefined &&
-            cartesiaModel === undefined &&
-            sarvamModel === undefined &&
-            sarvamVoice === undefined &&
-            googleModel === undefined &&
-            googleVoiceName === undefined &&
-            sttProvider === undefined &&
-            deepgramModel === undefined &&
-            sarvamSttModel === undefined &&
-            llmProvider === undefined &&
+            voiceId === undefined &&
+            allowedVoices === undefined &&
             llmModel === undefined &&
             llmTemperature === undefined &&
             interviewQuotaTopUp === undefined;
@@ -225,21 +206,7 @@ export async function PATCH(
             updateData,
             normalizeOrgAiConfig({
                 current: existingOrg,
-                next: {
-                    ttsProvider,
-                    cartesiaVoiceId,
-                    cartesiaModel,
-                    sarvamModel,
-                    sarvamVoice,
-                    googleModel,
-                    googleVoiceName,
-                    sttProvider,
-                    deepgramModel,
-                    sarvamSttModel,
-                    llmProvider,
-                    llmModel,
-                    llmTemperature,
-                },
+                next: { voiceId, allowedVoices, llmModel, llmTemperature },
             })
         );
 
@@ -284,12 +251,6 @@ export async function PATCH(
             }
         }
 
-        // When org switches away from GOOGLE, cascade-clear Google fields on all drives
-        // so COALESCE(drive.ttsProvider, org.ttsProvider) doesn't resurrect the Google path.
-        const newTtsProvider = String(updateData.ttsProvider || "").toUpperCase();
-        const wasGoogle = String(existingOrg.ttsProvider || "").toUpperCase() === "GOOGLE";
-        const isNowNonGoogle = newTtsProvider && newTtsProvider !== "GOOGLE";
-        const shouldClearDriveGoogleFields = wasGoogle && isNowNonGoogle;
 
         // -- TRANSACTION: Update Org & Admin ------------------
         const updated = await prisma.$transaction(async (tx) => {
@@ -309,17 +270,6 @@ export async function PATCH(
                 );
             }
 
-            // 2. Clear stale Google overrides on all drives under this org
-            if (shouldClearDriveGoogleFields) {
-                await tx.drive.updateMany({
-                    where: { orgId: id, ttsProvider: "GOOGLE" },
-                    data: {
-                        ttsProvider: null,
-                        googleModel: null,
-                        googleVoiceName: null,
-                    },
-                });
-            }
 
             if (shouldApplyInterviewQuotaTopUp) {
                 await tx.$executeRaw(

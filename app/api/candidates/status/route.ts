@@ -26,9 +26,6 @@ export async function GET(request: Request) {
                     select: {
                         id: true,
                         title: true,
-                        department: true,
-                        workMode: true,
-                        type: true,
                     }
                 },
                 interview: {

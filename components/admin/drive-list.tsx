@@ -63,7 +63,7 @@ export function DriveList() {
                                     </h3>
                                 </div>
                                 <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-6">
-                                    {drive.department}
+                                    {drive.role || drive.title}
                                 </p>
                             </div>
 

@@ -21,13 +21,6 @@ import {
     ArrowUpRight,
 } from "lucide-react";
 import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select";
-import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
@@ -49,7 +42,6 @@ export default function DrivesPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState("");
     const adminOrg = useAdminOrg();
-    const [typeFilter, setTypeFilter] = useState("all");
     const [timeline, setTimeline] = useState<DateRange>({ type: "month" });
 
     // ⚡ Read from shared context — no fetch needed (was 2 API calls per load)
@@ -82,11 +74,11 @@ export default function DrivesPage() {
                 endDate = timeline.to;
             }
 
-            fetchJobs(1, pagination.limit, searchQuery, "all", typeFilter, startDate, endDate).finally(() => setIsLoading(false));
+            fetchJobs(1, pagination.limit, searchQuery, startDate, endDate).finally(() => setIsLoading(false));
         }, 300);
 
         return () => clearTimeout(handler);
-    }, [searchQuery, typeFilter, timeline, pagination.limit]);
+    }, [searchQuery, timeline, pagination.limit]);
 
     const handlePageChange = (newPage: number) => {
         if (newPage >= 1 && newPage <= pagination.totalPages) {
@@ -110,7 +102,7 @@ export default function DrivesPage() {
                 endDate = timeline.to;
             }
 
-            fetchJobs(newPage, pagination.limit, searchQuery, "all", typeFilter, startDate, endDate).finally(() => setIsLoading(false));
+            fetchJobs(newPage, pagination.limit, searchQuery, startDate, endDate).finally(() => setIsLoading(false));
         }
     };
 
@@ -195,7 +187,7 @@ export default function DrivesPage() {
                     <div className="relative flex-1 max-w-2xl w-full group/search">
                         <Search className="absolute left-4 top-3.5 h-4 w-4 text-gray-400" />
                         <Input
-                            placeholder="Search by role, department or title..."
+                            placeholder="Search by role or title..."
                             className="pl-11 h-11 border-slate-200 bg-slate-50 rounded-2xl focus:bg-white focus:border-slate-300 focus:ring-4 focus:ring-slate-100 transition-all font-semibold text-sm shadow-inner"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
@@ -203,16 +195,6 @@ export default function DrivesPage() {
                     </div>
                     <div className="flex items-center gap-4 w-full md:w-auto">
                         <DateFilter value={timeline} onChange={setTimeline} />
-                        <Select value={typeFilter} onValueChange={setTypeFilter}>
-                            <SelectTrigger className="h-11 min-w-[140px] px-5 border-slate-200 rounded-2xl bg-slate-50 text-slate-600 font-medium shadow-inner">
-                                <SelectValue placeholder="Job Type" />
-                            </SelectTrigger>
-                            <SelectContent className="rounded-2xl border-slate-200">
-                                <SelectItem value="all">All Types</SelectItem>
-                                <SelectItem value="Full-time">Full-time</SelectItem>
-                                <SelectItem value="Internship">Internship</SelectItem>
-                            </SelectContent>
-                        </Select>
                     </div>
                 </div>
             </div>

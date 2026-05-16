@@ -21,8 +21,6 @@ export async function GET(req: Request) {
             select: {
                 id: true,
                 title: true,
-                department: true,
-                workMode: true,
                 screeningThreshold: true,
                 applications: {
                     where: { createdAt: { gte: start } },
@@ -56,8 +54,6 @@ export async function GET(req: Request) {
             return {
                 id: drive.id,
                 title: drive.title,
-                department: drive.department,
-                workMode: drive.workMode ?? "",
                 screeningThreshold: Number(drive.screeningThreshold ?? 60),
                 screeningPct,
                 applied,

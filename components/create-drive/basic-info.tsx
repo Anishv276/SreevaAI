@@ -6,10 +6,9 @@ import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-    Briefcase, Laptop, Layers, Building2, ChevronDown, Check,
-    ChevronLeft, ChevronRight, MapPin,
+    Briefcase, Layers, Building2, ChevronDown, Check,
+    ChevronLeft, ChevronRight,
 } from "lucide-react";
-import { LocationAutocomplete } from "@/components/ui/location-autocomplete";
 
 function PremiumSelect({
     label,
@@ -351,14 +350,6 @@ function PremiumDatePicker({ label, icon: Icon, id, value, onChange, error }: {
     );
 }
 
-/*  Departments & options  */
-const DEPARTMENTS = [
-    "Engineering", "Technology", "Product", "Design", "Marketing",
-    "Sales", "HR", "Finance", "Operations", "Legal",
-];
-const EMPLOYMENT_TYPES = ["Full-time", "Part-time", "Contract", "Internship", "Freelance"];
-const WORK_MODES = ["Remote", "Hybrid", "On-site"];
-
 /*  Main component  */
 interface BasicInfoProps {
     formData: any;
@@ -432,69 +423,6 @@ export function BasicInfo({ formData, updateFormData, isAnalyzing }: BasicInfoPr
                 </div>
             </section>
 
-            {/*  Team & Work Mode  */}
-            <section>
-                <div className="flex items-center gap-3 mb-3">
-                    <span className="h-6 w-1 rounded-full bg-[#F97316]" />
-                    <p className="text-[14px] font-bold text-gray-900 uppercase tracking-widest">Team &amp; Work Mode</p>
-                </div>
-                <div className="grid gap-4 md:grid-cols-2">
-                    <PremiumSelect
-                        label="Department"
-                        icon={Building2}
-                        options={DEPARTMENTS}
-                        value={formData.department || ""}
-                        onChange={(v) => { handleChange("department", v); handleBlur("department"); }}
-                        error={getError("department")}
-                        placeholder="Select Department"
-                    />
-                    <div className="space-y-2">
-                        <Label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest">
-                            <MapPin className="h-3 w-3 text-[#F97316]" />
-                            Work Location
-                            <span className="text-[#F97316] ml-0.5">*</span>
-                        </Label>
-                        <div className={cn("rounded-lg relative transition-all duration-150", 
-                            getError("location") ? "border border-red-500 shadow-[0_0_0_2px_rgba(239,68,68,0.1)]" : "")}>
-                            <LocationAutocomplete
-                                value={formData.location || ""}
-                                onChange={(v) => { handleChange("location", v); handleBlur("location"); }}
-                                placeholder="Search location..."
-                                icon={<MapPin className="h-4 w-4" />}
-                            />
-                        </div>
-                        {getError("location") && <p className="text-[10px] font-bold text-red-500 uppercase tracking-widest px-1">{getError("location")}</p>}
-                    </div>
-                </div>
-            </section>
-
-            {/*  Hiring Plan  */}
-            <section>
-                <div className="flex items-center gap-3 mb-3">
-                    <span className="h-6 w-1 rounded-full bg-[#F97316]" />
-                    <p className="text-[14px] font-bold text-gray-900 uppercase tracking-widest">Hiring Plan</p>
-                </div>
-                <div className="grid gap-4 md:grid-cols-2">
-                    <PremiumSelect
-                        label="Employment Type"
-                        icon={Briefcase}
-                        options={EMPLOYMENT_TYPES}
-                        value={formData.employmentType || ""}
-                        onChange={(v) => { handleChange("employmentType", v); handleBlur("employmentType"); }}
-                        error={getError("employmentType")}
-                        placeholder="Select Type"
-                    />
-                    <PremiumSelect
-                        label="Work Mode"
-                        icon={Laptop}
-                        options={WORK_MODES}
-                        value={formData.workMode || ""}
-                        onChange={(v) => { handleChange("workMode", v); handleBlur("workMode"); }}
-                        error={getError("workMode")}
-                        placeholder="Remote / Hybrid / On-site"
-                    />
-                </div>
-            </section>
         </div>
     );
 }

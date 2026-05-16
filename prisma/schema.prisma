@@ -24,19 +24,11 @@ model Organization {
   website              String?
   location             String?
   onboardingComplete   Boolean     @default(false)
-  ttsProvider          String?     @default("CARTESIA")
-  cartesiaVoiceId      String?     @default("9626c31c-bec5-4cca-baa8-f8ba9e84c8bc")
-  sarvamModel          String?     @default("bulbul:v3")
-  sarvamVoice          String?     @default("shubh")
-  googleModel          String?     @default("gemini-3.1-flash-tts-preview")
-  googleVoiceName      String?     @default("Puck")
+  voiceId              String?     @default("9626c31c-bec5-4cca-baa8-f8ba9e84c8bc")
+  allowedVoices        String[]    @default([])
   deepgramModel        String?     @default("nova-3-general")
-  sarvamSttModel       String?     @default("saaras:v3")
-  sttProvider          String?     @default("DEEPGRAM")
-  llmModel             String?     @default("gpt-4o")
-  llmProvider          String?     @default("OPENAI")
+  llmModel             String?     @default("gpt-4.1-mini")
   llmTemperature       Float?      @default(0.7)
-  cartesiaModel        String?     @default("cartesia/sonic-3")
   interviewQuotaTotal  Int         @default(0)
   interviewQuotaUsed   Int         @default(0)
   creditsUsed          Float       @default(0)
@@ -97,14 +89,10 @@ model Drive {
   id                 String        @id
   title              String
   role               String?
-  department         String
-  type               String        @default("Full-time")
   screeningThreshold Int           @default(0)
   creatorId          String
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
-  positions          Int?          @default(1)
-  workMode           String?
   screeningCriteria  String?       @default("{}")
   extractedDetails   String?       @default("{}")
   interviewLanguage  String?       @default("English")
@@ -114,14 +102,8 @@ model Drive {
   orgId              String?
   location           String?
   deadline           DateTime?
-  status             String        @default("ACTIVE")
   aiName             String?       @default("Ishitha")
-  cartesiaVoiceId    String?       @default("9626c31c-bec5-4cca-baa8-f8ba9e84c8bc")
-  sarvamVoice        String?       @default("shubh")
-  sarvamModel        String?        @default("bulbul:v3")
-  googleModel        String?       @default("gemini-3.1-flash-tts-preview")
-  googleVoiceName    String?       @default("Puck")
-  ttsProvider        String?       @default("CARTESIA")
+  voiceId            String?       @default("9626c31c-bec5-4cca-baa8-f8ba9e84c8bc")
   applications       Application[]
   resumeCandidates   ResumeCandidate[]
   resumeBatches      ResumeBatch[]
@@ -129,7 +111,7 @@ model Drive {
   creator            User          @relation("CreatedDrives", fields: [creatorId], references: [id], onDelete: Cascade)
   organization       Organization? @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
-  @@index([orgId, status])
+  @@index([orgId])
 }
 
 model Application {
@@ -175,7 +157,7 @@ model Interview {
   aiSummary             String?
   snapshots             String[]    @default([])
   candidateFeedback     String?
-  candidateRating       Int?
+  candidateRating       Json?
   proctoringEvents      Json?       @default("[]")
   interviewReport       Json?       @default("{}")
   proctoringReport      Json?       @default("{}")
@@ -255,4 +237,21 @@ model InterviewSlot {
   
   @@index([orgId, startTime])
   @@index([driveId, startTime])
+}
+
+model EngineVoice {
+  id          String   @id
+  name        String
+  provider    String
+  model       String
+  description String?
+  gender      String?
+  tags        String[] @default([])
+  isActive    Boolean  @default(true)
+  isBuiltIn   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([provider])
 }

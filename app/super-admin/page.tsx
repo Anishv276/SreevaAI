@@ -58,6 +58,11 @@ export default function SuperAdminDashboard() {
                 </div>
 
                 <div className="flex items-center gap-3 flex-shrink-0 flex-wrap justify-end">
+                    <Link href="/super-admin/voices">
+                        <button className="flex items-center gap-2 border border-gray-200 bg-white text-gray-700 text-[13.5px] font-semibold px-4 py-2.5 rounded-xl transition-all duration-150 shadow-sm hover:shadow-md hover:border-orange-200 hover:text-[#F97316]">
+                            Voice Engine
+                        </button>
+                    </Link>
                     <Link href="/super-admin/orgs/new">
                         <button className="btn-shimmer flex items-center gap-2 bg-[#F97316] hover:bg-orange-600 text-white text-[13.5px] font-semibold px-4 py-2.5 rounded-xl transition-all duration-150 shadow-sm hover:shadow-md">
                             <Plus className="h-4 w-4" />

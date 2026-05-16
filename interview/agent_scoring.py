@@ -183,10 +183,20 @@ async def evaluate_answer_and_decide(
                             '"clarification" | "specificity" | "contradiction" | null, '
                             '"reason": "one short sentence", '
                             '"depth_signal": "SURFACE" | "SPECIFIC" | "DEEP"}\n\n'
-                            "MOVE_ON when: answer has real specifics (names/numbers/dates), clear reasoning, "
-                            "OR topic already had 3+ follow-ups, OR candidate said I don't know twice.\n"
-                            "PROBE when: answer is vague, generic, no real example, no numbers, "
-                            "uses only 'we' with no personal ownership, or sounds rehearsed.\n"
+                            "CRITICAL RULE — DID THE ANSWER ACTUALLY ADDRESS THE QUESTION ASKED?\n"
+                            "Numbers and process words (24 hours, 100 calls, 25 centers) are NOT real specifics "
+                            "if they don't answer what was asked. Ask: 'Did the candidate answer the specific question, "
+                            "or just describe their general process again?'\n\n"
+                            "MOVE_ON when:\n"
+                            "  - Answer directly addressed what was asked with named specifics (person, tool, project, outcome)\n"
+                            "  - Topic already had 2+ follow-ups AND candidate has nothing new to add\n"
+                            "  - Candidate clearly said 'I don't know' or admitted they can't answer\n\n"
+                            "PROBE when:\n"
+                            "  - Answer described a general process instead of answering the specific question\n"
+                            "  - Answer is vague, circular, or just restated what they said before\n"
+                            "  - Answer uses only 'we' with no personal ownership\n"
+                            "  - Answer has no named person, vendor, tool, system, decision, or concrete outcome\n"
+                            "  - BUT: do not probe the same angle more than twice — if it hasn't worked twice, MOVE_ON\n\n"
                             "probe_mode:\n"
                             "  ownership = 'we did' but unclear what they personally did\n"
                             "  evidence = missing concrete example, named project, or proof\n"
@@ -196,7 +206,7 @@ async def evaluate_answer_and_decide(
                             "  verification = polished answer, probe memory of the exact moment\n"
                             "  specificity = generic answer missing names/numbers/dates\n"
                             "  contradiction = alias for clarification when a mismatch is explicit\n"
-                            "depth_signal: SURFACE=generic/vague, SPECIFIC=named real thing, DEEP=specifics+reasoning"
+                            "depth_signal: SURFACE=generic/vague or answered different question, SPECIFIC=named real thing, DEEP=specifics+reasoning"
                         ),
                     },
                     {

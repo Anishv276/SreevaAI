@@ -130,6 +130,11 @@ export async function syncOrgStatusWithInterviewQuota(orgId: string): Promise<st
     const interviewQuotaUsed = Number(current.interviewQuotaUsed || 0);
     const interviewQuotaRemaining = Math.max(0, interviewQuotaTotal - interviewQuotaUsed);
     const currentStatus = String(current.status || "ACTIVE").toUpperCase();
+
+    if (currentStatus === "CLOSED") {
+        return "CLOSED";
+    }
+
     const statusControl = await getOrgStatusControlRaw(orgId);
 
     if (statusControl === ORG_STATUS_CONTROL_MANUAL) {
@@ -181,6 +186,12 @@ export async function getEffectiveOrgStatus(orgId: string): Promise<string | nul
     if (!current) return null;
 
     const statusControl = normalizeOrgStatusControl(current.statusControl);
+    const currentStatus = String(current.status || "ACTIVE").toUpperCase();
+
+    if (currentStatus === "CLOSED") {
+        return "CLOSED";
+    }
+
     if (statusControl === ORG_STATUS_CONTROL_MANUAL) {
         return "SUSPENDED";
     }

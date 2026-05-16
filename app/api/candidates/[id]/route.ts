@@ -35,7 +35,6 @@ export async function GET(
                 drive: {
                     select: {
                         title: true,
-                        department: true,
                         orgId: true,
                         role: true,
                         extractedDetails: true,
@@ -267,25 +266,6 @@ export async function PATCH(
                 });
             }
 
-            try {
-                const driveStats = await prisma.drive.findUnique({
-                    where: { id: candidate.driveId },
-                    include: {
-                        _count: {
-                            select: { applications: { where: { hiringStatus: { equals: "hired", mode: "insensitive" } } } }
-                        }
-                    }
-                });
-
-                if (driveStats && driveStats.positions && driveStats._count.applications >= driveStats.positions) {
-                    await prisma.drive.update({
-                        where: { id: candidate.driveId },
-                        data: { status: "CLOSED" }
-                    });
-                }
-            } catch (err) {
-                console.error("Auto-close drive error:", err);
-            }
         } else if (body.hiringStatus === "not hired") {
             const mailResult = await sendApplicationStatusEmail({
                 email: updated.email,

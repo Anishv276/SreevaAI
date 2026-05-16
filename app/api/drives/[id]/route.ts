@@ -38,30 +38,20 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
                 id: true,
                 title: true,
                 role: true,
-                department: true,
-                type: true,
                 screeningThreshold: true,
                 screeningCriteria: true,
                 extractedDetails: true,
                 creatorId: true,
                 createdAt: true,
                 updatedAt: true,
-                positions: true,
-                workMode: true,
                 deadline: true,
                 interviewLanguage: true,
                 interviewQuestions: true,
                 jdFileName: true,
                 jdPreviewUrl: true,
                 orgId: true,
-                location: true,
                 aiName: true,
-                cartesiaVoiceId: true,
-                sarvamVoice: true,
-                sarvamModel: true,
-                googleModel: true,
-                googleVoiceName: true,
-                ttsProvider: true,
+                voiceId: true,
                 organization: {
                     select: {
                         status: true,
@@ -170,17 +160,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         }
 
         const data = result.data;
-        const positions = data.positions !== undefined ? data.positions : undefined;
         const existingDrive = await (prisma.drive as any).findUnique({
             where: { id: driveId },
             select: {
                 orgId: true,
                 extractedDetails: true,
-                ttsProvider: true,
-                cartesiaVoiceId: true,
-                sarvamVoice: true,
-                googleModel: true,
-                googleVoiceName: true,
+                voiceId: true,
             },
         });
 
@@ -197,14 +182,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
         if (data.title !== undefined) updateData.title = data.title;
         if (data.role !== undefined) updateData.role = data.role;
-        if (data.department !== undefined) updateData.department = data.department;
-        if (data.employmentType !== undefined || data.type !== undefined) {
-            updateData.type = data.employmentType || data.type;
-        }
-        if (data.workMode !== undefined) updateData.workMode = data.workMode;
-        if (data.location !== undefined) updateData.location = data.location;
         if (data.deadline !== undefined) updateData.deadline = normalizeDeadlineDate(data.deadline as string | null | undefined);
-        if (positions !== undefined) updateData.positions = positions;
 
         if (data.jdFileName !== undefined) updateData.jdFileName = data.jdFileName;
         if (data.jdPreviewUrl !== undefined) {
@@ -251,13 +229,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
             updateData,
             normalizeDriveAiConfig({
                 current: existingDrive,
-                next: {
-                    ttsProvider: data.ttsProvider,
-                    cartesiaVoiceId: data.cartesiaVoiceId,
-                    sarvamVoice: data.sarvamVoice,
-                    googleModel: data.googleModel,
-                    googleVoiceName: data.googleVoiceName,
-                },
+                next: { voiceId: data.voiceId },
             })
         );
         if (data.aiName !== undefined) updateData.aiName = data.aiName;

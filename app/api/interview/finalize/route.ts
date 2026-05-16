@@ -6,13 +6,10 @@ import { interviewFinalizeSchema } from "@/lib/validation";
 import crypto from "crypto";
 import { generateId } from "@/lib/ids";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
-import { generateInterviewReport } from "@/lib/interview-analysis";
 import {
   deductInterviewQuota,
   incrementOrgCreditsUsed,
 } from "@/lib/credits";
-import { recordOrgBillingUsage } from "@/lib/usage-metrics";
-import { safeJsonParse } from "@/lib/utils";
 
 export const runtime = "nodejs";
 
@@ -150,89 +147,6 @@ async function persistInterviewUpdateRaw(params: {
   );
 }
 
-async function persistInterviewReportRaw(params: {
-  applicationId: string;
-  interviewReport: unknown;
-  aiSummary?: string | null;
-}) {
-  const { applicationId, interviewReport, aiSummary } = params;
-  await prisma.$executeRawUnsafe(
-    `
-    UPDATE "Interview"
-    SET "interviewReport" = $1::jsonb,
-        "aiSummary" = COALESCE($2::text, "Interview"."aiSummary"),
-        "updatedAt" = NOW()
-    WHERE "applicationId" = $3
-    `,
-    JSON.stringify(interviewReport),
-    aiSummary || null,
-    applicationId
-  );
-}
-
-async function persistStrategicVerdictRaw(params: {
-  applicationId: string;
-  strategicVerdict: unknown;
-}) {
-  const { applicationId, strategicVerdict } = params;
-  await prisma.$executeRawUnsafe(
-    `
-    UPDATE "Interview"
-    SET "strategicVerdict" = $1::jsonb,
-        "updatedAt" = NOW()
-    WHERE "applicationId" = $2
-    `,
-    JSON.stringify(strategicVerdict),
-    applicationId
-  );
-}
-
-function estimateInterviewReportUsage(params: {
-  transcript: string;
-  resumeText: string;
-  jdText: string;
-  report: unknown;
-  durationSeconds: number;
-}) {
-  const promptText = [
-    params.transcript,
-    params.resumeText,
-    params.jdText,
-    "Interview report generation",
-    String(params.durationSeconds || 0),
-  ]
-    .filter(Boolean)
-    .join("\n\n");
-
-  const reportText = JSON.stringify(params.report ?? {});
-  return {
-    model: "gpt-4o",
-    inputTokens: Math.max(1, Math.ceil(promptText.length / 4)),
-    outputTokens: Math.max(1, Math.ceil(reportText.length / 4)),
-    cachedInputTokens: 0,
-  };
-}
-
-type InterviewReportShape = {
-  qa_blocks?: Array<{
-    q?: number;
-    title?: string;
-    tags?: string[];
-    score?: string;
-    scoreColor?: string;
-    verdict?: string;
-    confidence?: string;
-  }>;
-  recording?: {
-    summary?: string;
-  };
-  verdict?: {
-    summary?: string;
-    recommendation?: string;
-    recommendation_reason?: string;
-  };
-  strategic_verdict?: unknown;
-};
 
 export async function POST(req: Request) {
   try {
@@ -363,141 +277,8 @@ export async function POST(req: Request) {
       }
     }
 
-    try {
-      // Re-fetch AFTER saves so we get the latest transcript (agent.py may have already saved it)
-      const app = await prisma.application.findUnique({
-        where: { id: applicationId },
-        select: {
-          fullName: true,
-          resumeText: true,
-          aiReport: true,
-          drive: {
-            select: {
-              id: true,
-              title: true,
-              orgId: true,
-            },
-          },
-          interview: {
-            select: {
-              proctoringEvents: true,
-              interviewDuration: true,
-              interviewTranscript: true,
-              interviewReport: true,
-            },
-          },
-        },
-      });
-
-      if (app) {
-        const driveRows = await prisma.$queryRawUnsafe<Array<{ extractedDetails: string | null }>>(
-          `
-          SELECT "extractedDetails"
-          FROM "Drive"
-          WHERE id = $1
-          LIMIT 1
-          `,
-          app.drive?.id
-        );
-
-        const resumeText =
-          app.resumeText?.trim() ||
-          (() => {
-            if (!app.aiReport) return "";
-            try {
-              const parsed = JSON.parse(app.aiReport);
-              return String(parsed?.text || parsed?.resume_text || "");
-            } catch {
-              return "";
-            }
-          })();
-
-        const structuredResume = {};
-        const driveDetails = driveRows?.[0]?.extractedDetails
-          ? safeJsonParse(driveRows[0].extractedDetails, {})
-          : {};
-        const jdText = [
-          app.drive?.title || "",
-          JSON.stringify(driveDetails || {}),
-        ].filter(Boolean).join("\n\n");
-        // Use transcript from client first, then DB (agent.py may have saved it already)
-        const transcriptForReport = finalTranscript || app.interview?.interviewTranscript || "";
-        const durationForReport = resolvedDuration ?? app.interview?.interviewDuration ?? 0;
-        const proctoringEvents = Array.isArray(app.interview?.proctoringEvents)
-          ? app.interview?.proctoringEvents
-          : [];
-
-        // Use existing report from DB if available; otherwise generate new one using GPT-4o
-        let report = app.interview?.interviewReport as InterviewReportShape | null;
-        let interviewReportUsage:
-          | {
-              model?: string | null;
-              inputTokens?: number;
-              outputTokens?: number;
-              cachedInputTokens?: number;
-              sessionDuration?: number;
-            }
-          | null = null;
-        if (!report && transcriptForReport) {
-          const { data: generatedReport, usage: reportUsage } = await generateInterviewReport({
-            transcript: transcriptForReport,
-            resumeText,
-            jdText,
-            role: app.drive?.title || "Interview Role",
-            candidateName: app.fullName,
-            durationSeconds: durationForReport,
-            proctoringEvents,
-            orgId: app.drive?.orgId || undefined,
-          });
-          report = generatedReport;
-          interviewReportUsage = reportUsage || estimateInterviewReportUsage({
-            transcript: transcriptForReport,
-            resumeText,
-            jdText,
-            report,
-            durationSeconds: durationForReport,
-          });
-
-          await persistInterviewReportRaw({
-            applicationId,
-            interviewReport: report,
-            aiSummary: report?.recording?.summary || report?.verdict?.summary || null,
-          });
-        } else if (report) {
-          interviewReportUsage = estimateInterviewReportUsage({
-            transcript: transcriptForReport,
-            resumeText,
-            jdText,
-            report,
-            durationSeconds: durationForReport,
-          });
-        }
-
-        if (app.drive?.orgId && interviewReportUsage) {
-          await recordOrgBillingUsage({
-            orgId: app.drive.orgId,
-            feature: "interviewReport",
-            usage: interviewReportUsage,
-          }).catch(console.error);
-        }
-        await persistStrategicVerdictRaw({
-          applicationId,
-          strategicVerdict: report?.strategic_verdict || {
-            decision:
-              report?.verdict?.recommendation === "Strong Yes" || report?.verdict?.recommendation === "Yes"
-                ? "Hire"
-                : report?.verdict?.recommendation === "No"
-                  ? "Do Not Hire"
-                  : "Maybe",
-            summary: report?.verdict?.summary || "",
-            rationale: report?.verdict?.recommendation_reason ? [report.verdict.recommendation_reason] : [],
-            next_actions: [],
-          },
-        });
-      }
-    } catch (reportError) {
-      console.error("[INTERVIEW FINALIZE] Failed to generate interview report", reportError);
-    }
+    // Report generation is handled by the interview-finalization worker via Redis.
+    // No synchronous LLM call here — the candidate is not blocked and no timeout occurs.
 
   let jobId: string | number | undefined;
   try {

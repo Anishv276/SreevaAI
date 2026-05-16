@@ -12,8 +12,6 @@ import { type DateRange } from "./date-filter";
 interface DriveSummary {
     id: string;
     title: string;
-    department: string;
-    workMode: string;
     screeningThreshold: number;
     screeningPct: number;
     applied: number;
@@ -172,7 +170,7 @@ export function ActiveDrivesSummary({ dateRange }: ActiveDrivesSummaryProps) {
                                                         </h4>
                                                     </div>
                                                     <p className="text-[11px] font-bold text-slate-400 flex items-center gap-2 uppercase tracking-wider">
-                                                        {drive.department}
+                                                        Open drive
                                                     </p>
                                                 </div>
                                             </div>

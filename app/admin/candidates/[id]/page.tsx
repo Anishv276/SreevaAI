@@ -228,7 +228,27 @@ export default function CandidateProfilePage() {
           }))
         : interviewSessionRows;
     const wordCount = interviewTranscript ? interviewTranscript.split(/\s+/).filter(Boolean).length : 0;
-    const interviewScore = Number(candidate?.interview?.candidateRating || 0) || 0;
+    const interviewScore = (() => {
+        const rating = candidate?.interview?.candidateRating;
+        if (typeof rating === "number" && Number.isFinite(rating)) return rating;
+        if (rating && typeof rating === "object" && !Array.isArray(rating)) {
+            switch (String((rating as { overallFeeling?: unknown }).overallFeeling || "").trim()) {
+                case "Terrible":
+                    return 1;
+                case "Okay":
+                    return 2;
+                case "Good":
+                    return 3;
+                case "Great":
+                    return 4;
+                case "Loved it":
+                    return 5;
+                default:
+                    return 0;
+            }
+        }
+        return 0;
+    })();
     const combinedScore = Math.max(0, Math.min(10, interviewScore));
     const proctoringVerdictSummary = String(interviewReportData?.integrity?.summary || "").trim() || "No proctoring summary available.";
     const recordingDurationSec = typeof candidate?.interview?.interviewDuration === "number" ? candidate.interview.interviewDuration : null;

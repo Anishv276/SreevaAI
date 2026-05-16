@@ -150,13 +150,42 @@ for logger_name in ("livekit.plugins.cartesia", "livekit.plugins.silero", "livek
     _logger = logging.getLogger(logger_name)
     _logger.addFilter(_RuntimeWarningSampler())
 STT_MODEL = "nova-3"
-CARTESIA_MODEL = "cartesia/sonic-3"
-CARTESIA_VOICE_ID = "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"
 LLM_MODEL = "gpt-4.1-mini"
-GOOGLE_REALTIME_MODEL = "gemini-2.5-flash-native-audio-preview-12-2025"
-GOOGLE_ANALYSIS_MODEL = "gemini-2.5-flash"
-DEFAULT_GOOGLE_TTS_MODEL = GOOGLE_REALTIME_MODEL
-DEFAULT_GOOGLE_VOICE_NAME = "Puck"
+DEFAULT_VOICE_ID = "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"
+
+# Voice registry — single source of truth for voice→provider+model mapping.
+# Provider is "CARTESIA" or "SARVAM". Model is the TTS model string for that provider.
+VOICE_REGISTRY: dict[str, dict[str, str]] = {
+    # Cartesia voices
+    "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc": {"provider": "CARTESIA", "model": "cartesia/sonic-3"},
+    "95d51f79-c397-46f9-b49a-23763d3eaa2d": {"provider": "CARTESIA", "model": "cartesia/sonic-3"},
+    "f786b574-daa5-4673-aa0c-cbe3e8534c02": {"provider": "CARTESIA", "model": "cartesia/sonic-3"},
+    "e07c00bc-4134-4eae-9ea4-1a55fb45746b": {"provider": "CARTESIA", "model": "cartesia/sonic-3"},
+    "5ee9feff-1265-424a-9d7f-8e4d431a12c7": {"provider": "CARTESIA", "model": "cartesia/sonic-3"},
+    "694f9389-aac1-45b6-b726-9d9369183238": {"provider": "CARTESIA", "model": "cartesia/sonic-3"},
+    "638385f3-3333-4f5d-85a2-3f820c64b732": {"provider": "CARTESIA", "model": "cartesia/sonic-3"},
+    "248be1fc-3d27-4452-9457-3705bf68bf8f": {"provider": "CARTESIA", "model": "cartesia/sonic-3"},
+    # Sarvam voices
+    "shubh":   {"provider": "SARVAM", "model": "bulbul:v3"},
+    "manan":   {"provider": "SARVAM", "model": "bulbul:v3"},
+    "ishita":  {"provider": "SARVAM", "model": "bulbul:v3"},
+    "shreya":  {"provider": "SARVAM", "model": "bulbul:v3"},
+    "priya":   {"provider": "SARVAM", "model": "bulbul:v3"},
+    "aditya":  {"provider": "SARVAM", "model": "bulbul:v3"},
+    "ritu":    {"provider": "SARVAM", "model": "bulbul:v3"},
+    "rahul":   {"provider": "SARVAM", "model": "bulbul:v3"},
+    "neha":    {"provider": "SARVAM", "model": "bulbul:v3"},
+    "pooja":   {"provider": "SARVAM", "model": "bulbul:v3"},
+    "rohan":   {"provider": "SARVAM", "model": "bulbul:v3"},
+    "simran":  {"provider": "SARVAM", "model": "bulbul:v3"},
+    "kavya":   {"provider": "SARVAM", "model": "bulbul:v3"},
+    "amit":    {"provider": "SARVAM", "model": "bulbul:v3"},
+    "dev":     {"provider": "SARVAM", "model": "bulbul:v3"},
+    "varun":   {"provider": "SARVAM", "model": "bulbul:v3"},
+    "kabir":   {"provider": "SARVAM", "model": "bulbul:v3"},
+    "tanya":   {"provider": "SARVAM", "model": "bulbul:v3"},
+    "sunny":   {"provider": "SARVAM", "model": "bulbul:v3"},
+}
 FIXED_INTERVIEW_DURATION_MINUTES = 20
 DATABASE_URL = os.environ.get("DATABASE_URL")
 REDIS_URL = os.environ.get("REDIS_URL", "").strip()

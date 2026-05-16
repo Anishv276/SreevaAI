@@ -14,7 +14,8 @@ import {
     ShieldAlert,
     Loader2,
     LifeBuoy,
-    CreditCard
+    CreditCard,
+    AudioLines
 } from "lucide-react";
 import { Toaster } from "@/components/ui/toast-custom";
 
@@ -109,6 +110,7 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
                     {[ 
                         { href: "/super-admin", label: "Dashboard", icon: LayoutDashboard },
                         { href: "/super-admin/orgs", label: "Organizations", icon: Users },
+                        { href: "/super-admin/voices", label: "Voice Engine", icon: AudioLines },
                         { href: "/super-admin/billing", label: "Billing", icon: CreditCard },
                         { href: "/super-admin/support", label: "Support Tickets", icon: LifeBuoy },
                         { href: "/super-admin/settings", label: "Settings", icon: Settings },
@@ -138,8 +140,8 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
                             S
                         </div>
                         <div className="flex-1 min-w-0">
-                            <p className="text-gray-950 text-[11px] font-black truncate uppercase tracking-tight">Super Administrator</p>
-                            <p className="text-gray-500 text-[10px] font-bold truncate lowercase mt-1 tracking-wider leading-none">support@sreevaai.co</p>
+                            <p className="text-gray-950 text-sm font-semibold truncate leading-tight">Super Administrator</p>
+                            <p className="text-gray-500 text-xs font-medium truncate mt-1 leading-tight">support@sreevaai.co</p>
                         </div>
                     </div>
                     

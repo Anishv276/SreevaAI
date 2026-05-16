@@ -1,474 +1,596 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+
+import { useEffect, useMemo, useState } from "react";
+import type { ComponentType, FormEvent, ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, CheckCircle2, Building2, User, Mail, Lock, ShieldCheck, Globe, RefreshCw, Play, Pause, MapPin as MapPinIcon, ChevronRight, Sparkles, Volume2, Mic2, BrainCircuit, Coins, Mic, ChevronDown, Infinity, Check, Search, AudioLines, Shield, Layers, Thermometer, Loader2, Zap } from "lucide-react";
+import {
+  ArrowLeft,
+  BrainCircuit,
+  Building2,
+  CheckCircle2,
+  Coins,
+  Globe,
+  Loader2,
+  Lock,
+  Mail,
+  MapPin,
+  Mic,
+  Shield,
+  Thermometer,
+  User,
+  Volume2,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { LocationAutocomplete } from "@/components/ui/location-autocomplete";
 import { toast } from "@/components/ui/toast-custom";
 import { ProctoringSignalsSection } from "@/components/super-admin/proctoring-signals-section";
-import { CARTESIA_VOICES, DEFAULT_GOOGLE_TTS_MODEL, GOOGLE_TTS_MODELS, GOOGLE_VOICES, SARVAM_VOICES } from "@/lib/constants/voices";
-import { DEFAULT_ORG_PLAN, ORG_PLAN_OPTIONS } from "@/lib/org-plans";
-import { getProctoringSignalsForPlan } from "@/lib/proctoring-signals";
-import { GEMINI_LLM_MODELS, OPENAI_LLM_MODELS } from "@/lib/llm-models";
+import { ALL_VOICES, DEFAULT_VOICE_ID, getVoiceById, type Voice } from "@/lib/constants/voices";
+import { DEFAULT_ORG_PLAN, ORG_PLAN_OPTIONS, type OrgPlanId } from "@/lib/org-plans";
+import { getProctoringSignalsForPlan, type ProctoringSignalToggles } from "@/lib/proctoring-signals";
+import { OPENAI_LLM_MODELS } from "@/lib/llm-models";
 import { cn } from "@/lib/utils";
 
-// Exact UI Components from Create Drive
-function PremiumInput({ label, icon: Icon, error, ...props }: any) {
-    return (
-        <div className="space-y-2">
-            <label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest">
-                <Icon className="h-3 w-3 text-[#F97316]" />
-                {label}
-                <span className="text-[#F97316] ml-0.5">*</span>
-            </label>
-            <input
-                {...props}
-                onWheel={(e) => (e.target as HTMLInputElement).blur()}
-                className={cn("h-10 w-full rounded-lg bg-white border border-gray-200 px-3 text-[14px] font-medium shadow-sm transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[#F97316]/30 focus:border-[#F97316] hover:border-orange-300 hover:shadow-md", error && "border-red-500")}
-            />
-        </div>
-    );
+type OrgFormState = {
+  orgName: string;
+  slug: string;
+  location: string;
+  plan: OrgPlanId;
+  maxActiveDrives: string;
+  interviewQuotaTotal: string;
+  proctoringSignals: ProctoringSignalToggles;
+  adminName: string;
+  adminEmail: string;
+  adminPassword: string;
+  voiceId: string;
+  deepgramModel: string;
+  llmModel: string;
+  llmTemperature: number;
+};
+
+function SectionHeader({ title, description }: { title: string; description?: string }) {
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-3">
+        <span className="h-6 w-1 rounded-full bg-[#F97316]" />
+        <p className="text-[13px] font-bold uppercase tracking-[0.18em] text-slate-900">{title}</p>
+      </div>
+      {description ? <p className="text-sm text-slate-500">{description}</p> : null}
+    </div>
+  );
 }
 
-function SectionHeader({ title }: { title: string }) {
-    return (
-        <div className="flex items-center gap-3 mb-6">
-            <span className="h-6 w-1 rounded-full bg-[#F97316]" />
-            <p className="text-[14px] font-bold text-gray-900 uppercase tracking-widest">{title}</p>
-        </div>
-    );
+function Field({
+  label,
+  icon: Icon,
+  children,
+}: {
+  label: string;
+  icon: ComponentType<{ className?: string }>;
+  children: ReactNode;
+}) {
+  return (
+    <div className="space-y-2">
+      <label className="flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-widest text-slate-500">
+        <Icon className="h-3.5 w-3.5 text-[#F97316]" />
+        {label}
+      </label>
+      {children}
+    </div>
+  );
 }
 
-function Steps({ steps, currentStep, onStepClick }: { steps: string[], currentStep: number, onStepClick: (i: number) => void }) {
-    return (
-        <div className="relative flex justify-between w-full max-w-3xl mx-auto mb-16 px-4">
-            <div className="absolute top-4 left-0 h-[2px] w-full bg-gray-100 rounded-full" />
-            <div className="absolute top-4 left-0 h-[2px] bg-[#F97316] rounded-full transition-all duration-500" style={{ width: `${(currentStep / (steps.length - 1)) * 100}%` }} />
-            {steps.map((step, index) => {
-                const isCurrent = index === currentStep;
-                return (
-                    <div key={step} className="relative z-10 flex flex-col items-center gap-2 cursor-pointer group" onClick={() => onStepClick(index)}>
-                        <div className={cn("flex h-8 w-8 items-center justify-center rounded-full border-2 bg-white transition-all", index < currentStep ? "border-[#F97316] bg-[#F97316] text-white" : isCurrent ? "border-[#F97316] text-[#F97316] shadow-lg" : "border-gray-200 text-gray-400 group-hover:border-orange-200")}>
-                            {index < currentStep ? <Check className="h-4 w-4" /> : <span className="text-xs font-bold">{index + 1}</span>}
-                        </div>
-                        <span className={cn("text-[10px] font-bold uppercase tracking-tighter", isCurrent ? "text-gray-900" : "text-gray-400 group-hover:text-gray-600")}>{step}</span>
-                    </div>
-                );
-            })}
-        </div>
-    );
+function TextInput({
+  label,
+  icon,
+  value,
+  onChange,
+  placeholder,
+  type = "text",
+  required = false,
+  autoComplete,
+}: {
+  label: string;
+  icon: ComponentType<{ className?: string }>;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  type?: string;
+  required?: boolean;
+  autoComplete?: string;
+}) {
+  const Icon = icon;
+  return (
+    <Field label={label} icon={Icon}>
+      <input
+        type={type}
+        required={required}
+        autoComplete={autoComplete}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-medium text-slate-900 shadow-sm outline-none transition focus:border-[#F97316] focus:ring-4 focus:ring-orange-50"
+      />
+    </Field>
+  );
 }
 
-function LimitControl({ value, onChange, label }: { value: string, onChange: (v: string) => void, label: string }) {
-    const isUnlimited = String(value).toLowerCase() === "unlimited" || Number(value) === 0;
-    const inputValue = isUnlimited ? "" : String(value);
-    return (
-        <div className="space-y-2">
-            <label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest"><Layers className="h-3 w-3 text-[#F97316]" /> {label}</label>
-            <div className="flex items-center gap-1.5">
-                <div className="flex bg-gray-100/50 p-1 rounded-lg border border-gray-100 w-fit shrink-0">
-                    <button type="button" onClick={() => onChange("Unlimited")} className={cn("px-3 h-7 rounded-md text-[10px] font-bold uppercase transition-all", isUnlimited ? "bg-white text-[#F97316] shadow-sm" : "text-gray-400 hover:text-gray-600")}>Unlimited</button>
-                    <button type="button" onClick={() => { if (isUnlimited) onChange("1"); }} className={cn("px-3 h-7 rounded-md text-[10px] font-bold uppercase transition-all", !isUnlimited ? "bg-white text-[#F97316] shadow-sm" : "text-gray-400 hover:text-gray-600")}>Limited</button>
-                </div>
-                {!isUnlimited && <input type="number" min="1" value={inputValue} onChange={(e) => onChange(String(Math.max(1, Number(e.target.value) || 1)))} className="h-9 w-16 rounded-lg border border-gray-200 bg-white px-2 text-sm font-bold text-gray-900 focus:border-[#F97316] outline-none text-center shadow-sm" />}
-            </div>
-        </div>
-    );
+function SelectInput({
+  label,
+  icon,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  value: string;
+  onChange: (value: string) => void;
+  options: Array<{ value: string; label: string }>;
+}) {
+  const Icon = icon;
+  return (
+    <Field label={label} icon={Icon}>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-medium text-slate-900 shadow-sm outline-none transition focus:border-[#F97316] focus:ring-4 focus:ring-orange-50"
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </Field>
+  );
 }
 
-function CustomSelect({ value, onChange, options, label, icon: Icon }: any) {
-    return (
-        <div className="space-y-2">
-            <label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest">
-                <Icon className="h-3 w-3 text-[#F97316]" />
-                {label}
-            </label>
-            <select value={value} onChange={(e) => onChange(e.target.value)} className="h-10 w-full rounded-lg bg-white border border-gray-200 px-3 text-[14px] font-medium shadow-sm focus:border-[#F97316] focus:outline-none hover:border-orange-300 transition-all">
-                {options.map((opt: any) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-            </select>
+function LimitControl({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const isUnlimited = String(value).toLowerCase() === "unlimited" || Number(value) === 0;
+  const inputValue = isUnlimited ? "" : String(value);
+
+  return (
+    <Field label={label} icon={Coins}>
+      <div className="flex items-center gap-2">
+        <div className="flex w-fit rounded-xl border border-slate-200 bg-slate-50 p-1">
+          <button
+            type="button"
+            onClick={() => onChange("Unlimited")}
+            className={cn(
+              "rounded-lg px-3 py-2 text-[10px] font-bold uppercase tracking-widest transition",
+              isUnlimited ? "bg-white text-[#F97316] shadow-sm" : "text-slate-400 hover:text-slate-700"
+            )}
+          >
+            Unlimited
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (isUnlimited) onChange("1");
+            }}
+            className={cn(
+              "rounded-lg px-3 py-2 text-[10px] font-bold uppercase tracking-widest transition",
+              !isUnlimited ? "bg-white text-[#F97316] shadow-sm" : "text-slate-400 hover:text-slate-700"
+            )}
+          >
+            Limited
+          </button>
         </div>
-    );
+        {!isUnlimited ? (
+          <input
+            type="number"
+            min={1}
+            value={inputValue}
+            onChange={(e) => onChange(String(Math.max(1, Number(e.target.value) || 1)))}
+            className="h-11 w-20 rounded-xl border border-slate-200 bg-white px-2 text-center text-sm font-bold text-slate-900 shadow-sm outline-none focus:border-[#F97316] focus:ring-4 focus:ring-orange-50"
+          />
+        ) : null}
+      </div>
+    </Field>
+  );
 }
 
 export default function NewOrgPage() {
-    const router = useRouter();
-    const [loading, setLoading] = useState(false);
-    const [step, setStep] = useState(0);
-    const [highestStepReached, setHighestStepReached] = useState(0);
-    const [success, setSuccess] = useState<any>(null);
-    const [previewLoading, setPreviewLoading] = useState(false);
-    const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
-    const [activeAudio, setActiveAudio] = useState<HTMLAudioElement | null>(null);
-    const [showVoiceDropdown, setShowVoiceDropdown] = useState(false);
-    const [voiceSearch, setVoiceSearch] = useState("");
+  const router = useRouter();
+  const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState<{ orgName: string; adminEmail: string } | null>(null);
+  const [voices, setVoices] = useState<Voice[]>(ALL_VOICES);
+  const [slugTouched, setSlugTouched] = useState(false);
+  const [slugSuffix] = useState(() => Math.floor(1000 + Math.random() * 9000).toString());
 
-    const [form, setForm] = useState({
-        orgName: "", slug: "", location: "", plan: DEFAULT_ORG_PLAN,
-        maxActiveDrives: "Unlimited", interviewQuotaTotal: "100",
-        proctoringSignals: getProctoringSignalsForPlan(DEFAULT_ORG_PLAN),
-        adminName: "", adminEmail: "", adminPassword: "",
-        ttsProvider: "CARTESIA", cartesiaVoiceId: "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
-        cartesiaModel: "cartesia/sonic-3", sarvamModel: "bulbul:v3", sarvamVoice: "shubh",
-        googleModel: DEFAULT_GOOGLE_TTS_MODEL, googleVoiceName: "Puck",
-        sttProvider: "DEEPGRAM", deepgramModel: "nova-3-general", sarvamSttModel: "saaras:v3",
-        llmProvider: "OPENAI", llmModel: "gpt-4o", llmTemperature: 0.7,
-        slugSuffix: Math.floor(1000 + Math.random() * 9000).toString(),
-    });
+  const [form, setForm] = useState<OrgFormState>(() => ({
+    orgName: "",
+    slug: "",
+    location: "",
+    plan: DEFAULT_ORG_PLAN,
+    maxActiveDrives: "Unlimited",
+    interviewQuotaTotal: "100",
+    proctoringSignals: getProctoringSignalsForPlan(DEFAULT_ORG_PLAN),
+    adminName: "",
+    adminEmail: "",
+    adminPassword: "",
+    voiceId: DEFAULT_VOICE_ID,
+    deepgramModel: "nova-3-general",
+    llmModel: "gpt-4.1-mini",
+    llmTemperature: 0.7,
+  }));
 
-    const handleTtsProviderChange = (v: string) => {
-        if (v === "GOOGLE") {
-            setForm(p => ({
-                ...p,
-                ttsProvider: "GOOGLE",
-                sttProvider: "GOOGLE",
-                llmProvider: "GOOGLE",
-                llmModel: "gemini-2.0-flash",
-                googleModel: DEFAULT_GOOGLE_TTS_MODEL,
-                googleVoiceName: "Puck"
-            }));
-        } else {
-            setForm(p => ({
-                ...p,
-                ttsProvider: v,
-                sttProvider: p.sttProvider === "GOOGLE" ? "DEEPGRAM" : p.sttProvider,
-                llmProvider: p.llmProvider === "GOOGLE" ? "OPENAI" : p.llmProvider,
-                llmModel: p.llmModel.startsWith("gemini") ? "gpt-4o" : p.llmModel
-            }));
+  const selectedVoice = useMemo(() => getVoiceById(form.voiceId) ?? getVoiceById(DEFAULT_VOICE_ID), [form.voiceId]);
+
+  useEffect(() => {
+    const loadVoices = async () => {
+      try {
+        const res = await fetch("/api/voices", { cache: "no-store" });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (Array.isArray(data?.voices) && data.voices.length > 0) {
+          setVoices(data.voices);
         }
+      } catch {
+        // keep static fallback
+      }
     };
+    void loadVoices();
+  }, []);
 
-    const stopCurrentPreview = () => { if (activeAudio) { activeAudio.pause(); setActiveAudio(null); } setPlayingVoiceId(null); };
+  const selectedVoiceFromCatalog = useMemo(
+    () => voices.find((voice) => voice.id === form.voiceId) || selectedVoice,
+    [voices, form.voiceId, selectedVoice]
+  );
 
-    const validateStep0 = () => {
-        if (!form.orgName.trim()) { toast.error("Client Name is required"); return false; }
-        if (!form.slug.trim()) { toast.error("URL Identifier is required"); return false; }
-        return true;
-    };
+  const updateForm = (patch: Partial<OrgFormState>) => {
+    setForm((prev) => ({ ...prev, ...patch }));
+  };
 
-    const validateStep1 = () => {
-        if (!form.adminEmail.trim()) { toast.error("Login Email is required"); return false; }
-        const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!EMAIL_REGEX.test(form.adminEmail)) { toast.error("Invalid admin email format"); return false; }
-        if (!form.adminPassword) { toast.error("Password is required"); return false; }
+  const makeSlug = (value: string) => {
+    const base = value
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    return base ? `${base}-${slugSuffix}` : "";
+  };
 
-        if (form.adminPassword.length < 8) { toast.error("Password must be at least 8 characters long"); return false; }
-        if (!/[a-z]/.test(form.adminPassword)) { toast.error("Password must contain at least one lowercase letter"); return false; }
-        if (!/[A-Z]/.test(form.adminPassword)) { toast.error("Password must contain at least one uppercase letter"); return false; }
-        if (!/[0-9]/.test(form.adminPassword)) { toast.error("Password must contain at least one number"); return false; }
-        if (!/[^a-zA-Z0-9]/.test(form.adminPassword)) { toast.error("Password must contain at least one special character"); return false; }
-
-        return true;
-    };
-
-    const handleNext = (targetStep: number) => {
-        // Allow going backwards freely
-        if (targetStep < step) {
-            setStep(targetStep);
-            return;
-        }
-
-        // Do not allow skipping unreached steps (must fill each step during creation)
-        if (targetStep > highestStepReached + 1) {
-            toast.error("Please complete the steps sequentially.");
-            return;
-        }
-
-        for (let i = step; i < targetStep; i++) {
-            if (i === 0 && !validateStep0()) return;
-            if (i === 1 && !validateStep1()) return;
-        }
-
-        setHighestStepReached(Math.max(highestStepReached, targetStep));
-        setStep(targetStep);
-    };
-
-    const getVoicesForProvider = () => {
-        if (form.ttsProvider === "SARVAM") return SARVAM_VOICES;
-        if (form.ttsProvider === "GOOGLE") return GOOGLE_VOICES;
-        return CARTESIA_VOICES;
-    };
-
-    const getVoiceId = () => {
-        if (form.ttsProvider === "SARVAM") return form.sarvamVoice;
-        if (form.ttsProvider === "GOOGLE") return form.googleVoiceName;
-        return form.cartesiaVoiceId;
-    };
-
-    const playSample = async (voiceId: string) => {
-        const provider = form.ttsProvider;
-        const modelId = provider === "SARVAM" ? form.sarvamModel : provider === "GOOGLE" ? form.googleModel : form.cartesiaModel;
-        if (playingVoiceId === voiceId) { stopCurrentPreview(); return; }
-        setPreviewLoading(true);
-        try {
-            stopCurrentPreview();
-            const res = await fetch("/api/admin/voice/preview", {
-                method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ provider, voiceId, modelId, transcript: "Hello buddy, how are you doing? I'm ready to interview candidates." }),
-            });
-            if (!res.ok) throw new Error("Preview failed");
-            const blob = await res.blob();
-            const audio = new Audio(URL.createObjectURL(blob));
-            audio.onended = () => stopCurrentPreview();
-            await audio.play();
-            setActiveAudio(audio);
-            setPlayingVoiceId(voiceId);
-        } catch (err) { toast.error("Preview failed."); }
-        finally { setPreviewLoading(false); }
-    };
-
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setLoading(true);
-        try {
-            const res = await fetch("/api/super-admin/orgs", {
-                method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(form),
-            });
-            if (!res.ok) {
-                const data = await res.json().catch(() => null);
-                throw new Error(data?.error || "Failed to create organization");
-            }
-            setSuccess({ orgName: form.orgName, adminEmail: form.adminEmail });
-        } catch (err: any) { toast.error(err.message); }
-        finally { setLoading(false); }
-    };
-
-    if (success) {
-        return (
-            <div className="min-h-[70vh] flex items-center justify-center p-8">
-                <div className="max-w-md w-full bg-white border border-gray-100 rounded-2xl p-10 text-center shadow-2xl space-y-6">
-                    <div className="h-16 w-16 bg-emerald-50 rounded-full flex items-center justify-center mx-auto text-emerald-500"><CheckCircle2 className="h-8 w-8" /></div>
-                    <h2 className="text-3xl font-black text-gray-900 tracking-tight">{success.orgName} Created</h2>
-                    <p className="text-gray-500 font-medium">{success.adminEmail} can now access the portal.</p>
-                    <button onClick={() => router.push("/super-admin/orgs")} className="w-full h-12 rounded-lg bg-gray-900 text-white font-bold text-xs uppercase tracking-widest hover:bg-black transition-all">Go to Organizations</button>
-                </div>
-            </div>
-        );
+  const validate = () => {
+    if (!form.orgName.trim()) {
+      toast.error("Client Name is required");
+      return false;
     }
+    if (!form.slug.trim()) {
+      toast.error("URL Identifier is required");
+      return false;
+    }
+    if (!form.adminEmail.trim()) {
+      toast.error("Login Email is required");
+      return false;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.adminEmail)) {
+      toast.error("Invalid admin email format");
+      return false;
+    }
+    if (!form.adminPassword) {
+      toast.error("Password is required");
+      return false;
+    }
+    if (form.adminPassword.length < 8) {
+      toast.error("Password must be at least 8 characters long");
+      return false;
+    }
+    return true;
+  };
 
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!validate()) return;
+
+    setLoading(true);
+    try {
+      const res = await fetch("/api/super-admin/orgs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orgName: form.orgName.trim(),
+          slug: form.slug.trim().toLowerCase(),
+          plan: form.plan,
+          location: form.location.trim() || null,
+          adminName: form.adminName.trim() || null,
+          adminEmail: form.adminEmail.trim(),
+          adminPassword: form.adminPassword,
+          maxActiveDrives: form.maxActiveDrives,
+          interviewQuotaTotal: Number(form.interviewQuotaTotal || 0),
+          proctoringSignals: form.proctoringSignals,
+          voiceId: form.voiceId,
+          allowedVoices: [form.voiceId],
+          deepgramModel: form.deepgramModel,
+          llmModel: form.llmModel,
+          llmTemperature: form.llmTemperature,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || "Failed to create organization");
+      }
+
+      setSuccess({
+        orgName: form.orgName.trim(),
+        adminEmail: form.adminEmail.trim(),
+      });
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Failed to create organization");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (success) {
     return (
-        <div className="p-8 lg:p-12 w-full max-w-[1100px] mx-auto bg-white min-h-screen">
-            <button onClick={() => router.back()} className="group flex items-center gap-2 text-gray-400 hover:text-gray-900 text-[11px] font-bold uppercase tracking-widest mb-10 transition-all">
-                <ArrowLeft className="h-3 w-3 group-hover:-translate-x-1" /> Back to Organizations
-            </button>
-
-            <div className="flex items-center gap-6 mb-16">
-                <div className="h-14 w-14 rounded-xl bg-orange-50 border border-orange-100 flex items-center justify-center text-[#F97316]"><Building2 className="h-7 w-7" /></div>
-                <div>
-                    <h1 className="text-3xl font-black text-gray-900 tracking-tight leading-none">Add Client</h1>
-                    <p className="text-gray-400 font-medium text-sm mt-1">Configure global AI and administrative guardrails.</p>
-                </div>
-            </div>
-
-            <Steps steps={["Identity", "Admin", "AI Engine", "Billing", "Security"]} currentStep={step} onStepClick={handleNext} />
-
-            <form
-                onSubmit={handleSubmit}
-                onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                        e.preventDefault();
-                    }
-                }}
-                className="space-y-12"
-            >
-                {step === 0 && (
-                    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
-                        <SectionHeader title="Organization Profile" />
-                        <div className="grid md:grid-cols-2 gap-6">
-                            <PremiumInput label="Client Name" icon={Building2} value={form.orgName} onChange={(e: any) => {
-                                const newName = e.target.value;
-                                setForm(p => {
-                                    const generatedBase = newName.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-                                    const currentGenerated = generatedBase ? `${generatedBase}-${(p as any).slugSuffix}` : "";
-                                    const previousName = p.orgName || "";
-                                    const previousGenerated = previousName.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-                                    const expectedPrevious = previousGenerated ? `${previousGenerated}-${(p as any).slugSuffix}` : "";
-
-                                    return {
-                                        ...p,
-                                        orgName: newName,
-                                        slug: (p.slug === expectedPrevious || !p.slug)
-                                            ? currentGenerated
-                                            : p.slug
-                                    };
-                                });
-                            }} placeholder="e.g. Lumoscale" required />
-                            <PremiumInput label="URL Identifier" icon={Globe} value={form.slug} onChange={(e: any) => setForm(p => ({ ...p, slug: e.target.value.toLowerCase() }))} placeholder="slug-path" required />
-                        </div>
-                        <div className="pt-6 border-t border-gray-100">
-                            <div className="space-y-2">
-                                <label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest"><MapPinIcon className="h-3 w-3 text-[#F97316]" />Location</label>
-                                <LocationAutocomplete value={form.location || ""} onChange={val => setForm({ ...form, location: val })} placeholder="Mumbai, India" />
-                            </div>
-                        </div>
-                        <div className="flex justify-end pt-8"><button type="button" onClick={() => handleNext(1)} className="h-12 px-8 rounded-lg bg-gray-900 text-white font-bold text-xs uppercase tracking-widest hover:bg-black transition-all flex items-center gap-3">NEXT: ADMIN <ChevronRight className="h-4 w-4" /></button></div>
-                    </div>
-                )}
-
-                {step === 1 && (
-                    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
-                        <SectionHeader title="Administrative Access" />
-                        <div className="grid md:grid-cols-3 gap-6">
-                            <PremiumInput label="Admin Name" icon={User} value={form.adminName} onChange={(e: any) => setForm(p => ({ ...p, adminName: e.target.value }))} placeholder="Full Name" />
-                            <PremiumInput label="Login Email" icon={Mail} value={form.adminEmail} onChange={(e: any) => setForm(p => ({ ...p, adminEmail: e.target.value }))} placeholder="admin@client.com" />
-                            <PremiumInput label="Password" icon={Lock} type="password" value={form.adminPassword} onChange={(e: any) => setForm(p => ({ ...p, adminPassword: e.target.value }))} placeholder="••••••••" />
-                        </div>
-                        <div className="flex justify-between pt-8 border-t border-gray-100">
-                            <button type="button" onClick={() => handleNext(0)} className="h-12 px-8 rounded-lg border border-gray-200 text-gray-500 font-bold text-xs uppercase tracking-widest hover:bg-gray-50">BACK</button>
-                            <button type="button" onClick={() => handleNext(2)} className="h-12 px-8 rounded-lg bg-gray-900 text-white font-bold text-xs uppercase tracking-widest hover:bg-black transition-all flex items-center gap-3">NEXT: AI ENGINE <ChevronRight className="h-4 w-4" /></button>
-                        </div>
-                    </div>
-                )}
-
-                {step === 2 && (
-                    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
-                        <SectionHeader title="AI Engine & Audio" />
-                        <div className="grid md:grid-cols-2 gap-10">
-                            {/* TTS & Voice */}
-                            <div className="space-y-6">
-                                <CustomSelect label="TTS Provider" icon={Volume2} value={form.ttsProvider} onChange={handleTtsProviderChange} options={[{ value: "CARTESIA", label: "Cartesia" }, { value: "SARVAM", label: "Sarvam" }, { value: "GOOGLE", label: "Google Cloud" }]} />
-                                <div className="space-y-2">
-                                    <label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest"><Mic2 className="h-3 w-3 text-[#F97316]" />Voice Selection</label>
-                                    <div className="relative">
-                                        <button type="button" onClick={() => setShowVoiceDropdown(!showVoiceDropdown)} className="h-11 w-full rounded-lg border border-gray-200 bg-white px-4 flex items-center justify-between hover:border-orange-300 transition-all outline-none">
-                                            <div className="flex items-center gap-2">
-                                                <AudioLines className="h-4 w-4 text-orange-500" />
-                                                <span className="text-sm font-bold text-gray-900">{getVoicesForProvider().find(v => v.id === getVoiceId())?.name || "Select Voice"}</span>
-                                            </div>
-                                            <ChevronDown className={cn("h-4 w-4 text-gray-400 transition-transform", showVoiceDropdown && "rotate-180")} />
-                                        </button>
-                                        {showVoiceDropdown && (
-                                            <div className="absolute z-50 mt-2 w-full bg-white border border-gray-100 rounded-xl shadow-2xl p-2 max-h-60 overflow-y-auto animate-in fade-in zoom-in-95 duration-200">
-                                                <div className="relative mb-2">
-                                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3 w-3 text-gray-400" />
-                                                    <input type="text" value={voiceSearch} onChange={e => setVoiceSearch(e.target.value)} placeholder="Search voices..." className="h-8 w-full pl-8 pr-3 rounded-lg border border-gray-100 text-[11px] focus:outline-none" />
-                                                </div>
-                                                {getVoicesForProvider().filter(v => v.name.toLowerCase().includes(voiceSearch.toLowerCase())).map(v => (
-                                                    <button key={v.id} type="button" onClick={() => { setForm(p => ({ ...p, [form.ttsProvider === "SARVAM" ? "sarvamVoice" : form.ttsProvider === "GOOGLE" ? "googleVoiceName" : "cartesiaVoiceId"]: v.id })); setShowVoiceDropdown(false); }} className="w-full flex items-center justify-between p-2.5 rounded-lg hover:bg-orange-50 group text-left transition-all">
-                                                        <div className="flex flex-col">
-                                                            <span className="text-xs font-bold text-gray-900 group-hover:text-orange-600">{v.name}</span>
-                                                            <span className="text-[9px] text-gray-400 font-medium uppercase tracking-tight truncate max-w-[150px]">{v.description}</span>
-                                                        </div>
-                                                        <div onClick={(e) => { e.stopPropagation(); playSample(v.id); }} className="h-8 w-8 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-orange-600 hover:text-white transition-all">
-                                                            {playingVoiceId === v.id ? <Pause className="h-3 w-3 fill-current" /> : <Play className="h-3 w-3 fill-current ml-0.5" />}
-                                                        </div>
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                                <CustomSelect label="Neural Model" icon={Layers} value={form.ttsProvider === "SARVAM" ? form.sarvamModel : form.ttsProvider === "GOOGLE" ? form.googleModel : form.cartesiaModel} onChange={(v: any) => setForm(p => ({ ...p, [form.ttsProvider === "SARVAM" ? "sarvamModel" : form.ttsProvider === "GOOGLE" ? "googleModel" : "cartesiaModel"]: v }))} options={form.ttsProvider === "CARTESIA" ? [{ value: "cartesia/sonic-3", label: "Sonic-3 (Ultra)" }, { value: "cartesia/sonic-2", label: "Sonic-2" }] : form.ttsProvider === "SARVAM" ? [{ value: "bulbul:v3", label: "Bulbul v3" }, { value: "bulbul:v2", label: "Bulbul v2" }] : GOOGLE_TTS_MODELS.map(m => ({ value: m.value, label: m.label }))} />
-                            </div>
-
-                            {/* STT & LLM */}
-                            <div className="space-y-6">
-                                <div className="relative group space-y-4">
-                                    <CustomSelect label="Transcription (STT)" icon={Mic} value={form.sttProvider} onChange={(v: any) => setForm(p => ({ ...p, sttProvider: v }))} options={form.ttsProvider === "GOOGLE" ? [{ value: "GOOGLE", label: "Google Cloud STT" }] : [{ value: "DEEPGRAM", label: "Deepgram (Nova-3)" }, { value: "SARVAM", label: "Sarvam (Regional)" }]} />
-
-                                    {form.sttProvider === "DEEPGRAM" && (
-                                        <div className="animate-in fade-in slide-in-from-top-2">
-                                            <CustomSelect
-                                                label="Deepgram Model"
-                                                icon={Zap}
-                                                value={form.deepgramModel}
-                                                onChange={(v: any) => setForm(p => ({ ...p, deepgramModel: v }))}
-                                                options={[
-                                                    { value: "nova-3-general", label: "Nova-3 (Latest)" },
-                                                    { value: "nova-2-general", label: "Nova-2 (Legacy)" },
-                                                ]}
-                                            />
-                                        </div>
-                                    )}
-
-                                    {form.ttsProvider === "GOOGLE" && (
-                                        <div className="absolute inset-0 pointer-events-none flex items-center justify-end pr-10">
-                                            <div className="flex items-center gap-1 bg-blue-50/90 border border-blue-100 px-1.5 py-0.5 rounded shadow-sm translate-y-1">
-                                                <Lock className="h-2 w-2 text-blue-600" />
-                                                <span className="text-[7px] font-black text-blue-600 uppercase tracking-widest">Stack Locked</span>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                                <div className="relative group">
-                                    <CustomSelect label="Intelligence (LLM)" icon={BrainCircuit} value={form.llmModel} onChange={(v: any) => setForm(p => ({ ...p, llmModel: v }))} options={form.ttsProvider === "GOOGLE" ? GEMINI_LLM_MODELS : OPENAI_LLM_MODELS} />
-                                    {form.ttsProvider === "GOOGLE" && (
-                                        <div className="absolute inset-0 pointer-events-none flex items-center justify-end pr-10">
-                                            <div className="flex items-center gap-1 bg-blue-50/90 border border-blue-100 px-1.5 py-0.5 rounded shadow-sm translate-y-1">
-                                                <Lock className="h-2 w-2 text-blue-600" />
-                                                <span className="text-[7px] font-black text-blue-600 uppercase tracking-widest">Stack Locked</span>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                                <div className="space-y-4">
-                                    <div className="flex items-center justify-between">
-                                        <label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest"><Thermometer className="h-3 w-3 text-[#F97316]" /> Temperature</label>
-                                        <span className="text-[12px] font-black text-gray-900">{form.llmTemperature.toFixed(1)}</span>
-                                    </div>
-                                    <input type="range" min="0" max="1" step="0.1" value={form.llmTemperature} onChange={e => setForm(p => ({ ...p, llmTemperature: parseFloat(e.target.value) }))} className="w-full h-1.5 bg-gray-100 rounded-lg appearance-none cursor-pointer accent-[#F97316] hover:accent-orange-600 transition-all" />
-                                </div>
-                            </div>
-                        </div>
-                        <div className="flex justify-between pt-8">
-                            <button type="button" onClick={() => handleNext(1)} className="h-12 px-8 rounded-lg border border-gray-200 text-gray-500 font-bold text-xs uppercase tracking-widest hover:bg-gray-50">BACK</button>
-                            <button type="button" onClick={() => handleNext(3)} className="h-12 px-8 rounded-lg bg-gray-900 text-white font-bold text-xs uppercase tracking-widest hover:bg-black transition-all flex items-center gap-3">NEXT: BILLING <ChevronRight className="h-4 w-4" /></button>
-                        </div>
-                    </div>
-                )}
-
-                {step === 3 && (
-                    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
-                        <SectionHeader title="Billing & Quotas" />
-                        <div className="grid md:grid-cols-2 gap-6 bg-gray-50/50 p-6 rounded-2xl border border-gray-100 shadow-inner">
-                            <LimitControl label="Job Limit" value={form.maxActiveDrives} onChange={val => setForm(p => ({ ...p, maxActiveDrives: val }))} />
-                            <PremiumInput label="Total Interviews Allocated" icon={Coins} type="number" value={form.interviewQuotaTotal} onChange={(e: any) => setForm(p => ({ ...p, interviewQuotaTotal: e.target.value }))} />
-                        </div>
-                        <div className="flex justify-between pt-8 border-t border-gray-100">
-                            <button type="button" onClick={() => handleNext(2)} className="h-12 px-8 rounded-lg border border-gray-200 text-gray-500 font-bold text-xs uppercase tracking-widest hover:bg-gray-50">BACK</button>
-                            <button type="button" onClick={() => handleNext(4)} className="h-12 px-8 rounded-lg bg-gray-900 text-white font-bold text-xs uppercase tracking-widest hover:bg-black transition-all flex items-center gap-3">NEXT: SECURITY <ChevronRight className="h-4 w-4" /></button>
-                        </div>
-                    </div>
-                )}
-
-                {step === 4 && (
-                    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
-                        <SectionHeader title="Security & Network Plan" />
-                        <div className="grid md:grid-cols-4 gap-8">
-                            <div className="md:col-span-1 space-y-4">
-                                <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest">Client Plan</label>
-                                {ORG_PLAN_OPTIONS.map(p => (
-                                    <button
-                                        key={p.id}
-                                        type="button"
-                                        onClick={() => setForm(prev => ({
-                                            ...prev,
-                                            plan: p.id,
-                                            proctoringSignals: getProctoringSignalsForPlan(p.id),
-                                        }))}
-                                        className={cn("w-full p-4 rounded-lg border text-left transition-all", form.plan === p.id ? "border-[#F97316] bg-orange-50 shadow-sm" : "border-gray-100 hover:border-gray-200")}
-                                    >
-                                        <p className="text-xs font-black uppercase text-gray-900">{p.label}</p>
-                                        <p className="text-[10px] text-gray-400 font-bold mt-0.5">{p.desc}</p>
-                                    </button>
-                                ))}
-                            </div>
-                            <div className="md:col-span-3">
-                                <ProctoringSignalsSection
-                                    signals={form.proctoringSignals as any}
-                                    disabled={form.plan === "STARTER"}
-                                    onChange={(k, v) => setForm(p => ({ ...p, proctoringSignals: { ...p.proctoringSignals, [k]: v } }))}
-                                />
-                            </div>
-                        </div>
-                        <div className="flex justify-between pt-10 border-t border-gray-100">
-                            <button type="button" onClick={() => handleNext(3)} className="h-14 px-8 rounded-lg border border-gray-200 text-gray-500 font-bold text-xs uppercase tracking-widest hover:bg-gray-50">BACK</button>
-                            <button type="submit" disabled={loading} className="h-14 px-12 rounded-lg bg-[#F97316] text-white font-black text-xs uppercase tracking-widest shadow-xl shadow-orange-200 hover:bg-orange-700 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-3">
-                                {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Shield className="h-5 w-5" />} {loading ? "Creating..." : "Create"}
-                            </button>
-                        </div>
-                    </div>
-                )}
-            </form>
+      <div className="min-h-[70vh] px-4 py-8">
+        <div className="mx-auto flex w-full max-w-lg flex-col items-center rounded-3xl border border-slate-200 bg-white p-10 text-center shadow-sm">
+          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
+            <CheckCircle2 className="h-8 w-8" />
+          </div>
+          <h1 className="text-3xl font-black tracking-tight text-slate-900">{success.orgName} created</h1>
+          <p className="mt-3 text-sm font-medium text-slate-500">
+            {success.adminEmail} can now access the portal.
+          </p>
+          <Button onClick={() => router.push("/super-admin/orgs")} className="mt-8 h-11 w-full rounded-xl bg-slate-900 text-white hover:bg-slate-800">
+            Go to Organizations
+          </Button>
         </div>
+      </div>
     );
+  }
+
+  return (
+    <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 lg:px-0">
+      <button
+        type="button"
+        onClick={() => router.back()}
+        className="mb-6 inline-flex items-center gap-2 text-sm font-bold text-slate-500 transition hover:text-slate-700"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Back to Organizations
+      </button>
+
+      <div className="mb-8">
+        <div className="flex items-center gap-4">
+          <div className="h-12 w-1.5 rounded-full bg-gradient-to-b from-[#F97316] to-orange-400 shadow-[0_0_12px_rgba(249,115,22,0.35)]" />
+          <div>
+            <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">Add Client</h1>
+            <p className="mt-1 text-base font-medium text-slate-500 sm:text-lg">
+              Configure the organization, admin access, AI defaults, and safety controls.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <form onSubmit={handleSubmit} className="space-y-8">
+        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+          <SectionHeader title="Organization Profile" description="Core client metadata and URL slug." />
+          <div className="mt-6 grid gap-6 md:grid-cols-2">
+            <TextInput
+              label="Client Name"
+              icon={Building2}
+              value={form.orgName}
+              onChange={(value) => {
+                updateForm({
+                  orgName: value,
+                  slug: slugTouched ? form.slug : makeSlug(value),
+                });
+              }}
+              placeholder="e.g. Lumoscale"
+              required
+            />
+            <TextInput
+              label="URL Identifier"
+              icon={Globe}
+              value={form.slug}
+              onChange={(value) => {
+                setSlugTouched(true);
+                updateForm({ slug: value.toLowerCase() });
+              }}
+              placeholder="client-slug"
+              required
+            />
+            <div className="md:col-span-2">
+              <Field label="Location" icon={MapPin}>
+                <LocationAutocomplete
+                  value={form.location}
+                  onChange={(value) => updateForm({ location: value })}
+                  placeholder="Mumbai, India"
+                />
+              </Field>
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+          <SectionHeader title="Administrative Access" description="Primary login credentials for the new organization." />
+          <div className="mt-6 grid gap-6 md:grid-cols-3">
+            <TextInput
+              label="Admin Name"
+              icon={User}
+              value={form.adminName}
+              onChange={(value) => updateForm({ adminName: value })}
+              placeholder="Full name"
+            />
+            <TextInput
+              label="Login Email"
+              icon={Mail}
+              value={form.adminEmail}
+              onChange={(value) => updateForm({ adminEmail: value })}
+              placeholder="admin@client.com"
+              required
+              autoComplete="email"
+            />
+            <TextInput
+              label="Password"
+              icon={Lock}
+              type="password"
+              value={form.adminPassword}
+              onChange={(value) => updateForm({ adminPassword: value })}
+              placeholder="Minimum 8 characters"
+              required
+              autoComplete="new-password"
+            />
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+          <SectionHeader title="AI Engine" description="The defaults that will be saved to the organization." />
+          <div className="mt-6 grid gap-6 lg:grid-cols-2">
+            <div className="space-y-6">
+              <SelectInput
+                label="Primary Voice"
+                icon={Volume2}
+                value={form.voiceId}
+                onChange={(value) => updateForm({ voiceId: value })}
+                options={voices.map((voice) => ({
+                  value: voice.id,
+                  label: `${voice.name} (${voice.provider})`,
+                }))}
+              />
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Selected voice</p>
+                <p className="mt-2 text-sm font-semibold text-slate-900">
+                  {selectedVoiceFromCatalog?.name || "Unknown voice"}
+                </p>
+                <p className="mt-1 text-sm text-slate-500">
+                  {selectedVoiceFromCatalog?.provider || "CARTESIA"} | {selectedVoiceFromCatalog?.model || "cartesia/sonic-3"}
+                </p>
+              </div>
+            </div>
+            <div className="space-y-6">
+              <SelectInput
+                label="Transcription (STT)"
+                icon={Mic}
+                value={form.deepgramModel}
+                onChange={(value) => updateForm({ deepgramModel: value })}
+                options={[
+                  { value: "nova-3-general", label: "Nova-3 (Latest)" },
+                  { value: "nova-2-general", label: "Nova-2 (Legacy)" },
+                ]}
+              />
+              <SelectInput
+                label="Intelligence (LLM)"
+                icon={BrainCircuit}
+                value={form.llmModel}
+                onChange={(value) => updateForm({ llmModel: value })}
+                options={OPENAI_LLM_MODELS}
+              />
+              <div className="space-y-2">
+                <label className="flex items-center justify-between text-[12px] font-bold uppercase tracking-widest text-slate-500">
+                  <span className="flex items-center gap-1.5">
+                    <Thermometer className="h-3.5 w-3.5 text-[#F97316]" />
+                    Temperature
+                  </span>
+                  <span className="text-slate-900">{form.llmTemperature.toFixed(1)}</span>
+                </label>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.1"
+                  value={form.llmTemperature}
+                  onChange={(e) => updateForm({ llmTemperature: parseFloat(e.target.value) })}
+                  className="h-2 w-full cursor-pointer appearance-none rounded-full bg-slate-100 accent-[#F97316]"
+                />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+          <SectionHeader title="Billing and Quotas" description="Usage guardrails for the organization." />
+          <div className="mt-6 grid gap-6 md:grid-cols-2">
+            <LimitControl
+              label="Job Limit"
+              value={form.maxActiveDrives}
+              onChange={(value) => updateForm({ maxActiveDrives: value })}
+            />
+            <TextInput
+              label="Total Interviews Allocated"
+              icon={Coins}
+              value={form.interviewQuotaTotal}
+              onChange={(value) => updateForm({ interviewQuotaTotal: value })}
+              placeholder="100"
+              type="number"
+            />
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+          <SectionHeader title="Plan and Safety" description="Choose a plan and enable proctoring signals." />
+          <div className="mt-6 grid gap-6 lg:grid-cols-4">
+            <div className="space-y-3 lg:col-span-1">
+              <p className="text-[12px] font-bold uppercase tracking-widest text-slate-500">Client plan</p>
+              {ORG_PLAN_OPTIONS.map((plan) => (
+                <button
+                  key={plan.id}
+                  type="button"
+                  onClick={() =>
+                    updateForm({
+                      plan: plan.id,
+                      proctoringSignals: getProctoringSignalsForPlan(plan.id),
+                    })
+                  }
+                  className={cn(
+                    "w-full rounded-2xl border p-4 text-left transition",
+                    form.plan === plan.id
+                      ? "border-[#F97316] bg-orange-50 shadow-sm"
+                      : "border-slate-200 bg-white hover:border-slate-300"
+                  )}
+                >
+                  <p className="text-sm font-semibold uppercase tracking-wide text-slate-900">{plan.label}</p>
+                  <p className="mt-1 text-xs text-slate-500">{plan.desc}</p>
+                </button>
+              ))}
+            </div>
+            <div className="lg:col-span-3">
+              <ProctoringSignalsSection
+                signals={form.proctoringSignals}
+                disabled={form.plan === "STARTER"}
+                onChange={(key, checked) =>
+                  updateForm({
+                    proctoringSignals: {
+                      ...form.proctoringSignals,
+                      [key]: checked,
+                    },
+                  })
+                }
+              />
+            </div>
+          </div>
+        </section>
+
+        <div className="flex items-center justify-end gap-3 pb-4">
+          <Button
+            type="button"
+            variant="outline"
+            className="h-11 rounded-xl border-slate-200 bg-white px-5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            onClick={() => router.back()}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            disabled={loading}
+            className="h-11 rounded-xl bg-[#F97316] px-6 text-sm font-semibold text-white shadow-sm hover:bg-orange-600"
+          >
+            {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Shield className="mr-2 h-4 w-4" />}
+            {loading ? "Creating..." : "Create client"}
+          </Button>
+        </div>
+      </form>
+    </div>
+  );
 }

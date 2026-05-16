@@ -20,18 +20,14 @@ interface DriveDetails {
     id: string;
     title: string;
     role?: string | null;
-    department?: string | null;
     applicants?: number | null;
     screeningThreshold?: number | null;
     interviewLanguage?: string | null;
-    type?: string | null;
     description?: string | null;
-    workMode?: string | null;
     experience?: string | null;
     responsibilities?: string | null;
     requirements?: string | null;
     skills?: string | null;
-    location?: string | null;
     salary?: string | null;
     extractedDetails?: Record<string, unknown> | string | null;
     jdPreviewUrl?: string | null;
@@ -70,18 +66,14 @@ export default function DriveCandidatesPage() {
                     id: data.id,
                     title: data.title,
                     role: data.role || null,
-                    department: data.department || null,
                     applicants: data.applicants ?? data._count?.applications ?? 0,
                     screeningThreshold: data.screeningThreshold ?? null,
                     interviewLanguage: data.interviewLanguage || null,
-                    type: data.type || null,
                     description: data.description || null,
-                    workMode: data.workMode || null,
                     experience: data.experience || null,
                     responsibilities: data.responsibilities || null,
                     requirements: data.requirements || null,
                     skills: data.skills || null,
-                    location: data.location || null,
                     salary: data.salary || null,
                     extractedDetails: data.extractedDetails || null,
                     jdPreviewUrl: data.jdPreviewUrl || null,
@@ -161,7 +153,7 @@ export default function DriveCandidatesPage() {
                             <Badge className="rounded-full border border-orange-200 bg-orange-50 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.18em] text-[#F97316] shadow-none">
                                 Job Candidates
                               </Badge>
-                            <span>{drive?.department || "Recruitment"}</span>
+                            <span>{drive?.role || "Recruitment"}</span>
                         </div>
                         <div className="space-y-1">
                             <h1 className="truncate text-lg font-bold tracking-tight text-gray-900 sm:text-xl">

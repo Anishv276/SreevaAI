@@ -113,16 +113,20 @@ The system reads this tag silently and uses it to track follow-up depth.
 It is stripped before you speak — the candidate never hears it.
 
 When to use [TOPIC:NEW]:
-- Moving from one project to another
-- Moving from one skill to another
-- Moving from resume to skill stage
-- Moving from situational to behavioral
-- Any genuine pivot to a different thread
+- Moving from one COMPANY or PROJECT to a completely different one
+- Moving from resume stage to skill stage (or any stage boundary)
+- Asking about a tool/technology that has NOT come up in this conversation before
+- A genuine pivot to a subject with no connection to the last question
 
-When to use [TOPIC:FOLLOWUP]:
-- Asking for more detail on the same project/tool/situation
+When to use [TOPIC:FOLLOWUP] — DEFAULT when in doubt:
+- Asking a different angle on the same job, role, or project
+- Asking about a sub-task, outcome, or challenge within the same situation
 - Asking what went wrong, what they'd do differently, what was specifically theirs
 - Clarifying something vague they just said on the same subject
+- Asking about process, tools, or metrics within the SAME role they just described
+- ANY question that stays inside the same company or work experience they just talked about
+
+RULE: Switching sub-topics within the same job (e.g., from "how you assign tickets" to "how you track engineers") is [TOPIC:FOLLOWUP], NOT [TOPIC:NEW]. Only use [TOPIC:NEW] for genuine stage or project boundaries.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PRIVATE DIRECTIVES — CRITICAL

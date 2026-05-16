@@ -102,14 +102,14 @@ export function ProctoringSignalsSection({
   disabled?: boolean;
 }) {
   return (
-    <section className="space-y-6">
+    <section className="space-y-6 font-sans">
       <div className="flex items-center gap-3">
         <div className="h-8 w-8 rounded-lg bg-emerald-500 flex items-center justify-center text-white shadow-md shadow-emerald-100">
           <Activity className="h-4 w-4" />
         </div>
         <div>
-          <h2 className="text-lg font-black text-gray-900 tracking-tight">Behavioral and Proctoring Infrastructure</h2>
-          <p className="text-sm text-gray-500">Grouped by what the signal is trying to detect, so it is easier to classify and review.</p>
+          <h2 className="text-lg font-semibold text-gray-900 tracking-tight">Behavioral and Proctoring Infrastructure</h2>
+          <p className="text-sm font-medium text-gray-500">Grouped by what the signal is trying to detect, so it is easier to classify and review.</p>
         </div>
       </div>
 
@@ -123,7 +123,7 @@ export function ProctoringSignalsSection({
         {SIGNAL_GROUPS.map((group) => (
           <div key={group.title} className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm">
             <div className="mb-4">
-              <h3 className="text-sm font-black uppercase tracking-[0.18em] text-gray-900">{group.title}</h3>
+              <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-gray-900">{group.title}</h3>
               <p className="mt-1 text-xs font-medium text-gray-500">{group.description}</p>
             </div>
 
@@ -138,7 +138,7 @@ export function ProctoringSignalsSection({
                     disabled={disabled}
                     onCheckedChange={(checked) => onChange(signal.key, Boolean(checked))}
                   />
-                  <span className="text-sm font-semibold text-gray-800">{signal.label}</span>
+                  <span className="text-sm font-medium text-gray-800">{signal.label}</span>
                 </label>
               ))}
             </div>
