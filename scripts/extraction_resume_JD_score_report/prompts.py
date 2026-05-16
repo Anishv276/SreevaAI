@@ -68,10 +68,10 @@ EXTRACTION RULES:
    - high criteria get 10-15 points each
    - medium criteria get 5-10 points each
 
-5. EVIDENCE REQUIRED:
-   - "work_history" = candidate must have done this in a real job
-   - "project" = project/freelance/open-source signal acceptable
-   - "any" = listed skill or mention is enough
+5. EVIDENCE REQUIRED — default is "any". Only upgrade when the JD text explicitly demands it:
+   - "any" = DEFAULT. Use for all skills, tools, and technologies. A candidate listing React, Python, SQL etc. on their resume is sufficient proof. This is the correct value for the vast majority of criteria.
+   - "project" = Use ONLY when the JD explicitly says something like "portfolio required", "show us your work", or "open-source contributions expected".
+   - "work_history" = Use ONLY when the JD explicitly says phrases like "must have X in production", "professional experience required", "X years of hands-on experience in a commercial setting", "led a team", or "owned end-to-end in a real job". Do NOT use this for normal skill requirements.
 
 6. CANONICAL SKILL NAMES — use these exact canonical labels:
 {JD_CANONICAL_SKILL_REFERENCE}

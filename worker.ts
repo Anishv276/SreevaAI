@@ -276,21 +276,36 @@ async function processDriveResumeBatchJob(job: any) {
           tmpPdfPath = join(tmpdir(), `drive_resume_${candidate.id}_${Date.now()}.pdf`);
           await writeFile(tmpPdfPath, pdfBuffer);
 
-          const extracted = await runPythonJson(["scripts/extract_pdf.py", tmpPdfPath, "RESUME", "gpt-5.4-mini"]);
-          if (extracted?.error) throw new Error(extracted.error);
-          const resumeRawText = String(extracted?.text || "");
-          const structuredResume = extracted?.data || {};
-          if (extracted?.usage?.inputTokens || extracted?.usage?.outputTokens) {
-            await recordOrgBillingUsage({
-              orgId,
-              feature: "resumeExtraction",
-              usage: {
-                model: extracted.usage.model || "gpt-5.4-mini",
-                inputTokens: extracted.usage.inputTokens || 0,
-                outputTokens: extracted.usage.outputTokens || 0,
-                cachedInputTokens: extracted.usage.cachedInputTokens || 0,
-              },
-            }).catch(() => {});
+          // Use cached parse result if already stored — avoids LLM non-determinism on retries
+          const cachedResumeData = parseJsonSafe<any>(candidate.resumeData, {});
+          const cachedStructured = cachedResumeData?.structured || {};
+          const cachedText = String(candidate.resumeText || "");
+          const hasCachedParse = cachedText.length > 50 && Object.keys(cachedStructured).length > 0;
+
+          let resumeRawText: string;
+          let structuredResume: Record<string, any>;
+
+          if (hasCachedParse) {
+            console.log(`[RESUME-WORKER] Candidate ${candidate.id}: using cached parse result, skipping LLM extraction`);
+            resumeRawText = cachedText;
+            structuredResume = cachedStructured;
+          } else {
+            const extracted = await runPythonJson(["scripts/extract_pdf.py", tmpPdfPath, "RESUME", "gpt-5.4-mini"]);
+            if (extracted?.error) throw new Error(extracted.error);
+            resumeRawText = String(extracted?.text || "");
+            structuredResume = extracted?.data || {};
+            if (extracted?.usage?.inputTokens || extracted?.usage?.outputTokens) {
+              await recordOrgBillingUsage({
+                orgId,
+                feature: "resumeExtraction",
+                usage: {
+                  model: extracted.usage.model || "gpt-5.4-mini",
+                  inputTokens: extracted.usage.inputTokens || 0,
+                  outputTokens: extracted.usage.outputTokens || 0,
+                  cachedInputTokens: extracted.usage.cachedInputTokens || 0,
+                },
+              }).catch(() => {});
+            }
           }
 
           console.log(`[RESUME-WORKER] Candidate ${candidate.id}: extracting -> scoring (50%)`);
