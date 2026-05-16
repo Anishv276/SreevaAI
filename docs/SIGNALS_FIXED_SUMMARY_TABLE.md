@@ -66,7 +66,7 @@
 - ✅ All signals stored in `Interview.interviewReport.behavioral_analysis.proctoring_signals_detected`
 - ✅ Stores: signal name, turns, confidence, evidence, LLM-generated interpretation, visible flag, count
 
-### Frontend Display (interview-report-hyring.tsx)
+### Frontend Display (interview-report-Sreeva AI.tsx)
 - ✅ Added "proctoring_signals_detected" to labels dict (line 1757)
 - ✅ Added isSignalObjects check for conditional rendering (line 1760)
 - ✅ Renders as single-line summaries with amber dots (lines 1766-1774)

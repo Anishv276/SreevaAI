@@ -137,7 +137,7 @@ Both signals appear in the Behavioral Signals tab as single-line summaries.
 
 ### React Component Flow:
 
-**File:** `interview-report-hyring.tsx:1730-1790`
+**File:** `interview-report-Sreeva AI.tsx:1730-1790`
 
 ```typescript
 {intel === "behavioral" && (
@@ -177,7 +177,7 @@ Both signals appear in the Behavioral Signals tab as single-line summaries.
 
 ### Signal Summary Formatter:
 
-**File:** `interview-report-hyring.tsx:475-491`
+**File:** `interview-report-Sreeva AI.tsx:475-491`
 
 ```typescript
 function _formatSignalSummary(signal: any): string {

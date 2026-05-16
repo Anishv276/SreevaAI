@@ -260,7 +260,7 @@ model.comm.??? = 0-100 (communication score)
 
 ## File Structure
 
-**Location**: `components/admin/candidate-profile/interview-report-hyring.tsx`
+**Location**: `components/admin/candidate-profile/interview-report-Sreeva AI.tsx`
 
 **Lines to modify**:
 - Line 1377-1406: The four-card grid

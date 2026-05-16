@@ -207,7 +207,7 @@ Result:
 
 ### 7. Frontend Display ✅
 
-**File:** `interview-report-hyring.tsx:1730-1790`
+**File:** `interview-report-Sreeva AI.tsx:1730-1790`
 
 **React Component Flow:**
 

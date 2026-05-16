@@ -68,8 +68,8 @@
 | turn_decision.py | Added recovery signals to detector dict | 700-715 |
 | behavioral_analysis.py | Added recovery signals to LLM interpretation | 263 |
 | behavioral_analysis.py | Added signal descriptions for recovery signals | 285-292 |
-| interview-report-hyring.tsx | Added recovery signal formatting with ✓ prefix | 481 |
-| interview-report-hyring.tsx | Added fallback summaries for all signals | 493-502 |
+| interview-report-Sreeva AI.tsx | Added recovery signal formatting with ✓ prefix | 481 |
+| interview-report-Sreeva AI.tsx | Added fallback summaries for all signals | 493-502 |
 
 ---
 
@@ -279,7 +279,7 @@ These signals are NOT yet fixed (25+ total signals exist):
 Can follow same pattern to fix remaining signals:
 1. Add LLM interpretation in behavioral_analysis.py
 2. Add recovery detector in turn_decision.py
-3. Add frontend fallback in interview-report-hyring.tsx
+3. Add frontend fallback in interview-report-Sreeva AI.tsx
 4. Verify database storage and frontend display
 
 ---

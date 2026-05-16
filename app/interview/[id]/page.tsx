@@ -224,7 +224,13 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const [returnCountdown, setReturnCountdown] = useState<number | null>(null);
     const [isTabViolation, setIsTabViolation] = useState(false);
     const [isFullscreenViolation, setIsFullscreenViolation] = useState(false);
+    const [tabSwitchCount, setTabSwitchCount] = useState(0);
+    const [tabViolationElapsed, setTabViolationElapsed] = useState<string | null>(null);
     const tabViolationTimerRef = useRef<number | null>(null);
+    // Prevents blur + visibilitychange from double-firing on the same tab-switch event
+    const tabSwitchInFlightRef = useRef(false);
+    // Timestamp (ms) when interview phase started — used to compute elapsed time in proctoring events
+    const interviewStartedAtRef = useRef<number | null>(null);
     //  AI Face Proctoring 
     const [referenceSnapshotUrl, setReferenceSnapshotUrl] = useState<string | null>(null);
     // Selected Devices
@@ -302,17 +308,20 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     }, [id]);
 
     //  Face violation handler 
-    const handleFaceViolation = useCallback((eventType: string, reason: string, severity?: "low" | "medium" | "high") => {
+    const handleFaceViolation = useCallback((
+        eventType: string,
+        reason: string,
+        severity?: "low" | "medium" | "high",
+        metadata?: Record<string, unknown>,
+    ) => {
         if (eventType === "face_absence" && !isFaceAbsenceEnabled) return;
         if (eventType === "multiple_faces" && !isMultipleFacesEnabled) return;
         if (eventType === "identity_mismatch" && !isIdentityMismatchEnabled) return;
-        // 1. Keep the violation silent in the interview UI, but still record it.
         if (SHOW_BACKGROUND_PROCTORING_ALERTS) {
             setFaceViolationAlert({ type: eventType, reason });
             if (faceViolationTimerRef.current) clearTimeout(faceViolationTimerRef.current);
             faceViolationTimerRef.current = setTimeout(() => setFaceViolationAlert(null), 6000);
         }
-        // 2. Send to backend for audit trail
         fetch("/api/interview/proctoring", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -324,6 +333,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                     severity: severity ?? "medium",
                     timestamp: Date.now(),
                     reason,
+                    metadata: metadata && Object.keys(metadata).length > 0 ? metadata : undefined,
                 }],
             }),
         }).catch(() => { });
@@ -335,19 +345,22 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         isIdentityMismatchEnabled,
     ]);
     const handleAgentDetectedViolation = useCallback((eventType: string, reason: string, severity?: string) => {
-        handleFaceViolation(eventType, reason, severity as "low" | "medium" | "high" | undefined);
+        handleFaceViolation(eventType, reason, severity as "low" | "medium" | "high" | undefined, undefined);
     }, [handleFaceViolation]);
     //  Hardware heartbeat violation handler 
-    const handleHardwareViolation = useCallback((eventType: string, reason: string, severity?: "low" | "medium" | "high") => {
+    const handleHardwareViolation = useCallback((
+        eventType: string,
+        reason: string,
+        severity: "low" | "medium" | "high" = "high",
+        metadata?: Record<string, unknown>,
+    ) => {
         if (eventType === "camera_disabled" && !isCameraDisabledEnabled) return;
         if (eventType === "microphone_disabled" && !isMicrophoneDisabledEnabled) return;
-        // 1. Keep the violation silent in the interview UI, but still record it.
         if (SHOW_BACKGROUND_PROCTORING_ALERTS) {
             setHardwareViolationAlert({ type: eventType, reason });
             if (hardwareViolationTimerRef.current) clearTimeout(hardwareViolationTimerRef.current);
             hardwareViolationTimerRef.current = setTimeout(() => setHardwareViolationAlert(null), 8000);
         }
-        // 2. Send to backend for audit trail
         fetch("/api/interview/proctoring", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -356,24 +369,28 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 interviewToken,
                 events: [{
                     eventType,
-                    severity: severity ?? "high",
+                    severity,
                     timestamp: Date.now(),
                     reason,
+                    metadata: metadata && Object.keys(metadata).length > 0 ? metadata : undefined,
                 }],
             }),
         }).catch(() => { });
     }, [id, interviewToken, isCameraDisabledEnabled, isMicrophoneDisabledEnabled]);
     //  Connection violation handler 
-    const handleConnectionViolation = useCallback((eventType: string, reason: string, severity?: "low" | "medium" | "high") => {
+    const handleConnectionViolation = useCallback((
+        eventType: string,
+        reason: string,
+        severity: "low" | "medium" | "high" = "medium",
+        metadata?: Record<string, unknown>,
+    ) => {
         if (eventType === "connection_lost" && !isConnectionLostEnabled) return;
-        // 1. Keep connection events silent in the interview UI, but still record them.
-        const displayMs = severity === "high" ? 9000 : severity === "low" ? 5000 : 8000;
         if (SHOW_BACKGROUND_PROCTORING_ALERTS) {
+            const displayMs = severity === "high" ? 9000 : severity === "low" ? 5000 : 8000;
             setConnectionAlert({ eventType, reason });
             if (connectionAlertTimerRef.current) clearTimeout(connectionAlertTimerRef.current);
             connectionAlertTimerRef.current = setTimeout(() => setConnectionAlert(null), displayMs);
         }
-        // 2. Send to backend for audit trail
         fetch("/api/interview/proctoring", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -382,9 +399,10 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 interviewToken,
                 events: [{
                     eventType,
-                    severity: severity ?? "medium",
+                    severity,
                     timestamp: Date.now(),
                     reason,
+                    metadata: metadata && Object.keys(metadata).length > 0 ? metadata : undefined,
                 }],
             }),
         }).catch(() => { });
@@ -466,6 +484,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         if (phase !== "launching") return;
         if (!isAgentReady || agentReadyCommittedRef.current) return;
         agentReadyCommittedRef.current = true;
+        interviewStartedAtRef.current = Date.now();
         setPhase("interview");
     }, [phase, isAgentReady]);
     useEffect(() => {
@@ -697,16 +716,35 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         if (phase !== "interview" || !isTabSwitchEnabled) {
             setIsTabViolation(false);
             clearDelayedViolation(tabViolationTimerRef);
+            tabSwitchInFlightRef.current = false;
             return;
         }
-        const handleViolation = (specificReason?: string) => {
+
+        // Log a tab-switch violation. visibilitychange is the authoritative source;
+        // blur is a fallback for browsers/VMs that don't fire visibilitychange reliably.
+        // tabSwitchInFlightRef prevents the same physical event from logging twice.
+        const logTabSwitchViolation = (reason: string, severity: "medium" | "high") => {
             if (tabViolationTimerRef.current !== null) return;
+            // Capture elapsed time at the moment the event fires, before the grace delay.
+            const detectedAt = Date.now();
+            const elapsedMs = interviewStartedAtRef.current ? detectedAt - interviewStartedAtRef.current : null;
+            // 1500ms grace window: OS notifications (Slack, email) typically steal focus
+            // for <500ms and self-resolve. Only fire after sustained focus loss.
             tabViolationTimerRef.current = window.setTimeout(() => {
                 tabViolationTimerRef.current = null;
-                if (SHOW_TAB_FULLSCREEN_ALERTS) {
-                    setIsTabViolation(true);
-                }
-                // Telemetry: Log to backend
+                tabSwitchInFlightRef.current = false;
+                const elapsedSeconds = elapsedMs !== null ? Math.floor(elapsedMs / 1000) : null;
+                const elapsedLabel = elapsedSeconds !== null
+                    ? `${Math.floor(elapsedSeconds / 60)}m ${elapsedSeconds % 60}s into interview`
+                    : null;
+                setTabViolationElapsed(elapsedLabel);
+                setTabSwitchCount(prev => {
+                    const newCount = prev + 1;
+                    if (SHOW_TAB_FULLSCREEN_ALERTS) {
+                        setIsTabViolation(true);
+                    }
+                    return newCount;
+                });
                 fetch("/api/interview/proctoring", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -715,31 +753,80 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         interviewToken: interviewToken,
                         events: [{
                             eventType: "tab_switch",
-                            severity: "medium",
-                            timestamp: Date.now(),
-                            reason: specificReason || (document.hidden ? "Tab Switched" : "Window Blurred")
+                            severity,
+                            timestamp: detectedAt,
+                            reason: elapsedLabel ? `${reason} (${elapsedLabel})` : reason,
+                            metadata: {
+                                elapsedSeconds: elapsedSeconds ?? null,
+                                elapsedLabel: elapsedLabel ?? null,
+                            },
                         }]
                     })
                 }).catch(() => { });
-            }, 250);
+            }, 1500);
         };
+
         const onVisibilityChange = () => {
-            if (document.hidden) handleViolation();
-            else clearDelayedViolation(tabViolationTimerRef);
+            if (document.hidden) {
+                tabSwitchInFlightRef.current = true;
+                logTabSwitchViolation("Tab Switched", "medium");
+            } else {
+                tabSwitchInFlightRef.current = false;
+                clearDelayedViolation(tabViolationTimerRef);
+            }
         };
-        const onWindowFocus = () => clearDelayedViolation(tabViolationTimerRef);
-        const onWindowBlur = () => handleViolation();
+
+        const onWindowBlur = () => {
+            // Skip if visibilitychange already handled this event
+            if (tabSwitchInFlightRef.current) return;
+            tabSwitchInFlightRef.current = true;
+            logTabSwitchViolation("Window Lost Focus", "medium");
+        };
+
+        const onWindowFocus = () => {
+            tabSwitchInFlightRef.current = false;
+            clearDelayedViolation(tabViolationTimerRef);
+        };
+
         const onFullscreenChange = () => {
             const isFS = !!(document.fullscreenElement || (document as any).webkitFullscreenElement || (document as any).mozFullScreenElement || (document as any).msFullscreenElement);
             if (!isFS) {
                 setIsFullscreenViolation(true);
-                // Trigger violation with specific reason (handles DB logging + UI state)
-                handleViolation("Fullscreen Exited");
+                // Fullscreen exit is deliberate — no grace window, high severity, logged separately
+                const fsDetectedAt = Date.now();
+                const fsElapsedMs = interviewStartedAtRef.current ? fsDetectedAt - interviewStartedAtRef.current : null;
+                const fsElapsedSec = fsElapsedMs !== null ? Math.floor(fsElapsedMs / 1000) : null;
+                const fsElapsedLabel = fsElapsedSec !== null
+                    ? `${Math.floor(fsElapsedSec / 60)}m ${fsElapsedSec % 60}s into interview`
+                    : undefined;
+                fetch("/api/interview/proctoring", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        applicationId: id,
+                        interviewToken: interviewToken,
+                        events: [{
+                            eventType: "tab_switch",
+                            severity: "high",
+                            timestamp: fsDetectedAt,
+                            reason: fsElapsedLabel ? `Fullscreen Exited (${fsElapsedLabel})` : "Fullscreen Exited",
+                            metadata: {
+                                elapsedSeconds: fsElapsedSec ?? null,
+                                elapsedLabel: fsElapsedLabel ?? null,
+                            },
+                        }]
+                    })
+                }).catch(() => { });
+                if (SHOW_TAB_FULLSCREEN_ALERTS) {
+                    setTabViolationElapsed(fsElapsedLabel ?? null);
+                    setIsTabViolation(true);
+                }
             } else {
                 setIsFullscreenViolation(false);
                 clearDelayedViolation(tabViolationTimerRef);
             }
         };
+
         document.addEventListener("visibilitychange", onVisibilityChange);
         window.addEventListener("blur", onWindowBlur);
         window.addEventListener("focus", onWindowFocus);
@@ -756,6 +843,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             document.removeEventListener("mozfullscreenchange", onFullscreenChange);
             document.removeEventListener("MSFullscreenChange", onFullscreenChange);
             clearDelayedViolation(tabViolationTimerRef);
+            tabSwitchInFlightRef.current = false;
         };
     }, [phase, id, clearDelayedViolation, isTabSwitchEnabled]);
     useEffect(() => {
@@ -956,17 +1044,15 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             {phase === "interview" && (
                 <>
                     <FaceProctoring
-                        applicationId={id}
-                        interviewToken={interviewToken}
                         isActive={phase === "interview"}
                         referenceSnapshotUrl={referenceSnapshotUrl}
+                        interviewStartedAt={interviewStartedAtRef}
                         onViolation={handleFaceViolation}
                     />
                     {(isCameraDisabledEnabled || isMicrophoneDisabledEnabled) && (
                         <HardwareHeartbeat
-                            applicationId={id}
-                            interviewToken={interviewToken}
                             isActive={phase === "interview"}
+                            interviewStartedAt={interviewStartedAtRef}
                             onViolation={handleHardwareViolation}
                         />
                     )}
@@ -1025,6 +1111,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         {isConnectionLostEnabled && (
                             <ConnectionProctoring
                                 isActive={phase === "interview"}
+                                interviewStartedAt={interviewStartedAtRef}
                                 onViolation={handleConnectionViolation}
                             />
                         )}
@@ -1052,25 +1139,38 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         className="fixed inset-0 z-[200] bg-zinc-950/90 backdrop-blur-sm flex items-center justify-center p-6"
                     >
                         <div className="max-w-md w-full bg-zinc-900 border border-zinc-800 rounded-3xl p-8 shadow-2xl text-center space-y-6">
-                            <div className="mx-auto w-20 h-20 rounded-2xl bg-orange-500/10 flex items-center justify-center">
-                                <ShieldAlert className="w-10 h-10 text-orange-500" />
+                            <div className={`mx-auto w-20 h-20 rounded-2xl flex items-center justify-center ${tabSwitchCount >= 3 ? "bg-red-500/10" : "bg-orange-500/10"}`}>
+                                <ShieldAlert className={`w-10 h-10 ${tabSwitchCount >= 3 ? "text-red-500" : "text-orange-500"}`} />
                             </div>
                             <div className="space-y-2">
-                                <h2 className="text-2xl font-black text-white uppercase tracking-tight">Security Alert</h2>
+                                <h2 className="text-2xl font-black text-white uppercase tracking-tight">
+                                    {isFullscreenViolation ? "Fullscreen Exited" : "Focus Lost"}
+                                </h2>
                                 <p className="text-zinc-400 text-sm font-medium leading-relaxed">
-                                    Tab switching or window blurring detected. This incident has been logged for review to ensure interview integrity.
+                                    {isFullscreenViolation
+                                        ? "You exited fullscreen mode. Please stay in fullscreen during the interview."
+                                        : tabSwitchCount === 1
+                                            ? "You switched away from this tab. This incident has been logged for review."
+                                            : `You have switched away ${tabSwitchCount} times. Repeated incidents are flagged for recruiter review.`}
                                 </p>
                             </div>
                             <div className="pt-4 flex flex-col gap-3">
                                 <Button
                                     onClick={() => setIsTabViolation(false)}
-                                    className="w-full bg-orange-500 hover:bg-orange-600 text-white font-black uppercase tracking-widest py-6 rounded-2xl shadow-[0_10px_20px_-10px_rgba(249,115,22,0.5)] transition-all active:scale-95"
+                                    className={`w-full text-white font-black uppercase tracking-widest py-6 rounded-2xl transition-all active:scale-95 ${tabSwitchCount >= 3
+                                        ? "bg-red-500 hover:bg-red-600 shadow-[0_10px_20px_-10px_rgba(239,68,68,0.5)]"
+                                        : "bg-orange-500 hover:bg-orange-600 shadow-[0_10px_20px_-10px_rgba(249,115,22,0.5)]"}`}
                                 >
                                     I Understand & Continue
                                 </Button>
                                 <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
-                                    Incident logged for review
+                                    Incident {tabSwitchCount > 1 ? `${tabSwitchCount} of session` : "logged"} · Under review
                                 </div>
+                                {tabViolationElapsed && (
+                                    <div className="text-[10px] font-medium text-zinc-600 uppercase tracking-widest">
+                                        Detected at {tabViolationElapsed}
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </motion.div>

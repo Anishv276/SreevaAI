@@ -400,7 +400,7 @@ PROCTORING SIGNALS DETECTED
 | | Lines 259-310 | Updated _interpret_hidden_signal() to call LLM for ownership_ambiguity, example_evasion, resume_claim_mismatch, follow_up_collapse |
 | | Lines 333-362 | Made synthesize_behavioral_report() async, await extract_proctoring_signals() |
 | `agent_persistence.py` | Lines 986-992 | Changed synthesize_behavioral_report() call to await (async) |
-| `interview-report-hyring.tsx` | Lines 475-491 | Added _formatSignalSummary() helper function with fallbacks |
+| `interview-report-Sreeva AI.tsx` | Lines 475-491 | Added _formatSignalSummary() helper function with fallbacks |
 | | Lines 1749-1757 | Added "proctoring_signals_detected" to labels dict |
 | | Lines 1760-1790 | Added isSignalObjects check and conditional rendering for signal objects vs string bullets |
 
@@ -453,7 +453,7 @@ response = await client.chat.completions.create(
 
 ### Frontend Display
 
-**Location:** Behavioral Signals Tab (interview-report-hyring.tsx:1730-1790)  
+**Location:** Behavioral Signals Tab (interview-report-Sreeva AI.tsx:1730-1790)  
 **Rendering:**
 ```typescript
 const isSignalObjects = value.length > 0 && 
@@ -665,7 +665,7 @@ recovery_deltas = {
 3. **Directive Injection**: Mandatory instructions injected into interview
 4. **LLM Interpretation** (behavioral_analysis.py): GPT-4o-mini generates dynamic one-liners
 5. **Database Storage** (agent_persistence.py): Saves signal objects with evidence
-6. **Frontend Display** (interview-report-hyring.tsx): Shows single-line summaries in Behavioral Signals tab
+6. **Frontend Display** (interview-report-Sreeva AI.tsx): Shows single-line summaries in Behavioral Signals tab
 7. **Trust Integration** (trust_engine.py): Updates behavioral_confidence bucket
 8. **Recovery Mechanics**: Supports recovery signals when candidates clarify
 

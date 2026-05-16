@@ -1,196 +1,122 @@
-﻿"use client";
-
-/**
- * ConnectionProctoring.tsx
- * 
- * Silent connection-stability proctoring engine using LiveKit RoomEvent listeners.
- *
- * MUST be rendered INSIDE a <LiveKitRoom> context - it uses useRoomContext()
- * to access the Room object directly, which is the only reliable way to
- * subscribe to connection lifecycle events.
- *
- * Events it listens to (from LiveKit's RoomEvent enum):
- * 
- *  RoomEvent.Reconnecting        - socket dropped, attempting to reconnect
- *  RoomEvent.Disconnected        - permanent disconnect (server closed room,
- *                                  token expired, or network unrecoverable)
- *  RoomEvent.ConnectionQualityChanged - quality changed for local participant
- *                                       (Poor -> flags a quality warning)
- *
- * Proctoring signals produced:
- * 
- *  connection_lost      severity: medium  (temporary drop, reconnecting)
- *  connection_lost      severity: high    (permanent disconnect)
- *
- * Why this matters for recruiters:
- * 
- *  • A candidate who force-closes the browser to cheat produces:  connection_lost
- *    with NO restoration - recruiter sees an UNRESOLVED HIGH flag next to the
- *    other proctoring violations.
- *
- *  • We only log connection_lost events, with severity based on whether the
- *    disconnect is temporary or permanent.
- */
+"use client";
 
 import { useEffect, useRef, useCallback } from "react";
+import type { RefObject } from "react";
 import { useRoomContext } from "@livekit/components-react";
 import { RoomEvent, ConnectionQuality, DisconnectReason } from "livekit-client";
 
-//  Thresholds 
-/** ms after Reconnecting fires before we log connection_lost.
- *  Prevents logging a violation for a momentary reconnect that resolves instantly. */
+// ms after Reconnecting fires before logging — avoids flagging a blip that self-resolves
 const RECONNECTING_GRACE_MS = 2_000;
 
-/** Cooldown between repeated connection_lost events (prevents spam on
- *  flaky connections that oscillate rapidly). */
-const LOST_COOLDOWN_MS = 15_000;
+// Separate cooldowns: a permanent disconnect must always fire even right after a reconnect log
+const RECONNECT_COOLDOWN_MS = 15_000;
+const DISCONNECT_COOLDOWN_MS = 5_000;
 
-/** How many consecutive "Poor" quality readings before we log a quality flag. */
+// Consecutive poor readings required before logging a quality warning
 const POOR_QUALITY_CONFIRM_COUNT = 3;
-
-/** Cooldown between repeated quality_warning events. */
 const QUALITY_COOLDOWN_MS = 60_000;
 
-//  Types 
 interface ConnectionProctoringProps {
-  /** Only monitor when the interview phase is active. */
   isActive: boolean;
-  /** Called on every loggable connection event. */
+  interviewStartedAt: RefObject<number | null>;
   onViolation: (
     eventType: string,
     reason: string,
-    severity?: "low" | "medium" | "high"
+    severity: "low" | "medium" | "high",
+    metadata?: Record<string, unknown>,
   ) => void;
 }
 
-export function ConnectionProctoring({
-  isActive,
-  onViolation,
-}: ConnectionProctoringProps) {
+export function ConnectionProctoring({ isActive, interviewStartedAt, onViolation }: ConnectionProctoringProps) {
   const room = useRoomContext();
 
-  //  State refs 
-  const mountedRef            = useRef(false);
-  const isActiveRef           = useRef(isActive);
-  const lastLostFiredRef      = useRef(0);
-  const poorCountRef          = useRef(0);
-  const lastQualityFiredRef   = useRef(0);
+  const mountedRef             = useRef(false);
+  const isActiveRef            = useRef(isActive);
+  const lastReconnectFiredRef  = useRef(0);
+  const lastDisconnectFiredRef = useRef(0);
+  const poorCountRef           = useRef(0);
+  const lastQualityFiredRef    = useRef(0);
+  // Ref to cancel the reconnecting grace timer on cleanup
+  const reconnectGraceRef      = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => { isActiveRef.current = isActive; }, [isActive]);
 
-  //  Cooldown helpers 
-  const canFireLost = useCallback((): boolean =>
-    Date.now() - lastLostFiredRef.current > LOST_COOLDOWN_MS, []);
+  const elapsedMeta = useCallback((now: number) => {
+    const start = interviewStartedAt.current;
+    if (!start) return { label: null, seconds: null };
+    const seconds = Math.floor((now - start) / 1000);
+    return { label: `${Math.floor(seconds / 60)}m ${seconds % 60}s into interview`, seconds };
+  }, [interviewStartedAt]);
 
-  const canFireQuality = useCallback((): boolean =>
-    Date.now() - lastQualityFiredRef.current > QUALITY_COOLDOWN_MS, []);
+  const buildMeta = useCallback((now: number): { reason_suffix: string; metadata: Record<string, unknown> } => {
+    const { label, seconds } = elapsedMeta(now);
+    if (!label) return { reason_suffix: "", metadata: {} };
+    return { reason_suffix: ` (${label})`, metadata: { elapsedSeconds: seconds, elapsedLabel: label } };
+  }, [elapsedMeta]);
 
-  //  Core: attach/detach RoomEvent listeners 
   useEffect(() => {
     if (!isActive || !room) return;
-
     mountedRef.current = true;
 
-    //  Handler: Reconnecting 
-    // LiveKit fires this the moment the WebSocket drops and it starts the
-    // retry loop. We delay logging by RECONNECTING_GRACE_MS to avoid
-    // flagging a <2 s blip as a violation.
     const onReconnecting = () => {
       if (!isActiveRef.current || !mountedRef.current) return;
-      if (!canFireLost()) return;
+      if (Date.now() - lastReconnectFiredRef.current < RECONNECT_COOLDOWN_MS) return;
+      // Cancel any previously pending grace timer before starting a new one
+      if (reconnectGraceRef.current) { clearTimeout(reconnectGraceRef.current); reconnectGraceRef.current = null; }
 
-      setTimeout(() => {
+      const firedAt = Date.now();
+      reconnectGraceRef.current = setTimeout(() => {
+        reconnectGraceRef.current = null;
         if (!isActiveRef.current || !mountedRef.current) return;
-        lastLostFiredRef.current = Date.now();
-        onViolation(
-          "connection_lost",
-          "Internet connection dropped - LiveKit is attempting to reconnect",
-          "medium"
-        );
-        if (process.env.NODE_ENV !== "production") {
-          console.debug("[ConnectionProctoring] connection_lost fired (reconnecting)");
-        }
+        lastReconnectFiredRef.current = Date.now();
+        const { reason_suffix, metadata } = buildMeta(firedAt);
+        onViolation("connection_lost", `Internet connection dropped — attempting to reconnect${reason_suffix}`, "medium", metadata);
       }, RECONNECTING_GRACE_MS);
     };
 
-    //  Handler: Disconnected (permanent) 
-    // This fires when the Room is permanently disconnected - the server closed
-    // the room, the token expired, or the network is completely unrecoverable.
     const onDisconnected = (reason?: DisconnectReason) => {
       if (!isActiveRef.current || !mountedRef.current) return;
+      if (Date.now() - lastDisconnectFiredRef.current < DISCONNECT_COOLDOWN_MS) return;
 
-      const reasonLabel = reason != null
-        ? ` (reason: ${DisconnectReason[reason] ?? reason})`
-        : "";
+      // Cancel pending reconnect grace — disconnect supersedes it
+      if (reconnectGraceRef.current) { clearTimeout(reconnectGraceRef.current); reconnectGraceRef.current = null; }
 
-      // Only fire if we haven't just fired a medium-severity lost recently
-      if (canFireLost()) {
-        lastLostFiredRef.current = Date.now();
-        onViolation(
-          "connection_lost",
-          `Permanently disconnected from interview room${reasonLabel}`,
-          "high"
-        );
-      }
-      if (process.env.NODE_ENV !== "production") {
-        console.debug(`[ConnectionProctoring] Disconnected permanently${reasonLabel}`);
-      }
+      const now = Date.now();
+      lastDisconnectFiredRef.current = now;
+      const reasonLabel = reason != null ? ` (${DisconnectReason[reason] ?? reason})` : "";
+      const { reason_suffix, metadata } = buildMeta(now);
+      onViolation("connection_lost", `Permanently disconnected from interview room${reasonLabel}${reason_suffix}`, "high", metadata);
     };
 
-    //  Handler: ConnectionQualityChanged 
-    // Fires when the local participant's connection quality changes.
-    // We only flag "Poor" quality (value = ConnectionQuality.Poor).
-    // We require POOR_QUALITY_CONFIRM_COUNT consecutive readings before logging
-    // to prevent flagging a momentary spike.
     const onQualityChanged = (quality: ConnectionQuality) => {
       if (!isActiveRef.current || !mountedRef.current) return;
-
       if (quality === ConnectionQuality.Poor) {
         poorCountRef.current += 1;
-        if (poorCountRef.current >= POOR_QUALITY_CONFIRM_COUNT && canFireQuality()) {
-          lastQualityFiredRef.current = Date.now();
+        if (poorCountRef.current >= POOR_QUALITY_CONFIRM_COUNT) {
+          const now = Date.now();
+          if (now - lastQualityFiredRef.current < QUALITY_COOLDOWN_MS) return;
+          lastQualityFiredRef.current = now;
           poorCountRef.current = 0;
-          onViolation(
-            "connection_lost",
-            `Sustained poor network quality detected (${POOR_QUALITY_CONFIRM_COUNT} consecutive poor readings)`,
-            "low"
-          );
-          if (process.env.NODE_ENV !== "production") {
-            console.debug("[ConnectionProctoring] Sustained poor quality flagged");
-          }
+          const { reason_suffix, metadata } = buildMeta(now);
+          onViolation("connection_lost", `Sustained poor network quality (${POOR_QUALITY_CONFIRM_COUNT} consecutive readings)${reason_suffix}`, "low", metadata);
         }
       } else {
-        // Quality improved - reset the counter
         poorCountRef.current = 0;
       }
     };
 
-    //  Attach listeners 
-    room.on(RoomEvent.Reconnecting,            onReconnecting);
-    room.on(RoomEvent.Disconnected,            onDisconnected);
-    room.on(RoomEvent.ConnectionQualityChanged, onQualityChanged);
-
-    if (process.env.NODE_ENV !== "production") {
-      console.debug("[ConnectionProctoring] Listeners attached to Room");
-    }
+    room.on(RoomEvent.Reconnecting,             onReconnecting);
+    room.on(RoomEvent.Disconnected,             onDisconnected);
+    room.on(RoomEvent.ConnectionQualityChanged,  onQualityChanged);
 
     return () => {
       mountedRef.current = false;
-
-      // Detach all listeners
+      if (reconnectGraceRef.current) { clearTimeout(reconnectGraceRef.current); reconnectGraceRef.current = null; }
       room.off(RoomEvent.Reconnecting,            onReconnecting);
       room.off(RoomEvent.Disconnected,            onDisconnected);
       room.off(RoomEvent.ConnectionQualityChanged, onQualityChanged);
-
-      if (process.env.NODE_ENV !== "production") {
-        console.debug("[ConnectionProctoring] Listeners detached");
-      }
     };
-  // Rerun whenever isActive or the room instance changes
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isActive, room]);
 
-  // This component renders nothing - pure side-effect engine
   return null;
 }
-

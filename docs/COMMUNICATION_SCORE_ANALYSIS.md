@@ -147,7 +147,7 @@ def score_communication(interview_transcript: str, interview_turns: list) -> dic
 ```
 
 ### Option B: Frontend (Simple Rule-Based)
-**File**: `buildHyringInterviewViewModel()` in `interview-report-hyring.tsx`  
+**File**: `buildSreeva AIInterviewViewModel()` in `interview-report-Sreeva AI.tsx`  
 **When**: When building view model  
 **Advantage**: No backend changes needed
 

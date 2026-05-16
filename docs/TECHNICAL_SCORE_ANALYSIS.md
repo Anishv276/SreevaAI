@@ -215,7 +215,7 @@ def analyze_technical_competency(interview_data):
 
 ### Option B: Frontend (Report Building)
 **When**: When building the view model
-**Where**: `buildHyringInterviewViewModel()` in `interview-report-hyring.tsx`
+**Where**: `buildSreeva AIInterviewViewModel()` in `interview-report-Sreeva AI.tsx`
 
 ```javascript
 function extractTechnicalAnalysis(i) {

@@ -120,15 +120,15 @@ Output: One-liner interpretation (fallback to static text if LLM fails)
 
 ---
 
-## 5. FRONTEND RENDERING LAYER (interview-report-hyring.tsx)
+## 5. FRONTEND RENDERING LAYER (interview-report-Sreeva AI.tsx)
 **How recruiters see signals**
 
 ### 5a. Data Flow
 ```
-buildHyringInterviewViewModel(i: {
+buildSreeva AIInterviewViewModel(i: {
   interviewReportBehavioralAnalysis,  // ← from DB
   ...
-}) → HyringInterviewViewModel {
+}) → Sreeva AIInterviewViewModel {
   integritySignals,    // ← mapped from proctoring rows (NOT proctoring_signals_detected)
   behavioralAnalysis,  // ← raw behavioral_analysis object
   ...

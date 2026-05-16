@@ -23,7 +23,7 @@ Currently the **Behavioral signals** tab shows:
 
 ## Where Ownership_Ambiguity Will Appear
 
-**File**: `interview-report-hyring.tsx:1709-1754`
+**File**: `interview-report-Sreeva AI.tsx:1709-1754`
 
 ```typescript
 {intel === "behavioral" && (
@@ -161,7 +161,7 @@ Currently the **Behavioral signals** tab shows:
 
 ## Fix Required: Update React Component
 
-**File**: `interview-report-hyring.tsx:1727-1750`
+**File**: `interview-report-Sreeva AI.tsx:1727-1750`
 
 ```typescript
 // BEFORE (expects strings only)
@@ -385,7 +385,7 @@ if (Array.isArray(value) && value.length > 0) {
    JSON saved to Interview.interviewReport column
    ↓
    
-7. Frontend Rendering (interview-report-hyring.tsx)
+7. Frontend Rendering (interview-report-Sreeva AI.tsx)
    model.behavioralAnalysis.proctoring_signals_detected
    ↓
    
@@ -407,6 +407,6 @@ if (Array.isArray(value) && value.length > 0) {
 ✅ **Database**: Stored in interview report JSON
 ❌ **Frontend**: Currently expects strings, not objects - **NEEDS FIX**
 
-**To Fix**: Update `interview-report-hyring.tsx:1727-1750` to handle both string bullets AND signal objects, rendering signals as amber cards with confidence badge.
+**To Fix**: Update `interview-report-Sreeva AI.tsx:1727-1750` to handle both string bullets AND signal objects, rendering signals as amber cards with confidence badge.
 
 Once fixed, ownership_ambiguity (and all other proctoring signals) will display beautifully in the Behavioral Signals tab.

@@ -146,7 +146,7 @@ Evidence: "candidate clarified the conflicting claim"
 
 ---
 
-## 5. FRONTEND RENDERING (interview-report-hyring.tsx)
+## 5. FRONTEND RENDERING (interview-report-Sreeva AI.tsx)
 
 **Tab:** Behavioral Signals → `proctoring_signals_detected` section
 
@@ -223,7 +223,7 @@ Per turn (agent_runtime.py:1434)
 | 3 | behavioral_analysis.py:313 | No static fallback for contradiction signals | Added static fallbacks for both |
 | 4 | turn_decision.py:20 | SignalFlags TypedDict missing `contradiction_resolved` (and had duplicate ownership_clarified/example_given entries) | Cleaned up duplicates, added contradiction_resolved |
 | 5 | turn_decision.py:742 | build_signal_flags() missing contradiction_resolved | Added |
-| 6 | interview-report-hyring.tsx:477 | _formatSignalSummary() had no fallback for contradiction/contradiction_resolved, and only ownership_clarified/example_given had recovery prefix | Added both to fallbacks dict, added contradiction_resolved to isRecovery check |
+| 6 | interview-report-Sreeva AI.tsx:477 | _formatSignalSummary() had no fallback for contradiction/contradiction_resolved, and only ownership_clarified/example_given had recovery prefix | Added both to fallbacks dict, added contradiction_resolved to isRecovery check |
 
 ---
 
