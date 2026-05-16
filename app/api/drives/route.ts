@@ -10,7 +10,6 @@ import { deleteDriveEmbeddings } from "@/lib/pinecone";
 import { getOrgBillingStatus } from "@/lib/credits";
 import { isDriveCreationLocked } from "@/lib/drive-limits";
 import { normalizeDriveAiConfig } from "@/lib/ai-provider-config";
-import { deriveFieldsFromExtractedDetails } from "@/lib/drive-jd";
 import { getInterviewQuotaSupportMessage, isOrgRestrictedStatus } from "@/lib/interview-quota";
 import { parseOrgLimitValue } from "@/lib/org-limits";
 import { parseDriveScreeningSettings, sanitizeScreeningCriteria } from "@/lib/screening-criteria";
@@ -229,29 +228,20 @@ export async function POST(request: Request) {
         };
 
         const driveId = generateId("drv", data.title);
-        const parsedExtracted = (() => {
-            try { return data.extractedDetails ? JSON.parse(data.extractedDetails) : null; }
-            catch { return null; }
-        })();
-        const jdFields = parsedExtracted ? deriveFieldsFromExtractedDetails(parsedExtracted) : null;
+
 
         const drive = await (prisma.drive as any).create({
             data: {
                 id: driveId,
                 title: data.title,
-                description: jdFields?.description || "",
                 role: data.role || null,
                 department: data.department,
                 type: data.employmentType || data.type || "Full-time",
                 workMode: data.workMode || null,
                 location: data.location || null,
                 positions: data.positions || 1,
-                salary: jdFields?.salary || null,
-                experience: jdFields?.experience || null,
-                skills: jdFields?.skills || null,
-                responsibilities: jdFields?.responsibilities || null,
-                requirements: jdFields?.requirements || null,
                 extractedDetails: data.extractedDetails || null,
+
                 jdFileName: data.jdFileName || null,
                 jdPreviewUrl: data.jdPreviewUrl?.startsWith("blob:") ? null : (data.jdPreviewUrl || null),
                 screeningCriteria: JSON.stringify(mergedScreeningCriteria),

@@ -8,7 +8,6 @@ import { safeJsonParse } from "@/lib/utils";
 import { getSession } from "@/lib/auth";
 import { parseDriveScreeningSettings, sanitizeScreeningCriteria } from "@/lib/screening-criteria";
 import { isOrgRestrictedStatus } from "@/lib/interview-quota";
-import { deriveFieldsFromExtractedDetails } from "@/lib/drive-jd";
 
 export const dynamic = "force-dynamic";
 
@@ -216,13 +215,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
             updateData.extractedDetails = extractedStr;
             try {
                 const parsed = JSON.parse(extractedStr);
-                const derived = deriveFieldsFromExtractedDetails(parsed);
-                updateData.description = derived.description || "";
-                updateData.skills = derived.skills;
-                updateData.responsibilities = derived.responsibilities;
-                updateData.requirements = derived.requirements;
-                updateData.experience = derived.experience;
-                updateData.salary = derived.salary;
+                // derived fields removed — extractedDetails is source of truth
+
             } catch { /* keep existing values if parse fails */ }
         }
 

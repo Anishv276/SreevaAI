@@ -467,8 +467,7 @@ ${semanticContext || "No semantic matches found - rely on tools for accurate dat
             select: {
               id: true, title: true, department: true, role: true,
               screeningThreshold: true,
-              positions: true, workMode: true, salary: true,
-              experience: true, skills: true, requirements: true,
+              positions: true, workMode: true,
               createdAt: true,
               _count: { select: { applications: true } },
             },

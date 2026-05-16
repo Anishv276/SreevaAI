@@ -418,9 +418,6 @@ export async function POST(req: Request) {
           : {};
         const jdText = [
           app.drive?.title || "",
-          app.drive?.description || "",
-          app.drive?.requirements || "",
-          app.drive?.skills || "",
           JSON.stringify(driveDetails || {}),
         ].filter(Boolean).join("\n\n");
         // Use transcript from client first, then DB (agent.py may have saved it already)
