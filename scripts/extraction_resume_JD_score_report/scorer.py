@@ -4,7 +4,6 @@ Fully self-contained. No dependency on extract_pdf.py.
 """
 from __future__ import annotations
 import re
-import json
 from extraction_resume_JD_score_report.utils import normalize_skill, _as_dict
 from extraction_resume_JD_score_report.config import TRANSFERABLE_SKILLS
 
@@ -436,24 +435,36 @@ def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
     jd_criteria = jd_data.get("criteria", [])
     hr_custom_checks = screening_criteria.get("customChecks", []) or screening_criteria.get("custom_checks", [])
 
-    # If HR has overridden skills via screening_criteria, inject as criteria items
+    # Merge HR screening skills into JD criteria (never replace — recruiter supplements the JD)
     hr_criteria_skills = screening_criteria.get("skills", {})
     if hr_criteria_skills:
+        existing_names = {str(c.get("name", "")).strip().lower() for c in jd_criteria}
         hr_required = hr_criteria_skills.get("mustHave") or hr_criteria_skills.get("required", [])
-        if hr_required:
-            # Convert HR override skills into criteria format
-            hr_skill_criteria = []
-            for s in hr_required:
-                name = s.get("name", s) if isinstance(s, dict) else s
-                w = s.get("weight", "high") if isinstance(s, dict) else "high"
-                weight_pts = {"critical": 20, "high": 15, "medium": 10}.get(w, 15)
-                hr_skill_criteria.append({
-                    "id": f"hr_{name}", "category": "skill", "name": name,
-                    "priority": w, "weight": weight_pts,
-                    "evidence_required": "any", "source_text": f"HR required: {name}"
-                })
-            if hr_skill_criteria:
-                jd_criteria = hr_skill_criteria  # HR overrides JD criteria
+        for s in (hr_required or []):
+            name = s.get("name", s) if isinstance(s, dict) else s
+            name = str(name).strip()
+            if not name or name.lower() in existing_names:
+                continue
+            weight_pts = s.get("weight", 15) if isinstance(s, dict) else 15
+            jd_criteria.append({
+                "id": f"hr_must_{name}", "category": "skill", "name": name,
+                "priority": "high", "weight": weight_pts,
+                "evidence_required": "any", "source_text": f"HR required: {name}",
+            })
+            existing_names.add(name.lower())
+        hr_optional = hr_criteria_skills.get("optional") or hr_criteria_skills.get("niceToHave", [])
+        for s in (hr_optional or []):
+            name = s.get("name", s) if isinstance(s, dict) else s
+            name = str(name).strip()
+            if not name or name.lower() in existing_names:
+                continue
+            weight_pts = s.get("weight", 8) if isinstance(s, dict) else 8
+            jd_criteria.append({
+                "id": f"hr_opt_{name}", "category": "skill", "name": name,
+                "priority": "medium", "weight": weight_pts,
+                "evidence_required": "any", "source_text": f"HR optional: {name}",
+            })
+            existing_names.add(name.lower())
 
     # Legacy fallback: if old JD format (no criteria), convert must_have skills to criteria
     if not jd_criteria:

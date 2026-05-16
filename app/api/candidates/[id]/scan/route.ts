@@ -86,9 +86,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
         const screeningSettings = parseDriveScreeningSettings(
             application.drive.screeningCriteria,
-            Number(application.drive.screeningThreshold ?? 0)
+            Number(application.drive.screeningThreshold ?? 60)
         );
-        const threshold = Number(screeningSettings.threshold ?? application.drive.screeningThreshold ?? 0);
+        const threshold = screeningSettings.threshold;
         const scoringInput = {
             resume: structuredResume,
             jd: safeJsonParse(driveRows?.[0]?.extractedDetails, {}),

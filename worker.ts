@@ -191,7 +191,7 @@ async function processDriveResumeBatchJob(job: any) {
     drive.screeningCriteria,
     Number(drive.screeningThreshold ?? 60)
   );
-  const threshold = Number(parsedSettings.threshold ?? 60);
+  const threshold = parsedSettings.threshold;
   const screeningCriteria = parsedSettings.criteria;
 
   let structuredJd = parseJsonSafe<Record<string, any>>(drive.extractedDetails, {});
@@ -718,11 +718,16 @@ if (isQueueEnabled("resume-processing")) {
           description: true,
           extractedDetails: true,
           screeningThreshold: true,
+          screeningCriteria: true,
           orgId: true,
         },
       });
-      // Threshold source of truth: DB value; fallback must be 0 (not 70).
-      const THRESHOLD = Number(latestDrive?.screeningThreshold ?? 0) || 0;
+      const THRESHOLD = Number(latestDrive?.screeningThreshold ?? 60) || 60;
+      const singleJobParsedSettings = parseDriveScreeningSettings(
+        latestDrive?.screeningCriteria,
+        THRESHOLD
+      );
+      const singleJobScreeningCriteria = singleJobParsedSettings.criteria;
       // Parse JD details if stored as string
       let jdDetails: Record<string, any> = {};
       try {
@@ -742,7 +747,8 @@ if (isQueueEnabled("resume-processing")) {
         jd: jdDetails,
         resume_raw_text: resumeText,
         jd_raw_text: jdText || latestDrive?.description || (drive as any).description || "",
-        threshold: THRESHOLD
+        threshold: THRESHOLD,
+        screening_criteria: singleJobScreeningCriteria,
       };
       tempInputPath = join(tmpdir(), `scoring_${Date.now()}_${Math.random().toString(36).substring(7)}.json`);
       await writeFile(tempInputPath, JSON.stringify(scoringInput));

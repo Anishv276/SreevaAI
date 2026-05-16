@@ -101,7 +101,7 @@ export async function POST(
             drive.id
         );
 
-        const threshold = Number(drive.screeningThreshold ?? 0);
+        const threshold = Number(drive.screeningThreshold ?? 60);
         const scoringInput = {
             resume: structuredResume,
             jd: safeJsonParse(driveRows?.[0]?.extractedDetails, {}),

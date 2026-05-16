@@ -9,22 +9,6 @@ export interface ScreeningCriteria {
     customChecks?: Array<{ text: string; required?: boolean }>;
     // Backward compatibility for older saved drives.
     evaluationInstructions?: string;
-    experience?: {
-        minimumYears?: number;
-        seniorityLevel?: "junior" | "mid" | "senior" | "lead" | "manager";
-        preferredDomain?: string;
-    };
-    education?: {
-        degreeLevel?: "high_school" | "bachelor" | "master" | "phd";
-        fieldOfStudy?: string[];
-        requiredCertifications?: string[];
-        niceToHaveCertifications?: string[];
-    };
-    location?: {
-        required?: string[];
-        workPermitRequired?: boolean;
-        remoteOk?: boolean;
-    };
 }
 
 export interface DriveScreeningSettings {
@@ -98,20 +82,6 @@ export function sanitizeScreeningCriteria(criteria: ScreeningCriteria | Record<s
         },
         customChecks: normalizeCustomChecks(source.customChecks),
         evaluationInstructions: typeof source.evaluationInstructions === "string" ? source.evaluationInstructions : undefined,
-        experience: isPlainObject(source.experience) ? {
-            minimumYears: typeof source.experience.minimumYears === "number" ? source.experience.minimumYears : undefined,
-            seniorityLevel: source.experience.seniorityLevel as any,
-            preferredDomain: typeof source.experience.preferredDomain === "string" ? source.experience.preferredDomain : undefined,
-        } : undefined,
-        education: isPlainObject(source.education) ? {
-            degreeLevel: source.education.degreeLevel as any,
-            fieldOfStudy: Array.isArray(source.education.fieldOfStudy) ? source.education.fieldOfStudy : undefined,
-            requiredCertifications: Array.isArray(source.education.requiredCertifications) ? source.education.requiredCertifications : undefined,
-        } : undefined,
-        location: isPlainObject(source.location) ? {
-            workPermitRequired: Boolean(source.location.workPermitRequired),
-            remoteOk: Boolean(source.location.remoteOk),
-        } : undefined,
     };
 }
 
