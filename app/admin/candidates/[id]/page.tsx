@@ -224,6 +224,7 @@ export default function CandidateProfilePage() {
             answer: String(block?.answer || "").trim(),
             score: String(block?.score || "--"),
             reasoning: String(block?.reasoning || block?.verdict || "").trim(),
+            score_breakdown: block?.score_breakdown ?? null,
           }))
         : interviewSessionRows;
     const wordCount = interviewTranscript ? interviewTranscript.split(/\s+/).filter(Boolean).length : 0;

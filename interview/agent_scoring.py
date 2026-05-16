@@ -33,6 +33,16 @@ async def score_answer_quality(
             "fluency": 0, "grammar": 0, "confidence": 0,
             "overall": 0.0, "signals": [], "concerns": ["empty_answer"],
         }
+    # Hard-cap scores for answers that are too short to evaluate meaningfully.
+    # Word count < 5 cannot demonstrate depth, specificity, or grounding regardless of content.
+    word_count = len(candidate_answer.strip().split())
+    if word_count < 5:
+        clarity = 1 if word_count > 0 else 0
+        return {
+            "clarity": clarity, "depth": 0, "specificity": 0, "grounding": 0,
+            "fluency": 1, "grammar": 1, "confidence": 1,
+            "overall": clarity / 4.0, "signals": [], "concerns": ["incomplete"],
+        }
     recent_context = "\n".join(transcript_lines[-8:]) if transcript_lines else ""
     try:
         completion = await asyncio.wait_for(
@@ -127,18 +137,20 @@ async def score_answer_quality(
         parsed["concerns"] = parsed.get("concerns", [])
         return parsed
     except asyncio.TimeoutError:
-        logger.warning("[SCORE] Answer scorer timed out - returning neutral scores")
+        logger.warning("[SCORE] Answer scorer timed out - scoring conservatively")
+        # Timeout means we can't evaluate — use conservative low scores rather than
+        # neutral 5s which would falsely inflate the candidate's averages.
         return {
-            "clarity": 5, "depth": 5, "specificity": 5, "grounding": 5,
-            "fluency": 5, "grammar": 5, "confidence": 5,
-            "overall": 5.0, "signals": [], "concerns": ["timeout"],
+            "clarity": 2, "depth": 2, "specificity": 2, "grounding": 2,
+            "fluency": 2, "grammar": 2, "confidence": 2,
+            "overall": 2.0, "signals": [], "concerns": ["timeout"],
         }
     except Exception as e:
         logger.warning(f"[SCORE] Answer scorer failed: {e}", exc_info=True)
         return {
-            "clarity": 5, "depth": 5, "specificity": 5, "grounding": 5,
-            "fluency": 5, "grammar": 5, "confidence": 5,
-            "overall": 5.0, "signals": [], "concerns": ["error"],
+            "clarity": 2, "depth": 2, "specificity": 2, "grounding": 2,
+            "fluency": 2, "grammar": 2, "confidence": 2,
+            "overall": 2.0, "signals": [], "concerns": ["error"],
         }
 async def evaluate_answer_and_decide(
     candidate_answer: str,

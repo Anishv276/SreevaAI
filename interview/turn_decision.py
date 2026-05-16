@@ -11,6 +11,8 @@ class QualityScores(TypedDict):
     depth: float        # 0-10: reasoning shown
     specificity: float  # 0-10: real names/numbers/examples
     grounding: float    # 0-10: tied to lived experience
+    fluency: float      # 0-10: smooth natural delivery
+    confidence: float   # 0-10: assertiveness and decisiveness
 class SignalFlags(TypedDict):
     ownership_ambiguity: bool        # vague "we" with no personal contribution named
     example_evasion: bool            # stayed theoretical after request for real example
@@ -739,6 +741,8 @@ def build_turn_decision(
             depth=quality.get("depth", 5.0),
             specificity=quality.get("specificity", 5.0),
             grounding=quality.get("grounding", 5.0),
+            fluency=quality.get("fluency", 0.0),
+            confidence=quality.get("confidence", 0.0),
         ),
         signals=signals,
         signal_events=signal_events,
