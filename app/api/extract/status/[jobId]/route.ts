@@ -2,30 +2,11 @@ import { NextResponse } from "next/server";
 import { Queue } from "bullmq";
 import redisConnection from "@/lib/redis";
 import { JD_EXTRACTION_QUEUE_NAME } from "@/lib/jd-extraction";
-import { deriveDriveJdFieldsFromDescription } from "@/lib/drive-jd";
-import { safeJsonParse } from "@/lib/utils";
 import { recordOrgBillingUsage } from "@/lib/usage-metrics";
 import { getSession } from "@/lib/auth";
 
-async function hydrateJdExtraction(payload: { data?: Record<string, any>; text?: string | null }) {
-    const baseData = payload.data && typeof payload.data === "object" ? payload.data : {};
-    const text = typeof payload.text === "string" ? payload.text.trim() : "";
-
-    const looksSparse =
-        Object.keys(baseData).length === 0 ||
-        !String(baseData.job_title || "").trim() ||
-        !String(baseData.role_summary || "").trim();
-
-    if (!text || !looksSparse) return baseData;
-
-    try {
-        const derived = await deriveDriveJdFieldsFromDescription(text);
-        if (!derived?.extractedDetails) return baseData;
-        const derivedData = safeJsonParse(derived.extractedDetails, {});
-        return { ...derivedData, ...baseData };
-    } catch {
-        return baseData;
-    }
+function hydrateJdExtraction(payload: { data?: Record<string, any> }) {
+    return payload.data && typeof payload.data === "object" ? payload.data : {};
 }
 
 export async function GET(
@@ -56,7 +37,7 @@ export async function GET(
 
         if (state === "completed") {
             const result = job.returnvalue as { data?: Record<string, any>; text?: string; usage?: any };
-            const hydratedData = await hydrateJdExtraction({ data: result?.data, text: result?.text ?? null });
+            const hydratedData = hydrateJdExtraction({ data: result?.data });
 
             // Record billing usage now that we have the result
             let orgId: string | null = null;
