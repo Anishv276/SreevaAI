@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
+import html2canvas from "html2canvas";
+import { jsPDF } from "jspdf";
 import { cn } from "@/lib/utils";
 import {
   ArrowLeft,
@@ -1294,10 +1296,22 @@ export function buildSreevaAIResumeViewModel(i: {
   };
 }
 
-type ResumeReportSreevaAIProps = { model: SreevaAIResumeViewModel; onBack?: () => void };
+type ResumeReportSreevaAIProps = {
+  model: SreevaAIResumeViewModel;
+  onBack?: () => void;
+  showHeader?: boolean;
+  headerActions?: ReactNode;
+};
 
-export function ResumeReportSreevaAI({ model, onBack }: ResumeReportSreevaAIProps) {
+export function ResumeReportSreevaAI({
+  model,
+  onBack,
+  showHeader = true,
+  headerActions,
+}: ResumeReportSreevaAIProps) {
   const [radarHovered, setRadarHovered] = useState<RadarKey | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const reportRef = useRef<HTMLDivElement | null>(null);
 
   const BackButton = () => {
     const className = "mt-2 inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#DDE1E5] bg-white px-3 text-[11px] font-medium text-[#0D4D2E] shadow-sm hover:bg-[#F7FAF8]";
@@ -1313,6 +1327,48 @@ export function ResumeReportSreevaAI({ model, onBack }: ResumeReportSreevaAIProp
         <ArrowLeft className="h-4 w-4" />
       </Link>
     );
+  };
+
+  const handleExportPdf = async () => {
+    if (!reportRef.current || isExporting) return;
+
+    try {
+      setIsExporting(true);
+      const canvas = await html2canvas(reportRef.current, {
+        scale: Math.min(2, window.devicePixelRatio || 1),
+        useCORS: true,
+        backgroundColor: "#EEF0F3",
+        scrollX: 0,
+        scrollY: -window.scrollY,
+      });
+
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF({ orientation: "p", unit: "pt", format: "a4" });
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const imgWidth = pageWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight, undefined, "FAST");
+      heightLeft -= pageHeight;
+
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight, undefined, "FAST");
+        heightLeft -= pageHeight;
+      }
+
+      const safeName = (model.fullName || "resume-report")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "");
+      pdf.save(`${safeName || "resume-report"}.pdf`);
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   if (model.processing) {
@@ -1338,15 +1394,45 @@ export function ResumeReportSreevaAI({ model, onBack }: ResumeReportSreevaAIProp
     <div className={cn("w-full transition-colors duration-500", bgPage)}>
       <MeshGradient />
 
-      <div className="mx-auto w-full max-w-6xl space-y-6 px-4 pb-16 pt-4 sm:px-6 sm:pt-6">
-        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#DDE1E5] pb-4">
-          <div className="flex items-center gap-4">
-            <BackButton />
-            <div>
-              <h1 className="text-xl font-semibold tracking-tight text-[#1A1D22]">Resume Screening</h1>
+      <div ref={reportRef} className="mx-auto w-full max-w-6xl space-y-6 px-4 pb-16 pt-4 sm:px-6 sm:pt-6">
+        {showHeader && (
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#DDE1E5] pb-4">
+            <div className="flex items-center gap-4">
+              <BackButton />
+              <div>
+                <h1 className="text-xl font-semibold tracking-tight text-[#1A1D22]">Resume Screening</h1>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {headerActions ? <div className="flex items-center gap-2">{headerActions}</div> : null}
+              {model.resumeUrl ? (
+                <a
+                  href={model.resumeUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#DDE1E5] bg-white px-3 text-[11px] font-bold text-[#0D4D2E] shadow-sm hover:bg-[#F7FAF8]"
+                >
+                  <Link2 className="h-3.5 w-3.5" />
+                  View Resume
+                </a>
+              ) : (
+                <span className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#DDE1E5] bg-white px-3 text-[11px] font-bold text-[#9AA1AA] shadow-sm">
+                  <Link2 className="h-3.5 w-3.5" />
+                  View Resume
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={handleExportPdf}
+                disabled={isExporting}
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#DDE1E5] bg-white px-3 text-[11px] font-bold text-[#0D4D2E] shadow-sm hover:bg-[#F7FAF8] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                {isExporting ? "Exporting..." : "Export PDF"}
+              </button>
             </div>
           </div>
-        </div>
+        )}
 
         {/* Candidate Header Card */}
         <div className={cn(card, "relative overflow-hidden border-none bg-white p-0 shadow-[0_4px_20px_rgba(0,0,0,0.03)]")}>

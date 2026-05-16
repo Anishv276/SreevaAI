@@ -847,10 +847,9 @@ async def entrypoint(ctx: JobContext):
         remaining_for_stages = float(distributed_seconds)
         resume_budget_seconds = 0
         if _resume_stage_idx is not None:
-            if remaining_for_stages >= 360:
-                resume_budget_seconds = 330
-            elif remaining_for_stages >= 300:
-                resume_budget_seconds = int(remaining_for_stages)
+            # Cap resume at 240s (4 min) to leave room for stages 3+4
+            if remaining_for_stages >= 240:
+                resume_budget_seconds = 240
             else:
                 resume_budget_seconds = int(max(0.0, remaining_for_stages))
             _stage_budgets_secs[_resume_stage_idx] = resume_budget_seconds
@@ -858,10 +857,9 @@ async def entrypoint(ctx: JobContext):
 
         skill_budget_seconds = 0
         if _skill_stage_idx is not None:
-            if remaining_for_stages >= 360:
-                skill_budget_seconds = 330
-            elif remaining_for_stages >= 300:
-                skill_budget_seconds = int(remaining_for_stages)
+            # Cap skill at 240s (4 min) to leave room for stages 3+4
+            if remaining_for_stages >= 240:
+                skill_budget_seconds = 240
             else:
                 skill_budget_seconds = int(max(0.0, remaining_for_stages))
             _stage_budgets_secs[_skill_stage_idx] = skill_budget_seconds
@@ -869,12 +867,12 @@ async def entrypoint(ctx: JobContext):
 
         situational_budget_seconds = 0
         if _situational_stage_idx is not None:
-            if remaining_for_stages >= 360:
-                situational_budget_seconds = 330
-            elif remaining_for_stages >= 300:
-                situational_budget_seconds = int(remaining_for_stages)
+            # Cap situational at 270s (4.5 min), leave BEHAVIORAL_RESERVED_SECONDS for behavioral
+            available_for_situational = max(0.0, remaining_for_stages - BEHAVIORAL_RESERVED_SECONDS)
+            if available_for_situational >= 270:
+                situational_budget_seconds = 270
             else:
-                situational_budget_seconds = int(max(0.0, remaining_for_stages))
+                situational_budget_seconds = int(available_for_situational)
             _stage_budgets_secs[_situational_stage_idx] = situational_budget_seconds
             remaining_for_stages = max(0.0, remaining_for_stages - situational_budget_seconds)
 
@@ -1581,16 +1579,8 @@ async def entrypoint(ctx: JobContext):
                                     and _topic_depth_history[-2] < 4.0
                                 )
                                 hard_cap_hit = _topic_follow_up_count >= follow_up_depth
-                                # If candidate gave one vague answer (quality < 5.0) and we already
-                                # probed once, that's enough — move on rather than rephrase the same question.
-                                one_probe_vague = (
-                                    _topic_follow_up_count >= 1
-                                    and len(_topic_depth_history) >= 1
-                                    and _topic_depth_history[-1] < 5.0
-                                    and quality_avg < 5.0
-                                )
-                                if hard_cap_hit or (last_two_low and _topic_follow_up_count >= 2) or one_probe_vague:
-                                    reason_note = "cap" if hard_cap_hit else ("one_probe_vague" if one_probe_vague else "quality exhausted")
+                                if hard_cap_hit or (last_two_low and _topic_follow_up_count >= 2):
+                                    reason_note = "cap" if hard_cap_hit else "quality exhausted"
                                     action = "MOVE_ON"
                                     next_goal = "This thread is exhausted. Pivot naturally to the next topic within this stage — no announcement."
                                     td["decision"]["action"] = "MOVE_ON"
