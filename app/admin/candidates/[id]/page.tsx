@@ -152,11 +152,24 @@ export default function CandidateProfilePage() {
         return [];
     })();
 
+    // ── Is this a fallback/failed report? ──────────────────────────────────
+    const isFallbackReport = interviewReportData?._meta?.is_fallback === true;
+
     const interviewReportScores = interviewReportData?.scores || {};
     const interviewReportRecording = interviewReportData?.recording || {};
     const interviewReportCommunication = interviewReportData?.communication || {};
     const interviewReportCognitiveInsights = interviewReportData?.cognitive_insights || {};
     const interviewReportBehavioralAnalysis = interviewReportData?.behavioral_analysis || {};
+    const interviewReportVerdict = interviewReportData?.verdict || {};
+    const interviewStrategicVerdict = (() => {
+        // Prefer the dedicated strategicVerdict DB field, fall back to report embedded field
+        const raw = candidate?.interview?.strategicVerdict || interviewReportData?.strategic_verdict;
+        if (!raw) return null;
+        if (typeof raw === "string") {
+            try { return JSON.parse(raw); } catch { return null; }
+        }
+        return raw;
+    })();
     const interviewBillingSnapshot = (() => {
         const raw = candidate?.interview?.billingSnapshot;
         if (!raw) return {};
@@ -169,20 +182,26 @@ export default function CandidateProfilePage() {
         }
         return raw;
     })();
-    // Build skill objects from skill_ratings (score per skill) + skills_proof (skill name list)
-    const skillRatings: Record<string, number> = interviewReportData?.skill_ratings || {};
-    const skillsProof: string[] = Array.isArray(interviewReportData?.skills_proof) ? interviewReportData.skills_proof : [];
-    const interviewReportSkills = skillsProof.map((skillName: string) => ({
-        name: String(skillName).trim(),
-        skill: String(skillName).trim(),
-        score: skillRatings[skillName] != null ? String(skillRatings[skillName]) : "—",
-        status: skillRatings[skillName] != null
-            ? skillRatings[skillName] >= 7 ? "STRONG"
-            : skillRatings[skillName] >= 4 ? "MODERATE"
-            : "WEAK"
-            : "NOT TESTED",
-    }));
-    const interviewReportSummary = interviewReportRecording.summary || interviewReportData?.verdict?.summary || interviewAiSummary || "";
+
+    // ── Skills proof — handle object array (new schema) AND legacy string array ──
+    const rawSkillsProof = Array.isArray(interviewReportData?.skills_proof)
+        ? interviewReportData.skills_proof
+        : [];
+    const interviewReportSkills = rawSkillsProof.map((item: any) => {
+        if (typeof item === "string") {
+            const trimmed = item.trim();
+            return { name: trimmed, skill: trimmed, score: "—", status: "NOT TESTED", evidence: "" };
+        }
+        return {
+            name: String(item?.skill || item?.name || "").trim(),
+            skill: String(item?.skill || item?.name || "").trim(),
+            score: String(item?.score || "—").trim(),
+            status: String(item?.status || "NOT TESTED").trim(),
+            evidence: String(item?.evidence || "").trim(),
+        };
+    }).filter((s: any) => s.name);
+
+    const interviewReportSummary = interviewReportData?.verdict?.summary || interviewReportRecording.summary || interviewAiSummary || "";
     const interviewStatusNormalized = String(candidate?.interview?.status || candidate?.interviewStatus || "").trim().toUpperCase();
     const interviewIsFinished =
         interviewStatusNormalized === "COMPLETED" ||
@@ -215,52 +234,78 @@ export default function CandidateProfilePage() {
         }))
         : [];
 
-    // Use AI-generated qa_blocks for question analysis
+    // ── QA blocks — use AI blocks with full question/answer_summary from new schema ──
     const aiQaBlocks = Array.isArray(interviewReportData?.qa_blocks) ? interviewReportData.qa_blocks : [];
     const interviewQaRows = aiQaBlocks.length > 0
-        ? aiQaBlocks.map((block: any, i: number) => ({
-            q: Number(block?.q || i + 1),
-            question: String(block?.question || block?.title || "Question " + (i + 1)).trim(),
-            answer: String(block?.answer || "").trim(),
-            score: String(block?.score || "--"),
-            reasoning: String(block?.reasoning || block?.verdict || "").trim(),
-            score_breakdown: block?.score_breakdown ?? null,
-          }))
+        ? aiQaBlocks.map((block: any, i: number) => {
+            // Cross-reference interviewTurns for any missing question/answer text
+            const matchedTurn = interviewTurns[i] || interviewTurns.find((t: any) => Number(t?.turn) === Number(block?.q));
+            return {
+                q: Number(block?.q || i + 1),
+                question: String(block?.question || matchedTurn?.question || block?.title || `Question ${i + 1}`).trim(),
+                answer: String(block?.answer_summary || block?.answer || matchedTurn?.answer || "").trim(),
+                score: String(block?.score || "--"),
+                reasoning: String(block?.verdict || block?.reasoning || "").trim(),
+                score_breakdown: block?.score_breakdown ?? null,
+                tags: Array.isArray(block?.tags) ? block.tags : [],
+                confidence: String(block?.confidence || ""),
+            };
+        })
         : interviewSessionRows;
+
     const wordCount = interviewTranscript ? interviewTranscript.split(/\s+/).filter(Boolean).length : 0;
+
+    // ── interviewScore: derive from AI scores.combined_score → qa_blocks average → 0 ──
+    // NEVER use candidateRating (self-assessment) as a performance score.
     const interviewScore = (() => {
-        const rating = candidate?.interview?.candidateRating;
-        if (typeof rating === "number" && Number.isFinite(rating)) return rating;
-        if (rating && typeof rating === "object" && !Array.isArray(rating)) {
-            switch (String((rating as { overallFeeling?: unknown }).overallFeeling || "").trim()) {
-                case "Terrible":
-                    return 1;
-                case "Okay":
-                    return 2;
-                case "Good":
-                    return 3;
-                case "Great":
-                    return 4;
-                case "Loved it":
-                    return 5;
-                default:
-                    return 0;
+        const aiCombined = Number(interviewReportScores.combined_score);
+        if (Number.isFinite(aiCombined) && aiCombined > 0) {
+            // combined_score is 0-100; normalise to 0-10 for backward compat
+            return Math.round(aiCombined / 10);
+        }
+        // Fall back: average qa_blocks scores
+        if (aiQaBlocks.length > 0) {
+            const nums = aiQaBlocks
+                .map((b: any) => parseFloat(String(b?.score || "").replace(/[^\d.]/g, "")))
+                .filter((n: number) => Number.isFinite(n));
+            if (nums.length > 0) {
+                return Math.round(nums.reduce((a: number, b: number) => a + b, 0) / nums.length);
             }
         }
         return 0;
     })();
     const combinedScore = Math.max(0, Math.min(10, interviewScore));
-    const proctoringVerdictSummary = String(interviewReportData?.integrity?.summary || "").trim() || "No proctoring summary available.";
-    const recordingDurationSec = typeof candidate?.interview?.interviewDuration === "number" ? candidate.interview.interviewDuration : null;
+
+    // ── Proctoring verdict — if fallback report but real events exist, say so ──
+    const proctoringVerdictSummary = (() => {
+        const aiSummary = String(interviewReportData?.integrity?.summary || "").trim();
+        if (aiSummary && !isFallbackReport) return aiSummary;
+        const hasFlags = groupedProctoringSignals.some((s: any) => s.severity === "high" || s.severity === "medium");
+        if (hasFlags) return `${groupedProctoringSignals.length} proctoring event type(s) detected. Manual review of the recording is recommended.`;
+        if (groupedProctoringSignals.length > 0) return `${groupedProctoringSignals.length} proctoring event type(s) logged — all low severity.`;
+        return "No proctoring flags detected during this session.";
+    })();
+
+    const recordingDurationSec = typeof candidate?.interview?.recordingDurationSec === "number"
+        ? candidate.interview.recordingDurationSec
+        : typeof candidate?.interview?.interviewDuration === "number"
+            ? candidate.interview.interviewDuration
+            : null;
+
     const communicationStatus = (() => {
-        const cefrLabel = interviewReportData?.scores?.cefr_label;
-        if (cefrLabel) return String(cefrLabel);
         const commData = interviewReportData?.communication || {};
-        const commValues = [commData.pronunciation, commData.clarity, commData.grammar, commData.fluency, commData.vocabulary, commData.depth].map(Number).filter((n) => Number.isFinite(n) && n > 0);
+        const commValues = [commData.pronunciation, commData.grammar, commData.fluency, commData.confidence]
+            .map(Number).filter((n) => Number.isFinite(n) && n > 0);
         if (commValues.length > 0) {
             const avg = commValues.reduce((a, b) => a + b, 0) / commValues.length;
             if (avg >= 70) return "Strong";
             if (avg >= 45) return "Average";
+            return "Limited";
+        }
+        const aiCommScore = Number(interviewReportScores.communication_score);
+        if (Number.isFinite(aiCommScore) && aiCommScore > 0) {
+            if (aiCommScore >= 70) return "Strong";
+            if (aiCommScore >= 45) return "Average";
             return "Limited";
         }
         if (!interviewTranscript) return "Pending";
@@ -331,15 +376,10 @@ export default function CandidateProfilePage() {
                 : Array.isArray(resumeStruct.work_history)
                     ? resumeStruct.work_history
                 : [];
-        const educationList = Array.isArray(report.education) ? report.education : [];
         const skillDepth = toTextList(report.skill_depth);
         const coreClaims = toTextList(report.core_claims);
         const breakdown = report.breakdown || null;
         const score = Number(candidate?.aiScore ?? report.score ?? 0) || 0;
-        const mustHaveBarPct =
-            breakdown?.skills_max && Number(breakdown.skills_max) > 0
-                ? Math.min(100, Math.round((Number(breakdown.skills_score) / Number(breakdown.skills_max)) * 100))
-                : Math.min(100, Math.max(0, Math.round(score)));
         // Experience years: prefer scored result, fall back to AI assessment
         const experienceYears: number | null = (() => {
             const v = report.candidate_years ?? report.experience_assessment?.years ?? resumeStruct?.experience?.total_years ?? null;
@@ -404,9 +444,7 @@ export default function CandidateProfilePage() {
             interviewStageLabel: String(report.status || candidate?.resumeStatus || "Screened"),
             breakdown,
             combinedWorkHistory: workHistory,
-            educationList,
             totalExtractedSkills: matchedSkillsCount,
-            mustHaveBarPct,
             techSkillSample: skillDepth.slice(0, 14),
             structuredResumeData,
             structuredJdData,
@@ -515,6 +553,9 @@ export default function CandidateProfilePage() {
                     interviewReportCommunication,
                     interviewReportCognitiveInsights,
                     interviewReportBehavioralAnalysis,
+                    interviewReportVerdict,
+                    interviewStrategicVerdict,
+                    isFallbackReport,
                     interviewBillingSnapshot,
                     interviewReportSkills,
                     interviewSessionRows,

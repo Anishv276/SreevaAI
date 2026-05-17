@@ -123,17 +123,13 @@ OUTPUT FIELD INSTRUCTIONS
    - "end_date": "MMM YYYY" or "Present"
    - "duration_months": integer
    - "is_current": boolean
-   - "company_type": "Product Startup" | "Service Company" | "Fortune 500" | "MNC" | "Agency" | "Freelance/Contract" | "Research/Academia" | "Early Stage Startup" | "Government/PSU"
    - "recruiter_summary": 2-3 sentences — what did they BUILD or DO, what tools, what scope, what outcome
    - "technologies_used": array of strings
    - "ownership_level": "owner" | "contributor" | "unclear"
    - "impact_strength": "high" | "medium" | "low"
-   - "overlap_note": "Overlaps with [Company] by ~N months" or null
 5. experience_assessment
    - "years": {candidate_years}
    - "vs_required": "{candidate_years} yrs vs {jd_min_years} yrs required"
-   - "quality": rate the QUALITY of experience, not just years. E.g. "High — 3 owner-level roles with measurable outcomes"
-   - "relevance": rate how relevant the experience domain is to THIS specific JD. E.g. "Strong — 2 of 3 companies were in same vertical"
 6. candidate_potential
        - "for_this_role": "High" | "Medium" | "Low"
 7. decision_reason (string — EXACTLY 3–4 sentences, this is the ONLY decision signal HR will read)
@@ -147,7 +143,7 @@ OUTPUT FIELD INSTRUCTIONS
    - Every sentence must name a company, tool, project, or metric — no floating claims.
    - FORBIDDEN: "strong background", "passionate", "experienced in", "has worked with", "proficient", score numbers.
    - Tone: direct, professional, like a senior recruiter briefing a hiring manager in 30 seconds.
-9. recruiter_snapshot is ALSO used as the "Screening summary" card bullets.
+8. recruiter_snapshot is ALSO used as the "Screening summary" card bullets.
     Write it so it naturally splits into 3 bullet-sized insights when split on ". " — each sentence should stand alone.
     Return ONLY valid JSON matching this EXACT schema. No markdown. No code fences. No extra keys.
 {{
@@ -164,17 +160,14 @@ OUTPUT FIELD INSTRUCTIONS
   ],
   "experience_assessment": {{
     "years": {candidate_years},
-    "vs_required": "{candidate_years} yrs vs {jd_min_years} yrs required",
-    "quality": "string",
-    "relevance": "string"
+    "vs_required": "{candidate_years} yrs vs {jd_min_years} yrs required"
   }},
   "work_history_annotated": [
     {{
       "company":"string","role":"string","start_date":"string","end_date":"string",
-      "duration_months":0,"is_current":false,"company_type":"string",
+      "duration_months":0,"is_current":false,
       "recruiter_summary":"string","technologies_used":["string"],
-      "ownership_level":"owner|contributor|unclear","impact_strength":"high|medium|low",
-      "overlap_note":"string|null"
+      "ownership_level":"owner|contributor|unclear","impact_strength":"high|medium|low"
     }}
   ],
   "candidate_potential": {{"for_this_role":"High|Medium|Low"}},

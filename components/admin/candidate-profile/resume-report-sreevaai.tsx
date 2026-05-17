@@ -1,7 +1,6 @@
 "use client";
 
 import { useRef, useState, type ReactNode } from "react";
-import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
@@ -208,34 +207,16 @@ export type SreevaAIResumeViewModel = {
   fullName: string;
   displayAvatar: string;
   roleLabel: string;
-  cityBadge: string;
   locationLine: string;
   experienceLine: string;
-  appliedOn: string;
-  parseMeta: string;
   fitPercent: number;
   fitLabel: string;
-  stats: {
-    workExp: string;
-    rolesCount: string;
-    skillsExtracted: string;
-    pipeline: string;
-  };
-  mustHave: { percent: number; nRequirements: number; tag: "GOOD" | "AVERAGE" | "WEAK" };
-  scoreBreakdown: {
-    essentials: number;
-    experience: number;
-    supplemental: number;
-    overall: number;
-  };
-  comm5: { pronunciation: number; grammar: number; vocabulary: number; minimalFiller: number; fluency: number; tag: string };
   fitRadar: { essentials: number; impact: number; domain: number; skills: number; evidence: number };
   fitRadarNotes: RadarNotes;
   aiSummaryPoints: { label: string; body: string; tone: "emerald" | "amber" | "rose" }[];
   strengths: { label: string; body: string }[];
   weaknesses: { label: string; body: string }[];
   decisionStamp: "SHORTLISTED" | "REJECTED" | "BORDERLINE";
-  rubricRows: IntelSignalRow[];
   skillMatching?: unknown;
   skillMatchRows: {
     name: string;
@@ -247,16 +228,8 @@ export type SreevaAIResumeViewModel = {
   }[];
   careerLines: { label: string; body: string; time: string }[];
   resumeUrl: string | null;
-  hasStructuredResume: boolean;
   reviewStrip: string;
-  feedbackStars: number;
 };
-
-function tagFromPct(p: number): "GOOD" | "AVERAGE" | "WEAK" {
-  if (p >= 70) return "GOOD";
-  if (p >= 45) return "AVERAGE";
-  return "WEAK";
-}
 
 function buildResumeAiSummaryPoints(model: Pick<
   SreevaAIResumeViewModel,
@@ -481,9 +454,7 @@ export function buildSreevaAIResumeViewModel(i: {
     domain_max?: number;
   } | null;
   combinedWorkHistory: unknown[];
-  educationList: unknown[];
   totalExtractedSkills: number;
-  mustHaveBarPct: number;
   techSkillSample: string[];
   structuredResumeData?: unknown;
   structuredJdData?: unknown;
@@ -518,11 +489,8 @@ export function buildSreevaAIResumeViewModel(i: {
   const dS = Number(b?.domain_score ?? 0);
 
   // Math fallbacks — only used when AI radar not present
-  const mustPct = Math.min(100, Math.round((skS / skM) * 100));
   const expPct = Math.min(100, Math.round((exS / exM) * 100));
-  const supPct = (gM + dM) > 0 ? Math.min(100, Math.round(((gS + dS) / (gM + dM)) * 100)) : 0;
 
-  const nReq = Math.max(3, skM > 0 ? Math.min(20, Math.round(skM / 3)) : 5);
   const nRoles = Array.isArray(i.combinedWorkHistory) ? i.combinedWorkHistory.length : 0;
 
   const ar = i.aiRadar;
@@ -750,24 +718,6 @@ export function buildSreevaAIResumeViewModel(i: {
     if (fitRadar.evidence === 0) fitRadar.evidence = clamp(ar?.evidence ?? ar?.confidence, fitRadar.evidence);
   }
 
-  // comm5 repurposed for score breakdown display
-  const comm5 = {
-    pronunciation: fitRadar.essentials,
-    grammar: fitRadar.impact,
-    vocabulary: fitRadar.domain,
-    minimalFiller: fitRadar.skills,
-    fluency: fitRadar.evidence,
-    tag: i.candidatePotential === "High" ? "STRONG" : i.candidatePotential === "Low" ? "WEAK" :
-      tagFromPct(i.matchScore * 0.6 + mustPct * 0.2 + expPct * 0.2) === "GOOD" ? "STRONG" : "AVERAGE",
-  };
-
-  const scoreBreakdown = {
-    essentials: fitRadar.essentials,
-    experience: fitRadar.impact,
-    supplemental: fitRadar.domain,
-    overall: Math.min(100, Math.max(0, Math.round(i.matchScore))),
-  };
-
   const aiSummaryPoints = buildResumeAiSummaryPoints({
     fitRadarNotes,
     comparison: {
@@ -785,37 +735,6 @@ export function buildSreevaAIResumeViewModel(i: {
       : i.normalizedStatus?.toLowerCase() === "rejected"
         ? "REJECTED"
         : "BORDERLINE";
-
-  const rubricRows: IntelSignalRow[] = [
-    {
-      id: "rb1",
-      label: "Must-have points",
-      badge: `${skS} / ${skM} pts`,
-      tone: mustPct >= 55 ? "emerald" : "amber",
-      icon: "shield" as IntelIconKey,
-    },
-    {
-      id: "rb2",
-      label: "Experience depth",
-      badge: `${exS} / ${exM} pts`,
-      tone: expPct >= 55 ? "emerald" : "sky",
-      icon: "box" as IntelIconKey,
-    },
-    {
-      id: "rb3",
-      label: "Supplemental + domain",
-      badge: `${gS + dS} / ${gM + dM} pts`,
-      tone: supPct >= 50 ? "emerald" : "slate",
-      icon: "star" as IntelIconKey,
-    },
-    {
-      id: "rb4",
-      label: "Overall AI match",
-      badge: `${Math.round(i.matchScore)} / 100`,
-      tone: i.matchScore >= 60 ? "emerald" : "amber",
-      icon: "zap" as IntelIconKey,
-    },
-  ];
 
   // Build matched + missing skill rows. Prefer structured report skill_matching, then AI skill_match_rows, then resume skills.
   const skillMatchRows: SreevaAIResumeViewModel["skillMatchRows"] = (() => {
@@ -1232,39 +1151,19 @@ export function buildSreevaAIResumeViewModel(i: {
     fullName: c.fullName || "Candidate",
     displayAvatar: i.displayAvatar,
     roleLabel: String(c.drive?.role || c.drive?.title || "Requisition").replace(/[-—]/g, " ").trim() || "Role",
-    cityBadge: String(c.location || "Location").replace(/[-—]/g, " ").split(",")[0].trim() || "",
     locationLine: (c.location || "").replace(/[-—]/g, " ").trim() || "",
     experienceLine: candidateExperienceLine,
-    appliedOn:
-      c.createdAt && i.mounted
-        ? new Date(c.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
-        : "",
-    parseMeta: i.hasAiReport ? "AI report ready" : i.hasResumeText ? "Text extracted" : "Awaiting document",
     fitPercent: Math.min(100, Math.max(0, Math.round(i.matchScore))),
     fitLabel: fitLabelFromPct(i.matchScore),
-    stats: {
-      workExp:
-        typeof c.experienceYears === "number" && Number.isFinite(c.experienceYears) && c.experienceYears >= 0
-          ? `${c.experienceYears} yrs`
-          : " ",
-      rolesCount: nRoles > 0 ? String(nRoles) : " ",
-      skillsExtracted: String(i.totalExtractedSkills),
-      pipeline: i.interviewStageLabel,
-    },
-    mustHave: { percent: i.mustHaveBarPct, nRequirements: nReq, tag: tagFromPct(mustPct) },
-    scoreBreakdown,
-    comm5,
     fitRadar,
     fitRadarNotes,
     aiSummaryPoints,
     strengths,
     weaknesses,
     decisionStamp,
-    rubricRows,
     skillMatchRows,
     careerLines,
     resumeUrl: c.resumeUrl || null,
-    hasStructuredResume: nRoles > 0 || i.totalExtractedSkills > 0,
     reviewStrip: (() => {
       // Human review always wins
       const human = i.humanLayer;
@@ -1292,7 +1191,6 @@ export function buildSreevaAIResumeViewModel(i: {
         })),
       });
     })(),
-    feedbackStars: i.matchScore >= 80 ? 5 : i.matchScore >= 65 ? 4 : i.matchScore >= 50 ? 3 : i.matchScore >= 35 ? 2 : 1,
   };
 }
 

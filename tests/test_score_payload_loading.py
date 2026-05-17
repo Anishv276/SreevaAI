@@ -47,7 +47,7 @@ def test_run_score_accepts_temp_json_file_path(monkeypatch):
         }
 
     def fake_generate_report_inline(*args, **kwargs):
-        return {"fit_radar": {}, "decision_reason": "ok"}, {"model": "gpt-4o-mini", "inputTokens": 0, "outputTokens": 0, "cachedInputTokens": 0}
+        return {"fit_radar": {}, "decision_reason": "ok. Sentence two here. Sentence three here."}, {"model": "gpt-4o-mini", "inputTokens": 0, "outputTokens": 0, "cachedInputTokens": 0}
 
     monkeypatch.setattr(score_parser, "_compute_score", fake_compute_score)
     monkeypatch.setattr(score_parser, "_generate_report_inline", fake_generate_report_inline)
@@ -59,7 +59,7 @@ def test_run_score_accepts_temp_json_file_path(monkeypatch):
     assert captured["resume_data"]["experience"]["total_years"] == 5
     assert captured["threshold"] == 70
     assert result["data"]["score"] == 88
-    assert result["data"]["decision_reason"] == "ok"
+    assert result["data"]["decision_reason"] == "ok. Sentence two here. Sentence three here."
 
 
 def test_run_score_still_accepts_raw_json_text(monkeypatch):
@@ -83,7 +83,7 @@ def test_run_score_still_accepts_raw_json_text(monkeypatch):
         }
 
     def fake_generate_report_inline(*args, **kwargs):
-        return {"fit_radar": {}, "decision_reason": "raw"}, {"model": "gpt-4o-mini", "inputTokens": 0, "outputTokens": 0, "cachedInputTokens": 0}
+        return {"fit_radar": {}, "decision_reason": "raw. Sentence two here. Sentence three here."}, {"model": "gpt-4o-mini", "inputTokens": 0, "outputTokens": 0, "cachedInputTokens": 0}
 
     monkeypatch.setattr(score_parser, "_compute_score", fake_compute_score)
     monkeypatch.setattr(score_parser, "_generate_report_inline", fake_generate_report_inline)
@@ -92,4 +92,4 @@ def test_run_score_still_accepts_raw_json_text(monkeypatch):
     result = parser._run_score(client=object(), json_text=json.dumps(payload), model_override=None)
 
     assert captured["threshold"] == 60
-    assert result["data"]["decision_reason"] == "raw"
+    assert result["data"]["decision_reason"] == "raw. Sentence two here. Sentence three here."

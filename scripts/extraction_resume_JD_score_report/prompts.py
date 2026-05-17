@@ -23,19 +23,6 @@ RESUME_SYSTEM_PROMPT = (
     "Output ONLY valid JSON. Follow the schema exactly."
 )
 
-REPORT_SYSTEM_PROMPT = (
-    "You are a Principal Technical Recruiter and Talent Intelligence expert. "
-    "You produce world-class candidate evaluation reports used by hiring managers at top companies. "
-    "EVIDENCE DISCIPLINE: Every strength, concern, and claim MUST cite company name, tool, project, or metric. "
-    "FORBIDDEN words anywhere in output: 'strong communicator', 'team player', 'passionate', 'motivated', 'fast learner', 'detail-oriented', 'has experience with'. "
-    "REQUIRED evidence pattern: 'At [Company], [built/led/owned] [specific thing] using [tool] — [outcome/scale/metric]'. "
-    "TONE: Professional, factual, constructive. Rejected candidates get honest specific gaps, not unkind language. "
-    "BIAS: Zero tolerance. No inference from name, nationality, gender, age, or education prestige alone. "
-    "fit_radar values are YOUR independent analytical judgment — do not copy score breakdown numbers. "
-    "Output ONLY valid JSON. No markdown. No code fences. No extra text outside the JSON object."
-)
-
-
 def build_jd_prompt(text: str) -> str:
     """Returns the full JD extraction user prompt."""
     return f"""You are an expert ATS analyst. Your task is to convert a Job Description into a structured set of ROLE ELIGIBILITY CRITERIA that a resume screening engine will use to evaluate candidates.

@@ -1,10 +1,5 @@
 import OpenAI from "openai";
 
-/**
- * Generates a comprehensive interview analysis report using OpenAI.
- * This function takes the interview transcript, candidate details, and job requirements
- * to produce a structured analysis of the candidate's performance.
- */
 export async function generateInterviewReport(params: {
   transcript: string;
   resumeText: string;
@@ -34,8 +29,7 @@ export async function generateInterviewReport(params: {
   const openai = new OpenAI({ apiKey });
 
   const prompt = `
-You are a senior technical recruiter and behavioral analyst. 
-You are analyzing a transcript of an AI-led interview.
+You are a senior technical recruiter and behavioral analyst reviewing an AI-led interview.
 
 CANDIDATE: ${candidateName}
 ROLE: ${role}
@@ -53,229 +47,148 @@ ${transcript}
 
 ---
 TASK:
-Analyze the transcript and generate a structured JSON report. 
-Your analysis must be objective, deep, and focus on both technical skills and behavioral signals.
+Analyze the transcript and produce a structured JSON report.
+Be objective, specific, and evidence-backed. Never invent moments — cite the transcript.
 
-OUTPUT SCHEMA (JSON):
+OUTPUT SCHEMA (strict JSON, all fields required):
 {
+  "_meta": {
+    "is_fallback": false,
+    "generated_at": "ISO timestamp string"
+  },
+
+  "scores": {
+    "combined_score": number (0-100, overall interview performance weighted across technical + communication + behavioral),
+    "technical_score": number (0-100, quality of technical/domain answers),
+    "communication_score": number (0-100, clarity, fluency, grammar, confidence combined),
+    "behavioral_score": number (0-100, engagement, consistency, integrity signals)
+  },
+
   "qa_blocks": [
     {
-      "q": number,
-      "title": "string (Short question summary)",
-      "tags": ["string"],
+      "q": number (1-based index),
+      "question": "Full question text as asked by the interviewer",
+      "answer_summary": "50-80 word neutral summary of what the candidate actually said",
+      "title": "2-4 word topic label (e.g. 'React Hooks', 'System Design')",
+      "tags": ["skill1", "skill2"],
       "score": "X/10",
-      "scoreColor": "text-orange-500",
-      "verdict": "detailed reasoning for this specific answer",
-      "confidence": "High" | "Medium" | "Low"
+      "verdict": "Specific reasoning: what was asked, what candidate said, why the score. Cite the transcript. No generic phrases.",
+      "confidence": "High" | "Medium" | "Low",
+      "score_breakdown": {
+        "clarity": number (0-10),
+        "depth": number (0-10),
+        "fluency": number (0-10),
+        "confidence": number (0-10)
+      }
     }
   ],
+
   "recording": {
-    "summary": "1-2 sentence summary of the interview audio/video performance"
+    "summary": "1-2 sentence summary of overall session quality"
   },
+
   "communication": {
-    "pronunciation": number (0-100, how clearly and understandably the candidate spoke — accent is fine as long as it is easy to understand),
-    "grammar": number (0-100, sentence structure and grammatical correctness — do not penalise minor natural speech errors),
-    "fluency": number (0-100, smooth conversational flow — minor fillers like 'um' and 'uh' are normal, only penalise if they heavily disrupt understanding),
-    "confidence": number (0-100, how assertive and certain the candidate sounded — penalise heavy hedging like 'I think maybe' or 'I'm not sure but'),
-    "summary": "One sentence describing overall communication quality based on what was actually said in the interview"
+    "pronunciation": number (0-100),
+    "grammar": number (0-100),
+    "fluency": number (0-100),
+    "confidence": number (0-100),
+    "summary": "One specific sentence about communication quality based on the transcript — cite a pattern"
   },
+
   "cognitive_insights": {
-    "clarity": number (0-100, how clearly the candidate expressed and articulated ideas across all answers),
-    "clarity_earned": "One sentence — exactly what the candidate did that earned this score. Reference a specific answer or pattern from the transcript.",
-    "clarity_missed": "One sentence — exactly what reduced the score. What was vague, unclear, or poorly articulated? Reference a specific moment.",
-    "depth_of_knowledge": number (0-100, level of technical depth, detail, and understanding demonstrated in answers),
-    "depth_earned": "One sentence — what demonstrated genuine depth. Specific topic or answer that showed real understanding.",
-    "depth_missed": "One sentence — where depth was missing. Surface-level answers, avoided follow-ups, or gaps in understanding.",
-    "problem_solving": number (0-100, quality of approach to solving technical problems — methodology, step-by-step reasoning, consideration of edge cases),
-    "problem_solving_earned": "One sentence — what showed structured problem-solving. Specific approach, breakdown, or reasoning demonstrated.",
-    "problem_solving_missed": "One sentence — what was missing. Skipped steps, no edge cases considered, jumped to solution without reasoning.",
-    "logical_thinking": number (0-100, structure, coherence, and consistency of reasoning across responses),
-    "logical_thinking_earned": "One sentence — where reasoning was structured and coherent. Specific example of logical flow.",
-    "logical_thinking_missed": "One sentence — where reasoning broke down. Inconsistency, contradiction, or incoherent flow in a specific answer.",
-    "fluency": number (0-100, smooth conversational delivery — natural flow of thought expression, not just speech),
-    "fluency_earned": "One sentence — what made delivery fluent. Natural pacing, connected thoughts, coherent transitions.",
-    "fluency_missed": "One sentence — what disrupted fluency. Fragmented delivery, restarts, or disjointed transitions in a specific answer.",
-    "confidence": number (0-100, assertiveness and certainty in responses — penalise heavy hedging and backtracking),
-    "confidence_earned": "One sentence — where the candidate was assertive and certain. Specific answer where they held their position or gave a direct claim.",
-    "confidence_missed": "One sentence — where confidence dropped. Heavy hedging, backtracking, or giving up under questioning.",
-    "summary": "Brief summary of candidate's cognitive strengths and gaps based on interview performance"
+    "clarity": number (0-100),
+    "clarity_earned": "One sentence — specific transcript moment that raised the clarity score",
+    "clarity_missed": "One sentence — specific moment that lowered the clarity score",
+    "depth_of_knowledge": number (0-100),
+    "depth_earned": "One sentence — what showed genuine depth",
+    "depth_missed": "One sentence — where depth was missing",
+    "problem_solving": number (0-100),
+    "problem_solving_earned": "One sentence — what showed structured problem-solving",
+    "problem_solving_missed": "One sentence — what was missing",
+    "logical_thinking": number (0-100),
+    "logical_thinking_earned": "One sentence — where reasoning was coherent",
+    "logical_thinking_missed": "One sentence — where reasoning broke down",
+    "fluency": number (0-100),
+    "fluency_earned": "One sentence — what made delivery fluent",
+    "fluency_missed": "One sentence — what disrupted fluency",
+    "confidence": number (0-100),
+    "confidence_earned": "One sentence — where candidate was assertive",
+    "confidence_missed": "One sentence — where confidence dropped",
+    "summary": "2-3 sentence synthesis of cognitive strengths and gaps"
   },
+
   "behavioral_analysis": {
-    "overview": "High-level summary of candidate's behavior and engagement during interview",
+    "overview": "2-3 sentence high-level behavioral summary for the hiring decision",
     "engagement_signals": [
-      "Specific observations about focus, attention, interaction (e.g., 'Asked 3 clarifying questions showing genuine interest', 'Showed fatigue signs in final 20 minutes')",
-      "Include positive engagement and areas of disengagement with specific timing/context"
+      "Specific observation about focus, attention, participation — cite timing or topic"
     ],
     "consistency_signals": [
-      "Resume claim vs. interview answer validation with specific examples (e.g., 'Claims 5 years React but struggled with basic hooks question')",
-      "Contradiction detection with evidence (e.g., 'Said led architecture, later attributed to team')",
-      "Exaggeration patterns if detected"
+      "Resume claim vs interview answer — specific mismatch or confirmation with evidence"
     ],
     "communication_patterns": [
-      "How candidate structured responses, clarity pattern (e.g., 'Vague first answers, became specific when probed')",
-      "Observable patterns in speech (hedging, confidence, articulation) with examples from transcript",
-      "Changes in communication style across interview"
+      "How candidate structured responses — specific pattern with transcript example"
     ],
     "confidence_indicators": [
-      "Evidence of genuine confidence: specific examples, step-by-step thinking, defending positions",
-      "Evidence of false confidence: hedging, backtracking, giving up when challenged",
-      "Pattern over time: Did confidence increase, decrease, or remain stable?"
+      "Evidence of genuine or false confidence — specific example from transcript"
     ],
     "integrity_flags": [
-      "Proctoring signals correlated with answer quality (e.g., 'Checked tabs 7 times during technical Q, which were weakest answers')",
-      "Behavioral red flags from interview content (evasion, inconsistency, note-checking indicators)",
-      "Clear integrity concerns vs. benign explanations"
+      "Proctoring correlation or behavioral red flag — cite event + question topic"
     ],
     "strengths_observed": [
-      "Areas of genuine capability demonstrated through interview (e.g., 'Showed systematic problem-solving on debugging scenarios')",
-      "Positive behaviors (e.g., 'Acknowledged knowledge gaps rather than guessing')",
-      "Recovery patterns and growth within interview"
+      "Specific capability demonstrated — cite the question/topic and what they did"
     ],
     "concerns_noted": [
-      "Knowledge/experience gaps vs. claimed level (e.g., 'Avoids specific examples 4 times despite claiming specialization')",
-      "Behavioral red flags (evasion, inconsistency, dishonesty indicators)",
-      "Patterns that repeat across multiple questions/topics"
+      "Specific gap, evasion, or pattern — cite the question/topic where it occurred"
     ],
-    "summary": "Concise overall assessment (2-3 sentences) synthesizing all signals into hiring decision context"
+    "summary": "2-3 sentence overall behavioral assessment for hiring decision"
   },
+
   "verdict": {
-    "summary": "Detailed overall summary of the candidate's performance (200-300 words)",
+    "summary": "200-300 word detailed overall assessment. Cover: technical depth, communication quality, behavioral signals, consistency with resume, and specific evidence from the interview. End with a clear hiring recommendation rationale.",
     "recommendation": "Strong Yes" | "Yes" | "Maybe" | "No",
-    "recommendation_reason": "Primary reason for this recommendation"
+    "recommendation_reason": "1-2 sentence primary reason for this recommendation, citing specific evidence"
   },
+
   "strategic_verdict": {
     "decision": "Hire" | "Maybe" | "Do Not Hire",
-    "summary": "Strategic overview for leadership",
-    "rationale": ["point 1", "point 2"],
-    "next_actions": ["action 1"]
+    "summary": "2-3 sentence strategic overview for leadership",
+    "rationale": ["Specific point 1 with evidence", "Specific point 2 with evidence"],
+    "next_actions": ["Specific next action — e.g. 'Schedule technical deep-dive on system design'"]
   },
+
   "integrity": {
-    "score": number (0-100),
-    "summary": "Summary of proctoring and behavioral integrity"
+    "score": number (0-100, 100 = perfectly clean session),
+    "summary": "Specific summary of proctoring events and behavioral integrity — cite event counts and correlation with answer quality"
   },
+
   "skills_proof": [
     {
-      "skill": "string (specific skill name, e.g., 'Python', 'REST APIs', 'React', 'System Design')",
+      "skill": "Specific skill name (e.g. Python, REST APIs, React, System Design)",
       "status": "PROVED" | "PARTIAL" | "NOT PROVED" | "NOT TESTED",
-      "score": "string (X/10, based on interview performance for this specific skill)",
-      "evidence": "string (specific quote or example from transcript showing skill mastery/weakness, e.g., 'When asked about async/await, candidate correctly explained event loop and provided working code example')"
+      "score": "X/10",
+      "evidence": "Specific quote or paraphrase from transcript showing mastery or gap"
     }
   ]
 }
 
-Guidelines:
-1. QA_BLOCKS (CRITICAL - Every question MUST have score and detailed reasoning):
-   - Map EVERY question-answer pair from the transcript as a separate qa_block
-   - For each Q&A:
-     * title: 1-2 word summary of what the question tested (e.g., "React Hooks", "Problem Solving", "Leadership")
-     * tags: ["skill1", "skill2"] - what technical/behavioral skills this tested
-     * score: Rate 0-10 based on answer quality. 8-10 = strong/correct, 5-7 = partial/some gaps, 0-4 = weak/incorrect
-     * verdict: SPECIFIC reasoning explaining WHY this score. Must include:
-       - What the question asked for
-       - What the candidate actually answered
-       - Why it was good/bad (specific strengths or gaps shown)
-       - Example from transcript: "When asked about async/await, candidate said '...'. This shows [strength/gap]."
-     * confidence: High (clear answer), Medium (partially clear), Low (vague/incomplete)
-   - Do NOT write generic verdicts like "Good answer" or "Showed knowledge". Be specific about what they demonstrated.
-   - Example (GOOD): "Asked to explain database indexing. Candidate correctly described B-tree structure, trade-offs, and when to use. Shows strong database fundamentals."
-   - Example (BAD): "The answer was good and showed technical knowledge."
-
-2. Recommendation: Use "Strong Yes" only for exceptional candidates. Use "No" for clear failures.
-3. Integrity: Factor in proctoring events (tab switching, face detection issues).
-4. Logic: Ensure the rationale directly cites evidence from the transcript.
-5. Communication: Score based ONLY on what the candidate actually said in the transcript. Do not penalise accents, natural pauses, or occasional fillers. The goal is whether HR can easily understand this person and whether communication issues affected answer quality.
-6. Cognitive Insights (CRITICAL — all fields required):
-   - Every category needs FOUR fields: the score (0-100), _earned (why they got it), _missed (why they lost it), and the shared summary.
-   - _earned: One sentence citing a specific interview moment that RAISED the score. Name the topic or answer. Example: "Correctly walked through a binary search implementation step-by-step without prompting."
-   - _missed: One sentence citing a specific interview moment that LOWERED the score. Name the gap or failure. Example: "When asked about time complexity, gave vague answer ('it depends') without explaining which case or why."
-   - Clarity: Did they express ideas without the interviewer needing to re-ask or re-probe? Penalise rambling, circular answers, or needing 2-3 attempts to make a point.
-   - Depth of knowledge: Did answers go beyond surface definitions? Penalise when candidate only gave textbook definitions without application or examples.
-   - Problem solving: Did they decompose the problem, state assumptions, consider edge cases? Penalise jumping to a solution without reasoning.
-   - Logical thinking: Were ideas sequenced coherently? Did their conclusion follow from their reasoning? Penalise contradictions, non-sequiturs, or answers that drifted off-topic.
-   - Fluency: Did thoughts connect naturally? Penalise fragmented delivery, mid-sentence restarts, or disjointed transitions between ideas.
-   - Confidence: Did they commit to answers and defend positions? Penalise heavy hedging ("I think maybe", "I'm not 100% sure but"), backtracking, or abandoning correct positions under light questioning.
-   - All scores 0-100, based ONLY on evidence from the transcript. Do not invent moments. If a category had no test moment, score conservatively and note it in _missed.
-
-7. Behavioral Analysis (CRITICAL - Comprehensive Signal Synthesis):
-   CRITICAL: This is NOT a score or metric. Synthesize ALL behavioral and intelligence signals into a narrative that explains WHAT HAPPENED during the interview.
-
-   For each section, follow these rules:
-
-   ENGAGEMENT SIGNALS:
-   - What was the candidate's demeanor? Focused, distracted, engaged, tired?
-   - Did they ask clarifying questions, show genuine interest, or remain passive?
-   - Track engagement changes over time (e.g., started strong, faded in final 20 min)
-   - Example (GOOD): "Asked 3 clarifying questions about team structure, showing preparation. Showed fatigue in final 15 minutes with shorter responses."
-   - Example (BAD): "Engagement was average"
-
-   CONSISTENCY SIGNALS (Resume ↔ Interview):
-   - For each major resume claim (skills, experience, role), compare with interview answers
-   - Did they prove the claim? Can they explain it? Do examples match their level?
-   - Flag mismatches, exaggerations, or inconsistencies with SPECIFIC EVIDENCE
-   - Example (GOOD): "Claims '5 years React expertise' but couldn't explain hooks without guidance. Later said 'My team handled state management', contradicting earlier claim of leading architecture."
-   - Example (BAD): "Resume doesn't match interview answers"
-
-   COMMUNICATION PATTERNS:
-   - How did they structure responses? Vague → specific? Rambling? Concise?
-   - Hedging language pattern ("maybe", "I think", "probably") - is it scattered or concentrated on certain topics?
-   - Did clarity improve when probed, or stay the same/worse?
-   - Example (GOOD): "First answers were vague ('I've worked with APIs'), but when asked for specific examples, gave detailed explanation of REST vs GraphQL tradeoffs."
-   - Example (BAD): "Communication was unclear"
-
-   CONFIDENCE INDICATORS:
-   - Genuine confidence: Specific examples, step-by-step reasoning, defending position when challenged
-   - False confidence: Surface polish that crumbles under probing, hedging on claimed specialties
-   - Did confidence increase (showed thinking), decrease (got stuck), or stay flat?
-   - Correlate with topic: Was confidence high only on easy questions?
-   - Example (GOOD): "Confident on debugging (gave specific examples, explained reasoning), but became uncertain when asked about architectural decisions despite claiming expertise."
-   - Example (BAD): "Confidence level was medium"
-
-   INTEGRITY FLAGS & PROCTORING SIGNALS:
-   - Correlate proctoring signals (tab switches, face detection issues) with answer quality/topics
-   - Behavioral red flags: Evasion, repeated inability to provide examples, inconsistent stories
-   - Example (GOOD): "Checked browser tabs 7 times during technical questions (claimed areas of expertise), but 0 times during behavioral questions. Pattern suggests looking up answers for weak areas."
-   - Example (BAD): "Tab switching detected"
-
-   STRENGTHS OBSERVED:
-   - Where did they genuinely shine? Specific examples + evidence
-   - Recovery patterns: Did they think through problems when given time/guidance?
-   - Positive behaviors: Acknowledging gaps, asking follow-up questions, showing methodology
-   - Example (GOOD): "When given debugging scenario, showed systematic troubleshooting approach. Explained assumptions before asking clarifying questions, indicating genuine problem-solving skill."
-   - Example (BAD): "Showed strength in some areas"
-
-   CONCERNS NOTED:
-   - Knowledge gaps vs. claimed expertise level
-   - Repeated patterns (e.g., avoids giving examples, evasive on certain topics)
-   - Behavioral concerns (exaggeration, inconsistency, note-checking indicators)
-   - Example (GOOD): "Avoided providing specific examples 4 times when asked directly. Particularly evasive on topics listed as specialties. Raises authenticity concerns."
-   - Example (BAD): "Has some concerns"
-
-   SYNTHESIS RULES:
-   - Use specific examples from the transcript ("When asked about X, answered Y")
-   - Connect patterns to hiring relevance ("This matters because...")
-   - Avoid generic observations; be precise about what happened and why
-   - Each bullet point should enable HR to understand behavior without seeing transcript
-   - 5-8 bullets per category minimum for depth and accuracy
-   - FINAL SUMMARY (2-3 sentences): Synthesize all signals into overall behavioral assessment for hiring decision
-
-8. SKILLS PROOF (CRITICAL - Must be based on actual interview performance):
-   - ONLY list skills that were actually discussed/tested in the interview
-   - For each skill: Extract the skill name (e.g., 'Python', 'React', 'REST APIs', 'Leadership')
-   - STATUS:
-     * "PROVED" = Candidate demonstrated clear capability with specific examples or correct answers
-     * "PARTIAL" = Candidate showed some understanding but with gaps or hesitation
-     * "NOT PROVED" = Candidate claimed skill but could not demonstrate it
-     * "NOT TESTED" = Skill was listed in JD/resume but never discussed in interview
-   - SCORE: Rate 1-10 based on depth, clarity, and accuracy of answers. Score must directly reflect interview performance.
-   - EVIDENCE: Quote specific example from transcript (e.g., "When asked about async/await, candidate explained: '...'. This demonstrates strong understanding.") OR "Candidate avoided answering when asked about X, claiming 'I haven't used it much'."
-   - Do NOT invent skills or overstate performance. Be conservative and evidence-based.
+RULES:
+1. QA_BLOCKS: Map EVERY interviewer question as a separate block. Include full question text and answer_summary. score_breakdown is required for every block.
+2. SCORES: combined_score = weighted average (technical 40%, communication 35%, behavioral 25%). All scores 0-100.
+3. SKILLS_PROOF: Only skills actually discussed. status must reflect actual performance.
+4. BEHAVIORAL_ANALYSIS: 4-8 bullets per section minimum. Cite the transcript specifically.
+5. VERDICT SUMMARY: 200-300 words, specific, evidence-backed. No generic praise.
+6. INTEGRITY: Score 100 if no proctoring events. Deduct for tab switches (5pts each), face not detected (10pts), multiple devices (15pts). Correlate with answer quality.
+7. COGNITIVE INSIGHTS: All _earned/_missed fields required. Cite specific questions/answers.
+8. recommendation: "Strong Yes" only for exceptional candidates. "No" for clear failures. Be honest.
+9. _meta.is_fallback must always be false in a real response.
+10. Do NOT write generic phrases like "showed knowledge", "good answer", "demonstrated skill". Be specific.
 `;
 
   try {
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
       messages: [
-        { role: "system", content: "You are a professional recruitment AI. Output ONLY valid JSON." },
+        { role: "system", content: "You are a professional recruitment AI. Output ONLY valid JSON matching the exact schema provided. All fields are required." },
         { role: "user", content: prompt },
       ],
       response_format: { type: "json_object" },
@@ -286,6 +199,10 @@ Guidelines:
     if (!content) throw new Error("Empty response from OpenAI");
 
     const data = JSON.parse(content);
+    // Ensure _meta is always present and not fallback
+    if (!data._meta) data._meta = { is_fallback: false, generated_at: new Date().toISOString() };
+    data._meta.is_fallback = false;
+
     console.log(`[INTERVIEW_ANALYSIS] Successfully generated report for ${candidateName}`);
     return {
       data,
@@ -302,64 +219,75 @@ Guidelines:
   }
 }
 
-/**
- * Returns a minimal valid report structure if the AI analysis fails.
- */
 function generateFallbackReport(name: string, role: string, reason = "Internal processing error.") {
   return {
+    _meta: {
+      is_fallback: true,
+      generated_at: new Date().toISOString(),
+      reason,
+    },
+    scores: {
+      combined_score: 0,
+      technical_score: 0,
+      communication_score: 0,
+      behavioral_score: 0,
+    },
     qa_blocks: [],
-    recording: { summary: "Transcript captured successfully." },
+    recording: { summary: "Transcript captured. AI analysis unavailable — manual review required." },
     communication: {
-      pronunciation: 50,
-      grammar: 50,
-      fluency: 50,
-      confidence: 50,
-      summary: "Communication evaluation pending — manual review recommended."
+      pronunciation: 0,
+      grammar: 0,
+      fluency: 0,
+      confidence: 0,
+      summary: "Communication evaluation pending — manual review of recording recommended.",
     },
     cognitive_insights: {
-      clarity: 50,
-      depth_of_knowledge: 50,
-      problem_solving: 50,
-      logical_thinking: 50,
-      summary: "Cognitive evaluation pending — manual review recommended."
+      clarity: 0,
+      clarity_earned: "Unable to evaluate — AI analysis failed.",
+      clarity_missed: "Unable to evaluate — AI analysis failed.",
+      depth_of_knowledge: 0,
+      depth_earned: "Unable to evaluate — AI analysis failed.",
+      depth_missed: "Unable to evaluate — AI analysis failed.",
+      problem_solving: 0,
+      problem_solving_earned: "Unable to evaluate — AI analysis failed.",
+      problem_solving_missed: "Unable to evaluate — AI analysis failed.",
+      logical_thinking: 0,
+      logical_thinking_earned: "Unable to evaluate — AI analysis failed.",
+      logical_thinking_missed: "Unable to evaluate — AI analysis failed.",
+      fluency: 0,
+      fluency_earned: "Unable to evaluate — AI analysis failed.",
+      fluency_missed: "Unable to evaluate — AI analysis failed.",
+      confidence: 0,
+      confidence_earned: "Unable to evaluate — AI analysis failed.",
+      confidence_missed: "Unable to evaluate — AI analysis failed.",
+      summary: "Cognitive evaluation requires manual review.",
     },
     behavioral_analysis: {
-      overview: "Behavioral analysis could not be completed due to processing error. Manual review of interview recording and transcript recommended.",
-      engagement_signals: [
-        "Automated engagement analysis unavailable — review interview recording for focus, participation level, and demeanor changes over time."
-      ],
-      consistency_signals: [
-        "Compare resume claims against interview responses manually to assess accuracy and experience level authenticity."
-      ],
-      communication_patterns: [
-        "Review transcript for communication style — clarity, structure, hedging patterns, and coherence changes during interview."
-      ],
-      confidence_indicators: [
-        "Assess confidence through interview evidence: specific examples, reasoning quality, handling of challenges, and topic-dependent variations."
-      ],
-      integrity_flags: [
-        "Review proctoring log for suspicious patterns (tab switching, face detection issues) correlated with question topics and answer quality."
-      ],
-      strengths_observed: [
-        "Identify areas where candidate demonstrated genuine capability through specific examples and systematic thinking."
-      ],
-      concerns_noted: [
-        "Identify patterns of evasion, inconsistency, knowledge gaps vs. claims, or authenticity concerns."
-      ],
-      summary: "Behavioral analysis requires manual review due to system limitation. This interview requires human assessment for hiring decision."
+      overview: "Automated behavioral analysis unavailable. Manual review of interview recording and transcript is required before making a hiring decision.",
+      engagement_signals: [],
+      consistency_signals: [],
+      communication_patterns: [],
+      confidence_indicators: [],
+      integrity_flags: [],
+      strengths_observed: [],
+      concerns_noted: [],
+      summary: "This interview requires human assessment. AI analysis failed to complete.",
     },
     verdict: {
-      summary: `Basic analysis for ${name} for ${role}. ${reason}`,
+      summary: `AI analysis for ${name} (${role}) could not be completed. ${reason} Manual review of the interview transcript and recording is required before making a hiring decision.`,
       recommendation: "Maybe",
-      recommendation_reason: "Manual review required due to processing failure."
+      recommendation_reason: "Manual review required — automated analysis was unavailable for this session.",
     },
     strategic_verdict: {
       decision: "Maybe",
-      summary: "Requires manual oversight.",
-      rationale: ["Automated analysis failed"],
-      next_actions: ["Review transcript manually"]
+      summary: "Automated analysis failed. Human review required before any hiring decision.",
+      rationale: ["AI report generation failed — transcript is available for manual review."],
+      next_actions: ["Review interview recording and transcript manually", "Conduct follow-up interview to assess candidate"],
     },
-    integrity: { score: 100, summary: "No automated integrity flags." },
-    skills_proof: []
+    integrity: {
+      score: 100,
+      summary: "No automated integrity analysis available. Review proctoring events manually if this session had flags.",
+    },
+    skills_proof: [],
   };
 }
