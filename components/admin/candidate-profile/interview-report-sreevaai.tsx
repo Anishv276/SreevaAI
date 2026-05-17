@@ -20,7 +20,6 @@ import {
   ArrowLeft,
   Bot,
   Box,
-  Check,
   Eye,
   GitBranch,
   Play,
@@ -80,18 +79,9 @@ export type SreevaAIInterviewViewModel = {
   recommendationStars: number;
   fitPercent: number;
   fitLabel: string;
-  stats: {
-    workExp: string;
-    currentHourly: string;
-    expectedHourly: string;
-    expectedJoining: string;
-    feedbackStars: number;
-  };
   technical: { percent: number; questions: number; tag: "GOOD" | "AVERAGE" | "WEAK" };
   comm: { pronunciation: number; grammar: number; vocabulary: number; minimalFiller: number; fluency: number; tag: string; commSummary: string };
   aiBullets: string[];
-  proctoringRows: { key: string; label: string; value: string; bad: boolean }[];
-  engagementVibes: IntelSignalRow[];
   cognitiveInsights: IntelSignalRow[];
   integritySignals: IntelSignalRow[];
   behavioralAnalysis: Record<string, any>;
@@ -189,66 +179,12 @@ const BADGE_PILL: Record<IntelBadgeTone, string> = {
   slate: "border-slate-200/90 bg-slate-100 text-slate-700",
 };
 
-function proctoringCount(groups: { key: string; count: number }[], pred: (k: string) => boolean) {
-  return groups.reduce((n, g) => (pred(String(g.key).toLowerCase()) ? n + g.count : n), 0);
-}
-
 function cognitiveLabel(n: number): { badge: string; tone: IntelBadgeTone } {
   if (n >= 78) return { badge: "Strong", tone: "emerald" };
   if (n >= 65) return { badge: "Moderate", tone: "sky" };
   if (n >= 52) return { badge: "Medium", tone: "amber" };
   if (n >= 35) return { badge: "Average", tone: "amber" };
   return { badge: "Limited", tone: "rose" };
-}
-
-function buildEngagementVibes(groups: { key: string; count: number }[]): IntelSignalRow[] {
-  const g = groups || [];
-  const faceLike = proctoringCount(g, (k) => k.includes("face") || k.includes("head") || k.includes("pose"));
-  const gazeC = proctoringCount(g, (k) => k.includes("gaze") || k.includes("eye"));
-  return [
-    {
-      id: "posture",
-      label: "Posture",
-      icon: "user",
-      details: [
-        faceLike >= 3 ? `Posture leaned or shifted ${faceLike} times.` : faceLike >= 1 ? `Posture adjusted ${faceLike} time${faceLike === 1 ? "" : "s"}.` : "Posture stayed steady throughout the session.",
-        "This is a visual-session observation, not a standalone verdict.",
-      ],
-      ...(faceLike >= 3
-        ? { badge: "Leaning", tone: "rose" as const }
-        : faceLike >= 1
-          ? { badge: "Adjusting", tone: "amber" as const }
-          : { badge: "Upright", tone: "emerald" as const }),
-    },
-    {
-      id: "facial",
-      label: "Facial expressions",
-      icon: "smile",
-      badge: "Neutral",
-      tone: "sky",
-      details: ["No strong expression spikes were detected in the session.", "Useful as context only; not a decision signal by itself."],
-    },
-    {
-      id: "eye",
-      label: "Eye contact",
-      icon: "eye",
-      details: [
-        gazeC >= 1 ? `Eye contact drifted away from camera ${gazeC} time${gazeC === 1 ? "" : "s"}.` : "Eye contact remained steady during the interview.",
-        "Watch this together with other signals like tab switching and response quality.",
-      ],
-      ...(gazeC >= 1
-        ? { badge: "Occasional", tone: "amber" as const }
-        : { badge: "Steady", tone: "emerald" as const }),
-    },
-    {
-      id: "attire",
-      label: "Professional attire",
-      icon: "shirt",
-      badge: "Not assessed",
-      tone: "slate",
-      details: ["Appearance is not scored automatically here.", "Kept as a contextual note only."],
-    },
-  ];
 }
 
 function buildCognitiveFromComm(
@@ -889,7 +825,7 @@ export function buildSreevaAIInterviewViewModel(i: {
     commSummary: String(com.summary || "").trim(),
   };
 
-  const proctoringRows: SreevaAIInterviewViewModel["proctoringRows"] = (i.groupedProctoringSignals || []).slice(0, 8).map((g) => ({
+  const proctoringRows: { key: string; label: string; value: string; bad: boolean }[] = (i.groupedProctoringSignals || []).slice(0, 8).map((g) => ({
     key: g.key,
     label: g.label.replace(/\b\w/g, (ch) => ch.toUpperCase()),
     value: `${g.count} time${g.count === 1 ? "" : "s"}`,
@@ -904,7 +840,6 @@ export function buildSreevaAIInterviewViewModel(i: {
     });
   }
 
-  const engagementVibes = buildEngagementVibes(i.groupedProctoringSignals || []);
   const cognitiveInsights = buildCognitiveFromComm(cogInsights, i.interviewScore, i.wordCount, technicalPct);
   const integritySignals = buildIntegritySignals(proctoringRows);
   const inputTokens = Math.max(0, Math.round(toNum(billing.inputTokens)));
@@ -1042,8 +977,6 @@ export function buildSreevaAIInterviewViewModel(i: {
     rec.duration_label ||
     (i.recordingDurationSec ? (i.formatDuration || formatDurationM)(i.recordingDurationSec) : i.interviewTranscript ? `${Math.max(1, Math.round((i.wordCount / 150) * 5))} mins (est.)` : "—");
 
-  const rawJoin = c.interview?.expectedJoiningDate;
-  const expectedJoining = rawJoin && i.mounted ? new Date(rawJoin).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—";
   const rawComb = Number(scores.combined_score);
   const fitPct = (() => {
     if (Number.isFinite(rawComb) && rawComb > 0) {
@@ -1055,8 +988,7 @@ export function buildSreevaAIInterviewViewModel(i: {
   const commAvg = Math.round(
     (comm.pronunciation + comm.grammar + comm.vocabulary + comm.minimalFiller + comm.fluency) / 5
   );
-  const flagCount = proctoringRows.filter((row) => row.bad).length;
-  const fitText = fitPct >= 80 ? "strong fit" : fitPct >= 60 ? "moderate fit" : fitPct >= 40 ? "borderline fit" : "low fit";
+  const flagCount = proctoringRows.filter((row: { bad: boolean }) => row.bad).length;
   const { topStrengths, topRisks } = buildTopStrengthsRisks({
     technicalPct,
     techTag,
@@ -1066,24 +998,6 @@ export function buildSreevaAIInterviewViewModel(i: {
     transcript,
     skills,
   });
-  const proctoringText =
-    flagCount > 0
-      ? `${flagCount} proctoring flag${flagCount === 1 ? "" : "s"} were recorded and should be reviewed.`
-      : "No meaningful proctoring flags were recorded.";
-  const perfectText =
-    commAvg >= 70
-      ? "he is strongest at keeping communication clear and structured"
-      : technicalPct >= 70
-        ? "he is strongest at handling core technical questions"
-        : "he is strongest at staying engaged and answering in a relevant way";
-  const laggingText =
-    technicalPct < 70
-      ? "he still needs deeper technical evidence before a final call"
-      : commAvg < 70
-        ? "his communication still needs more polish and fluency"
-        : flagCount > 0
-          ? "the session needs a human review because of the proctoring flags"
-          : "there is limited risk, but more role-specific evidence would make the call safer";
   const roleName = String(c.drive?.role || c.drive?.title || "role").trim();
   const candidateFirstName = String(c.fullName || "The candidate").split(" ")[0];
   const topSkillName = skills[0]?.name || null;
@@ -1145,43 +1059,14 @@ export function buildSreevaAIInterviewViewModel(i: {
     totalTime,
     questionsAsked,
     skillsCovered: skills.length,
-    proctoringFlags: proctoringRows.filter((row) => row.bad).length,
+    proctoringFlags: proctoringRows.filter((row: { bad: boolean }) => row.bad).length,
     recommendation: recommendationFromPct(fitPct),
     recommendationStars: Math.max(1, Math.min(5, Math.round(fitPct / 20))),
     fitPercent: fitPct,
     fitLabel: fitLabelFromPct(fitPct),
-    stats: {
-      workExp: "—",
-      currentHourly: "—",
-      expectedHourly: "—",
-      expectedJoining,
-      feedbackStars: (() => {
-        const r = c.interview?.candidateRating;
-        if (typeof r === "number" && r > 0) return Math.max(0, Math.min(5, r));
-        if (r && typeof r === "object" && !Array.isArray(r)) {
-          switch (String((r as { overallFeeling?: unknown }).overallFeeling || "").trim()) {
-            case "Terrible":
-              return 1;
-            case "Okay":
-              return 2;
-            case "Good":
-              return 3;
-            case "Great":
-              return 4;
-            case "Loved it":
-              return 5;
-            default:
-              return 4.2;
-          }
-        }
-        return 4.2;
-      })(),
-    },
     technical: { percent: technicalPct, questions: questionsAsked, tag: techTag },
     comm,
     aiBullets,
-    proctoringRows,
-    engagementVibes,
     cognitiveInsights,
     integritySignals,
     behavioralAnalysis: behavAnalysis,
@@ -1314,223 +1199,6 @@ export function Donut({
           <p className="text-[1.6rem] font-extrabold leading-none tracking-tight text-[#1A1D22] sm:text-[1.75rem]">{p}%</p>
           <p className="mt-1.5 text-[11px] font-bold uppercase leading-tight text-[#5C6370]">
             {questionsLabel || `${questions} questions`}
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-const COMM_LABELS: {
-  key: "pronunciation" | "grammar" | "vocabulary" | "minimalFiller" | "fluency";
-  label: string;
-}[] = [
-  { key: "pronunciation", label: "Pronunciation" },
-  { key: "grammar", label: "Grammar" },
-  { key: "vocabulary", label: "Vocabulary" },
-  { key: "minimalFiller", label: "Minimal filler" },
-  { key: "fluency", label: "Fluency" },
-];
-
-function cornerLabelLines(full: string): [string, string?] {
-  if (full === "Pronunciation") return ["Pronun-", "ciation"];
-  if (full === "Minimal filler") return ["Minimal", "filler"];
-  if (full.length > 12) return [full.slice(0, 9) + "…", undefined];
-  return [full, undefined];
-}
-
-/** Minimal pentagon: neutral lines + single fill, dimension names at the five points. */
-function Radar5Plot({ values }: { values: { pronunciation: number; grammar: number; vocabulary: number; minimalFiller: number; fluency: number } }) {
-  const vals = [values.pronunciation, values.grammar, values.vocabulary, values.minimalFiller, values.fluency];
-  const n = 5;
-  const cx = 50;
-  const cy = 50;
-  const r = 32;
-  const rOuter = 46;
-  const angle = (i: number) => (-90 + (360 / n) * i) * (Math.PI / 180);
-  const pts = vals.map((v, i) => {
-    const t = (Math.max(0, Math.min(100, v)) / 100) * r;
-    return `${cx + t * Math.cos(angle(i))},${cy + t * Math.sin(angle(i))}`;
-  });
-  return (
-    <div className="w-full min-h-[170px] sm:min-h-[190px]">
-      <svg
-        viewBox="0 0 100 100"
-        className="h-full w-full overflow-visible"
-        preserveAspectRatio="xMidYMid meet"
-        aria-label="Communication dimensions (five metrics)"
-      >
-        {[0.25, 0.5, 0.75, 1].map((f) => (
-          <polygon
-            key={f}
-            points={Array.from({ length: n }, (_, i) => {
-              const t = f * r;
-              return `${cx + t * Math.cos(angle(i))},${cy + t * Math.sin(angle(i))}`;
-            }).join(" ")}
-            fill="none"
-            stroke="#E5E7EB"
-            strokeWidth="0.45"
-            vectorEffect="non-scaling-stroke"
-          />
-        ))}
-        {Array.from({ length: n }, (_, i) => (
-          <line
-            key={`spoke-${i}`}
-            x1={cx}
-            y1={cy}
-            x2={cx + r * Math.cos(angle(i))}
-            y2={cy + r * Math.sin(angle(i))}
-            stroke="#E5E7EB"
-            strokeWidth="0.4"
-            vectorEffect="non-scaling-stroke"
-          />
-        ))}
-        <polygon
-          points={pts.join(" ")}
-          fill="rgb(15 23 42 / 0.06)"
-          stroke="#1A1D22"
-          strokeWidth="0.7"
-          strokeLinejoin="round"
-          style={{ pointerEvents: "none" }}
-          vectorEffect="non-scaling-stroke"
-        />
-        {COMM_LABELS.map((def, i) => {
-          const ax = angle(i);
-          const ox = cx + rOuter * Math.cos(ax);
-          const oy = cy + rOuter * Math.sin(ax);
-          const [line1, line2] = cornerLabelLines(def.label);
-          return (
-            <text
-              key={def.key}
-              x={ox}
-              y={line2 ? oy - 1.1 : oy}
-              textAnchor="middle"
-              dominantBaseline="middle"
-              fontSize="2.4"
-              fontWeight="500"
-              fill="#4B5563"
-              style={{ fontFamily: "var(--font-inter, ui-sans-serif, system-ui, sans-serif)" }}
-            >
-              {line1}
-              {line2 && (
-                <tspan x={ox} dy="2.9">
-                  {line2}
-                </tspan>
-              )}
-            </text>
-          );
-        })}
-      </svg>
-    </div>
-  );
-}
-
-export function CommunicationScoreCard({ comm }: { comm: SreevaAIInterviewViewModel["comm"] }) {
-  const avg = Math.round(
-    COMM_LABELS.reduce((s, { key }) => s + Math.max(0, Math.min(100, Number(comm[key]) || 0)), 0) / COMM_LABELS.length
-  );
-  const ranked = COMM_LABELS.map(({ key, label }) => ({
-    key,
-    label,
-    value: Math.max(0, Math.min(100, Number(comm[key]) || 0)),
-  })).sort((a, b) => b.value - a.value);
-  const strongest = ranked[0];
-  const weakest = ranked[ranked.length - 1];
-  const strongestText = strongest ? strongest.label : "—";
-  const weakestText = weakest ? weakest.label : "—";
-  return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3 px-2 pb-3 pt-1 sm:px-3 sm:pb-4">
-      <Radar5Plot values={comm} />
-      <div className="space-y-1.5 text-center">
-        <p className="text-[11px] font-semibold tabular-nums text-neutral-600">Average {avg} / 100</p>
-        <p className="text-[11px] text-[#6B7079]">
-          Strongest: <span className="font-semibold text-[#1A1D22]">{strongestText}</span> · Needs work:{" "}
-          <span className="font-semibold text-[#1A1D22]">{weakestText}</span>
-        </p>
-      </div>
-    </div>
-  );
-}
-
-export function CommunicationScoreCardDonut({ comm }: { comm: SreevaAIInterviewViewModel["comm"] }) {
-  const metrics = [
-    {
-      key: "clarity",
-      label: "Clarity",
-      color: "#6366F1",
-      value: Math.round(Number(comm.pronunciation)),
-    },
-    {
-      key: "fluency",
-      label: "Fluency",
-      color: "#F59E0B",
-      value: Math.round(Number(comm.fluency)),
-    },
-    {
-      key: "grammar",
-      label: "Grammar",
-      color: "#10B981",
-      value: Math.round(Number(comm.grammar)),
-    },
-    {
-      key: "confidence",
-      label: "Confidence",
-      color: "#F43F5E",
-      value: Math.round(Number(comm.vocabulary)),
-    },
-  ].map((metric) => ({ ...metric, value: Math.max(0, Math.min(100, metric.value)) }));
-  const avg = Math.round(metrics.reduce((sum, metric) => sum + metric.value, 0) / metrics.length);
-  const total = Math.max(1, metrics.reduce((sum, metric) => sum + metric.value, 0));
-  const ranked = [...metrics].sort((a, b) => b.value - a.value);
-  const strongest = ranked[0];
-  const weakest = ranked[ranked.length - 1];
-
-  let cursor = 0;
-  const segments = metrics.map((metric) => {
-    const start = cursor;
-    cursor += (metric.value / total) * 100;
-    return `${metric.color} ${start}% ${cursor}%`;
-  });
-
-  return (
-    <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-2 pb-3 pt-1 sm:px-3 sm:pb-4 sm:pt-2">
-      <div className="w-full max-w-[320px]">
-        <div className="relative mx-auto mt-6 aspect-square w-full max-w-[188px]">
-          <div className="absolute inset-0 rounded-full" style={{ background: `conic-gradient(${segments.join(", ")})` }} />
-          <div className="absolute inset-[22%] rounded-full bg-white shadow-[inset_0_0_0_1px_rgba(232,234,237,1)]" />
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="text-center">
-              <div className="text-[40px] font-extrabold leading-none tracking-tight text-[#1A1D22]">{avg}</div>
-              <div className="mt-1 text-[10px] font-extrabold uppercase tracking-[0.28em] text-[#9CA3AF]">
-                Overall
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-6 grid grid-cols-2 gap-x-6 gap-y-3 px-2">
-          {metrics.map((metric) => (
-            <div key={metric.key} className="flex items-center justify-between gap-2">
-              <div className="flex min-w-0 items-center gap-2">
-                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: metric.color }} />
-                <span className="text-[11px] font-extrabold uppercase tracking-widest text-[#5C6370]">
-                  {metric.label}
-                </span>
-              </div>
-              <span className="text-[12px] font-extrabold tabular-nums text-[#1A1D22]">{metric.value}</span>
-            </div>
-          ))}
-        </div>
-
-        <div className="mt-5 space-y-1 text-center">
-          <p className="text-[11px] font-semibold tabular-nums text-neutral-600">Average {avg} / 100</p>
-          <p className="text-[11px] leading-5 text-[#6B7079]">
-            Strongest: <span className="font-semibold text-[#1A1D22]">{strongest?.label || "—"}</span> · Needs work:{" "}
-            <span className="font-semibold text-[#1A1D22]">{weakest?.label || "—"}</span>
-          </p>
-          <p className="text-[10px] font-medium leading-5 text-[#8A919F]">
-            Communication is strongest in {strongest?.label?.toLowerCase() || "clarity"} and can improve in{" "}
-            {weakest?.label?.toLowerCase() || "confidence"}.
           </p>
         </div>
       </div>
@@ -1725,7 +1393,6 @@ function QuestionAnalysisCard({
   transcript: SreevaAIInterviewViewModel["transcript"];
   questions: SreevaAIInterviewViewModel["questionAnalysis"];
 }) {
-  const playerRef = useRef<any>(null);
   return (
     <div className={cn(card, "flex h-full min-h-0 min-w-0 flex-col overflow-hidden p-0")}>
       <div className="border-b border-[#E8EAED] px-4 py-3">
@@ -1785,20 +1452,9 @@ function QuestionAnalysisCard({
                         </span>
                       )}
                       {line.bad && <span className="text-red-500">🚩</span>}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (typeof line.seekSeconds === "number" && playerRef.current?.plyr) {
-                            const plyr = playerRef.current.plyr;
-                            const wasPlaying = !plyr.paused;
-                            plyr.currentTime = line.seekSeconds;
-                            if (wasPlaying) void plyr.play?.();
-                          }
-                        }}
-                        className="text-[9px] font-semibold text-[#6B7079] hover:text-[#0B5FFF]"
-                      >
+                      <span className="text-[9px] font-semibold text-[#6B7079]">
                         {line.seekLabel || line.time}
-                      </button>
+                      </span>
                     </div>
                     <p className="whitespace-pre-wrap text-[12px] leading-relaxed text-[#1A1D22]">{line.text}</p>
                     {isUser && <Play className="mt-1 h-3.5 w-3.5 text-[#0B5FFF] opacity-60" />}
