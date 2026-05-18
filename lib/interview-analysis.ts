@@ -29,191 +29,275 @@ export async function generateInterviewReport(params: {
   const openai = new OpenAI({ apiKey });
 
   const prompt = `
-You are a senior technical recruiter and behavioral analyst reviewing an AI-led interview.
+You are a senior technical recruiter and behavioral analyst. You have just reviewed a complete AI-led interview.
 
 CANDIDATE: ${candidateName}
 ROLE: ${role}
 DURATION: ${Math.round(durationSeconds / 60)} minutes
 PROCTORING EVENTS: ${JSON.stringify(proctoringEvents || [])}
 
-[RESUME TEXT]
+[RESUME]
 ${resumeText || "No resume provided."}
 
 [JOB DESCRIPTION]
 ${jdText || "No JD provided."}
 
-[INTERVIEW TRANSCRIPT]
+[FULL INTERVIEW TRANSCRIPT]
 ${transcript}
 
 ---
-TASK:
-Analyze the transcript and produce a structured JSON report.
-Be objective, specific, and evidence-backed. Never invent moments — cite the transcript.
+
+TASK: Analyze the full transcript end-to-end and output a structured JSON report. Be specific and evidence-backed. Never invent moments — cite the transcript directly.
 
 OUTPUT SCHEMA (strict JSON, all fields required):
+
 {
   "_meta": {
     "is_fallback": false,
-    "generated_at": "ISO timestamp string"
+    "generated_at": "ISO timestamp"
   },
 
   "scores": {
-    "combined_score": number (0-100, overall interview performance. Weighted formula: technical_score×0.30 + communication_score×0.25 + behavioral_score×0.20 + cognitive_score×0.15 + integrity_score×0.10. Compute this LAST after all other scores are finalized.),
-    "technical_score": number (0-100, quality of technical/domain answers — average of all qa_blocks score_breakdown depth scores scaled to 100. Penalise heavily for shallow or incorrect answers.),
-    "communication_score": number (0-100, average of communication.pronunciation + communication.grammar + communication.fluency + communication.confidence divided by 4. Must match what you score in the communication section.),
-    "behavioral_score": number (0-100, engagement, consistency between resume and interview answers, ownership, and behavioral signals — NOT communication or proctoring),
-    "cognitive_score": number (0-100, average of cognitive_insights: clarity, depth_of_knowledge, problem_solving, logical_thinking divided by 4),
-    "integrity_score": number (0-100, same as integrity.score — start 100, deduct per proctoring event type: tab_switch −5, face_not_detected −10, multiple_faces −15, phone_detected −10, looking_away −5)
+    "combined_score": number (0–100. Weighted: demonstrated_competency×0.35 + communication×0.25 + behavioral×0.20 + cognitive×0.15 + integrity×0.05. Compute LAST.),
+    "demonstrated_competency": number (0–100. See RULE 2 for full methodology.),
+    "communication_score": number (0–100. Average of all 9 communication sub-scores. Must match communication section.),
+    "behavioral_score": number (0–100. Engagement depth, ownership signals, consistency between resume claims and interview answers, handling of follow-up probes. NOT communication, NOT proctoring.),
+    "cognitive_score": number (0–100. Average of cognitive_insights: clarity + depth_of_knowledge + problem_solving + logical_thinking + adaptability, divided by 5.),
+    "integrity_score": number (0–100. Start 100, deduct: tab_switch −5 each, face_not_detected −10 each, multiple_faces −15 each, phone_detected −8 each. Floor at 0.)
   },
 
   "qa_blocks": [
     {
-      "q": number (1-based index),
-      "question": "Full question text as asked by the interviewer",
-      "answer_summary": "50-80 word neutral summary of what the candidate actually said",
-      "title": "2-4 word topic label (e.g. 'React Hooks', 'System Design')",
+      "q": number (1-based),
+      "question": "Full question text as asked",
+      "answer_summary": "60–90 word neutral summary of what the candidate actually said — paraphrase, do not evaluate here",
+      "title": "2–4 word topic label",
       "tags": ["skill1", "skill2"],
       "score": "X/10",
-      "verdict": "Specific reasoning: what was asked, what candidate said, why the score. Cite the transcript. No generic phrases.",
+      "verdict": "Specific reasoning: what was asked, what the candidate said, what was good, what was missing. Cite transcript. No generic phrases.",
       "confidence": "High" | "Medium" | "Low",
       "score_breakdown": {
-        "clarity": number (0-10),
-        "depth": number (0-10),
-        "fluency": number (0-10),
-        "confidence": number (0-10)
+        "technical_accuracy": number (0–10, correctness of facts/concepts stated),
+        "depth": number (0–10, beyond surface — layers, trade-offs, edge cases),
+        "clarity": number (0–10, how clearly the answer was communicated),
+        "practical_application": number (0–10, real-world usage, project context, implementation detail)
       }
     }
   ],
 
-  "recording": {
-    "summary": "1-2 sentence summary of overall session quality"
-  },
-
   "communication": {
-    "pronunciation": number (0-100, score ONLY on clarity of articulation from the transcript — did words come through clearly and without distortion? 85-100: crisp articulation throughout; 65-84: mostly clear with occasional mumbling; 40-64: frequent unclear words; below 40: hard to understand),
-    "grammar": number (0-100, score ONLY on sentence structure from the transcript — complete sentences, correct tense, subject-verb agreement. 85-100: consistently well-formed sentences; 65-84: mostly correct with minor fragments; 40-64: notable fragments and tense errors; below 40: frequent structural errors that impede understanding),
-    "fluency": number (0-100, score ONLY on smoothness of delivery — filler words (um, uh, like, you know, sort of), unnatural pauses, restarts, incomplete thoughts. 85-100: smooth delivery, minimal filler; 65-84: occasional filler or pauses; 40-64: frequent filler or hesitation; below 40: heavily disrupted delivery that hinders comprehension),
-    "confidence": number (0-100, score ONLY on assertiveness and decisiveness — did the candidate state answers clearly without excessive hedging ('I think maybe', 'not sure', 'kind of')? Did tone stay steady under follow-up? 85-100: decisive, no hedging, held position under pressure; 65-84: mostly confident with occasional hedging; 40-64: frequent hedging, tone dropped under follow-up; below 40: consistently tentative, avoided direct answers),
-    "summary": "One specific sentence citing a concrete pattern observed in the transcript — name the actual behavior (e.g. 'Candidate used filler words 12+ times across technical answers, dragging fluency down, but grammar was consistently strong'). No generic phrases."
+    "pronunciation": number (0–100. Score clarity of articulation as readable from the transcript.
+      SIGNALS THAT LOWER SCORE: garbled or broken words, truncated words mid-sentence, words that appear phonetically mangled or misheard by the STT system, sentences where word boundaries collapse.
+      SIGNALS THAT RAISE SCORE: words consistently spelled correctly and fully formed, sentences that read cleanly without broken phrasing.
+      85–100: crisp, fully formed words throughout; 65–84: mostly clear with occasional garbled words; 40–64: frequent unclear or broken words; below 40: hard to parse multiple answers.
+      NOTE: This is a transcript — score what is OBSERVABLE in the text, not assumed vocal quality.),
+
+    "grammar": number (0–100. Score sentence structure quality across ALL answers.
+      SIGNALS THAT LOWER SCORE: subject-verb disagreement ("I was studied", "we will I mean"), missing articles, run-on sentences with no punctuation, tense inconsistencies within a single sentence, sentence fragments under 4 words used as complete answers, incorrect prepositions, repeated word ("nothing nothing much").
+      SIGNALS THAT RAISE SCORE: consistently complete sentences, correct tense throughout, varied clause structure (subordinate clauses, conditionals), proper use of articles and prepositions.
+      Count observable grammar errors across the full transcript. 85–100: ≤2 errors; 65–84: 3–6 errors; 40–64: 7–12 errors; below 40: 13+ errors or pervasive structural issues.),
+
+    "fluency": number (0–100. Score smoothness of verbal delivery based on observable transcript patterns.
+      SIGNALS THAT LOWER SCORE: filler words (um, uh, like, you know, basically, so, right, I mean, sort of, kind of) — count total instances; broken phrases that restart mid-thought ("I was — I mean — so what happened was"); sentence fragments followed immediately by a corrected version; answers that trail off without completing the thought.
+      SCORING SCALE: Count filler instances across all substantive answers.
+      0 fillers → 95–100; 1–3 fillers → 85–94; 4–7 fillers → 70–84; 8–12 fillers → 55–69; 13–18 fillers → 40–54; 19–25 fillers → 25–39; 26+ fillers → below 25.
+      Also penalise broken/restarted phrases: each restart = −3 points from fluency base.),
+
+    "confidence": number (0–100. Score assertiveness and decisiveness from the transcript text.
+      SIGNALS THAT LOWER SCORE: hedging phrases ("I think maybe", "I guess", "not sure", "kind of", "sort of", "I believe", "probably", "might be", "could be", "I suppose", "something like that"); apologetic openers ("sorry, just", "only", "I might be wrong"); tentative phrasing where a direct statement was possible; answers that end with an upward question ("…right?", "…I think?"); self-corrections that suggest uncertainty rather than clarification.
+      SIGNALS THAT RAISE SCORE: declarative statements ("I built X", "The reason is Y", "We used Z because"), active voice, defending a position when challenged, giving direct answers without unnecessary qualification.
+      Count hedging instances across all substantive answers.
+      0–1 hedges → 90–100; 2–3 hedges → 75–89; 4–6 hedges → 60–74; 7–10 hedges → 45–59; 11–15 hedges → 30–44; 16+ hedges → below 30.),
+
+    "summary": "One sentence that names the SPECIFIC patterns observed — cite actual counts or concrete examples (e.g., 'Candidate used 14 filler words and 8 hedging phrases across technical answers, dragging fluency and confidence scores down despite grammatically complete sentences.'). No generic phrases."
   },
 
   "cognitive_insights": {
-    "clarity": number (0-100),
-    "clarity_earned": "One sentence — specific transcript moment that raised the clarity score",
-    "clarity_missed": "One sentence — specific moment that lowered the clarity score",
-    "depth_of_knowledge": number (0-100),
-    "depth_earned": "One sentence — what showed genuine depth",
-    "depth_missed": "One sentence — where depth was missing",
-    "problem_solving": number (0-100),
-    "problem_solving_earned": "One sentence — what showed structured problem-solving",
-    "problem_solving_missed": "One sentence — what was missing",
-    "logical_thinking": number (0-100),
-    "logical_thinking_earned": "One sentence — where reasoning was coherent",
-    "logical_thinking_missed": "One sentence — where reasoning broke down",
-    "fluency": number (0-100),
-    "fluency_earned": "One sentence — what made delivery fluent",
-    "fluency_missed": "One sentence — what disrupted fluency",
-    "confidence": number (0-100),
-    "confidence_earned": "One sentence — where candidate was assertive",
-    "confidence_missed": "One sentence — where confidence dropped",
-    "summary": "2-3 sentence synthesis of cognitive strengths and gaps"
+    "clarity": number (0–100),
+    "clarity_earned": "1–2 sentences: what the candidate specifically said or did that showed clear thinking. Quote or close paraphrase from transcript. Start with what worked — e.g. 'Structured their answer in three steps before diving in, naming each part before explaining it.'",
+    "clarity_missed": "1–2 sentences: what cost them points — where their explanation was confusing, circular, or required follow-up probing. Cite the specific moment. If none, write 'No clarity issues detected.'",
+    "depth_of_knowledge": number (0–100),
+    "depth_earned": "1–2 sentences: the strongest evidence of real knowledge depth — a specific implementation detail, trade-off, or nuanced distinction they demonstrated. Quote or close paraphrase.",
+    "depth_missed": "1–2 sentences: where they stayed surface-level, gave textbook definitions without application, or failed to go beyond the obvious. Cite exact question or moment. If depth was strong throughout, write 'No significant depth gaps.'",
+    "problem_solving": number (0–100),
+    "problem_solving_earned": "1–2 sentences: the best example of structured thinking — did they break the problem down, name constraints, consider edge cases? Quote or paraphrase the moment.",
+    "problem_solving_missed": "1–2 sentences: where they jumped to a solution without reasoning, made an unstated assumption, or ignored an important constraint. Cite the question. If problem solving was solid, write 'No major gaps in problem solving approach.'",
+    "logical_thinking": number (0–100),
+    "logical_thinking_earned": "1–2 sentences: where their reasoning was sequenced, conclusions followed from stated premises, or they connected ideas across different parts of the interview.",
+    "logical_thinking_missed": "1–2 sentences: where their logic broke down — contradictory statements, conclusions that didn't follow from their reasoning, or answers that drifted off-topic. If reasoning was coherent throughout, write 'Logical consistency maintained across the session.'",
+    "adaptability": number (0–100),
+    "adaptability_earned": "1–2 sentences: how they responded when redirected, corrected, or given a curveball — did they adjust their answer, ask a clarifying question, or incorporate the feedback? Cite the moment.",
+    "adaptability_missed": "1–2 sentences: where they resisted correction, repeated the same wrong answer, or failed to incorporate interviewer feedback. If adaptability was strong, write 'No adaptability issues observed.'",
+    "confidence": number (0–100, genuine conviction vs surface hedging — did they own their answers or constantly qualify with 'I think', 'maybe', 'not sure'?),
+    "confidence_earned": "1–2 sentences: moments where the candidate answered with clear conviction — defended a position, gave a direct answer without excessive hedging, or pushed back thoughtfully when challenged. Quote or paraphrase.",
+    "confidence_missed": "1–2 sentences: moments of unnecessary hedging, over-qualification, or backing down from a correct answer when challenged. Cite the specific exchange. If confidence was strong throughout, write 'No confidence issues detected.'",
+    "summary": "2–3 sentences. Sentence 1: name the strongest cognitive dimension and cite the best evidence moment. Sentence 2: name the weakest dimension and what specifically caused it. Sentence 3: overall cognitive profile verdict — is this person a sharp thinker, surface-level, inconsistent, or a specialist in narrow areas?"
   },
 
   "behavioral_analysis": {
-    "overview": "2-3 sentence plain-English summary an HR manager can read in 10 seconds and know whether to advance. State the candidate's working style, attitude to role, and one decisive signal.",
+    "overview": "2–3 sentence plain-English summary an HR manager can read in 10 seconds. State working style, attitude toward the role, and one decisive signal for hiring.",
     "engagement_signals": [
-      "Write each bullet as a complete observation an HR manager can act on. Format: [What happened] → [What it signals]. E.g. 'Candidate asked two clarifying questions before answering the system design question → shows structured thinking and genuine engagement rather than rushing to answer.' Minimum 4 bullets, cite topic/timing."
+      {
+        "signal": "Short label for this signal (e.g. 'Proactive clarification before answering')",
+        "what_happened": "Exactly what the candidate said or did at this moment in the interview — cite the topic or question.",
+        "what_was_wrong": "What concern or gap this revealed, or write 'None — this was a positive signal' if it was good.",
+        "handled": "Yes — [how they resolved it] / Partially — [what was missing] / No — [what they should have done instead]"
+      }
     ],
     "consistency_signals": [
-      "Compare resume claims to interview answers. Format: [Resume claim] vs [What they said in interview] → [Verdict: Confirmed / Partial / Not supported]. E.g. 'Resume lists 3 years React experience → answered hooks question confidently with real examples → Confirmed.' Minimum 4 bullets."
+      {
+        "signal": "Short label (e.g. 'Resume claimed 3 years Python — answered showed beginner level')",
+        "what_happened": "What the resume claimed vs what they said in the interview.",
+        "what_was_wrong": "Whether the claim was Confirmed, Partially supported, or Not supported — and why it matters.",
+        "handled": "Yes — candidate acknowledged the gap / No — candidate doubled down or ignored the inconsistency / N/A — no inconsistency detected"
+      }
     ],
     "communication_patterns": [
-      "Describe how the candidate communicated, not just that they did. Format: [Pattern observed] — [Specific example from transcript]. E.g. 'Used structured STAR responses for behavioral questions — when asked about a conflict, they named the stakeholder, described their action, and stated the outcome clearly.' Minimum 4 bullets."
+      {
+        "signal": "Short label (e.g. 'Used STAR structure consistently')",
+        "what_happened": "The specific pattern observed with a transcript example.",
+        "what_was_wrong": "What was problematic about this pattern, or 'None — this was effective communication' if positive.",
+        "handled": "Yes / Partially / No — with one sentence of context"
+      }
     ],
     "confidence_indicators": [
-      "Distinguish genuine confidence from performance. Format: [Signal type: Genuine/Surface/Low] — [Evidence]. E.g. 'Genuine: stated a strong opinion on architecture trade-offs and defended it when challenged.' or 'Surface: claimed expertise in Kubernetes but could not name a single kubectl command when asked.' Minimum 4 bullets."
+      {
+        "signal": "Short label (e.g. 'Genuine confidence on system design' or 'Surface confidence on testing')",
+        "what_happened": "The exact moment or exchange that revealed this confidence level.",
+        "what_was_wrong": "What the confidence level signals as a risk or strength — be specific.",
+        "handled": "Yes / Partially / No — did they recover or compound the issue"
+      }
     ],
     "integrity_flags": [
-      "Only include if there is an actual flag. If none, write one bullet: 'No behavioral integrity concerns detected during this session.' If flags exist, format: [Flag type] at [question/topic] — [what was observed] — [HR implication]. E.g. 'Tab switch detected during the coding question — candidate's answer quality dropped noticeably after returning, suggesting possible reference lookup.'"
+      "Only include real flags. If none: 'No behavioral integrity concerns detected.' If flags: [Type] at [topic] — [what was observed] — [HR implication]."
     ],
     "strengths_observed": [
-      "Write each strength as a hiring argument, not a compliment. Format: [Skill/trait demonstrated] — [Specific moment from interview that proves it] — [Why it matters for this role]. E.g. 'Debugging mindset — when given a broken code snippet, immediately asked about the execution environment before reading the code → critical for a backend engineering role.' Minimum 4 bullets."
+      "Format: [Skill/trait] — [Specific transcript moment proving it] — [Why it matters for this role]. Minimum 4 bullets."
     ],
     "concerns_noted": [
-      "Write each concern as a risk the hiring manager should weigh, with enough detail to decide. Format: [Concern] — [What the candidate said or did] — [Risk level: Low/Medium/High and why]. E.g. 'Shallow system design answers — described only happy-path flows with no mention of failure modes or scale — Medium risk for a senior backend role.' Minimum 4 bullets."
+      "Format: [Concern] — [What was said/done] — [Risk: Low/Medium/High + why]. Minimum 4 bullets."
     ],
-    "summary": "3-sentence final behavioral verdict. Sentence 1: working style and interpersonal signals. Sentence 2: the single strongest evidence point for hiring. Sentence 3: the single biggest risk or open question. Write for a hiring manager making a final call."
+    "summary": "3-sentence behavioral verdict. Sentence 1: working style and interpersonal signals. Sentence 2: strongest evidence point FOR hiring. Sentence 3: biggest risk or open question."
   },
 
   "verdict": {
-    "summary": "200-300 word detailed overall assessment. Cover: technical depth, communication quality, behavioral signals, consistency with resume, and specific evidence from the interview. End with a clear hiring recommendation rationale.",
+    "summary": "150–250 word assessment. Organise as: (1) What the candidate demonstrated — specific skills/projects/knowledge shown with transcript evidence. (2) Critical gaps — what was missing or weak, with severity. (3) Hiring signal — the single most decisive observation that tips this candidate toward hire or no-hire. Never summarise scores (they are shown separately). Never repeat communication observations (shown separately). No vague adjectives. Every sentence must contain a specific observation tied to a transcript moment.",
     "recommendation": "Strong Yes" | "Yes" | "Maybe" | "No",
-    "recommendation_reason": "1-2 sentence primary reason for this recommendation, citing specific evidence",
-    "ai_summary_concise": "EXACTLY 4 narrative bullet points (one per line, starting with • or -) that tell the COMPLETE STORY of who this candidate is as a person and professional. CRITICAL: NO SCORES, NO PERCENTAGES. Each bullet must be 2-3 sentences with deep, specific analysis showing you READ the ENTIRE INTERVIEW. Bold (**word**) ONLY truly important words: actual skills, specific gaps, clear signals, meaningful patterns. Format: • **Category**: 2-3 sentence narrative with evidence from interview. Examples:\n• **Background & Technical Foundation**: Candidate brings **5+ years of React experience** with **proven track record** shipping **multiple production applications**. Demonstrates **strong grasp** of **async patterns**, **state management**, and **component architecture**. Shows **systematic approach** to solving **complex problems**.\n• **Communication & Interpersonal Style**: **Articulate and thoughtful** in technical explanations, **pauses to think** before answering which shows **careful consideration**. When discussing challenges, **takes ownership** and **articulates learnings** clearly. Shows **genuine curiosity** about the **role's problems** rather than just technical questions.\n• **Technical Gaps & Growth Areas**: Struggles with **distributed systems thinking** - didn't mention **failure modes** or **scaling constraints**. Weak on **database optimization** - couldn't explain **indexing strategy**. These are **learnable gaps** with **proper mentoring**, not fundamental flaws.\n• **Hiring Signal & Next Steps**: **STRONG HIRE** for senior frontend role. **Clear depth** in core technologies and **strong communication** make **immediate value** likely. **Recommendation**: Pair with **backend-focused mentor** for first 90 days. **Red flag to monitor**: Gets frustrated quickly under **ambiguity** - needs **clear requirements**."
+    "recommendation_reason": "1–2 sentences citing the single most decisive evidence from the transcript — the one thing that most determined this recommendation.",
+    "ai_summary_concise": "EXACTLY 4 bullet points starting with •. These are plain, factual, insight-rich observations for an HR manager. STRICT RULES: NO scores, NO percentages, NO communication observations (shown elsewhere), NO hiring recommendation (shown elsewhere), NO vague adjectives ('strong communicator', 'good fit'). Every bullet must be ONE focused sentence containing a SPECIFIC observation from the transcript — name what was said, what topic, what pattern. Bold (**text**) only genuinely important skills, gaps, or signals. Organise as:\n• What specific knowledge, projects, or skills did this person prove? Name the exact area and what they said.\n• Where did depth fall short or a critical area go unanswered? Be specific — name the topic and what was missing.\n• What consistent behavioral pattern emerged? Cite the moment that revealed it most clearly.\n• What is the most important unique insight about this candidate that cannot be seen from scores alone?"
   },
 
   "strategic_verdict": {
     "decision": "Hire" | "Maybe" | "Do Not Hire",
-    "summary": "2-3 sentence strategic overview for leadership",
-    "rationale": ["Specific point 1 with evidence", "Specific point 2 with evidence"],
-    "next_actions": ["Specific next action — e.g. 'Schedule technical deep-dive on system design'"]
+    "summary": "2–3 sentence strategic overview",
+    "rationale": ["Evidence-backed point 1", "Evidence-backed point 2"],
+    "next_actions": ["Specific next action with context"]
   },
 
   "integrity": {
-    "score": number (0-100, 100 = perfectly clean session),
-    "summary": "Specific summary of proctoring events and behavioral integrity — cite event counts and correlation with answer quality"
+    "score": number (0–100),
+    "summary": "Specific summary citing event counts and any correlation with answer quality"
   },
 
   "skills_proof": [
     {
-      "skill": "Specific skill name (e.g. Python, REST APIs, React, System Design)",
+      "skill": "Exact skill name as discussed (e.g. 'React', 'System Design', 'SQL', 'Leadership', 'REST APIs')",
       "status": "PROVED" | "PARTIAL" | "NOT PROVED" | "NOT TESTED",
       "score": "X/10",
-      "evidence": "Specific quote or paraphrase from transcript showing mastery or gap"
+      "what_they_showed": "1–2 sentences: what the candidate demonstrated — specific implementation detail, example, or decision they described. Quote or close paraphrase.",
+      "what_was_missing": "1–2 sentences: what was weak, surface-level, or absent. If nothing was missing, write 'Fully demonstrated — no gaps identified.'"
     }
   ]
 }
 
+SKILLS_PROOF RULES:
+- Include EVERY skill mentioned anywhere in the transcript — from resume claims, interviewer questions, or candidate answers
+- Minimum 6 skills. If the interview covered fewer than 6, include skills implied by the role JD
+- Score strictly: 8–10 = deep hands-on proof with specific details, 5–7 = partial or surface-level, 1–4 = claimed but not demonstrated, 0 = not tested
+- Never give a skill 7+ unless the candidate gave specific implementation evidence (not just definitions)
+- Status must match score: PROVED = 7+, PARTIAL = 4–6, NOT PROVED = 1–3, NOT TESTED = 0
+
+---
+
 RULES:
-1. QA_BLOCKS: Map EVERY interviewer question as a separate block. Include full question text and answer_summary. score_breakdown is required for every block.
-2. SCORES: combined_score = (technical_score×0.30) + (communication_score×0.25) + (behavioral_score×0.20) + (cognitive_score×0.15) + (integrity_score×0.10). All scores 0-100. cognitive_score = average of cognitive_insights (clarity, depth_of_knowledge, problem_solving, logical_thinking). integrity_score = same value as integrity.score. communication_score = average of communication sub-scores. Compute combined_score LAST.
-3. SKILLS_PROOF: Only skills actually discussed. status must reflect actual performance.
-4. BEHAVIORAL_ANALYSIS: Minimum 4 bullets per section. Every bullet must follow the format described in the schema — [observed fact] → [what it signals for hiring]. Never write generic bullets like "showed good communication" or "was engaged." Write bullets an HR manager can quote in a debrief meeting.
-5. VERDICT SUMMARY: 200-300 words, specific, evidence-backed. No generic praise.
-6. AI_SUMMARY_CONCISE: EXACTLY 4 narrative lines (each starting with •). NO SCORES, NO PERCENTAGES. Each line must be 2-3 DETAILED SENTENCES with deep analysis showing you read the full interview. Bold (**word**) ONLY the truly important words: actual skills proven, specific gaps identified, clear signals observed, meaningful patterns found — NOT generic descriptors. CRITICAL RULES: (a) Tell the STORY, not metrics. (b) Cite specific evidence from transcript. (c) Show understanding of candidate as PERSON not just technician. (d) Each section should help HR make a decision. Examples:
-   • **Background & Technical Foundation**: Candidate brings **5+ years React** with **shipped 3+ production apps** showing **systematic problem-solving**. Demonstrated **strong understanding** of **async patterns** and **state management** through concrete examples.
-   • **Communication & Working Style**: **Articulate and thoughtful**, takes **time to consider** answers rather than rushing. Shows **ownership mentality** when discussing failures, explaining **what was learned**. Displays **genuine curiosity** about role challenges.
-   • **Technical Gaps & Growth Areas**: Weak on **distributed systems thinking** - didn't mention **failure modes**. Missing **database optimization** knowledge. These are **learnable gaps**, not fundamental flaws.
-   • **Hiring Signal & Recommendation**: **STRONG HIRE**. **Solid technical depth**, **excellent communication**, **ownership mindset**. Pair with **backend mentor**. **Monitor**: Frustrates under **ambiguity** - needs **clear requirements**.
-7. INTEGRITY: Score 100 if no proctoring events. Deduct for tab switches (5pts each), face not detected (10pts), multiple devices (15pts). Correlate with answer quality.
-8. COGNITIVE INSIGHTS: All _earned/_missed fields required. Cite specific questions/answers.
-9. recommendation: "Strong Yes" only for exceptional candidates. "No" for clear failures. Be honest.
-10. _meta.is_fallback must always be false in a real response.
-11. Do NOT write generic phrases like "showed knowledge", "good answer", "demonstrated skill". Be specific.
-12. COMMUNICATION SCORES: Each score must be independently derived from transcript evidence. Do NOT average them together or give all four the same score. Score each dimension separately based only on what you can observe in the text: grammar from sentence structure, fluency from filler/pause patterns, confidence from hedging language, pronunciation from clarity of words. If the transcript shows clear evidence of weakness in one dimension and strength in another, scores should diverge — a score spread of 20+ points across dimensions is expected when the candidate has mixed communication patterns.
-13. TECHNICAL_SCORE: Must be calculated from actual Q&A performance (score_breakdown clarity, depth from qa_blocks). Not arbitrary. Show why: "Question X tested Y skill: candidate scored 8/10 (strong depth, weak edge cases)" = technical strength. Average all Q scores for technical_score.
+
+1. QA_BLOCKS — What counts as a real interview question:
+   Include ONLY questions that ask the candidate to demonstrate knowledge, share experience, or explain something meaningful.
+   SKIP: greetings ("How are you?"), setup questions ("Is your audio working?"), small talk, and the interviewer's own transition statements.
+   The first real question is typically about background, experience, skills, or projects.
+   Every qa_block MUST have a full score_breakdown with all 4 dimensions.
+
+2. DEMONSTRATED_COMPETENCY SCORE — Core methodology:
+   This replaces a narrow "technical_score". It measures how well the candidate demonstrated their capabilities across ALL these axes:
+   - Project & Implementation Knowledge: Did they describe what they actually built, how it worked, what decisions they made?
+   - Technical Understanding: Did they explain WHY they made choices, not just WHAT they did?
+   - Architecture Thinking: Did they mention trade-offs, scalability, failure modes, or design decisions?
+   - Debugging & Problem-Solving: Did they share specific debugging stories, root cause analysis, or recovery strategies?
+   - Breadth vs Depth: Did they show breadth across the role's domain or deep expertise in core areas?
+   - Practical Confidence: Did they speak from experience or theory?
+
+   Scoring:
+   - 80–100: Deep, specific, multi-layered answers. Mentioned concrete implementation details, real trade-offs, named technologies correctly. Clearly has hands-on experience.
+   - 60–79: Good practical knowledge with some gaps. Explained most concepts correctly with real examples but missed depth in 1–2 areas.
+   - 40–59: Moderate — has some experience, answers are surface-level in key areas. Knows the vocabulary but struggles with implementation details.
+   - 20–39: Limited hands-on knowledge. Mostly theoretical. Could not explain implementation details when probed.
+   - 0–19: Very limited. Generic answers with no specific examples. Could not demonstrate any meaningful domain knowledge.
+
+   DO NOT give a low score just because you didn't ask a formal JD-aligned coding question. Evaluate what the candidate DID demonstrate about their capabilities.
+   DO NOT use only qa_block depth scores — look at the full picture across ALL answers.
+
+3. SKILLS_PROOF — Extract every skill discussed, mentioned, or probed in the interview. If a skill appeared in the transcript (even informally), include it. Status must reflect actual performance — not JD alignment.
+
+4. BEHAVIORAL_ANALYSIS — Minimum 4 bullets per section. Every bullet must follow the exact format. Base signals on REAL interview content, not greetings.
+
+5. VERDICT.summary — 200–300 words, evidence-backed. Cite specific answers.
+
+6. AI_SUMMARY_CONCISE — EXACTLY 4 bullets (•). Each is ONE plain sentence — a specific, factual observation grounded in the transcript. NO label prefixes (no "**Demonstrated Capability**:" etc). NO scores, percentages, communication observations, or hiring recommendation. Bold (**text**) only the single most important word or phrase per bullet. Vague adjectives forbidden unless immediately followed by specific evidence.
+
+7. INTEGRITY — Score 100 if no events. Deduct per event, not per type.
+
+8. COGNITIVE INSIGHTS — All _evidence fields required. Cite specific questions/answers from the SUBSTANTIVE interview (not greetings). adaptability is a required dimension.
+
+9. RECOMMENDATION — "Strong Yes" only for exceptional candidates. "No" for clear failures. Be honest.
+
+10. _meta.is_fallback must always be false.
+
+11. NEVER write generic phrases: "showed knowledge", "good answer", "demonstrated skill", "communicated well". Be specific — cite what was said. NEVER use em dashes (—) or en dashes (–) anywhere in your output. Use a period or comma instead.
+
+12. COMMUNICATION — Score all 4 dimensions independently using the exact counting and signal methodology defined in the schema. Do NOT give all 4 the same score. Before scoring, ACTUALLY COUNT: filler word instances (um, uh, like, you know, basically, sort of, kind of, I mean), hedging phrases (I think, maybe, I guess, not sure, kind of, sort of, I suppose, probably, might be), grammar errors (subject-verb disagreement, tense inconsistency, sentence fragments, missing articles), and broken/restarted phrases. Use these counts to derive scores per the scale defined in each dimension. A spread of 20–40 points across dimensions is normal. Score the FULL interview, including casual exchanges, not just formal answers.
+
+13. SCORE_BREAKDOWN per qa_block — Use all 4 dimensions: technical_accuracy, depth, clarity, practical_application. The overall "score" for the block is the average of these 4 × 10. Do not just assign an overall score and ignore breakdown.
+
+14. ROLE FIT context — Role fit is computed by the system from demonstrated_competency + behavioral_score. Your job is to make those two scores accurate. Do not game them.
 `;
 
   try {
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
       messages: [
-        { role: "system", content: "You are a professional recruitment AI. Output ONLY valid JSON matching the exact schema provided. All fields are required." },
+        {
+          role: "system",
+          content: "You are a professional recruitment AI. Output ONLY valid JSON matching the exact schema. All fields required. No markdown fences. No explanation outside JSON.",
+        },
         { role: "user", content: prompt },
       ],
       response_format: { type: "json_object" },
-      temperature: 0.2,
+      temperature: 0.15,
     });
 
     const content = response.choices[0].message.content;
     if (!content) throw new Error("Empty response from OpenAI");
 
     const data = JSON.parse(content);
-    // Ensure _meta is always present and not fallback
     if (!data._meta) data._meta = { is_fallback: false, generated_at: new Date().toISOString() };
     data._meta.is_fallback = false;
 
-    console.log(`[INTERVIEW_ANALYSIS] Successfully generated report for ${candidateName}`);
+    // Migrate old score key name if AI used it
+    if (data.scores && data.scores.technical_score !== undefined && data.scores.demonstrated_competency === undefined) {
+      data.scores.demonstrated_competency = data.scores.technical_score;
+    }
+
+    console.log(`[INTERVIEW_ANALYSIS] Report generated for ${candidateName}`);
     return {
       data,
       usage: {
@@ -231,49 +315,33 @@ RULES:
 
 function generateFallbackReport(name: string, role: string, reason = "Internal processing error.") {
   return {
-    _meta: {
-      is_fallback: true,
-      generated_at: new Date().toISOString(),
-      reason,
-    },
+    _meta: { is_fallback: true, generated_at: new Date().toISOString(), reason },
     scores: {
       combined_score: 0,
-      technical_score: 0,
+      demonstrated_competency: 0,
       communication_score: 0,
       behavioral_score: 0,
+      cognitive_score: 0,
+      integrity_score: 100,
     },
     qa_blocks: [],
     recording: { summary: "Transcript captured. AI analysis unavailable — manual review required." },
     communication: {
-      pronunciation: 0,
-      grammar: 0,
-      fluency: 0,
-      confidence: 0,
+      clarity: 0, structured_thinking: 0, confidence: 0, response_flow: 0,
+      filler_usage: 0, conciseness: 0, context_understanding: 0,
+      technical_articulation: 0, follow_up_handling: 0,
       summary: "Communication evaluation pending — manual review of recording recommended.",
     },
     cognitive_insights: {
-      clarity: 0,
-      clarity_earned: "Unable to evaluate — AI analysis failed.",
-      clarity_missed: "Unable to evaluate — AI analysis failed.",
-      depth_of_knowledge: 0,
-      depth_earned: "Unable to evaluate — AI analysis failed.",
-      depth_missed: "Unable to evaluate — AI analysis failed.",
-      problem_solving: 0,
-      problem_solving_earned: "Unable to evaluate — AI analysis failed.",
-      problem_solving_missed: "Unable to evaluate — AI analysis failed.",
-      logical_thinking: 0,
-      logical_thinking_earned: "Unable to evaluate — AI analysis failed.",
-      logical_thinking_missed: "Unable to evaluate — AI analysis failed.",
-      fluency: 0,
-      fluency_earned: "Unable to evaluate — AI analysis failed.",
-      fluency_missed: "Unable to evaluate — AI analysis failed.",
-      confidence: 0,
-      confidence_earned: "Unable to evaluate — AI analysis failed.",
-      confidence_missed: "Unable to evaluate — AI analysis failed.",
+      clarity: 0, clarity_evidence: "Unable to evaluate.",
+      depth_of_knowledge: 0, depth_evidence: "Unable to evaluate.",
+      problem_solving: 0, problem_solving_evidence: "Unable to evaluate.",
+      logical_thinking: 0, logical_thinking_evidence: "Unable to evaluate.",
+      adaptability: 0, adaptability_evidence: "Unable to evaluate.",
       summary: "Cognitive evaluation requires manual review.",
     },
     behavioral_analysis: {
-      overview: "Automated behavioral analysis unavailable. Manual review of interview recording and transcript is required before making a hiring decision.",
+      overview: "Automated behavioral analysis unavailable. Manual review required.",
       engagement_signals: [],
       consistency_signals: [],
       communication_patterns: [],
@@ -281,116 +349,115 @@ function generateFallbackReport(name: string, role: string, reason = "Internal p
       integrity_flags: [],
       strengths_observed: [],
       concerns_noted: [],
-      summary: "This interview requires human assessment. AI analysis failed to complete.",
+      summary: "This interview requires human assessment.",
     },
     verdict: {
-      summary: `AI analysis for ${name} (${role}) could not be completed. ${reason} Manual review of the interview transcript and recording is required before making a hiring decision.`,
+      summary: `AI analysis for ${name} (${role}) could not be completed. ${reason}`,
       recommendation: "Maybe",
-      recommendation_reason: "Manual review required — automated analysis was unavailable for this session.",
+      recommendation_reason: "Manual review required.",
+      ai_summary_concise: "",
     },
     strategic_verdict: {
       decision: "Maybe",
-      summary: "Automated analysis failed. Human review required before any hiring decision.",
+      summary: "Automated analysis failed. Human review required.",
       rationale: ["AI report generation failed — transcript is available for manual review."],
-      next_actions: ["Review interview recording and transcript manually", "Conduct follow-up interview to assess candidate"],
+      next_actions: ["Review interview recording and transcript manually"],
     },
-    integrity: {
-      score: 100,
-      summary: "No automated integrity analysis available. Review proctoring events manually if this session had flags.",
-    },
+    integrity: { score: 100, summary: "No automated integrity analysis available." },
     skills_proof: [],
   };
 }
 
 /**
- * Recomputes combined_score + all sub-scores from the AI report's raw data.
- * Called after the AI returns a report, before persisting to DB.
- * This ensures the score is always derived from actual evidence — not just
- * whatever the AI happened to calculate (which can be inconsistent).
- *
- * Formula:
- *   combined = technical(30%) + communication(25%) + behavioral(20%) + cognitive(15%) + integrity(10%)
+ * Recomputes all scores from AI report evidence. Called after AI returns, before DB persist.
+ * Uses demonstrated_competency (new) with fallback to technical_score (old schema).
  */
 export function computeEnrichedInterviewScore(report: Record<string, any>): {
   combined_score: number;
-  technical_score: number;
+  technical_score: number;   // kept as DB field name for compatibility
   communication_score: number;
   behavioral_score: number;
   cognitive_score: number;
   integrity_score: number;
 } {
   const clamp = (v: number) => Math.max(0, Math.min(100, Math.round(v)));
-  const avg = (nums: number[]) => nums.length > 0 ? nums.reduce((a, b) => a + b, 0) / nums.length : null;
+  const safeAvg = (nums: number[]) =>
+    nums.length > 0 ? nums.reduce((a, b) => a + b, 0) / nums.length : null;
 
-  // ── Technical score ──────────────────────────────────────────────────────
-  // Primary: scores.technical_score from AI
-  // Fallback: average qa_blocks score_breakdown.depth × 10
-  let technicalScore: number;
-  const aiTech = Number(report?.scores?.technical_score);
-  if (Number.isFinite(aiTech) && aiTech > 0) {
-    technicalScore = clamp(aiTech);
+  // ── Demonstrated Competency (replaces narrow technical_score) ─────────────
+  // Primary: AI's demonstrated_competency → fallback: technical_score → fallback: derive from qa_blocks
+  let demonstratedCompetency: number;
+  const aiDC = Number(report?.scores?.demonstrated_competency ?? report?.scores?.technical_score);
+  if (Number.isFinite(aiDC) && aiDC > 0) {
+    demonstratedCompetency = clamp(aiDC);
   } else {
-    const qaDepths = (Array.isArray(report?.qa_blocks) ? report.qa_blocks : [])
-      .map((b: any) => Number(b?.score_breakdown?.depth))
-      .filter((n: number) => Number.isFinite(n) && n >= 0);
-    const qaAvg = avg(qaDepths);
-    if (qaAvg !== null) {
-      technicalScore = clamp(qaAvg * 10);
+    // Derive from qa_blocks: average of all 4 score_breakdown dimensions per block
+    const qaBlocks: any[] = Array.isArray(report?.qa_blocks) ? report.qa_blocks : [];
+    const blockScores = qaBlocks.map((b: any) => {
+      const sb = b?.score_breakdown || {};
+      const dims = [
+        Number(sb.technical_accuracy ?? sb.depth ?? 0),
+        Number(sb.depth ?? 0),
+        Number(sb.clarity ?? 0),
+        Number(sb.practical_application ?? sb.confidence ?? 0),
+      ].filter((n) => Number.isFinite(n) && n > 0);
+      return dims.length > 0 ? (dims.reduce((a, x) => a + x, 0) / dims.length) * 10 : null;
+    }).filter((n): n is number => n !== null);
+
+    const blockAvg = safeAvg(blockScores);
+    if (blockAvg !== null) {
+      demonstratedCompetency = clamp(blockAvg);
     } else {
-      // Last resort: parse "X/10" format scores from qa_blocks
-      const qaScores = (Array.isArray(report?.qa_blocks) ? report.qa_blocks : [])
-        .map((b: any) => parseFloat(String(b?.score || "").replace(/[^\d.]/g, "")))
-        .filter((n: number) => Number.isFinite(n) && n >= 0);
-      const rawAvg = avg(qaScores);
-      technicalScore = rawAvg !== null ? clamp(rawAvg <= 10 ? rawAvg * 10 : rawAvg) : clamp(Number(report?.scores?.combined_score) || 0);
+      // Last resort: parse "X/10" scores
+      const rawScores = qaBlocks
+        .map((b: any) => {
+          const s = String(b?.score || "");
+          const m = s.match(/^(\d+(?:\.\d+)?)\/10$/);
+          return m ? parseFloat(m[1]) * 10 : parseFloat(s.replace(/[^\d.]/g, "")) || 0;
+        })
+        .filter((n) => n > 0);
+      demonstratedCompetency = safeAvg(rawScores) !== null ? clamp(safeAvg(rawScores)!) : 0;
     }
   }
 
-  // ── Communication score ──────────────────────────────────────────────────
-  // Average of the 4 communication sub-scores (all 0-100)
+  // ── Communication (4 dimensions: pronunciation, grammar, fluency, confidence) ──
   const comm = report?.communication || {};
-  const commValues = [
-    Number(comm.pronunciation),
-    Number(comm.grammar),
-    Number(comm.fluency),
-    Number(comm.confidence),
-  ].filter((n) => Number.isFinite(n) && n >= 0);
-  const communicationScore = commValues.length > 0
-    ? clamp(commValues.reduce((a, b) => a + b, 0) / commValues.length)
+  const commDims = ["pronunciation", "grammar", "fluency", "confidence"]
+    .map((k) => Number(comm[k])).filter((n) => Number.isFinite(n) && n > 0);
+
+  const communicationScore = commDims.length > 0
+    ? clamp(safeAvg(commDims)!)
     : clamp(Number(report?.scores?.communication_score) || 0);
 
-  // ── Behavioral score ─────────────────────────────────────────────────────
-  // Use AI behavioral_score as-is (it's already based on engagement + consistency)
+  // ── Behavioral ─────────────────────────────────────────────────────────────
   const behavioralScore = clamp(Number(report?.scores?.behavioral_score) || 0);
 
-  // ── Cognitive score ──────────────────────────────────────────────────────
-  // Average of clarity, depth_of_knowledge, problem_solving, logical_thinking
+  // ── Cognitive (5-dimension average) ───────────────────────────────────────
   const cog = report?.cognitive_insights || {};
-  const cogValues = [
-    Number(cog.clarity),
-    Number(cog.depth_of_knowledge),
-    Number(cog.problem_solving),
-    Number(cog.logical_thinking),
-  ].filter((n) => Number.isFinite(n) && n >= 0);
-  const cognitiveScore = cogValues.length > 0
-    ? clamp(cogValues.reduce((a, b) => a + b, 0) / cogValues.length)
+  const cogDims = [
+    Number(cog.clarity), Number(cog.depth_of_knowledge),
+    Number(cog.problem_solving), Number(cog.logical_thinking),
+    Number(cog.adaptability),
+  ].filter((n) => Number.isFinite(n) && n > 0);
+  const cognitiveScore = cogDims.length > 0
+    ? clamp(safeAvg(cogDims)!)
     : clamp(Number(report?.scores?.cognitive_score) || 0);
 
-  // ── Integrity score ──────────────────────────────────────────────────────
+  // ── Integrity ──────────────────────────────────────────────────────────────
   const integrityScore = clamp(Number(report?.integrity?.score ?? 100));
 
-  // ── Combined score ───────────────────────────────────────────────────────
+  // ── Combined (new weights) ─────────────────────────────────────────────────
   const combinedScore = clamp(
-    technicalScore * 0.30 +
-    communicationScore * 0.25 +
-    behavioralScore * 0.20 +
-    cognitiveScore * 0.15 +
-    integrityScore * 0.10
+    demonstratedCompetency * 0.35 +
+    communicationScore     * 0.25 +
+    behavioralScore        * 0.20 +
+    cognitiveScore         * 0.15 +
+    integrityScore         * 0.05
   );
 
   return {
     combined_score: combinedScore,
-    technical_score: technicalScore,
+    technical_score: demonstratedCompetency,   // DB column keeps old name
     communication_score: communicationScore,
     behavioral_score: behavioralScore,
     cognitive_score: cognitiveScore,

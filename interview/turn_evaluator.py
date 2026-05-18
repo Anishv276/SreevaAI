@@ -34,7 +34,7 @@ def _is_signal_enabled(signal_toggles: Optional[dict[str, Any]], signal_name: st
         return True
     raw_value = signal_toggles.get(signal_name)
     if raw_value is None:
-        return True
+        return False
     if isinstance(raw_value, bool):
         return raw_value
     if isinstance(raw_value, str):

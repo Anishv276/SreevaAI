@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isInterviewReopenAllowed, isInterviewTokenRequired } from "@/lib/interview-access";
 import { FIXED_INTERVIEW_DURATION_MINUTES } from "@/lib/drive-limits";
+import crypto from "crypto";
 
 export async function POST(
     request: Request,
@@ -32,6 +33,29 @@ export async function POST(
         // -- LIFECYCLE CHECK ------------------------------
         if (!allowReopen && (interview?.status === "COMPLETED" || interview?.status === "FAILED")) {
             return NextResponse.json({ error: "Access Denied: Interview already finalized" }, { status: 403 });
+        }
+
+        // If interview is IN_PROGRESS, allow rejoin only if they were in for less than 5 minutes.
+        // This lets candidates retry if they had a connection drop before the interview really started.
+        const REJOIN_GRACE_MINUTES = 5;
+        if (!allowReopen && interview?.status === "IN_PROGRESS" && interview?.startedAt) {
+            const elapsedMs = Date.now() - new Date(interview.startedAt).getTime();
+            const elapsedMinutes = elapsedMs / 60000;
+            if (elapsedMinutes >= REJOIN_GRACE_MINUTES) {
+                return NextResponse.json({
+                    error: "Access Denied: Interview already in progress. You cannot rejoin after 5 minutes.",
+                }, { status: 403 });
+            }
+            // Under 5 minutes — reset to PENDING so they get a clean session
+            try {
+                await prisma.interview.update({
+                    where: { applicationId },
+                    data: { status: "PENDING", startedAt: null },
+                });
+                console.log(`[TOKEN] Rejoin allowed for ${applicationId} — elapsed ${Math.round(elapsedMinutes * 10) / 10}min < ${REJOIN_GRACE_MINUTES}min, reset to PENDING`);
+            } catch (resetErr) {
+                console.warn("[TOKEN_API] Failed to reset interview status:", resetErr);
+            }
         }
 
         if (interview?.expiresAt && interview.expiresAt < new Date()) {
@@ -86,10 +110,14 @@ export async function POST(
                 const apiKey = process.env.LIVEKIT_API_KEY;
                 const apiSecret = process.env.LIVEKIT_API_SECRET;
                 const rawUrl = process.env.LIVEKIT_URL;
-                if (!apiKey || !apiSecret || !rawUrl) return;
+                if (!apiKey || !apiSecret || !rawUrl) {
+                    console.error("[TOKEN] Missing LiveKit env vars — dispatch skipped");
+                    return;
+                }
 
                 // Strip any WebSocket or HTTP prefix and force HTTPS for the server SDK
                 const host = `https://${rawUrl.trim().replace(/^(wss?|https?):\/\//, "")}`;
+                console.log(`[TOKEN] Dispatching agent "${agentName}" to room "${roomName}" via ${host}`);
 
                 const roomClient = new RoomServiceClient(host, apiKey, apiSecret);
                 const dispatchClient = new AgentDispatchClient(host, apiKey, apiSecret);
@@ -100,15 +128,27 @@ export async function POST(
                         emptyTimeout: 10 * 60,
                         departureTimeout: 60,
                     });
+                    console.log(`[TOKEN] Room "${roomName}" created/verified`);
                 } catch (roomErr) {
                     const msg = roomErr instanceof Error ? roomErr.message.toLowerCase() : "";
                     if (!msg.includes("already exists")) {
-                        console.warn("Interview room warmup warning:", roomErr);
+                        console.error("[TOKEN] Room creation failed:", roomErr);
                     }
                 }
 
+                // Cancel any existing pending dispatches for this room before creating a new one.
                 try {
-                    await dispatchClient.createDispatch(roomName, agentName, {
+                    const existing = await dispatchClient.listDispatch(roomName);
+                    for (const d of existing) {
+                        await dispatchClient.deleteDispatch(d.id, roomName).catch(() => {});
+                    }
+                    if (existing.length > 0) {
+                        console.log(`[TOKEN] Cleared ${existing.length} stale dispatch(es) for room "${roomName}"`);
+                    }
+                } catch { /* ignore if room doesn't exist yet */ }
+
+                try {
+                    const dispatch = await dispatchClient.createDispatch(roomName, agentName, {
                         metadata: JSON.stringify({
                             applicationId,
                             candidateName: application.fullName,
@@ -116,14 +156,12 @@ export async function POST(
                             timeLimitMins: FIXED_INTERVIEW_DURATION_MINUTES,
                         }),
                     });
+                    console.log(`[TOKEN] Agent dispatch created: id=${dispatch.id} agent=${dispatch.agentName} room=${dispatch.room}`);
                 } catch (dispatchErr) {
-                    const msg = dispatchErr instanceof Error ? dispatchErr.message.toLowerCase() : "";
-                    if (!msg.includes("already") && !msg.includes("exists")) {
-                        console.warn("Interview dispatch warning:", dispatchErr);
-                    }
+                    console.error("[TOKEN] Agent dispatch FAILED:", dispatchErr);
                 }
             } catch (warmupErr) {
-                console.warn("Interview warmup warning:", warmupErr);
+                console.error("[TOKEN] Warmup error:", warmupErr);
             }
         })();
 
@@ -149,6 +187,17 @@ export async function POST(
             await prisma.application.update({
                 where: { id: applicationId },
                 data: { interviewStatus: "in progress" }
+            });
+            await prisma.interview.upsert({
+                where: { applicationId },
+                update: { status: "IN_PROGRESS", startedAt: new Date() },
+                create: {
+                    id: crypto.randomUUID(),
+                    applicationId,
+                    accessToken: interviewToken || crypto.randomUUID(),
+                    status: "IN_PROGRESS",
+                    startedAt: new Date(),
+                },
             });
         } catch (statusErr) {
             console.warn("[TOKEN_API] Failed to update interview status to in progress:", statusErr);

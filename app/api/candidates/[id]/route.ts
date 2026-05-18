@@ -61,6 +61,7 @@ export async function GET(
                         strategicVerdict: true,
                         interviewTurns: true,
                         answerScores: true,
+                        proctoringEvents: true,
                         recordingStatus: true,
                         recordingMimeType: true,
                         recordingStartedAt: true,

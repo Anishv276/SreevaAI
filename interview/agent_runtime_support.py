@@ -82,7 +82,7 @@ class JsonFormatter(logging.Formatter):
             for key in _SESSION_CONTEXT_KEYS:
                 if key in log_record:
                     log_record[key] = _sanitize_context_value(log_record[key])
-        return json.dumps(log_record)
+        return json.dumps(log_record, ensure_ascii=False)
 for handler in logger.handlers[:]:
     logger.removeHandler(handler)
 handler = logging.StreamHandler()
@@ -98,7 +98,11 @@ def set_log_context(fields: dict[str, Any]):
 
 
 def reset_log_context(token) -> None:
-    _LOG_CONTEXT_FIELDS.reset(token)
+    try:
+        _LOG_CONTEXT_FIELDS.reset(token)
+    except ValueError:
+        # Can happen during shutdown when callback executes in a different async context.
+        logger.debug("[SESSION] reset_log_context skipped due to cross-context token")
 
 
 class _SessionLogContextFilter(logging.Filter):

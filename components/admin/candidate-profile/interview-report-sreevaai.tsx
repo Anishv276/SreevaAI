@@ -62,22 +62,22 @@ export type SreevaAIInterviewViewModel = {
   fitPercent: number;
   fitLabel: string;
   isFallback: boolean;
-  technical: { percent: number; questions: number; tag: "GOOD" | "AVERAGE" | "WEAK"; scores?: { technical: number; communication: number; behavioral: number } };
-  comm: { pronunciation: number; grammar: number; vocabulary: number; minimalFiller: number; fluency: number; tag: string; commSummary: string };
+  technical: { percent: number; questions: number; tag: "GOOD" | "AVERAGE" | "WEAK"; scores?: { technical: number; communication: number; behavioral: number; cognitive: number; problem_solving: number } };
+  comm: { pronunciation: number; grammar: number; fluency: number; confidence: number; vocabulary: number; minimalFiller: number; tag: string; commSummary: string; hasNewSchema: boolean };
   verdictSummary: string;
   verdictRecommendationReason: string;
   aiBullets: string[];
   cognitiveInsights: IntelSignalRow[];
   integritySignals: IntelSignalRow[];
   behavioralAnalysis: Record<string, any>;
-  skills: { name: string; stars: number; status: string; scoreLabel: string; evidence?: string }[];
+  skills: { name: string; stars: number; status: string; scoreLabel: string; whatShowed?: string; whatMissing?: string }[];
   topStrengths: string[];
   topRisks: string[];
   transcript: { from: "ai" | "user"; text: string; time?: string; qBadge?: QBadge; bad?: boolean; seekSeconds?: number; seekLabel?: string }[];
   questionAnalysis: {
     id: number; question: string; answer: string; score: string; qBadge: QBadge; bad: boolean;
     reasoning: string; tags: string[]; confidence: string;
-    scoreBreakdown: { clarity: number; depth: number; fluency: number; confidence: number } | null;
+    scoreBreakdown: { clarity: number; depth: number; technical_accuracy: number; practical_application: number } | null;
   }[];
   videoUrl: string | null;
   recordingDurationSec: number | null;
@@ -92,12 +92,53 @@ export type SreevaAIInterviewViewModel = {
     turn: number;
     recruiter_visible: boolean;
   }[];
+  proctoringEventsFull: { time: string; eventType: string; reason: string; severity: string; elapsedSeconds: number }[];
+  answerScores: { question: string; answer: string; depth: number; clarity: number; fluency: number; confidence: number; overall: number; signals: string[] }[];
 };
 
 function formatDurationM(totalSeconds: number) {
   const m = Math.floor((totalSeconds || 0) * 0.0166666);
   const s = Math.floor((totalSeconds || 0) % 60);
   return `${m}:${s.toString().padStart(2, "0")} min`;
+}
+
+function inferVideoMimeType(url: string): "video/webm" | "video/mp4" {
+  const normalized = String(url || "").toLowerCase();
+  if (normalized.includes(".webm")) return "video/webm";
+  if (normalized.includes(".mp4")) return "video/mp4";
+  // Recording pipeline defaults to webm chunks/merge output.
+  return "video/webm";
+}
+
+// Strip em dashes and normalize punctuation from AI-generated text
+// Only strip em/en dashes — replaces them with a comma+space to preserve flow
+function cleanAiText(s: string): string {
+  return s
+    .replace(/\s*[—–]\s*/g, ", ")
+    .replace(/,\s*,/g, ",")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+// Parse an AI bullet like "[Title] — [Evidence] — [Why it matters for role]"
+// into { title, description } for the two-line card format
+function parseBulletCard(raw: string): { title: string; description: string } {
+  if (!raw) return { title: "", description: "" };
+  // Strip leading bullet markers
+  const clean = raw.replace(/^[•\-\*]\s*/, "").trim();
+  // Split on em/en dash separators
+  const parts = clean.split(/\s*[—–]\s*/);
+  if (parts.length >= 2) {
+    const title = parts[0].trim();
+    // Join remaining parts as the description, strip leading risk level label
+    const desc = parts.slice(1).join(" — ")
+      .replace(/^\s*(Low|Medium|High)\s+risk[^.]*\.\s*/i, "")
+      .trim();
+    return { title, description: desc };
+  }
+  // No dash separator — treat whole thing as description, derive short title
+  const sentences = clean.split(/\.\s+/);
+  return { title: sentences[0]?.trim() || clean, description: sentences.slice(1).join(". ").trim() };
 }
 
 function scoreToBadge(scoreStr: string): { q: QBadge; bad: boolean } {
@@ -167,73 +208,73 @@ function buildCognitiveFromInsights(
   };
   const toS = (v: unknown): string => String(v || "").trim();
 
-  const clarityN   = toN(cogInsights.clarity,           derivedComm?.clarityScore ?? 60);
-  const depthN     = toN(cogInsights.depth_of_knowledge, 62);
-  const probN      = toN(cogInsights.problem_solving,    technicalPct);
-  const logN       = toN(cogInsights.logical_thinking,   65);
-  // Use dedicated cognitive fluency, fall back to derived transcript fluency (NOT depth)
-  const fluencyN   = toN(cogInsights.fluency,            derivedComm?.fluencyScore ?? 60);
-  // Use dedicated cognitive confidence, fall back to derived transcript confidence (NOT logical)
-  const confidN    = toN(cogInsights.confidence,         derivedComm?.confidenceScore ?? 60);
+  const clarityN = toN(cogInsights.clarity,            derivedComm?.clarityScore ?? 60);
+  const depthN   = toN(cogInsights.depth_of_knowledge, 62);
+  const probN    = toN(cogInsights.problem_solving,     technicalPct);
+  const logN     = toN(cogInsights.logical_thinking,    65);
+  const adaptN   = toN(cogInsights.adaptability,        60);
+  const confidN  = toN(cogInsights.confidence,          derivedComm?.confidenceScore ?? 60);
   const cogSummary = toS(cogInsights.summary);
 
   const lines = (
+    score: number,
     earnedKey: string,
     missedKey: string,
+    evidenceKey: string,
     earnedFallback: string,
     missedFallback: string,
     includeOverall = false,
   ): string[] => {
-    const earned = toS(cogInsights[earnedKey]) || earnedFallback;
+    const earned = toS(cogInsights[earnedKey]) || toS(cogInsights[evidenceKey]) || earnedFallback;
     const missed = toS(cogInsights[missedKey]) || missedFallback;
-    const out: string[] = [`✓ ${earned}`, `✗ ${missed}`];
-    if (includeOverall && cogSummary) out.push(`Overall: ${cogSummary}`);
+    const out: string[] = [`Score: ${score}/100`, `✓ ${earned}`, `✗ ${missed}`];
+    if (includeOverall && cogSummary) out.push(cogSummary);
     return out;
   };
 
   return [
     {
-      id: "c1", label: "Clarity", icon: "activity",
-      details: lines("clarity_earned", "clarity_missed",
-        `Scored ${clarityN}/100 — candidate articulated ideas with reasonable structure.`,
-        `Points lost where answers required re-probing or circled without a clear conclusion.`),
+      id: "c1", label: "Clarity of thought", icon: "activity",
+      details: lines(clarityN, "clarity_earned", "clarity_missed", "clarity_evidence",
+        "Articulated ideas with reasonable structure across responses.",
+        "Some answers required re-probing or circled without a clear conclusion."),
       ...cognitiveLabel(clarityN),
     },
     {
-      id: "c2", label: "Confidence", icon: "zap",
-      details: lines("confidence_earned", "confidence_missed",
-        `Scored ${confidN}/100 — showed direct positioning on areas of familiarity.`,
-        `Points lost where heavy hedging ("I think maybe", "not 100% sure") replaced definitive answers.`),
-      ...cognitiveLabel(confidN),
-    },
-    {
-      id: "c3", label: "Fluency", icon: "star",
-      details: lines("fluency_earned", "fluency_missed",
-        `Scored ${fluencyN}/100 — thoughts connected naturally with reasonable pacing.`,
-        `Points lost where delivery became fragmented or ideas were left incomplete.`),
-      ...cognitiveLabel(fluencyN),
-    },
-    {
-      id: "c4", label: "Depth of knowledge", icon: "search",
-      details: lines("depth_earned", "depth_missed",
-        `Scored ${depthN}/100 — demonstrated applied understanding beyond surface definitions.`,
-        `Points lost where answers stayed at definition level without examples or application.`),
+      id: "c2", label: "Depth of knowledge", icon: "search",
+      details: lines(depthN, "depth_earned", "depth_missed", "depth_evidence",
+        "Demonstrated applied understanding beyond surface definitions.",
+        "Answers stayed at definition level without concrete examples or implementation detail."),
       ...cognitiveLabel(depthN),
     },
     {
-      id: "c5", label: "Problem solving", icon: "box",
-      details: lines("problem_solving_earned", "problem_solving_missed",
-        `Scored ${probN}/100 — showed structured breakdown in at least some scenarios.`,
-        `Points lost where candidate jumped to solution without stating assumptions or edge cases.`),
+      id: "c3", label: "Problem solving", icon: "box",
+      details: lines(probN, "problem_solving_earned", "problem_solving_missed", "problem_solving_evidence",
+        "Showed structured breakdown in at least some scenarios.",
+        "Jumped to solutions without stating assumptions or considering edge cases."),
       ...cognitiveLabel(probN),
     },
     {
-      id: "c6", label: "Logical thinking", icon: "git-branch",
-      details: lines("logical_thinking_earned", "logical_thinking_missed",
-        `Scored ${logN}/100 — reasoning was sequenced coherently across most responses.`,
-        `Points lost where conclusions didn't follow from stated reasoning or answers drifted.`,
-        true),
+      id: "c4", label: "Logical thinking", icon: "git-branch",
+      details: lines(logN, "logical_thinking_earned", "logical_thinking_missed", "logical_thinking_evidence",
+        "Reasoning was sequenced coherently across most responses.",
+        "Some conclusions didn't follow from stated reasoning or answers drifted off-topic."),
       ...cognitiveLabel(logN),
+    },
+    {
+      id: "c5", label: "Adaptability", icon: "zap",
+      details: lines(adaptN, "adaptability_earned", "adaptability_missed", "adaptability_evidence",
+        "Adjusted well when redirected or given new information mid-interview.",
+        "Resisted correction or failed to incorporate interviewer feedback."),
+      ...cognitiveLabel(adaptN),
+    },
+    {
+      id: "c6", label: "Confidence & conviction", icon: "star",
+      details: lines(confidN, "confidence_earned", "confidence_missed", "confidence_evidence",
+        "Answered with direct positioning on areas of clear familiarity.",
+        "Heavy hedging replaced definitive answers in key moments.",
+        true),
+      ...cognitiveLabel(confidN),
     },
   ];
 }
@@ -265,13 +306,13 @@ function buildIntegritySignals(
     const title = display?.title || r.label.replace(/\b\w/g, c => c.toUpperCase());
     const details: string[] = [];
     if (display) {
-      details.push(`Why it was flagged: ${display.why}`);
-      details.push(`Risk level: ${display.risk}`);
+      details.push(`✗ ${display.why}`);
+      details.push(`Risk: ${display.risk}`);
     }
     if (count > 0) {
-      if (count >= 3) details.push(`Occurred ${count} times — high frequency. Strongly recommend reviewing recording timestamps where these events fired.`);
-      else if (count === 2) details.push(`Occurred twice — review both incidents in the recording before deciding.`);
-      else details.push(`Occurred once — review the recording at this point to confirm context.`);
+      if (count >= 3) details.push(`✗ Occurred ${count} times — high frequency. Strongly recommend reviewing recording timestamps.`);
+      else if (count === 2) details.push(`✗ Occurred twice — review both incidents in the recording before deciding.`);
+      else details.push(`✓ Occurred once — isolated event, review the recording at this point to confirm context.`);
     }
     return {
       id: r.key,
@@ -290,13 +331,11 @@ function buildIntegritySignals(
     badge: `${integrityScore}/100`,
     tone: integrityScore >= 80 ? "emerald" : integrityScore >= 60 ? "amber" : "rose",
     icon: "shield",
-    details: [
-      integrityScore >= 80
-        ? "Session shows no significant integrity concerns. All proctoring signals are within acceptable range."
-        : integrityScore >= 60
-          ? "Some proctoring events were detected. Review the flagged signals below and cross-reference with the recording before making a hiring decision."
-          : "Multiple integrity flags were raised in this session. Manual review of the recording is strongly recommended before relying on this interview alone.",
-    ],
+    details: integrityScore >= 80
+      ? ["✓ Session shows no significant integrity concerns.", "✓ All proctoring signals are within acceptable range."]
+      : integrityScore >= 60
+        ? ["✗ Some proctoring events were detected.", "✓ No high-severity flags raised — review flagged signals and cross-reference with the recording before deciding."]
+        : ["✗ Multiple integrity flags raised in this session.", "✗ Manual review of the recording is strongly recommended before relying on this interview alone."],
   });
 
   // If no real events, add a clean signal
@@ -307,11 +346,23 @@ function buildIntegritySignals(
       badge: "Clean",
       tone: "emerald",
       icon: "shield",
-      details: ["No proctoring events were raised during this session. The candidate completed the interview without any integrity flags."],
+      details: ["✓ No proctoring events raised during this session.", "✓ Candidate completed the interview without any integrity flags."],
     });
   }
 
   return signals;
+}
+
+// Extract the core observation from an AI bullet formatted as "[Signal] — [Evidence] — [Risk level]"
+// Returns just the first meaningful clause, cleaned of em dashes
+function extractBulletCore(raw: string): string {
+  if (!raw) return "";
+  // Remove risk level suffix patterns like "— Medium risk", "— High risk", "— Low risk"
+  const withoutRisk = raw.replace(/[—–]\s*(Low|Medium|High)\s+risk[^—–]*/gi, "").trim();
+  // Take just the first em-dash-separated segment (the actual observation)
+  const firstClause = withoutRisk.split(/\s*[—–]\s*/)[0].trim();
+  // Clean remaining dashes and normalize
+  return cleanAiText(firstClause || raw);
 }
 
 function buildTopStrengthsRisks(args: {
@@ -324,42 +375,51 @@ function buildTopStrengthsRisks(args: {
   skills: { name: string; stars: number }[];
   qaRows: { score: string; bad: boolean }[];
 }): { topStrengths: string[]; topRisks: string[] } {
-  // Pull from AI behavioral_analysis first
   const aiStrengths: string[] = Array.isArray(args.behavioralAnalysis?.strengths_observed)
-    ? args.behavioralAnalysis.strengths_observed.filter((s: unknown) => typeof s === "string" && s.trim()).slice(0, 3)
+    ? args.behavioralAnalysis.strengths_observed
+        .filter((s: unknown) => typeof s === "string" && s.trim())
+        .map((s: string) => s.trim())
+        .slice(0, 3)
     : [];
   const aiConcerns: string[] = Array.isArray(args.behavioralAnalysis?.concerns_noted)
-    ? args.behavioralAnalysis.concerns_noted.filter((s: unknown) => typeof s === "string" && s.trim()).slice(0, 3)
+    ? args.behavioralAnalysis.concerns_noted
+        .filter((s: unknown) => typeof s === "string" && s.trim())
+        .map((s: string) => s.trim())
+        .slice(0, 3)
     : [];
 
   const topStrengths: string[] = [...aiStrengths];
   const topRisks: string[] = [...aiConcerns];
 
-  // Supplement with derived signals only if AI analysis didn't fill them
-  if (topStrengths.length < 2) {
-    if (args.fitPct >= 80) topStrengths.push("Overall fit is strong for this role");
-    else if (args.fitPct >= 60) topStrengths.push("Overall fit is workable and worth advancing");
-    if (args.technicalPct >= 70 && topStrengths.length < 2)
-      topStrengths.push(`Technical answers are solid — ${args.technicalPct}% across ${args.qaRows.length} scored responses`);
-    if (args.commAvg >= 70 && topStrengths.length < 2)
-      topStrengths.push("Communication is clear, structured, and easy to follow");
+  if (topStrengths.length < 3) {
+    if (args.fitPct >= 80 && topStrengths.length < 3)
+      topStrengths.push("Strong overall candidate fit — demonstrated consistent alignment with role expectations across technical, behavioral, and communication dimensions — signals readiness to contribute from day one");
+    else if (args.fitPct >= 60 && topStrengths.length < 3)
+      topStrengths.push("Solid overall fit — candidate showed meaningful alignment with the role requirements across most evaluated areas — worth advancing to the next stage for a more in-depth assessment");
+    if (args.technicalPct >= 70 && topStrengths.length < 3)
+      topStrengths.push(`Demonstrated technical competency — gave specific, evidence-backed answers across ${args.qaRows.length} evaluated questions showing practical implementation knowledge — indicates real hands-on experience rather than surface familiarity`);
+    if (args.commAvg >= 70 && topStrengths.length < 3)
+      topStrengths.push("Clear and structured communication — consistently expressed ideas with logical flow, appropriate vocabulary, and minimal hedging throughout the session — would perform well in collaborative or client-facing environments");
     const topSkill = [...args.skills].sort((a, b) => b.stars - a.stars)[0];
     if (topSkill && topSkill.stars >= 4 && topStrengths.length < 3)
-      topStrengths.push(`Best technical signal demonstrated in ${topSkill.name}`);
+      topStrengths.push(`Strong ${topSkill.name} signal — the strongest demonstrated skill in the session, backed by specific examples and confident articulation — this area can be relied upon without further validation`);
+    if (topStrengths.length < 2)
+      topStrengths.push("Factual consistency across the session — no contradictions detected between resume claims and interview answers — suggests honest, well-grounded self-presentation that can be trusted at face value");
   }
 
-  if (topRisks.length < 2) {
+  if (topRisks.length < 3) {
     if (args.technicalPct < 35 && topRisks.length < 3)
-      topRisks.push("Technical depth is significantly below the pass threshold for this role");
+      topRisks.push("Technical depth significantly below role threshold — answers lacked specificity and relied on high-level descriptions rather than concrete implementation experience — requires a dedicated technical screen before advancing");
     else if (args.technicalPct < 50 && topRisks.length < 3)
-      topRisks.push("Technical depth needs stronger evidence before advancing");
-    const anyProctoringBad = args.proctoringRows.some((r) => r.bad);
-    if (anyProctoringBad && topRisks.length < 3)
-      topRisks.push("Proctoring flags need a human review before relying on this session alone");
+      topRisks.push("Insufficient technical depth — several answers were vague or generic without evidence of hands-on experience — needs stronger proof points before this candidate can be trusted for technical delivery");
+    if (args.proctoringRows.some((r) => r.bad) && topRisks.length < 3)
+      topRisks.push("Proctoring anomalies flagged — one or more integrity signals were triggered during the session — a human reviewer must assess these events before this report's scores can be relied upon");
     if (args.commAvg < 50 && topRisks.length < 3)
-      topRisks.push("Communication is below average — may affect fit for client-facing or collaborative roles");
+      topRisks.push("Communication is below average — candidate struggled with clarity, fluency, or confidence during several responses — may affect performance in team collaboration, stakeholder communication, or client-facing scenarios");
     if (args.fitPct < 40 && topRisks.length < 3)
-      topRisks.push("Overall fit is low — requires a strong follow-up or technical screen to verify");
+      topRisks.push("Low overall fit signal — the candidate's profile and responses do not align well with the evaluated role criteria — a follow-up structured interview is recommended before making any hiring decision");
+    if (topRisks.length < 2)
+      topRisks.push("Limited evidence of depth — answers across multiple topics stayed at the surface level without exploring implementation trade-offs, edge cases, or real-world constraints — depth of experience remains unvalidated");
   }
 
   return { topStrengths: topStrengths.slice(0, 3), topRisks: topRisks.slice(0, 3) };
@@ -393,6 +453,8 @@ export function buildSreevaAIInterviewViewModel(i: {
   formatDuration: (n: number) => string;
   communicationStatus: string;
   signalTimeline: { elapsed_sec: number; signal_name: string; signal_layer: string; evidence: string; score_delta: number; turn: number; recruiter_visible: boolean }[];
+  proctoringEventsFull?: { time: string; eventType: string; reason: string; severity: string; elapsedSeconds: number }[];
+  answerScoresParsed?: { question: string; answer: string; depth: number; clarity: number; fluency: number; confidence: number; overall: number; signals: string[] }[];
 }): SreevaAIInterviewViewModel {
   const c = i.candidate;
   const com = i.interviewReportCommunication || {};
@@ -405,17 +467,26 @@ export function buildSreevaAIInterviewViewModel(i: {
     const n = Number(v);
     return Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : fallback;
   };
-  // ── Technical score: prefer AI scores object → qa_blocks average ──
+  // ── Demonstrated competency (replaces narrow technical_score) ──
+  // Prefer demonstrated_competency (new schema) → technical_score (old) → qa_blocks average
   const technicalPct = (() => {
+    const dc = Number(scores.demonstrated_competency);
+    if (Number.isFinite(dc) && dc > 0) return Math.min(100, Math.max(0, Math.round(dc)));
     const aiTech = Number(scores.technical_score);
     if (Number.isFinite(aiTech) && aiTech > 0) return Math.min(100, Math.max(0, Math.round(aiTech)));
-    const aiCombined = Number(scores.combined_score);
-    if (Number.isFinite(aiCombined) && aiCombined > 0) return Math.min(100, Math.round(aiCombined));
-    // Derive from qa_blocks
+    // Derive from qa_blocks: average of all 4 score_breakdown dimensions × 10
     const qaRows = i.interviewQaRows || [];
-    const nums = qaRows.map((r: any) => parseFloat(String(r?.score || "").replace(/[^\d.]/g, "")))
-      .filter((n: number) => Number.isFinite(n));
-    if (nums.length > 0) return Math.min(100, Math.round((nums.reduce((a: number, b: number) => a + b, 0) / nums.length) * 10));
+    const blockAvgs = qaRows.map((r: any) => {
+      const sb = r?.score_breakdown || {};
+      const dims = [
+        Number(sb.technical_accuracy ?? sb.depth ?? 0),
+        Number(sb.depth ?? 0),
+        Number(sb.clarity ?? 0),
+        Number(sb.practical_application ?? sb.confidence ?? 0),
+      ].filter((n: number) => Number.isFinite(n) && n > 0);
+      return dims.length > 0 ? (dims.reduce((a: number, b: number) => a + b, 0) / dims.length) * 10 : null;
+    }).filter((n: number | null): n is number => n !== null);
+    if (blockAvgs.length > 0) return Math.min(100, Math.round(blockAvgs.reduce((a: number, b: number) => a + b, 0) / blockAvgs.length));
     return i.isFallbackReport ? 0 : Math.min(100, Math.max(0, i.interviewScore)) || 0;
   })();
 
@@ -454,16 +525,20 @@ export function buildSreevaAIInterviewViewModel(i: {
   const commFallback = Number.isFinite(aiCommScore) && aiCommScore > 0 ? aiCommScore : 50;
 
   const comm = {
-    pronunciation: toPct(com.pronunciation ?? com.clarity, derivedComm?.clarityScore ?? commFallback),
-    grammar: toPct(com.grammar, derivedComm?.grammarScore ?? commFallback),
-    vocabulary: toPct(com.confidence ?? com.vocabulary, derivedComm?.confidenceScore ?? commFallback),
-    minimalFiller: toPct(com.fluency ?? com.filler, derivedComm?.fluencyScore ?? commFallback),
-    fluency: toPct(com.fluency, derivedComm?.fluencyScore ?? commFallback),
+    pronunciation: toPct(com.pronunciation, derivedComm?.clarityScore ?? commFallback),
+    grammar:       toPct(com.grammar,       derivedComm?.grammarScore ?? commFallback),
+    fluency:       toPct(com.fluency,       derivedComm?.fluencyScore ?? commFallback),
+    confidence:    toPct(com.confidence,    derivedComm?.confidenceScore ?? commFallback),
+    // kept for legacy UI compatibility
+    vocabulary:    toPct(com.confidence ?? com.vocabulary, derivedComm?.confidenceScore ?? commFallback),
+    minimalFiller: toPct(com.fluency, derivedComm?.fluencyScore ?? commFallback),
     tag: String(i.communicationStatus).toUpperCase() || "AVERAGE",
-    commSummary: String(com.summary || "").trim(),
+    commSummary: cleanAiText(String(com.summary || "").trim()),
+    hasNewSchema: false,
   };
 
-  const commAvg = Math.round((comm.pronunciation + comm.grammar + comm.vocabulary + comm.minimalFiller + comm.fluency) / 5);
+  const commDimVals = [comm.pronunciation, comm.grammar, comm.fluency, comm.confidence].filter(v => v > 0);
+  const commAvg = commDimVals.length > 0 ? Math.round(commDimVals.reduce((a, b) => a + b, 0) / commDimVals.length) : commFallback;
 
   // ── Proctoring rows ──
   const proctoringRows: { key: string; label: string; value: string; bad: boolean }[] =
@@ -501,19 +576,20 @@ export function buildSreevaAIInterviewViewModel(i: {
     const v = value.toLowerCase();
     return !v || /^question\s*\d+$/i.test(value) || v.length < 3 || v.includes("interview") || v === "skill" || v === "[object object]";
   };
-  const skillMap = new Map<string, { name: string; stars: number; status: string; scoreLabel: string; evidence?: string }>();
-  const addSkill = (name: string, stars: number, status: string, scoreLabel: string, evidence?: string) => {
+  const skillMap = new Map<string, { name: string; stars: number; status: string; scoreLabel: string; whatShowed?: string; whatMissing?: string }>();
+  const addSkill = (name: string, stars: number, status: string, scoreLabel: string, whatShowed?: string, whatMissing?: string) => {
     const clean = normalizeSkillName(name);
     if (isGenericSkillName(clean)) return;
     const existing = skillMap.get(clean.toLowerCase());
     if (!existing) {
-      skillMap.set(clean.toLowerCase(), { name: clean, stars, status, scoreLabel, evidence });
+      skillMap.set(clean.toLowerCase(), { name: clean, stars, status, scoreLabel, whatShowed, whatMissing });
       return;
     }
     existing.stars = Math.max(existing.stars, stars);
     existing.status = existing.status || status;
     existing.scoreLabel = existing.scoreLabel !== "—" ? existing.scoreLabel : scoreLabel;
-    existing.evidence = existing.evidence || evidence;
+    existing.whatShowed = existing.whatShowed || whatShowed;
+    existing.whatMissing = existing.whatMissing || whatMissing;
   };
 
   // Parse "X/10" or "X/5" or plain number scores into 0-5 stars
@@ -539,26 +615,29 @@ export function buildSreevaAIInterviewViewModel(i: {
   // Primary source: AI skills_proof objects (new schema)
   (i.interviewReportSkills || []).forEach((s: any) => {
     const name = String(s?.skill || s?.title || s?.name || "").trim();
-    const scoreLabel = String(s?.score || "—").trim();
+    const scoreLabel = String(s?.score || "").trim() || "—";
     const stars = parseScoreToStars(scoreLabel);
     const status = String(s?.status || "NOT TESTED").trim();
-    const evidence = String(s?.evidence || "").trim();
-    if (name) addSkill(name, stars, status, scoreLabel, evidence || undefined);
+    const whatShowed = cleanAiText(String(s?.what_they_showed || s?.evidence || "").trim()) || undefined;
+    const whatMissing = cleanAiText(String(s?.what_was_missing || "").trim()) || undefined;
+    if (name) addSkill(name, stars, status, scoreLabel, whatShowed, whatMissing);
   });
 
-  // Supplement from qa_blocks tags
+  // Supplement from qa_blocks tags — derive score from actual qa_block score
   (i.interviewQaRows || []).forEach((row: any) => {
     if (Array.isArray(row?.tags)) {
+      const rawScore = String(row?.score || "");
+      const stars = parseScoreToStars(rawScore);
+      const status = stars >= 4 ? "PROVED" : stars >= 2 ? "PARTIAL" : "NOT PROVED";
       row.tags.forEach((tag: string) => {
         if (tag && !isGenericSkillName(tag)) {
-          const stars = parseScoreToStars(String(row?.score || ""));
-          addSkill(tag, stars || 2, "PARTIAL", String(row?.score || "—"), undefined);
+          addSkill(tag, stars || 1, status, rawScore || "—");
         }
       });
     }
   });
 
-  const skills = Array.from(skillMap.values());
+  const skills = Array.from(skillMap.values()).sort((a, b) => b.stars - a.stars);
   if (skills.length === 0 && !i.isFallbackReport) {
     skills.push({ name: "Role fit (JD)", stars: Math.max(1, Math.min(5, Math.round((technicalPct / 100) * 5))), status: "NOT TESTED", scoreLabel: "—" });
   }
@@ -614,21 +693,23 @@ export function buildSreevaAIInterviewViewModel(i: {
       const n = parseFloat(raw);
       return Number.isFinite(n) ? (n > 10 ? n / 10 : n) : 5;
     })();
-    const scoreBreakdown = sb && typeof sb === "object" && (Number(sb.clarity) || Number(sb.depth) || Number(sb.fluency) || Number(sb.confidence)) ? {
-      clarity:    Math.max(0, Math.min(10, Number(sb.clarity    ?? 0))),
-      depth:      Math.max(0, Math.min(10, Number(sb.depth      ?? 0))),
-      fluency:    Math.max(0, Math.min(10, Number(sb.fluency    ?? 0))),
-      confidence: Math.max(0, Math.min(10, Number(sb.confidence ?? 0))),
-    } : {
-      // Derive approximate breakdown from overall score — deterministic small offsets per metric
-      clarity:    Math.round(Math.max(0, Math.min(10, numScore + [0.5, -0.5, 0, 1, -1][idx % 5]))),
-      depth:      Math.round(Math.max(0, Math.min(10, numScore + [-0.5, 0.5, -1, 0, 1][idx % 5]))),
-      fluency:    Math.round(Math.max(0, Math.min(10, numScore + [0, -1, 0.5, -0.5, 0][idx % 5]))),
-      confidence: Math.round(Math.max(0, Math.min(10, numScore + [-1, 0, 1, 0.5, -0.5][idx % 5]))),
-    };
+    // Prefer: AI report score_breakdown → live answerScoresParsed → null
+    // Handles both new schema (technical_accuracy, practical_application) and old (fluency, confidence)
+    const liveScore = (i.answerScoresParsed || [])[idx];
+    const scoreBreakdown = sb && typeof sb === "object" && Object.keys(sb).length > 0 ? {
+      clarity:              Math.max(0, Math.min(10, Number(sb.clarity    ?? 0))),
+      depth:                Math.max(0, Math.min(10, Number(sb.depth      ?? 0))),
+      technical_accuracy:   Math.max(0, Math.min(10, Number(sb.technical_accuracy ?? sb.fluency    ?? 0))),
+      practical_application:Math.max(0, Math.min(10, Number(sb.practical_application ?? sb.confidence ?? 0))),
+    } : liveScore && (liveScore.clarity || liveScore.depth || liveScore.fluency || liveScore.confidence) ? {
+      clarity:              Math.max(0, Math.min(10, liveScore.clarity)),
+      depth:                Math.max(0, Math.min(10, liveScore.depth)),
+      technical_accuracy:   Math.max(0, Math.min(10, liveScore.fluency)),
+      practical_application:Math.max(0, Math.min(10, liveScore.confidence)),
+    } : null;
     questionAnalysis.push({
       id: idx, question: q, answer: a || "—", score, qBadge: b, bad,
-      reasoning: String(row?.reasoning || "").trim(),
+      reasoning: cleanAiText(String(row?.reasoning || "").trim()),
       tags: Array.isArray(row?.tags) ? row.tags : [],
       confidence: String(row?.confidence || ""),
       scoreBreakdown,
@@ -646,85 +727,64 @@ export function buildSreevaAIInterviewViewModel(i: {
   // ── Recommendation from AI verdict (not from fitPct) ──
   const { label: recommendation, color: recommendationColor } = recommendationFromAI(verdict.recommendation, fitPct);
   // ── AI Summary bullets — use concise 4-line summary from AI ──
-  const verdictSummaryText = String(verdict.summary || i.interviewReportSummary || i.interviewAiSummary || "").trim();
-  const verdictRecommendationReason = String(verdict.recommendation_reason || "").trim();
+  const verdictSummaryText = cleanAiText(String(verdict.summary || i.interviewReportSummary || i.interviewAiSummary || "").trim());
+  const verdictRecommendationReason = cleanAiText(String(verdict.recommendation_reason || "").trim());
   const aiSummaryConcise = String((verdict as any).ai_summary_concise || "").trim();
 
   // Proctoring signal (needed before aiBullets to reference flagCount)
   const flagCount = proctoringRows.filter((row) => row.bad).length;
 
-  // Use AI's concise 4-bullet summary if available, otherwise generate fallback
-  const aiBullets: string[] = (() => {
-    const bullets: string[] = [];
-
-    // Primary: Use AI-generated concise summary (4 bullet points)
-    if (aiSummaryConcise) {
-      // Split on newlines first, then strip bullet markers (•, -, *)
-      const lines = aiSummaryConcise
-        .split(/\n/)
-        .map(line => line.trim())
-        .filter(line => line.length > 0)
-        .slice(0, 4);
-
-      lines.forEach(line => {
-        // Remove leading bullet markers (•, -, +) then trim
-        let cleaned = line.replace(/^[\s•\-+]+/, "").trim();
-        // Handle single * at start (but not **)
-        if (cleaned[0] === "*" && cleaned[1] !== "*") {
-          cleaned = cleaned.substring(1).trim();
-        }
-        if (cleaned.length > 5) {
-          bullets.push(cleaned);
-        }
-      });
-    }
-
-    // Fallback: If AI didn't provide concise summary, generate 4 narrative key points from data
-    if (bullets.length === 0) {
-      if (!i.isFallbackReport) {
-        // Point 1: Background & Technical Strengths (narrative, not scores)
-        const techStrength = technicalPct >= 70 ? "demonstrates **deep technical knowledge** and **strong execution ability**"
-          : technicalPct >= 45 ? "shows **moderate technical depth** with **capability to grow**"
-          : "has **foundational technical understanding** but needs **significant development**";
-        const topSkills = skills.slice(0, 2).map(s => `**${s.name}**`).join(", ");
-        const skillsContext = topSkills ? ` Proven expertise in ${topSkills}.` : "";
-        bullets.push(`**Background & Technical Strengths**: Candidate ${techStrength} across multiple areas.${skillsContext} Shows **structured thinking** when approaching problems.`);
-
-        // Point 2: Communication & Working Style (narrative)
-        const commScore = Math.round(commAvg);
-        const commQuality = commScore >= 70 ? "**articulate** and **fluent**, communicates **clearly** with **minimal hesitation**"
-          : commScore >= 50 ? "generally **clear** in explanations but shows **occasional hesitation** under pressure"
-          : "struggles with **clarity** and **confidence** in verbal expression";
-        const engagementLevel = flagCount === 0 ? "**genuine engagement** throughout" : "some **attention/focus issues** detected";
-        bullets.push(`**Communication & Engagement**: Candidate is ${commQuality}. Demonstrates ${engagementLevel} with **consistent participation** in the interview.`);
-
-        // Point 3: Technical Gaps & Development Areas
-        const gapTheme = technicalPct >= 70 ? "minor **edge-case handling**"
-          : technicalPct >= 45 ? "**system design depth** and **optimization thinking**"
-          : "**core technical concepts** and **problem-solving methodology**";
-        const proctoringStatus = flagCount === 0 ? "**clean session with no integrity concerns**" : `**${flagCount} proctoring concern${flagCount !== 1 ? "s" : ""}** noted`;
-        bullets.push(`**Technical Gaps & Behavioral Integrity**: Needs development in ${gapTheme}. Session was ${proctoringStatus}. Shows potential to **improve with mentoring**.`);
-
-        // Point 4: Overall Recommendation (narrative)
-        const recNarrative = verdictRecommendationReason
-          ? verdictRecommendationReason
-          : fitPct >= 70 ? "**Strong candidate** with **solid fundamentals** and **high potential** for success in this role. Ready for **immediate impact** with **minimal ramp-up**."
-            : fitPct >= 50 ? "**Good fit** with **demonstrated capability**. Would benefit from **focused mentoring** in key areas. **Recommend moving forward** with structured **onboarding**."
-            : fitPct >= 30 ? "**Potential candidate** who shows **foundational ability** but needs **significant development** in critical areas. Recommend **follow-up evaluation** or **advanced training plan**."
-            : "**Not recommended** at this time. Consider **re-evaluation** after **skill development** in core areas.";
-        bullets.push(`**Hiring Recommendation**: ${recNarrative}`);
-      }
-    }
-
-    return bullets.slice(0, 4); // Enforce max 4 points
-  })();
-
-  // ── Strengths / Risks from AI behavioral analysis ──
+  // ── Strengths / Risks — needed before aiBullets fallback ──
   const { topStrengths, topRisks } = buildTopStrengthsRisks({
     technicalPct, techTag, commAvg, fitPct, proctoringRows,
     behavioralAnalysis: behavAnalysis, skills,
     qaRows: questionAnalysis,
   });
+
+  // Use AI's concise 4-bullet summary if available, otherwise generate fallback
+  const aiBullets: string[] = (() => {
+    const bullets: string[] = [];
+
+    // Primary: AI-generated concise summary
+    if (aiSummaryConcise) {
+      const lines = aiSummaryConcise
+        .split(/\n/)
+        .map((line: string) => line.trim())
+        .filter((line: string) => line.length > 5)
+        .slice(0, 4);
+      lines.forEach((line: string) => {
+        // Strip leading bullet marker (•, -, *, +) but preserve ** inside
+        const cleaned = cleanAiText(line.replace(/^[\s•\-+]\s*/, "").replace(/^\*(?!\*)/, "").trim());
+        if (cleaned.length > 5) bullets.push(cleaned);
+      });
+    }
+
+    // Fallback: evidence-based bullets derived from actual data, no comm/recommendation duplication
+    if (bullets.length === 0 && !i.isFallbackReport) {
+      const provedSkills = skills.filter(s => s.status === "PROVED" || s.status === "PARTIAL").slice(0, 2);
+      const topSkillNames = provedSkills.map(s => `**${s.name}**`).join(" and ") || "**their primary domain**";
+      bullets.push(`Candidate demonstrated practical hands-on exposure to ${topSkillNames} through specific project descriptions and implementation context.`);
+
+      const gapSkills = skills.filter(s => s.status === "NOT PROVED" || s.status === "NOT TESTED").slice(0, 2);
+      const gapNames = gapSkills.map(s => `**${s.name}**`).join(" and ") || "**advanced technical depth**";
+      bullets.push(`Depth was ${technicalPct >= 60 ? "solid in core areas but surface-level" : "limited"} on ${gapNames} — answers stayed at concept level without implementation detail when probed.`);
+
+      const behavioralSummary = String(behavAnalysis?.summary || "").trim();
+      const engagementLine = behavioralSummary
+        ? behavioralSummary.split(".")[0].trim() + "."
+        : flagCount === 0
+          ? "Candidate maintained consistent engagement with no behavioral anomalies across the session."
+          : `**${flagCount} behavioral signal${flagCount !== 1 ? "s" : ""}** triggered during the session — review proctoring timeline for context.`;
+      bullets.push(engagementLine);
+
+      const topStrength = topStrengths[0]?.replace(/\*\*/g, "") || "";
+      const topRisk = topRisks[0]?.replace(/\*\*/g, "") || "";
+      if (topStrength) bullets.push(`Strongest observed signal: **${topStrength.toLowerCase()}**${topRisk ? ` — primary area to validate further: ${topRisk.toLowerCase()}` : ""}.`);
+    }
+
+    return bullets.slice(0, 4);
+  })();
+
 
   // ── Timestamps ──
   const rec = i.interviewReportRecording || {};
@@ -759,9 +819,11 @@ export function buildSreevaAIInterviewViewModel(i: {
       questions: questionsAsked,
       tag: techTag,
       scores: {
-        technical: toPct(scores.technical_score, technicalPct),
+        technical: toPct(scores.demonstrated_competency ?? scores.technical_score, technicalPct),
         communication: toPct(scores.communication_score, commAvg),
         behavioral: toPct(scores.behavioral_score, Math.round(commAvg * 0.8)),
+        cognitive: toPct(scores.cognitive_score, 50),
+        problem_solving: toPct(Number(cogInsights.problem_solving), Math.round(technicalPct * 0.9)),
       },
     },
     comm,
@@ -783,6 +845,8 @@ export function buildSreevaAIInterviewViewModel(i: {
     signalTimeline: (i.signalTimeline || [])
       .filter((e) => e.recruiter_visible)
       .sort((a, b) => a.elapsed_sec - b.elapsed_sec),
+    proctoringEventsFull: i.proctoringEventsFull || [],
+    answerScores: i.answerScoresParsed || [],
   };
 }
 
@@ -810,23 +874,85 @@ function fmtTime(sec: number) {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-function IntegrityTimeline({ events, onTimelineClick }: { events: SreevaAIInterviewViewModel["signalTimeline"]; onTimelineClick?: (seconds: number) => void }) {
+type UnifiedTimelineEvent =
+  | { kind: "signal"; elapsed_sec: number; signal_name: string; evidence: string; turn: number }
+  | { kind: "proctoring"; elapsed_sec: number; eventType: string; reason: string; severity: string };
+
+const PROCTORING_META: Record<string, { label: string; tone: "rose" | "amber" | "sky" | "slate" }> = {
+  tab_switch:          { label: "Tab switch",       tone: "rose" },
+  tab_hidden:          { label: "Tab hidden",        tone: "rose" },
+  face_absent:         { label: "Face absent",       tone: "amber" },
+  face_multiple:       { label: "Multiple faces",    tone: "rose" },
+  blur:                { label: "Window blur",        tone: "amber" },
+  focus_lost:          { label: "Focus lost",        tone: "amber" },
+  copy_paste:          { label: "Copy/paste",         tone: "rose" },
+  screenshot:          { label: "Screenshot",         tone: "rose" },
+  fullscreen_exit:     { label: "Fullscreen exit",   tone: "amber" },
+};
+
+function buildUnifiedTimeline(
+  signals: SreevaAIInterviewViewModel["signalTimeline"],
+  proctoring: SreevaAIInterviewViewModel["proctoringEventsFull"],
+): UnifiedTimelineEvent[] {
+  const out: UnifiedTimelineEvent[] = [];
+  for (const s of signals) {
+    out.push({ kind: "signal", elapsed_sec: s.elapsed_sec, signal_name: s.signal_name, evidence: s.evidence, turn: s.turn });
+  }
+  for (const p of proctoring) {
+    const sec = typeof p.elapsedSeconds === "number" ? p.elapsedSeconds : 0;
+    out.push({ kind: "proctoring", elapsed_sec: sec, eventType: (p.eventType || "").toLowerCase().replace(/\s+/g, "_"), reason: p.reason || "", severity: p.severity || "" });
+  }
+  return out.sort((a, b) => a.elapsed_sec - b.elapsed_sec);
+}
+
+function IntegrityTimeline({
+  signals, proctoring, onTimelineClick,
+}: {
+  signals: SreevaAIInterviewViewModel["signalTimeline"];
+  proctoring: SreevaAIInterviewViewModel["proctoringEventsFull"];
+  onTimelineClick?: (seconds: number) => void;
+}) {
+  const events = buildUnifiedTimeline(signals, proctoring);
+
   if (events.length === 0) {
     return (
       <div className="flex items-center gap-2 px-4 py-5 text-[12px] text-emerald-700">
         <span className="h-2 w-2 rounded-full bg-emerald-500" />
-        No behavioral signals detected during this session.
+        No signals detected during this session.
       </div>
     );
   }
+
   return (
-    <div className="relative px-4 py-3 overflow-y-auto" style={{ scrollbarWidth: "thin", scrollbarColor: "#CBD5E1 transparent" }}>
+    <div className="relative px-4 py-3">
       {/* vertical rail */}
       <div className="absolute left-[27px] top-0 bottom-0 w-px bg-[#E8EAED]" />
       <ol className="space-y-0 list-none m-0 p-0">
         {events.map((ev, idx) => {
-          const meta = SIGNAL_META[ev.signal_name] ?? { label: ev.signal_name.replace(/_/g, " "), tone: "slate" as const };
-          const tone = meta.tone;
+          const isLast = idx === events.length - 1;
+
+          let tone: "rose" | "emerald" | "amber" | "sky" | "slate";
+          let label: string;
+          let subLabel: string | null = null;
+          let evidence: string | null = null;
+          let category: string;
+
+          if (ev.kind === "signal") {
+            const meta = SIGNAL_META[ev.signal_name] ?? { label: ev.signal_name.replace(/_/g, " "), tone: "slate" as const };
+            tone = meta.tone;
+            label = meta.label;
+            subLabel = `Turn ${ev.turn}`;
+            evidence = ev.evidence || null;
+            category = "behavioral";
+          } else {
+            const meta = PROCTORING_META[ev.eventType] ?? { label: ev.eventType.replace(/_/g, " "), tone: "amber" as const };
+            tone = ev.severity === "high" || ev.severity === "critical" ? "rose" : meta.tone;
+            label = meta.label;
+            subLabel = ev.severity ? ev.severity.toUpperCase() : null;
+            evidence = ev.reason || null;
+            category = "proctoring";
+          }
+
           const dotCls =
             tone === "rose"    ? "bg-rose-500 ring-rose-100"
             : tone === "emerald" ? "bg-emerald-500 ring-emerald-100"
@@ -839,22 +965,26 @@ function IntegrityTimeline({ events, onTimelineClick }: { events: SreevaAIInterv
             : tone === "amber"   ? "bg-amber-50 text-amber-700 border-amber-200"
             : tone === "sky"     ? "bg-sky-50 text-sky-700 border-sky-200"
             :                      "bg-slate-50 text-slate-600 border-slate-200";
-          const isLast = idx === events.length - 1;
+          const catCls = category === "proctoring"
+            ? "bg-violet-50 text-violet-600 border-violet-200"
+            : "bg-slate-50 text-slate-500 border-slate-200";
+
           return (
-            <li key={idx} className={cn("relative flex gap-3 items-start cursor-pointer hover:bg-[#F9FAFB] rounded px-2 -mx-2 transition-colors", isLast ? "pb-1" : "pb-4")} onClick={() => onTimelineClick?.(ev.elapsed_sec)}>
-              {/* dot */}
+            <li
+              key={idx}
+              className={cn("relative flex gap-3 items-start cursor-pointer hover:bg-[#F9FAFB] rounded px-2 -mx-2 transition-colors", isLast ? "pb-1" : "pb-4")}
+              onClick={() => onTimelineClick?.(ev.elapsed_sec)}
+            >
               <div className={cn("relative z-10 mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full ring-4", dotCls)} />
-              {/* content */}
               <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center gap-1.5">
                   <span className="text-[11px] font-bold tabular-nums text-[#6B7079] w-[38px] shrink-0">{fmtTime(ev.elapsed_sec)}</span>
-                  <span className={cn("rounded border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide", labelCls)}>
-                    {meta.label}
-                  </span>
-                  <span className="text-[10px] text-[#9AA0AC]">Turn {ev.turn}</span>
+                  <span className={cn("rounded border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide", labelCls)}>{label}</span>
+                  <span className={cn("rounded border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide", catCls)}>{category}</span>
+                  {subLabel && <span className="text-[10px] text-[#9AA0AC]">{subLabel}</span>}
                 </div>
-                {ev.evidence && (
-                  <p className="mt-1 ml-[50px] text-[11px] leading-relaxed text-[#5C6370] line-clamp-2">{ev.evidence}</p>
+                {evidence && (
+                  <p className="mt-1 ml-[50px] text-[11px] leading-relaxed text-[#5C6370] line-clamp-2">{evidence}</p>
                 )}
               </div>
             </li>
@@ -865,15 +995,15 @@ function IntegrityTimeline({ events, onTimelineClick }: { events: SreevaAIInterv
   );
 }
 
-export function IntelMetricCard({ row, isCognitive }: { row: IntelSignalRow; isCognitive?: boolean }) {
+export function IntelMetricCard({ row }: { row: IntelSignalRow; isCognitive?: boolean }) {
   const Icon = INTEL_ICON_MAP[row.icon];
-  const [open, setOpen] = useState(false);
   const [hovered, setHovered] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
   const [tipPos, setTipPos] = useState<{ top: number; left: number; width: number } | null>(null);
 
-  const earned = isCognitive ? (row.details?.find(d => d.startsWith("✓")) || "") : "";
-  const missed = isCognitive ? (row.details?.find(d => d.startsWith("✗")) || "") : "";
+  const earned = row.details?.find(d => d.startsWith("✓")) || "";
+  const missed = row.details?.find(d => d.startsWith("✗")) || "";
+  const plainLines = row.details?.filter(d => !d.startsWith("✓") && !d.startsWith("✗")) ?? [];
 
   const handleMouseEnter = () => {
     if (cardRef.current) {
@@ -884,69 +1014,64 @@ export function IntelMetricCard({ row, isCognitive }: { row: IntelSignalRow; isC
   };
   const handleMouseLeave = () => { setHovered(false); setTipPos(null); };
 
-  if (isCognitive) {
-    return (
-      <div
-        ref={cardRef}
-        className="rounded-[18px] border border-neutral-200/70 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.05)] px-4 py-3.5 cursor-default"
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={handleMouseLeave}
-      >
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 flex-1 items-center gap-3">
-            <Icon className="h-4 w-4 shrink-0 text-neutral-700" strokeWidth={1.5} />
-            <span className="min-w-0 text-[13px] font-semibold leading-snug text-neutral-900">{row.label}</span>
-          </div>
-          <span className={cn("shrink-0 rounded-md border px-2.5 py-1 text-[11px] font-semibold leading-none", BADGE_PILL[row.tone])}>
-            {row.badge}
-          </span>
-        </div>
-        {hovered && tipPos && (earned || missed) && (
-          <div
-            className="fixed z-[9999] rounded-xl border border-neutral-200 bg-white shadow-2xl px-3 py-3 space-y-2"
-            style={{ top: tipPos.top, left: tipPos.left, width: tipPos.width }}
-          >
-            {earned && (
-              <div className="flex gap-2 items-start">
-                <span className="mt-[3px] shrink-0 text-emerald-500 text-[13px] font-black">✓</span>
-                <p className="text-[12px] leading-relaxed text-neutral-700">{earned.replace(/^✓\s*/, "")}</p>
-              </div>
-            )}
-            {missed && (
-              <div className="flex gap-2 items-start">
-                <span className="mt-[3px] shrink-0 text-rose-500 text-[13px] font-black">✗</span>
-                <p className="text-[12px] leading-relaxed text-neutral-700">{missed.replace(/^✗\s*/, "")}</p>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  }
+  const hasTooltip = !!(earned || missed || plainLines.length > 0);
 
   return (
-    <div className="rounded-[18px] border border-neutral-200/70 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.05)] overflow-hidden">
-      <button
-        type="button"
-        onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between gap-3 px-4 py-3.5 hover:bg-neutral-50/80 transition-colors text-left"
-      >
+    <div
+      ref={cardRef}
+      className="rounded-[18px] border border-neutral-200/70 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.05)] px-4 py-3.5 cursor-default"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    >
+      <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <Icon className="h-4 w-4 shrink-0 text-neutral-700" strokeWidth={1.5} />
           <span className="min-w-0 text-[13px] font-semibold leading-snug text-neutral-900">{row.label}</span>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <span className={cn("shrink-0 rounded-md border px-2.5 py-1 text-[11px] font-semibold leading-none", BADGE_PILL[row.tone])}>
-            {row.badge}
-          </span>
-          <ChevronDown className={cn("h-4 w-4 text-neutral-400 transition-transform", open ? "rotate-180" : "")} />
-        </div>
-      </button>
-      {open && (
-        <div className="border-t border-neutral-100 bg-neutral-50/60 px-4 py-3 space-y-2">
-          {(row.details?.length ? row.details : [`${row.label} is marked as ${row.badge}.`]).map((line, idx) => (
-            <p key={`${row.id}-${idx}`} className="text-[12px] leading-relaxed text-neutral-700">{line}</p>
-          ))}
+        <span className={cn("shrink-0 rounded-md border px-2.5 py-1 text-[11px] font-semibold leading-none", BADGE_PILL[row.tone])}>
+          {row.badge}
+        </span>
+      </div>
+      {hovered && tipPos && hasTooltip && (
+        <div
+          className="fixed z-[9999] rounded-xl border border-neutral-200 bg-white shadow-2xl overflow-hidden"
+          style={{ top: tipPos.top, left: tipPos.left, width: tipPos.width }}
+        >
+          {earned && (
+            <div className="flex gap-2.5 items-start px-3 py-2.5 bg-emerald-50 border-b border-emerald-100">
+              <span className="mt-[3px] shrink-0 text-emerald-600 text-[13px] font-black">✓</span>
+              <p className="text-[12px] leading-relaxed text-emerald-900">{earned.replace(/^✓\s*/, "")}</p>
+            </div>
+          )}
+          {missed && (
+            <div className="flex gap-2.5 items-start px-3 py-2.5 bg-rose-50 border-b border-rose-100">
+              <span className="mt-[3px] shrink-0 text-rose-600 text-[13px] font-black">✗</span>
+              <p className="text-[12px] leading-relaxed text-rose-900">{missed.replace(/^✗\s*/, "")}</p>
+            </div>
+          )}
+          {plainLines.map((line, idx) => {
+            const isScore = /^Score:\s*\d+\/100/.test(line);
+            if (isScore) {
+              const score = parseInt(line.match(/(\d+)\/100/)?.[1] || "0", 10);
+              return (
+                <div key={idx} className="px-3 py-2.5 border-b border-neutral-100 bg-neutral-50">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[10px] font-black uppercase tracking-[0.14em] text-neutral-500">Score</span>
+                    <span className="text-[12px] font-black text-neutral-800">{score}/100</span>
+                  </div>
+                  <div className="h-1.5 w-full rounded-full bg-neutral-200 overflow-hidden">
+                    <div
+                      className={cn("h-full rounded-full transition-all", score >= 78 ? "bg-emerald-500" : score >= 52 ? "bg-amber-400" : "bg-rose-500")}
+                      style={{ width: `${score}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            }
+            return (
+              <p key={idx} className="text-[12px] leading-relaxed text-neutral-700 px-3 py-2.5 border-b border-neutral-100 last:border-0">{line}</p>
+            );
+          })}
         </div>
       )}
     </div>
@@ -992,8 +1117,37 @@ function ScrollFade({ children, className, style }: { children: React.ReactNode;
   );
 }
 
+function SkillCircle({ stars, status }: { stars: number; status: string }) {
+  const R = 18, CIRC = 2 * Math.PI * R;
+  const pct = Math.round((stars / 5) * 100);
+  const fill = CIRC * (pct / 100);
+  const color =
+    status === "PROVED"     ? "#10B981" :
+    status === "PARTIAL"    ? "#F59E0B" :
+    status === "NOT PROVED" ? "#F43F5E" : "#6366F1";
+  return (
+    <svg width="44" height="44" viewBox="0 0 44 44" className="shrink-0" style={{ transform: "rotate(-90deg)" }}>
+      <circle cx="22" cy="22" r={R} fill="none" stroke="#E8EAED" strokeWidth="3.5" />
+      <circle
+        cx="22" cy="22" r={R} fill="none"
+        stroke={color} strokeWidth="3.5"
+        strokeDasharray={`${fill} ${CIRC}`}
+        strokeLinecap="round"
+      />
+      <text
+        x="22" y="22"
+        textAnchor="middle" dominantBaseline="middle"
+        style={{ transform: "rotate(90deg)", transformOrigin: "22px 22px", fontSize: "9.5px", fontWeight: 800, fill: color }}
+      >
+        {pct}%
+      </text>
+    </svg>
+  );
+}
+
 function SkillRatingsContainer({ skills }: { skills: SreevaAIInterviewViewModel["skills"] }) {
-  const [expandedSkill, setExpandedSkill] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
+
   if (skills.length === 0) {
     return (
       <div className="flex min-h-[120px] items-center justify-center px-4 py-6 text-center">
@@ -1001,36 +1155,70 @@ function SkillRatingsContainer({ skills }: { skills: SreevaAIInterviewViewModel[
       </div>
     );
   }
-  const statusColor: Record<string, string> = {
-    PROVED: "text-emerald-700", PARTIAL: "text-amber-700",
-    "NOT PROVED": "text-rose-700", "NOT TESTED": "text-[#6B7079]",
-    STRONG: "text-emerald-700", MODERATE: "text-amber-700", WEAK: "text-rose-700",
+
+  const statusCfg: Record<string, { badge: string; badgeText: string }> = {
+    PROVED:       { badge: "bg-emerald-50 border-emerald-200 text-emerald-700", badgeText: "Proved" },
+    PARTIAL:      { badge: "bg-amber-50 border-amber-200 text-amber-700",       badgeText: "Partial" },
+    "NOT PROVED": { badge: "bg-rose-50 border-rose-200 text-rose-700",           badgeText: "Not Proved" },
+    "NOT TESTED": { badge: "bg-slate-50 border-slate-200 text-slate-500",        badgeText: "Not Tested" },
   };
+
   return (
-    <ScrollFade className="max-h-[320px] space-y-2 overflow-y-auto p-3 pr-2 overscroll-contain" style={{ scrollbarWidth: "thin", scrollbarColor: "#CBD5E1 transparent" }}>
-      {skills.map((s) => (
-        <div key={`${s.name}-${s.status}`} className="border-b border-[#EEF0F3] py-2 last:border-0">
-          <button onClick={() => setExpandedSkill(expandedSkill === s.name ? null : s.name)} className="w-full flex items-center justify-between hover:bg-[#F9FAFB] rounded px-1 transition-colors">
-            <div className="min-w-0 pr-3 text-left">
-              <p className="text-[12px] font-semibold text-[#1A1D22]">{s.name}</p>
-              <p className={cn("mt-0.5 text-[10px] font-semibold uppercase tracking-widest", statusColor[s.status] || "text-[#6B7079]")}>
-                {s.status}{s.scoreLabel !== "—" ? ` · ${s.scoreLabel}` : ""}
-              </p>
+    <ScrollFade className="max-h-[380px] overflow-y-auto overscroll-contain" style={{ scrollbarWidth: "thin", scrollbarColor: "#CBD5E1 transparent" }}>
+      <div className="divide-y divide-[#F0F1F3]">
+        {skills.map((s) => {
+          const cfg = statusCfg[s.status] || statusCfg["NOT TESTED"];
+          const isOpen = expanded === s.name;
+          const hasDetail = !!(s.whatShowed || s.whatMissing);
+
+          return (
+            <div key={`${s.name}-${s.status}`}>
+              <button
+                type="button"
+                onClick={() => hasDetail && setExpanded(isOpen ? null : s.name)}
+                className={cn("w-full flex items-center gap-3 px-4 py-3 text-left transition-colors", hasDetail ? "hover:bg-[#FAFBFC] cursor-pointer" : "cursor-default")}
+              >
+                {/* Name + badge */}
+                <div className="flex-1 min-w-0">
+                  <p className="text-[13px] font-bold text-[#1A1D22] leading-snug truncate">{s.name}</p>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className={cn("rounded border px-1.5 py-0.5 text-[10px] font-black leading-none", cfg.badge)}>
+                      {cfg.badgeText}
+                    </span>
+                    {s.scoreLabel !== "—" && (
+                      <span className="text-[10px] font-semibold text-[#6B7079]">{s.scoreLabel}</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Circle ring on right */}
+                <SkillCircle stars={s.stars} status={s.status} />
+
+                {hasDetail && (
+                  <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 text-[#98A2B3] transition-transform", isOpen ? "rotate-180" : "")} />
+                )}
+              </button>
+
+              {isOpen && hasDetail && (
+                <div className="px-4 pb-4 space-y-2.5">
+                  {s.whatShowed && (
+                    <div className="rounded-xl border-l-[3px] border-l-emerald-400 border border-[#EBEBEB] bg-emerald-50/30 px-3.5 py-3">
+                      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-emerald-700 mb-1">What they showed</p>
+                      <p className="text-[12.5px] leading-relaxed text-[#1A1D22]">{s.whatShowed}</p>
+                    </div>
+                  )}
+                  {s.whatMissing && (
+                    <div className="rounded-xl border-l-[3px] border-l-rose-400 border border-[#EBEBEB] bg-rose-50/30 px-3.5 py-3">
+                      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-rose-700 mb-1">What was missing</p>
+                      <p className="text-[12.5px] leading-relaxed text-[#1A1D22]">{s.whatMissing}</p>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-            <div className="flex shrink-0 items-center gap-0.5">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <Star key={i} className={cn("h-3.5 w-3.5", i < s.stars ? "fill-[#1E9D55] text-[#1E9D55]" : "text-[#DDE1E5]")} />
-              ))}
-            </div>
-          </button>
-          {expandedSkill === s.name && s.evidence && (
-            <div className="mt-2 ml-1 text-[11px] text-[#475467] bg-[#F9FAFB] rounded px-2 py-1.5 border-l-2 border-[#1E9D55]">
-              <p className="font-semibold text-[#6B7079] mb-1">Evidence from transcript:</p>
-              <p className="leading-relaxed">{s.evidence}</p>
-            </div>
-          )}
-        </div>
-      ))}
+          );
+        })}
+      </div>
     </ScrollFade>
   );
 }
@@ -1103,41 +1291,81 @@ function HiringStamp({ recommendation, color }: { recommendation: string; color:
   );
 }
 
-function BehavioralBullet({ text, tone }: { text: string; tone: "risk" | "neutral" | "positive" | "flag" }) {
+function BehavioralBullet({ text, tone }: { text: string | Record<string, string>; tone: "risk" | "neutral" | "positive" | "flag" }) {
   const [expanded, setExpanded] = useState(false);
+
   const dotColor  = { risk: "bg-rose-500", flag: "bg-amber-500", positive: "bg-emerald-500", neutral: "bg-slate-400" }[tone];
-  const borderCls = { risk: "border-rose-100", flag: "border-amber-100", positive: "border-emerald-100", neutral: "border-[#F0F1F3]" }[tone];
-  const bgCls     = { risk: "bg-rose-50/60",   flag: "bg-amber-50/50",   positive: "bg-emerald-50/50",   neutral: "bg-[#FAFBFC]" }[tone];
+  const accentCls = {
+    risk:     "border-l-rose-400   bg-rose-50/30",
+    flag:     "border-l-amber-400  bg-amber-50/30",
+    positive: "border-l-emerald-400 bg-emerald-50/20",
+    neutral:  "border-l-slate-300  bg-[#FAFBFC]",
+  }[tone];
 
-  // Split "Claim — Detail/evidence" into two parts for expand
-  const sepMatch = text.match(/^([\s\S]+?)\s*[→—–]\s*([\s\S]+)$/);
-  const [claim, detail] = sepMatch ? [sepMatch[1].trim(), sepMatch[2].trim()] : [text, ""];
+  // Object format (new AI schema)
+  if (typeof text === "object" && text !== null) {
+    const { signal, what_happened, what_was_wrong, handled } = text;
+    const isHandled = /^yes/i.test(handled || "");
+    const isPartial = /^partial/i.test(handled || "");
+    const handledColor = isHandled ? "text-emerald-700 bg-emerald-50 border-emerald-200"
+      : isPartial ? "text-amber-700 bg-amber-50 border-amber-200"
+      : "text-rose-700 bg-rose-50 border-rose-200";
+    const handledIcon = isHandled ? "✓" : isPartial ? "◑" : "✗";
 
-  if (!detail) {
     return (
-      <li className="flex gap-2.5 items-start px-1">
-        <span className={`mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full ${dotColor}`} />
-        <span className="text-[13px] leading-relaxed text-[#1A1D22]">{text}</span>
+      <li className={`rounded-xl border-l-[3px] border border-[#EBEBEB] ${accentCls} overflow-hidden`}>
+        <button
+          type="button"
+          onClick={() => setExpanded(e => !e)}
+          className="w-full flex items-start gap-2.5 px-3.5 py-3 text-left hover:bg-black/[0.02] transition-colors"
+        >
+          <span className={`mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full ${dotColor}`} />
+          <span className="flex-1 text-[13px] font-semibold leading-snug text-[#1A1D22]">{signal}</span>
+          <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 text-[#98A2B3] mt-0.5 transition-transform", expanded ? "rotate-180" : "")} />
+        </button>
+        {expanded && (
+          <div className="border-t border-black/[0.05] px-4 py-3.5 space-y-3">
+            {what_happened && (
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#6B7079] mb-1">What happened</p>
+                <p className="text-[12.5px] leading-relaxed text-[#1A1D22]">{what_happened}</p>
+              </div>
+            )}
+            {what_was_wrong && (
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#6B7079] mb-1">What it signals</p>
+                <p className="text-[12.5px] leading-relaxed text-[#344054]">{what_was_wrong}</p>
+              </div>
+            )}
+            {handled && (
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#6B7079] mb-1">Did they handle it?</p>
+                <p className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[12px] font-semibold leading-snug ${handledColor}`}>
+                  <span className="font-black">{handledIcon}</span>
+                  {handled}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
       </li>
     );
   }
 
+  // Legacy string format fallback
+  const sepMatch = (text as string).match(/^([\s\S]+?)\s*[→—–]\s*([\s\S]+)$/);
+  const [claim, detail] = sepMatch ? [sepMatch[1].trim(), sepMatch[2].trim()] : [text as string, ""];
+  const detailColor = { risk: "text-rose-700", flag: "text-amber-700", positive: "text-emerald-700", neutral: "text-[#475467]" }[tone];
+
   return (
-    <li className={`rounded-xl border ${borderCls} ${bgCls} overflow-hidden`}>
-      <button
-        type="button"
-        onClick={() => setExpanded(e => !e)}
-        className="w-full flex items-start gap-2.5 px-3 py-2.5 text-left hover:bg-black/[0.02] transition-colors"
-      >
-        <span className={`mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full ${dotColor}`} />
-        <span className="flex-1 text-[13px] font-medium leading-snug text-[#1A1D22]">{claim}</span>
-        <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 text-[#98A2B3] mt-0.5 transition-transform", expanded ? "rotate-180" : "")} />
-      </button>
-      {expanded && (
-        <div className="border-t border-black/[0.05] px-4 py-2.5">
-          <p className="text-[12px] leading-relaxed text-[#475467]">{detail}</p>
+    <li className={`rounded-xl border-l-[3px] border border-[#EBEBEB] ${accentCls} px-3.5 py-3`}>
+      <div className="flex items-start gap-2.5">
+        <span className={`mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full ${dotColor}`} />
+        <div className="min-w-0 flex-1">
+          <p className="text-[13px] font-semibold leading-snug text-[#1A1D22]">{claim}</p>
+          {detail && <p className={`mt-1 text-[12px] leading-relaxed ${detailColor}`}>{detail}</p>}
         </div>
-      )}
+      </div>
     </li>
   );
 }
@@ -1187,6 +1415,22 @@ function ProctoringSignalCard({ signal }: { signal: any }) {
   );
 }
 
+const BEHAVIORAL_SECTION_META: Record<string, {
+  headerBg: string;
+  headerText: string;
+  pillBg: string;
+  pillText: string;
+  divider: string;
+}> = {
+  engagement_signals:     { headerBg: "bg-sky-50",     headerText: "text-sky-800",     pillBg: "bg-sky-100",     pillText: "text-sky-700",     divider: "border-sky-100" },
+  consistency_signals:    { headerBg: "bg-violet-50",  headerText: "text-violet-800",  pillBg: "bg-violet-100",  pillText: "text-violet-700",  divider: "border-violet-100" },
+  communication_patterns: { headerBg: "bg-indigo-50",  headerText: "text-indigo-800",  pillBg: "bg-indigo-100",  pillText: "text-indigo-700",  divider: "border-indigo-100" },
+  confidence_indicators:  { headerBg: "bg-amber-50",   headerText: "text-amber-800",   pillBg: "bg-amber-100",   pillText: "text-amber-700",   divider: "border-amber-100" },
+  strengths_observed:     { headerBg: "bg-emerald-50", headerText: "text-emerald-800", pillBg: "bg-emerald-100", pillText: "text-emerald-700", divider: "border-emerald-100" },
+  concerns_noted:         { headerBg: "bg-rose-50",    headerText: "text-rose-800",    pillBg: "bg-rose-100",    pillText: "text-rose-700",    divider: "border-rose-100" },
+  proctoring_signals_detected: { headerBg: "bg-slate-50", headerText: "text-slate-800", pillBg: "bg-slate-100", pillText: "text-slate-700", divider: "border-slate-200" },
+};
+
 function BehavioralSignalsPanel({ analysis }: { analysis: Record<string, any> }) {
   const hasContent = analysis && Object.keys(analysis).some(key => {
     const v = analysis[key];
@@ -1204,37 +1448,102 @@ function BehavioralSignalsPanel({ analysis }: { analysis: Record<string, any> })
   const summary = analysis.summary;
   const SECTION_ORDER = [
     "engagement_signals", "consistency_signals", "communication_patterns",
-    "confidence_indicators", "integrity_flags", "strengths_observed",
+    "confidence_indicators", "strengths_observed",
     "concerns_noted", "proctoring_signals_detected",
   ];
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
+      {/* Verdict banner */}
       {summary && (
-        <div className="rounded-2xl border border-[#E0E7FF] bg-[#F5F7FF] px-4 py-3.5">
-          <p className="text-[10px] font-black uppercase tracking-[0.15em] text-[#6366F1] mb-1.5">Overall Assessment</p>
-          <p className="text-[13.5px] leading-relaxed text-[#1E1B4B] font-medium">{summary}</p>
+        <div className="rounded-2xl border border-[#C7D2FE] bg-gradient-to-br from-[#EEF2FF] to-[#F5F3FF] px-4 py-4">
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#6366F1] mb-1.5">Behavioral Verdict</p>
+          <p className="text-[13px] leading-relaxed text-[#1E1B4B] font-medium">{summary}</p>
         </div>
       )}
+
       {SECTION_ORDER.map(key => {
         const value = analysis[key];
         if (!Array.isArray(value) || value.length === 0) return null;
         const config = BEHAVIORAL_SECTION_CONFIG[key];
-        if (!config) return null;
+        const meta   = BEHAVIORAL_SECTION_META[key];
+        if (!config || !meta) return null;
         const isSignalObjects = typeof value[0] === "object" && value[0] !== null && "signal" in value[0];
-        const headerColor = { risk: "text-rose-600", flag: "text-amber-600", positive: "text-emerald-600", neutral: "text-[#344054]" }[config.tone];
-        const borderColor = { risk: "border-rose-100", flag: "border-amber-100", positive: "border-emerald-100", neutral: "border-[#E8EAED]" }[config.tone];
+
         return (
-          <div key={key} className={`rounded-2xl border ${borderColor} bg-white overflow-hidden`}>
-            <div className="px-4 pt-3.5 pb-2.5 border-b border-[#F2F4F7]">
-              <p className={`text-[11px] font-black uppercase tracking-[0.15em] ${headerColor}`}>{config.label}</p>
-              <p className="text-[11px] text-[#98A2B3] mt-0.5">{config.description}</p>
+          <div key={key} className="overflow-hidden rounded-2xl border border-[#E8EAED] bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+            {/* Section header */}
+            <div className={`flex items-center justify-between gap-3 px-4 py-3 ${meta.headerBg} border-b ${meta.divider}`}>
+              <div>
+                <p className={`text-[12px] font-bold leading-none ${meta.headerText}`}>{config.label}</p>
+                <p className="text-[11px] text-[#6B7079] mt-0.5">{config.description}</p>
+              </div>
+              <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-black ${meta.pillBg} ${meta.pillText}`}>
+                {value.length} signal{value.length !== 1 ? "s" : ""}
+              </span>
             </div>
-            <div className="px-4 py-3">
+
+            {/* Signal list */}
+            <div className="px-3.5 py-3">
               {isSignalObjects ? (
-                <div className="space-y-2">{value.map((signal: any, idx: number) => <ProctoringSignalCard key={idx} signal={signal} />)}</div>
+                <div className="space-y-2">
+                  {value.map((signal: any, idx: number) => <ProctoringSignalCard key={idx} signal={signal} />)}
+                </div>
               ) : (
-                <ul className="space-y-2">{value.map((bullet: string, idx: number) => <BehavioralBullet key={idx} text={bullet} tone={config.tone} />)}</ul>
+                <ul className="space-y-2">
+                  {value.map((bullet: string | Record<string, string>, idx: number) => (
+                    <BehavioralBullet key={idx} text={bullet} tone={config.tone} />
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+const EVENT_TYPE_LABELS: Record<string, { label: string; what: string; clarified?: string }> = {
+  tab_switch:      { label: "Tab / App switch",    what: "Candidate switched away from the interview window — could indicate looking up answers or distraction." },
+  connection_lost: { label: "Connection dropped",  what: "Candidate's session disconnected. May be a genuine network issue or a deliberate reset." },
+  face_absence:    { label: "Face not visible",    what: "Camera detected no face in the frame — candidate may have moved away, turned off camera, or left the desk." },
+  multiple_faces:  { label: "Multiple faces",      what: "More than one person visible in the camera — possible coaching or external assistance." },
+  camera_disabled: { label: "Camera off",          what: "Candidate disabled their camera mid-session, removing visual proctoring coverage." },
+  identity_mismatch: { label: "Identity mismatch", what: "Face did not consistently match the registered candidate identity. Verify with photo ID." },
+};
+
+function ProctoringEventsPanel({ events }: { events: { time: string; eventType: string; reason: string; severity: string; elapsedSeconds: number }[] }) {
+  if (events.length === 0) {
+    return (
+      <div className="flex items-center gap-2 px-4 py-5 text-[12px] text-emerald-700">
+        <span className="h-2 w-2 rounded-full bg-emerald-500" />
+        No proctoring events recorded during this session.
+      </div>
+    );
+  }
+
+  const sevCls = (sev: string) =>
+    sev === "high" ? "bg-rose-50 text-rose-700 border-rose-200" :
+    sev === "medium" ? "bg-amber-50 text-amber-700 border-amber-200" :
+    "bg-slate-50 text-slate-600 border-slate-200";
+
+  return (
+    <div className="divide-y divide-[#F2F4F7]">
+      {events.map((ev, idx) => {
+        const meta = EVENT_TYPE_LABELS[ev.eventType];
+        const label = meta?.label || ev.eventType.replace(/_/g, " ");
+        const what = meta?.what || ev.reason;
+        return (
+          <div key={idx} className="px-4 py-3 flex gap-3 items-start">
+            <span className="shrink-0 w-[42px] text-[10px] font-bold tabular-nums text-[#6B7079] pt-0.5">{ev.time}</span>
+            <div className="flex-1 min-w-0">
+              <div className="flex flex-wrap items-center gap-2 mb-1">
+                <span className={`rounded border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${sevCls(ev.severity)}`}>{label}</span>
+              </div>
+              <p className="text-[11px] text-[#5C6370] leading-relaxed">{what}</p>
+              {ev.reason && ev.reason !== what && (
+                <p className="text-[11px] text-[#9AA0AC] leading-relaxed mt-0.5 italic">{ev.reason}</p>
               )}
             </div>
           </div>
@@ -1490,56 +1799,57 @@ export function CommunicationScoreCardDonutLive({ comm }: { comm: SreevaAIInterv
 
 export function TechnicalScoreCard({ pct, questions, tag: _tag, scores }: {
   pct: number; questions: number; tag: string; questionsLabel?: string;
-  scores?: { technical: number; communication: number; behavioral: number };
+  scores?: { technical: number; communication: number; behavioral: number; cognitive: number; problem_solving: number };
 }) {
   const p = Math.max(0, Math.min(100, pct));
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
 
-  const tech  = Math.max(0, Math.min(100, scores?.technical   ?? 0));
-  const behav = Math.max(0, Math.min(100, scores?.behavioral  ?? 0));
-  const domainFit = Math.round((tech + behav) / 2);
+  const competency   = Math.max(0, Math.min(100, scores?.technical      ?? p));
+  const probSolving  = Math.max(0, Math.min(100, scores?.problem_solving ?? Math.round(p * 0.9)));
+  const roleFit      = Math.max(0, Math.min(100, scores?.cognitive       ?? Math.round((competency + (scores?.behavioral ?? 50)) / 2)));
+  const behav        = Math.max(0, Math.min(100, scores?.behavioral      ?? 50));
 
   const CIRCLES = [
     {
       key: "overall", label: "Overall", value: p,
       color: p >= 70 ? "#10B981" : p >= 45 ? "#F59E0B" : "#F43F5E",
       track: p >= 70 ? "#D1FAE5" : p >= 45 ? "#FEF3C7" : "#FEE2E2",
-      what: "Weighted total: technical (40%) + communication (35%) + behavioral (25%).",
-      low:  "Overall performance fell below the bar — candidate needs significant development before hiring.",
-      mid:  "Decent overall showing with some gaps — a follow-up interview is worth considering to probe weaker areas.",
-      high: "Strong overall performance across technical depth, communication quality, and engagement.",
+      what: "Weighted overall score: demonstrated competency (35%) + communication (25%) + behavioral engagement (20%) + cognitive (15%) + integrity (5%).",
+      low:  "Overall performance below the bar — significant gaps across multiple dimensions.",
+      mid:  "Moderate performance — some strong areas with clear gaps to address.",
+      high: "Strong overall performance across competency, communication, and engagement.",
     },
     {
-      key: "technical_skills", label: "Technical", value: tech,
+      key: "competency", label: "Competency", value: competency,
       color: "#1E6FD6", track: "#DBEAFE",
-      what: "Correctness and depth of answers to role-specific technical questions.",
-      low:  "Technical answers lacked correctness or depth — core skills appear underdeveloped for this role.",
-      mid:  "Showed partial technical skills. Some answers correct but gaps appeared under follow-up probing.",
-      high: "Demonstrated strong technical skills — accurate answers, correct terminology, and applied concepts well.",
+      what: "Demonstrated competency: project depth, implementation knowledge, technical understanding, architecture thinking, and practical exposure shown during the interview.",
+      low:  "Limited hands-on knowledge — mostly theoretical, couldn't explain implementation details when probed.",
+      mid:  "Moderate competency — real experience with some gaps. Knows vocabulary but struggles with depth.",
+      high: "Strong demonstrated competency — specific project details, real trade-offs, confident implementation knowledge.",
     },
     {
-      key: "problem_solving", label: "Problem Solving", value: tech,
+      key: "problem_solving", label: "Problem Solving", value: probSolving,
       color: "#6366F1", track: "#E0E7FF",
-      what: "Structured approach to solving novel problems — breaking down complexity, identifying assumptions, considering edge cases.",
-      low:  "Jumped to solutions without analyzing the problem. Missed edge cases or assumptions.",
-      mid:  "Good problem breakdown with occasional gaps. Mostly considered edge cases but sometimes superficially.",
-      high: "Systematic analysis: clearly stated assumptions, explored multiple approaches, thoroughly considered edge cases.",
+      what: "Cognitive problem-solving: ability to break down problems, identify constraints, consider trade-offs, and reason under pressure.",
+      low:  "Jumped to solutions, missed edge cases. Reasoning lacked structure.",
+      mid:  "Reasonable problem-solving approach with some gaps in depth or edge case handling.",
+      high: "Systematic thinker — clearly stated assumptions, explored trade-offs, handled follow-up probing well.",
     },
     {
-      key: "role_fit", label: "Role Fit", value: domainFit,
+      key: "role_fit", label: "Role Fit", value: roleFit,
       color: "#8B5CF6", track: "#EDE9FE",
-      what: "How well the candidate's experience, skills, and demonstrated abilities align with the specific role requirements.",
-      low:  "Significant gaps between candidate skills and role requirements. Would require substantial ramp-up time.",
-      mid:  "Good alignment with some gaps. Has core skills with some areas needing development.",
-      high: "Strong alignment — experience and demonstrated skills directly match role expectations and JD.",
+      what: "Role fit: cognitive breadth + how well demonstrated skills and experience align with the role's requirements.",
+      low:  "Significant mismatch — skills and experience don't yet meet the role's core requirements.",
+      mid:  "Reasonable fit with some gaps. Has the foundation but needs development in key areas.",
+      high: "Strong fit — experience, demonstrated skills, and thinking style align well with role expectations.",
     },
     {
-      key: "engagement_fit", label: "Engagement", value: behav,
+      key: "engagement", label: "Engagement", value: behav,
       color: "#F59E0B", track: "#FEF3C7",
-      what: "Engagement, consistency, and genuine enthusiasm — resume vs. interview alignment and role interest signals.",
-      low:  "Candidate appeared disengaged or gave answers that didn't align with their resume claims.",
-      mid:  "Mostly engaged with occasional lapses — answers consistent but lacked energy or conviction in places.",
-      high: "Highly engaged — genuine enthusiasm, consistent answers, and strong alignment with the role.",
+      what: "Behavioral engagement: ownership signals, resume-interview consistency, genuine enthusiasm, and follow-through under probing questions.",
+      low:  "Low engagement — answers inconsistent with resume, evasive under follow-up, limited ownership signals.",
+      mid:  "Mostly engaged with some inconsistencies — generally participated well but lapses in conviction.",
+      high: "Highly engaged — consistent, ownership-oriented, genuine enthusiasm for the role and problems.",
     },
   ];
 
@@ -1783,14 +2093,54 @@ export function TechnicalScoreCard({ pct, questions, tag: _tag, scores }: {
 
 
 
-function QuestionAnalysisCard({ transcript, questions, onTranscriptSeek, recordingDurationSec }: { transcript: SreevaAIInterviewViewModel["transcript"]; questions: SreevaAIInterviewViewModel["questionAnalysis"]; onTranscriptSeek?: (seconds: number) => void; recordingDurationSec?: number | null }) {
+type AnswerScoreRow = { question: string; answer: string; depth: number; clarity: number; fluency: number; confidence: number; overall: number; signals: string[] };
+
+function QuestionAnalysisCard({ transcript, questions, answerScores, onTranscriptSeek, recordingDurationSec }: {
+  transcript: SreevaAIInterviewViewModel["transcript"];
+  questions: SreevaAIInterviewViewModel["questionAnalysis"];
+  answerScores?: AnswerScoreRow[];
+  onTranscriptSeek?: (seconds: number) => void;
+  recordingDurationSec?: number | null;
+}) {
+  // Prefer answerScores (live DB data) over AI report qa_blocks
+  const rows: { question: string; aiQuestion?: string; answer: string; depth: number; clarity: number; fluency: number; confidence: number; overall: number; signals: string[]; reasoning?: string; tags?: string[] }[] = (() => {
+    if (answerScores && answerScores.length > 0) {
+      return answerScores.map((s, idx) => ({
+        question: s.question,
+        answer: s.answer,
+        depth: s.depth,
+        clarity: s.clarity,
+        fluency: s.fluency,
+        confidence: s.confidence,
+        overall: s.overall,
+        signals: s.signals,
+        reasoning: questions[idx]?.reasoning || "",
+        tags: questions[idx]?.tags || [],
+      }));
+    }
+    return questions
+      .filter(q => q.answer && q.answer !== "—" && q.answer.length > 2)
+      .map(q => ({
+        question: q.question,
+        answer: q.answer,
+        depth: q.scoreBreakdown?.depth ?? 0,
+        clarity: q.scoreBreakdown?.clarity ?? 0,
+        fluency: q.scoreBreakdown?.practical_application ?? 0,
+        confidence: 0,
+        overall: parseFloat(q.score.replace(/[^\d.]/g, "")) || 0,
+        signals: [],
+        reasoning: q.reasoning,
+        tags: q.tags,
+      }));
+  })();
+
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
       <Tabs defaultValue="transcript" className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
         <div className="border-b border-[#E8EAED] px-3 py-3">
           <div className="mb-2 flex items-center justify-between gap-2">
             <p className="text-sm font-extrabold text-[#1A1D22]">Conversation review</p>
-            <span className="rounded-md bg-[#F3F4F6] px-2 py-1 text-[10px] font-bold text-[#6B7079]">{questions.length} total</span>
+            <span className="rounded-md bg-[#F3F4F6] px-2 py-1 text-[10px] font-bold text-[#6B7079]">{rows.length} total</span>
           </div>
           <TabsList className="h-auto w-full justify-start gap-2 rounded-none bg-transparent p-0">
             <TabsTrigger value="analysis" className="rounded-full border border-transparent bg-[#F3F4F6] px-4 py-2 text-[10px] font-extrabold uppercase tracking-widest text-[#5C6370] data-[state=active]:border-[#C9E2FF] data-[state=active]:bg-[#F4F8FF] data-[state=active]:text-[#0B5FFF]">
@@ -1804,62 +2154,59 @@ function QuestionAnalysisCard({ transcript, questions, onTranscriptSeek, recordi
 
         <TabsContent value="analysis" className="mt-0 flex h-full min-h-0 flex-1 overflow-hidden">
           <ScrollFade className="flex h-full min-h-0 flex-1 flex-col gap-3 overflow-y-scroll p-3 pr-2 overscroll-contain" style={{ scrollbarWidth: "thin", scrollbarColor: "#CBD5E1 transparent" }}>
-            {(() => {
-              // Filter out AI-only rows (no candidate answer)
-              const answered = questions.filter(q => q.answer && q.answer !== "—" && q.answer.length > 2);
-              if (answered.length === 0) return (
-                <div className="flex min-h-[220px] items-center justify-center rounded-2xl border border-dashed border-[#E8EAED] bg-[#FAFBFC] px-4 text-center text-[12px] font-medium text-[#6B7079]">
-                  No answered questions available yet.
-                </div>
-              );
-              return answered.map((item, idx) => (
-                <div key={`${item.id}-${idx}`} className="rounded-2xl border border-[#E8EAED] bg-white p-3.5 cursor-pointer hover:shadow-md hover:border-[#0B5FFF]/30 transition-all" onClick={() => {
-                      const duration = recordingDurationSec || 1800;
-                      const seekTime = Math.max(0, Math.floor((idx / (answered.length - 1 || 1)) * duration));
-                      onTranscriptSeek?.(seekTime);
-                    }}>
+            {rows.length === 0 ? (
+              <div className="flex min-h-[220px] items-center justify-center rounded-2xl border border-dashed border-[#E8EAED] bg-[#FAFBFC] px-4 text-center text-[12px] font-medium text-[#6B7079]">
+                No answered questions available yet.
+              </div>
+            ) : rows.map((item, idx) => {
+              const overall = item.overall;
+              const qBadge: QBadge = overall >= 7 ? "STRONG" : overall >= 5 ? "AVERAGE" : overall > 0 ? "FAIR" : "PENDING";
+              const duration = recordingDurationSec || 1800;
+              const seekTime = Math.max(0, Math.floor((idx / (rows.length - 1 || 1)) * duration));
+              return (
+                <div key={idx} className="rounded-2xl border border-[#E8EAED] bg-white p-3.5 cursor-pointer hover:shadow-md hover:border-[#0B5FFF]/30 transition-all"
+                  onClick={() => onTranscriptSeek?.(seekTime)}>
                   {/* Header: Q number + tags + score badge */}
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap mb-1">
                         <p className="text-[9px] font-extrabold uppercase tracking-widest text-[#6B7079]">Q{idx + 1}</p>
-                        {item.tags.map((tag) => (
+                        {(item.tags || []).map((tag) => (
                           <span key={tag} className="rounded bg-[#F0F1F3] px-1.5 py-0.5 text-[9px] font-bold text-[#5C6370]">{tag}</span>
                         ))}
+                        {item.signals.map((sig) => (
+                          <span key={sig} className="rounded bg-[#FEF3C7] px-1.5 py-0.5 text-[9px] font-bold text-[#92400E]">{sig}</span>
+                        ))}
                       </div>
-                      <p className="text-[13px] font-bold leading-5 text-[#1A1D22]">{item.question}</p>
+                      {/* AI question */}
+                      <p className="text-[11px] font-semibold leading-5 text-[#5C6370] mb-1">{item.question}</p>
                     </div>
                     <div className="flex shrink-0 flex-col items-end gap-1">
                       <span className={cn("rounded border px-2.5 py-1 text-[11px] font-extrabold",
-                        item.qBadge === "STRONG" ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                        : item.qBadge === "AVERAGE" ? "border-amber-200 bg-amber-50 text-amber-800"
-                        : item.qBadge === "FAIR" ? "border-rose-200 bg-rose-50 text-rose-800"
+                        qBadge === "STRONG" ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                        : qBadge === "AVERAGE" ? "border-amber-200 bg-amber-50 text-amber-800"
+                        : qBadge === "FAIR" ? "border-rose-200 bg-rose-50 text-rose-800"
                         : "border-blue-200 bg-blue-50 text-blue-800"
-                      )}>{item.score}</span>
-                      {item.confidence && (
-                        <span className={cn("rounded border px-1.5 py-0.5 text-[9px] font-bold",
-                          item.confidence === "High" ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                          : item.confidence === "Low" ? "border-rose-200 bg-rose-50 text-rose-700"
-                          : "border-amber-200 bg-amber-50 text-amber-700"
-                        )}>{item.confidence}</span>
-                      )}
+                      )}>{overall > 0 ? `${overall}/10` : qBadge}</span>
                     </div>
                   </div>
 
                   {/* Candidate answer */}
-                  <div className="mt-3 rounded-xl bg-[#F4F8FF] border border-[#D4E5FF] p-3">
-                    <p className="text-[9px] font-extrabold uppercase tracking-widest text-[#0B5FFF] mb-1">Candidate</p>
-                    <p className="text-[12px] leading-5 text-[#1A1D22]">{item.answer}</p>
-                  </div>
+                  {item.answer && (
+                    <div className="mt-3 rounded-xl bg-[#F4F8FF] border border-[#D4E5FF] p-3">
+                      <p className="text-[9px] font-extrabold uppercase tracking-widest text-[#0B5FFF] mb-1">Candidate</p>
+                      <p className="text-[12px] leading-5 text-[#1A1D22]">{item.answer}</p>
+                    </div>
+                  )}
 
                   {/* Score breakdown rings */}
-                  {item.scoreBreakdown && (
+                  {(item.depth > 0 || item.clarity > 0 || item.fluency > 0 || item.confidence > 0) && (
                     <div className="mt-2 grid grid-cols-4 gap-2 rounded-xl bg-[#FAFBFC] border border-[#F0F1F3] p-3">
                       {([
-                        ["Clarity",    item.scoreBreakdown.clarity,    "#6366F1"],
-                        ["Depth",      item.scoreBreakdown.depth,      "#10B981"],
-                        ["Fluency",    item.scoreBreakdown.fluency,    "#F59E0B"],
-                        ["Confidence", item.scoreBreakdown.confidence, "#F43F5E"],
+                        ["Clarity",    item.clarity,    "#6366F1"],
+                        ["Depth",      item.depth,      "#10B981"],
+                        ["Fluency",    item.fluency,    "#F59E0B"],
+                        ["Confidence", item.confidence, "#F43F5E"],
                       ] as [string, number, string][]).map(([label, val, color]) => (
                         <div key={label} className="text-center">
                           <div className="relative mx-auto h-10 w-10">
@@ -1876,9 +2223,23 @@ function QuestionAnalysisCard({ transcript, questions, onTranscriptSeek, recordi
                       ))}
                     </div>
                   )}
+
+                  {/* Overall score bar */}
+                  {overall > 0 && (
+                    <div className="mt-2 flex items-center gap-2 px-1">
+                      <span className="text-[9px] font-bold uppercase tracking-wide text-[#6B7079] w-14 shrink-0">Overall</span>
+                      <div className="flex-1 h-1.5 rounded-full bg-[#F0F1F3] overflow-hidden">
+                        <div className="h-full rounded-full" style={{
+                          width: `${(overall / 10) * 100}%`,
+                          backgroundColor: overall >= 7 ? "#10B981" : overall >= 5 ? "#F59E0B" : "#F43F5E"
+                        }} />
+                      </div>
+                      <span className="text-[10px] font-extrabold text-[#1A1D22] w-8 text-right">{overall}/10</span>
+                    </div>
+                  )}
                 </div>
-              ));
-            })()}
+              );
+            })}
           </ScrollFade>
         </TabsContent>
 
@@ -2083,7 +2444,7 @@ export function InterviewReportSreevaAI({
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <div className={cn(card, "flex flex-col overflow-hidden")}>
             <div className="flex items-center justify-between border-b border-[#E8EAED] px-4 py-3">
-              <p className="text-sm font-extrabold text-[#1A1D22]">Technical score</p>
+              <p className="text-sm font-extrabold text-[#1A1D22]">Score Breakdown</p>
               <span className={cn("rounded-md px-2.5 py-0.5 text-[9px] font-extrabold uppercase",
                 model.technical.tag === "GOOD" ? "bg-emerald-100 text-emerald-800"
                 : model.technical.tag === "AVERAGE" ? "bg-amber-100 text-amber-800"
@@ -2102,26 +2463,32 @@ export function InterviewReportSreevaAI({
           </div>
 
           {/* AI Summary */}
-          <div className={cn(card, "p-4 flex flex-col gap-3 overflow-hidden")}>
-            <div className="flex items-center gap-1.5 text-[#0D4D2E]">
-              <Sparkles className="h-3.5 w-3.5" />
-              <p className="text-[10px] font-extrabold uppercase tracking-widest">AI Summary</p>
+          <div className={cn(card, "overflow-hidden")}>
+            <div className="flex items-center gap-2 border-b border-[#E8EAED] px-4 py-3">
+              <Sparkles className="h-3.5 w-3.5 text-[#0D4D2E]" />
+              <p className="text-sm font-extrabold text-[#1A1D22]">Candidate Insights</p>
+              <span className="ml-auto text-[10px] text-[#9AA0AC] font-medium">AI-generated · based on full interview</span>
             </div>
             {model.isFallback ? (
-              <p className="text-[12px] text-[#6B7079]">AI analysis pending — manual review required.</p>
+              <p className="px-4 py-5 text-[12px] text-[#6B7079]">AI analysis pending — manual review required.</p>
             ) : (
-              <ul className="space-y-2.5">
+              <ul className="divide-y divide-[#F5F6F7]">
                 {model.aiBullets.map((b, i) => {
-                  // Convert **word** to <strong> tags
-                  const parts = b.split(/\*\*([^*]+)\*\*/);
+                  // Strip bullet marker and **Label**: prefix entirely — show plain body only
+                  const stripped = b.replace(/^[•\-\*]\s*/, "").trim();
+                  const body = stripped.replace(/^\*\*[^*]+\*\*[:：]?\s*/, "").trim();
+                  // Render **bold** markers as dark green semibold
+                  const parts = body.split(/\*\*([^*]+)\*\*/);
                   return (
-                    <li key={i} className="flex gap-2.5 items-start">
-                      <span className="mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full bg-[#1E9D55]" />
-                      <span className="text-[12.5px] leading-relaxed text-[#1A1D22]">
+                    <li key={i} className="flex items-start gap-2.5 px-4 py-3">
+                      <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
+                      <p className="text-[12.5px] leading-relaxed text-[#1A1D22]">
                         {parts.map((part, idx) =>
-                          idx % 2 === 1 ? <strong key={idx} className="font-bold text-[#0D4D2E]">{part}</strong> : part
+                          idx % 2 === 1
+                            ? <strong key={idx} className="font-semibold text-[#0D4D2E]">{part}</strong>
+                            : part
                         )}
-                      </span>
+                      </p>
                     </li>
                   );
                 })}
@@ -2130,46 +2497,54 @@ export function InterviewReportSreevaAI({
           </div>
         </div>
 
-        {/* ── Strengths & Weaknesses (Resume-style) ── */}
+        {/* ── Strengths & Concerns ── */}
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <div className={cn(card, "relative border border-emerald-100 bg-white p-0 shadow-md overflow-hidden")}>
-            <div className="border-b border-emerald-100 bg-emerald-50/70 px-4 py-3">
-              <p className="text-sm font-semibold text-emerald-800">Strengths Observed</p>
+          <div className={cn(card, "overflow-hidden")}>
+            <div className="border-b border-[#E8EAED] px-4 py-3">
+              <p className="text-sm font-extrabold text-[#1A1D22]">Strengths Observed</p>
             </div>
-            <div className="space-y-2 p-3">
-              {model.topStrengths.length > 0 ? (
-                model.topStrengths.map((item, idx) => (
-                  <div key={`strength-${idx}`} className="flex items-start gap-2 rounded-lg border border-emerald-100/80 bg-white px-3 py-2.5 transition-colors hover:bg-emerald-50/30">
-                    <div className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
-                    <div className="min-w-0">
-                      <p className="text-[12px] font-semibold text-[#1A1D22]">{item}</p>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <p className="px-3 py-2 text-[11px] leading-5 text-[#6B7079]">No specific strengths identified in this session.</p>
-              )}
-            </div>
+            {model.topStrengths.length > 0 ? (
+              <ul className="divide-y divide-[#F0F1F3]">
+                {model.topStrengths.map((item, idx) => {
+                  const { title, description } = parseBulletCard(item);
+                  return (
+                    <li key={idx} className="flex items-start gap-3 px-5 py-4">
+                      <span className="mt-[6px] h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[13.5px] font-bold text-[#1A1D22] leading-snug">{title}</p>
+                        {description && <p className="mt-1 text-[12.5px] leading-relaxed text-[#4B5563]">{description}</p>}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="px-4 py-4 text-[12px] text-[#6B7079]">No specific strengths identified in this session.</p>
+            )}
           </div>
 
-          <div className={cn(card, "relative border border-red-100 bg-white p-0 shadow-md overflow-hidden")}>
-            <div className="border-b border-red-100 bg-red-50 px-4 py-3">
-              <p className="text-sm font-semibold text-red-900">Concerns & Risks</p>
+          <div className={cn(card, "overflow-hidden")}>
+            <div className="border-b border-[#E8EAED] px-4 py-3">
+              <p className="text-sm font-extrabold text-[#1A1D22]">Concerns & Risks</p>
             </div>
-            <div className="space-y-2 p-3">
-              {model.topRisks.length > 0 ? (
-                model.topRisks.map((item, idx) => (
-                  <div key={`risk-${idx}`} className="flex items-start gap-2 rounded-lg border border-red-100 bg-red-50/30 px-3 py-2.5 transition-colors hover:bg-red-50/60">
-                    <div className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" />
-                    <div className="min-w-0">
-                      <p className="text-[12px] font-semibold text-red-900">{item}</p>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <p className="px-3 py-2 text-[11px] leading-5 text-red-600">No specific risks flagged in this session.</p>
-              )}
-            </div>
+            {model.topRisks.length > 0 ? (
+              <ul className="divide-y divide-[#F0F1F3]">
+                {model.topRisks.map((item, idx) => {
+                  const { title, description } = parseBulletCard(item);
+                  return (
+                    <li key={idx} className="flex items-start gap-3 px-5 py-4">
+                      <span className="mt-[6px] h-2 w-2 shrink-0 rounded-full bg-rose-500" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[13.5px] font-bold text-[#1A1D22] leading-snug">{title}</p>
+                        {description && <p className="mt-1 text-[12.5px] leading-relaxed text-[#4B5563]">{description}</p>}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="px-4 py-4 text-[12px] text-[#6B7079]">No specific risks flagged in this session.</p>
+            )}
           </div>
         </div>
 
@@ -2231,7 +2606,10 @@ export function InterviewReportSreevaAI({
                   <div className="aspect-video w-full shrink-0 bg-black">
                     <Plyr
                       ref={plyrRef}
-                      source={{ type: "video", sources: [{ src: model.videoUrl, type: "video/mp4" }] }}
+                      source={{
+                        type: "video",
+                        sources: [{ src: model.videoUrl, type: inferVideoMimeType(model.videoUrl) }],
+                      }}
                       options={{ duration: model.recordingDurationSec || undefined }}
                     />
                   </div>
@@ -2244,14 +2622,14 @@ export function InterviewReportSreevaAI({
                   </div>
                 )}
 
-                {/* Integrity signal timeline */}
+                {/* Unified signal timeline */}
                 <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-t border-[#E8EAED]">
                   <div className="shrink-0 px-4 pt-3 pb-2 flex items-center justify-between">
                     <p className="text-[10px] font-extrabold uppercase tracking-widest text-[#5C6370]">Signal timeline</p>
-                    <span className="text-[10px] font-bold text-[#9AA0AC]">{model.signalTimeline.length} event{model.signalTimeline.length !== 1 ? "s" : ""}</span>
+                    <span className="text-[10px] font-bold text-[#9AA0AC]">{model.signalTimeline.length + model.proctoringEventsFull.length} event{(model.signalTimeline.length + model.proctoringEventsFull.length) !== 1 ? "s" : ""}</span>
                   </div>
                   <div className="min-h-0 flex-1 overflow-y-auto" style={{ scrollbarWidth: "thin", scrollbarColor: "#CBD5E1 transparent" }}>
-                    <IntegrityTimeline events={model.signalTimeline} onTimelineClick={handleSeek} />
+                    <IntegrityTimeline signals={model.signalTimeline} proctoring={model.proctoringEventsFull} onTimelineClick={handleSeek} />
                   </div>
                 </div>
 
@@ -2271,81 +2649,45 @@ export function InterviewReportSreevaAI({
             {/* Transcript + Question analysis */}
             <div className="min-h-0 min-w-0 h-[600px]">
               <div className={cn(card, "h-full overflow-hidden p-0")}>
-                <QuestionAnalysisCard transcript={model.transcript} questions={model.questionAnalysis} onTranscriptSeek={handleSeek} recordingDurationSec={model.recordingDurationSec} />
+                <QuestionAnalysisCard transcript={model.transcript} questions={model.questionAnalysis} answerScores={model.answerScores} onTranscriptSeek={handleSeek} recordingDurationSec={model.recordingDurationSec} />
               </div>
             </div>
           </div>
         </div>
 
-        {/* ── Final Decision Note with Key Reasons & Next Steps ── */}
+        {/* ── Final Recommendation ── */}
         {!model.isFallback && (() => {
-          const color = model.recommendationColor;
-          const isHire = color === "green";
-          const isNo   = color === "red";
-          const isMaybe = color === "amber";
-          const borderCls = isHire
-            ? "border-emerald-200"
+          const isHire = model.recommendationColor === "green";
+          const isNo   = model.recommendationColor === "red";
+          const strength = model.topStrengths[0] ? parseBulletCard(model.topStrengths[0]).title : null;
+          const gap      = model.topRisks[0]      ? parseBulletCard(model.topRisks[0]).title      : null;
+          const nextStep = isHire
+            ? "Move to offer stage and conduct reference checks."
             : isNo
-            ? "border-red-200"
-            : "border-amber-200";
-          const bgCls = isHire
-            ? "bg-emerald-50"
-            : isNo
-            ? "bg-red-50"
-            : "bg-amber-50";
-          const iconBg = isHire ? "bg-emerald-600 text-white" : isNo ? "bg-red-100 text-red-700" : "bg-amber-600 text-white";
-          const labelCls = isHire ? "text-emerald-700" : isNo ? "text-red-800" : "text-amber-800";
-          const stampBg = isHire ? "bg-emerald-600 text-white" : isNo ? "bg-red-600 text-white" : "bg-amber-600 text-white";
-          const whyLabel = isHire ? `Why ${model.recommendation}` : isNo ? "Why Not Hired" : "Why Review Required";
-
-          const nextStepsData = isHire
-            ? [
-                { title: "Schedule onboarding", desc: "Set up skill assessment in identified gap areas" },
-                { title: "Mentoring plan", desc: "Set up 90-day structured plan for role-specific knowledge" },
-                { title: "Reference checks", desc: "Confirm background and previous experience" }
-              ]
-            : isNo
-            ? [
-                { title: "Provide feedback", desc: "Give constructive feedback on areas for improvement" },
-                { title: "Future opportunities", desc: "Consider for alternative roles or positions" },
-                { title: "Skill development", desc: "Offer option to reapply after addressing gaps" }
-              ]
-            : [
-                { title: "Technical assessment", desc: "Schedule follow-up deep-dive on key skill gaps" },
-                { title: "Hands-on validation", desc: "Validate specific technical claims with practical task" },
-                { title: "Second opinion", desc: "Get additional perspective from senior team member" }
-              ];
-
+            ? "Send rejection with constructive feedback on the key gaps."
+            : "Schedule a focused follow-up or second-round interview.";
+          const borderCls = isHire ? "border-emerald-200" : isNo ? "border-rose-200" : "border-amber-200";
+          const bgCls     = isHire ? "bg-emerald-50"      : isNo ? "bg-rose-50"      : "bg-amber-50";
+          const stampCls  = isHire ? "bg-emerald-600"     : isNo ? "bg-rose-600"     : "bg-amber-500";
+          const textCls   = isHire ? "text-emerald-900"   : isNo ? "text-rose-900"   : "text-amber-900";
+          const mutedCls  = isHire ? "text-emerald-700"   : isNo ? "text-rose-700"   : "text-amber-700";
+          const summary   = model.verdictSummary || model.verdictRecommendationReason || "";
           return (
-            <div className={cn("rounded-3xl border p-4 sm:p-6", borderCls, bgCls)}>
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                <div className="flex min-w-0 flex-1 items-start gap-4">
-                  <div className={cn("mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full", iconBg)}>
-                    {isHire ? <Shield className="h-5 w-5" /> : isNo ? <Zap className="h-5 w-5" /> : <AlertTriangle className="h-5 w-5" />}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className={cn("text-[10px] font-semibold uppercase tracking-[0.2em]", labelCls)}>{whyLabel}</p>
-                    <p className="mt-3 text-[13px] leading-relaxed text-[#1A1D22]">
-                      {model.verdictSummary || model.verdictRecommendationReason || (isHire ? "Strong candidate ready to move forward." : isNo ? "Does not meet current role requirements." : "Recommend further evaluation before final decision.")}
-                    </p>
-
-                    {/* Next Steps Section */}
-                    <div className="mt-4 border-t border-current border-opacity-10 pt-4">
-                      <p className="text-[11px] font-semibold text-[#5C6370] uppercase tracking-widest">Next Steps: What Should We Do</p>
-                      <div className="mt-2 grid gap-2 sm:grid-cols-3">
-                        {nextStepsData.map((step, idx) => (
-                          <div key={idx} className="rounded-lg border border-current border-opacity-10 bg-white/50 p-2.5">
-                            <p className="text-[11px] font-semibold text-[#1A1D22]">{step.title}</p>
-                            <p className="mt-0.5 text-[10px] leading-snug text-[#6B7079]">{step.desc}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
+            <div className={cn("rounded-2xl border px-6 py-5", borderCls, bgCls)}>
+              <div className="flex items-start justify-between gap-6">
+                <div className="min-w-0 flex-1 space-y-2.5">
+                  <p className={cn("text-[13.5px] leading-relaxed", textCls)}>
+                    {summary || `${model.fullName} is a ${model.fitLabel.toLowerCase()} candidate for the ${model.roleLabel} role with ${model.fitPercent}% fit.`}
+                    {!summary && strength && ` Strong in ${strength.toLowerCase()}.`}
+                    {!summary && gap && ` Key gap: ${gap.toLowerCase()}.`}
+                  </p>
+                  <p className={cn("text-[12px]", mutedCls)}>
+                    <span className="font-extrabold uppercase tracking-wide">Next step — </span>{nextStep}
+                  </p>
                 </div>
-                <div className={cn("rounded-lg px-4 py-2 text-[11px] font-black uppercase tracking-widest shrink-0", stampBg)}>
+                <span className={cn("shrink-0 rounded-lg px-4 py-2 text-[11px] font-black uppercase tracking-widest text-white", stampCls)}>
                   {model.recommendation}
-                </div>
+                </span>
               </div>
             </div>
           );

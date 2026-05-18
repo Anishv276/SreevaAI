@@ -1,7 +1,8 @@
 """
-Interview phase helpers — 5-stage turn-based flow.
+Interview phase helpers — 2-stage turn-based flow.
 
-Flow: greeting → warmup → Stage 1 (RESUME) → Stage 2 (SKILL) → Stage 3 (SITUATIONAL) → Stage 4 (BEHAVIORAL)
+Flow: greeting → warmup → Stage 1 (RESUME, 0-10 min) → Stage 2 (SKILL, 10 min-end)
+Each stage weaves in situational and behavioral questions naturally.
 Runtime enforces time budgets and stage cutover. Directives are goal-driven, not procedural.
 """
 
@@ -20,10 +21,8 @@ class InterviewStageConfig:
     turn_budget: int
 
 STAGE_CONFIGS: list[InterviewStageConfig] = [
-    InterviewStageConfig(index=0, name="resume",      label="RESUME",      turn_budget=5),
-    InterviewStageConfig(index=1, name="skill",       label="SKILL",       turn_budget=5),
-    InterviewStageConfig(index=2, name="situational", label="SITUATIONAL", turn_budget=5),
-    InterviewStageConfig(index=3, name="behavioral",  label="BEHAVIORAL",  turn_budget=5),
+    InterviewStageConfig(index=0, name="resume", label="RESUME", turn_budget=8),
+    InterviewStageConfig(index=1, name="skill",  label="SKILL",  turn_budget=8),
 ]
 
 
@@ -46,22 +45,22 @@ def build_warmup_directive() -> str:
     )
 
 
-# ---------------------------------------------------------------------------
-# Stage 1 — RESUME
-# Goal: understand what this person actually built and owned, not what's on paper
-# ---------------------------------------------------------------------------
-
 def _build_custom_questions_block(custom_questions: list[str] | None, stage_label: str) -> str:
-    """Return a directive block for custom questions, or empty string if none."""
     cqs = [q.strip() for q in (custom_questions or []) if q.strip()]
     if not cqs:
         return ""
     items = "\n".join(f"  {i+1}. {q}" for i, q in enumerate(cqs))
     return (
-        f"\nCUSTOM QUESTIONS (recruiter-mandated — weave naturally into {stage_label} or defer to a later stage, "
+        f"\nCUSTOM QUESTIONS (recruiter-mandated — weave naturally into {stage_label} or defer to later, "
         f"but ALL must be asked before the interview ends):\n{items}\n"
     )
 
+
+# ---------------------------------------------------------------------------
+# Stage 1 — RESUME (0-10 min)
+# Goal: understand what this person built and owned; weave in situational +
+# behavioral probes naturally as threads open up.
+# ---------------------------------------------------------------------------
 
 def build_stage_1_resume_directive(*, band: str, resume_brief: _BriefType, custom_questions: list[str] | None = None) -> str:
     if hasattr(resume_brief, "anchor_item"):
@@ -84,7 +83,6 @@ def build_stage_1_resume_directive(*, band: str, resume_brief: _BriefType, custo
     all_items = all_items[:5]
     material = "\n".join(f"  • {item}" for item in all_items) if all_items else "  • (use what they mention)"
 
-    # Opening move based on anchor type
     if anchor_type == "project":
         opening = f"Open by asking what they personally built or owned in: {anchor.split(' - ')[0].strip()}"
     elif anchor_type in ("role", "internship"):
@@ -96,7 +94,7 @@ def build_stage_1_resume_directive(*, band: str, resume_brief: _BriefType, custo
         "fresher": (
             "They're early-career. You want to understand HOW they think, not what they've done.\n"
             "Look for: did they understand why they built what they built? Can they explain a decision they made?\n"
-            "If they're vague, try: 'Walk me through one specific day of work on that — what were you actually doing?'"
+            "If they're vague, try: 'Walk me through one specific day of work on that.'"
         ),
         "mid": (
             "They should have real ownership. Push past team language — you want their specific contribution.\n"
@@ -118,26 +116,36 @@ def build_stage_1_resume_directive(*, band: str, resume_brief: _BriefType, custo
     cq_block = _build_custom_questions_block(custom_questions, "STAGE 1")
     return (
         f"[DO NOT SAY ALOUD][STAGE 1: RESUME]\n\n"
-        f"GOAL: Understand what {'' if band != 'fresher' else 'this fresher '}candidate actually built and owned — "
-        f"not what's written on the resume.\n\n"
+        f"GOAL: Understand what this candidate actually built and owned — not what's on the resume.\n"
+        f"You have ~10 minutes. Talk through their work naturally, and weave in at least one situational\n"
+        f"and at least one behavioral question. You can ask more than one of each — they don't need to be forced.\n\n"
+        f"PRIORITY ORDER (strict):\n"
+        f"  1) Resume ownership topics first (projects/work/internship from the material below).\n"
+        f"  2) Only after 2+ resume-topic questions, ask educational background or generic background.\n"
+        f"  3) Custom recruiter questions are required, but they must not replace resume ownership probing.\n\n"
+        f"QUOTA — complete before this stage ends (track quietly, never announce):\n"
+        f"  ☐ At least 1 SITUATIONAL question — a 'what would you do if...' anchored to something they actually worked on.\n"
+        f"    Bring it up naturally when a good opening appears in the conversation. Sound genuinely curious.\n"
+        f"  ☐ At least 1 BEHAVIORAL question — ask them about a real moment they lived through, not a hypothetical.\n"
+        f"    Bring it up when they mention something where a challenge or conflict would naturally fit.\n\n"
         f"OPENING MOVE: {opening}\n\n"
-        f"AVAILABLE MATERIAL (work through this — don't rotate mechanically, follow what's interesting):\n"
+        f"MATERIAL TO DRAW FROM:\n"
         f"{material}\n\n"
         f"YOUR INSTINCT FOR THIS CANDIDATE:\n{band_instinct}\n"
         f"{cq_block}\n"
         f"HOW TO MOVE:\n"
-        f"  → Start with the anchor. Pull on whatever they say — a tool they mention, a decision they made, something that broke.\n"
-        f"  → When a thread is exhausted or they've said 'I don't know'/'I forgot' twice on the same topic, move to the next item.\n"
-        f"  → Don't ask about the same thing three times. If they can't answer, accept it and move on.\n"
-        f"  → Stay in resume territory — no skill probing, no hypotheticals yet.\n"
-        f"  → One question per turn. React to what they actually said before asking the next thing."
+        f"  → Start with the anchor. Follow what they say — a tool, a decision, something that broke.\n"
+        f"  → Ask 1-2 sharp follow-ups on one topic, then rotate to the next resume topic.\n"
+        f"  → Sound like a curious, engaged human — not a checklist. React to what they share.\n"
+        f"  → Drop in the situational or behavioral when it fits naturally — never announce the type.\n"
+        f"  → Don't revisit the same area three times. Accept a weak answer and move on.\n"
+        f"  → One question per turn. Short, warm, direct."
     )
 
 
 # ---------------------------------------------------------------------------
-# Stage 2 — SKILL
-# Goal: probe depth on specific skills — built dynamically at injection time
-# so it knows what Stage 1 already covered
+# Stage 2 — SKILL (10 min-end)
+# Goal: probe depth on skills; weave in situational + behavioral naturally.
 # ---------------------------------------------------------------------------
 
 def build_stage_2_skill_directive(
@@ -153,7 +161,6 @@ def build_stage_2_skill_directive(
     else:
         skills = list(resume_brief.get("skills", []) or [])
 
-    # Pull JD must-haves
     jd_must_haves: list[str] = []
     for line in (context_brief or "").splitlines():
         if line.strip().lower().startswith("jd must-haves"):
@@ -170,7 +177,6 @@ def build_stage_2_skill_directive(
         if s.strip() and s.strip().lower() not in _GENERIC
     ))[:6]
 
-    # Mark which skills were already discussed in Stage 1
     covered = [c.lower() for c in (covered_in_stage1 or [])]
     fresh_skills = [s for s in combined if not any(c in s.lower() or s.lower() in c for c in covered)]
     already_touched = [s for s in combined if any(c in s.lower() or s.lower() in c for c in covered)]
@@ -193,130 +199,22 @@ def build_stage_2_skill_directive(
     cq_block = _build_custom_questions_block(custom_questions, "STAGE 2")
     return (
         f"[DO NOT SAY ALOUD][STAGE 2: SKILL]\n\n"
-        f"GOAL: Understand HOW DEEP this candidate actually goes on the skills that matter for this role.\n"
-        f"Not 'do you know X' — you already know they claimed it. You want the real story behind it.\n\n"
+        f"RESUME STAGE IS COMPLETE. Do NOT go back to resume walkthrough questions.\n\n"
+        f"GOAL: Understand how deep this candidate actually goes on the skills that matter for this role.\n"
+        f"You have ~7 minutes. Explore their skills naturally, and weave in at least one situational\n"
+        f"and at least one behavioral question. You can ask more than one of each if the conversation opens up.\n\n"
+        f"QUOTA — complete before this stage ends (track quietly, never announce):\n"
+        f"  ☐ At least 1 SITUATIONAL question — a 'what would you do if...' tied to a real skill they used.\n"
+        f"    Bring it up naturally when there's an opening. Sound genuinely interested, not scripted.\n"
+        f"  ☐ At least 1 BEHAVIORAL question — a real moment they experienced with that skill, not a hypothetical.\n"
+        f"    Bring it up when the skill conversation naturally invites it.\n\n"
         f"YOUR INSTINCT: {band_instinct}\n\n"
         f"SKILL MATERIAL:\n{skills_block}\n"
         f"{cq_block}\n"
         f"HOW TO MOVE:\n"
-        f"  → Pick the most relevant skill first. Ask where/how they used it in something real.\n"
-        f"  → Follow what's interesting — a failure, a tradeoff, something they had to figure out.\n"
-        f"  → For skills already touched in Stage 1: don't re-ask how they used it — ask what was hard, what broke, what they'd change.\n"
-        f"  → When a skill is exhausted (you got something concrete or confirmed there's nothing there), move to the next.\n"
-        f"  → Never ask 'Do you know X?' — ground every question in what they already mentioned.\n"
-        f"  → One question per turn."
-    )
-
-
-# ---------------------------------------------------------------------------
-# Stage 3 — SITUATIONAL
-# Goal: test judgment — how they think under pressure or ambiguity
-# ---------------------------------------------------------------------------
-
-def build_stage_3_situational_directive(
-    *,
-    band: str,
-    context_brief: str = "",
-    covered_topics: list[str] | None = None,
-    custom_questions: list[str] | None = None,
-) -> str:
-    seeds = context_brief.strip() or "Use the projects and skills already discussed."
-    covered_note = (
-        f"Already covered: {', '.join(covered_topics[:4])}. Build your scenario from something different.\n"
-        if covered_topics else ""
-    )
-
-    band_instinct = {
-        "fresher": (
-            "Build the scenario from something they actually built. Make it concrete and real.\n"
-            "Example: 'You mentioned the lead qualification workflow — what would you do if the Instagram source suddenly stopped sending leads?'\n"
-            "You want: do they have a mental model for how the system works, or did they just follow instructions?"
-        ),
-        "mid": (
-            "Give them competing priorities or an unclear requirement on something they owned.\n"
-            "Example: 'Your client wants you to change the qualification criteria mid-campaign — how do you handle that?'\n"
-            "You want: do they think about impact before acting, or do they just execute?"
-        ),
-        "experienced": (
-            "Give them a real constraint — scale, reliability, a stakeholder conflict.\n"
-            "You want: how they reason through tradeoffs, what they'd sacrifice and why."
-        ),
-        "senior": (
-            "Give them an ambiguous strategy call or a situation where they have to influence without authority.\n"
-            "You want: how they decide when there's no clear right answer."
-        ),
-    }.get(band, "Build a realistic scenario from their background. Test decision quality, not knowledge.")
-
-    cq_block = _build_custom_questions_block(custom_questions, "STAGE 3")
-    return (
-        f"[DO NOT SAY ALOUD][STAGE 3: SITUATIONAL]\n\n"
-        f"GOAL: Test how this candidate thinks when something goes wrong or gets ambiguous — not what they know.\n\n"
-        f"YOUR INSTINCT:\n{band_instinct}\n\n"
-        f"{covered_note}"
-        f"SCENARIO MATERIAL (anchor your scenario to one of these — make it feel real, not hypothetical):\n{seeds}\n"
-        f"{cq_block}\n"
-        f"HOW TO MOVE:\n"
-        f"  → Set the scene briefly. Make it specific to something they've actually done.\n"
-        f"  → Ask what they'd do FIRST and WHY — you want their decision logic, not the full plan.\n"
-        f"  → Follow up on the risk or tradeoff: 'What could go wrong there?' or 'What are you giving up with that choice?'\n"
-        f"  → If they say 'I don't know' or go blank: simplify the scenario once, then move on.\n"
-        f"  → One question per turn."
-    )
-
-
-# ---------------------------------------------------------------------------
-# Stage 4 — BEHAVIORAL
-# Goal: find a real human moment — how they actually behaved under pressure
-# ---------------------------------------------------------------------------
-
-def build_stage_4_behavioral_directive(
-    *,
-    band: str,
-    context_brief: str = "",
-    covered_topics: list[str] | None = None,
-    custom_questions: list[str] | None = None,
-) -> str:
-    context = context_brief.strip() or "Use what was discussed in earlier stages."
-    covered_note = (
-        f"Already covered: {', '.join(covered_topics[:4])}. Pick a different moment.\n"
-        if covered_topics else ""
-    )
-
-    band_instinct = {
-        "fresher": (
-            "Ask about a real moment — not a career story, a human one.\n"
-            "Something went wrong. They got feedback that stung. They disagreed with someone.\n"
-            "Example: 'Tell me about a time something broke and it was your fault — what happened?'\n"
-            "You want: do they own it, or do they deflect? Do they learn, or do they explain?"
-        ),
-        "mid": (
-            "Ask about conflict, a missed deadline, or pushback they had to navigate.\n"
-            "You want: what THEY did — not what the team did. Push for 'I' not 'we'.\n"
-            "If the story is too clean, ask what they'd do differently."
-        ),
-        "experienced": (
-            "Ask about owning a failure, mentoring someone through difficulty, or influencing without authority.\n"
-            "You want: real stakes, real consequences, real reflection."
-        ),
-        "senior": (
-            "Ask about a hard people decision, reversing a public call, or navigating values vs delivery pressure.\n"
-            "You want: how they hold up when the answer isn't clean."
-        ),
-    }.get(band, "Ask for a concrete moment: conflict, failure, or collaboration under real pressure.")
-
-    cq_block = _build_custom_questions_block(custom_questions, "STAGE 4")
-    return (
-        f"[DO NOT SAY ALOUD][STAGE 4: BEHAVIORAL]\n\n"
-        f"GOAL: Find one real human moment that reveals how this candidate actually behaves — not how they describe themselves.\n\n"
-        f"YOUR INSTINCT:\n{band_instinct}\n\n"
-        f"{covered_note}"
-        f"CONTEXT FROM EARLIER STAGES (use this to make the opener feel personal, not generic):\n{context}\n"
-        f"{cq_block}\n"
-        f"HOW TO MOVE:\n"
-        f"  → Open by referencing something real from their background — a project, a tool, a situation they mentioned.\n"
-        f"  → Ask what actually happened — not 'tell me about a time', but something more specific to what you heard.\n"
-        f"  → Follow up: what did THEY personally do? Then: what would they do differently?\n"
-        f"  → Push for 'I' not 'we'. If they keep saying 'we', ask: 'What was specifically your call in that?'\n"
-        f"  → If they say 'I forgot' or go blank: try one simpler angle, then close the stage naturally.\n"
-        f"  → One question per turn. Wind down naturally — don't announce you're ending."
+        f"  → Pick the most important skill first. Ask where and how they used it in something real.\n"
+        f"  → For skills already touched in Stage 1 — don't re-ask the basics. Go deeper: what broke, what was hard.\n"
+        f"  → Drop in the situational or behavioral when it fits — never announce the type.\n"
+        f"  → When a skill is covered, move to the next naturally. Never ask 'Do you know X?'\n"
+        f"  → One question per turn. Warm, direct, curious."
     )

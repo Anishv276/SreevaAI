@@ -385,11 +385,29 @@ def build_resume_brief(band: str, resume_context: ResumeContext) -> ResumeBrief:
 # ---------------------------------------------------------------------------
 
 def first_name_from_full_name(full_name: str) -> str:
-    """Safely extract first name. Returns empty string for blank input."""
+    """
+    Extract a usable first name from an Indian full name.
+    Skips single-letter initials at the start. For 3+ token names with no leading
+    initial, uses the second token (given name in South/North Indian conventions).
+    Examples: "S Meenakshi" → "Meenakshi", "Vadla Vamsi Krishna" → "Vamsi",
+              "Ravi Kumar" → "Ravi", "John" → "John".
+    """
     if not full_name:
         return ""
-    cleaned = " ".join(str(full_name).strip().split())
-    return cleaned.split(" ", 1)[0] if cleaned else ""
+    tokens = " ".join(str(full_name).strip().split()).split()
+    if not tokens:
+        return ""
+    # Single token — return as-is
+    if len(tokens) == 1:
+        return tokens[0]
+    # If first token is a single letter (initial), skip it
+    if len(tokens[0]) == 1:
+        return tokens[1]
+    # 3+ token name, no leading initial → second token is given name
+    if len(tokens) >= 3:
+        return tokens[1]
+    # 2-token name, first is a real word → return first token
+    return tokens[0]
 
 
 # ---------------------------------------------------------------------------

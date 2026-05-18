@@ -124,6 +124,8 @@ export function HardwareCheck({
     }, [verifiedPhrase]);
 
     const retryMic = useCallback(() => {
+        clearMicTimers();
+        autoVerifyInProgressRef.current = false;
         if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
             try { mediaRecorderRef.current.stop(); } catch { }
         }
@@ -138,7 +140,7 @@ export function HardwareCheck({
         setLiveTranscript("");
         setInterimTranscript("");
         setMicRetryToken(t => t + 1);
-    }, []);
+    }, [clearMicTimers]);
 
     const camDropdownRef = useRef<HTMLDivElement>(null);
     const micDropdownRef = useRef<HTMLDivElement>(null);
@@ -167,10 +169,27 @@ export function HardwareCheck({
 
     // Speaker / Audio Playback
     const [speakerPlaying, setSpeakerPlaying] = useState(false);
-    const [speakerStatus, setSpeakerStatus] = useState<"idle" | "playing" | "passed" | "failed">("idle");
+    const [speakerStatus, setSpeakerStatus] = useState<"idle" | "playing" | "awaiting" | "passed" | "failed">("idle");
     const [speakerTargetWord, setSpeakerTargetWord] = useState("");
     const [speakerRetryMsg, setSpeakerRetryMsg] = useState(false);
     const SPEAKER_KEYWORDS = ["READY", "CLEAR", "START", "INTERVIEW"];
+    const speakerStatusRef = useRef(speakerStatus);
+    const speakerFallbackTimerRef = useRef<number | null>(null);
+
+    useEffect(() => {
+        speakerStatusRef.current = speakerStatus;
+    }, [speakerStatus]);
+
+    const clearSpeakerFallbackTimer = useCallback(() => {
+        if (speakerFallbackTimerRef.current !== null) {
+            window.clearTimeout(speakerFallbackTimerRef.current);
+            speakerFallbackTimerRef.current = null;
+        }
+    }, []);
+
+    useEffect(() => () => {
+        clearSpeakerFallbackTimer();
+    }, [clearSpeakerFallbackTimer]);
 
     // Network Speed & Quality
     const [uploadSpeedMbps, setUploadSpeedMbps] = useState<number | null>(null);
@@ -210,6 +229,7 @@ export function HardwareCheck({
         lighting: false,
     });
     const [visualStatusMsg, setVisualStatusMsg] = useState("Initializing visual integrity check...");
+    const faceLocked = faceCountHistoryRef.current.filter(c => c === 1).length >= 3;
     const visualReady = visualSignals.alignment && visualSignals.proximity && visualSignals.lighting;
 
     useEffect(() => {
@@ -376,12 +396,12 @@ export function HardwareCheck({
     }, []);
 
     const [micVerified, setMicVerified] = useState(false);
-    const allReady = cameraStatus === "granted" &&
+    const cameraFullyReady = cameraStatus === "granted" && faceLocked && visualReady;
+    const allReady = cameraFullyReady &&
         micStatus === "granted" &&
         micVerified &&
         (noiseBypass || noisePassed) &&
         (speakerStatus === "passed" || speakerStatus === "failed") &&
-        visualReady &&
         consentChecked;
 
     useEffect(() => {
@@ -452,6 +472,51 @@ export function HardwareCheck({
     const audioChunksRef = useRef<Blob[]>([]);
     const [isRecording, setIsRecording] = useState(false);
     const [isVerifying, setIsVerifying] = useState(false);
+    const micSilenceTimerRef = useRef<number | null>(null);
+    const micMaxTimerRef = useRef<number | null>(null);
+    const autoVerifyInProgressRef = useRef(false);
+    const sendToDeepgramRef = useRef<((chunks: Blob[], mimeType: string) => void) | null>(null);
+
+    function clearMicTimers() {
+        if (micSilenceTimerRef.current !== null) {
+            window.clearTimeout(micSilenceTimerRef.current);
+            micSilenceTimerRef.current = null;
+        }
+        if (micMaxTimerRef.current !== null) {
+            window.clearTimeout(micMaxTimerRef.current);
+            micMaxTimerRef.current = null;
+        }
+    }
+
+    useEffect(() => () => {
+        clearMicTimers();
+    }, []);
+
+    function autoStopAndVerify() {
+        const mr = mediaRecorderRef.current;
+        if (!mr || autoVerifyInProgressRef.current) return;
+        autoVerifyInProgressRef.current = true;
+        clearMicTimers();
+        setIsRecording(false);
+
+        const finish = () => {
+            sendToDeepgramRef.current?.(audioChunksRef.current, mr.mimeType);
+        };
+
+        if (mr.state === "inactive") {
+            finish();
+            return;
+        }
+
+        mr.onstop = finish;
+        try {
+            mr.stop();
+        } catch (err) {
+            console.error("[Record] auto-stop error:", err);
+            autoVerifyInProgressRef.current = false;
+            setIsVerifying(false);
+        }
+    }
 
     // Volume level update (display only)
     useEffect(() => {
@@ -491,10 +556,16 @@ export function HardwareCheck({
             const t = (final + interim).trim();
             liveTranscriptRef.current = t;
             setLiveTranscript(t);
+            if (t) {
+                if (micSilenceTimerRef.current !== null) window.clearTimeout(micSilenceTimerRef.current);
+                micSilenceTimerRef.current = window.setTimeout(() => {
+                    void autoStopAndVerify();
+                }, 100);
+            }
         };
         r.onerror = () => {};
         r.onend = () => {
-            if (!verifiedRef.current && recogRef.current === r) {
+            if (!verifiedRef.current && recogRef.current === r && !autoVerifyInProgressRef.current) {
                 setTimeout(() => { try { r.start(); } catch { } }, 300);
             }
         };
@@ -502,7 +573,7 @@ export function HardwareCheck({
         return () => {
             if (recogRef.current === r) { try { r.abort(); } catch { } recogRef.current = null; }
         };
-    }, [micStatus, micRetryToken]);
+    }, [autoStopAndVerify, micStatus, micRetryToken]);
 
     // Start recording audio via MediaRecorder
     const startRecording = useCallback(() => {
@@ -510,6 +581,8 @@ export function HardwareCheck({
         if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
             try { mediaRecorderRef.current.stop(); } catch { }
         }
+        clearMicTimers();
+        autoVerifyInProgressRef.current = false;
 
         const stream = streamRef.current;
         if (!stream) return;
@@ -531,11 +604,20 @@ export function HardwareCheck({
         mr.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
         mediaRecorderRef.current = mr;
 
-        mr.onstart = () => setIsRecording(true);
-        mr.onerror = () => setIsRecording(false);
+        mr.onstart = () => {
+            setIsRecording(true);
+            micMaxTimerRef.current = window.setTimeout(() => {
+                void autoStopAndVerify();
+            }, 12000);
+        };
+        mr.onerror = () => {
+            clearMicTimers();
+            autoVerifyInProgressRef.current = false;
+            setIsRecording(false);
+        };
 
         mr.start(250);
-    }, []);
+    }, [autoStopAndVerify, clearMicTimers]);
 
     // Send recorded audio to Deepgram and verify
     const sendToDeepgram = useCallback(async (chunks: Blob[], mimeType: string) => {
@@ -595,8 +677,15 @@ export function HardwareCheck({
             }
         } finally {
             setIsVerifying(false);
+            clearMicTimers();
+            autoVerifyInProgressRef.current = false;
+            setIsRecording(false);
         }
-    }, []);
+    }, [clearMicTimers]);
+
+    useEffect(() => {
+        sendToDeepgramRef.current = sendToDeepgram;
+    }, [sendToDeepgram]);
 
     // Stop recording and trigger verification
     const stopAndVerify = useCallback(() => {
@@ -682,6 +771,7 @@ export function HardwareCheck({
 
     //  Speaker / Audio Playback Test 
     const playSpeakerTest = useCallback(async () => {
+        clearSpeakerFallbackTimer();
         setSpeakerStatus("playing");
         setSpeakerPlaying(true);
         setSpeakerRetryMsg(false);
@@ -711,26 +801,33 @@ export function HardwareCheck({
             utter.volume = 1.0; // Max browser-supported volume for speech synthesis
 
             utter.onend = () => {
+                clearSpeakerFallbackTimer();
                 setSpeakerPlaying(false);
+                setSpeakerStatus("awaiting");
             };
 
             utter.onerror = (e) => {
                 console.error("[Speaker] TTS error:", e);
+                clearSpeakerFallbackTimer();
                 setSpeakerPlaying(false);
+                setSpeakerStatus("failed");
             };
 
             synth.speak(utter);
 
             // Safety fallback to show buttons if TTS fails to fire onend
-            setTimeout(() => {
+            speakerFallbackTimerRef.current = window.setTimeout(() => {
                 setSpeakerPlaying(false);
+                if (speakerStatusRef.current === "playing") setSpeakerStatus("awaiting");
             }, 6000);
 
         } catch (err) {
             console.error("[Speaker] Error:", err);
+            clearSpeakerFallbackTimer();
             setSpeakerPlaying(false);
+            setSpeakerStatus("failed");
         }
-    }, [SPEAKER_KEYWORDS]);
+    }, [SPEAKER_KEYWORDS, clearSpeakerFallbackTimer]);
 
     const handleSpeakerFailure = () => {
         setSpeakerStatus("idle"); // Reset status back to idle so play button shows up again!
@@ -764,6 +861,8 @@ export function HardwareCheck({
     }, [latencyMs, downloadSpeedMbps, uploadSpeedMbps]);
 
     const requestPermissions = useCallback(async (cameraId?: string, micId?: string) => {
+        clearMicTimers();
+        autoVerifyInProgressRef.current = false;
         if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
         setError(null);
         setCameraStatus("requesting");
@@ -833,7 +932,7 @@ export function HardwareCheck({
             setMicStatus("denied");
             setError("Could not access camera or microphone. Please check browser permissions.");
         }
-    }, [startVisualizer]);
+    }, [clearMicTimers, startVisualizer]);
 
     //  Global Mount Lifecycle 
     useEffect(() => {
@@ -970,17 +1069,17 @@ export function HardwareCheck({
                         "px-5 py-3.5 text-xs font-bold text-center border-t transition-all duration-300 flex items-center justify-center gap-2",
                         cameraStatus !== "granted"
                             ? "bg-gray-50 border-gray-100 text-gray-400"
-                            : !visualSignals.alignment && !visualSignals.proximity && !visualSignals.lighting && faceCountHistoryRef.current.filter(c => c === 1).length < 3
+                            : !cameraFullyReady && faceCountHistoryRef.current.filter(c => c === 1).length < 3
                                 ? "bg-red-50 border-red-100 text-red-600 animate-pulse"
-                                : visualReady
+                                : cameraFullyReady
                                     ? "bg-green-50 border-green-100 text-green-700 font-extrabold"
                                     : "bg-orange-50 border-orange-100 text-orange-600"
                     )}>
                         {cameraStatus !== "granted" ? (
                             <span>Camera Access Required</span>
-                        ) : !visualSignals.alignment && !visualSignals.proximity && !visualSignals.lighting && faceCountHistoryRef.current.filter(c => c === 1).length < 3 ? (
+                        ) : !cameraFullyReady && faceCountHistoryRef.current.filter(c => c === 1).length < 3 ? (
                             <span>No face detected. Please center your face.</span>
-                        ) : visualReady ? (
+                        ) : cameraFullyReady ? (
                             <span>Camera Secured &amp; Perfectly Aligned</span>
                         ) : (
                             <span>Adjust Position: {visualStatusMsg}</span>
@@ -1125,13 +1224,13 @@ export function HardwareCheck({
                                             {/* Live transcript — every word shown as spoken */}
                                             <p className="text-[11px] text-center font-semibold tracking-wide min-h-[18px]">
                                                 {isVerifying ? (
-                                                    <span className="text-gray-400 flex items-center justify-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> Verifying with Deepgram...</span>
+                                                    <span className="text-gray-400 flex items-center justify-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> Verifying voice...</span>
                                                 ) : liveTranscript ? (
                                                     <span className="text-orange-500 font-bold">&ldquo;{liveTranscript}&rdquo;</span>
                                                 ) : isRecording ? (
-                                                    <span className="text-gray-400 animate-pulse">Listening... speak now</span>
+                                                    <span className="text-gray-400 animate-pulse">Listening... speak the sentence and pause</span>
                                                 ) : (
-                                                    <span className="text-gray-300">Press Record, say the sentence, then press Stop</span>
+                                                    <span className="text-gray-300">Press Record, say the sentence, then pause to auto-verify</span>
                                                 )}
                                             </p>
 
@@ -1160,20 +1259,17 @@ export function HardwareCheck({
                                                         <Mic className="w-3.5 h-3.5" /> Record
                                                     </button>
                                                 ) : (
-                                                    <button
-                                                        onClick={stopAndVerify}
-                                                        className="flex items-center gap-2 rounded-full px-5 py-2 text-xs font-bold bg-red-500 hover:bg-red-600 text-white shadow-sm transition-all animate-pulse"
-                                                    >
-                                                        <span className="w-2.5 h-2.5 rounded-sm bg-white" /> Stop & Verify
-                                                    </button>
+                                                    <div className="flex items-center gap-2 rounded-full px-5 py-2 text-xs font-bold bg-orange-50 text-orange-600 border border-orange-100">
+                                                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Auto-verifying...
+                                                    </div>
                                                 )}
                                             </div>
 
-                                            {/* Disabled Next Step footer */}
+                                            {/* Next Step stays hidden until the microphone check passes */}
                                             <div className="flex justify-end pt-3 border-t border-gray-50">
-                                                <button disabled className="rounded-full px-6 py-2.5 text-xs font-bold border border-gray-200 bg-gray-50 text-gray-300 cursor-not-allowed">
-                                                    Next Step
-                                                </button>
+                                                <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-300">
+                                                    Finish mic verification to unlock next step
+                                                </span>
                                             </div>
                                         </div>
                                     )}
@@ -1195,7 +1291,7 @@ export function HardwareCheck({
                                         {/* Play Sound trigger button */}
                                         <div className="flex flex-col items-center justify-center min-h-[90px]">
                                             <AnimatePresence mode="wait">
-                                                {speakerStatus === "idle" ? (
+                                                {speakerStatus === "idle" || speakerStatus === "failed" ? (
                                                     <motion.button
                                                         key="play-btn"
                                                         onClick={playSpeakerTest}
@@ -1214,6 +1310,13 @@ export function HardwareCheck({
                                                             />
                                                         ))}
                                                     </motion.div>
+                                                ) : speakerStatus === "awaiting" ? (
+                                                    <motion.div key="awaiting-badge" className="flex flex-col items-center gap-1">
+                                                        <div className="w-14 h-14 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center shadow-lg shadow-orange-500/10 border border-orange-200">
+                                                            <Volume2 className="w-6 h-6" />
+                                                        </div>
+                                                        <span className="text-[10px] font-bold text-orange-600 mt-2 uppercase tracking-wider">Did you hear it?</span>
+                                                    </motion.div>
                                                 ) : speakerStatus === "passed" ? (
                                                     <motion.div key="passed-badge" className="flex flex-col items-center gap-1">
                                                         <div className="w-14 h-14 rounded-full bg-[#34c759] text-white flex items-center justify-center shadow-lg shadow-green-500/10">
@@ -1227,7 +1330,7 @@ export function HardwareCheck({
                                     </div>
 
                                     {/* Yes / No simple options (Hides on idle retry loop to prevent overlap) */}
-                                    {speakerStatus === "playing" && (
+                                    {speakerStatus === "awaiting" && (
                                         <div className="flex items-center justify-center gap-4 my-2 animate-fadeIn">
                                             <button
                                                 onClick={() => { setSpeakerStatus("passed"); setSpeakerRetryMsg(false); }}

@@ -186,26 +186,6 @@ def remove_system_messages(chat_ctx, marker: str) -> None:
     items[:] = [msg for msg in list(items) if not _contains_marker(msg)]
 
 
-def describe_system_messages(chat_ctx, max_items: int = 8) -> list[str]:
-    """Return short human-readable summaries of live system messages."""
-    items = getattr(chat_ctx, "items", None)
-    if items is None:
-        return []
-
-    summaries: list[str] = []
-    for msg in items:
-        if getattr(msg, "role", "") != "system":
-            continue
-        content = getattr(msg, "content", "") or ""
-        if isinstance(content, list):
-            content = " ".join(str(part) for part in content)
-        text = " ".join(str(content).split())
-        if not text:
-            continue
-        summaries.append(text[:140])
-        if len(summaries) >= max_items:
-            break
-    return summaries
 def append_transcript_line(transcript_lines: list[str], speaker: str, text: str) -> None:
     text = re.sub(r"<[^>]+>", "", text).strip()
     clean = " ".join(text.split()).strip()

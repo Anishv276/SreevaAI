@@ -508,6 +508,29 @@ async function persistInterviewUpdateRaw(params: {
     fallbackId
   );
 }
+
+async function waitForInterviewTranscript(
+  applicationId: string,
+  initialTranscript: string,
+  retries = 6,
+  delayMs = 2000
+): Promise<string> {
+  if (initialTranscript.trim()) return initialTranscript.trim();
+
+  for (let attempt = 1; attempt <= retries; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+    const row = await prisma.interview.findUnique({
+      where: { applicationId },
+      select: { interviewTranscript: true },
+    });
+    const transcript = String(row?.interviewTranscript || "").trim();
+    if (transcript) {
+      console.log(`[REPORT] Transcript became available for ${applicationId} on retry ${attempt}/${retries}`);
+      return transcript;
+    }
+  }
+  return "";
+}
 console.log("Worker started: Awaiting jobs...");
 const managedWorkers: Worker[] = [];
 let backupQueue: Queue | null = null;
@@ -918,7 +941,6 @@ if (isQueueEnabled("invitation-delivery-queue")) {
               id: true,
               title: true,
               orgId: true,
-              status: true,
             },
           },
           interview: {
@@ -936,10 +958,6 @@ if (isQueueEnabled("invitation-delivery-queue")) {
       if (!application.email) {
         console.warn(`[Invitation Worker] Application ${applicationId} has no email address. Skipping.`);
         return { skipped: true, reason: "missing_email" };
-      }
-      if (application.drive?.status && application.drive.status !== "ACTIVE") {
-        console.warn(`[Invitation Worker] Drive ${application.drive.id} is ${application.drive.status}. Skipping.`);
-        return { skipped: true, reason: "drive_inactive" };
       }
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://sreevaai.com';
       const now = new Date();
@@ -1223,11 +1241,8 @@ if (isQueueEnabled("interview-finalization")) {
             return { success: true };
           }
 
-          const finalTranscript = transcript || app.interview?.interviewTranscript || "";
-          if (!finalTranscript) {
-            console.warn(`[REPORT] No transcript available for ${applicationId}, skipping report.`);
-            return { success: true };
-          }
+          const initialTranscript = transcript || app.interview?.interviewTranscript || "";
+          const finalTranscript = await waitForInterviewTranscript(applicationId, initialTranscript);
 
           const createdAtIso = app.createdAt.toISOString();
           const resumeReportCreatedAtIso = app.updatedAt.toISOString();
@@ -1264,11 +1279,11 @@ if (isQueueEnabled("interview-finalization")) {
                   text: app.aiReport,
                   createdAt: resumeReportCreatedAtIso,
                 },
-                {
-                  type: "interview_transcript",
+                ...(finalTranscript ? [{
+                  type: "interview_transcript" as const,
                   text: finalTranscript,
                   createdAt: interviewCreatedAtIso,
-                },
+                }] : []),
                 ...(existingInterviewReport ? [{
                   type: "interview_report" as const,
                   text: existingInterviewReport,
@@ -1285,6 +1300,11 @@ if (isQueueEnabled("interview-finalization")) {
             }
           } catch (syncError) {
             console.error(`[SYNC ERROR] Failed to sync interview corpus for ${applicationId}:`, syncError);
+          }
+
+          if (!finalTranscript) {
+            console.warn(`[REPORT] No transcript available for ${applicationId} after retries; report generation skipped, base corpus sync completed.`);
+            return { success: true };
           }
 
           if (existingInterviewReport) {
@@ -1541,31 +1561,98 @@ if (isQueueEnabled("interview-recording")) {
 
       console.log(`[RECORDING_WORKER] Merging ${resolvedKeys.length} chunks for ${applicationId}`);
 
-      // ── 3. Download and concatenate chunks ────────────────────────────────
-      const buffers: Buffer[] = [];
-      for (const key of resolvedKeys) {
+      // ── 3. Download chunks to tmp files ──────────────────────────────────
+      const tmpDir = tmpdir();
+      const chunkPaths: string[] = [];
+      for (let ci = 0; ci < resolvedKeys.length; ci++) {
         try {
-          const buf = await getObjectBuffer(bucket, key);
-          buffers.push(buf);
+          const buf = await getObjectBuffer(bucket, resolvedKeys[ci]);
+          if (!buf || buf.length === 0) {
+            console.warn(`[RECORDING_WORKER] Skipping empty chunk ${resolvedKeys[ci]}`);
+            continue;
+          }
+          const chunkPath = join(tmpDir, `chunk-${applicationId}-${ci}.webm`);
+          await writeFile(chunkPath, buf);
+          chunkPaths.push(chunkPath);
         } catch (e) {
-          console.warn(`[RECORDING_WORKER] Failed to fetch chunk ${key}:`, e);
-          // Continue — partial merge is better than total failure
+          console.warn(`[RECORDING_WORKER] Failed to fetch chunk ${resolvedKeys[ci]}:`, e);
         }
       }
 
-      if (!buffers.length) {
+      if (!chunkPaths.length) {
         throw new Error(`[RECORDING_WORKER] All chunk downloads failed for ${applicationId}`);
       }
 
-      // ── 4. Upload merged file ──────────────────────────────────────────────
-      const finalBuffer = Buffer.concat(buffers);
+      console.log(`[RECORDING_WORKER] Downloaded ${chunkPaths.length}/${resolvedKeys.length} chunks for ${applicationId}`);
+
+      // ── 4. Merge with ffmpeg (concat demuxer) ─────────────────────────────
       const effectiveSession = sessionId || "merged";
+      const outputPath = join(tmpDir, `merged-${applicationId}-${effectiveSession}.webm`);
+      const concatListPath = join(tmpDir, `concat-${applicationId}.txt`);
+      const concatContent = chunkPaths.map(p => `file '${p}'`).join("\n");
+      await writeFile(concatListPath, concatContent);
+
+      let ffmpegOk = false;
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const ff = spawn("ffmpeg", [
+            "-y",
+            "-f", "concat",
+            "-safe", "0",
+            "-i", concatListPath,
+            "-c", "copy",
+            outputPath,
+          ]);
+          const ffmpegLogs: string[] = [];
+          ff.stderr.on("data", (d: Buffer) => {
+            const line = d.toString().trim();
+            ffmpegLogs.push(line);
+            console.log(`[FFMPEG] ${line}`);
+          });
+          ff.on("close", (code: number) => {
+            if (code === 0) resolve();
+            else reject(new Error(`ffmpeg exited with code ${code}. Last log: ${ffmpegLogs.slice(-3).join(" | ")}`));
+          });
+          ff.on("error", (err: Error) => reject(new Error(`ffmpeg spawn failed: ${err.message}`)));
+        });
+        ffmpegOk = true;
+        console.log(`[RECORDING_WORKER] ffmpeg merge succeeded for ${applicationId}`);
+      } catch (ffErr) {
+        console.warn(`[RECORDING_WORKER] ffmpeg failed, falling back to raw concat: ${ffErr}`);
+      }
+
+      // ── 5. Build final buffer & validate ─────────────────────────────────
+      const { readFile } = await import("fs/promises");
+      let finalBuffer: Buffer;
+
+      if (ffmpegOk) {
+        finalBuffer = await readFile(outputPath);
+      } else {
+        // Raw concat fallback — works for single chunk or pre-valid webm segments
+        const rawBufs = await Promise.all(chunkPaths.map(p => readFile(p).catch(() => Buffer.alloc(0))));
+        finalBuffer = Buffer.concat(rawBufs.filter(b => b.length > 0));
+      }
+
+      // BUG FIX #2: Validate buffer before uploading
+      if (!finalBuffer || finalBuffer.length === 0) {
+        throw new Error(`[RECORDING_WORKER] Final buffer is empty after merge for ${applicationId} — aborting upload`);
+      }
+      console.log(`[RECORDING_WORKER] Final buffer size: ${(finalBuffer.length / 1024 / 1024).toFixed(2)} MB`);
+
+      // ── 6. Upload merged file ─────────────────────────────────────────────
       const finalKey = `${CANDIDATES_PREFIX}/${safeCandidate}/recordings/${Date.now()}-interview-${effectiveSession}.webm`;
       const recordingUrl = await putObject(bucket, finalKey, finalBuffer, mimeType);
-
+      const finalRecordingUrl = typeof recordingUrl === "string" ? recordingUrl : String(recordingUrl);
       console.log(`[RECORDING_WORKER] Uploaded merged video for ${applicationId} → ${finalKey}`);
 
-      // ── 5. Persist recording metadata ─────────────────────────────────────
+      // Cleanup tmp files (non-fatal, fire-and-forget)
+      Promise.all([
+        ...chunkPaths.map(p => unlink(p).catch(() => {})),
+        unlink(concatListPath).catch(() => {}),
+        unlink(outputPath).catch(() => {}),
+      ]).catch(() => {});
+
+      // ── 7. Persist recording metadata to DB ──────────────────────────────
       await prisma.$executeRawUnsafe(
         `UPDATE "Interview"
          SET "interviewRecordingUrl" = $1,
@@ -1576,29 +1663,28 @@ if (isQueueEnabled("interview-recording")) {
              "recordingCompletedAt"  = $2,
              "updatedAt"             = NOW()
          WHERE "applicationId" = $5`,
-        typeof recordingUrl === "string" ? recordingUrl : String(recordingUrl),
+        finalRecordingUrl,
         completedAt,
         durationSec || null,
         mimeType,
         applicationId
       );
+      console.log(`[RECORDING_WORKER] DB updated for ${applicationId}`);
 
-      // ── 6. Best-effort cleanup of chunk files ─────────────────────────────
+      // ── 8. Cleanup R2 chunks ──────────────────────────────────────────────
       try {
         const { deleteObject: del } = await import("./lib/s3");
-        await Promise.all(
-          resolvedKeys.map((key) => del(bucket, key).catch(() => {}))
-        );
-        console.log(`[RECORDING_WORKER] Cleaned up ${resolvedKeys.length} chunks for ${applicationId}`);
-      } catch { /* cleanup failure is non-fatal */ }
+        await Promise.all(resolvedKeys.map(key => del(bucket, key).catch(() => {})));
+        console.log(`[RECORDING_WORKER] Cleaned up ${resolvedKeys.length} R2 chunks for ${applicationId}`);
+      } catch { /* non-fatal */ }
 
-      // ── 7. Enqueue finalization job (report generation) ───────────────────
+      // ── 9. Enqueue finalization (report generation) ───────────────────────
       const finalizationQueue = new Queue("interview-finalization", { connection: redisConnection });
       await finalizationQueue.add(
         "finalize-interview",
         {
           applicationId,
-          recordingUrl: typeof recordingUrl === "string" ? recordingUrl : String(recordingUrl),
+          recordingUrl: finalRecordingUrl,
           interviewStatus: "COMPLETED",
         },
         {
@@ -1611,7 +1697,8 @@ if (isQueueEnabled("interview-recording")) {
       await finalizationQueue.close();
 
       console.log(`[RECORDING_WORKER] Finalization job queued for ${applicationId}`);
-      return { success: true, finalKey, chunksProcessed: buffers.length };
+      // BUG FIX #1: was referencing undefined `buffers` — use chunkPaths.length
+      return { success: true, finalKey, chunksProcessed: chunkPaths.length };
     },
     {
       connection: redisConnection,

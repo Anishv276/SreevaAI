@@ -160,11 +160,14 @@ export default function CandidateProfilePage() {
         return [];
     })();
 
-    // ── Signal timeline from proctoringReport.events ──────────────────────
+    // ── Signal timeline from proctoringReport.checkpoint_events (AI signals) + events (proctoring) ──
     const signalTimeline = (() => {
         const raw = candidate?.interview?.proctoringReport;
         const pr = typeof raw === "string" ? (() => { try { return JSON.parse(raw); } catch { return {}; } })() : (raw || {});
-        const events: any[] = Array.isArray(pr?.events) ? pr.events : [];
+        // AI behavioral signals are stored in checkpoint_events; proctoring events in events
+        const checkpointEvents: any[] = Array.isArray(pr?.checkpoint_events) ? pr.checkpoint_events : [];
+        const procEvents: any[] = Array.isArray(pr?.events) ? pr.events : [];
+        const events: any[] = [...checkpointEvents, ...procEvents];
         return events
             .filter((e: any) => e?.recruiter_visible !== false && e?.signal_name && typeof e?.elapsed_sec === "number")
             .map((e: any) => ({
@@ -195,14 +198,15 @@ export default function CandidateProfilePage() {
     const interviewReportSkills = rawSkillsProof.map((item: any) => {
         if (typeof item === "string") {
             const trimmed = item.trim();
-            return { name: trimmed, skill: trimmed, score: "—", status: "NOT TESTED", evidence: "" };
+            return { name: trimmed, skill: trimmed, score: "—", status: "NOT TESTED", what_they_showed: "", what_was_missing: "" };
         }
         return {
             name: String(item?.skill || item?.name || "").trim(),
             skill: String(item?.skill || item?.name || "").trim(),
             score: String(item?.score || "—").trim(),
             status: String(item?.status || "NOT TESTED").trim(),
-            evidence: String(item?.evidence || "").trim(),
+            what_they_showed: String(item?.what_they_showed || item?.evidence || "").trim(),
+            what_was_missing: String(item?.what_was_missing || "").trim(),
         };
     }).filter((s: any) => s.name);
 
@@ -213,21 +217,71 @@ export default function CandidateProfilePage() {
         interviewStatusNormalized === "FINISHED" ||
         Boolean(candidate?.interview?.completedAt);
     const interviewReportLocked = !interviewIsFinished;
-    const groupedProctoringSignals = Array.isArray(candidate?.interview?.proctoringEvents)
-        ? candidate.interview.proctoringEvents.reduce((acc: any[], ev: any) => {
-            const key = String(ev?.eventType || ev?.type || "signal");
-            const severity = String(ev?.severity || "low").toLowerCase();
-            const existing = acc.find((row) => row.key === key);
-            if (existing) {
-                existing.count += 1;
-                if (severity === "high") existing.severity = "high";
-                else if (severity === "medium" && existing.severity !== "high") existing.severity = "medium";
-                return acc;
-            }
-            acc.push({ key, label: key.replace(/_/g, " "), count: 1, severity });
+
+    // ── Parse proctoringEvents — stored as JSON string in DB ──
+    const rawProctoringEvents: any[] = (() => {
+        const raw = candidate?.interview?.proctoringEvents;
+        if (Array.isArray(raw)) return raw;
+        if (typeof raw === "string") {
+            try { return JSON.parse(raw) as any[]; } catch { return []; }
+        }
+        return [];
+    })();
+
+    const groupedProctoringSignals = rawProctoringEvents.reduce((acc: any[], ev: any) => {
+        const key = String(ev?.eventType || ev?.type || "signal");
+        const severity = String(ev?.severity || "low").toLowerCase();
+        const existing = acc.find((row: any) => row.key === key);
+        if (existing) {
+            existing.count += 1;
+            if (severity === "high") existing.severity = "high";
+            else if (severity === "medium" && existing.severity !== "high") existing.severity = "medium";
             return acc;
-        }, [])
-        : [];
+        }
+        acc.push({ key, label: key.replace(/_/g, " "), count: 1, severity });
+        return acc;
+    }, []);
+
+    // Full proctoring event list for detailed signal display (time + evidence per event)
+    const proctoringEventsFull: { time: string; eventType: string; reason: string; severity: string; elapsedSeconds: number }[] =
+        rawProctoringEvents.map((ev: any) => {
+            const elapsed = Number(ev?.metadata?.elapsedSeconds ?? ev?.elapsedSeconds ?? 0);
+            const mins = Math.floor(elapsed / 60);
+            const secs = elapsed % 60;
+            return {
+                time: `${mins}:${String(secs).padStart(2, "0")}`,
+                eventType: String(ev?.eventType || ev?.type || "unknown"),
+                reason: String(ev?.reason || ev?.metadata?.elapsedLabel || ""),
+                severity: String(ev?.severity || "low").toLowerCase(),
+                elapsedSeconds: elapsed,
+            };
+        });
+
+    // ── Parse answerScores — stored as JSON string in DB ──
+    const answerScoresParsed: { question: string; answer: string; depth: number; clarity: number; fluency: number; confidence: number; overall: number; signals: string[] }[] = (() => {
+        const raw = candidate?.interview?.answerScores;
+        const parsed = (() => {
+            if (!raw) return null;
+            if (typeof raw === "object") return raw;
+            try { return JSON.parse(raw as string); } catch { return null; }
+        })();
+        if (!parsed) return [];
+        const allAnswers: any[] = Array.isArray(parsed?.allAnswers) ? parsed.allAnswers : Array.isArray(parsed) ? parsed : [];
+        const turns = Array.isArray(interviewTurns) ? interviewTurns : [];
+        return allAnswers.map((score: any, idx: number) => {
+            const turn = turns[idx] || null;
+            return {
+                question: String(turn?.question || `Turn ${idx + 1}`).trim(),
+                answer: String(turn?.answer || "").trim(),
+                depth: Number(score?.depth ?? 0),
+                clarity: Number(score?.clarity ?? 0),
+                fluency: Number(score?.fluency ?? 0),
+                confidence: Number(score?.confidence ?? 0),
+                overall: Number(score?.overall ?? 0),
+                signals: Array.isArray(score?.signals) ? score.signals.filter(Boolean) : [],
+            };
+        }).filter((s, idx) => s.question && s.question !== `Turn ${idx + 1}`);
+    })();
 
     const interviewSessionRows = Array.isArray(interviewTurns)
         ? interviewTurns.map((turn: any, i: number) => ({
@@ -688,6 +742,8 @@ export default function CandidateProfilePage() {
                     formatDuration,
                     communicationStatus,
                     signalTimeline,
+                    proctoringEventsFull,
+                    answerScoresParsed,
                 })}
             />
 

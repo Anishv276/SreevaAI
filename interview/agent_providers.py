@@ -14,8 +14,10 @@ from __future__ import annotations
 import inspect
 import os
 from typing import Any
+import aiohttp
 
 from livekit.plugins import cartesia, deepgram, openai, sarvam, silero
+from livekit.agents import tts as tts_mod
 try:
     from livekit.plugins import elevenlabs  # type: ignore[attr-defined]
 except Exception:  # pragma: no cover - plugin may not be installed in all environments
@@ -97,6 +99,9 @@ def build_sarvam_tts(
         "output_audio_bitrate": d["sarvam_output_bitrate"],
         "min_buffer_size":      d["sarvam_min_buffer"],
         "max_chunk_length":     d["sarvam_max_chunk"],
+        # Explicitly request stream-completion events so the client can
+        # terminate WS playback cleanly at end-of-speech.
+        "send_completion_event": True,
     }
     if "v2" in model:
         tts_kwargs.update({
@@ -106,7 +111,20 @@ def build_sarvam_tts(
         })
     else:
         tts_kwargs["temperature"] = d["sarvam_temperature"]
-    return sarvam.TTS(**tts_kwargs)
+
+    # On Windows (IocpProactor), the shared aiohttp TCPConnector gets into a
+    # closing state after the first TTS session completes and fails on reuse.
+    # Passing a dedicated session with force_close=True ensures each WS call
+    # gets a fresh connection rather than reusing a half-closed transport.
+    connector = aiohttp.TCPConnector(force_close=True)
+    tts_kwargs["http_session"] = aiohttp.ClientSession(connector=connector)
+
+    tts = sarvam.TTS(**tts_kwargs)
+    # Force non-streaming mode for Sarvam so LiveKit uses HTTP synthesize()
+    # instead of websocket stream() for every utterance (including session.say).
+    # This avoids intermittent "Cannot write to closing transport" WS failures.
+    tts._capabilities = tts_mod.TTSCapabilities(streaming=False, aligned_transcript=False)
+    return tts
 
 
 def _elevenlabs_supported_params() -> set[str]:

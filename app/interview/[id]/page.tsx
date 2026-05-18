@@ -150,6 +150,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const [supportSubmitting, setSupportSubmitting] = useState(false);
     const [supportSuccess, setSupportSuccess] = useState(false);
     const [supportError, setSupportError] = useState<string | null>(null);
+    const [blockedAccessMessage, setBlockedAccessMessage] = useState<string | null>(null);
     const [supportForm, setSupportForm] = useState({
         name: "",
         email: "",
@@ -392,15 +393,19 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const handleRemoteAgentAudioTrack = useCallback((track: MediaStreamTrack | null) => {
         // Handled by child component
     }, []);
-    const tokenRequestRef = useRef<Promise<boolean> | null>(null);
-    const ensureWarmConnection = useCallback(async (): Promise<boolean> => {
+    const tokenRequestRef = useRef<Promise<WarmConnectionResult> | null>(null);
+    type WarmConnectionResult =
+        | { ok: true }
+        | { ok: false; message: string };
+
+    const ensureWarmConnection = useCallback(async (): Promise<WarmConnectionResult> => {
         const requestAttempt = connectionAttemptRef.current;
         if (token && serverUrl && typeof sessionDurationRef.current === "number" && sessionDurationRef.current > 0) {
-            return true;
+            return { ok: true };
         }
         if (requireInterviewToken && !interviewToken) {
             console.error("Warm connection failed: missing interview security token in the URL.");
-            return false;
+            return { ok: false, message: "This interview link is missing its security token. Please reopen the interview link from your invitation email or dashboard." };
         }
         if (tokenRequestRef.current) {
             return tokenRequestRef.current;
@@ -414,7 +419,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 });
                 const data = await res.json();
                 if (requestAttempt !== connectionAttemptRef.current) {
-                    return false;
+                    return { ok: false, message: "Interview connection could not be prepared. Please retry." };
                 }
                 if (res.ok && data.token && data.url) {
                     setToken(data.token);
@@ -426,23 +431,32 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                     sessionDurationRef.current = fixedDurationSeconds;
                     setRemainingSeconds(fixedDurationSeconds);
                     console.log("Warm connection prepared.");
-                    return true;
+                    return { ok: true };
+                }
+                const apiError = String(data?.error || "Invalid token payload");
+                const isFinalized = /already finalized|already completed|completed interview|session has expired|expired/i.test(apiError);
+                if (isFinalized) {
+                    const blockedMessage = "You have already completed your interview. Please contact the support team at support@sreevaai.com.";
+                    return {
+                        ok: false,
+                        message: blockedMessage,
+                    };
                 }
                 console.warn(
                     "Warm connection failed:",
-                    data?.error || "Invalid token payload",
+                    apiError,
                     data?.details || {}
                 );
-                return false;
+                return { ok: false, message: apiError || "Interview connection could not be prepared. Please retry." };
             } catch (err) {
                 console.error("Warm connection request failed:", err);
-                return false;
+                return { ok: false, message: "Interview connection could not be prepared. Please retry." };
             } finally {
                 tokenRequestRef.current = null;
             }
         })();
         return tokenRequestRef.current;
-    }, [id, token, serverUrl]);
+    }, [id, token, serverUrl, interviewToken, requireInterviewToken]);
     // Token is fetched on demand when the user clicks "I'm Ready".
     const handleAgentReady = useCallback((ready: boolean) => {
         setIsAgentReady(ready);
@@ -556,6 +570,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         }
         setIsJoining(true);
         setJoinError(null);
+        setBlockedAccessMessage(null);
         if (!interviewToken && requireInterviewToken) {
             setJoinError("This interview link is missing its security token. Please reopen the interview link from your invitation email or dashboard.");
             setIsJoining(false);
@@ -576,11 +591,10 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 if (lkRoomRef.current) {
                     void lkRoomRef.current.startAudio().catch(() => { });
                 }
-                const isWarmReady = await ensureWarmConnection();
-                if (!isWarmReady) {
-                    setJoinError("Interview connection could not be prepared. Please retry.");
-                    setPhase("check");
-                    setIsJoining(false);
+                const warmResult = await ensureWarmConnection();
+                if (!warmResult.ok) {
+                    await resetToHardwareCheck();
+                    setBlockedAccessMessage(warmResult.message);
                     return;
                 }
                 const durationSeconds = sessionDurationRef.current;
@@ -778,6 +792,48 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     }, [phase, stopInterviewMedia]);
     return (
         <div ref={containerRef} className="min-h-screen bg-white text-gray-900 flex flex-col font-sans relative overflow-hidden" style={{ transform: 'translateZ(0)' }}>
+            <AnimatePresence>
+                {blockedAccessMessage && (
+                    <motion.div
+                        key="blocked-access"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-[240] flex items-center justify-center bg-black/60 backdrop-blur-sm p-6"
+                    >
+                        <motion.div
+                            initial={{ opacity: 0, y: 20, scale: 0.98 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: 20, scale: 0.98 }}
+                            className="w-full max-w-md rounded-[28px] bg-white shadow-2xl border border-black/5 p-8 text-center"
+                        >
+                            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-orange-50 text-orange-500">
+                                <ShieldAlert className="h-8 w-8" />
+                            </div>
+                            <h2 className="text-2xl font-black tracking-tight text-gray-900">
+                                You have already completed your interview
+                            </h2>
+                            <p className="mt-3 text-sm leading-6 text-gray-600">
+                                {blockedAccessMessage}
+                            </p>
+                            <p className="mt-3 text-sm font-semibold text-gray-700">
+                                Please contact the support team:{" "}
+                                <a href="mailto:support@sreevaai.com" className="text-orange-600 underline decoration-orange-300 underline-offset-2">
+                                    support@sreevaai.com
+                                </a>
+                            </p>
+                            <div className="mt-6 flex justify-center gap-3">
+                                <Button
+                                    onClick={() => setBlockedAccessMessage(null)}
+                                    className="rounded-full bg-orange-500 px-6 py-2.5 text-white font-bold hover:bg-orange-600"
+                                >
+                                    Got it
+                                </Button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
             <AnimatePresence mode="wait">
                 {phase === "loading" && (
                     <motion.div
