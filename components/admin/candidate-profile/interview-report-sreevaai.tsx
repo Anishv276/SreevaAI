@@ -1735,7 +1735,7 @@ export function TechnicalScoreCard({ pct, questions, tag: _tag, scores }: {
 function QuestionAnalysisCard({ transcript, questions, onTranscriptSeek, recordingDurationSec }: { transcript: SreevaAIInterviewViewModel["transcript"]; questions: SreevaAIInterviewViewModel["questionAnalysis"]; onTranscriptSeek?: (seconds: number) => void; recordingDurationSec?: number | null }) {
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
-      <Tabs defaultValue="analysis" className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+      <Tabs defaultValue="transcript" className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
         <div className="border-b border-[#E8EAED] px-3 py-3">
           <div className="mb-2 flex items-center justify-between gap-2">
             <p className="text-sm font-extrabold text-[#1A1D22]">Conversation review</p>
