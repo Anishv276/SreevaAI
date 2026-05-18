@@ -434,7 +434,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                     return { ok: true };
                 }
                 const apiError = String(data?.error || "Invalid token payload");
-                const isFinalized = /already finalized|already completed|completed interview|session has expired|expired/i.test(apiError);
+                const isFinalized = /already finalized|already completed|completed interview|session has expired|expired|invalid token|invalid token payload|token expiry|token expired/i.test(apiError);
                 if (isFinalized) {
                     const blockedMessage = "You have already completed your interview. Please contact the support team at support@sreevaai.com.";
                     return {

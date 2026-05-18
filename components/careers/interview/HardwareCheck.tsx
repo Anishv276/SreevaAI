@@ -563,7 +563,7 @@ export function HardwareCheck({
                 }, 100);
             }
         };
-        r.onerror = () => {};
+        r.onerror = () => { };
         r.onend = () => {
             if (!verifiedRef.current && recogRef.current === r && !autoVerifyInProgressRef.current) {
                 setTimeout(() => { try { r.start(); } catch { } }, 300);
