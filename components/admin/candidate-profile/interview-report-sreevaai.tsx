@@ -1336,8 +1336,8 @@ export function CommunicationScoreCardDonutLive({ comm }: { comm: SreevaAIInterv
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-2 pb-3 pt-1 sm:px-3 sm:pb-4 sm:pt-2">
-      <div className="w-full max-w-[320px]">
+    <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-2 pb-3 pt-1 sm:px-3 sm:pb-4 sm:pt-2 relative">
+      <div className="w-full max-w-[320px] relative">
         <div
           ref={donutRef}
           className="relative mx-auto mt-4 aspect-square w-full max-w-[160px] transition-transform duration-300 ease-out hover:scale-[1.04]"
@@ -1355,6 +1355,60 @@ export function CommunicationScoreCardDonutLive({ comm }: { comm: SreevaAIInterv
             </div>
           </div>
         </div>
+
+        {/* Tooltip positioned relative to donut */}
+        {active && (() => {
+          const activeSegment = segments.find((s) => s.key === activeMetric);
+          const WHY: Record<string, { what: string; scored: string }> = {
+            clarity: {
+              what: "Did the candidate's answers have a logical structure — opening point, supporting reasoning, conclusion? Were ideas immediately understandable or did they require re-reading?",
+              scored: activeSegment!.value >= 75
+                ? `${activeSegment!.value}/100 — Candidate structured answers with a clear point first, supported by reasoning. Ideas were easy to follow on first listen.`
+                : activeSegment!.value >= 50
+                ? `${activeSegment!.value}/100 — Answers were generally understandable but occasionally drifted before landing on the key point. Some re-listening needed.`
+                : `${activeSegment!.value}/100 — Answers frequently lacked structure. Key points were buried or unclear, requiring significant effort to follow.`,
+            },
+            fluency: {
+              what: "How smooth was the delivery? Counted against: filler words (um, uh, like, you know), long unnatural pauses, repeated restarts, and incomplete sentences.",
+              scored: activeSegment!.value >= 75
+                ? `${activeSegment!.value}/100 — Delivery was smooth with minimal filler. Thoughts connected naturally with consistent pacing throughout.`
+                : activeSegment!.value >= 50
+                ? `${activeSegment!.value}/100 — Noticeable filler words or pauses in several answers, but speech remained followable. Moderate disruption to delivery.`
+                : `${activeSegment!.value}/100 — Frequent filler words, restarts, or long pauses significantly disrupted speech flow. Listener effort was high.`,
+            },
+            grammar: {
+              what: "Sentence-level correctness — complete sentences, correct subject-verb agreement, and no structural fragments. Assessed from transcribed speech patterns.",
+              scored: activeSegment!.value >= 75
+                ? `${activeSegment!.value}/100 — Consistently used complete, well-formed sentences. Very few grammatical fragments or structural errors detected in the transcript.`
+                : activeSegment!.value >= 50
+                ? `${activeSegment!.value}/100 — Mostly correct grammar with some sentence fragments or tense inconsistencies, typical of spoken language under pressure.`
+                : `${activeSegment!.value}/100 — Frequent grammatical errors or fragmented sentences throughout. May affect professional credibility in client-facing or written communication roles.`,
+            },
+            confidence: {
+              what: "Assertiveness of delivery — did the candidate state positions clearly, or hedge with 'I think maybe', 'not sure', 'kind of'? Did they maintain tone under follow-up questions?",
+              scored: activeSegment!.value >= 75
+                ? `${activeSegment!.value}/100 — Candidate stated answers decisively. Minimal hedging language. Tone remained steady even when challenged or probed.`
+                : activeSegment!.value >= 50
+                ? `${activeSegment!.value}/100 — Generally confident with occasional hedging. Some answers became tentative under follow-up but recovered.`
+                : `${activeSegment!.value}/100 — Frequent use of hedging language ('I think', 'maybe', 'not entirely sure'). Tone dropped under follow-up questions, signalling low assertiveness.`,
+            },
+          };
+          return (
+            <div className="absolute right-0 top-1/2 z-30 -translate-y-1/2 -translate-x-full pr-3 pointer-events-none">
+              <div className="rounded-xl border border-neutral-200 bg-white shadow-2xl overflow-hidden" style={{ minWidth: 300, pointerEvents: "auto" }}>
+                <div className="px-3 pt-2.5 pb-2 border-b border-neutral-100" style={{ borderLeftColor: activeSegment?.color || "#000", borderLeftWidth: 3 }}>
+                  <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: activeSegment?.color || "#000" }}>{activeSegment?.label}</p>
+                  <p className="mt-0.5 text-[10px] text-[#98A2B3] leading-snug">{WHY[activeSegment?.key as keyof typeof WHY]?.what}</p>
+                </div>
+                <div className="px-3 py-2.5">
+                  <p className="text-[11px] leading-relaxed text-[#1A1D22]">
+                    <span className="mr-1 font-black" style={{ color: activeSegment?.color || "#000" }}>▸</span>{WHY[activeSegment?.key as keyof typeof WHY]?.scored}
+                  </p>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         <div className="mt-5 grid grid-cols-2 gap-x-4 gap-y-3 px-2">
           {segments.map((m) => {
@@ -1410,19 +1464,6 @@ export function CommunicationScoreCardDonutLive({ comm }: { comm: SreevaAIInterv
                   </div>
                   <span className={cn("text-[12px] font-extrabold tabular-nums", isActive ? scoreColor : "text-[#1A1D22]")}>{m.value}</span>
                 </button>
-                {isActive && WHY[m.key] && (
-                  <div className="absolute left-full top-1/2 z-30 ml-3 -translate-y-1/2 rounded-xl border border-neutral-200 bg-white shadow-2xl overflow-hidden" style={{ minWidth: 300 }}>
-                    <div className="px-3 pt-2.5 pb-2 border-b border-neutral-100" style={{ borderLeftColor: m.color, borderLeftWidth: 3 }}>
-                      <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: m.color }}>{m.label}</p>
-                      <p className="mt-0.5 text-[10px] text-[#98A2B3] leading-snug">{WHY[m.key].what}</p>
-                    </div>
-                    <div className="px-3 py-2.5">
-                      <p className="text-[11px] leading-relaxed text-[#1A1D22]">
-                        <span className="mr-1 font-black" style={{ color: m.color }}>▸</span>{WHY[m.key].scored}
-                      </p>
-                    </div>
-                  </div>
-                )}
               </div>
             );
           })}
