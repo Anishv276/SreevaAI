@@ -680,35 +680,40 @@ export function buildSreevaAIInterviewViewModel(i: {
       });
     }
 
-    // Fallback: If AI didn't provide concise summary, generate 4 key points from data
+    // Fallback: If AI didn't provide concise summary, generate 4 narrative key points from data
     if (bullets.length === 0) {
       if (!i.isFallbackReport) {
-        // Point 1: Technical Score
-        if (technicalPct >= 70) bullets.push(`**Technical Skills**: **${technicalPct}%** - demonstrates **strong depth** and **correct implementation**`);
-        else if (technicalPct >= 45) bullets.push(`**Technical Skills**: **${technicalPct}%** - **moderate depth** with **gaps** in some areas`);
-        else if (technicalPct > 0) bullets.push(`**Technical Skills**: **${technicalPct}%** - **below expectations** for this role`);
+        // Point 1: Background & Technical Strengths (narrative, not scores)
+        const techStrength = technicalPct >= 70 ? "demonstrates **deep technical knowledge** and **strong execution ability**"
+          : technicalPct >= 45 ? "shows **moderate technical depth** with **capability to grow**"
+          : "has **foundational technical understanding** but needs **significant development**";
+        const topSkills = skills.slice(0, 2).map(s => `**${s.name}**`).join(", ");
+        const skillsContext = topSkills ? ` Proven expertise in ${topSkills}.` : "";
+        bullets.push(`**Background & Technical Strengths**: Candidate ${techStrength} across multiple areas.${skillsContext} Shows **structured thinking** when approaching problems.`);
 
-        // Point 2: Communication
+        // Point 2: Communication & Working Style (narrative)
         const commScore = Math.round(commAvg);
-        if (commScore >= 70) bullets.push(`**Communication**: **${commScore}%** - **clear**, **fluent**, **confident** delivery`);
-        else if (commScore >= 50) bullets.push(`**Communication**: **${commScore}%** - **generally clear** with **occasional hesitation**`);
-        else bullets.push(`**Communication**: **${commScore}%** - **needs improvement** in clarity and confidence`);
+        const commQuality = commScore >= 70 ? "**articulate** and **fluent**, communicates **clearly** with **minimal hesitation**"
+          : commScore >= 50 ? "generally **clear** in explanations but shows **occasional hesitation** under pressure"
+          : "struggles with **clarity** and **confidence** in verbal expression";
+        const engagementLevel = flagCount === 0 ? "**genuine engagement** throughout" : "some **attention/focus issues** detected";
+        bullets.push(`**Communication & Engagement**: Candidate is ${commQuality}. Demonstrates ${engagementLevel} with **consistent participation** in the interview.`);
 
-        // Point 3: Problem Solving / Behavioral
-        const proctoringClean = flagCount === 0;
-        if (proctoringClean) {
-          bullets.push(`**Behavioral Signals**: **clean session**, **genuine engagement**, **no integrity concerns**`);
-        } else {
-          bullets.push(`**Behavioral Signals**: **${flagCount} proctoring flag${flagCount !== 1 ? "s" : ""}** detected - **review recommended**`);
-        }
-      }
+        // Point 3: Technical Gaps & Development Areas
+        const gapTheme = technicalPct >= 70 ? "minor **edge-case handling**"
+          : technicalPct >= 45 ? "**system design depth** and **optimization thinking**"
+          : "**core technical concepts** and **problem-solving methodology**";
+        const proctoringStatus = flagCount === 0 ? "**clean session with no integrity concerns**" : `**${flagCount} proctoring concern${flagCount !== 1 ? "s" : ""}** noted`;
+        bullets.push(`**Technical Gaps & Behavioral Integrity**: Needs development in ${gapTheme}. Session was ${proctoringStatus}. Shows potential to **improve with mentoring**.`);
 
-      // Point 4: Recommendation (always include)
-      if (verdictRecommendationReason) {
-        bullets.push(`**Recommendation**: ${verdictRecommendationReason.replace(/^[*_]+([^*_]+)[*_]+/, "**$1**")}`);
-      } else {
-        const rec = fitPct >= 70 ? "**STRONG YES**" : fitPct >= 50 ? "**YES**" : fitPct >= 30 ? "**MAYBE**" : "**NO**";
-        bullets.push(`**Recommendation**: ${rec} - **fit score**: **${fitPct}%**`);
+        // Point 4: Overall Recommendation (narrative)
+        const recNarrative = verdictRecommendationReason
+          ? verdictRecommendationReason
+          : fitPct >= 70 ? "**Strong candidate** with **solid fundamentals** and **high potential** for success in this role. Ready for **immediate impact** with **minimal ramp-up**."
+            : fitPct >= 50 ? "**Good fit** with **demonstrated capability**. Would benefit from **focused mentoring** in key areas. **Recommend moving forward** with structured **onboarding**."
+            : fitPct >= 30 ? "**Potential candidate** who shows **foundational ability** but needs **significant development** in critical areas. Recommend **follow-up evaluation** or **advanced training plan**."
+            : "**Not recommended** at this time. Consider **re-evaluation** after **skill development** in core areas.";
+        bullets.push(`**Hiring Recommendation**: ${recNarrative}`);
       }
     }
 
