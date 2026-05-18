@@ -8,9 +8,9 @@ import { getOpenAIClient } from "@/lib/openai";
 import { canUseRecruiterAssistant } from "@/lib/org-plans";
 import type OpenAI from "openai";
 
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 // STATUS NORMALISATION - exact DB casing
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
 function normalizeResumeStatus(s: string): string {
   const map: Record<string, string> = {
     pending: "pending", shortlisted: "SHORTLISTED", rejected: "REJECTED",
@@ -25,9 +25,34 @@ function normalizeHiringStatus(s: string): string {
   return map[s.toLowerCase()] ?? s;
 }
 
-// -----------------------------------------------------------------------------
-// parseStructuredResume - converts raw JSON blob to clean LLM-readable object
-// -----------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Fuzzy name match — splits query into tokens, ALL must appear somewhere in fullName
+// "vamsi dakka" matches "Vamsi Krishna Dakka"
+// ---------------------------------------------------------------------------
+function buildFuzzyNameWhere(name: string, orgId: string) {
+  const tokens = name.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (!tokens.length) return null;
+
+  // If single token — simple contains
+  if (tokens.length === 1) {
+    return {
+      drive: { orgId },
+      fullName: { contains: tokens[0], mode: "insensitive" as const },
+    };
+  }
+
+  // Multi-token: every token must match somewhere in the name
+  return {
+    drive: { orgId },
+    AND: tokens.map((token) => ({
+      fullName: { contains: token, mode: "insensitive" as const },
+    })),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Parse resume JSON blob → readable object
+// ---------------------------------------------------------------------------
 function parseStructuredResume(raw: string | null | undefined) {
   if (!raw) return null;
   try {
@@ -61,8 +86,66 @@ function parseStructuredResume(raw: string | null | undefined) {
       careerProgression:
         sr.career_progression?.analysis ??
         (sr.career_timeline
-          ? `Progression pattern: ${sr.career_timeline.progression_pattern ?? "unknown"}; job hopping risk: ${sr.career_timeline.job_hopping_risk ?? "unknown"}`
+          ? `Progression: ${sr.career_timeline.progression_pattern ?? "unknown"}; job hopping risk: ${sr.career_timeline.job_hopping_risk ?? "unknown"}`
           : null),
+    };
+  } catch { return null; }
+}
+
+// ---------------------------------------------------------------------------
+// Parse interview report → full structured object the LLM can reason over
+// ---------------------------------------------------------------------------
+function parseInterviewReport(raw: string | object | null | undefined) {
+  if (!raw) return null;
+  try {
+    const r = typeof raw === "string" ? JSON.parse(raw) : raw;
+
+    const qa = Array.isArray(r.qa_blocks) ? r.qa_blocks.map((q: any) => ({
+      question:      q.question,
+      answerSummary: q.answer_summary,
+      score:         q.score,
+      verdict:       q.verdict,
+      confidence:    q.confidence,
+      tags:          q.tags,
+      scoreBreakdown: q.score_breakdown,
+    })) : [];
+
+    const skillsProof = Array.isArray(r.skills_proof) ? r.skills_proof.map((s: any) => ({
+      skill:    s.skill,
+      status:   s.status,
+      score:    s.score,
+      evidence: s.evidence,
+    })) : [];
+
+    return {
+      scores: {
+        combined:      r.combined_score ?? null,
+        technical:     r.technical_score ?? null,
+        communication: r.communication_score ?? null,
+        behavioral:    r.behavioral_score ?? null,
+      },
+      integrity: {
+        score:   r.integrity?.score ?? null,
+        summary: r.integrity?.summary ?? null,
+      },
+      communication: r.communication_analysis ?? null,
+      cognitive:     r.cognitive_insights ?? null,
+      behavioral:    r.behavioral_analysis ?? null,
+      verdict: {
+        summary:           r.verdict?.summary ?? null,
+        recommendation:    r.verdict?.recommendation ?? null,
+        recommendationReason: r.verdict?.recommendation_reason ?? null,
+        concise:           r.verdict?.ai_summary_concise ?? null,
+      },
+      strategicVerdict: {
+        decision: r.strategic_verdict?.decision ?? null,
+        summary:  r.strategic_verdict?.summary ?? null,
+        rationale: r.strategic_verdict?.rationale ?? null,
+        nextActions: r.strategic_verdict?.next_actions ?? null,
+      },
+      qa,
+      skillsProof,
+      generatedAt: r.generated_at ?? null,
     };
   } catch { return null; }
 }
@@ -78,13 +161,7 @@ export async function POST(req: NextRequest) {
 
     const org = await prisma.organization.findUnique({
       where: { id: orgId },
-      select: {
-        name: true,
-        industry: true,
-        size: true,
-        plan: true,
-        llmModel: true,
-      },
+      select: { name: true, industry: true, size: true, plan: true, llmModel: true },
     });
     if (!canUseRecruiterAssistant(org?.plan)) {
       return NextResponse.json(
@@ -105,11 +182,28 @@ export async function POST(req: NextRequest) {
         .map((m: any) => `${m.role === "user" ? "Recruiter" : "Assistant"}: ${m.content}`)
         .join("\n");
       const queryVector = await getEmbedding(recentContext);
-      const matches = await queryCandidates(queryVector, 15, { orgId: { $eq: orgId } });
-      semanticContext = matches.map((match: any) => {
-        const meta = match.metadata;
-        return `Candidate: ${meta.fullName} | Role: ${meta.jobTitle} | Type: ${meta.type} | AppID: ${meta.applicationId}\nContent: ${meta.contentChunk}\n---`;
-      }).join("\n");
+      const matches = await queryCandidates(queryVector, 20, { orgId: { $eq: orgId } });
+
+      // Group by candidate so we surface the richest context per person
+      const byCandidate: Record<string, { meta: any; chunks: Array<{ type: string; content: string; score: number }> }> = {};
+      for (const match of matches) {
+        const meta = match.metadata as any;
+        const appId = meta.applicationId;
+        if (!appId) continue;
+        if (!byCandidate[appId]) {
+          byCandidate[appId] = { meta, chunks: [] };
+        }
+        byCandidate[appId].chunks.push({
+          type: meta.type,
+          content: meta.contentChunk ?? "",
+          score: match.score ?? 0,
+        });
+      }
+
+      semanticContext = Object.values(byCandidate).map(({ meta, chunks }) => {
+        const sections = chunks.map((c) => `  [${c.type.toUpperCase()}]: ${c.content}`).join("\n");
+        return `CANDIDATE: ${meta.fullName} | Role: ${meta.jobTitle} | Score: ${meta.aiScore}/100 | AppID: ${meta.applicationId}\n${sections}`;
+      }).join("\n---\n");
     } catch { /* Pinecone optional */ }
 
     // -- 3. Tool Definitions --------------------------------------------------
@@ -118,7 +212,7 @@ export async function POST(req: NextRequest) {
         type: "function",
         function: {
           name: "get_recruitment_stats",
-          description: "Get real-time TOTAL counts: total candidates, drives, live interviews, completed interviews, shortlisted, rejected, hired, pending. Call this for ANY question about counts, totals, 'how many', pipeline overview, or dashboard summary.",
+          description: "Get real-time TOTAL counts: total candidates, drives, live interviews, completed interviews, shortlisted, rejected, hired, pending. Call for ANY question about counts, totals, 'how many', pipeline overview, or dashboard summary.",
           parameters: { type: "object", properties: {} },
         },
       },
@@ -134,7 +228,7 @@ export async function POST(req: NextRequest) {
         type: "function",
         function: {
           name: "get_drives_overview",
-          description: "List all recruitment drives with title, role, screening threshold, interview enabled flag, and application count. Use for 'show drives', 'all jobs', 'open positions', or drive-level summaries.",
+          description: "List all recruitment drives with title, role, screening threshold, and application count. Use for 'show drives', 'all jobs', 'open positions', or drive-level summaries.",
           parameters: { type: "object", properties: {} },
         },
       },
@@ -142,7 +236,7 @@ export async function POST(req: NextRequest) {
         type: "function",
         function: {
           name: "get_drive_by_name",
-          description: "Search for a specific drive by title/name. Use when recruiter mentions a job title or drive name like 'Oracle Fusion drive', 'Backend Engineer role', etc.",
+          description: "Search for a specific drive by title/name. Use when recruiter mentions a job title or drive name like 'Oracle Fusion drive', 'Backend Engineer role'.",
           parameters: {
             type: "object",
             properties: {
@@ -156,12 +250,12 @@ export async function POST(req: NextRequest) {
         type: "function",
         function: {
           name: "get_candidates_for_drive",
-          description: "Get all candidates for a specific drive by drive ID or drive name. Use when recruiter asks 'who applied for [role]', 'candidates for oracle drive', etc.",
+          description: "Get all candidates for a specific drive by drive ID or drive name.",
           parameters: {
             type: "object",
             properties: {
               driveId:   { type: "string", description: "Drive ID (uuid). Use if known." },
-              driveName: { type: "string", description: "Drive title/name to search candidates by. Use if driveId is unknown." },
+              driveName: { type: "string", description: "Drive title/name to search candidates by." },
               limit:     { type: "number", description: "Max candidates to return (default 20)." },
             },
           },
@@ -202,11 +296,11 @@ export async function POST(req: NextRequest) {
         type: "function",
         function: {
           name: "search_candidates_by_name",
-          description: "Find a candidate by name. Use for ANY question mentioning a person's name: 'tell me about Durga', 'Durga's skills', 'when did Priya apply', 'show resume of Ravi', 'what is Arjun's score'.",
+          description: "Find a candidate by name — supports partial and fuzzy matching so 'vamsi dakka' finds 'Vamsi Krishna Dakka'. Use for ANY question mentioning a person's name: profile, skills, score, application date, resume, status, etc. Returns full profile + interview summary.",
           parameters: {
             type: "object",
             properties: {
-              name: { type: "string", description: "Full or partial candidate name." },
+              name: { type: "string", description: "Full or partial candidate name. Even 2 words from a full name work." },
             },
             required: ["name"],
           },
@@ -215,12 +309,26 @@ export async function POST(req: NextRequest) {
       {
         type: "function",
         function: {
-          name: "search_candidates_by_skill",
-          description: "Find candidates who have a specific skill, technology, or tool. Use for 'who knows Python', 'find Java developers', 'candidates with AWS experience', 'who has Oracle HCM skills', 'find candidates with SQL'.",
+          name: "get_candidate_interview_report",
+          description: "Get the FULL interview report for a candidate: all scores (combined, technical, communication, behavioral), integrity score, Q&A blocks with individual question scores and verdicts, skills proof, cognitive insights, behavioral analysis, and final hiring recommendation. Use when recruiter asks about interview performance, specific scores, integrity, behavioral signals, or detailed assessment of a named candidate.",
           parameters: {
             type: "object",
             properties: {
-              skill: { type: "string", description: "Skill, technology, language, or tool name to search for." },
+              applicationId: { type: "string", description: "The application ID of the candidate." },
+              name:          { type: "string", description: "Candidate name (partial OK) — used if applicationId not known." },
+            },
+          },
+        },
+      },
+      {
+        type: "function",
+        function: {
+          name: "search_candidates_by_skill",
+          description: "Find candidates who have a specific skill, technology, or tool. Use for 'who knows Python', 'find Java developers', 'candidates with AWS experience'.",
+          parameters: {
+            type: "object",
+            properties: {
+              skill: { type: "string", description: "Skill, technology, language, or tool name." },
               limit: { type: "number", description: "Max results (default 10)." },
             },
             required: ["skill"],
@@ -231,7 +339,7 @@ export async function POST(req: NextRequest) {
         type: "function",
         function: {
           name: "get_candidate_detail",
-          description: "Full profile of a candidate by application ID: score, statuses, skills, education, projects, experience, interview summary, AI report.",
+          description: "Full profile of a candidate by application ID: score, statuses, parsed resume skills/education/experience/projects, interview summary.",
           parameters: {
             type: "object",
             properties: {
@@ -245,7 +353,7 @@ export async function POST(req: NextRequest) {
         type: "function",
         function: {
           name: "get_avg_scores",
-          description: "Get average AI scores, score distribution, and performance statistics. Use for 'average score', 'score distribution', 'how are candidates performing', 'what is the pass rate', 'average interview score'.",
+          description: "Get average AI scores, score distribution, and performance statistics. Use for 'average score', 'score distribution', 'how are candidates performing', 'pass rate'.",
           parameters: {
             type: "object",
             properties: {
@@ -257,106 +365,93 @@ export async function POST(req: NextRequest) {
     ];
 
     // -- 4. System Prompt -----------------------------------------------------
-    const systemPrompt = `You are Ishita Intelligence - the AI recruitment assistant for **${org?.name ?? "this organization"}**.
-You have complete, real-time access to the organization's hiring database. Every answer you give is based on LIVE data from tools - never from memory or assumptions.
+    const systemPrompt = `You are Ishita Intelligence — the AI recruitment assistant for **${org?.name ?? "this organization"}**.
+You have complete, real-time access to the organization's hiring database and every candidate's interview report.
+Every answer is based on LIVE data from tools — never from memory or assumptions.
 
 ### ORGANIZATION:
 - Name: ${org?.name ?? "Unknown"} | Industry: ${org?.industry ?? "N/A"} | Size: ${org?.size ?? "N/A"} | Plan: ${org?.plan ?? "STARTER"}
 
 ---
 
-### TOOL ROUTING - CALL THE RIGHT TOOL FOR EVERY QUESTION:
+### TOOL ROUTING — CALL THE RIGHT TOOL FOR EVERY QUESTION:
 
 **PIPELINE & COUNTS:**
 | Question | Tool |
 |---|---|
 | How many candidates? / Total count / Dashboard summary | get_recruitment_stats |
 | How many shortlisted / rejected / hired / pending? | get_candidate_counts_by_status |
-| Show hiring funnel / pipeline breakdown | get_candidate_counts_by_status |
-| What is the interview completion rate? | get_recruitment_stats |
+| Hiring funnel / pipeline breakdown | get_candidate_counts_by_status |
 
 **DRIVES / JOBS:**
 | Question | Tool |
 |---|---|
 | Show all drives / all jobs / open positions | get_drives_overview |
-| Tell me about the [Oracle / Backend / etc.] drive | get_drive_by_name |
+| Tell me about the [role] drive | get_drive_by_name |
 | How many applied for [role]? / Candidates for [drive] | get_candidates_for_drive |
-| What are the drive requirements / threshold? | get_drive_by_name |
 
-**CANDIDATE SEARCH:**
+**CANDIDATE PROFILE (name lookup):**
 | Question | Tool |
 |---|---|
-| Tell me about [Name] / [Name]'s profile | search_candidates_by_name |
-| What are [Name]'s skills / education / experience? | search_candidates_by_name |
-| When did [Name] apply? / [Name]'s application date | search_candidates_by_name |
-| Show [Name]'s resume / resume link | search_candidates_by_name |
-| What is [Name]'s score? / Did [Name] pass? | search_candidates_by_name |
-| [Name]'s interview status / hiring status | search_candidates_by_name |
-| What projects has [Name] done? | search_candidates_by_name |
-| Show full details for application ID [id] | get_candidate_detail |
+| Tell me about [Name] / profile / skills / status | search_candidates_by_name |
+| [Name]'s score / resume / application date | search_candidates_by_name |
+| Find [partial name] — 'vamsi dakka' matches 'Vamsi Krishna Dakka' | search_candidates_by_name |
 
-**SKILLS & TECHNOLOGY SEARCH:**
+**INTERVIEW REPORT (scores, integrity, behavioral, Q&A):**
+| Question | Tool |
+|---|---|
+| How did [Name] perform in the interview? | get_candidate_interview_report |
+| What is [Name]'s integrity score / technical score / communication score? | get_candidate_interview_report |
+| Show [Name]'s Q&A / question-level performance | get_candidate_interview_report |
+| What are [Name]'s behavioral signals / cognitive insights? | get_candidate_interview_report |
+| Should we hire [Name]? / What is the verdict? | get_candidate_interview_report |
+| Show [Name]'s skills proof / which skills did they prove? | get_candidate_interview_report |
+
+**SKILLS SEARCH:**
 | Question | Tool |
 |---|---|
 | Who knows [Python / Java / AWS / Oracle]? | search_candidates_by_skill |
-| Find candidates with [skill] experience | search_candidates_by_skill |
-| Who has [technology] skills? | search_candidates_by_skill |
-| Show me [skill] developers | search_candidates_by_skill |
+| Find candidates with [skill] | search_candidates_by_skill |
 
 **STATUS FILTERS:**
 | Question | Tool |
 |---|---|
-| Show shortlisted candidates | get_candidates_by_status (resumeStatus=shortlisted) |
-| Show rejected candidates | get_candidates_by_status (resumeStatus=rejected) |
-| Who is pending screening? | get_candidates_by_status (resumeStatus=pending) |
-| Who completed the interview? | get_candidates_by_status (interviewStatus=COMPLETED) |
-| Show hired candidates | get_candidates_by_status (hiringStatus=hired) |
-| Who was not shortlisted? | get_candidates_by_status (hiringStatus=not shortlisted) |
+| Show shortlisted / rejected / pending candidates | get_candidates_by_status |
+| Who completed the interview? / Who was hired? | get_candidates_by_status |
 
 **RANKINGS & PERFORMANCE:**
 | Question | Tool |
 |---|---|
 | Top candidates / Best scores / Highest rated | get_top_candidates |
 | Average score / Pass rate / Score distribution | get_avg_scores |
-| Best candidate for [drive] | get_top_candidates (with driveId) |
-| Who performed best in interviews? | get_top_candidates |
+| Full profile for AppID [id] | get_candidate_detail |
 
 ---
 
 ### PIPELINE STAGES:
-1. **Applied** -> Candidate submits resume
-2. **AI Screened** -> Resume scored 0–100 vs JD -> SHORTLISTED or REJECTED (resumeStatus)
-3. **Interview** -> Shortlisted get AI voice interview link -> PENDING -> IN_PROGRESS -> COMPLETED
-4. **Decision** -> Recruiter sets hiringStatus: Hired / Not Hired
+1. **Applied** → Candidate submits resume
+2. **AI Screened** → Scored 0–100 vs JD → SHORTLISTED or REJECTED (resumeStatus)
+3. **Interview** → Shortlisted get AI voice interview → PENDING → IN_PROGRESS → COMPLETED
+4. **Decision** → Recruiter sets hiringStatus: Hired / Not Hired
 
 ### EXACT DB STATUS VALUES:
 - resumeStatus: "pending" | "SHORTLISTED" | "REJECTED"
-- interviewStatus (Application): "pending" | "IN_PROGRESS" | "COMPLETED" | "Not Qualified"
-- Interview.status: "PENDING" | "IN_PROGRESS" | "COMPLETED"
+- interviewStatus: "pending" | "IN_PROGRESS" | "COMPLETED" | "Not Qualified"
 - hiringStatus: "pending" | "Shortlisted" | "Not Shortlisted" | "Hired" | "Not Hired"
 - aiScore: 0–100
 
-### CANDIDATE DATA FIELDS (from parsedResume):
-- technicalSkills -> programming languages (Java, Python, SQL ...)
-- tools -> platforms and tools (AWS, Oracle HCM, Excel ...)
-- education -> [{degree, field, institution, year}]
-- projects -> [{name, description, technologies}]
-- experience -> {totalYears, currentRole, currentCompany}
-- careerSummary -> one-paragraph AI-generated candidate summary
-- location, workHistory, redFlags, keywords
-
 ### RESPONSE RULES:
 - ALWAYS cite **Candidate Name (App ID: xxx)** when referring to a person
-- ALWAYS show resumeUrl as a direct URL when present - NEVER say "not available"
-- ALWAYS show createdAt as a readable date (e.g. "April 10, 2026") - NEVER say "not specified"
-- ALWAYS read skills from parsedResume.technicalSkills + parsedResume.tools - NEVER say "not listed"
-- Show aiScore as "XX/100" - if null, say "Not yet screened"
-- Use ### Headings and bullet points - no long paragraphs
-- Be warm, professional, and concise
-- If 0 results, say exactly that - never say "data unavailable"
+- Show scores as numbers: "Integrity: 85/100", "Technical: 72/100" — never vague
+- Show aiScore as "XX/100" — if null, say "Not yet screened"
+- Use ### Headings and bullet points — no long unbroken paragraphs
+- ALWAYS show resumeUrl as a direct URL when present
+- ALWAYS show createdAt as a readable date (e.g. "April 10, 2026")
+- If a candidate has an interview report, proactively surface key scores when asked about their performance
+- Be warm, professional, and concise — this is a personal HR intelligence tool
 
 ### SEMANTIC CONTEXT (most relevant candidates for this query):
-${semanticContext || "No semantic matches found - rely on tools for accurate data."}
+${semanticContext || "No semantic matches found — rely on tools for accurate data."}
 `;
 
     // -- 5. First LLM call ----------------------------------------------------
@@ -367,11 +462,7 @@ ${semanticContext || "No semantic matches found - rely on tools for accurate dat
       tool_choice: "auto",
       temperature: 0.2,
     });
-    await recordOrgBillingFromOpenAICompletion({
-      orgId,
-      feature: "chatbot",
-      completion: response,
-    });
+    await recordOrgBillingFromOpenAICompletion({ orgId, feature: "chatbot", completion: response });
 
     const responseMessage = response.choices[0].message;
 
@@ -440,48 +531,38 @@ ${semanticContext || "No semantic matches found - rely on tools for accurate dat
             where: { orgId },
             select: {
               id: true, title: true, role: true,
-              screeningThreshold: true,
-              createdAt: true,
+              screeningThreshold: true, createdAt: true,
               _count: { select: { applications: true } },
             },
             orderBy: { createdAt: "desc" },
           });
-          result = JSON.stringify(drives.map((d: (typeof drives)[number]) => ({
-            ...d,
-            applicationCount: d._count.applications,
-            _count: undefined,
+          result = JSON.stringify(drives.map((d) => ({
+            ...d, applicationCount: d._count.applications, _count: undefined,
           })));
 
         // -- get_drive_by_name ----------------------------------------------
         } else if (fn === "get_drive_by_name") {
           const drives = await prisma.drive.findMany({
-            where: {
-              orgId,
-              title: { contains: args.name, mode: "insensitive" },
-            },
+            where: { orgId, title: { contains: args.name, mode: "insensitive" } },
             select: {
               id: true, title: true, role: true,
-              screeningThreshold: true,
-              createdAt: true,
+              screeningThreshold: true, createdAt: true,
               _count: { select: { applications: true } },
             },
             take: 3,
           });
-          result = JSON.stringify(drives.map((d: (typeof drives)[number]) => ({
-            ...d,
-            applicationCount: d._count.applications,
-            _count: undefined,
+          result = JSON.stringify(drives.map((d) => ({
+            ...d, applicationCount: d._count.applications, _count: undefined,
           })));
 
         // -- get_candidates_for_drive ---------------------------------------
         } else if (fn === "get_candidates_for_drive") {
           const limit = Math.min(args.limit ?? 20, 50);
           let driveId = args.driveId;
-
           if (!driveId && args.driveName) {
             const drive = await prisma.drive.findFirst({
               where: { orgId, title: { contains: args.driveName, mode: "insensitive" } },
-              select: { id: true, title: true },
+              select: { id: true },
             });
             driveId = drive?.id;
           }
@@ -492,19 +573,14 @@ ${semanticContext || "No semantic matches found - rely on tools for accurate dat
               where: { drive: { orgId }, driveId },
               select: {
                 id: true, fullName: true, email: true,
-                aiScore: true, resumeStatus: true, hiringStatus: true,
-                interviewStatus: true,
+                aiScore: true, resumeStatus: true, hiringStatus: true, interviewStatus: true,
                 createdAt: true, resumeUrl: true,
                 drive: { select: { title: true } },
               },
               orderBy: { aiScore: "desc" },
               take: limit,
             });
-            result = JSON.stringify(candidates.map((c: any) => ({
-              ...c,
-              parsedResume: null,
-              structuredResume: undefined,
-            })));
+            result = JSON.stringify(candidates);
           }
 
         // -- get_top_candidates ---------------------------------------------
@@ -515,19 +591,14 @@ ${semanticContext || "No semantic matches found - rely on tools for accurate dat
             where: whereClause,
             select: {
               id: true, fullName: true, email: true,
-              aiScore: true, resumeStatus: true, hiringStatus: true,
-              interviewStatus: true,
+              aiScore: true, resumeStatus: true, hiringStatus: true, interviewStatus: true,
               createdAt: true, resumeUrl: true,
               drive: { select: { title: true } },
             },
             orderBy: { aiScore: "desc" },
             take: Math.min(args.limit ?? 10, 25),
           });
-          result = JSON.stringify(candidates.map((c: any) => ({
-            ...c,
-            parsedResume: null,
-            structuredResume: undefined,
-          })));
+          result = JSON.stringify(candidates);
 
         // -- get_candidates_by_status ---------------------------------------
         } else if (fn === "get_candidates_by_status") {
@@ -539,86 +610,141 @@ ${semanticContext || "No semantic matches found - rely on tools for accurate dat
             where: whereClause,
             select: {
               id: true, fullName: true, email: true,
-              aiScore: true, resumeStatus: true, hiringStatus: true,
-              interviewStatus: true,
+              aiScore: true, resumeStatus: true, hiringStatus: true, interviewStatus: true,
               createdAt: true, resumeUrl: true,
               drive: { select: { title: true } },
             },
             orderBy: { createdAt: "desc" },
             take: Math.min(args.limit ?? 20, 50),
           });
-          result = JSON.stringify(candidates.map((c: any) => ({
-            ...c,
-            parsedResume: null,
-            structuredResume: undefined,
-          })));
+          result = JSON.stringify(candidates);
 
         // -- search_candidates_by_name --------------------------------------
         } else if (fn === "search_candidates_by_name") {
-          const candidates = await prisma.application.findMany({
-            where: {
-              drive: { orgId },
-              fullName: { contains: args.name, mode: "insensitive" },
-            },
-            select: {
-              id: true, fullName: true, email: true, phone: true,
-              aiScore: true, resumeStatus: true, hiringStatus: true,
-              interviewStatus: true,
-              createdAt: true, resumeUrl: true,
-              drive: { select: { title: true } },
-              interview: { select: { status: true, aiSummary: true, completedAt: true } },
-            },
-            orderBy: { createdAt: "desc" },
-            take: 10,
-          });
-          result = JSON.stringify(candidates.map((c: any) => ({
-            ...c,
-            parsedResume: null,
-            structuredResume: undefined,
-          })));
+          const whereClause = buildFuzzyNameWhere(args.name, orgId);
+          if (!whereClause) {
+            result = JSON.stringify({ error: "Please provide a candidate name." });
+          } else {
+            const candidates = await prisma.application.findMany({
+              where: whereClause,
+              select: {
+                id: true, fullName: true, email: true, phone: true,
+                aiScore: true, resumeStatus: true, hiringStatus: true, interviewStatus: true,
+                createdAt: true, resumeUrl: true,
+                resumeData: true,
+                drive: { select: { id: true, title: true } },
+                interview: {
+                  select: {
+                    id: true, status: true, aiSummary: true, completedAt: true, interviewDuration: true,
+                  },
+                },
+              },
+              orderBy: { createdAt: "desc" },
+              take: 10,
+            });
+            result = JSON.stringify(candidates.map((c) => ({
+              ...c,
+              parsedResume: parseStructuredResume(c.resumeData as string | null),
+              resumeData: undefined,
+            })));
+          }
+
+        // -- get_candidate_interview_report ---------------------------------
+        } else if (fn === "get_candidate_interview_report") {
+          let appId = args.applicationId;
+
+          // If no appId, find candidate by name first
+          if (!appId && args.name) {
+            const whereClause = buildFuzzyNameWhere(args.name, orgId);
+            if (whereClause) {
+              const found = await prisma.application.findFirst({
+                where: whereClause,
+                select: { id: true, fullName: true },
+                orderBy: { createdAt: "desc" },
+              });
+              appId = found?.id;
+            }
+          }
+
+          if (!appId) {
+            result = JSON.stringify({ error: "Candidate not found. Try providing the application ID or a more specific name." });
+          } else {
+            const candidate = await prisma.application.findUnique({
+              where: { id: appId },
+              select: {
+                id: true, fullName: true, email: true,
+                aiScore: true, resumeStatus: true, hiringStatus: true, interviewStatus: true,
+                drive: { select: { title: true, orgId: true } },
+                interview: {
+                  select: {
+                    id: true, status: true,
+                    interviewReport: true,
+                    interviewTranscript: true,
+                    aiSummary: true,
+                    completedAt: true,
+                    interviewDuration: true,
+                    proctoringReport: true,
+                    strategicVerdict: true,
+                  },
+                },
+              },
+            });
+
+            if (!candidate || candidate.drive.orgId !== orgId) {
+              result = JSON.stringify({ error: "Candidate not found in this organization." });
+            } else if (!candidate.interview || candidate.interview.status !== "COMPLETED") {
+              result = JSON.stringify({
+                candidateName: candidate.fullName,
+                applicationId: candidate.id,
+                interviewStatus: candidate.interviewStatus,
+                message: "Interview not yet completed — no report available.",
+              });
+            } else {
+              const report = parseInterviewReport(candidate.interview.interviewReport as any);
+              result = JSON.stringify({
+                candidateName:    candidate.fullName,
+                applicationId:    candidate.id,
+                aiScore:          candidate.aiScore,
+                hiringStatus:     candidate.hiringStatus,
+                drive:            candidate.drive.title,
+                interviewStatus:  candidate.interviewStatus,
+                completedAt:      candidate.interview.completedAt,
+                interviewDuration: candidate.interview.interviewDuration,
+                aiSummary:        candidate.interview.aiSummary,
+                report,
+              });
+            }
+          }
 
         // -- search_candidates_by_skill -------------------------------------
         } else if (fn === "search_candidates_by_skill") {
           const skill = args.skill?.trim() ?? "";
-          const candidates = await prisma.application.findMany({
-            where: {
-              drive: { orgId },
-              resumeText: { contains: skill, mode: "insensitive" },
-              resumeStatus: "SHORTLISTED",
-            },
+          // Try shortlisted first, fall back to all
+          let candidates = await prisma.application.findMany({
+            where: { drive: { orgId }, resumeText: { contains: skill, mode: "insensitive" }, resumeStatus: "SHORTLISTED" },
             select: {
               id: true, fullName: true, email: true,
-              aiScore: true, resumeStatus: true, hiringStatus: true,
-              interviewStatus: true,
+              aiScore: true, resumeStatus: true, hiringStatus: true, interviewStatus: true,
               createdAt: true, resumeUrl: true,
               drive: { select: { title: true } },
             },
             orderBy: { aiScore: "desc" },
             take: Math.min(args.limit ?? 10, 25),
           });
-
-          const allCandidates = candidates.length > 0 ? candidates :
-            await prisma.application.findMany({
-              where: {
-                drive: { orgId },
-                resumeText: { contains: skill, mode: "insensitive" },
-              },
+          if (!candidates.length) {
+            candidates = await prisma.application.findMany({
+              where: { drive: { orgId }, resumeText: { contains: skill, mode: "insensitive" } },
               select: {
                 id: true, fullName: true, email: true,
-                aiScore: true, resumeStatus: true, hiringStatus: true,
-                interviewStatus: true,
+                aiScore: true, resumeStatus: true, hiringStatus: true, interviewStatus: true,
                 createdAt: true, resumeUrl: true,
                 drive: { select: { title: true } },
               },
               orderBy: { aiScore: "desc" },
               take: Math.min(args.limit ?? 10, 25),
             });
-
-          result = JSON.stringify(allCandidates.map((c: any) => ({
-            ...c,
-            parsedResume: null,
-            structuredResume: undefined,
-          })));
+          }
+          result = JSON.stringify(candidates);
 
         // -- get_candidate_detail -------------------------------------------
         } else if (fn === "get_candidate_detail") {
@@ -626,7 +752,7 @@ ${semanticContext || "No semantic matches found - rely on tools for accurate dat
             where: { id: args.applicationId },
             select: {
               id: true, fullName: true, email: true, phone: true,
-              aiScore: true, aiReport: true,
+              aiScore: true, aiReport: true, resumeData: true,
               resumeStatus: true, hiringStatus: true, interviewStatus: true,
               createdAt: true, resumeUrl: true,
               drive: { select: { title: true, orgId: true, screeningThreshold: true } },
@@ -641,13 +767,13 @@ ${semanticContext || "No semantic matches found - rely on tools for accurate dat
             let reportSummary: any = null;
             try {
               if (candidate.aiReport) {
-                const parsed = JSON.parse(candidate.aiReport);
+                const parsed = JSON.parse(candidate.aiReport as string);
                 reportSummary = {
-                  recruiterSnapshot:  parsed.recruiter_snapshot,
-                  decisionReason:     parsed.decision_reason,
-                  strengths:          parsed.strengths?.slice(0, 5),
-                  concerns:           parsed.concerns?.slice(0, 5),
-                  candidatePotential: parsed.candidate_potential,
+                  recruiterSnapshot:    parsed.recruiter_snapshot,
+                  decisionReason:       parsed.decision_reason,
+                  strengths:            parsed.strengths?.slice(0, 5),
+                  concerns:             parsed.concerns?.slice(0, 5),
+                  candidatePotential:   parsed.candidate_potential,
                   hiringRecommendation: parsed.hiring_recommendation,
                 };
               }
@@ -655,8 +781,8 @@ ${semanticContext || "No semantic matches found - rely on tools for accurate dat
             result = JSON.stringify({
               ...candidate,
               aiReport: reportSummary,
-              parsedResume: null,
-              structuredResume: undefined,
+              parsedResume: parseStructuredResume(candidate.resumeData as string | null),
+              resumeData: undefined,
             });
           }
 
@@ -664,7 +790,6 @@ ${semanticContext || "No semantic matches found - rely on tools for accurate dat
         } else if (fn === "get_avg_scores") {
           const where: any = { drive: { orgId }, aiScore: { not: null } };
           if (args.driveId) where.driveId = args.driveId;
-
           const [scoreStats, distribution] = await Promise.all([
             prisma.application.aggregate({
               where,
@@ -674,24 +799,17 @@ ${semanticContext || "No semantic matches found - rely on tools for accurate dat
               _count: { aiScore: true },
             }),
             prisma.$queryRaw`
-                SELECT
-                    COUNT(*) FILTER (WHERE "aiScore" >= 90)::INT AS "excellent",
-                    COUNT(*) FILTER (WHERE "aiScore" >= 70 AND "aiScore" < 90)::INT AS "good",
-                    COUNT(*) FILTER (WHERE "aiScore" >= 50 AND "aiScore" < 70)::INT AS "average",
-                    COUNT(*) FILTER (WHERE "aiScore" < 50)::INT AS "below_average"
-                FROM "Application" a
-                JOIN "Drive" d ON d.id = a."driveId"
-                WHERE d."orgId" = ${orgId}
-                AND a."aiScore" IS NOT NULL
-                ${args.driveId ? prisma.$queryRaw`AND a."driveId" = ${args.driveId}::uuid` : prisma.$queryRaw``}
-            ` as Promise<Array<{
-              excellent: number;
-              good: number;
-              average: number;
-              below_average: number;
-            }>>,
+              SELECT
+                COUNT(*) FILTER (WHERE "aiScore" >= 90)::INT AS "excellent",
+                COUNT(*) FILTER (WHERE "aiScore" >= 70 AND "aiScore" < 90)::INT AS "good",
+                COUNT(*) FILTER (WHERE "aiScore" >= 50 AND "aiScore" < 70)::INT AS "average",
+                COUNT(*) FILTER (WHERE "aiScore" < 50)::INT AS "below_average"
+              FROM "Application" a
+              JOIN "Drive" d ON d.id = a."driveId"
+              WHERE d."orgId" = ${orgId}
+              AND a."aiScore" IS NOT NULL
+            ` as Promise<Array<{ excellent: number; good: number; average: number; below_average: number }>>,
           ]);
-
           result = JSON.stringify({
             averageScore: scoreStats._avg.aiScore ? Math.round(scoreStats._avg.aiScore) : null,
             highestScore:  scoreStats._max.aiScore,
@@ -714,12 +832,7 @@ ${semanticContext || "No semantic matches found - rely on tools for accurate dat
         messages: toolMessages,
         temperature: 0.2,
       });
-      await recordOrgBillingFromOpenAICompletion({
-        orgId,
-        feature: "chatbot",
-        completion: secondResponse,
-      });
-
+      await recordOrgBillingFromOpenAICompletion({ orgId, feature: "chatbot", completion: secondResponse });
       return NextResponse.json(secondResponse.choices[0].message);
     }
 

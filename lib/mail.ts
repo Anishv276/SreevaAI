@@ -50,108 +50,105 @@ export async function sendApplicationStatusEmail({
             ? `Action Required: Schedule your AI Interview for ${jobTitle}`
             : `Update regarding your application for ${jobTitle}`;
 
-    const baseCard = "max-width: 640px; margin: 0 auto; background: #ffffff; border: 1px solid #e5e7eb; border-radius: 24px; overflow: hidden; box-shadow: 0 20px 60px rgba(15, 23, 42, 0.08);";
-    const sectionP = "margin: 0;";
-    const mutedText = "color: #64748b;";
-    const heading = "color: #0f172a; font-weight: 900; letter-spacing: -0.03em; margin: 0;";
-    const orangeBtn = "background: linear-gradient(135deg, #f97316 0%, #ea580c 100%); color: #ffffff; text-decoration: none; font-weight: 800; display: inline-block; border-radius: 14px; padding: 14px 28px; box-shadow: 0 12px 24px rgba(249, 115, 22, 0.22);";
-    const darkBtn = "background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); color: #ffffff; text-decoration: none; font-weight: 800; display: inline-block; border-radius: 14px; padding: 14px 28px; box-shadow: 0 12px 24px rgba(15, 23, 42, 0.16);";
+    const base = `
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+        background: #ffffff;
+        max-width: 560px;
+        margin: 0 auto;
+        border: 1px solid #e4e4e7;
+        border-radius: 12px;
+        overflow: hidden;
+    `;
+
+    const pill = (text: string, color: string, bg: string) =>
+        `<span style="display:inline-block;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:600;letter-spacing:0.04em;color:${color};background:${bg};">${text}</span>`;
+
+    const primaryBtn = (href: string, label: string) =>
+        `<a href="${href}" style="display:inline-block;background:#18181b;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:11px 24px;border-radius:8px;letter-spacing:0.01em;">${label}</a>`;
+
+    const footer = `
+        <div style="padding:24px 32px;border-top:1px solid #f4f4f5;">
+            <p style="margin:0;font-size:13px;color:#a1a1aa;">${orgName} Recruitment Team</p>
+        </div>
+    `;
 
     const html = isHired ? `
-        <div style="font-family: Inter, Arial, sans-serif; ${baseCard}">
-            <div style="text-align: center; margin-bottom: 25px;">
-                <div style="display: inline-block; background-color: #ECFDF5; padding: 12px; border-radius: 16px;">
-                    <span style="font-size: 32px;">🎉</span>
+        <div style="${base}">
+            <div style="background:#18181b;padding:32px;text-align:center;">
+                <p style="margin:0;font-size:13px;font-weight:500;color:#a1a1aa;letter-spacing:0.06em;text-transform:uppercase;">${orgName}</p>
+            </div>
+            <div style="padding:40px 32px 32px;">
+                ${pill("Offer", "#15803d", "#f0fdf4")}
+                <h1 style="margin:16px 0 10px;font-size:24px;font-weight:700;color:#18181b;letter-spacing:-0.02em;">You're in, ${fullName}.</h1>
+                <p style="margin:0 0 32px;font-size:15px;color:#52525b;line-height:1.6;">Congratulations — you've been selected for <strong style="color:#18181b;">${jobTitle}</strong>. We're excited to have you on board.</p>
+                <div style="background:#fafafa;border:1px solid #e4e4e7;border-radius:8px;padding:20px 24px;margin-bottom:32px;">
+                    <p style="margin:0 0 4px;font-size:12px;font-weight:600;color:#a1a1aa;text-transform:uppercase;letter-spacing:0.06em;">What's next</p>
+                    <p style="margin:0;font-size:14px;color:#3f3f46;line-height:1.6;">Our team will reach out shortly with your offer letter and onboarding details.</p>
                 </div>
             </div>
-            <div style="padding: 28px 30px 30px;">
-            <p style="display:inline-block; margin: 0 0 16px; padding: 8px 12px; border-radius: 999px; background: #ecfdf5; color: #047857; font-size: 11px; font-weight: 900; letter-spacing: 0.16em; text-transform: uppercase;">Offer Update</p>
-            <h1 style="${heading}; text-align: center; font-size: 28px; margin-bottom: 12px;">You're Hired, ${fullName}!</h1>
-            <p style="${mutedText}; text-align: center; font-size: 16px; line-height: 1.7; margin: 0 auto 20px; max-width: 520px;">We are delighted to let you know that you have been selected for the <strong>${jobTitle}</strong> position. Welcome to the team.</p>
-            <div style="background: #f8fafc; border-radius: 18px; padding: 18px; margin: 24px 0; border: 1px solid #e2e8f0; text-align: center;">
-            <p style="color: #0f172a; font-size: 14px; font-weight: 800; margin: 0 0 6px;">Next steps</p>
-            <p style="color: #475569; font-size: 14px; font-weight: 500; margin: 0;">Our team will reach out shortly with your offer letter and onboarding details.</p>
-            </div>
-            <p style="color: #94a3b8; font-size: 12px; margin: 22px 0 4px;">Best Regards,</p>
-            <p style="color: #334155; font-weight: 800; margin: 0;">${orgName} Recruitment Team</p>
-            </div>
+            ${footer}
         </div>
     ` : isConfirmed ? `
-        <div style="font-family: Inter, Arial, sans-serif; ${baseCard}">
-            <div style="background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 55%, #fff 100%); padding: 26px 30px 22px; border-bottom: 1px solid #fed7aa;">
-                <div style="text-align: center; margin-bottom: 16px;">
-                    <div style="display: inline-block; background: rgba(255,255,255,0.8); border: 1px solid rgba(249,115,22,0.18); padding: 14px; border-radius: 18px;">
-                        <span style="font-size: 26px;">📌</span>
-                    </div>
-                </div>
-                <p style="display:inline-block; margin: 0 auto 12px; padding: 8px 12px; border-radius: 999px; background: #fff7ed; color: #c2410c; font-size: 11px; font-weight: 900; letter-spacing: 0.16em; text-transform: uppercase;">Interview Booked</p>
-                <h1 style="${heading}; text-align: center; font-size: 28px; margin-bottom: 8px;">Interview Slot Confirmed</h1>
-                <p style="${mutedText}; text-align: center; font-size: 15px; line-height: 1.7; margin: 0 auto; max-width: 520px;">Hi ${fullName}, your AI interview for the <strong>${jobTitle}</strong> position is booked. Everything you need to join is below.</p>
+        <div style="${base}">
+            <div style="background:#18181b;padding:32px;text-align:center;">
+                <p style="margin:0;font-size:13px;font-weight:500;color:#a1a1aa;letter-spacing:0.06em;text-transform:uppercase;">${orgName}</p>
             </div>
-            <div style="padding: 24px 30px 30px;">
-                <div style="background: #f8fafc; border-radius: 20px; padding: 20px; border: 1px solid #e2e8f0; margin-bottom: 18px;">
-                    <p style="color: #64748b; font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.16em; margin: 0 0 10px; text-align: center;">Booked Time</p>
-                    <p style="color: #0f172a; font-size: 20px; font-weight: 900; margin: 0; text-align: center; line-height: 1.4;">
-                    ${scheduledAt ? scheduledAt.toLocaleString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', ...(scheduledTimeZone ? { timeZone: scheduledTimeZone } : {}) }) : 'Your selected time'}
+            <div style="padding:40px 32px 32px;">
+                ${pill("Interview Confirmed", "#1d4ed8", "#eff6ff")}
+                <h1 style="margin:16px 0 10px;font-size:24px;font-weight:700;color:#18181b;letter-spacing:-0.02em;">Your slot is booked.</h1>
+                <p style="margin:0 0 32px;font-size:15px;color:#52525b;line-height:1.6;">Hi ${fullName}, your AI interview for <strong style="color:#18181b;">${jobTitle}</strong> is confirmed. Details below.</p>
+                <div style="background:#fafafa;border:1px solid #e4e4e7;border-radius:8px;padding:20px 24px;margin-bottom:28px;">
+                    <p style="margin:0 0 4px;font-size:12px;font-weight:600;color:#a1a1aa;text-transform:uppercase;letter-spacing:0.06em;">Scheduled Time</p>
+                    <p style="margin:0;font-size:16px;font-weight:600;color:#18181b;">
+                        ${scheduledAt ? scheduledAt.toLocaleString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', ...(scheduledTimeZone ? { timeZone: scheduledTimeZone } : {}) }) : 'Your selected time'}
                     </p>
                 </div>
-                <div style="text-align: center; margin: 18px 0 16px;">
-                    <a href="${interviewLink}" style="${darkBtn}">Open Interview</a>
+                <div style="margin-bottom:32px;">
+                    ${primaryBtn(interviewLink || '#', 'Open Interview Room')}
                 </div>
-                <div style="background: #fff7ed; border: 1px solid #fed7aa; border-radius: 18px; padding: 16px 18px;">
-                    <p style="color: #9a3412; font-size: 12px; font-weight: 900; margin: 0 0 6px; text-transform: uppercase; letter-spacing: 0.08em;">Before you join</p>
-                    <p style="color: #7c2d12; font-size: 14px; line-height: 1.7; margin: 0;">Please finish the hardware check first. When your interview window opens, the start button will unlock automatically.</p>
+                <div style="border-left:3px solid #e4e4e7;padding:12px 16px;">
+                    <p style="margin:0;font-size:13px;color:#71717a;line-height:1.6;">Complete the hardware check before your session. The start button unlocks automatically when your window opens.</p>
                 </div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px;">
-                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 16px; padding: 14px;">
-                        <p style="color: #64748b; font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.14em; margin: 0 0 6px;">Tip 1</p>
-                        <p style="color: #0f172a; font-size: 13px; font-weight: 700; line-height: 1.5; margin: 0;">Use a stable internet connection.</p>
-                    </div>
-                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 16px; padding: 14px;">
-                        <p style="color: #64748b; font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.14em; margin: 0 0 6px;">Tip 2</p>
-                        <p style="color: #0f172a; font-size: 13px; font-weight: 700; line-height: 1.5; margin: 0;">Keep your camera and mic ready.</p>
-                    </div>
-                </div>
-                <p style="color: #94a3b8; font-size: 12px; margin: 18px 0 4px; text-align: center;">Best Regards,</p>
-                <p style="color: #334155; font-weight: 800; margin: 0; text-align: center;">${orgName} Recruitment Team</p>
             </div>
+            ${footer}
         </div>
     ` : isAccepted ? `
-        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 12px; background-color: #ffffff;">
-            <div style="text-align: center; margin-bottom: 25px;">
-                <div style="display: inline-block; background-color: #FFF7ED; padding: 12px; border-radius: 16px;">
-                    <span style="font-size: 24px;">✨</span>
-                </div>
+        <div style="${base}">
+            <div style="background:#18181b;padding:32px;text-align:center;">
+                <p style="margin:0;font-size:13px;font-weight:500;color:#a1a1aa;letter-spacing:0.06em;text-transform:uppercase;">${orgName}</p>
             </div>
-            <h1 style="color: #111827; text-align: center; font-size: 24px; font-weight: 800; margin-bottom: 10px;">Congratulations, ${fullName}!</h1>
-            <p style="color: #4B5563; text-align: center; font-size: 16px; line-height: 1.5;">We are thrilled to inform you that you have been <strong>Shortlisted</strong> for the <strong>${jobTitle}</strong> position based on your profile and skills.</p>
-            <div style="background-color: #F9FAFB; border-radius: 16px; padding: 20px; margin: 30px 0; border: 1px solid #F3F4F6;">
-                <h3 style="color: #111827; font-size: 14px; font-weight: 700; margin-top: 0; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 15px; text-align: center;">Next Step: Schedule AI Interview</h3>
-                <p style="color: #6B7280; font-size: 14px; margin-bottom: 20px; text-align: center;">You have been invited to a real-time <strong>Voice AI Interview</strong>. Please select a 20-minute slot that works for you.</p>
-                <div style="text-align: center;">
-                    <a href="${interviewLink}" style="background-color: #F97316; color: white; padding: 14px 35px; text-decoration: none; border-radius: 12px; font-weight: 800; font-size: 15px; display: inline-block; box-shadow: 0 4px 12px rgba(249,115,22,0.25);">Schedule AI Interview</a>
+            <div style="padding:40px 32px 32px;">
+                ${pill("Action Required", "#b45309", "#fffbeb")}
+                <h1 style="margin:16px 0 10px;font-size:24px;font-weight:700;color:#18181b;letter-spacing:-0.02em;">You've been shortlisted.</h1>
+                <p style="margin:0 0 32px;font-size:15px;color:#52525b;line-height:1.6;">Hi ${fullName}, your profile stood out for <strong style="color:#18181b;">${jobTitle}</strong>. The next step is a 20-minute AI voice interview — pick a time that works for you.</p>
+                <div style="margin-bottom:28px;">
+                    ${primaryBtn(interviewLink || '#', 'Schedule AI Interview')}
                 </div>
-                ${schedulingDeadlineLabel ? `<p style="color: #9CA3AF; font-size: 12px; margin-top: 16px; text-align: center;">Please schedule your interview on or before <strong>${schedulingDeadlineLabel}</strong>.</p>` : ""}
-                <p style="color: #9CA3AF; font-size: 11px; margin-top: 20px; text-align: center;">Note: Please ensure you choose a time where you will be in a quiet environment with a working camera and microphone.</p>
+                ${schedulingDeadlineLabel ? `
+                <div style="border-left:3px solid #e4e4e7;padding:12px 16px;margin-bottom:28px;">
+                    <p style="margin:0;font-size:13px;color:#71717a;">Schedule on or before <strong style="color:#3f3f46;">${schedulingDeadlineLabel}</strong>. Make sure you're in a quiet space with a working camera and mic.</p>
+                </div>
+                ` : `
+                <div style="border-left:3px solid #e4e4e7;padding:12px 16px;margin-bottom:28px;">
+                    <p style="margin:0;font-size:13px;color:#71717a;">Make sure you're in a quiet space with a working camera and microphone.</p>
+                </div>
+                `}
+                <p style="margin:0;font-size:13px;color:#a1a1aa;line-height:1.6;">Our team will review your interview and follow up within 24–48 hours.</p>
             </div>
-            <p style="color: #4B5563; font-size: 14px;">Our recruitment team will review the interview recording and reach out to you within 24-48 hours.</p>
-            <hr style="border: none; border-top: 1px solid #F3F4F6; margin: 25px 0;" />
-            <p style="color: #9CA3AF; font-size: 12px; margin-bottom: 5px;">Best Regards,</p>
-            <p style="color: #374151; font-weight: 700; margin-top: 0;">${orgName} Recruitment Team</p>
+            ${footer}
         </div>
     ` : `
-        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 12px;">
-            <h1 style="color: #111827; font-size: 20px; font-weight: 700;">Application Update</h1>
-            <p style="color: #4B5563;">Hi ${fullName},</p>
-            <p style="color: #4B5563;">Thank you for your interest in the <strong>${jobTitle}</strong> position at ${orgName}.</p>
-            <p style="color: #4B5563;">After carefully reviewing your profile, we regret to inform you that we will not be moving forward with your application for this specific role at this time.</p>
-            <p style="color: #4B5563; font-size: 15px; margin-bottom: 25px;">We appreciate the time you took to apply and wish you the best of luck in your job search.</p>
-            <div style="background-color: #F9FAFB; border-radius: 16px; padding: 25px; border: 1px solid #F3F4F6; text-align: center; margin: 30px 0;">
-                <p style="color: #6B7280; font-size: 14px; font-weight: 600; margin-bottom: 20px; line-height: 1.5;">If you are interested in exploring other opportunities at ${orgName}, we invite you to view our live job board.</p>
-                <a href="https://sreevaai.com/careers" style="background-color: #F97316; color: white; padding: 14px 30px; text-decoration: none; border-radius: 12px; font-weight: 800; font-size: 14px; display: inline-block; box-shadow: 0 4px 12px rgba(249,115,22,0.20);">Explore All Openings</a>
+        <div style="${base}">
+            <div style="background:#18181b;padding:32px;text-align:center;">
+                <p style="margin:0;font-size:13px;font-weight:500;color:#a1a1aa;letter-spacing:0.06em;text-transform:uppercase;">${orgName}</p>
             </div>
-            <p style="color: #9CA3AF; font-size: 12px; margin-bottom: 5px;">Best Regards,</p>
-            <p style="color: #374151; font-weight: 700; margin-top: 0;">${orgName} Recruitment Team</p>
+            <div style="padding:40px 32px 32px;">
+                ${pill("Application Update", "#71717a", "#fafafa")}
+                <h1 style="margin:16px 0 10px;font-size:24px;font-weight:700;color:#18181b;letter-spacing:-0.02em;">Thanks for applying, ${fullName}.</h1>
+                <p style="margin:0 0 32px;font-size:15px;color:#52525b;line-height:1.6;">After reviewing your application for <strong style="color:#18181b;">${jobTitle}</strong>, we've decided not to move forward at this time. We appreciate the effort you put in.</p>
+                <p style="margin:0;font-size:14px;color:#71717a;line-height:1.6;">We encourage you to apply for future roles that match your experience. Wishing you the best in your search.</p>
+            </div>
+            ${footer}
         </div>
     `;
 
@@ -177,18 +174,21 @@ export async function sendOrgWelcomeEmail({
 }): Promise<MailResult> {
     const loginUrl = `${process.env.NEXT_PUBLIC_APP_URL || ''}/login`;
     const subject = "Welcome to Sreeva AI: Your Workspace is Ready";
+
     const html = `
-        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 40px; color: #111827; border: 1px solid #f0f0f0; border-radius: 24px; background: #ffffff;">
-            <h2 style="margin: 0 0 8px; font-size: 26px; font-weight: 800; letter-spacing: -0.02em;">Welcome to Sreeva AI</h2>
-            <p style="color: #4b5563; font-size: 15px; margin: 0 0 24px; line-height: 1.6;">
-                Hi <strong>${adminName}</strong>, your workspace for <strong>${orgName}</strong> has been successfully provisioned.
-            </p>
-            <div style="padding: 28px; border: 1px dashed #f97316; border-radius: 20px; background: #fffaf5; margin-bottom: 30px;">
-                <p style="margin: 0 0 8px; color: #7c2d12; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em;">Next Step</p>
-                <p style="margin: 0 0 20px; color: #9a3412; font-size: 14px;">Log in to complete your onboarding and start your first recruitment drive.</p>
-                <a href="${loginUrl}" style="display: inline-block; background: #f97316; color: #fff; text-decoration: none; font-weight: 800; font-size: 15px; padding: 14px 32px; border-radius: 12px; box-shadow: 0 8px 20px rgba(249,115,22,0.25);">Access Workspace</a>
+        <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;background:#ffffff;max-width:560px;margin:0 auto;border:1px solid #e4e4e7;border-radius:12px;overflow:hidden;">
+            <div style="background:#18181b;padding:32px;text-align:center;">
+                <p style="margin:0;font-size:13px;font-weight:500;color:#a1a1aa;letter-spacing:0.06em;text-transform:uppercase;">Sreeva AI</p>
             </div>
-            <p style="margin: 0; color: #94a3b8; font-size: 12px; line-height: 1.5;">If you have any questions, contact your platform administrator.</p>
+            <div style="padding:40px 32px 32px;">
+                <span style="display:inline-block;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:600;letter-spacing:0.04em;color:#15803d;background:#f0fdf4;">Workspace Ready</span>
+                <h1 style="margin:16px 0 10px;font-size:24px;font-weight:700;color:#18181b;letter-spacing:-0.02em;">Welcome, ${adminName}.</h1>
+                <p style="margin:0 0 32px;font-size:15px;color:#52525b;line-height:1.6;">Your workspace for <strong style="color:#18181b;">${orgName}</strong> is live. Log in to finish onboarding and launch your first recruitment drive.</p>
+                <a href="${loginUrl}" style="display:inline-block;background:#18181b;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:11px 24px;border-radius:8px;letter-spacing:0.01em;">Access Workspace</a>
+            </div>
+            <div style="padding:24px 32px;border-top:1px solid #f4f4f5;">
+                <p style="margin:0;font-size:13px;color:#a1a1aa;">Questions? Reach out to your platform administrator.</p>
+            </div>
         </div>
     `;
 
@@ -214,17 +214,18 @@ export async function sendOtpEmail({
 }): Promise<void> {
     const subject = "Security Code: Sreeva AI Account Recovery";
     const html = `
-        <div style="font-family: sans-serif; max-width: 500px; margin: 0 auto; padding: 40px; border: 1px solid #f0f0f0; border-radius: 24px; background: #ffffff;">
-            <h1 style="color: #111827; font-size: 24px; font-weight: 800; margin-bottom: 8px;">Recovery Code</h1>
-            <p style="color: #6b7280; font-size: 14px; line-height: 1.5; margin-bottom: 30px;">
-                Hi ${name}, you requested to reset your password. Use the verification code below to proceed:
-            </p>
-            <div style="background: #fdf2f0; padding: 24px; border-radius: 16px; text-align: center; border: 2px dashed #f97316;">
-                <span style="font-size: 32px; font-weight: 900; color: #f97316; letter-spacing: 0.2em;">${otp}</span>
+        <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;background:#ffffff;max-width:480px;margin:0 auto;border:1px solid #e4e4e7;border-radius:12px;overflow:hidden;">
+            <div style="background:#18181b;padding:28px 32px;text-align:center;">
+                <p style="margin:0;font-size:13px;font-weight:500;color:#a1a1aa;letter-spacing:0.06em;text-transform:uppercase;">Sreeva AI</p>
             </div>
-            <p style="color: #9ca3af; font-size: 11px; margin-top: 30px; text-align: center;">
-                This code is valid for <strong>10 minutes</strong>. If you did not request this, please ignore this email or contact security.
-            </p>
+            <div style="padding:40px 32px 32px;">
+                <h1 style="margin:0 0 10px;font-size:22px;font-weight:700;color:#18181b;letter-spacing:-0.02em;">Recovery code</h1>
+                <p style="margin:0 0 32px;font-size:14px;color:#52525b;line-height:1.6;">Hi ${name}, use the code below to reset your password. It expires in 10 minutes.</p>
+                <div style="background:#fafafa;border:1px solid #e4e4e7;border-radius:8px;padding:24px;text-align:center;margin-bottom:32px;">
+                    <span style="font-size:36px;font-weight:700;color:#18181b;letter-spacing:0.18em;font-variant-numeric:tabular-nums;">${otp}</span>
+                </div>
+                <p style="margin:0;font-size:13px;color:#a1a1aa;line-height:1.6;">If you didn't request this, you can safely ignore this email or contact support.</p>
+            </div>
         </div>
     `;
     await sendEmail({ to, subject, html, type: "password-reset" });
@@ -239,17 +240,18 @@ export async function sendPasswordChangeOtpEmail({
 }): Promise<void> {
     const subject = "Security Verification: 6-Digit Code";
     const html = `
-        <div style="font-family: sans-serif; max-width: 500px; margin: 0 auto; padding: 40px; border: 1px solid #f0f0f0; border-radius: 24px; background: #ffffff;">
-            <h1 style="color: #111827; font-size: 24px; font-weight: 800; margin-bottom: 8px;">Security Code</h1>
-            <p style="color: #6b7280; font-size: 14px; line-height: 1.5; margin-bottom: 30px;">
-                Enter the code below to authorize your password change for <strong>${to}</strong>:
-            </p>
-            <div style="background: #fdf2f0; padding: 24px; border-radius: 16px; text-align: center; border: 2px dashed #f97316;">
-                <span style="font-size: 32px; font-weight: 900; color: #f97316; letter-spacing: 0.2em;">${otp}</span>
+        <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;background:#ffffff;max-width:480px;margin:0 auto;border:1px solid #e4e4e7;border-radius:12px;overflow:hidden;">
+            <div style="background:#18181b;padding:28px 32px;text-align:center;">
+                <p style="margin:0;font-size:13px;font-weight:500;color:#a1a1aa;letter-spacing:0.06em;text-transform:uppercase;">Sreeva AI</p>
             </div>
-            <p style="color: #9ca3af; font-size: 11px; margin-top: 30px; text-align: center;">
-                This code is valid for <strong>10 minutes</strong>. If you did not request this, please ignore this email.
-            </p>
+            <div style="padding:40px 32px 32px;">
+                <h1 style="margin:0 0 10px;font-size:22px;font-weight:700;color:#18181b;letter-spacing:-0.02em;">Confirm password change</h1>
+                <p style="margin:0 0 32px;font-size:14px;color:#52525b;line-height:1.6;">Enter this code to authorize the password change for <strong style="color:#18181b;">${to}</strong>. It expires in 10 minutes.</p>
+                <div style="background:#fafafa;border:1px solid #e4e4e7;border-radius:8px;padding:24px;text-align:center;margin-bottom:32px;">
+                    <span style="font-size:36px;font-weight:700;color:#18181b;letter-spacing:0.18em;font-variant-numeric:tabular-nums;">${otp}</span>
+                </div>
+                <p style="margin:0;font-size:13px;color:#a1a1aa;line-height:1.6;">If you didn't request this, secure your account immediately.</p>
+            </div>
         </div>
     `;
     await sendEmail({ to, subject, html, type: "password-reset" });

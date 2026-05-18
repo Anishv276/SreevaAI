@@ -82,6 +82,82 @@ export const pineconeIndex = index;
  * Helpers for managing embeddings in Pinecone
  */
 
+// ---------------------------------------------------------------------------
+// Interview report → structured human-readable text for embedding
+// This ensures that contentChunk stored in Pinecone metadata is meaningful
+// when the LLM reads it — not raw JSON.
+// ---------------------------------------------------------------------------
+function serializeInterviewReport(r: Record<string, unknown>): string {
+    const lines: string[] = [];
+
+    const n = (v: unknown) => (v != null ? String(v) : "");
+
+    // Scores
+    if (r.combined_score != null) {
+        lines.push(`SCORES: combined=${r.combined_score}/100, technical=${r.technical_score ?? "?"}/100, communication=${r.communication_score ?? "?"}/100, behavioral=${r.behavioral_score ?? "?"}/100`);
+    }
+
+    // Integrity
+    const integrity = r.integrity as Record<string, unknown> | undefined;
+    if (integrity?.score != null) {
+        lines.push(`INTEGRITY SCORE: ${integrity.score}/100. ${n(integrity.summary)}`);
+    }
+
+    // Verdict
+    const verdict = r.verdict as Record<string, unknown> | undefined;
+    if (verdict) {
+        lines.push(`VERDICT: ${n(verdict.recommendation)}. ${n(verdict.recommendation_reason)}`);
+        if (verdict.summary) lines.push(`VERDICT SUMMARY: ${n(verdict.summary)}`);
+        if (verdict.ai_summary_concise) lines.push(`CONCISE SUMMARY: ${n(verdict.ai_summary_concise)}`);
+    }
+
+    // Strategic verdict
+    const sv = r.strategic_verdict as Record<string, unknown> | undefined;
+    if (sv) {
+        lines.push(`STRATEGIC DECISION: ${n(sv.decision)}. ${n(sv.summary)}`);
+        if (Array.isArray(sv.rationale)) lines.push(`RATIONALE: ${sv.rationale.join("; ")}`);
+        if (Array.isArray(sv.next_actions)) lines.push(`NEXT ACTIONS: ${sv.next_actions.join("; ")}`);
+    }
+
+    // Communication
+    const comm = r.communication_analysis as Record<string, unknown> | undefined;
+    if (comm) {
+        lines.push(`COMMUNICATION: pronunciation=${n(comm.pronunciation)}/100, grammar=${n(comm.grammar)}/100, fluency=${n(comm.fluency)}/100, confidence=${n(comm.confidence)}/100. ${n(comm.summary)}`);
+    }
+
+    // Cognitive insights
+    const cog = r.cognitive_insights as Record<string, unknown> | undefined;
+    if (cog) {
+        if (cog.clarity != null) lines.push(`COGNITIVE clarity=${n(cog.clarity)}/100, depth_of_knowledge=${n((cog.depth_of_knowledge as any)?.score ?? "?")}/100, problem_solving=${n((cog.problem_solving as any)?.score ?? "?")}/100`);
+        if (cog.summary) lines.push(`COGNITIVE SUMMARY: ${n(cog.summary)}`);
+    }
+
+    // Behavioral analysis
+    const beh = r.behavioral_analysis as Record<string, unknown> | undefined;
+    if (beh) {
+        if (beh.overview) lines.push(`BEHAVIORAL OVERVIEW: ${n(beh.overview)}`);
+        if (Array.isArray(beh.strengths_observed)) lines.push(`STRENGTHS: ${beh.strengths_observed.join("; ")}`);
+        if (Array.isArray(beh.concerns_noted)) lines.push(`CONCERNS: ${beh.concerns_noted.join("; ")}`);
+        if (Array.isArray(beh.integrity_flags)) lines.push(`INTEGRITY FLAGS: ${beh.integrity_flags.join("; ")}`);
+        if (beh.summary) lines.push(`BEHAVIORAL SUMMARY: ${n(beh.summary)}`);
+    }
+
+    // Skills proof
+    if (Array.isArray(r.skills_proof)) {
+        const skills = (r.skills_proof as any[]).map((s) => `${s.skill}: ${s.status} (${s.score})`).join(", ");
+        lines.push(`SKILLS PROOF: ${skills}`);
+    }
+
+    // Q&A blocks (abbreviated)
+    if (Array.isArray(r.qa_blocks)) {
+        (r.qa_blocks as any[]).slice(0, 8).forEach((q, i) => {
+            lines.push(`Q${i + 1}: "${q.question}" — Score: ${q.score}, Verdict: ${q.verdict}`);
+        });
+    }
+
+    return lines.join("\n");
+}
+
 function serializeEmbeddingValue(value: unknown, depth = 0): string {
     if (value == null) return "";
     if (typeof value === "string") {
@@ -157,7 +233,18 @@ function serializeEmbeddingValue(value: unknown, depth = 0): string {
     return "";
 }
 
-function normalizeEmbeddingText(value: unknown): string {
+function normalizeEmbeddingText(value: unknown, type?: string): string {
+    // For interview reports, use the structured serializer for meaningful content
+    if (type === "interview_report") {
+        let parsed: unknown = value;
+        if (typeof value === "string") {
+            try { parsed = JSON.parse(value); } catch { /* fall through */ }
+        }
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            const structured = serializeInterviewReport(parsed as Record<string, unknown>);
+            if (structured.trim()) return structured.trim();
+        }
+    }
     const serialized = serializeEmbeddingValue(value);
     return serialized.replace(/\n{3,}/g, "\n\n").trim();
 }
@@ -254,7 +341,7 @@ export async function syncCandidateCorpusToPinecone(input: CandidatePineconeSync
     const errors: Array<{ type: CandidatePineconeContentType; error: string }> = [];
 
     for (const document of input.documents) {
-        const text = normalizeEmbeddingText(document.text);
+        const text = normalizeEmbeddingText(document.text, document.type);
         if (!text) {
             skippedCount += 1;
             continue;

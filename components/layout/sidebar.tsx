@@ -219,9 +219,6 @@ export function Sidebar() {
                     {NAV_GROUPS.map((group, gIdx) => (
                         <div key={gIdx} className="space-y-1">
                             {group.items.map((item) => {
-                                if ((quotaLocked || isSuspended) && item.href === "/admin/create-drive") {
-                                    return null;
-                                }
                                 const isActive = pathname === item.href;
                                 const hrefWithOrg = orgId ? `${item.href}?orgId=${orgId}` : item.href;
                                 
@@ -246,7 +243,9 @@ export function Sidebar() {
                                                 <span className="tracking-tight">{item.label}</span>
                                             </div>
                                             
-                                            {isActive && <div className="w-1.5 h-1.5 rounded-full bg-[#F97316] shadow-[0_0_8px_rgba(249,115,22,0.4)]" />}
+                                            {isActive && (
+                                                <div className="w-1.5 h-1.5 rounded-full bg-[#F97316] shadow-[0_0_8px_rgba(249,115,22,0.4)]" />
+                                            )}
                                         </div>
                                     </div>
                                 );

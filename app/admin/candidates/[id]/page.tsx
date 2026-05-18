@@ -260,26 +260,23 @@ export default function CandidateProfilePage() {
 
     const wordCount = interviewTranscript ? interviewTranscript.split(/\s+/).filter(Boolean).length : 0;
 
-    // ── interviewScore: derive from AI scores.combined_score → qa_blocks average → 0 ──
-    // NEVER use candidateRating (self-assessment) as a performance score.
+    // ── interviewScore: combined_score is 0-100 from the enriched report ──
     const interviewScore = (() => {
         const aiCombined = Number(interviewReportScores.combined_score);
-        if (Number.isFinite(aiCombined) && aiCombined > 0) {
-            // combined_score is 0-100; normalise to 0-10 for backward compat
-            return Math.round(aiCombined / 10);
-        }
-        // Fall back: average qa_blocks scores
+        if (Number.isFinite(aiCombined) && aiCombined > 0) return Math.max(0, Math.min(100, Math.round(aiCombined)));
+        // Fall back: average qa_blocks scores scaled to 0-100
         if (aiQaBlocks.length > 0) {
             const nums = aiQaBlocks
                 .map((b: any) => parseFloat(String(b?.score || "").replace(/[^\d.]/g, "")))
                 .filter((n: number) => Number.isFinite(n));
             if (nums.length > 0) {
-                return Math.round(nums.reduce((a: number, b: number) => a + b, 0) / nums.length);
+                const avg = nums.reduce((a: number, b: number) => a + b, 0) / nums.length;
+                return Math.max(0, Math.min(100, Math.round(avg <= 10 ? avg * 10 : avg)));
             }
         }
         return 0;
     })();
-    const combinedScore = Math.max(0, Math.min(10, interviewScore));
+    const combinedScore = interviewScore; // 0-100, no normalization needed
 
     // ── Proctoring verdict — if fallback report but real events exist, say so ──
     const proctoringVerdictSummary = (() => {

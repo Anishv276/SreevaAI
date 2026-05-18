@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentType, FormEvent, ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
+  AudioLines,
   BrainCircuit,
   Building2,
   CheckCircle2,
@@ -15,10 +16,13 @@ import {
   Mail,
   MapPin,
   Mic,
+  Pause,
+  Play,
+  RefreshCw,
+  Search,
   Shield,
   Thermometer,
   User,
-  Volume2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LocationAutocomplete } from "@/components/ui/location-autocomplete";
@@ -42,6 +46,7 @@ type OrgFormState = {
   adminEmail: string;
   adminPassword: string;
   voiceId: string;
+  allowedVoices: string[];
   deepgramModel: string;
   llmModel: string;
   llmTemperature: number;
@@ -205,6 +210,13 @@ export default function NewOrgPage() {
   const [voices, setVoices] = useState<Voice[]>(ALL_VOICES);
   const [slugTouched, setSlugTouched] = useState(false);
   const [slugSuffix] = useState(() => Math.floor(1000 + Math.random() * 9000).toString());
+  const [voiceSearch, setVoiceSearch] = useState("");
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
+  const activeAudioRef = useRef<HTMLAudioElement | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const gainNodeRef = useRef<GainNode | null>(null);
+  const previewUrlRef = useRef<string | null>(null);
 
   const [form, setForm] = useState<OrgFormState>(() => ({
     orgName: "",
@@ -218,12 +230,14 @@ export default function NewOrgPage() {
     adminEmail: "",
     adminPassword: "",
     voiceId: DEFAULT_VOICE_ID,
+    allowedVoices: [DEFAULT_VOICE_ID],
     deepgramModel: "nova-3-general",
     llmModel: "gpt-4.1-mini",
     llmTemperature: 0.7,
   }));
 
-  const selectedVoice = useMemo(() => getVoiceById(form.voiceId) ?? getVoiceById(DEFAULT_VOICE_ID), [form.voiceId]);
+  const primaryVoiceId = form.voiceId || form.allowedVoices[0] || DEFAULT_VOICE_ID;
+  const selectedVoice = useMemo(() => getVoiceById(primaryVoiceId) ?? getVoiceById(DEFAULT_VOICE_ID), [primaryVoiceId]);
 
   useEffect(() => {
     const loadVoices = async () => {
@@ -242,13 +256,119 @@ export default function NewOrgPage() {
   }, []);
 
   const selectedVoiceFromCatalog = useMemo(
-    () => voices.find((voice) => voice.id === form.voiceId) || selectedVoice,
-    [voices, form.voiceId, selectedVoice]
+    () => voices.find((voice) => voice.id === primaryVoiceId) || selectedVoice,
+    [voices, primaryVoiceId, selectedVoice]
   );
+
+  const filteredVoices = useMemo(() => {
+    const term = voiceSearch.trim().toLowerCase();
+    if (!term) return voices;
+    return voices.filter((voice) =>
+      [voice.name, voice.provider, voice.model, voice.description, voice.id].join(" ").toLowerCase().includes(term)
+    );
+  }, [voices, voiceSearch]);
 
   const updateForm = (patch: Partial<OrgFormState>) => {
     setForm((prev) => ({ ...prev, ...patch }));
   };
+
+  const setAllowedVoices = (nextAllowedVoices: string[]) => {
+    const normalized = Array.from(
+      new Set(nextAllowedVoices.map((id) => String(id || "").trim()).filter(Boolean))
+    );
+    const allowedVoices = normalized.length > 0 ? normalized : [DEFAULT_VOICE_ID];
+    updateForm({
+      allowedVoices,
+      voiceId: allowedVoices[0] || DEFAULT_VOICE_ID,
+    });
+  };
+
+  const toggleVoice = (voiceId: string) => {
+    const current = form.allowedVoices;
+    const nextAllowed = current.includes(voiceId)
+      ? current.filter((id) => id !== voiceId)
+      : [...current, voiceId];
+    setAllowedVoices(nextAllowed);
+  };
+
+  const stopCurrentPreview = () => {
+    if (activeAudioRef.current) {
+      activeAudioRef.current.pause();
+      activeAudioRef.current.src = "";
+      activeAudioRef.current = null;
+    }
+    if (previewUrlRef.current) {
+      URL.revokeObjectURL(previewUrlRef.current);
+      previewUrlRef.current = null;
+    }
+    gainNodeRef.current?.disconnect();
+    gainNodeRef.current = null;
+    if (audioContextRef.current && audioContextRef.current.state !== "closed") {
+      audioContextRef.current.close().catch(() => { });
+      audioContextRef.current = null;
+    }
+    setPlayingVoiceId(null);
+  };
+
+  const playSample = async (voiceId: string) => {
+    if (playingVoiceId === voiceId) {
+      stopCurrentPreview();
+      return;
+    }
+
+    setPreviewLoading(true);
+    try {
+      stopCurrentPreview();
+      const res = await fetch("/api/admin/voice/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          voiceId,
+          transcript: "Hello buddy, how are you doing? I'm ready to interview candidates.",
+        }),
+      });
+      if (!res.ok) throw new Error("Preview failed");
+      const blob = await res.blob();
+      const audioUrl = URL.createObjectURL(blob);
+      previewUrlRef.current = audioUrl;
+      const audio = new Audio(audioUrl);
+      const AudioContextClass = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (AudioContextClass) {
+        const ctx = new AudioContextClass();
+        audioContextRef.current = ctx;
+        const source = ctx.createMediaElementSource(audio);
+        const gainNode = ctx.createGain();
+        gainNode.gain.value = 2.5;
+        gainNodeRef.current = gainNode;
+        source.connect(gainNode);
+        gainNode.connect(ctx.destination);
+        audio.onended = () => {
+          stopCurrentPreview();
+          URL.revokeObjectURL(audioUrl);
+        };
+        await ctx.resume().catch(() => { });
+      } else {
+        audio.onended = () => {
+          stopCurrentPreview();
+          URL.revokeObjectURL(audioUrl);
+        };
+      }
+      await audio.play();
+      activeAudioRef.current = audio;
+      setPlayingVoiceId(voiceId);
+    } catch {
+      toast.error("Preview failed.");
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      stopCurrentPreview();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const makeSlug = (value: string) => {
     const base = value
@@ -307,8 +427,8 @@ export default function NewOrgPage() {
           maxActiveDrives: form.maxActiveDrives,
           interviewQuotaTotal: Number(form.interviewQuotaTotal || 0),
           proctoringSignals: form.proctoringSignals,
-          voiceId: form.voiceId,
-          allowedVoices: [form.voiceId],
+          voiceId: form.voiceId || DEFAULT_VOICE_ID,
+          allowedVoices: form.allowedVoices.length > 0 ? form.allowedVoices : [form.voiceId || DEFAULT_VOICE_ID],
           deepgramModel: form.deepgramModel,
           llmModel: form.llmModel,
           llmTemperature: form.llmTemperature,
@@ -448,19 +568,80 @@ export default function NewOrgPage() {
         <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
           <SectionHeader title="AI Engine" description="The defaults that will be saved to the organization." />
           <div className="mt-6 grid gap-6 lg:grid-cols-2">
-            <div className="space-y-6">
-              <SelectInput
-                label="Primary Voice"
-                icon={Volume2}
-                value={form.voiceId}
-                onChange={(value) => updateForm({ voiceId: value })}
-                options={voices.map((voice) => ({
-                  value: voice.id,
-                  label: `${voice.name} (${voice.provider})`,
-                }))}
-              />
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-widest text-slate-500">
+                  <AudioLines className="h-3.5 w-3.5 text-[#F97316]" />
+                  Allowed Voices
+                </label>
+                <p className="text-[10px] font-medium text-slate-400">
+                  Select one or more voices. The first selected voice becomes the primary voice for this client.
+                </p>
+                <div className="relative mb-2">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={voiceSearch}
+                    onChange={(e) => setVoiceSearch(e.target.value)}
+                    placeholder="Search voices..."
+                    className="h-10 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm font-medium text-slate-900 shadow-sm outline-none transition focus:border-[#F97316] focus:ring-4 focus:ring-orange-50"
+                  />
+                </div>
+                <div className="max-h-72 overflow-y-auto rounded-xl border border-slate-200 bg-white">
+                  {filteredVoices.map((voice) => {
+                    const allowed = form.allowedVoices.includes(voice.id);
+                    return (
+                      <div
+                        key={voice.id}
+                        className={cn(
+                          "flex items-center justify-between gap-3 border-b border-slate-100 px-3 py-2.5 last:border-b-0 transition-colors",
+                          allowed ? "bg-orange-50/40" : "bg-white hover:bg-slate-50"
+                        )}
+                      >
+                        <label className="flex min-w-0 flex-1 items-center gap-3">
+                          <input
+                            type="checkbox"
+                            checked={allowed}
+                            onChange={() => toggleVoice(voice.id)}
+                            className="h-3.5 w-3.5 shrink-0 accent-[#F97316]"
+                          />
+                          <div className="min-w-0">
+                            <p className={cn("truncate text-xs font-bold", allowed ? "text-orange-600" : "text-slate-800")}>
+                              {voice.name}
+                            </p>
+                            <p className="truncate text-[9px] text-slate-400">
+                              {voice.provider} · {voice.description}
+                            </p>
+                          </div>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => void playSample(voice.id)}
+                          className={cn(
+                            "ml-2 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-all",
+                            playingVoiceId === voice.id
+                              ? "bg-orange-600 text-white"
+                              : "bg-slate-100 text-slate-500 hover:bg-orange-100 hover:text-orange-600"
+                          )}
+                        >
+                          {previewLoading && playingVoiceId === voice.id ? (
+                            <RefreshCw className="h-3 w-3 animate-spin" />
+                          ) : playingVoiceId === voice.id ? (
+                            <Pause className="h-3 w-3 fill-current" />
+                          ) : (
+                            <Play className="h-3 w-3 fill-current ml-0.5" />
+                          )}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="text-[10px] text-slate-400">
+                  {form.allowedVoices.length} voice{form.allowedVoices.length !== 1 ? "s" : ""} selected
+                </p>
+              </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Selected voice</p>
+                <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Primary voice</p>
                 <p className="mt-2 text-sm font-semibold text-slate-900">
                   {selectedVoiceFromCatalog?.name || "Unknown voice"}
                 </p>

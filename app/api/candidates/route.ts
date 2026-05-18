@@ -172,10 +172,6 @@ export async function GET(request: Request) {
             if (intStatus === 'finished' || intStatus === 'completed') statsRow.interviewCompleted += count;
         });
 
-        if (candidates.length > 0) {
-
-        }
-
         const formattedCandidates = (candidates as any[]).map((app: any) => {
             let progress = null as number | null;
             let stage = null as string | null;
@@ -225,7 +221,7 @@ export async function GET(request: Request) {
             }
         }, {
             headers: {
-                'Cache-Control': 'private, max-age=30',
+                'Cache-Control': 'private, no-store',
             }
         });
     } catch (error) {

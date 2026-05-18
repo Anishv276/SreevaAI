@@ -58,10 +58,12 @@ OUTPUT SCHEMA (strict JSON, all fields required):
   },
 
   "scores": {
-    "combined_score": number (0-100, overall interview performance weighted across technical + communication + behavioral),
-    "technical_score": number (0-100, quality of technical/domain answers),
-    "communication_score": number (0-100, clarity, fluency, grammar, confidence combined),
-    "behavioral_score": number (0-100, engagement, consistency, integrity signals)
+    "combined_score": number (0-100, overall interview performance. Weighted formula: technical_score×0.30 + communication_score×0.25 + behavioral_score×0.20 + cognitive_score×0.15 + integrity_score×0.10. Compute this LAST after all other scores are finalized.),
+    "technical_score": number (0-100, quality of technical/domain answers — average of all qa_blocks score_breakdown depth scores scaled to 100. Penalise heavily for shallow or incorrect answers.),
+    "communication_score": number (0-100, average of communication.pronunciation + communication.grammar + communication.fluency + communication.confidence divided by 4. Must match what you score in the communication section.),
+    "behavioral_score": number (0-100, engagement, consistency between resume and interview answers, ownership, and behavioral signals — NOT communication or proctoring),
+    "cognitive_score": number (0-100, average of cognitive_insights: clarity, depth_of_knowledge, problem_solving, logical_thinking divided by 4),
+    "integrity_score": number (0-100, same as integrity.score — start 100, deduct per proctoring event type: tab_switch −5, face_not_detected −10, multiple_faces −15, phone_detected −10, looking_away −5)
   },
 
   "qa_blocks": [
@@ -174,7 +176,7 @@ OUTPUT SCHEMA (strict JSON, all fields required):
 
 RULES:
 1. QA_BLOCKS: Map EVERY interviewer question as a separate block. Include full question text and answer_summary. score_breakdown is required for every block.
-2. SCORES: combined_score = weighted average (technical 40%, communication 35%, behavioral 25%). All scores 0-100.
+2. SCORES: combined_score = (technical_score×0.30) + (communication_score×0.25) + (behavioral_score×0.20) + (cognitive_score×0.15) + (integrity_score×0.10). All scores 0-100. cognitive_score = average of cognitive_insights (clarity, depth_of_knowledge, problem_solving, logical_thinking). integrity_score = same value as integrity.score. communication_score = average of communication sub-scores. Compute combined_score LAST.
 3. SKILLS_PROOF: Only skills actually discussed. status must reflect actual performance.
 4. BEHAVIORAL_ANALYSIS: Minimum 4 bullets per section. Every bullet must follow the format described in the schema — [observed fact] → [what it signals for hiring]. Never write generic bullets like "showed good communication" or "was engaged." Write bullets an HR manager can quote in a debrief meeting.
 5. VERDICT SUMMARY: 200-300 words, specific, evidence-backed. No generic praise.
@@ -297,5 +299,101 @@ function generateFallbackReport(name: string, role: string, reason = "Internal p
       summary: "No automated integrity analysis available. Review proctoring events manually if this session had flags.",
     },
     skills_proof: [],
+  };
+}
+
+/**
+ * Recomputes combined_score + all sub-scores from the AI report's raw data.
+ * Called after the AI returns a report, before persisting to DB.
+ * This ensures the score is always derived from actual evidence — not just
+ * whatever the AI happened to calculate (which can be inconsistent).
+ *
+ * Formula:
+ *   combined = technical(30%) + communication(25%) + behavioral(20%) + cognitive(15%) + integrity(10%)
+ */
+export function computeEnrichedInterviewScore(report: Record<string, any>): {
+  combined_score: number;
+  technical_score: number;
+  communication_score: number;
+  behavioral_score: number;
+  cognitive_score: number;
+  integrity_score: number;
+} {
+  const clamp = (v: number) => Math.max(0, Math.min(100, Math.round(v)));
+  const avg = (nums: number[]) => nums.length > 0 ? nums.reduce((a, b) => a + b, 0) / nums.length : null;
+
+  // ── Technical score ──────────────────────────────────────────────────────
+  // Primary: scores.technical_score from AI
+  // Fallback: average qa_blocks score_breakdown.depth × 10
+  let technicalScore: number;
+  const aiTech = Number(report?.scores?.technical_score);
+  if (Number.isFinite(aiTech) && aiTech > 0) {
+    technicalScore = clamp(aiTech);
+  } else {
+    const qaDepths = (Array.isArray(report?.qa_blocks) ? report.qa_blocks : [])
+      .map((b: any) => Number(b?.score_breakdown?.depth))
+      .filter((n: number) => Number.isFinite(n) && n >= 0);
+    const qaAvg = avg(qaDepths);
+    if (qaAvg !== null) {
+      technicalScore = clamp(qaAvg * 10);
+    } else {
+      // Last resort: parse "X/10" format scores from qa_blocks
+      const qaScores = (Array.isArray(report?.qa_blocks) ? report.qa_blocks : [])
+        .map((b: any) => parseFloat(String(b?.score || "").replace(/[^\d.]/g, "")))
+        .filter((n: number) => Number.isFinite(n) && n >= 0);
+      const rawAvg = avg(qaScores);
+      technicalScore = rawAvg !== null ? clamp(rawAvg <= 10 ? rawAvg * 10 : rawAvg) : clamp(Number(report?.scores?.combined_score) || 0);
+    }
+  }
+
+  // ── Communication score ──────────────────────────────────────────────────
+  // Average of the 4 communication sub-scores (all 0-100)
+  const comm = report?.communication || {};
+  const commValues = [
+    Number(comm.pronunciation),
+    Number(comm.grammar),
+    Number(comm.fluency),
+    Number(comm.confidence),
+  ].filter((n) => Number.isFinite(n) && n >= 0);
+  const communicationScore = commValues.length > 0
+    ? clamp(commValues.reduce((a, b) => a + b, 0) / commValues.length)
+    : clamp(Number(report?.scores?.communication_score) || 0);
+
+  // ── Behavioral score ─────────────────────────────────────────────────────
+  // Use AI behavioral_score as-is (it's already based on engagement + consistency)
+  const behavioralScore = clamp(Number(report?.scores?.behavioral_score) || 0);
+
+  // ── Cognitive score ──────────────────────────────────────────────────────
+  // Average of clarity, depth_of_knowledge, problem_solving, logical_thinking
+  const cog = report?.cognitive_insights || {};
+  const cogValues = [
+    Number(cog.clarity),
+    Number(cog.depth_of_knowledge),
+    Number(cog.problem_solving),
+    Number(cog.logical_thinking),
+  ].filter((n) => Number.isFinite(n) && n >= 0);
+  const cognitiveScore = cogValues.length > 0
+    ? clamp(cogValues.reduce((a, b) => a + b, 0) / cogValues.length)
+    : clamp(Number(report?.scores?.cognitive_score) || 0);
+
+  // ── Integrity score ──────────────────────────────────────────────────────
+  const integrityScore = clamp(Number(report?.integrity?.score ?? 100));
+
+  // ── Combined score ───────────────────────────────────────────────────────
+  const combinedScore = clamp(
+    technicalScore * 0.30 +
+    communicationScore * 0.25 +
+    behavioralScore * 0.20 +
+    cognitiveScore * 0.15 +
+    integrityScore * 0.10
+  );
+
+  return {
+    combined_score: combinedScore,
+    technical_score: technicalScore,
+    communication_score: communicationScore,
+    behavioral_score: behavioralScore,
+    cognitive_score: cognitiveScore,
+    integrity_score: integrityScore,
   };
 }

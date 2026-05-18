@@ -15,7 +15,7 @@ import { getPythonExecutable } from "./lib/python-exec";
 import { extractJDFromText } from "./lib/openai";
 import { parseDriveScreeningSettings } from "./lib/screening-criteria";
 import { recordOrgBillingUsage } from "./lib/usage-metrics";
-import { generateInterviewReport } from "./lib/interview-analysis";
+import { generateInterviewReport, computeEnrichedInterviewScore } from "./lib/interview-analysis";
 import { syncCandidateCorpusToPinecone } from "./lib/pinecone";
 // Load environment variables
 dotenv.config();
@@ -1317,6 +1317,16 @@ if (isQueueEnabled("interview-finalization")) {
             proctoringEvents,
             orgId: app.drive?.orgId || undefined,
           });
+
+          // Enrich scores: recompute combined_score from all signals before persisting
+          if (!(report as any)?._meta?.is_fallback) {
+            const enriched = computeEnrichedInterviewScore(report as any);
+            (report as any).scores = {
+              ...(report as any).scores,
+              ...enriched,
+            };
+            console.log(`[REPORT] Enriched combined_score=${enriched.combined_score} (tech=${enriched.technical_score}, comm=${enriched.communication_score}, beh=${enriched.behavioral_score}, cog=${enriched.cognitive_score}, integ=${enriched.integrity_score})`);
+          }
 
           // Persist interviewReport + aiSummary
           await prisma.$executeRawUnsafe(

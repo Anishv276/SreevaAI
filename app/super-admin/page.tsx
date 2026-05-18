@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { SuperAdminStatsGrid } from "@/components/super-admin/stats-grid";
-import { OrgCreditPieChart, OrgCreditBarGraph, OrgInterviewPieChart } from "@/components/super-admin/credit-charts";
+import { OrgCreditPieChart, OrgQuotaConsumption, OrgInterviewPieChart } from "@/components/super-admin/credit-charts";
 import { RecentActivity } from "@/components/super-admin/recent-activity";
 import { Plus, ArrowRight, Building2, Loader2 } from "lucide-react";
 import Link from "next/link";
@@ -23,6 +23,7 @@ interface Org {
 interface ChartStats {
     orgCreditStats: { name: string; creditsUsed: number }[];
     orgInterviewStats: { name: string; count: number }[];
+    orgQuotaStats: { name: string; used: number; total: number }[];
 }
 
 function getStatusBadge(org: Org) {
@@ -45,7 +46,7 @@ function getStatusBadge(org: Org) {
 export default function SuperAdminDashboard() {
     const [mounted, setMounted] = useState(false);
     const [orgs, setOrgs] = useState<Org[]>([]);
-    const [chartStats, setChartStats] = useState<ChartStats>({ orgCreditStats: [], orgInterviewStats: [] });
+    const [chartStats, setChartStats] = useState<ChartStats>({ orgCreditStats: [], orgInterviewStats: [], orgQuotaStats: [] });
     const [orgsLoading, setOrgsLoading] = useState(true);
     const [chartsLoading, setChartsLoading] = useState(true);
 
@@ -68,6 +69,7 @@ export default function SuperAdminDashboard() {
                     setChartStats({
                         orgCreditStats: data.orgCreditStats ?? [],
                         orgInterviewStats: data.orgInterviewStats ?? [],
+                        orgQuotaStats: data.orgQuotaStats ?? [],
                     });
                 }
             })
@@ -181,7 +183,7 @@ export default function SuperAdminDashboard() {
             {/* Credit Analytics */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
                 <OrgCreditPieChart stats={chartStats.orgCreditStats} loading={chartsLoading} />
-                <OrgCreditBarGraph stats={chartStats.orgCreditStats} loading={chartsLoading} />
+                <OrgQuotaConsumption stats={chartStats.orgQuotaStats} loading={chartsLoading} />
             </div>
 
             {/* Global Activity */}

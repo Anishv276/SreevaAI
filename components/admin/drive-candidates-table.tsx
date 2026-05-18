@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -95,38 +95,39 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
     const isSuspended = isOrgRestrictedStatus(orgStatus);
     const isInterviewActionBlocked = isSuspended || quotaLocked;
     const interviewActionBlockedMessage = getInterviewActionBlockedMessage(isSuspended);
+    const getDateRange = () => {
+        let startDate: string | undefined;
+        let endDate: string | undefined;
+        if (timeline.type === "today") { startDate = new Date().toISOString().split("T")[0]; endDate = startDate; }
+        else if (timeline.type === "week") { const d = new Date(); d.setDate(d.getDate() - 7); startDate = d.toISOString().split("T")[0]; }
+        else if (timeline.type === "month") { const d = new Date(); d.setMonth(d.getMonth() - 1); startDate = d.toISOString().split("T")[0]; }
+        else if (timeline.type === "custom") { startDate = timeline.from; endDate = timeline.to; }
+        return { startDate, endDate };
+    };
+
+    // Filter/search change — show skeleton, reset to page 1
     useEffect(() => {
         let cancelled = false;
         setIsDriveViewReady(false);
         setSelectedIds(new Set());
         const handler = setTimeout(() => {
-            let startDate: string | undefined;
-            let endDate: string | undefined;
-            if (timeline.type === "today") {
-                startDate = new Date().toISOString().split("T")[0];
-                endDate = startDate;
-            } else if (timeline.type === "week") {
-                const date = new Date();
-                date.setDate(date.getDate() - 7);
-                startDate = date.toISOString().split("T")[0];
-            } else if (timeline.type === "month") {
-                const date = new Date();
-                date.setMonth(date.getMonth() - 1);
-                startDate = date.toISOString().split("T")[0];
-            } else if (timeline.type === "custom") {
-                startDate = timeline.from;
-                endDate = timeline.to;
-            }
+            const { startDate, endDate } = getDateRange();
             void fetchCandidates(1, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm, scoreSort)
-                .finally(() => {
-                    if (!cancelled) setIsDriveViewReady(true);
-                });
+                .finally(() => { if (!cancelled) setIsDriveViewReady(true); });
         }, 500);
-        return () => {
-            cancelled = true;
-            clearTimeout(handler);
-        };
-    }, [driveId, resumeFilter, interviewFilter, hiringFilter, timeline, searchTerm, pageSize, fetchCandidates, scoreSort, refreshKey]);
+        return () => { cancelled = true; clearTimeout(handler); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [driveId, resumeFilter, interviewFilter, hiringFilter, timeline, searchTerm, fetchCandidates, scoreSort, refreshKey]);
+
+    // Page size change — no skeleton, just refetch silently
+    const pageSizeRef = useRef(pageSize);
+    useEffect(() => {
+        if (pageSizeRef.current === pageSize) return;
+        pageSizeRef.current = pageSize;
+        const { startDate, endDate } = getDateRange();
+        void fetchCandidates(1, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm, scoreSort);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [pageSize]);
 
     useEffect(() => {
         let timer: NodeJS.Timeout;
@@ -486,16 +487,19 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                             >
                                 <UserX className="h-3.5 w-3.5" /> Reject
                             </Button>
-                            {!isSuspended && (
-                                <Button
-                                    size="sm"
-                                    onClick={openBulkSendEmailConfirm}
-                                    disabled={isBulkLoading}
-                                    className="h-8 px-3 rounded-xl border border-gray-200 bg-white text-gray-900 font-bold text-xs flex items-center gap-1.5 shadow-sm hover:bg-gray-50"
-                                >
-                                    <Mail className="h-3.5 w-3.5" /> Send Email
-                                </Button>
-                            )}
+                            {/* Email: locked when suspended, not hidden */}
+                            <Button
+                                size="sm"
+                                onClick={isSuspended ? undefined : openBulkSendEmailConfirm}
+                                disabled={isBulkLoading}
+                                title={isSuspended ? interviewActionBlockedMessage : undefined}
+                                className={cn(
+                                    "h-8 px-3 rounded-xl border border-gray-200 font-bold text-xs flex items-center gap-1.5 shadow-sm",
+                                    isSuspended ? "bg-gray-50 text-gray-400 cursor-not-allowed" : "bg-white text-gray-900 hover:bg-gray-50"
+                                )}
+                            >
+                                {isSuspended ? <Lock className="h-3.5 w-3.5" /> : <Mail className="h-3.5 w-3.5" />} Send Email
+                            </Button>
                         </div>
                     </div>
 
@@ -522,22 +526,24 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                         </div>
                     </div>
 
-                    {!isSuspended && (
-                        <div className="rounded-2xl border border-orange-100 bg-orange-50/40 px-3 py-2.5">
-                            <p className="text-[9px] font-black uppercase tracking-[0.22em] text-orange-600 mb-2">Interview Link</p>
-                            <div className="flex flex-wrap items-center gap-2">
-                                <Button
-                                    size="sm"
-                                    onClick={handleBulkSendInterviewLink}
-                                    disabled={isBulkLoading || isInterviewActionBlocked}
-                                    title={isInterviewActionBlocked ? interviewActionBlockedMessage : undefined}
-                                    className="h-8 px-3 rounded-xl border border-gray-200 bg-white text-gray-900 font-bold text-xs flex items-center gap-1.5 shadow-sm hover:bg-gray-50"
-                                >
-                                    {isInterviewActionBlocked ? <Lock className="h-3.5 w-3.5" /> : <RefreshCw className="h-3.5 w-3.5" />} Resend Link
-                                </Button>
-                            </div>
+                    {/* Interview Link group: locked when suspended/quota, not hidden */}
+                    <div className="rounded-2xl border border-orange-100 bg-orange-50/40 px-3 py-2.5">
+                        <p className="text-[9px] font-black uppercase tracking-[0.22em] text-orange-600 mb-2">Interview Link</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <Button
+                                size="sm"
+                                onClick={isInterviewActionBlocked ? undefined : handleBulkSendInterviewLink}
+                                disabled={isBulkLoading}
+                                title={isInterviewActionBlocked ? interviewActionBlockedMessage : undefined}
+                                className={cn(
+                                    "h-8 px-3 rounded-xl border border-gray-200 font-bold text-xs flex items-center gap-1.5 shadow-sm",
+                                    isInterviewActionBlocked ? "bg-gray-50 text-gray-400 cursor-not-allowed" : "bg-white text-gray-900 hover:bg-gray-50"
+                                )}
+                            >
+                                {isInterviewActionBlocked ? <Lock className="h-3.5 w-3.5" /> : <RefreshCw className="h-3.5 w-3.5" />} Resend Link
+                            </Button>
                         </div>
-                    )}
+                    </div>
 
                     {/* Group 4: Delete */}
                     <div className="rounded-2xl border border-red-100 bg-red-50/40 px-3 py-2.5">
@@ -569,7 +575,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
             )}
             <div className="group relative bg-white/40 backdrop-blur-xl rounded-[2.5rem] border border-white/40 shadow-[0_8px_24px_rgba(15,23,42,0.03)] overflow-hidden transition-all duration-700 hover:shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
                 <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-orange-400/0 via-[#F97316]/40 to-orange-400/0" />
-                <div className="relative w-full overflow-auto max-h-[65vh]">
+                <div className="relative w-full overflow-auto max-h-[86vh]">
                     <Table>
                         <TableHeader className="bg-gray-50/50 sticky top-0 z-10 backdrop-blur-md">
                             <TableRow className="border-b border-gray-100 hover:bg-transparent">
@@ -854,15 +860,18 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                                             <UserX className="h-4 w-4 mr-2 shrink-0" />
                                                             Reject
                                                         </DropdownMenuItem>
-                                                        {!isSuspended && (
-                                                            <DropdownMenuItem
-                                                                onClick={() => openSendEmailConfirm({ id: candidate.id, name: displayName, resumeStatus: candidate.status })}
-                                                                className="rounded-xl px-2.5 py-2 text-sm font-semibold text-blue-600 cursor-pointer focus:text-blue-700 focus:bg-blue-50 transition-colors"
-                                                            >
-                                                                <Mail className="h-4 w-4 mr-2 shrink-0" />
-                                                                Send Email
-                                                            </DropdownMenuItem>
-                                                        )}
+                                                        {/* Send Email — locked when suspended */}
+                                                        <DropdownMenuItem
+                                                            onClick={() => !isSuspended && openSendEmailConfirm({ id: candidate.id, name: displayName, resumeStatus: candidate.status })}
+                                                            className={cn(
+                                                                "rounded-xl px-2.5 py-2 text-sm font-semibold cursor-pointer transition-colors",
+                                                                isSuspended ? "text-gray-400 focus:bg-transparent" : "text-blue-600 focus:text-blue-700 focus:bg-blue-50"
+                                                            )}
+                                                            title={isSuspended ? interviewActionBlockedMessage : undefined}
+                                                        >
+                                                            {isSuspended ? <Lock className="h-4 w-4 mr-2 shrink-0" /> : <Mail className="h-4 w-4 mr-2 shrink-0" />}
+                                                            Send Email
+                                                        </DropdownMenuItem>
                                                         <DropdownMenuLabel className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400">Hire</DropdownMenuLabel>
                                                         <DropdownMenuItem
                                                             onClick={() => handleUpdateStatus(candidate.id, { hiringStatus: "hired" }, `${displayName} hired - confirmation email sent`)}
@@ -878,34 +887,32 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                                             <XCircle className="h-4 w-4 mr-2 shrink-0" />
                                                             Not Hired
                                                         </DropdownMenuItem>
-                                                        {!isSuspended && (
-                                                            <>
-                                                                <DropdownMenuLabel className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400">Manage</DropdownMenuLabel>
-                                                                <DropdownMenuItem
-                                                                    onClick={() => {
-                                                                        if (isInterviewActionBlocked) {
-                                                                            toast.error(interviewActionBlockedMessage);
-                                                                            return;
-                                                                        }
-                                                                        handleSendInterviewLink({ id: candidate.id, name: displayName, interviewStatus: candidate.interviewStatus });
-                                                                    }}
-                                                                    disabled={sendingInterviewLinkId === candidate.id || !canResendInterview || isInterviewActionBlocked}
-                                                                    className={cn(
-                                                                        "rounded-xl px-2.5 py-2 text-sm font-semibold cursor-pointer transition-colors",
-                                                                        sendingInterviewLinkId === candidate.id
+                                                        <>
+                                                            <DropdownMenuLabel className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400">Manage</DropdownMenuLabel>
+                                                            <DropdownMenuItem
+                                                                onClick={() => {
+                                                                    if (isInterviewActionBlocked) {
+                                                                        toast.error(interviewActionBlockedMessage);
+                                                                        return;
+                                                                    }
+                                                                    handleSendInterviewLink({ id: candidate.id, name: displayName, interviewStatus: candidate.interviewStatus });
+                                                                }}
+                                                                disabled={sendingInterviewLinkId === candidate.id || !canResendInterview || isInterviewActionBlocked}
+                                                                className={cn(
+                                                                    "rounded-xl px-2.5 py-2 text-sm font-semibold cursor-pointer transition-colors",
+                                                                    sendingInterviewLinkId === candidate.id
+                                                                        ? "text-gray-400 opacity-70"
+                                                                        : isInterviewActionBlocked
                                                                             ? "text-gray-400 opacity-70"
-                                                                            : isInterviewActionBlocked
-                                                                                ? "text-gray-400 opacity-70"
-                                                                                : canResendInterview
-                                                                                    ? "text-blue-600 focus:text-blue-700 focus:bg-blue-50"
-                                                                                    : "text-gray-400 opacity-70"
-                                                                    )}
-                                                                >
-                                                                    {isInterviewActionBlocked ? <Lock className="h-4 w-4 mr-2 shrink-0" /> : <RefreshCw className={cn("h-4 w-4 mr-2 shrink-0", sendingInterviewLinkId === candidate.id && "animate-spin")} />}
-                                                                    {sendingInterviewLinkId === candidate.id ? "Sending..." : "Resend Interview Link"}
-                                                                </DropdownMenuItem>
-                                                            </>
-                                                        )}
+                                                                            : canResendInterview
+                                                                                ? "text-blue-600 focus:text-blue-700 focus:bg-blue-50"
+                                                                                : "text-gray-400 opacity-70"
+                                                                )}
+                                                            >
+                                                                {isInterviewActionBlocked ? <Lock className="h-4 w-4 mr-2 shrink-0" /> : <RefreshCw className={cn("h-4 w-4 mr-2 shrink-0", sendingInterviewLinkId === candidate.id && "animate-spin")} />}
+                                                                {sendingInterviewLinkId === candidate.id ? "Sending..." : "Resend Interview Link"}
+                                                            </DropdownMenuItem>
+                                                        </>
                                                         <DropdownMenuItem
                                                             onClick={() => setDeleteConfirm({ mode: "single", candidateId: candidate.id, candidateName: displayName })}
                                                             className="rounded-xl px-2.5 py-2 text-sm font-semibold cursor-pointer text-gray-600 focus:text-gray-900 focus:bg-gray-50 transition-colors"

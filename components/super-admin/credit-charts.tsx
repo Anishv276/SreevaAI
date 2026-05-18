@@ -1,9 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { Loader2, Coins, TrendingUp } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Loader2, Coins, TrendingUp, Activity } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { motion } from "framer-motion";
 
 // 5 named colours + gray for "Other"
 const COLORS = ["#F97316", "#3B82F6", "#8B5CF6", "#EC4899", "#10B981", "#9CA3AF"];
@@ -23,7 +22,13 @@ interface OrgInterviewStat {
     count: number;
 }
 
-// Shared donut chart renderer
+interface OrgQuotaStat {
+    name: string;
+    used: number;
+    total: number;
+}
+
+// Animated donut chart — animates strokeDashoffset from 0 to final value on mount
 function DonutChart({
     segments,
     total,
@@ -34,19 +39,28 @@ function DonutChart({
     centerLabel: string;
 }) {
     const [activeIdx, setActiveIdx] = useState<number | null>(null);
+    const [animated, setAnimated] = useState(false);
     const size = 200;
     const center = size / 2;
     const radius = 78;
     const strokeWidth = 22;
     const circumference = 2 * Math.PI * radius;
 
-    let offset = 0;
+    useEffect(() => {
+        const t = requestAnimationFrame(() => setAnimated(true));
+        return () => cancelAnimationFrame(t);
+    }, []);
+
+    let offsetPct = 0;
     const arcs = segments.map((seg) => {
         const pct = total > 0 ? seg.value / total : 0;
-        const dash = `${pct * circumference} ${circumference}`;
-        const dashOffset = -offset * circumference;
-        offset += pct;
-        return { ...seg, dash, dashOffset };
+        const dashLen = pct * circumference;
+        // strokeDasharray: [filled portion, gap]
+        // strokeDashoffset: rotates start position
+        const dashArray = `${dashLen} ${circumference - dashLen}`;
+        const dashOffset = -offsetPct * circumference;
+        offsetPct += pct;
+        return { ...seg, dashArray, dashOffset };
     });
 
     return (
@@ -56,7 +70,7 @@ function DonutChart({
                     {/* Track */}
                     <circle cx={center} cy={center} r={radius} fill="transparent" stroke="#F3F4F6" strokeWidth={strokeWidth} />
                     {arcs.map((arc, i) => (
-                        <motion.circle
+                        <circle
                             key={arc.name}
                             cx={center}
                             cy={center}
@@ -64,22 +78,20 @@ function DonutChart({
                             fill="transparent"
                             stroke={arc.color}
                             strokeWidth={activeIdx === i ? strokeWidth + 4 : strokeWidth}
-                            strokeDasharray={arc.dash}
+                            strokeDasharray={animated ? arc.dashArray : `0 ${circumference}`}
                             strokeDashoffset={arc.dashOffset}
                             strokeLinecap="butt"
-                            className="transition-all duration-200 cursor-pointer"
+                            className="transition-all duration-700 ease-out cursor-pointer"
+                            style={{ transitionDelay: animated ? `${i * 80}ms` : "0ms" }}
                             onMouseEnter={() => setActiveIdx(i)}
                             onMouseLeave={() => setActiveIdx(null)}
-                            initial={{ pathLength: 0, opacity: 0 }}
-                            animate={{ pathLength: 1, opacity: 1 }}
-                            transition={{ duration: 1.2, ease: "easeOut", delay: i * 0.1 }}
                         />
                     ))}
                 </svg>
                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                     <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{centerLabel}</span>
                     <span className="text-2xl font-bold text-gray-900 tabular-nums">
-                        {activeIdx !== null ? arcs[activeIdx].value : total}
+                        {activeIdx !== null ? arcs[activeIdx].value.toLocaleString() : total.toLocaleString()}
                     </span>
                     {activeIdx !== null && (
                         <span className="text-[10px] font-bold text-gray-500 truncate max-w-[80px] text-center">
@@ -139,65 +151,6 @@ export function OrgCreditPieChart({ stats = [], loading = false }: { stats?: Org
     );
 }
 
-export function OrgCreditBarGraph({ stats = [], loading = false }: { stats?: OrgCreditStat[]; loading?: boolean }) {
-    const maxCr = Math.max(...stats.map((s) => s.creditsUsed), 1);
-
-    return (
-        <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm flex flex-col">
-            <div className="flex items-start justify-between mb-5">
-                <div>
-                    <h3 className="text-base font-bold text-gray-900 tracking-tight">Credit Usage by Org</h3>
-                    <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">Volume per organization</p>
-                </div>
-                <div className="h-9 w-9 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600 border border-amber-100">
-                    <Coins className="h-4 w-4" />
-                </div>
-            </div>
-
-            {loading ? (
-                <div className="flex-1 flex items-center justify-center py-12">
-                    <Loader2 className="h-6 w-6 text-orange-500 animate-spin" />
-                </div>
-            ) : (
-                <div className="flex flex-col justify-end flex-1">
-                    <div className="flex items-end gap-3 h-44 px-1">
-                        {stats.map((org, i) => {
-                            const pct = (org.creditsUsed / maxCr) * 100;
-                            const color = getColor(i, org.name);
-                            return (
-                                <div key={org.name} className="flex-1 flex flex-col items-center gap-2 h-full justify-end group/bar">
-                                    <div className="relative w-full flex justify-end flex-col h-full">
-                                        <motion.div
-                                            initial={{ height: 0 }}
-                                            animate={{ height: `${pct}%` }}
-                                            transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1], delay: i * 0.05 }}
-                                            className="w-full rounded-t-xl absolute bottom-0 left-0"
-                                            style={{ backgroundColor: color }}
-                                        >
-                                            <div className="absolute top-0 left-0 right-0 h-1/3 bg-white/15 rounded-t-xl" />
-                                        </motion.div>
-                                        {/* Tooltip */}
-                                        <div className="absolute bottom-full mb-1.5 left-1/2 -translate-x-1/2 opacity-0 group-hover/bar:opacity-100 transition-opacity bg-gray-900 text-white text-[9px] font-bold px-2 py-1 rounded-lg whitespace-nowrap pointer-events-none z-10">
-                                            {Math.round(org.creditsUsed)} credits
-                                        </div>
-                                    </div>
-                                    <p className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter truncate w-full text-center">
-                                        {org.name === "Other" ? "Other" : org.name.split(" ")[0]}
-                                    </p>
-                                </div>
-                            );
-                        })}
-                    </div>
-                    <div className="flex items-center gap-2 pt-3 border-t border-gray-100 mt-3">
-                        <div className="h-2 w-2 rounded-full bg-amber-400" />
-                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Credits used</span>
-                    </div>
-                </div>
-            )}
-        </div>
-    );
-}
-
 export function OrgInterviewPieChart({ stats = [], loading = false }: { stats?: OrgInterviewStat[]; loading?: boolean }) {
     const total = stats.reduce((s, o) => s + o.count, 0);
     const segments = stats.map((o, i) => ({ name: o.name, value: o.count, color: getColor(i, o.name) }));
@@ -224,6 +177,81 @@ export function OrgInterviewPieChart({ stats = [], loading = false }: { stats?: 
                 </div>
             ) : (
                 <DonutChart segments={segments} total={total} centerLabel="Total" />
+            )}
+        </div>
+    );
+}
+
+// Quota consumption: horizontal progress bars per org
+export function OrgQuotaConsumption({ stats = [], loading = false }: { stats?: OrgQuotaStat[]; loading?: boolean }) {
+    const [animated, setAnimated] = useState(false);
+
+    useEffect(() => {
+        const t = setTimeout(() => setAnimated(true), 80);
+        return () => clearTimeout(t);
+    }, [stats]);
+
+    return (
+        <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm flex flex-col">
+            <div className="flex items-start justify-between mb-5">
+                <div>
+                    <h3 className="text-base font-bold text-gray-900 tracking-tight">Quota Consumption</h3>
+                    <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">Interview quota used per org</p>
+                </div>
+                <div className="h-9 w-9 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600 border border-amber-100">
+                    <Activity className="h-4 w-4" />
+                </div>
+            </div>
+
+            {loading ? (
+                <div className="flex-1 flex items-center justify-center py-12">
+                    <Loader2 className="h-6 w-6 text-orange-500 animate-spin" />
+                </div>
+            ) : stats.length === 0 ? (
+                <div className="flex-1 flex items-center justify-center py-12 text-sm font-bold text-gray-400 uppercase tracking-widest">
+                    No quota data
+                </div>
+            ) : (
+                <div className="flex flex-col gap-3.5 flex-1 justify-center">
+                    {stats.map((org, i) => {
+                        const pct = org.total > 0 ? Math.round((org.used / org.total) * 100) : 0;
+                        const color =
+                            pct >= 90 ? "#EF4444" :
+                            pct >= 70 ? "#F97316" :
+                            pct >= 40 ? "#3B82F6" :
+                            "#10B981";
+                        return (
+                            <div key={org.name} className="group">
+                                <div className="flex items-center justify-between mb-1">
+                                    <span className="text-[11px] font-bold text-gray-700 truncate max-w-[140px]">
+                                        {org.name}
+                                    </span>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                        <span className="text-[10px] font-bold text-gray-400 tabular-nums">
+                                            {org.used}/{org.total}
+                                        </span>
+                                        <span
+                                            className="text-[10px] font-bold tabular-nums min-w-[32px] text-right"
+                                            style={{ color }}
+                                        >
+                                            {pct}%
+                                        </span>
+                                    </div>
+                                </div>
+                                <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
+                                    <div
+                                        className="h-full rounded-full transition-all duration-700 ease-out"
+                                        style={{
+                                            width: animated ? `${pct}%` : "0%",
+                                            backgroundColor: color,
+                                            transitionDelay: `${i * 60}ms`,
+                                        }}
+                                    />
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
             )}
         </div>
     );

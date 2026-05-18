@@ -16,7 +16,7 @@ import {
     MessageSquare,
     Zap,
     Scale,
-    RotateCcw
+    Plus
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,15 +29,15 @@ interface Message {
 }
 
 export function RecruiterAssistant({ logoUrl, name }: { logoUrl?: string; name?: string }) {
+    const welcomeMessage = {
+        role: "assistant" as const,
+        content: "### Welcome to Ishita @ Sreeva AI\n\nI am your AI recruitment assistant, ready to help you analyze your talent pool and find the best candidates. Ask me anything about your applicants' skills or interview performance!"
+    };
+
     const [isOpen, setIsOpen] = useState(false);
     const [isMinimized, setIsMinimized] = useState(false);
     const [input, setInput] = useState("");
-    const [messages, setMessages] = useState<Message[]>([
-        {
-            role: "assistant",
-            content: "### Welcome to Ishita @ Sreeva AI\n\nI am your AI recruitment assistant, ready to help you analyze your talent pool and find the best candidates. Ask me anything about your applicants' skills or interview performance!"
-        }
-    ]);
+    const [messages, setMessages] = useState<Message[]>([welcomeMessage]);
     const [isLoading, setIsLoading] = useState(false);
     // ⚡ Company branding is now passed as props from layout — no fetch needed
     const company = { logoUrl, name };
@@ -74,6 +74,12 @@ export function RecruiterAssistant({ logoUrl, name }: { logoUrl?: string; name?:
             }
             return <span key={i}>{part}</span>;
         });
+    };
+
+    const handleNewChat = () => {
+        setMessages([welcomeMessage]);
+        setInput("");
+        setIsLoading(false);
     };
 
     const handleSendMessage = async () => {
@@ -161,16 +167,11 @@ export function RecruiterAssistant({ logoUrl, name }: { logoUrl?: string; name?:
                                 <Button 
                                     variant="ghost" 
                                     size="icon" 
-                                    onClick={() => setMessages([
-                                        {
-                                            role: "assistant",
-                                            content: "### Welcome to Ishita @ Sreeva AI\n\nI am your AI recruitment assistant, ready to help you analyze your talent pool and find the best candidates. Ask me anything about your applicants' skills or interview performance!"
-                                        }
-                                    ])} 
+                                    onClick={handleNewChat}
                                     className="h-10 w-10 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded-xl transition-all"
-                                    title="Reset Chat"
+                                    title="New Chat"
                                 >
-                                    <RotateCcw className="h-4 w-4" />
+                                    <Plus className="h-5 w-5" />
                                 </Button>
                                 <Button variant="ghost" size="icon" onClick={() => setIsOpen(false)} className="h-10 w-10 text-gray-400 hover:text-gray-900 hover:bg-gray-50 rounded-xl transition-all">
                                     <X className="h-6 w-6" />

@@ -416,7 +416,7 @@ export function buildSreevaAIInterviewViewModel(i: {
     const nums = qaRows.map((r: any) => parseFloat(String(r?.score || "").replace(/[^\d.]/g, "")))
       .filter((n: number) => Number.isFinite(n));
     if (nums.length > 0) return Math.min(100, Math.round((nums.reduce((a: number, b: number) => a + b, 0) / nums.length) * 10));
-    return i.isFallbackReport ? 0 : Math.round((i.interviewScore / 10) * 100) || 0;
+    return i.isFallbackReport ? 0 : Math.min(100, Math.max(0, i.interviewScore)) || 0;
   })();
 
   const questionsAsked = Math.max(1, (i.interviewQaRows?.length || i.interviewSessionRows.length) || 1);
@@ -635,13 +635,12 @@ export function buildSreevaAIInterviewViewModel(i: {
     });
   });
 
-  // ── Fit percent — use AI combined_score as primary source ──
+  // ── Fit percent — combined_score is 0-100 (enriched server-side) ──
   const fitPct = (() => {
     const rawComb = Number(scores.combined_score);
-    if (Number.isFinite(rawComb) && rawComb > 0) {
-      return Math.min(100, rawComb <= 10 ? Math.round(rawComb * 10) : Math.round(rawComb));
-    }
-    return Math.min(100, Math.round((i.combinedScore / 10) * 100));
+    if (Number.isFinite(rawComb) && rawComb > 0) return Math.min(100, Math.max(0, Math.round(rawComb)));
+    // Fallback: combinedScore is already 0-100 from the page
+    return Math.min(100, Math.max(0, i.combinedScore));
   })();
 
   // ── Recommendation from AI verdict (not from fitPct) ──

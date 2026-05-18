@@ -199,7 +199,7 @@ export default function SuperAdminSupportPage() {
                         <select
                             value={status}
                             onChange={(e) => setStatus(e.target.value)}
-                            className="h-8 rounded-lg border border-gray-200 bg-white px-2 text-[11px] font-bold text-gray-600 outline-none focus:border-orange-500 transition-colors"
+                            className="h-8 rounded-lg border border-gray-200 bg-white px-2 text-[11px] font-bold text-gray-800 outline-none focus:border-orange-500 transition-colors"
                         >
                             <option value="ALL">Status: All</option>
                             <option value="OPEN">Open</option>
@@ -307,7 +307,7 @@ export default function SuperAdminSupportPage() {
                                                         <button 
                                                             disabled={updatingStatus === ticket.id}
                                                             className={cn(
-                                                                "inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase border shadow-sm transition-all hover:bg-white active:scale-[0.98] disabled:opacity-50",
+                                                                "inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase border shadow-sm transition-all hover:bg-white active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed",
                                                                 (ticket.status || "OPEN") === "OPEN" ? "bg-amber-50 border-amber-200 text-amber-700" :
                                                                 (ticket.status || "OPEN") === "RESOLVED" ? "bg-emerald-50 border-emerald-200 text-emerald-700" :
                                                                 "bg-gray-50 border-gray-200 text-gray-600"
@@ -318,13 +318,13 @@ export default function SuperAdminSupportPage() {
                                                             <ChevronDown className="h-3 w-3 opacity-50" />
                                                         </button>
                                                     </DropdownMenuTrigger>
-                                                    <DropdownMenuContent align="end" className="w-36 p-1 rounded-xl border-gray-100 shadow-xl">
+                                                    <DropdownMenuContent align="end" className="w-40 rounded-xl border border-gray-200 bg-white p-2 shadow-2xl">
                                                         {["OPEN", "RESOLVED", "CLOSED"].map((s) => (
                                                             <DropdownMenuItem
                                                                 key={s}
                                                                 className={cn(
-                                                                    "rounded-lg px-2.5 py-2 font-bold text-[10px] cursor-pointer flex items-center justify-between",
-                                                                    ticket.status === s ? "bg-orange-50 text-orange-600" : "text-gray-500 hover:bg-gray-50"
+                                                                    "flex cursor-pointer items-center justify-between rounded-lg px-2.5 py-2 text-[10px] font-bold",
+                                                                    ticket.status === s ? "bg-orange-50 text-orange-600" : "text-gray-700 hover:bg-gray-50"
                                                                 )}
                                                                 onClick={() => handleUpdateStatus(ticket.id, s)}
                                                             >
@@ -369,11 +369,11 @@ export default function SuperAdminSupportPage() {
                 )}
             </div>
             <Dialog open={!!viewTicket} onOpenChange={(open) => !open && setViewTicket(null)}>
-                <DialogContent className="max-w-xl rounded-[2rem] border-gray-100 bg-white/95 backdrop-blur-xl p-8 shadow-2xl">
-                    <DialogHeader>
-                        <DialogTitle className="text-lg font-bold text-gray-900 mb-4">Issue Description</DialogTitle>
-                    </DialogHeader>
-                    <div className="rounded-2xl bg-gray-50/50 border border-gray-100 p-6">
+            <DialogContent className="max-w-xl rounded-[2rem] border border-gray-100 bg-white p-8 shadow-2xl">
+                <DialogHeader>
+                    <DialogTitle className="text-lg font-bold text-gray-900 mb-4">Issue Description</DialogTitle>
+                </DialogHeader>
+                <div className="rounded-2xl bg-gray-50/50 border border-gray-100 p-6">
                         <p className="text-[15px] text-gray-700 leading-relaxed whitespace-pre-wrap font-medium">
                             {viewTicket?.issueAbout}
                         </p>

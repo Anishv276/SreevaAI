@@ -9,10 +9,13 @@ interface SuperAdminStats {
     totalOrgs: number;
     activeOrgs: number;
     suspendedOrgs: number;
+    closedOrgs: number;
     totalAdmins: number;
     totalDrives: number;
     totalCandidates: number;
     totalCreditsUsed: number;
+    platformHealth: number;
+    engagedOrgs: number;
     trends: { orgs: number; admins: number; drives: number; candidates: number };
 }
 
@@ -69,7 +72,7 @@ export function SuperAdminStatsGrid() {
     }
 
     const s = stats;
-    const activePercentage = s.totalOrgs > 0 ? Math.round((s.activeOrgs / s.totalOrgs) * 100) : 0;
+    const activePercentage = s.platformHealth ?? (s.totalOrgs > 0 ? Math.round((s.activeOrgs / s.totalOrgs) * 100) : 0);
 
     const cards = [
         {
@@ -119,7 +122,7 @@ export function SuperAdminStatsGrid() {
             icon: Globe,
             color: activePercentage > 90 ? "text-emerald-600" : activePercentage > 70 ? "text-amber-600" : "text-red-500",
             iconBg: activePercentage > 90 ? "bg-emerald-50" : activePercentage > 70 ? "bg-amber-50" : "bg-red-50",
-            sub: `${s.activeOrgs} active · ${s.suspendedOrgs} suspended`,
+            sub: `${s.activeOrgs} active · ${s.suspendedOrgs} paused · ${s.engagedOrgs ?? 0} engaged/30d`,
         },
     ];
 
