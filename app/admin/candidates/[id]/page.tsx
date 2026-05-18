@@ -152,6 +152,24 @@ export default function CandidateProfilePage() {
         return [];
     })();
 
+    // ── Signal timeline from proctoringReport.events ──────────────────────
+    const signalTimeline = (() => {
+        const raw = candidate?.interview?.proctoringReport;
+        const pr = typeof raw === "string" ? (() => { try { return JSON.parse(raw); } catch { return {}; } })() : (raw || {});
+        const events: any[] = Array.isArray(pr?.events) ? pr.events : [];
+        return events
+            .filter((e: any) => e?.recruiter_visible !== false && e?.signal_name && typeof e?.elapsed_sec === "number")
+            .map((e: any) => ({
+                elapsed_sec: Number(e.elapsed_sec),
+                signal_name: String(e.signal_name),
+                signal_layer: String(e.signal_layer || ""),
+                evidence: String(e.evidence || ""),
+                score_delta: Number(e.score_delta || 0),
+                turn: Number(e.turn || 0),
+                recruiter_visible: true,
+            }));
+    })();
+
     // ── Is this a fallback/failed report? ──────────────────────────────────
     const isFallbackReport = interviewReportData?._meta?.is_fallback === true;
 
@@ -161,27 +179,6 @@ export default function CandidateProfilePage() {
     const interviewReportCognitiveInsights = interviewReportData?.cognitive_insights || {};
     const interviewReportBehavioralAnalysis = interviewReportData?.behavioral_analysis || {};
     const interviewReportVerdict = interviewReportData?.verdict || {};
-    const interviewStrategicVerdict = (() => {
-        // Prefer the dedicated strategicVerdict DB field, fall back to report embedded field
-        const raw = candidate?.interview?.strategicVerdict || interviewReportData?.strategic_verdict;
-        if (!raw) return null;
-        if (typeof raw === "string") {
-            try { return JSON.parse(raw); } catch { return null; }
-        }
-        return raw;
-    })();
-    const interviewBillingSnapshot = (() => {
-        const raw = candidate?.interview?.billingSnapshot;
-        if (!raw) return {};
-        if (typeof raw === "string") {
-            try {
-                return JSON.parse(raw);
-            } catch {
-                return {};
-            }
-        }
-        return raw;
-    })();
 
     // ── Skills proof — handle object array (new schema) AND legacy string array ──
     const rawSkillsProof = Array.isArray(interviewReportData?.skills_proof)
@@ -554,9 +551,7 @@ export default function CandidateProfilePage() {
                     interviewReportCognitiveInsights,
                     interviewReportBehavioralAnalysis,
                     interviewReportVerdict,
-                    interviewStrategicVerdict,
                     isFallbackReport,
-                    interviewBillingSnapshot,
                     interviewReportSkills,
                     interviewSessionRows,
                     interviewQaRows,
@@ -572,6 +567,7 @@ export default function CandidateProfilePage() {
                     recordingDurationSec,
                     formatDuration,
                     communicationStatus,
+                    signalTimeline,
                 })}
             />
 

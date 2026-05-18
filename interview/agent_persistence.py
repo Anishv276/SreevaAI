@@ -744,7 +744,6 @@ async def persist_transcript(
     start_time: Optional[float],
     proctoring_data: Optional[dict] = None,
     final_status: str = "COMPLETED",
-    recruiter_summary: Optional[dict] = None,
 ):
     """Save transcript, duration, and proctoring report to Interview table via asyncpg."""
     if not transcript_lines and final_status != "NO_SHOW":
@@ -760,20 +759,8 @@ async def persist_transcript(
         proctor_report = None
         if proctoring_data:
             proctor_report = {
-                "role_category": proctoring_data.get("role_category"),
-                "candidate_band": proctoring_data.get("candidate_band"),
-                "total_turns": proctoring_data.get("total_turns", 0),
-                "final_suspicion_score": proctoring_data.get("suspicion_score", 0),
-                "final_mode": proctoring_data.get("current_mode", "normal"),
-                "exit_reason": proctoring_data.get("exit_reason", "normal_completion"),
                 "events": proctoring_data.get("events", []),
                 "contradictions": proctoring_data.get("contradictions", []),
-                "claim_index": proctoring_data.get("claim_index", {}),
-                "contradiction_state": proctoring_data.get("contradiction_state", {}),
-                "stage_history": proctoring_data.get("stage_history", []),
-                "stage_transition_events": proctoring_data.get("stage_transition_events", []),
-                "total_stages_covered": proctoring_data.get("total_stages_covered", 0),
-                "trust": recruiter_summary if recruiter_summary else {},
             }
         pool = await get_db_pool()
         async with pool.acquire() as conn:
@@ -833,27 +820,13 @@ async def persist_answer_scores(app_id: str, answer_scores: list[dict]) -> None:
             total_answers = len(answer_scores)
             avg_clarity = sum(s.get("clarity", 5) for s in answer_scores) / max(total_answers, 1)
             avg_depth = sum(s.get("depth", 5) for s in answer_scores) / max(total_answers, 1)
-            avg_specificity = sum(s.get("specificity", 5) for s in answer_scores) / max(total_answers, 1)
-            avg_grounding = sum(s.get("grounding", 5) for s in answer_scores) / max(total_answers, 1)
             avg_overall = sum(s.get("overall", 5) for s in answer_scores) / max(total_answers, 1)
-            all_signals = {}
-            all_concerns = {}
-            for score in answer_scores:
-                for sig in score.get("signals", []):
-                    all_signals[sig] = all_signals.get(sig, 0) + 1
-                for concern in score.get("concerns", []):
-                    all_concerns[concern] = all_concerns.get(concern, 0) + 1
             answer_scores_payload = {
-                "totalAnswers": total_answers,
                 "averages": {
                     "clarity": round(avg_clarity, 2),
                     "depth": round(avg_depth, 2),
-                    "specificity": round(avg_specificity, 2),
-                    "grounding": round(avg_grounding, 2),
                     "overall": round(avg_overall, 2),
                 },
-                "signalCounts": all_signals,
-                "concernCounts": all_concerns,
                 "allAnswers": answer_scores,
             }
             await conn.execute(
@@ -868,8 +841,7 @@ async def persist_answer_scores(app_id: str, answer_scores: list[dict]) -> None:
             )
             logger.info(
                 f"[SCORE] Saved {total_answers} answer scores for {app_id}: "
-                f"clarity={avg_clarity:.1f}, depth={avg_depth:.1f}, specificity={avg_specificity:.1f}, "
-                f"grounding={avg_grounding:.1f}"
+                f"clarity={avg_clarity:.1f}, depth={avg_depth:.1f}, overall={avg_overall:.1f}"
             )
     except Exception as e:
         logger.error(f"[SCORE] Failed to persist answer scores for {app_id}: {e}")

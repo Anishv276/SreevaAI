@@ -3,9 +3,9 @@
 ## Current UI Structure
 
 The interview report has tabs for:
-1. **Integrity signals** (proctoring flags, tab switching, face absent, etc.)
-2. **Behavioral signals** (engagement, consistency, communication, confidence)
-3. **Cognitive insights** (clarity, depth, problem-solving, etc.)
+1. **Integrity** (proctoring flags, tab switching, face absent, etc.)
+2. **Behavioral** (engagement, consistency, communication, confidence)
+3. **Cognitive** (clarity, depth, problem-solving, etc.)
 
 Currently the **Behavioral signals** tab shows:
 ```

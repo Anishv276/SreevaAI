@@ -1,21 +1,12 @@
-﻿import base64
-import os
-import sys
+﻿import sys
 import asyncio
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-import random
 import json
 import time
 import asyncpg
-import urllib.error
-import urllib.parse
-import urllib.request
-from dataclasses import dataclass
 from typing import Optional, Any
-import uuid
 import re
-import traceback
 from openai import AsyncOpenAI
 try:
     import redis.asyncio as redis_asyncio  # type: ignore[import-untyped]
@@ -37,7 +28,6 @@ from interview.agent_profile_context import (
     refresh_candidate_band_context,
 )
 from interview.interview_phases import (
-    InterviewStageConfig,
     STAGE_CONFIGS,
     build_greeting_text,
     build_warmup_directive,
@@ -56,7 +46,6 @@ from interview.agent_providers import (
 )
 from interview.agent_persistence import (
     _create_db_pool,
-    get_db_pool,
 )
 from interview.agent_runtime_helpers import (
     _build_recent_context_block,
@@ -67,20 +56,13 @@ from interview.agent_runtime_helpers import (
     sanitize_candidate_facing_text,
 )
 from interview.agent_runtime_support import (
-    AGENT_NAME,
-    APP_BASE_URL,
-    DATABASE_URL,
     DEFAULT_VOICE_ID,
     LLM_MODEL,
     VOICE_REGISTRY,
     FIXED_INTERVIEW_DURATION_MINUTES,
-    PROCTORING_WEIGHTS,
     REDIS_URL,
     STT_MODEL,
-    _DB_POOL,
     _DB_POOL_INIT_TASK,
-    _TOOL_ALIAS_CATALOG,
-    compose_mode_risk_score,
     compose_risk_score,
     logger,
     reset_log_context,
@@ -89,25 +71,16 @@ from interview.agent_runtime_support import (
 from livekit.agents import (
     Agent,
     AgentSession,
-    APIConnectOptions,
-    APIConnectionError,
-    APIStatusError,
-    APITimeoutError,
-    DEFAULT_API_CONNECT_OPTIONS,
     JobContext,
     JobProcess,
-    inference,
     TurnHandlingOptions,
     llm,
-    tts as lk_tts,
 )
 from livekit.agents.metrics import AgentSessionUsage
-from livekit.agents.voice.events import ConversationItemAddedEvent
 from livekit.agents.voice import room_io
 from livekit.agents.voice.turn import EndpointingOptions, InterruptionOptions
-from livekit.plugins import cartesia, openai, deepgram, silero, sarvam
 from interview.turn_evaluator import run_turn_evaluation
-from interview.trust_engine import apply_turn_decision, apply_proctoring_event, apply_contradiction_resolved, finalize_trust_state
+from interview.trust_engine import apply_turn_decision, apply_contradiction_resolved, finalize_trust_state
 from interview.contradiction_state import init_contradiction_state, advance_contradiction_state, summarize_contradiction_state
 from interview.session_state import init_trust_state
 from interview.recruiter_summary import build_recruiter_summary
@@ -206,7 +179,6 @@ from interview.agent_persistence import (
     flush_pending_manual_billing,
     generate_interview_report,
     generate_interview_summary,
-    get_db_pool,
     get_interview_context,
     mark_interview_started,
     persist_answer_scores,
@@ -460,7 +432,7 @@ async def entrypoint(ctx: JobContext):
     # Stage budgets are initialized once and then dynamically rebalanced after each stage.
     _initialize_stage_budgets_called = False
     started_at = time.perf_counter()
-    async def _log_shutdown(reason: str = "") -> None:
+    async def _log_shutdown(_reason: str = "") -> None:
         elapsed_sec = round(time.perf_counter() - started_at, 1)
         try:
             logger.info("[SESSION] shutdown — elapsed=%ss", elapsed_sec)
@@ -1320,12 +1292,9 @@ async def entrypoint(ctx: JobContext):
             if not warmup_complete and _last_interviewer_question and turn_snapshot > 1:
                 async with _session_state_lock:
                     answer_scores.append({
-                        "clarity": 0, "depth": 0, "specificity": 0, "grounding": 0,
-                        "fluency": 0, "grammar": 0, "confidence": 0,
+                        "clarity": 0, "depth": 0, "fluency": 0, "confidence": 0,
                         "overall": 0.0, "signals": [], "concerns": [],
                         "is_warmup": True,
-                        "turn": turn_snapshot,
-                        "question": _last_interviewer_question,
                     })
             if warmup_complete and _last_interviewer_question and turn_snapshot > 1:
                 answer_snap = content
@@ -1508,9 +1477,6 @@ async def entrypoint(ctx: JobContext):
                                 "overall": quality_avg,
                                 "signals": [event["signal_name"] for event in signal_events if event.get("signal_name")],
                                 "concerns": [event["signal_name"] for event in signal_events if event.get("score_delta", 0.0) < 0],
-                                "turn": turn,
-                                "question": question,
-                                "answer": answer,
                             }
                             answer_scores.append(quality_record)
                             # Update depth history and follow-up counter
@@ -1604,6 +1570,7 @@ async def entrypoint(ctx: JobContext):
                                 behavioral_toggles=evaluation_signal_toggles,
                             )
                             # Record the signal contract in one place and keep the legacy risk meter aligned.
+                            _now_elapsed = round(time.time() - session_start_time, 1) if session_start_time else 0.0
                             for event in signal_events:
                                 event_delta = float(event.get("score_delta", 0.0) or 0.0)
                                 legacy_delta = int(round(max(0.0, -event_delta) * 100))
@@ -1627,6 +1594,7 @@ async def entrypoint(ctx: JobContext):
                                     "recoverable": event["recoverable"],
                                     "recruiter_visible": event["recruiter_visible"],
                                     "turn": turn,
+                                    "elapsed_sec": _now_elapsed,
                                     "score_after": suspicion_score,
                                 })
                                 logger.info(
@@ -1684,6 +1652,7 @@ async def entrypoint(ctx: JobContext):
                                         "recruiter_visible": True,
                                         "evidence": contradiction_state_event.get("evidence", ""),
                                         "contradiction_type": contradiction_state_event.get("contradiction_type", ""),
+                                        "elapsed_sec": _now_elapsed,
                                     })
                                     logger.info(
                                         f"[CONTRADICTION] status={contradiction_state_event['status']} "
@@ -2330,7 +2299,6 @@ async def entrypoint(ctx: JobContext):
         session_start_time,
         proctoring_data=proctoring_data,
         final_status="COMPLETED",
-        recruiter_summary=recruiter_summary,
     )
     # Save answer quality scores
     await persist_answer_scores(app_id, answer_scores)

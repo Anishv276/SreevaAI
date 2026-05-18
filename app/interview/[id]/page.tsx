@@ -1068,7 +1068,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                     </motion.div>
                 )}
             </AnimatePresence>
-            {/*  AI Proctoring Violation Alert (face / gaze / pose)  */}
+            {/*  AI Proctoring Violation Alert (face / pose)  */}
             <AnimatePresence>
                 {SHOW_BACKGROUND_PROCTORING_ALERTS && faceViolationAlert && phase === "interview" && (
                     <motion.div

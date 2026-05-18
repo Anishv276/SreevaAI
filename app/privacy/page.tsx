@@ -112,7 +112,6 @@ export default function PrivacyPolicy() {
                     <p className="mb-2">During interviews we monitor:</p>
                     <ul className="list-disc pl-6 mb-4 space-y-1">
                         <li>Facial recognition (to verify candidate identity)</li>
-                        <li>Gaze detection (to detect if they're looking away)</li>
                         <li>Mouse movement patterns</li>
                         <li>Tab switching</li>
                         <li>Camera and microphone status</li>
@@ -135,13 +134,12 @@ export default function PrivacyPolicy() {
                         <li>Comply with legal obligations</li>
                     </ul>
 
-                    <h2 className="text-xl font-bold mt-8 mb-4">4. BIOMETRIC DATA (FACIAL RECOGNITION & GAZE TRACKING)</h2>
+                    <h2 className="text-xl font-bold mt-8 mb-4">4. BIOMETRIC DATA (FACIAL RECOGNITION & CAMERA-BASED PROCTORING)</h2>
                     <p className="mb-4">During interviews, we collect biometric data. Here's what we do and don't do:</p>
                     
                     <p className="font-bold mb-2">What we do:</p>
                     <ul className="list-disc pl-6 mb-4 space-y-1">
                         <li>Use facial recognition to verify identity</li>
-                        <li>Use gaze detection to detect potential cheating</li>
                         <li>Store data temporarily to generate assessment</li>
                     </ul>
 

@@ -20,7 +20,7 @@ const nextConfig: NextConfig = {
     root: projectRoot,
   },
   experimental: {
-    turbopackFileSystemCacheForDev: false,
+    turbopackFileSystemCacheForDev: true,
     serverActions: {
       bodySizeLimit: '20mb',
       allowedOrigins,

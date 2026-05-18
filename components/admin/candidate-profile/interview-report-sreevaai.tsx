@@ -646,38 +646,49 @@ export function buildSreevaAIInterviewViewModel(i: {
 
   // ── Recommendation from AI verdict (not from fitPct) ──
   const { label: recommendation, color: recommendationColor } = recommendationFromAI(verdict.recommendation, fitPct);
-  // ── AI Summary bullets — use real AI content ──
+  // ── AI Summary bullets — use concise 4-line summary from AI ──
   const verdictSummaryText = String(verdict.summary || i.interviewReportSummary || i.interviewAiSummary || "").trim();
   const verdictRecommendationReason = String(verdict.recommendation_reason || "").trim();
+  const aiSummaryConcise = String((verdict as any).ai_summary_concise || "").trim();
 
   // Proctoring signal (needed before aiBullets to reference flagCount)
   const flagCount = proctoringRows.filter((row) => row.bad).length;
 
-  // Split the AI verdict summary into sentence-level bullet points
+  // Use AI's concise 4-line summary if available, otherwise generate fallback
   const aiBullets: string[] = (() => {
     const bullets: string[] = [];
-    if (verdictSummaryText) {
-      // Split on sentence boundaries — each sentence becomes a bullet
-      const sentences = verdictSummaryText
-        .replace(/\n+/g, " ")
-        .split(/(?<=[.!?])\s+(?=[A-Z])/)
+
+    // Primary: Use AI-generated concise summary (4 lines, already formatted)
+    if (aiSummaryConcise) {
+      const lines = aiSummaryConcise
+        .split(/[.!?]+/)
         .map(s => s.trim())
-        .filter(s => s.length > 15);
-      bullets.push(...sentences.slice(0, 6));
+        .filter(s => s.length > 10)
+        .slice(0, 4);
+
+      // Convert markdown bold (**word**) to display format
+      lines.forEach(line => {
+        // Keep markdown as-is for now — UI will handle rendering
+        if (line) bullets.push(line);
+      });
     }
-    if (verdictRecommendationReason && !bullets.some(b => b.includes(verdictRecommendationReason.slice(0, 30)))) {
+
+    // Fallback: If AI didn't provide concise summary, use recommendation reason
+    if (bullets.length === 0 && verdictRecommendationReason) {
       bullets.push(verdictRecommendationReason);
     }
-    // Signal bullets when no AI verdict
+
+    // Absolute fallback: Generate from scores
     if (bullets.length === 0) {
       if (!i.isFallbackReport) {
-        if (technicalPct >= 70) bullets.push(`Technical performance was strong — scored ${technicalPct}% across ${questionsAsked} question${questionsAsked === 1 ? "" : "s"} with no major gaps flagged.`);
-        else if (technicalPct >= 45) bullets.push(`Technical depth was partial — scored ${technicalPct}% across ${questionsAsked} question${questionsAsked === 1 ? "" : "s"}; follow-up on weaker areas recommended.`);
-        else if (technicalPct > 0) bullets.push(`Technical performance was below threshold — scored ${technicalPct}% and depth of answers was insufficient for this role.`);
+        if (technicalPct >= 70) bullets.push(`**Strong** technical performance — scored **${technicalPct}%** across **${questionsAsked}** question${questionsAsked === 1 ? "" : "s"}.`);
+        else if (technicalPct >= 45) bullets.push(`**Moderate** technical depth — scored **${technicalPct}%**; follow-up recommended on weaker areas.`);
+        else if (technicalPct > 0) bullets.push(`**Below threshold** technical performance — scored **${technicalPct}%**, insufficient for this role.`);
       }
-      if (flagCount > 0) bullets.push(`${flagCount} proctoring flag${flagCount === 1 ? "" : "s"} detected — review the recording before making a decision.`);
+      if (flagCount > 0) bullets.push(`**${flagCount}** proctoring flag${flagCount === 1 ? "" : "s"} detected — **review recording** before deciding.`);
     }
-    return bullets;
+
+    return bullets.slice(0, 4); // Enforce max 4 lines
   })();
 
   // ── Strengths / Risks from AI behavioral analysis ──
@@ -1402,32 +1413,20 @@ export function TechnicalScoreCard({ pct, questions, tag: _tag, scores }: {
   scores?: { technical: number; communication: number; behavioral: number };
 }) {
   const p = Math.max(0, Math.min(100, pct));
-  const circleRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
-  const [tipPos, setTipPos] = useState<{ top: number; left: number; width: number } | null>(null);
-
-  const handleEnter = (key: string) => {
-    const el = circleRefs.current[key];
-    if (el) {
-      const r = el.getBoundingClientRect();
-      setTipPos({ top: r.bottom + 8, left: Math.max(8, r.left + r.width / 2 - 140), width: 280 });
-    }
-    setHoveredKey(key);
-  };
-  const handleLeave = () => { setHoveredKey(null); setTipPos(null); };
 
   const tech  = Math.max(0, Math.min(100, scores?.technical   ?? 0));
   const behav = Math.max(0, Math.min(100, scores?.behavioral  ?? 0));
   const domainFit = Math.round((tech + behav) / 2);
 
-  const CIRCLES: { key: string; label: string; value: number; color: string; track: string; what: string; low: string; mid: string; high: string }[] = [
+  const CIRCLES = [
     {
       key: "overall", label: "Overall", value: p,
       color: p >= 70 ? "#10B981" : p >= 45 ? "#F59E0B" : "#F43F5E",
       track: p >= 70 ? "#D1FAE5" : p >= 45 ? "#FEF3C7" : "#FEE2E2",
       what: "Weighted total: technical (40%) + communication (35%) + behavioral (25%).",
-      low:  "Overall performance fell below the expected bar — candidate needs significant development in key areas before a hiring decision.",
-      mid:  "Decent overall showing with notable gaps — a follow-up interview is worth considering to probe weaker areas.",
+      low:  "Overall performance fell below the bar — candidate needs significant development before hiring.",
+      mid:  "Decent overall showing with some gaps — a follow-up interview is worth considering to probe weaker areas.",
       high: "Strong overall performance across technical depth, communication quality, and engagement.",
     },
     {
@@ -1439,20 +1438,20 @@ export function TechnicalScoreCard({ pct, questions, tag: _tag, scores }: {
       high: "Demonstrated strong technical skills — accurate answers, correct terminology, and applied concepts well.",
     },
     {
-      key: "domain_knowledge", label: "Domain", value: tech,
+      key: "problem_solving", label: "Problem Solving", value: tech,
       color: "#6366F1", track: "#E0E7FF",
-      what: "Depth of subject-area knowledge — not just surface definitions but applied, contextual understanding.",
-      low:  "Domain knowledge was shallow — knew definitions but couldn't apply or extend them under questioning.",
-      mid:  "Solid foundational knowledge with gaps at the edges. Suitable for junior-to-mid level expectations.",
-      high: "Deep domain knowledge — connected concepts, gave real examples, and demonstrated clear mastery.",
+      what: "Structured approach to solving novel problems — breaking down complexity, identifying assumptions, considering edge cases.",
+      low:  "Jumped to solutions without analyzing the problem. Missed edge cases or assumptions.",
+      mid:  "Good problem breakdown with occasional gaps. Mostly considered edge cases but sometimes superficially.",
+      high: "Systematic analysis: clearly stated assumptions, explored multiple approaches, thoroughly considered edge cases.",
     },
     {
-      key: "domain_fit", label: "Domain Fit", value: domainFit,
+      key: "role_fit", label: "Role Fit", value: domainFit,
       color: "#8B5CF6", track: "#EDE9FE",
-      what: "How closely the candidate's knowledge and behavior map to the specific domain of this role.",
-      low:  "Candidate's background doesn't match this domain closely — significant ramp-up time would be needed.",
-      mid:  "Moderate domain fit — has adjacent skills and seems willing to bridge the gap with effort.",
-      high: "Strong domain fit — experience and answers map directly to what this role demands.",
+      what: "How well the candidate's experience, skills, and demonstrated abilities align with the specific role requirements.",
+      low:  "Significant gaps between candidate skills and role requirements. Would require substantial ramp-up time.",
+      mid:  "Good alignment with some gaps. Has core skills with some areas needing development.",
+      high: "Strong alignment — experience and demonstrated skills directly match role expectations and JD.",
     },
     {
       key: "engagement_fit", label: "Engagement", value: behav,
@@ -1465,104 +1464,239 @@ export function TechnicalScoreCard({ pct, questions, tag: _tag, scores }: {
   ];
 
   const activeCircle = CIRCLES.find(c => c.key === hoveredKey) ?? null;
-  const activeTip = activeCircle
-    ? activeCircle.value >= 70 ? activeCircle.high : activeCircle.value >= 45 ? activeCircle.mid : activeCircle.low
-    : "";
+  const centerCircle = activeCircle || CIRCLES[0];
+  const centerColor = centerCircle.key === "overall" 
+    ? (p >= 70 ? "#10B981" : p >= 45 ? "#F59E0B" : "#F43F5E")
+    : centerCircle.color;
 
-  // Ring helper — size S or L
-  const Ring = ({ c, size }: { c: typeof CIRCLES[0]; size: "lg" | "sm" }) => {
-    const sz = size === "lg" ? 96 : 72;
-    const r  = size === "lg" ? 38 : 28;
-    const sw = size === "lg" ? 7  : 5;
-    const fs = size === "lg" ? "text-[26px]" : "text-[17px]";
-    const circ = 2 * Math.PI * r;
-    const dash = (c.value / 100) * circ;
-    const isActive = hoveredKey === c.key;
-    return (
-      <div
-        ref={el => { circleRefs.current[c.key] = el; }}
-        onMouseEnter={() => handleEnter(c.key)}
-        onMouseLeave={handleLeave}
-        className={cn("flex cursor-default flex-col items-center gap-2 transition-transform duration-200", isActive ? "scale-105" : "")}
-      >
-        <div className="relative" style={{ width: sz, height: sz }}>
-          {/* Subtle glow behind active */}
-          {isActive && (
-            <div className="absolute inset-0 rounded-full blur-md opacity-30" style={{ backgroundColor: c.color }} />
-          )}
-          <svg width={sz} height={sz} viewBox={`0 0 ${sz} ${sz}`} className="relative">
-            <circle cx={sz/2} cy={sz/2} r={r} fill="none" stroke={c.track} strokeWidth={sw} />
-            <circle
-              cx={sz/2} cy={sz/2} r={r} fill="none"
-              stroke={c.color} strokeWidth={sw} strokeLinecap="round"
-              strokeDasharray={`${dash} ${circ}`}
-              strokeDashoffset={circ / 4}
-              style={{ transition: "stroke-dasharray 0.5s ease" }}
-            />
-          </svg>
-          <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <span className={cn("font-extrabold leading-none tabular-nums text-[#1A1D22]", fs)}>{c.value}</span>
-            <span className="text-[9px] font-semibold text-[#98A2B3] mt-0.5">/100</span>
-          </div>
-        </div>
-        <p className={cn(
-          "text-center font-extrabold uppercase tracking-widest leading-tight transition-colors",
-          size === "lg" ? "text-[10px]" : "text-[9px]",
-          isActive ? "text-[#1A1D22]" : "text-[#6B7079]"
-        )}>{c.label}</p>
-      </div>
-    );
+  const n = CIRCLES.length;
+  const cx = 50;
+  const cy = 50;
+  const r = 31;
+  const rOuter = 41.5;
+  const angle = (i: number) => (-90 + (360 / n) * i) * (Math.PI / 180);
+  const clampValue = (v: number) => Math.max(10, Math.min(100, v));
+
+  const pts = CIRCLES.map((def, i) => {
+    const t = (clampValue(def.value) / 100) * r;
+    return `${cx + t * Math.cos(angle(i))},${cy + t * Math.sin(angle(i))}`;
+  });
+
+  const pentPts = (f: number) => {
+    return CIRCLES.map((_, i) => {
+      const t = f * r;
+      return `${cx + t * Math.cos(angle(i))},${cy + t * Math.sin(angle(i))}`;
+    }).join(" ");
   };
 
-  const overall  = CIRCLES[0];
-  const subItems = CIRCLES.slice(1);
+  const primaryColor = p >= 70 ? "#10B981" : p >= 45 ? "#F59E0B" : "#F43F5E";
+  const secondaryColor = p >= 70 ? "#059669" : p >= 45 ? "#D97706" : "#E11D48";
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-5 px-4 py-5">
-
-      {/* Overall — large featured circle */}
-      <Ring c={overall} size="lg" />
-
-      {/* Divider with label */}
-      <div className="flex w-full items-center gap-3">
-        <div className="flex-1 border-t border-[#F0F1F3]" />
-        <span className="text-[9px] font-extrabold uppercase tracking-[0.18em] text-[#C4C9D4]">Breakdown</span>
-        <div className="flex-1 border-t border-[#F0F1F3]" />
-      </div>
-
-      {/* 4 sub-circles in 2×2 grid */}
-      <div className="grid grid-cols-2 gap-x-6 gap-y-5">
-        {subItems.map(c => <Ring key={c.key} c={c} size="sm" />)}
-      </div>
-
-      <p className="text-[9px] text-[#98A2B3]">
-        {questions} question{questions === 1 ? "" : "s"} · hover any circle for insight
-      </p>
-
-      {/* Fixed tooltip */}
-      {hoveredKey && activeCircle && tipPos && (
-        <div
-          className="fixed z-[9999] rounded-xl border border-[#E8EAED] bg-white shadow-2xl overflow-hidden"
-          style={{ top: tipPos.top, left: tipPos.left, width: tipPos.width }}
-          onMouseEnter={() => setHoveredKey(hoveredKey)}
-          onMouseLeave={handleLeave}
+    <div className="flex min-h-0 flex-1 flex-col items-center justify-center p-3">
+      {/* Holographic Radar Chart SVG Container */}
+      <div className="relative w-full aspect-square max-w-[280px]">
+        <svg
+          viewBox="0 0 100 100"
+          className="h-full w-full overflow-visible"
+          preserveAspectRatio="xMidYMid meet"
         >
-          <div className="px-4 pt-3 pb-2 border-b border-[#F0F1F3]" style={{ borderLeftColor: activeCircle.color, borderLeftWidth: 3 }}>
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: activeCircle.color }}>{activeCircle.label}</p>
-              <span className="text-[13px] font-extrabold tabular-nums" style={{ color: activeCircle.color }}>
-                {activeCircle.value}<span className="text-[9px] text-[#98A2B3]">/100</span>
+          <defs>
+            <linearGradient id="techRadarGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor={primaryColor} stopOpacity="0.15" />
+              <stop offset="100%" stopColor={secondaryColor} stopOpacity="0.15" />
+            </linearGradient>
+            <linearGradient id="techRadarStroke" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor={primaryColor} />
+              <stop offset="100%" stopColor={secondaryColor} />
+            </linearGradient>
+          </defs>
+
+          {/* Grid Rings (Concentric Pentagons) */}
+          {[0.25, 0.5, 0.75, 1].map((f) => (
+            <polygon
+              key={f}
+              points={pentPts(f)}
+              fill="none"
+              stroke="#F1F5F9"
+              strokeWidth="0.6"
+              strokeDasharray={f === 1 ? "none" : "1.5 1.5"}
+            />
+          ))}
+
+          {/* Spoke Axes */}
+          {CIRCLES.map((c, i) => (
+            <line
+              key={c.key}
+              x1={cx}
+              y1={cy}
+              x2={cx + r * Math.cos(angle(i))}
+              y2={cy + r * Math.sin(angle(i))}
+              stroke={hoveredKey === c.key ? "url(#techRadarStroke)" : "#E2E8F0"}
+              strokeWidth={hoveredKey === c.key ? "0.8" : "0.4"}
+              className="transition-colors duration-200"
+            />
+          ))}
+
+          {/* Glowing Active Shape */}
+          <polygon
+            points={pts.join(" ")}
+            fill="url(#techRadarGradient)"
+            stroke="url(#techRadarStroke)"
+            strokeWidth="1.2"
+            strokeLinejoin="round"
+            className="transition-all duration-300"
+          />
+
+          {/* Interactive Vertex Nodes and Text Labels */}
+          {CIRCLES.map((c, i) => {
+            const ax = angle(i);
+            const t = (clampValue(c.value) / 100) * r;
+            const nodeX = cx + t * Math.cos(ax);
+            const nodeY = cy + t * Math.sin(ax);
+            const ox = cx + rOuter * Math.cos(ax);
+            const oy = cy + rOuter * Math.sin(ax);
+            const isHovered = hoveredKey === c.key;
+
+            return (
+              <g
+                key={c.key}
+                onMouseEnter={() => setHoveredKey(c.key)}
+                onMouseLeave={() => setHoveredKey(null)}
+                className="cursor-pointer"
+              >
+                {/* Hit area for easier hovering */}
+                <circle cx={ox} cy={oy} r="9" fill="transparent" pointerEvents="all" />
+
+                {/* Vertex Dot */}
+                <circle
+                  cx={nodeX}
+                  cy={nodeY}
+                  r={isHovered ? "2.5" : "1.5"}
+                  fill="white"
+                  stroke={isHovered ? "url(#techRadarStroke)" : c.color}
+                  strokeWidth={isHovered ? "1.2" : "0.8"}
+                  className="transition-all duration-200"
+                />
+
+                {/* Text Label */}
+                <text
+                  x={ox}
+                  y={oy - 1.2}
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  fontSize={isHovered ? "2.8" : "2.4"}
+                  fontWeight={isHovered ? "900" : "700"}
+                  fill={isHovered ? "#0F172A" : "#64748B"}
+                  className="transition-all duration-200 uppercase tracking-widest font-extrabold"
+                  style={{ fontFamily: "var(--font-inter, sans-serif)" }}
+                >
+                  {c.label}
+                </text>
+                <text
+                  x={ox}
+                  y={oy + 2.2}
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  fontSize={isHovered ? "3.8" : "3.2"}
+                  fontWeight="900"
+                  fill={isHovered ? "url(#techRadarStroke)" : "#0F172A"}
+                  className="transition-all duration-200 font-extrabold"
+                  style={{ fontFamily: "var(--font-inter, sans-serif)" }}
+                >
+                  {c.value}%
+                </text>
+              </g>
+            );
+          })}
+
+          {/* Central Score readout */}
+          <g style={{ pointerEvents: "none" }}>
+            <circle cx={cx} cy={cy} r="7.5" fill="white" className="shadow-sm" />
+            <text
+              x={cx}
+              y={cy - 1.5}
+              textAnchor="middle"
+              dominantBaseline="middle"
+              fontSize="2"
+              fontWeight="800"
+              fill="#94A3B8"
+              className="uppercase tracking-widest font-bold"
+              style={{ fontFamily: "var(--font-inter, sans-serif)" }}
+            >
+              {centerCircle.label === "Domain Fit" ? "Dom Fit" : centerCircle.label}
+            </text>
+            <text
+              x={cx}
+              y={cy + 1.8}
+              textAnchor="middle"
+              dominantBaseline="middle"
+              fontSize="4.2"
+              fontWeight="900"
+              fill={centerColor}
+              className="font-extrabold"
+              style={{ fontFamily: "var(--font-inter, sans-serif)" }}
+            >
+              {centerCircle.value}%
+            </text>
+          </g>
+        </svg>
+      </div>
+
+      {/* Grid of Scores Strip below the radar chart */}
+      <div className="w-full grid grid-cols-5 gap-1.5 border-t border-[#F1F5F9] pt-4 px-1 mt-2">
+        {CIRCLES.map((c) => {
+          const isActive = hoveredKey === c.key;
+          return (
+            <div
+              key={c.key}
+              onMouseEnter={() => setHoveredKey(c.key)}
+              onMouseLeave={() => setHoveredKey(null)}
+              className={cn(
+                "flex flex-col items-center gap-0.5 py-1 px-0.5 rounded-lg transition-all duration-200 cursor-pointer",
+                isActive ? "bg-slate-50 scale-105" : "hover:bg-slate-50/50"
+              )}
+            >
+              <span className="text-[7.5px] font-bold uppercase tracking-wider text-[#64748B] text-center truncate w-full">
+                {c.label === "Domain Fit" ? "Dom Fit" : c.label}
+              </span>
+              <span
+                className="text-[12px] font-black tabular-nums font-extrabold"
+                style={{ color: isActive ? c.color : "#1E293B" }}
+              >
+                {c.value}
               </span>
             </div>
-            <p className="mt-0.5 text-[10px] text-[#98A2B3]">{activeCircle.what}</p>
-          </div>
-          <div className="px-4 py-3">
-            <p className="text-[11px] leading-relaxed text-[#1A1D22]">
-              <span className="mr-1.5 font-black" style={{ color: activeCircle.color }}>▸</span>{activeTip}
+          );
+        })}
+      </div>
+
+      {/* Dynamic Detail/Insight Panel */}
+      <div className="w-full mt-4 min-h-[68px] rounded-xl border border-[#E2E8F0] bg-slate-50/50 p-3 transition-all duration-200">
+        <div className="flex items-start gap-2.5">
+          <span
+            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-black text-white transition-all duration-200"
+            style={{ backgroundColor: centerColor }}
+          >
+            ▸
+          </span>
+          <div className="space-y-0.5">
+            <h4
+              className="text-[10px] font-black uppercase tracking-wider transition-colors duration-200"
+              style={{ color: centerColor }}
+            >
+              {centerCircle.label} Details
+            </h4>
+            <p className="text-[10px] leading-relaxed text-[#334155] font-medium">
+              {centerCircle.value >= 70 ? centerCircle.high : centerCircle.value >= 45 ? centerCircle.mid : centerCircle.low}
             </p>
           </div>
         </div>
-      )}
+      </div>
+
+      <p className="text-[9px] text-[#98A2B3] mt-3">
+        {questions} question{questions === 1 ? "" : "s"} · hover any label for active insight
+      </p>
     </div>
   );
 }
@@ -1888,12 +2022,20 @@ export function InterviewReportSreevaAI({
               <p className="text-[12px] text-[#6B7079]">AI analysis pending — manual review required.</p>
             ) : (
               <ul className="space-y-2.5">
-                {model.aiBullets.map((b, i) => (
-                  <li key={i} className="flex gap-2.5 items-start">
-                    <span className="mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full bg-[#1E9D55]" />
-                    <span className="text-[12.5px] leading-relaxed text-[#1A1D22]">{b}</span>
-                  </li>
-                ))}
+                {model.aiBullets.map((b, i) => {
+                  // Convert **word** to <strong> tags
+                  const parts = b.split(/\*\*([^*]+)\*\*/);
+                  return (
+                    <li key={i} className="flex gap-2.5 items-start">
+                      <span className="mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full bg-[#1E9D55]" />
+                      <span className="text-[12.5px] leading-relaxed text-[#1A1D22]">
+                        {parts.map((part, idx) =>
+                          idx % 2 === 1 ? <strong key={idx} className="font-bold text-[#0D4D2E]">{part}</strong> : part
+                        )}
+                      </span>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </div>

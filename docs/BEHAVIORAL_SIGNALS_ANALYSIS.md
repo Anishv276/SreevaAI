@@ -15,7 +15,7 @@ From `proctoringEvents` captured during interview:
 - Indicator: Not paying attention, leaving seat, masking identity
 - Severity: High (integrity concern)
 
-**Gaze/Eye Movement Issues**
+**Camera Attention Issues**
 - Looking away from camera for extended periods
 - Indicator: Checking notes, reading, not engaged
 - Severity: Medium-Low (natural for thinking, but pattern matters)

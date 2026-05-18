@@ -88,11 +88,11 @@ OUTPUT SCHEMA (strict JSON, all fields required):
   },
 
   "communication": {
-    "pronunciation": number (0-100),
-    "grammar": number (0-100),
-    "fluency": number (0-100),
-    "confidence": number (0-100),
-    "summary": "One specific sentence about communication quality based on the transcript — cite a pattern"
+    "pronunciation": number (0-100, score ONLY on clarity of articulation from the transcript — did words come through clearly and without distortion? 85-100: crisp articulation throughout; 65-84: mostly clear with occasional mumbling; 40-64: frequent unclear words; below 40: hard to understand),
+    "grammar": number (0-100, score ONLY on sentence structure from the transcript — complete sentences, correct tense, subject-verb agreement. 85-100: consistently well-formed sentences; 65-84: mostly correct with minor fragments; 40-64: notable fragments and tense errors; below 40: frequent structural errors that impede understanding),
+    "fluency": number (0-100, score ONLY on smoothness of delivery — filler words (um, uh, like, you know, sort of), unnatural pauses, restarts, incomplete thoughts. 85-100: smooth delivery, minimal filler; 65-84: occasional filler or pauses; 40-64: frequent filler or hesitation; below 40: heavily disrupted delivery that hinders comprehension),
+    "confidence": number (0-100, score ONLY on assertiveness and decisiveness — did the candidate state answers clearly without excessive hedging ('I think maybe', 'not sure', 'kind of')? Did tone stay steady under follow-up? 85-100: decisive, no hedging, held position under pressure; 65-84: mostly confident with occasional hedging; 40-64: frequent hedging, tone dropped under follow-up; below 40: consistently tentative, avoided direct answers),
+    "summary": "One specific sentence citing a concrete pattern observed in the transcript — name the actual behavior (e.g. 'Candidate used filler words 12+ times across technical answers, dragging fluency down, but grammar was consistently strong'). No generic phrases."
   },
 
   "cognitive_insights": {
@@ -118,35 +118,36 @@ OUTPUT SCHEMA (strict JSON, all fields required):
   },
 
   "behavioral_analysis": {
-    "overview": "2-3 sentence high-level behavioral summary for the hiring decision",
+    "overview": "2-3 sentence plain-English summary an HR manager can read in 10 seconds and know whether to advance. State the candidate's working style, attitude to role, and one decisive signal.",
     "engagement_signals": [
-      "Specific observation about focus, attention, participation — cite timing or topic"
+      "Write each bullet as a complete observation an HR manager can act on. Format: [What happened] → [What it signals]. E.g. 'Candidate asked two clarifying questions before answering the system design question → shows structured thinking and genuine engagement rather than rushing to answer.' Minimum 4 bullets, cite topic/timing."
     ],
     "consistency_signals": [
-      "Resume claim vs interview answer — specific mismatch or confirmation with evidence"
+      "Compare resume claims to interview answers. Format: [Resume claim] vs [What they said in interview] → [Verdict: Confirmed / Partial / Not supported]. E.g. 'Resume lists 3 years React experience → answered hooks question confidently with real examples → Confirmed.' Minimum 4 bullets."
     ],
     "communication_patterns": [
-      "How candidate structured responses — specific pattern with transcript example"
+      "Describe how the candidate communicated, not just that they did. Format: [Pattern observed] — [Specific example from transcript]. E.g. 'Used structured STAR responses for behavioral questions — when asked about a conflict, they named the stakeholder, described their action, and stated the outcome clearly.' Minimum 4 bullets."
     ],
     "confidence_indicators": [
-      "Evidence of genuine or false confidence — specific example from transcript"
+      "Distinguish genuine confidence from performance. Format: [Signal type: Genuine/Surface/Low] — [Evidence]. E.g. 'Genuine: stated a strong opinion on architecture trade-offs and defended it when challenged.' or 'Surface: claimed expertise in Kubernetes but could not name a single kubectl command when asked.' Minimum 4 bullets."
     ],
     "integrity_flags": [
-      "Proctoring correlation or behavioral red flag — cite event + question topic"
+      "Only include if there is an actual flag. If none, write one bullet: 'No behavioral integrity concerns detected during this session.' If flags exist, format: [Flag type] at [question/topic] — [what was observed] — [HR implication]. E.g. 'Tab switch detected during the coding question — candidate's answer quality dropped noticeably after returning, suggesting possible reference lookup.'"
     ],
     "strengths_observed": [
-      "Specific capability demonstrated — cite the question/topic and what they did"
+      "Write each strength as a hiring argument, not a compliment. Format: [Skill/trait demonstrated] — [Specific moment from interview that proves it] — [Why it matters for this role]. E.g. 'Debugging mindset — when given a broken code snippet, immediately asked about the execution environment before reading the code → critical for a backend engineering role.' Minimum 4 bullets."
     ],
     "concerns_noted": [
-      "Specific gap, evasion, or pattern — cite the question/topic where it occurred"
+      "Write each concern as a risk the hiring manager should weigh, with enough detail to decide. Format: [Concern] — [What the candidate said or did] — [Risk level: Low/Medium/High and why]. E.g. 'Shallow system design answers — described only happy-path flows with no mention of failure modes or scale — Medium risk for a senior backend role.' Minimum 4 bullets."
     ],
-    "summary": "2-3 sentence overall behavioral assessment for hiring decision"
+    "summary": "3-sentence final behavioral verdict. Sentence 1: working style and interpersonal signals. Sentence 2: the single strongest evidence point for hiring. Sentence 3: the single biggest risk or open question. Write for a hiring manager making a final call."
   },
 
   "verdict": {
     "summary": "200-300 word detailed overall assessment. Cover: technical depth, communication quality, behavioral signals, consistency with resume, and specific evidence from the interview. End with a clear hiring recommendation rationale.",
     "recommendation": "Strong Yes" | "Yes" | "Maybe" | "No",
-    "recommendation_reason": "1-2 sentence primary reason for this recommendation, citing specific evidence"
+    "recommendation_reason": "1-2 sentence primary reason for this recommendation, citing specific evidence",
+    "ai_summary_concise": "Exactly 4 sentences. Each sentence is critical and decisive. Bold the key words that HR must see (wrap in **word** format). Sentence 1: Overall fit and recommendation. Sentence 2: Primary technical strength or weakness. Sentence 3: Critical communication or behavioral signal. Sentence 4: Any major red flag or exceptional strength. Make every word count."
   },
 
   "strategic_verdict": {
@@ -175,13 +176,16 @@ RULES:
 1. QA_BLOCKS: Map EVERY interviewer question as a separate block. Include full question text and answer_summary. score_breakdown is required for every block.
 2. SCORES: combined_score = weighted average (technical 40%, communication 35%, behavioral 25%). All scores 0-100.
 3. SKILLS_PROOF: Only skills actually discussed. status must reflect actual performance.
-4. BEHAVIORAL_ANALYSIS: 4-8 bullets per section minimum. Cite the transcript specifically.
+4. BEHAVIORAL_ANALYSIS: Minimum 4 bullets per section. Every bullet must follow the format described in the schema — [observed fact] → [what it signals for hiring]. Never write generic bullets like "showed good communication" or "was engaged." Write bullets an HR manager can quote in a debrief meeting.
 5. VERDICT SUMMARY: 200-300 words, specific, evidence-backed. No generic praise.
-6. INTEGRITY: Score 100 if no proctoring events. Deduct for tab switches (5pts each), face not detected (10pts), multiple devices (15pts). Correlate with answer quality.
-7. COGNITIVE INSIGHTS: All _earned/_missed fields required. Cite specific questions/answers.
-8. recommendation: "Strong Yes" only for exceptional candidates. "No" for clear failures. Be honest.
-9. _meta.is_fallback must always be false in a real response.
-10. Do NOT write generic phrases like "showed knowledge", "good answer", "demonstrated skill". Be specific.
+6. AI_SUMMARY_CONCISE: Exactly 4 sentences. Each sentence is critical information an HR manager needs. Bold (**word**) key metrics, names, and decisions. Never filler. Example: "**Senior React Developer** with **7 years** experience. **Strong** system design answers but **weak** on **database optimization**. Shows **genuine confidence** but **occasional hedging** under pressure. **Clear hire** for frontend team if backend skills improve."
+7. INTEGRITY: Score 100 if no proctoring events. Deduct for tab switches (5pts each), face not detected (10pts), multiple devices (15pts). Correlate with answer quality.
+8. COGNITIVE INSIGHTS: All _earned/_missed fields required. Cite specific questions/answers.
+9. recommendation: "Strong Yes" only for exceptional candidates. "No" for clear failures. Be honest.
+10. _meta.is_fallback must always be false in a real response.
+11. Do NOT write generic phrases like "showed knowledge", "good answer", "demonstrated skill". Be specific.
+12. COMMUNICATION SCORES: Each score must be independently derived from transcript evidence. Do NOT average them together or give all four the same score. Score each dimension separately based only on what you can observe in the text: grammar from sentence structure, fluency from filler/pause patterns, confidence from hedging language, pronunciation from clarity of words. If the transcript shows clear evidence of weakness in one dimension and strength in another, scores should diverge — a score spread of 20+ points across dimensions is expected when the candidate has mixed communication patterns.
+13. TECHNICAL_SCORE: Must be calculated from actual Q&A performance (score_breakdown clarity, depth from qa_blocks). Not arbitrary. Show why: "Question X tested Y skill: candidate scored 8/10 (strong depth, weak edge cases)" = technical strength. Average all Q scores for technical_score.
 `;
 
   try {

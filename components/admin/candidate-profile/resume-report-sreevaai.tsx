@@ -421,6 +421,154 @@ function tokenMatches(left: unknown, right: unknown): boolean {
   return a === b || a.includes(b) || b.includes(a);
 }
 
+function sanitizePdfText(value: unknown): string {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function addWrappedText(
+  pdf: jsPDF,
+  text: string,
+  x: number,
+  y: number,
+  maxWidth: number,
+  lineHeight: number,
+): number {
+  const lines = pdf.splitTextToSize(sanitizePdfText(text), maxWidth) as string[];
+  pdf.text(lines, x, y);
+  return y + lines.length * lineHeight;
+}
+
+function ensurePage(pdf: jsPDF, y: number, bottom = 40): number {
+  const pageHeight = pdf.internal.pageSize.getHeight();
+  if (y <= pageHeight - bottom) return y;
+  pdf.addPage();
+  return 40;
+}
+
+function buildResumeFallbackPdf(model: SreevaAIResumeViewModel) {
+  const pdf = new jsPDF({ orientation: "p", unit: "pt", format: "a4" });
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const margin = 40;
+  const contentWidth = pageWidth - margin * 2;
+  const lineHeight = 14;
+  let y = margin;
+
+  const title = sanitizePdfText(model.fullName || "Candidate");
+  const subtitle = sanitizePdfText(model.roleLabel || "Resume Screening");
+  const meta = [
+    sanitizePdfText(model.locationLine),
+    sanitizePdfText(model.experienceLine),
+    `${model.fitPercent}% fit`,
+    sanitizePdfText(model.fitLabel),
+  ].filter(Boolean).join(" | ");
+
+  pdf.setTextColor("#111827");
+  pdf.setFont("helvetica", "bold");
+  pdf.setFontSize(20);
+  pdf.text(title, margin, y);
+  y += 24;
+
+  pdf.setFontSize(12);
+  pdf.setFont("helvetica", "normal");
+  pdf.text(subtitle, margin, y);
+  y += 16;
+
+  pdf.setTextColor("#6B7280");
+  y = addWrappedText(pdf, meta, margin, y, contentWidth, lineHeight);
+  y += 8;
+
+  const section = (heading: string, body: () => void) => {
+    y = ensurePage(pdf, y + 18);
+    pdf.setTextColor("#1F2937");
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(13);
+    pdf.text(heading, margin, y);
+    y += 14;
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(11);
+    pdf.setTextColor("#374151");
+    body();
+    y += 8;
+  };
+
+  section("Executive Summary", () => {
+    y = addWrappedText(pdf, model.reviewStrip || model.aiSummaryPoints.map((p) => `${p.label}: ${p.body}`).join(" "), margin, y, contentWidth, lineHeight);
+  });
+
+  section("Key Signals", () => {
+    for (const point of model.aiSummaryPoints.slice(0, 4)) {
+      y = ensurePage(pdf, y + 24);
+      pdf.setFont("helvetica", "bold");
+      pdf.text(`• ${point.label}`, margin, y);
+      y += 12;
+      pdf.setFont("helvetica", "normal");
+      y = addWrappedText(pdf, point.body, margin + 12, y, contentWidth - 12, lineHeight);
+      y += 2;
+    }
+  });
+
+  section("Top Strengths", () => {
+    for (const item of model.strengths.slice(0, 4)) {
+      y = ensurePage(pdf, y + 24);
+      pdf.setFont("helvetica", "bold");
+      pdf.text(`• ${item.label}`, margin, y);
+      y += 12;
+      pdf.setFont("helvetica", "normal");
+      y = addWrappedText(pdf, item.body, margin + 12, y, contentWidth - 12, lineHeight);
+      y += 2;
+    }
+  });
+
+  section("Top Weaknesses", () => {
+    for (const item of model.weaknesses.slice(0, 4)) {
+      y = ensurePage(pdf, y + 24);
+      pdf.setFont("helvetica", "bold");
+      pdf.text(`• ${item.label}`, margin, y);
+      y += 12;
+      pdf.setFont("helvetica", "normal");
+      y = addWrappedText(pdf, item.body, margin + 12, y, contentWidth - 12, lineHeight);
+      y += 2;
+    }
+  });
+
+  section("Skill Match", () => {
+    for (const row of model.skillMatchRows.slice(0, 10)) {
+      const status = row.matched ? "Matched" : "Not matched";
+      const detail = [row.depth, row.source, row.category, row.evidenceNote].filter(Boolean).join(" | ");
+      y = ensurePage(pdf, y + 20);
+      pdf.setFont("helvetica", "bold");
+      pdf.text(`• ${row.name}`, margin, y);
+      pdf.setFont("helvetica", "normal");
+      pdf.text(status, pageWidth - margin - 90, y);
+      y += 11;
+      if (detail) {
+        y = addWrappedText(pdf, detail, margin + 12, y, contentWidth - 12, lineHeight);
+      }
+      y += 2;
+    }
+  });
+
+  section("Career Lines", () => {
+    for (const line of model.careerLines.slice(0, 8)) {
+      y = ensurePage(pdf, y + 24);
+      pdf.setFont("helvetica", "bold");
+      pdf.text(`• ${line.label}`, margin, y);
+      y += 12;
+      pdf.setFont("helvetica", "normal");
+      const body = [line.time, line.body].filter(Boolean).join(" | ");
+      y = addWrappedText(pdf, body, margin + 12, y, contentWidth - 12, lineHeight);
+      y += 2;
+    }
+  });
+
+  pdf.setTextColor("#9CA3AF");
+  pdf.setFontSize(9);
+  pdf.text("Generated from Sreeva AI resume screening data.", margin, pdf.internal.pageSize.getHeight() - 24);
+  return pdf;
+}
+
 /**
  * Flattens existing candidate-page resume signals into a SreevaAI-mirror view model.
  */
@@ -1232,38 +1380,48 @@ export function ResumeReportSreevaAI({
 
     try {
       setIsExporting(true);
-      const canvas = await html2canvas(reportRef.current, {
-        scale: Math.min(2, window.devicePixelRatio || 1),
-        useCORS: true,
-        backgroundColor: "#EEF0F3",
-        scrollX: 0,
-        scrollY: -window.scrollY,
-      });
+      try {
+        const canvas = await html2canvas(reportRef.current, {
+          scale: Math.min(2, window.devicePixelRatio || 1),
+          useCORS: true,
+          backgroundColor: "#EEF0F3",
+          scrollX: 0,
+          scrollY: -window.scrollY,
+        });
 
-      const imgData = canvas.toDataURL("image/png");
-      const pdf = new jsPDF({ orientation: "p", unit: "pt", format: "a4" });
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      const imgWidth = pageWidth;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      let heightLeft = imgHeight;
-      let position = 0;
+        const imgData = canvas.toDataURL("image/png");
+        const pdf = new jsPDF({ orientation: "p", unit: "pt", format: "a4" });
+        const pageWidth = pdf.internal.pageSize.getWidth();
+        const pageHeight = pdf.internal.pageSize.getHeight();
+        const imgWidth = pageWidth;
+        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+        let heightLeft = imgHeight;
+        let position = 0;
 
-      pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight, undefined, "FAST");
-      heightLeft -= pageHeight;
-
-      while (heightLeft > 0) {
-        position = heightLeft - imgHeight;
-        pdf.addPage();
         pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight, undefined, "FAST");
         heightLeft -= pageHeight;
-      }
 
-      const safeName = (model.fullName || "resume-report")
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-+|-+$/g, "");
-      pdf.save(`${safeName || "resume-report"}.pdf`);
+        while (heightLeft > 0) {
+          position = heightLeft - imgHeight;
+          pdf.addPage();
+          pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight, undefined, "FAST");
+          heightLeft -= pageHeight;
+        }
+
+        const safeName = (model.fullName || "resume-report")
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "");
+        pdf.save(`${safeName || "resume-report"}.pdf`);
+      } catch (error) {
+        console.warn("Image-based PDF export failed; using text fallback.", error);
+        const pdf = buildResumeFallbackPdf(model);
+        const safeName = (model.fullName || "resume-report")
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "");
+        pdf.save(`${safeName || "resume-report"}.pdf`);
+      }
     } finally {
       setIsExporting(false);
     }

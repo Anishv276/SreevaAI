@@ -141,7 +141,7 @@ buildSreeva AIInterviewViewModel(i: {
 - `proctoringRows` is built from `groupedProctoringSignals` (proctoring telemetry counts)
 - NOT from `proctoring_signals_detected` (behavioral signals with LLM interpretation)
 
-**Result**: Frontend shows old-style proctoring rows (tab switching, gaze drifts, etc.)
+**Result**: Frontend shows old-style proctoring rows (tab switching, attention drifts, etc.)
 But NOT the new behavioral signals (ownership ambiguity, latency mismatch, etc.)
 
 ### 5c. Signal Summary Formatting
