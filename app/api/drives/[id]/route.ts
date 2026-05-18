@@ -106,6 +106,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
                 enabled: true,
                 weights: {} // Schema doesn't have a weights field yet
             },
+        }, {
+            headers: {
+                'Cache-Control': 'private, max-age=60',
+            }
         });
     } catch (error: any) {
         console.error("[GET_DRIVE_ERROR]:", error);

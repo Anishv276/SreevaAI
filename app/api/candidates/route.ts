@@ -119,7 +119,7 @@ export async function GET(request: Request) {
             ];
         }
 
-        const [candidates, total, statsResult] = await Promise.all([
+        const [candidates, total] = await Promise.all([
             prisma.application.findMany({
                 where,
                 include: {
@@ -135,15 +135,16 @@ export async function GET(request: Request) {
                 skip: offset,
                 take: limit,
             }),
-            prisma.application.count({ where }),
-            prisma.application.groupBy({
-                by: ['resumeStatus', 'hiringStatus', 'interviewStatus'],
-                where: {
-                    drive: { orgId, ...(driveId && driveId !== "all" ? { id: driveId } : {}) }
-                },
-                _count: { _all: true }
-            })
+            prisma.application.count({ where })
         ]);
+
+        const statsResult = await prisma.application.groupBy({
+            by: ['resumeStatus', 'hiringStatus', 'interviewStatus'],
+            where: {
+                drive: { orgId, ...(driveId && driveId !== "all" ? { id: driveId } : {}) }
+            },
+            _count: { _all: true }
+        });
 
         // Aggregate stats manually from groupBy result
         const statsRow = {
@@ -221,6 +222,10 @@ export async function GET(request: Request) {
                 interviewRunning: Number(statsRow.interviewRunning ?? 0),
                 interviewPending: Number(statsRow.interviewPending ?? 0),
                 interviewCompleted: Number(statsRow.interviewCompleted ?? 0),
+            }
+        }, {
+            headers: {
+                'Cache-Control': 'private, max-age=30',
             }
         });
     } catch (error) {

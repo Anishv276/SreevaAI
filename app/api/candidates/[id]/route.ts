@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-import { sendApplicationStatusEmail } from "@/lib/mail";
 import { deleteCandidateEmbeddings } from "@/lib/pinecone";
 import { deleteUrlTargets } from "@/lib/delete-utils";
 import { appendCandidateActivity } from "@/lib/candidate-activity";
@@ -57,7 +56,6 @@ export async function GET(
                         createdAt: true,
                         updatedAt: true,
                         inviteSentAt: true,
-                        proctoringEvents: true,
                         interviewReport: true,
                         proctoringReport: true,
                         strategicVerdict: true,
@@ -68,9 +66,7 @@ export async function GET(
                         recordingStartedAt: true,
                         recordingCompletedAt: true,
                         recordingDurationSec: true,
-                        recordingManifest: true,
                         snapshots: true,
-                        billingSnapshot: true,
                     }
                 }
             }
@@ -89,6 +85,10 @@ export async function GET(
             ...candidate,
             formattedDate: new Date(candidate.createdAt).toLocaleDateString(),
             driveTitle: candidate.drive?.title || "Role N/A"
+        }, {
+            headers: {
+                'Cache-Control': 'private, max-age=60',
+            }
         });
 
     } catch (error) {
@@ -244,46 +244,6 @@ export async function PATCH(
                 timestamp: new Date().toISOString(),
                 source: "hr",
             });
-        }
-
-        // Send email for hire / not-hired actions
-        if (body.hiringStatus === "hired") {
-            const mailResult = await sendApplicationStatusEmail({
-                email: updated.email,
-                fullName: updated.fullName,
-                jobTitle: (updated as any).drive?.title || "the role",
-                orgId: (updated as any).drive?.orgId ?? undefined,
-                status: "Hired",
-                score: updated.aiScore || 0,
-            });
-            if (mailResult.success) {
-                await appendCandidateActivity(id, {
-                    type: "email_sent",
-                    label: "Hire email sent",
-                    details: `Sent at ${new Date().toISOString()}`,
-                    timestamp: new Date().toISOString(),
-                    source: "system",
-                });
-            }
-
-        } else if (body.hiringStatus === "not hired") {
-            const mailResult = await sendApplicationStatusEmail({
-                email: updated.email,
-                fullName: updated.fullName,
-                jobTitle: (updated as any).drive?.title || "the role",
-                orgId: (updated as any).drive?.orgId ?? undefined,
-                status: "REJECTED",
-                score: updated.aiScore || 0,
-            });
-            if (mailResult.success) {
-                await appendCandidateActivity(id, {
-                    type: "email_sent",
-                    label: "Rejection email sent",
-                    details: `Sent at ${new Date().toISOString()}`,
-                    timestamp: new Date().toISOString(),
-                    source: "system",
-                });
-            }
         }
 
         return NextResponse.json(updated);

@@ -77,13 +77,11 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
     const [isSelectionMode, setIsSelectionMode] = useState(true);
     const [isBulkLoading, setIsBulkLoading] = useState(false);
     const [isDriveViewReady, setIsDriveViewReady] = useState(false);
-    const [pendingEmailBatch, setPendingEmailBatch] = useState<{
-        ids: string[];
-        emailType: "screening" | "hiring";
-        targetAction: "shortlist" | "reject" | "hire" | "nothired";
-        title: string;
-        description: string;
-        confirmText: string;
+    const [emailConfirm, setEmailConfirm] = useState<{
+        mode: "single" | "bulk";
+        candidateId?: string;
+        candidateName?: string;
+        resumeStatus?: string;
     } | null>(null);
     // ⚡ Read from shared context — no fetch needed
     const adminOrg = useAdminOrg();
@@ -95,7 +93,6 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
         let cancelled = false;
         setIsDriveViewReady(false);
         setSelectedIds(new Set());
-        setPendingEmailBatch(null);
         const handler = setTimeout(() => {
             let startDate: string | undefined;
             let endDate: string | undefined;
@@ -246,47 +243,6 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
         setSelectedIds(new Set());
         setIsSelectionMode(true);
     };
-    const getBulkEmailPrompt = (action: "hire" | "not_hired" | "reject" | "shortlist", ids: string[]) => {
-        const count = ids.length;
-        switch (action) {
-            case "shortlist":
-                return {
-                    ids,
-                    emailType: "screening" as const,
-                    targetAction: "shortlist" as const,
-                    title: "Send Interview Emails?",
-                    description: `You shortlisted ${count} selected candidate(s). Send interview invitation emails now?`,
-                    confirmText: `Send Email (${count})`,
-                };
-            case "reject":
-                return {
-                    ids,
-                    emailType: "screening" as const,
-                    targetAction: "reject" as const,
-                    title: "Send Rejection Emails?",
-                    description: `You rejected ${count} selected candidate(s). Send rejection emails now?`,
-                    confirmText: `Send Email (${count})`,
-                };
-            case "hire":
-                return {
-                    ids,
-                    emailType: "hiring" as const,
-                    targetAction: "hire" as const,
-                    title: "Send Hire Emails?",
-                    description: `You hired ${count} selected candidate(s). Send hire confirmation emails now?`,
-                    confirmText: `Send Email (${count})`,
-                };
-            case "not_hired":
-                return {
-                    ids,
-                    emailType: "hiring" as const,
-                    targetAction: "nothired" as const,
-                    title: "Send Rejection Emails?",
-                    description: `You marked ${count} selected candidate(s) as not hired. Send rejection emails now?`,
-                    confirmText: `Send Email (${count})`,
-                };
-        }
-    };
     const handleBulkStatus = async (action: "hire" | "not_hired" | "reject" | "shortlist" | "delete") => {
         if (!selectedCount || isBulkLoading) return;
         const ids = Array.from(selectedIds);
@@ -302,10 +258,6 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                 toast.success(data?.message || "Bulk action completed");
                 clearSelection();
                 fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, undefined, undefined, searchTerm, scoreSort);
-                if (action !== "delete") {
-                    const emailPrompt = getBulkEmailPrompt(action as "hire" | "not_hired" | "reject" | "shortlist", ids);
-                    if (emailPrompt) setPendingEmailBatch(emailPrompt);
-                }
                 return;
             }
             toast.error(data?.error || "Failed to update selected candidates");
@@ -340,39 +292,72 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
             setIsBulkLoading(false);
         }
     };
-    const handleBulkSendEmail = async (
-        emailType: "screening" | "hiring",
-        targetAction?: "shortlist" | "reject" | "hire" | "nothired",
-        ids?: string[]
-    ) => {
-        const targetIds = ids && ids.length > 0 ? ids : Array.from(selectedIds);
-        if (!targetIds.length || isBulkLoading) return false;
-        if (isInterviewActionBlocked) {
-            toast.error(interviewActionBlockedMessage);
-            return false;
-        }
+    const handleSendEmailConfirmed = async () => {
+        if (!emailConfirm) return;
+        setIsBulkLoading(true);
         try {
-            setIsBulkLoading(true);
-            const res = await fetch("/api/candidates/bulk-email", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ ids: targetIds, emailType, targetAction }),
-            });
-            const data = await res.json().catch(() => null);
-            if (res.ok) {
-                toast.success(data?.message || "Emails sent");
+            if (emailConfirm.mode === "single" && emailConfirm.candidateId) {
+                const status = normalizeStatusKey(emailConfirm.resumeStatus);
+                if (status === "shortlisted") {
+                    await fetch(`/api/candidates/${emailConfirm.candidateId}/send-interview-link`, { method: "POST" });
+                    toast.success(`Schedule link sent to ${emailConfirm.candidateName}`);
+                } else if (status === "rejected") {
+                    await fetch(`/api/candidates/${emailConfirm.candidateId}/send-email`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ emailType: "rejection" }),
+                    });
+                    toast.success(`Rejection email sent to ${emailConfirm.candidateName}`);
+                }
+            } else if (emailConfirm.mode === "bulk") {
+                const ids = Array.from(selectedIds);
+                const selected = filteredCandidates.filter((c: any) => selectedIds.has(c.id));
+                const shortlisted = selected.filter((c: any) => normalizeStatusKey(c.status) === "shortlisted").map((c: any) => c.id);
+                const rejected = selected.filter((c: any) => normalizeStatusKey(c.status) === "rejected").map((c: any) => c.id);
+                const results = await Promise.all([
+                    ...shortlisted.map((id: string) => fetch(`/api/candidates/${id}/send-interview-link`, { method: "POST" })),
+                    ...(rejected.length ? [fetch("/api/candidates/bulk-email", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ ids: rejected, emailType: "screening", targetAction: "reject" }),
+                    })] : []),
+                ]);
+                const failed = results.filter((r) => !r.ok).length;
+                const succeeded = results.length - failed;
+                if (succeeded > 0) toast.success(`Emails sent to ${shortlisted.length + rejected.length} candidate(s)`);
+                if (failed > 0) toast.error(`Failed to send to ${failed} candidate(s)`);
                 clearSelection();
                 fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, undefined, undefined, searchTerm, scoreSort);
-                return true;
             }
-            toast.error(data?.error || "Failed to send emails");
         } catch {
-            toast.error("Failed to send emails");
+            toast.error("Failed to send email");
         } finally {
             setIsBulkLoading(false);
+            setEmailConfirm(null);
         }
-        return false;
     };
+
+    const openSendEmailConfirm = (candidate: { id: string; name: string; resumeStatus?: string }) => {
+        const status = normalizeStatusKey(candidate.resumeStatus);
+        if (status !== "shortlisted" && status !== "rejected") {
+            toast.error("Candidate must be shortlisted or rejected to send an email.");
+            return;
+        }
+        setEmailConfirm({ mode: "single", candidateId: candidate.id, candidateName: candidate.name, resumeStatus: candidate.resumeStatus });
+    };
+
+    const openBulkSendEmailConfirm = () => {
+        if (!selectedCount) return;
+        const selected = filteredCandidates.filter((c: any) => selectedIds.has(c.id));
+        const shortlisted = selected.filter((c: any) => normalizeStatusKey(c.status) === "shortlisted").length;
+        const rejected = selected.filter((c: any) => normalizeStatusKey(c.status) === "rejected").length;
+        if (shortlisted === 0 && rejected === 0) {
+            toast.error("No selected candidates are shortlisted or rejected.");
+            return;
+        }
+        setEmailConfirm({ mode: "bulk" });
+    };
+
     const driveTitle = jobs.find((job) => job.id === driveId)?.title || "Job";
 
     if (!isDriveViewReady) {
@@ -466,9 +451,8 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                             </Button>
                             <Button
                                 size="sm"
-                                onClick={() => handleBulkSendEmail("screening")}
-                                disabled={isBulkLoading || isInterviewActionBlocked}
-                                title={isInterviewActionBlocked ? interviewActionBlockedMessage : "Send appropriate email (shortlisted/rejected) based on current status"}
+                                onClick={openBulkSendEmailConfirm}
+                                disabled={isBulkLoading}
                                 className="h-8 px-3 rounded-xl border border-gray-200 bg-white text-gray-900 font-bold text-xs flex items-center gap-1.5 shadow-sm hover:bg-gray-50"
                             >
                                 <Mail className="h-3.5 w-3.5" /> Send Email
@@ -495,15 +479,6 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                 className="h-8 px-3 rounded-xl border border-gray-200 bg-white text-gray-900 font-bold text-xs flex items-center gap-1.5 shadow-sm hover:bg-gray-50"
                             >
                                 <UserX className="h-3.5 w-3.5" /> Not Hired
-                            </Button>
-                            <Button
-                                size="sm"
-                                onClick={() => handleBulkSendEmail("hiring")}
-                                disabled={isBulkLoading || isInterviewActionBlocked}
-                                title={isInterviewActionBlocked ? interviewActionBlockedMessage : "Send appropriate email (hired/not hired) based on current status"}
-                                className="h-8 px-3 rounded-xl border border-gray-200 bg-white text-gray-900 font-bold text-xs flex items-center gap-1.5 shadow-sm hover:bg-gray-50"
-                            >
-                                <Mail className="h-3.5 w-3.5" /> Send Email
                             </Button>
                         </div>
                     </div>
@@ -840,25 +815,11 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                                             Reject
                                                         </DropdownMenuItem>
                                                         <DropdownMenuItem
-                                                            onClick={() => {
-                                                                if (isInterviewActionBlocked) {
-                                                                    toast.error(interviewActionBlockedMessage);
-                                                                    return;
-                                                                }
-                                                                handleSendInterviewLink({
-                                                                    id: candidate.id,
-                                                                    name: displayName,
-                                                                    interviewStatus: candidate.interviewStatus,
-                                                                });
-                                                            }}
-                                                            disabled={isInterviewActionBlocked}
-                                                            className={cn(
-                                                                "rounded-xl px-2.5 py-2 text-sm font-semibold cursor-pointer transition-colors",
-                                                                isInterviewActionBlocked ? "text-gray-400 opacity-70" : "text-blue-600 focus:text-blue-700 focus:bg-blue-50"
-                                                            )}
+                                                            onClick={() => openSendEmailConfirm({ id: candidate.id, name: displayName, resumeStatus: candidate.status })}
+                                                            className="rounded-xl px-2.5 py-2 text-sm font-semibold text-blue-600 cursor-pointer focus:text-blue-700 focus:bg-blue-50 transition-colors"
                                                         >
-                                                            {isInterviewActionBlocked ? <Lock className="h-4 w-4 mr-2 shrink-0" /> : <Mail className="h-4 w-4 mr-2 shrink-0" />}
-                                                            Send Schedule Link
+                                                            <Mail className="h-4 w-4 mr-2 shrink-0" />
+                                                            Send Email
                                                         </DropdownMenuItem>
                                                         <DropdownMenuLabel className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400">Hire</DropdownMenuLabel>
                                                         <DropdownMenuItem
@@ -874,23 +835,6 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                                         >
                                                             <XCircle className="h-4 w-4 mr-2 shrink-0" />
                                                             Not Hired
-                                                        </DropdownMenuItem>
-                                                        <DropdownMenuItem
-                                                            onClick={() => {
-                                                                if (isInterviewActionBlocked) {
-                                                                    toast.error(interviewActionBlockedMessage);
-                                                                    return;
-                                                                }
-                                                                window.location.href = `mailto:${candidate.email}`;
-                                                            }}
-                                                            disabled={isInterviewActionBlocked}
-                                                            className={cn(
-                                                                "rounded-xl px-2.5 py-2 text-sm font-semibold cursor-pointer transition-colors",
-                                                                isInterviewActionBlocked ? "text-gray-400 opacity-70" : "text-blue-600 focus:text-blue-700 focus:bg-blue-50"
-                                                            )}
-                                                        >
-                                                            {isInterviewActionBlocked ? <Lock className="h-4 w-4 mr-2 shrink-0" /> : <Mail className="h-4 w-4 mr-2 shrink-0" />}
-                                                            Compose Email
                                                         </DropdownMenuItem>
                                                         <DropdownMenuLabel className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400">Manage</DropdownMenuLabel>
                                                         <DropdownMenuItem
@@ -986,22 +930,46 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                     </Button>
                 </div>
             </div>
-            <ActionConfirmModal
-                isOpen={pendingEmailBatch !== null}
-                onClose={() => setPendingEmailBatch(null)}
-                onConfirm={async () => {
-                    if (!pendingEmailBatch) return;
-                    const batch = pendingEmailBatch;
-                    const sent = await handleBulkSendEmail(batch.emailType, batch.targetAction, batch.ids);
-                    if (sent) setPendingEmailBatch(null);
-                }}
-                title={pendingEmailBatch?.title || "Send Emails?"}
-                description={pendingEmailBatch?.description || "Would you like to send emails to the selected candidates now?"}
-                confirmText={pendingEmailBatch?.confirmText || "Send Email"}
-                cancelText="No Thanks"
-                variant="info"
-                isLoading={isBulkLoading}
-            />
+            {emailConfirm && (() => {
+                const isBulk = emailConfirm.mode === "bulk";
+                const selected = isBulk ? filteredCandidates.filter((c: any) => selectedIds.has(c.id)) : [];
+                const shortlistedCount = isBulk ? selected.filter((c: any) => normalizeStatusKey(c.status) === "shortlisted").length : 0;
+                const rejectedCount = isBulk ? selected.filter((c: any) => normalizeStatusKey(c.status) === "rejected").length : 0;
+                const singleStatus = !isBulk ? normalizeStatusKey(emailConfirm.resumeStatus) : null;
+                return (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
+                        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden">
+                            <div className="px-6 pt-6 pb-4">
+                                <h2 className="text-lg font-black text-gray-900 tracking-tight">Confirm Send Email</h2>
+                                {isBulk ? (
+                                    <div className="mt-2 space-y-1 text-sm text-gray-600">
+                                        {shortlistedCount > 0 && <p>• <span className="font-bold text-emerald-700">{shortlistedCount} shortlisted</span> → schedule link will be sent</p>}
+                                        {rejectedCount > 0 && <p>• <span className="font-bold text-rose-700">{rejectedCount} rejected</span> → rejection email will be sent</p>}
+                                    </div>
+                                ) : (
+                                    <p className="mt-2 text-sm text-gray-600">
+                                        {singleStatus === "shortlisted"
+                                            ? <>Send a <span className="font-bold text-emerald-700">schedule link</span> to <span className="font-bold">{emailConfirm.candidateName}</span>.</>
+                                            : <>Send a <span className="font-bold text-rose-700">rejection email</span> to <span className="font-bold">{emailConfirm.candidateName}</span>.</>}
+                                    </p>
+                                )}
+                            </div>
+                            <div className="flex items-center justify-end gap-3 px-6 py-4 bg-gray-50/50 border-t border-gray-100">
+                                <button onClick={() => setEmailConfirm(null)} className="h-10 px-5 rounded-2xl font-bold text-gray-500 hover:bg-gray-100 transition-colors">
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleSendEmailConfirmed}
+                                    disabled={isBulkLoading}
+                                    className="h-10 px-6 rounded-2xl bg-blue-600 text-white font-bold hover:bg-blue-700 transition-colors disabled:opacity-60"
+                                >
+                                    {isBulkLoading ? "Sending..." : "Send"}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
         </div>
     );
 }

@@ -73,6 +73,10 @@ export async function GET(request: Request) {
             ...org,
             status: String(effectiveStatus || org.status || "ACTIVE").toUpperCase(),
             activeDriveCount,
+        }, {
+            headers: {
+                'Cache-Control': 'private, max-age=120',
+            }
         });
     } catch (error) {
         console.error("Error fetching organization:", error);

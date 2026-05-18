@@ -18,5 +18,9 @@ export async function GET() {
         }
     }
     
-    return NextResponse.json(session || null);
+    return NextResponse.json(session || null, {
+        headers: {
+            'Cache-Control': 'private, max-age=300',
+        }
+    });
 }

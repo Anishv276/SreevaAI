@@ -126,6 +126,10 @@ export async function GET(request: Request) {
                 limit,
                 totalPages: Math.ceil(total / limit)
             }
+        }, {
+            headers: {
+                'Cache-Control': 'private, max-age=45',
+            }
         });
     } catch (error) {
         console.error("Error fetching drives:", error);

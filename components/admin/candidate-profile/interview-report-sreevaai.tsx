@@ -1312,6 +1312,7 @@ export function CommunicationScoreCardDonutLive({ comm }: { comm: SreevaAIInterv
   const avg = Math.round(metrics.reduce((sum, m) => sum + m.value, 0) / metrics.length);
   const total = Math.max(1, metrics.reduce((sum, m) => sum + m.value, 0));
   const [activeMetric, setActiveMetric] = useState<string | null>(null);
+  const [tooltipPos, setTooltipPos] = useState<{ top: number; left: number } | null>(null);
   const donutRef = useRef<HTMLDivElement | null>(null);
 
   let cursor = 0;
@@ -1328,11 +1329,21 @@ export function CommunicationScoreCardDonutLive({ comm }: { comm: SreevaAIInterv
     const distance = Math.sqrt(dx * dx + dy * dy);
     const outerRadius = Math.min(rect.width, rect.height) / 2;
     const innerRadius = outerRadius * 0.42;
-    if (distance < innerRadius || distance > outerRadius) { setActiveMetric(null); return; }
+    if (distance < innerRadius || distance > outerRadius) { setActiveMetric(null); setTooltipPos(null); return; }
     const angle = ((Math.atan2(dy, dx) * 180) / Math.PI + 450) % 360;
     const pct = (angle / 360) * 100;
     const found = segments.find((s) => pct >= s.start && pct < s.end) || segments[0];
     setActiveMetric(found?.key || null);
+
+    // Calculate tooltip position based on segment angle (in viewport/fixed coordinates)
+    const segmentMidAngle = ((found?.start || 0) + (found?.end || 0)) / 2;
+    const radians = ((segmentMidAngle - 90) * Math.PI) / 180; // Adjust for 0° = top
+    const tooltipRadius = outerRadius * 2.2; // Increased distance to avoid hover interference
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    const tooltipX = centerX + Math.cos(radians) * tooltipRadius;
+    const tooltipY = centerY + Math.sin(radians) * tooltipRadius;
+    setTooltipPos({ left: tooltipX - 140, top: tooltipY - 60 });
   };
 
   return (
@@ -1356,8 +1367,8 @@ export function CommunicationScoreCardDonutLive({ comm }: { comm: SreevaAIInterv
           </div>
         </div>
 
-        {/* Tooltip positioned relative to donut */}
-        {active && (() => {
+        {/* Tooltip positioned beside hovered segment */}
+        {active && tooltipPos && (() => {
           const activeSegment = segments.find((s) => s.key === activeMetric);
           const WHY: Record<string, { what: string; scored: string }> = {
             clarity: {
@@ -1394,7 +1405,7 @@ export function CommunicationScoreCardDonutLive({ comm }: { comm: SreevaAIInterv
             },
           };
           return (
-            <div className="absolute -right-full top-1/2 z-30 -translate-y-1/2 pl-4 pointer-events-none">
+            <div className="fixed z-30 pointer-events-none" style={{ left: tooltipPos.left, top: tooltipPos.top }}>
               <div className="rounded-xl border border-neutral-200 bg-white shadow-2xl overflow-hidden" style={{ width: 280, pointerEvents: "auto" }}>
                 <div className="px-3 pt-2.5 pb-2 border-b border-neutral-100" style={{ borderLeftColor: activeSegment?.color || "#000", borderLeftWidth: 3 }}>
                   <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: activeSegment?.color || "#000" }}>{activeSegment?.label}</p>
@@ -2267,92 +2278,80 @@ export function InterviewReportSreevaAI({
           </div>
         </div>
 
-        {/* ── Final Decision Note + Next Steps ── */}
+        {/* ── Final Decision Note with Key Reasons & Next Steps ── */}
         {!model.isFallback && (() => {
           const color = model.recommendationColor;
           const isHire = color === "green";
           const isNo   = color === "red";
           const isMaybe = color === "amber";
-          const gradientCls = isHire
-            ? "border-emerald-200 bg-gradient-to-br from-emerald-100 via-white to-emerald-50 shadow-emerald-200/40"
+          const borderCls = isHire
+            ? "border-emerald-200"
             : isNo
-            ? "border-red-200 bg-gradient-to-br from-red-100 via-white to-red-50 shadow-red-200/40"
-            : "border-[#DDE1E5] bg-gradient-to-r from-gray-100 via-white to-gray-50 shadow-gray-200/40";
-          const iconBg = isHire ? "bg-emerald-600 text-white" : isNo ? "bg-red-100 text-red-700" : "bg-slate-800 text-white";
-          const labelCls = isHire ? "text-emerald-700" : isNo ? "text-red-800" : "text-[#5C6370]";
-          const stampBg = isHire ? "bg-emerald-600 text-white" : isNo ? "bg-red-100 text-red-700" : "bg-black text-white";
-          const whyLabel = isHire ? `Why ${model.recommendation}` : isNo ? "Why Not Hired" : "Review Required";
-          const bodyText = [model.verdictSummary, model.verdictRecommendationReason].filter(Boolean).join("\n\n");
+            ? "border-red-200"
+            : "border-amber-200";
+          const bgCls = isHire
+            ? "bg-emerald-50"
+            : isNo
+            ? "bg-red-50"
+            : "bg-amber-50";
+          const iconBg = isHire ? "bg-emerald-600 text-white" : isNo ? "bg-red-100 text-red-700" : "bg-amber-600 text-white";
+          const labelCls = isHire ? "text-emerald-700" : isNo ? "text-red-800" : "text-amber-800";
+          const stampBg = isHire ? "bg-emerald-600 text-white" : isNo ? "bg-red-600 text-white" : "bg-amber-600 text-white";
+          const whyLabel = isHire ? `Why ${model.recommendation}` : isNo ? "Why Not Hired" : "Why Review Required";
 
-          // Generate next steps based on recommendation
-          const nextSteps = isHire
-            ? ["Schedule onboarding and skill assessment in identified gap areas", "Set up 90-day mentoring plan for role-specific knowledge", "Conduct reference checks to confirm background"]
+          const nextStepsData = isHire
+            ? [
+                { title: "Schedule onboarding", desc: "Set up skill assessment in identified gap areas" },
+                { title: "Mentoring plan", desc: "Set up 90-day structured plan for role-specific knowledge" },
+                { title: "Reference checks", desc: "Confirm background and previous experience" }
+              ]
             : isNo
-            ? ["Archive application and provide constructive feedback", "Consider for future roles if requirements shift", "Offer option for skill development and reapplication"]
-            : ["Schedule follow-up technical deep-dive interview", "Validate specific claims with hands-on assessment", "Get additional perspective from another senior team member"];
+            ? [
+                { title: "Provide feedback", desc: "Give constructive feedback on areas for improvement" },
+                { title: "Future opportunities", desc: "Consider for alternative roles or positions" },
+                { title: "Skill development", desc: "Offer option to reapply after addressing gaps" }
+              ]
+            : [
+                { title: "Technical assessment", desc: "Schedule follow-up deep-dive on key skill gaps" },
+                { title: "Hands-on validation", desc: "Validate specific technical claims with practical task" },
+                { title: "Second opinion", desc: "Get additional perspective from senior team member" }
+              ];
 
           return (
-            <>
-              {/* Verdict Section */}
-              <div className={cn("rounded-3xl border p-[1.5px] shadow-2xl transition-all duration-500", gradientCls)}>
-                <div className="flex flex-col gap-4 rounded-[calc(1.5rem-1.5px)] bg-white/60 backdrop-blur-sm px-6 py-5 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="flex min-w-0 flex-1 items-start gap-4">
-                    <div className={cn("mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl shadow-sm", iconBg)}>
-                      {isHire ? <Shield className="h-5 w-5" /> : isNo ? <Zap className="h-5 w-5" /> : <Activity className="h-5 w-5" />}
-                    </div>
-                    <div className="min-w-0">
-                      <p className={cn("text-[10px] font-semibold uppercase tracking-[0.2em]", labelCls)}>{whyLabel}</p>
-                      <p className="mt-3 text-[13px] leading-7 text-[#1A1D22]">
-                        {(() => {
-                          if (!bodyText) return <span className="text-[#6B7079]">No AI verdict available for this session.</span>;
-                          const parts = bodyText.split(/(?<=\.)\s+/).map(s => s.trim()).filter(Boolean);
-                          if (parts.length === 0) return bodyText;
-                          return <><strong>{parts[0]} </strong>{parts.slice(1).join(" ")}</>;
-                        })()}
-                      </p>
-                    </div>
+            <div className={cn("rounded-3xl border p-4 sm:p-6", borderCls, bgCls)}>
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex min-w-0 flex-1 items-start gap-4">
+                  <div className={cn("mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full", iconBg)}>
+                    {isHire ? <Shield className="h-5 w-5" /> : isNo ? <Zap className="h-5 w-5" /> : <AlertTriangle className="h-5 w-5" />}
                   </div>
-                  <div className="flex shrink-0 items-center gap-3">
-                    <div className={cn("rounded-xl px-4 py-2 text-[11px] font-black uppercase tracking-widest shadow-sm", stampBg)}>
-                      {model.recommendation}
+                  <div className="min-w-0 flex-1">
+                    <p className={cn("text-[10px] font-semibold uppercase tracking-[0.2em]", labelCls)}>{whyLabel}</p>
+                    <p className="mt-3 text-[13px] leading-relaxed text-[#1A1D22]">
+                      {model.verdictSummary || model.verdictRecommendationReason || (isHire ? "Strong candidate ready to move forward." : isNo ? "Does not meet current role requirements." : "Recommend further evaluation before final decision.")}
+                    </p>
+
+                    {/* Next Steps Section */}
+                    <div className="mt-4 border-t border-current border-opacity-10 pt-4">
+                      <p className="text-[11px] font-semibold text-[#5C6370] uppercase tracking-widest">Next Steps: What Should We Do</p>
+                      <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                        {nextStepsData.map((step, idx) => (
+                          <div key={idx} className="rounded-lg border border-current border-opacity-10 bg-white/50 p-2.5">
+                            <p className="text-[11px] font-semibold text-[#1A1D22]">{step.title}</p>
+                            <p className="mt-0.5 text-[10px] leading-snug text-[#6B7079]">{step.desc}</p>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 </div>
+                <div className={cn("rounded-lg px-4 py-2 text-[11px] font-black uppercase tracking-widest shrink-0", stampBg)}>
+                  {model.recommendation}
+                </div>
               </div>
-
-            </>
-          );
-        })()}
-
-        {/* Next Steps inline section */}
-        {!model.isFallback && (() => {
-          const color = model.recommendationColor;
-          const isHire = color === "green";
-          const isNo   = color === "red";
-          const nextSteps = isHire
-            ? ["Schedule onboarding and skill assessment in identified gap areas", "Set up 90-day mentoring plan for role-specific knowledge", "Conduct reference checks to confirm background"]
-            : isNo
-            ? ["Archive application and provide constructive feedback", "Consider for future roles if requirements shift", "Offer option for skill development and reapplication"]
-            : ["Schedule follow-up technical deep-dive interview", "Validate specific claims with hands-on assessment", "Get additional perspective from another senior team member"];
-
-          return (
-            <div className="space-y-3">
-              <p className="text-[11px] font-extrabold uppercase tracking-widest text-[#5C6370]">Next Steps</p>
-              <ul className="space-y-2">
-                {nextSteps.map((step, idx) => (
-                  <li key={idx} className="flex gap-2.5 text-[12px] leading-snug text-[#1A1D22]">
-                    <span className={cn("mt-1.5 h-1 w-1 shrink-0 rounded-full",
-                      isHire ? "bg-emerald-600"
-                      : isNo ? "bg-red-600"
-                      : "bg-amber-600"
-                    )} />
-                    <span>{step}</span>
-                  </li>
-                ))}
-              </ul>
             </div>
           );
         })()}
+
 
       </div>
     </div>

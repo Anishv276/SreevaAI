@@ -519,6 +519,42 @@ class ExampleGivenDetector(BaseDetector):
         return None
 
 
+class StrongUnderPressureDetector(BaseDetector):
+    """Fires when a candidate was probed (follow-up asked) and still delivered
+    a high-quality answer. Mirrors the trust_engine inline check exactly:
+      - previous action was PROBE  (topic_follow_up_count >= 1)
+      - answer quality avg >= 6.5
+    The signal is purely positive — it boosts behavioral_confidence and produces
+    a recruiter-visible SignalEvent that the trust_engine inline path was not
+    emitting, so recruiters could never see evidence of this strength.
+    """
+    _QUALITY_THRESHOLD = 6.5
+
+    def detect(self, ctx: DetectionContext) -> Optional[SignalEvent]:
+        if ctx.topic_follow_up_count < 1:
+            return None
+        if ctx.current_depth < self._QUALITY_THRESHOLD:
+            return None
+        # Require the answer to be substantive enough to be meaningful
+        if len(ctx.answer.split()) < 20:
+            return None
+        confidence = min(0.95, 0.70 + (ctx.current_depth - self._QUALITY_THRESHOLD) * 0.05)
+        return _build_signal_event(
+            signal_name="strong_under_pressure",
+            signal_layer="behavioral_confidence",
+            confidence=confidence,
+            evidence=(
+                f"probed answer maintained high depth={ctx.current_depth:.1f} "
+                f"(threshold={self._QUALITY_THRESHOLD}) on follow-up #{ctx.topic_follow_up_count}"
+            ),
+            trust_bucket_affected="behavioral_confidence",
+            score_delta=0.05,
+            probe_mode="ownership",
+            recoverable=False,
+            recruiter_visible=True,
+        )
+
+
 class SignalEvaluator:
     """OOP Registry and orchestrator for all SignalDetector subclasses."""
     _DETECTORS: dict[str, BaseDetector] = {
@@ -532,6 +568,7 @@ class SignalEvaluator:
         "complexity_latency_mismatch": ComplexityLatencyMismatchDetector(),
         "ownership_clarified": OwnershipClarifiedDetector(),
         "example_given": ExampleGivenDetector(),
+        "strong_under_pressure": StrongUnderPressureDetector(),
     }
 
     @classmethod
@@ -614,6 +651,7 @@ def build_signal_flags(signal_events: list[SignalEvent]) -> SignalFlags:
         ownership_clarified="ownership_clarified" in names,
         example_given="example_given" in names,
         contradiction_resolved="contradiction_resolved" in names,
+        strong_under_pressure="strong_under_pressure" in names,
     )
 
 

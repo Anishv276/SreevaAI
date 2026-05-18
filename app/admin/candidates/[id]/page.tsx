@@ -59,11 +59,14 @@ export default function CandidateProfilePage() {
     const id = typeof params?.id === "string" ? params.id : Array.isArray(params?.id) ? params.id[0] : "";
     const reportMode = (searchParams.get("report") || "interview").toLowerCase();
     const backHref = searchParams.get("back") || "/admin/candidates";
+    const orgIdParam = searchParams.get("orgId");
     const [candidate, setCandidate] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [mounted, setMounted] = useState(false);
     const [resumeReportOpen, setResumeReportOpen] = useState(false);
+    const [isUpdating, setIsUpdating] = useState(false);
+    const [confirmDialog, setConfirmDialog] = useState<{ action: string; title: string; description: string } | null>(null);
 
     useEffect(() => {
         setMounted(true);
@@ -466,6 +469,61 @@ export default function CandidateProfilePage() {
         return `${m}:${s.toString().padStart(2, "0")}min`;
     };
 
+    const handleHiringAction = useCallback(async (action: "hire" | "not_hired") => {
+        if (!candidate?.id) return;
+        setIsUpdating(true);
+        try {
+            const url = new URL(`/api/candidates/${candidate.id}`, window.location.origin);
+            if (orgIdParam) url.searchParams.append("orgId", orgIdParam);
+            const res = await fetch(url, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ hiringStatus: action === "hire" ? "hired" : "not hired" })
+            });
+            if (res.ok) {
+                await fetchCandidate();
+            }
+        } catch (err) {
+            console.error("Error updating hiring status:", err);
+        } finally {
+            setIsUpdating(false);
+        }
+    }, [candidate?.id, orgIdParam, fetchCandidate]);
+
+    const handleResendInterviewLink = useCallback(async () => {
+        if (!candidate?.id) return;
+        setIsUpdating(true);
+        try {
+            const url = new URL(`/api/candidates/${candidate.id}/send-interview-link`, window.location.origin);
+            if (orgIdParam) url.searchParams.append("orgId", orgIdParam);
+            const res = await fetch(url, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" }
+            });
+            if (res.ok) {
+                await fetchCandidate();
+            }
+        } catch (err) {
+            console.error("Error resending interview link:", err);
+        } finally {
+            setIsUpdating(false);
+        }
+    }, [candidate?.id, orgIdParam, fetchCandidate]);
+
+    const handleConfirmAction = useCallback(async () => {
+        if (!confirmDialog) return;
+
+        if (confirmDialog.action === "hire") {
+            await handleHiringAction("hire");
+        } else if (confirmDialog.action === "not_hired") {
+            await handleHiringAction("not_hired");
+        } else if (confirmDialog.action === "resend_link") {
+            await handleResendInterviewLink();
+        }
+
+        setConfirmDialog(null);
+    }, [confirmDialog, handleHiringAction, handleResendInterviewLink]);
+
     if (loading) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -523,22 +581,72 @@ export default function CandidateProfilePage() {
     }
 
 
+    const hiringStatus = candidate?.hiringStatus?.toLowerCase() || "pending";
+    const isHired = hiringStatus === "hired";
+    const isNotHired = hiringStatus === "not hired";
+
     return (
         <>
             <InterviewReportSreevaAI
                 showHeader={true}
                 headerActions={
-                    <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={interviewReportLocked}
-                        onClick={() => setResumeReportOpen(true)}
-                        className="h-8 rounded-lg border-[#DDE1E5] bg-white px-3 text-[11px] font-bold text-[#0D4D2E] hover:bg-[#F7FAF8]"
-                    >
-                        <FileText className="mr-1.5 h-3.5 w-3.5" />
-                        Resume report
-                    </Button>
+                    <div className="flex items-center gap-2">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={interviewReportLocked}
+                            onClick={() => setResumeReportOpen(true)}
+                            className="h-8 rounded-lg border-[#DDE1E5] bg-white px-3 text-[11px] font-bold text-[#0D4D2E] hover:bg-[#F7FAF8]"
+                        >
+                            <FileText className="mr-1.5 h-3.5 w-3.5" />
+                            Resume report
+                        </Button>
+                        <div className="flex items-center gap-2 border-l border-[#DDE1E5] pl-2">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={isUpdating}
+                                onClick={() => setConfirmDialog({
+                                    action: "resend_link",
+                                    title: "Resend Interview Link?",
+                                    description: "Send a new interview scheduling link to the candidate so they can reschedule if needed."
+                                })}
+                                className="h-8 rounded-lg border-blue-200 bg-blue-50 px-3 text-[11px] font-bold text-blue-700 hover:bg-blue-100"
+                            >
+                                Resend Link
+                            </Button>
+                            <Button
+                                type="button"
+                                variant={isHired ? "default" : "outline"}
+                                size="sm"
+                                disabled={isUpdating}
+                                onClick={() => setConfirmDialog({
+                                    action: "hire",
+                                    title: "Mark as Hired?",
+                                    description: `Confirm hiring decision for ${candidate?.fullName}.`
+                                })}
+                                className={isHired ? "h-8 rounded-lg bg-emerald-600 text-white px-3 text-[11px] font-bold hover:bg-emerald-700" : "h-8 rounded-lg border-emerald-200 bg-emerald-50 px-3 text-[11px] font-bold text-emerald-700 hover:bg-emerald-100"}
+                            >
+                                Hire
+                            </Button>
+                            <Button
+                                type="button"
+                                variant={isNotHired ? "default" : "outline"}
+                                size="sm"
+                                disabled={isUpdating}
+                                onClick={() => setConfirmDialog({
+                                    action: "not_hired",
+                                    title: "Mark as Not Hired?",
+                                    description: `Confirm rejection for ${candidate?.fullName}.`
+                                })}
+                                className={isNotHired ? "h-8 rounded-lg bg-rose-600 text-white px-3 text-[11px] font-bold hover:bg-rose-700" : "h-8 rounded-lg border-rose-200 bg-rose-50 px-3 text-[11px] font-bold text-rose-700 hover:bg-rose-100"}
+                            >
+                                Not Hired
+                            </Button>
+                        </div>
+                    </div>
                 }
                 model={buildSreevaAIInterviewViewModel({
                     backHref,
@@ -589,6 +697,39 @@ export default function CandidateProfilePage() {
                     </div>
                 </DialogContent>
             </Dialog>
+
+            {confirmDialog && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden">
+                        <div className="px-6 pt-6 pb-4">
+                            <h2 className="text-lg font-black text-gray-900 tracking-tight">{confirmDialog.title}</h2>
+                            <p className="text-sm text-gray-600 mt-2">{confirmDialog.description}</p>
+                        </div>
+                        <div className="flex items-center justify-end gap-3 px-6 py-4 bg-gray-50/50 border-t border-gray-100">
+                            <Button
+                                variant="ghost"
+                                onClick={() => setConfirmDialog(null)}
+                                className="h-10 px-5 rounded-2xl font-bold text-gray-500"
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                onClick={handleConfirmAction}
+                                disabled={isUpdating}
+                                className={`h-10 px-6 rounded-2xl border font-bold flex items-center gap-2 ${
+                                    confirmDialog.action === "hire"
+                                        ? "bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700"
+                                        : confirmDialog.action === "not_hired"
+                                        ? "bg-rose-600 text-white border-rose-600 hover:bg-rose-700"
+                                        : "bg-blue-600 text-white border-blue-600 hover:bg-blue-700"
+                                }`}
+                            >
+                                {isUpdating ? "Processing..." : "Confirm"}
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </>
     );
 }

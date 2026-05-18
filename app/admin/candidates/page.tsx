@@ -236,15 +236,6 @@ export default function CandidatesPage() {
     const [isBulkLoading, setIsBulkLoading] = useState(false);
     const [isCandidatesTableReady, setIsCandidatesTableReady] = useState(false);
     const [emailCandidate, setEmailCandidate] = useState<{ id: string; name: string; email: string; role: string } | null>(null);
-    const [pendingEmailBatch, setPendingEmailBatch] = useState<{
-        ids: string[];
-        action: "hire" | "reject" | "shortlist" | "not_hired";
-        emailType: "screening" | "hiring";
-        targetAction: "shortlist" | "reject" | "hire" | "nothired";
-        title: string;
-        description: string;
-        confirmText: string;
-    } | null>(null);
     const [timeline, setTimeline] = useState<DateRange>({ type: "all" });
     const searchParams = useSearchParams();
     const router = useRouter();
@@ -375,53 +366,6 @@ export default function CandidatesPage() {
         setPendingAction(action);
         setIsActionModalOpen(true);
     };
-    const getBulkEmailPrompt = (action: "hire" | "reject" | "shortlist" | "not_hired", ids: string[]) => {
-        const count = ids.length;
-        switch (action) {
-            case "shortlist":
-                return {
-                    ids,
-                    action,
-                    emailType: "screening" as const,
-                    targetAction: "shortlist" as const,
-                    title: "Send Interview Emails?",
-                    description: `You shortlisted ${count} selected candidate(s). Send interview invitation emails to everyone now?`,
-                    confirmText: `Send Email (${count})`,
-                };
-            case "reject":
-                return {
-                    ids,
-                    action,
-                    emailType: "screening" as const,
-                    targetAction: "reject" as const,
-                    title: "Send Rejection Emails?",
-                    description: `You rejected ${count} selected candidate(s). Send rejection emails to everyone now?`,
-                    confirmText: `Send Email (${count})`,
-                };
-            case "hire":
-                return {
-                    ids,
-                    action,
-                    emailType: "hiring" as const,
-                    targetAction: "hire" as const,
-                    title: "Send Hire Emails?",
-                    description: `You hired ${count} selected candidate(s). Send hire confirmation emails to everyone now?`,
-                    confirmText: `Send Email (${count})`,
-                };
-            case "not_hired":
-                return {
-                    ids,
-                    action,
-                    emailType: "hiring" as const,
-                    targetAction: "nothired" as const,
-                    title: "Send Rejection Emails?",
-                    description: `You marked ${count} selected candidate(s) as not hired. Send rejection emails to everyone now?`,
-                    confirmText: `Send Email (${count})`,
-                };
-            default:
-                return null;
-        }
-    };
     const confirmBulkAction = async () => {
         if (!pendingAction) return;
         if (isSuspended && (pendingAction === "hire" || pendingAction === "shortlist" || pendingAction === "reject" || pendingAction === "not_hired")) {
@@ -440,7 +384,6 @@ export default function CandidatesPage() {
             });
             if (!res.ok) throw new Error();
             const count = ids.length;
-            const emailPrompt = pendingAction === "delete" ? null : getBulkEmailPrompt(pendingAction, ids);
             setSelectedIds(new Set());
             setIsSelectionMode(true);
             setIsActionModalOpen(false);
@@ -469,43 +412,11 @@ export default function CandidatesPage() {
                         : pendingAction === "not_hired" ? `${count} candidate(s) marked as not hired`
                             : `${count} candidate(s) deleted`;
             toast.success(msg);
-            if (emailPrompt) {
-                setPendingEmailBatch(emailPrompt);
-            }
         } catch {
             toast.error(`Failed to ${pendingAction} candidates`);
         } finally {
             setIsBulkLoading(false);
         }
-    };
-    const handleBulkSendEmail = async (
-        emailType: "screening" | "hiring",
-        targetAction?: "shortlist" | "reject" | "hire" | "nothired",
-        ids?: string[]
-    ): Promise<boolean> => {
-        const targetIds = ids && ids.length > 0 ? ids : Array.from(selectedIds);
-        if (targetIds.length === 0) return false;
-        setIsBulkLoading(true);
-        try {
-            const res = await fetch("/api/candidates/bulk-email", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ ids: targetIds, emailType, targetAction }),
-            });
-            const data = await res.json().catch(() => null);
-            if (res.ok) {
-                toast.success(data?.message || "Emails sent");
-                setSelectedIds(new Set());
-                setIsSelectionMode(true);
-                return true;
-            }
-            toast.error(data?.error || "Failed to send emails");
-        } catch {
-            toast.error("Failed to send emails");
-        } finally {
-            setIsBulkLoading(false);
-        }
-        return false;
     };
     return (
         <div className="space-y-8 pb-10 animate-in fade-in duration-700 font-sans" style={{ zoom: 0.7, transformOrigin: "top center" }}>
@@ -869,7 +780,10 @@ export default function CandidatesPage() {
                                                             style={{ transform: "scale(0.75)" }}
                                                         >
                                                             {/* Job Group */}
-                                                            <DropdownMenuLabel className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400">Job</DropdownMenuLabel>
+                                                            <DropdownMenuLabel className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400">
+                                                                Job
+                                                                <span className="ml-1 text-gray-300">({candidate.role || "Open Role"})</span>
+                                                            </DropdownMenuLabel>
                                                             <DropdownMenuItem
                                                                 onClick={() => handleMoveToDrive(candidate.driveId)}
                                                                 disabled={!candidate.driveId}
@@ -879,7 +793,7 @@ export default function CandidatesPage() {
                                                                 )}
                                                             >
                                                                 <Briefcase className="h-4 w-4 mr-2 shrink-0" />
-                                                                Go to Job
+                                                                Open Job
                                                             </DropdownMenuItem>
                                                         </DropdownMenuContent>
                                                     </DropdownMenu>
@@ -930,11 +844,11 @@ export default function CandidatesPage() {
                 }
                 description={
                     pendingAction === "hire"
-                        ? `Hire ${selectedIds.size} selected candidate(s)? You will be asked next whether to send hire emails.`
+                        ? `Hire ${selectedIds.size} selected candidate(s)?`
                         : pendingAction === "shortlist"
-                            ? `Shortlist ${selectedIds.size} selected candidate(s)? You will be asked next whether to send interview emails.`
+                            ? `Shortlist ${selectedIds.size} selected candidate(s)?`
                             : pendingAction === "not_hired" || pendingAction === "reject"
-                                ? `Mark ${selectedIds.size} selected candidate(s) as Not Hired? You will be asked next whether to send rejection emails.`
+                                ? `Mark ${selectedIds.size} selected candidate(s) as Not Hired?`
                                 : `Permanently delete ${selectedIds.size} selected candidate(s)? This cannot be undone.`
                 }
                 confirmText={
@@ -945,23 +859,6 @@ export default function CandidatesPage() {
                 }
                 isLoading={isBulkLoading}
             />
-            <ActionConfirmModal
-                isOpen={pendingEmailBatch !== null}
-                onClose={() => setPendingEmailBatch(null)}
-                onConfirm={async () => {
-                    if (!pendingEmailBatch) return;
-                    const batch = pendingEmailBatch;
-                    const sent = await handleBulkSendEmail(batch.emailType, batch.targetAction, batch.ids);
-                    if (sent) setPendingEmailBatch(null);
-                }}
-                title={pendingEmailBatch?.title || "Send Emails?"}
-                description={pendingEmailBatch?.description || "Would you like to send emails to the selected candidates now?"}
-                confirmText={pendingEmailBatch?.confirmText || "Send Email"}
-                cancelText="No Thanks"
-                variant="info"
-                isLoading={isBulkLoading}
-            />
-            {/* AI Assistant */}
             {/* Email Composer */}
             <EmailComposer
                 candidate={emailCandidate}

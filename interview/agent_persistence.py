@@ -790,6 +790,45 @@ async def persist_transcript(
             )
     except Exception as e:
         logger.error(f"[TRANSCRIPT] DB save failed: {e}")
+
+
+async def checkpoint_ai_signals(app_id: str, events: list[dict]) -> None:
+    """Merge-append a batch of AI signal events into proctoringReport without
+    overwriting the rest of the report. Safe to call multiple times — each call
+    appends only the new events passed in; deduplication is handled by the
+    caller (agent_runtime) which passes only the newly-appended slice.
+
+    Uses a jsonb merge so concurrent frontend signal writes to proctoringEvents
+    are never touched.
+    """
+    if not events or not DATABASE_URL:
+        return
+    try:
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE "Interview"
+                SET
+                    "proctoringReport" = COALESCE("proctoringReport", '{}'::jsonb)
+                        || jsonb_build_object(
+                            'checkpoint_events',
+                            COALESCE(
+                                ("proctoringReport"->'checkpoint_events'),
+                                '[]'::jsonb
+                            ) || $1::jsonb
+                        ),
+                    "updatedAt" = NOW()
+                WHERE "applicationId" = $2
+                """,
+                json.dumps(events),
+                app_id,
+            )
+        logger.info(f"[CHECKPOINT] Flushed {len(events)} AI signal(s) to DB for app {app_id}")
+    except Exception as e:
+        logger.warning(f"[CHECKPOINT] AI signal flush failed for app {app_id}: {e}")
+
+
 async def mark_interview_started(app_id: str):
     """Mark the application and interview as IN_PROGRESS via asyncpg."""
     if not DATABASE_URL:

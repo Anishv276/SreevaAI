@@ -176,6 +176,7 @@ def prewarm(proc: JobProcess):
     except RuntimeError:
         logger.info("No running event loop in prewarm; DB pool will initialize lazily.")
 from interview.agent_persistence import (
+    checkpoint_ai_signals,
     flush_pending_manual_billing,
     generate_interview_report,
     generate_interview_summary,
@@ -672,6 +673,8 @@ async def entrypoint(ctx: JobContext):
     # Cross-turn consistency engine state
     _claim_index: dict[str, list[dict]] = {}  # claims indexed by type for contradiction checks
     _contradictions_found: list[dict] = [] # all detected contradictions for final report
+    _ai_signal_flush_counter: int = 0       # counts new AI signal events since last checkpoint
+    _ai_signal_flushed_count: int = 0       # total events already flushed (slice pointer)
     # Lock protecting all shared session state that is written by background tasks.
     _session_state_lock = asyncio.Lock()
     def refresh_composite_risk() -> int:
@@ -1143,7 +1146,8 @@ async def entrypoint(ctx: JobContext):
         nonlocal suspicion_score, proctoring_events, _last_interviewer_question, \
             _topic_follow_up_count, current_interview_mode, answer_scores, \
             _claim_index, _contradictions_found, \
-            _topic_depth_history, _trust_state, _contradiction_state, _active_eval_task, greeting_delivered_at
+            _topic_depth_history, _trust_state, _contradiction_state, _active_eval_task, greeting_delivered_at, \
+            _ai_signal_flush_counter, _ai_signal_flushed_count
         try:
             if not content or role != "user":
                 return
@@ -1668,6 +1672,18 @@ async def entrypoint(ctx: JobContext):
                                 refresh_composite_risk()
                             elif depth_signal == "DEEP" and current_interview_mode == "normal":
                                 current_interview_mode = "deep"
+                            # Checkpoint: flush newly appended AI signals to DB every 5 events
+                            # so signals survive an agent crash between turns.
+                            new_total = len(proctoring_events)
+                            _ai_signal_flush_counter += new_total - _ai_signal_flushed_count
+                            if _ai_signal_flush_counter >= 5:
+                                flush_slice = proctoring_events[_ai_signal_flushed_count:]
+                                _ai_signal_flushed_count = new_total
+                                _ai_signal_flush_counter = 0
+                                spawn_background_task(
+                                    checkpoint_ai_signals(app_id, flush_slice),
+                                    f"ai_signal_checkpoint_turn_{turn_snapshot}",
+                                )
                         # Append contradiction context to directive if needed
                         contradiction_summary = summarize_contradiction_state(_contradiction_state)
                         evidence = contradiction_summary["evidence"]
