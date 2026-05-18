@@ -2083,38 +2083,99 @@ export function InterviewReportSreevaAI({
 
         {/* Full AI verdict moved to bottom — rendered after question analysis */}
 
-        {/* ── Hiring readout ── */}
-        <div className={cn(card, "p-4 sm:p-5")}>
-          <p className="mb-4 text-[10px] font-extrabold uppercase tracking-widest text-[#5C6370]">Hiring readout</p>
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 sm:gap-8">
-            <div>
-              <p className="mb-3 text-[10px] font-extrabold uppercase tracking-widest text-[#0D4D2E]">Top strengths</p>
+        {/* ── Decision Note (Resume-style) ── */}
+        {!model.isFallback && (
+          <div className={cn(
+            "rounded-3xl border p-[1.5px] shadow-2xl transition-all duration-500",
+            model.recommendationColor === "green"
+              ? "border-emerald-200 bg-gradient-to-br from-emerald-100 via-white to-emerald-50 shadow-emerald-200/40"
+            : model.recommendationColor === "red"
+              ? "border-red-200 bg-gradient-to-br from-red-100 via-white to-red-50 shadow-red-200/40"
+              : model.recommendationColor === "amber"
+                ? "border-amber-200 bg-gradient-to-br from-amber-100 via-white to-amber-50 shadow-amber-200/40"
+                : "border-[#DDE1E5] bg-gradient-to-r from-gray-100 via-white to-gray-50 shadow-gray-200/40"
+        )}>
+            <div className="flex flex-col gap-4 rounded-[calc(1.5rem-1.5px)] bg-white/60 backdrop-blur-sm px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex min-w-0 flex-1 items-start gap-4">
+                <div className={cn(
+                  "mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl shadow-sm",
+                  model.recommendationColor === "green" ? "bg-emerald-600 text-white" :
+                    model.recommendationColor === "red" ? "bg-red-100 text-red-700" :
+                    model.recommendationColor === "amber" ? "bg-amber-100 text-amber-700" :
+                    "bg-slate-800 text-white"
+                )}>
+                  {model.recommendationColor === "green" ? <Shield className="h-5 w-5" /> :
+                    model.recommendationColor === "red" ? <Zap className="h-5 w-5" /> :
+                    <AlertTriangle className="h-5 w-5" />}
+                </div>
+                <div className="min-w-0">
+                  <p className={cn(
+                    "text-[10px] font-semibold uppercase tracking-[0.2em]",
+                    model.recommendationColor === "green" ? "text-emerald-700" :
+                      model.recommendationColor === "red" ? "text-red-800" :
+                      model.recommendationColor === "amber" ? "text-amber-800" :
+                      "text-[#5C6370]"
+                  )}>
+                    Hiring recommendation
+                  </p>
+                  <p className="mt-3 text-[13px] leading-7 text-[#1A1D22]">
+                    {model.verdictRecommendationReason || "Recommendation pending full analysis review."}
+                  </p>
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-3">
+                <div className={cn(
+                  "rounded-xl px-4 py-2 text-[11px] font-black uppercase tracking-widest shadow-sm",
+                  model.recommendationColor === "green" ? "bg-emerald-600 text-white" :
+                    model.recommendationColor === "red" ? "bg-red-100 text-red-700" :
+                    model.recommendationColor === "amber" ? "bg-amber-600 text-white" :
+                    "bg-black text-white"
+                )}>
+                  {model.recommendation}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Strengths & Weaknesses (Resume-style) ── */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className={cn(card, "relative border border-emerald-100 bg-white p-0 shadow-md overflow-hidden")}>
+            <div className="border-b border-emerald-100 bg-emerald-50/70 px-4 py-3">
+              <p className="text-sm font-semibold text-emerald-800">Strengths Observed</p>
+            </div>
+            <div className="space-y-2 p-3">
               {model.topStrengths.length > 0 ? (
-                <ol className="m-0 list-none space-y-2.5 p-0" role="list">
-                  {model.topStrengths.map((t, i) => (
-                    <li key={`strength-${i}`} className="flex gap-2.5 text-[13px] leading-snug text-[#1A1D22]">
-                      <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#E6F4EC] text-[10px] font-extrabold text-[#0D4D2E]">{i + 1}</span>
-                      <span>{t}</span>
-                    </li>
-                  ))}
-                </ol>
+                model.topStrengths.map((item, idx) => (
+                  <div key={`strength-${idx}`} className="flex items-start gap-2 rounded-lg border border-emerald-100/80 bg-white px-3 py-2.5 transition-colors hover:bg-emerald-50/30">
+                    <div className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
+                    <div className="min-w-0">
+                      <p className="text-[12px] font-semibold text-[#1A1D22]">{item}</p>
+                    </div>
+                  </div>
+                ))
               ) : (
-                <p className="text-[12px] text-[#6B7079]">No specific strengths identified in this session.</p>
+                <p className="px-3 py-2 text-[11px] leading-5 text-[#6B7079]">No specific strengths identified in this session.</p>
               )}
             </div>
-            <div>
-              <p className="mb-3 text-[10px] font-extrabold uppercase tracking-widest text-[#9A3412]">Top risks</p>
+          </div>
+
+          <div className={cn(card, "relative border border-red-100 bg-white p-0 shadow-md overflow-hidden")}>
+            <div className="border-b border-red-100 bg-red-50 px-4 py-3">
+              <p className="text-sm font-semibold text-red-900">Concerns & Risks</p>
+            </div>
+            <div className="space-y-2 p-3">
               {model.topRisks.length > 0 ? (
-                <ol className="m-0 list-none space-y-2.5 p-0" role="list">
-                  {model.topRisks.map((t, i) => (
-                    <li key={`risk-${i}`} className="flex gap-2.5 text-[13px] leading-snug text-[#1A1D22]">
-                      <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-[10px] font-extrabold text-amber-900">{i + 1}</span>
-                      <span>{t}</span>
-                    </li>
-                  ))}
-                </ol>
+                model.topRisks.map((item, idx) => (
+                  <div key={`risk-${idx}`} className="flex items-start gap-2 rounded-lg border border-red-100 bg-red-50/30 px-3 py-2.5 transition-colors hover:bg-red-50/60">
+                    <div className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" />
+                    <div className="min-w-0">
+                      <p className="text-[12px] font-semibold text-red-900">{item}</p>
+                    </div>
+                  </div>
+                ))
               ) : (
-                <p className="text-[12px] text-[#6B7079]">No specific risks flagged in this session.</p>
+                <p className="px-3 py-2 text-[11px] leading-5 text-red-600">No specific risks flagged in this session.</p>
               )}
             </div>
           </div>
