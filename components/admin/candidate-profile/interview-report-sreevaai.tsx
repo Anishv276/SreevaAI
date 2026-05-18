@@ -1907,6 +1907,7 @@ export function InterviewReportSreevaAI({
   headerActions?: ReactNode;
 }) {
   const [intel, setIntel] = useState<IntelId>("integrity");
+  const [expandedVerdict, setExpandedVerdict] = useState(false);
   const plyrRef = useRef<any>(null);
 
   const handleSeek = (seconds: number) => {
@@ -2228,7 +2229,6 @@ export function InterviewReportSreevaAI({
 
         {/* ── Final Decision Note — matches resume report style ── */}
         {!model.isFallback && (() => {
-          const [expandedVerdict, setExpandedVerdict] = useState(false);
           const color = model.recommendationColor;
           const isHire = color === "green";
           const isNo   = color === "red";
