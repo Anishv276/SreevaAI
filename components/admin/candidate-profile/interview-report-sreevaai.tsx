@@ -1411,7 +1411,7 @@ export function CommunicationScoreCardDonutLive({ comm }: { comm: SreevaAIInterv
                   <span className={cn("text-[12px] font-extrabold tabular-nums", isActive ? scoreColor : "text-[#1A1D22]")}>{m.value}</span>
                 </button>
                 {isActive && WHY[m.key] && (
-                  <div className="absolute left-0 right-0 top-full z-30 mt-1 rounded-xl border border-neutral-200 bg-white shadow-2xl overflow-hidden" style={{ minWidth: 220 }}>
+                  <div className="absolute left-full top-1/2 z-30 ml-3 -translate-y-1/2 rounded-xl border border-neutral-200 bg-white shadow-2xl overflow-hidden" style={{ minWidth: 300 }}>
                     <div className="px-3 pt-2.5 pb-2 border-b border-neutral-100" style={{ borderLeftColor: m.color, borderLeftWidth: 3 }}>
                       <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: m.color }}>{m.label}</p>
                       <p className="mt-0.5 text-[10px] text-[#98A2B3] leading-snug">{WHY[m.key].what}</p>
