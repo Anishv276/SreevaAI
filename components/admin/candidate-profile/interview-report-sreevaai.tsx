@@ -1907,21 +1907,32 @@ export function InterviewReportSreevaAI({
   const plyrRef = useRef<any>(null);
 
   const handleSeek = (seconds: number) => {
+    if (!plyrRef.current) return;
+
+    const setCurrentTime = (el: any) => {
+      try {
+        el.currentTime = seconds;
+      } catch {
+        // Ignore errors
+      }
+    };
+
     try {
-      if (plyrRef.current) {
-        // Try accessing the player instance directly
-        if (plyrRef.current.plyr) {
-          plyrRef.current.plyr.currentTime = seconds;
-        } else if (plyrRef.current.currentTime !== undefined) {
-          // Fallback: if it's the player instance directly
-          plyrRef.current.currentTime = seconds;
-        } else {
-          // Last resort: find video element in the DOM
-          const videoEl = document.querySelector('video');
-          if (videoEl) {
-            videoEl.currentTime = seconds;
-          }
-        }
+      // Try Plyr API first
+      if (plyrRef.current.plyr) {
+        setCurrentTime(plyrRef.current.plyr);
+        return;
+      }
+
+      // Try direct video element
+      const videoEl = plyrRef.current.querySelector?.('video') ||
+                     document.querySelector('video');
+      if (videoEl) {
+        setCurrentTime(videoEl);
+        // Force UI update by dispatching a timeupdate event
+        setTimeout(() => {
+          videoEl.dispatchEvent(new Event('timeupdate'));
+        }, 10);
       }
     } catch (err) {
       console.error('Seek error:', err);
