@@ -2081,63 +2081,6 @@ export function InterviewReportSreevaAI({
           </div>
         </div>
 
-        {/* Full AI verdict moved to bottom — rendered after question analysis */}
-
-        {/* ── Decision Note (Resume-style) ── */}
-        {!model.isFallback && (
-          <div className={cn(
-            "rounded-3xl border p-[1.5px] shadow-2xl transition-all duration-500",
-            model.recommendationColor === "green"
-              ? "border-emerald-200 bg-gradient-to-br from-emerald-100 via-white to-emerald-50 shadow-emerald-200/40"
-            : model.recommendationColor === "red"
-              ? "border-red-200 bg-gradient-to-br from-red-100 via-white to-red-50 shadow-red-200/40"
-              : model.recommendationColor === "amber"
-                ? "border-amber-200 bg-gradient-to-br from-amber-100 via-white to-amber-50 shadow-amber-200/40"
-                : "border-[#DDE1E5] bg-gradient-to-r from-gray-100 via-white to-gray-50 shadow-gray-200/40"
-        )}>
-            <div className="flex flex-col gap-4 rounded-[calc(1.5rem-1.5px)] bg-white/60 backdrop-blur-sm px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex min-w-0 flex-1 items-start gap-4">
-                <div className={cn(
-                  "mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl shadow-sm",
-                  model.recommendationColor === "green" ? "bg-emerald-600 text-white" :
-                    model.recommendationColor === "red" ? "bg-red-100 text-red-700" :
-                    model.recommendationColor === "amber" ? "bg-amber-100 text-amber-700" :
-                    "bg-slate-800 text-white"
-                )}>
-                  {model.recommendationColor === "green" ? <Shield className="h-5 w-5" /> :
-                    model.recommendationColor === "red" ? <Zap className="h-5 w-5" /> :
-                    <AlertTriangle className="h-5 w-5" />}
-                </div>
-                <div className="min-w-0">
-                  <p className={cn(
-                    "text-[10px] font-semibold uppercase tracking-[0.2em]",
-                    model.recommendationColor === "green" ? "text-emerald-700" :
-                      model.recommendationColor === "red" ? "text-red-800" :
-                      model.recommendationColor === "amber" ? "text-amber-800" :
-                      "text-[#5C6370]"
-                  )}>
-                    Hiring recommendation
-                  </p>
-                  <p className="mt-3 text-[13px] leading-7 text-[#1A1D22]">
-                    {model.verdictRecommendationReason || "Recommendation pending full analysis review."}
-                  </p>
-                </div>
-              </div>
-              <div className="flex shrink-0 items-center gap-3">
-                <div className={cn(
-                  "rounded-xl px-4 py-2 text-[11px] font-black uppercase tracking-widest shadow-sm",
-                  model.recommendationColor === "green" ? "bg-emerald-600 text-white" :
-                    model.recommendationColor === "red" ? "bg-red-100 text-red-700" :
-                    model.recommendationColor === "amber" ? "bg-amber-600 text-white" :
-                    "bg-black text-white"
-                )}>
-                  {model.recommendation}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* ── Strengths & Weaknesses (Resume-style) ── */}
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <div className={cn(card, "relative border border-emerald-100 bg-white p-0 shadow-md overflow-hidden")}>
