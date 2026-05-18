@@ -660,15 +660,23 @@ export function buildSreevaAIInterviewViewModel(i: {
 
     // Primary: Use AI-generated concise summary (4 bullet points)
     if (aiSummaryConcise) {
-      // Split on bullet points (• or - or *) or parse lines
-      const points = aiSummaryConcise
-        .split(/\n|\s*•\s*|\s*-\s*/)
-        .map(s => s.trim())
-        .filter(s => s.length > 10)
+      // Split on newlines first, then strip bullet markers (•, -, *)
+      const lines = aiSummaryConcise
+        .split(/\n/)
+        .map(line => line.trim())
+        .filter(line => line.length > 0)
         .slice(0, 4);
 
-      points.forEach(point => {
-        if (point) bullets.push(point);
+      lines.forEach(line => {
+        // Remove leading bullet markers (•, -, +) then trim
+        let cleaned = line.replace(/^[\s•\-+]+/, "").trim();
+        // Handle single * at start (but not **)
+        if (cleaned[0] === "*" && cleaned[1] !== "*") {
+          cleaned = cleaned.substring(1).trim();
+        }
+        if (cleaned.length > 5) {
+          bullets.push(cleaned);
+        }
       });
     }
 
