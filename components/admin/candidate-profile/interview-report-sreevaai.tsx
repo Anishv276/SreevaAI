@@ -1569,7 +1569,7 @@ export function TechnicalScoreCard({ pct, questions, tag: _tag, scores }: {
 
 
 
-function QuestionAnalysisCard({ transcript, questions, onTranscriptSeek }: { transcript: SreevaAIInterviewViewModel["transcript"]; questions: SreevaAIInterviewViewModel["questionAnalysis"]; onTranscriptSeek?: (seconds: number) => void }) {
+function QuestionAnalysisCard({ transcript, questions, onTranscriptSeek, recordingDurationSec }: { transcript: SreevaAIInterviewViewModel["transcript"]; questions: SreevaAIInterviewViewModel["questionAnalysis"]; onTranscriptSeek?: (seconds: number) => void; recordingDurationSec?: number | null }) {
   return (
     <div className={cn(card, "flex h-full min-h-0 min-w-0 flex-col overflow-hidden p-0")}>
       <div className="border-b border-[#E8EAED] px-4 py-3">
@@ -1601,7 +1601,11 @@ function QuestionAnalysisCard({ transcript, questions, onTranscriptSeek }: { tra
                 </div>
               );
               return answered.map((item, idx) => (
-                <div key={`${item.id}-${idx}`} className="rounded-2xl border border-[#E8EAED] bg-white p-3.5 cursor-pointer hover:shadow-md hover:border-[#0B5FFF]/30 transition-all" onClick={() => onTranscriptSeek?.(Math.max(0, Math.floor((idx / (answered.length - 1 || 1)) * 1800)))}>
+                <div key={`${item.id}-${idx}`} className="rounded-2xl border border-[#E8EAED] bg-white p-3.5 cursor-pointer hover:shadow-md hover:border-[#0B5FFF]/30 transition-all" onClick={() => {
+                      const duration = recordingDurationSec || 1800;
+                      const seekTime = Math.max(0, Math.floor((idx / (answered.length - 1 || 1)) * duration));
+                      onTranscriptSeek?.(seekTime);
+                    }}>
                   {/* Header: Q number + tags + score badge */}
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
@@ -1742,11 +1746,27 @@ export function InterviewReportSreevaAI({
   headerActions?: ReactNode;
 }) {
   const [intel, setIntel] = useState<IntelId>("integrity");
-  const playerRef = useRef<any>(null);
+  const plyrRef = useRef<any>(null);
 
   const handleSeek = (seconds: number) => {
-    if (playerRef.current?.plyr) {
-      playerRef.current.plyr.currentTime = seconds;
+    try {
+      if (plyrRef.current) {
+        // Try accessing the player instance directly
+        if (plyrRef.current.plyr) {
+          plyrRef.current.plyr.currentTime = seconds;
+        } else if (plyrRef.current.currentTime !== undefined) {
+          // Fallback: if it's the player instance directly
+          plyrRef.current.currentTime = seconds;
+        } else {
+          // Last resort: find video element in the DOM
+          const videoEl = document.querySelector('video');
+          if (videoEl) {
+            videoEl.currentTime = seconds;
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Seek error:', err);
     }
   };
 
@@ -1957,7 +1977,7 @@ export function InterviewReportSreevaAI({
         <div className="grid min-h-0 grid-cols-1 gap-4 xl:grid-cols-2" style={{ gridAutoRows: "600px" }}>
           {/* Conversation */}
           <div className="min-h-0 min-w-0 h-[600px]">
-            <QuestionAnalysisCard transcript={model.transcript} questions={model.questionAnalysis} onTranscriptSeek={handleSeek} />
+            <QuestionAnalysisCard transcript={model.transcript} questions={model.questionAnalysis} onTranscriptSeek={handleSeek} recordingDurationSec={model.recordingDurationSec} />
           </div>
 
           {/* Recording */}
@@ -1971,8 +1991,12 @@ export function InterviewReportSreevaAI({
               </div>
 
               {model.videoUrl ? (
-                <div className="aspect-video w-full shrink-0 bg-black" ref={playerRef}>
-                  <Plyr source={{ type: "video", sources: [{ src: model.videoUrl, type: "video/mp4" }] }} options={{ duration: model.recordingDurationSec || undefined }} />
+                <div className="aspect-video w-full shrink-0 bg-black">
+                  <Plyr
+                    ref={plyrRef}
+                    source={{ type: "video", sources: [{ src: model.videoUrl, type: "video/mp4" }] }}
+                    options={{ duration: model.recordingDurationSec || undefined }}
+                  />
                 </div>
               ) : (
                 <div className="flex shrink-0 items-center justify-center gap-3 px-4 py-6 border-b border-[#E8EAED] bg-[#FAFBFC]">
