@@ -147,7 +147,7 @@ OUTPUT SCHEMA (strict JSON, all fields required):
     "summary": "200-300 word detailed overall assessment. Cover: technical depth, communication quality, behavioral signals, consistency with resume, and specific evidence from the interview. End with a clear hiring recommendation rationale.",
     "recommendation": "Strong Yes" | "Yes" | "Maybe" | "No",
     "recommendation_reason": "1-2 sentence primary reason for this recommendation, citing specific evidence",
-    "ai_summary_concise": "Exactly 4 sentences. Each sentence is critical and decisive. Bold the key words that HR must see (wrap in **word** format). Sentence 1: Overall fit and recommendation. Sentence 2: Primary technical strength or weakness. Sentence 3: Critical communication or behavioral signal. Sentence 4: Any major red flag or exceptional strength. Make every word count."
+    "ai_summary_concise": "Exactly 4 bullet points. Each point is ONE critical fact. Bold (**word**) all important words: scores, skills, decisions, red flags, strengths. Format: • **Skill/Metric**: value/context. Examples: • **React**: 9/10 strong, knows hooks deeply • **Problem Solving**: weak, jumps to solutions • **Communication**: confident but hedges under pressure • **Hire Recommendation**: STRONG YES if backend improves"
   },
 
   "strategic_verdict": {
@@ -178,7 +178,11 @@ RULES:
 3. SKILLS_PROOF: Only skills actually discussed. status must reflect actual performance.
 4. BEHAVIORAL_ANALYSIS: Minimum 4 bullets per section. Every bullet must follow the format described in the schema — [observed fact] → [what it signals for hiring]. Never write generic bullets like "showed good communication" or "was engaged." Write bullets an HR manager can quote in a debrief meeting.
 5. VERDICT SUMMARY: 200-300 words, specific, evidence-backed. No generic praise.
-6. AI_SUMMARY_CONCISE: Exactly 4 sentences. Each sentence is critical information an HR manager needs. Bold (**word**) key metrics, names, and decisions. Never filler. Example: "**Senior React Developer** with **7 years** experience. **Strong** system design answers but **weak** on **database optimization**. Shows **genuine confidence** but **occasional hedging** under pressure. **Clear hire** for frontend team if backend skills improve."
+6. AI_SUMMARY_CONCISE: Exactly 4 bullet points (not sentences). Each bullet is ONE critical fact HR needs. Bold (**word**) ALL important words: scores, skills, decisions, gaps, strengths. Format: • **Metric/Skill**: value. Examples:
+   • **React**: 9/10 - knows hooks, lifecycle, optimization deeply
+   • **System Design**: 6/10 - good architecture but weak on failure modes
+   • **Communication**: confident but hedges ("I think maybe") under pressure
+   • **Recommendation**: STRONG YES for senior frontend role
 7. INTEGRITY: Score 100 if no proctoring events. Deduct for tab switches (5pts each), face not detected (10pts), multiple devices (15pts). Correlate with answer quality.
 8. COGNITIVE INSIGHTS: All _earned/_missed fields required. Cite specific questions/answers.
 9. recommendation: "Strong Yes" only for exceptional candidates. "No" for clear failures. Be honest.

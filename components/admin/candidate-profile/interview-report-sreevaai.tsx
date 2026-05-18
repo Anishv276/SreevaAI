@@ -654,41 +654,57 @@ export function buildSreevaAIInterviewViewModel(i: {
   // Proctoring signal (needed before aiBullets to reference flagCount)
   const flagCount = proctoringRows.filter((row) => row.bad).length;
 
-  // Use AI's concise 4-line summary if available, otherwise generate fallback
+  // Use AI's concise 4-bullet summary if available, otherwise generate fallback
   const aiBullets: string[] = (() => {
     const bullets: string[] = [];
 
-    // Primary: Use AI-generated concise summary (4 lines, already formatted)
+    // Primary: Use AI-generated concise summary (4 bullet points)
     if (aiSummaryConcise) {
-      const lines = aiSummaryConcise
-        .split(/[.!?]+/)
+      // Split on bullet points (• or - or *) or parse lines
+      const points = aiSummaryConcise
+        .split(/\n|\s*•\s*|\s*-\s*/)
         .map(s => s.trim())
         .filter(s => s.length > 10)
         .slice(0, 4);
 
-      // Convert markdown bold (**word**) to display format
-      lines.forEach(line => {
-        // Keep markdown as-is for now — UI will handle rendering
-        if (line) bullets.push(line);
+      points.forEach(point => {
+        if (point) bullets.push(point);
       });
     }
 
-    // Fallback: If AI didn't provide concise summary, use recommendation reason
-    if (bullets.length === 0 && verdictRecommendationReason) {
-      bullets.push(verdictRecommendationReason);
-    }
-
-    // Absolute fallback: Generate from scores
+    // Fallback: If AI didn't provide concise summary, generate 4 key points from data
     if (bullets.length === 0) {
       if (!i.isFallbackReport) {
-        if (technicalPct >= 70) bullets.push(`**Strong** technical performance — scored **${technicalPct}%** across **${questionsAsked}** question${questionsAsked === 1 ? "" : "s"}.`);
-        else if (technicalPct >= 45) bullets.push(`**Moderate** technical depth — scored **${technicalPct}%**; follow-up recommended on weaker areas.`);
-        else if (technicalPct > 0) bullets.push(`**Below threshold** technical performance — scored **${technicalPct}%**, insufficient for this role.`);
+        // Point 1: Technical Score
+        if (technicalPct >= 70) bullets.push(`**Technical Skills**: **${technicalPct}%** - demonstrates **strong depth** and **correct implementation**`);
+        else if (technicalPct >= 45) bullets.push(`**Technical Skills**: **${technicalPct}%** - **moderate depth** with **gaps** in some areas`);
+        else if (technicalPct > 0) bullets.push(`**Technical Skills**: **${technicalPct}%** - **below expectations** for this role`);
+
+        // Point 2: Communication
+        const commScore = Math.round(commAvg);
+        if (commScore >= 70) bullets.push(`**Communication**: **${commScore}%** - **clear**, **fluent**, **confident** delivery`);
+        else if (commScore >= 50) bullets.push(`**Communication**: **${commScore}%** - **generally clear** with **occasional hesitation**`);
+        else bullets.push(`**Communication**: **${commScore}%** - **needs improvement** in clarity and confidence`);
+
+        // Point 3: Problem Solving / Behavioral
+        const proctoringClean = flagCount === 0;
+        if (proctoringClean) {
+          bullets.push(`**Behavioral Signals**: **clean session**, **genuine engagement**, **no integrity concerns**`);
+        } else {
+          bullets.push(`**Behavioral Signals**: **${flagCount} proctoring flag${flagCount !== 1 ? "s" : ""}** detected - **review recommended**`);
+        }
       }
-      if (flagCount > 0) bullets.push(`**${flagCount}** proctoring flag${flagCount === 1 ? "" : "s"} detected — **review recording** before deciding.`);
+
+      // Point 4: Recommendation (always include)
+      if (verdictRecommendationReason) {
+        bullets.push(`**Recommendation**: ${verdictRecommendationReason.replace(/^[*_]+([^*_]+)[*_]+/, "**$1**")}`);
+      } else {
+        const rec = fitPct >= 70 ? "**STRONG YES**" : fitPct >= 50 ? "**YES**" : fitPct >= 30 ? "**MAYBE**" : "**NO**";
+        bullets.push(`**Recommendation**: ${rec} - **fit score**: **${fitPct}%**`);
+      }
     }
 
-    return bullets.slice(0, 4); // Enforce max 4 lines
+    return bullets.slice(0, 4); // Enforce max 4 points
   })();
 
   // ── Strengths / Risks from AI behavioral analysis ──
