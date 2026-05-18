@@ -1948,7 +1948,6 @@ export function InterviewReportSreevaAI({
   headerActions?: ReactNode;
 }) {
   const [intel, setIntel] = useState<IntelId>("integrity");
-  const [expandedVerdict, setExpandedVerdict] = useState(false);
   const plyrRef = useRef<any>(null);
 
   const handleSeek = (seconds: number) => {
@@ -2268,11 +2267,12 @@ export function InterviewReportSreevaAI({
           </div>
         </div>
 
-        {/* ── Final Decision Note — matches resume report style ── */}
+        {/* ── Final Decision Note + Next Steps ── */}
         {!model.isFallback && (() => {
           const color = model.recommendationColor;
           const isHire = color === "green";
           const isNo   = color === "red";
+          const isMaybe = color === "amber";
           const gradientCls = isHire
             ? "border-emerald-200 bg-gradient-to-br from-emerald-100 via-white to-emerald-50 shadow-emerald-200/40"
             : isNo
@@ -2283,55 +2283,67 @@ export function InterviewReportSreevaAI({
           const stampBg = isHire ? "bg-emerald-600 text-white" : isNo ? "bg-red-100 text-red-700" : "bg-black text-white";
           const whyLabel = isHire ? `Why ${model.recommendation}` : isNo ? "Why Not Hired" : "Review Required";
           const bodyText = [model.verdictSummary, model.verdictRecommendationReason].filter(Boolean).join("\n\n");
-          const firstSentence = (() => {
-            if (!bodyText) return "No AI verdict available for this session.";
-            const parts = bodyText.split(/(?<=\.)\s+/).map(s => s.trim()).filter(Boolean);
-            return parts[0] || bodyText;
-          })();
+
+          // Generate next steps based on recommendation
+          const nextSteps = isHire
+            ? ["Schedule onboarding and skill assessment in identified gap areas", "Set up 90-day mentoring plan for role-specific knowledge", "Conduct reference checks to confirm background"]
+            : isNo
+            ? ["Archive application and provide constructive feedback", "Consider for future roles if requirements shift", "Offer option for skill development and reapplication"]
+            : ["Schedule follow-up technical deep-dive interview", "Validate specific claims with hands-on assessment", "Get additional perspective from another senior team member"];
+
           return (
-            <div className={cn("rounded-3xl border p-[1.5px] shadow-2xl transition-all duration-500", gradientCls)}>
-              <div className="flex flex-col gap-3 rounded-[calc(1.5rem-1.5px)] bg-white/60 backdrop-blur-sm px-6 py-4 sm:py-5">
-                <div className="flex items-start gap-4">
-                  <div className={cn("mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl shadow-sm", iconBg)}>
-                    {isHire ? <Shield className="h-5 w-5" /> : isNo ? <Zap className="h-5 w-5" /> : <Activity className="h-5 w-5" />}
+            <>
+              {/* Verdict Section */}
+              <div className={cn("rounded-3xl border p-[1.5px] shadow-2xl transition-all duration-500", gradientCls)}>
+                <div className="flex flex-col gap-4 rounded-[calc(1.5rem-1.5px)] bg-white/60 backdrop-blur-sm px-6 py-5 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="flex min-w-0 flex-1 items-start gap-4">
+                    <div className={cn("mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl shadow-sm", iconBg)}>
+                      {isHire ? <Shield className="h-5 w-5" /> : isNo ? <Zap className="h-5 w-5" /> : <Activity className="h-5 w-5" />}
+                    </div>
+                    <div className="min-w-0">
+                      <p className={cn("text-[10px] font-semibold uppercase tracking-[0.2em]", labelCls)}>{whyLabel}</p>
+                      <p className="mt-3 text-[13px] leading-7 text-[#1A1D22]">
+                        {(() => {
+                          if (!bodyText) return <span className="text-[#6B7079]">No AI verdict available for this session.</span>;
+                          const parts = bodyText.split(/(?<=\.)\s+/).map(s => s.trim()).filter(Boolean);
+                          if (parts.length === 0) return bodyText;
+                          return <><strong>{parts[0]} </strong>{parts.slice(1).join(" ")}</>;
+                        })()}
+                      </p>
+                    </div>
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <p className={cn("text-[10px] font-semibold uppercase tracking-[0.2em]", labelCls)}>{whyLabel}</p>
-                    <p className="mt-2 text-[13px] leading-relaxed text-[#1A1D22]">
-                      <strong>{firstSentence.replace(/\.$/, "")}.</strong>
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <div className={cn("rounded-xl px-3 py-1.5 text-[10px] font-black uppercase tracking-widest shadow-sm whitespace-nowrap", stampBg)}>
+                  <div className="flex shrink-0 items-center gap-3">
+                    <div className={cn("rounded-xl px-4 py-2 text-[11px] font-black uppercase tracking-widest shadow-sm", stampBg)}>
                       {model.recommendation}
                     </div>
                   </div>
                 </div>
-
-                {/* Expandable section */}
-                {expandedVerdict && (
-                  <div className="mt-3 pt-3 border-t border-white/30">
-                    <p className="text-[12px] leading-relaxed text-[#1A1D22]">
-                      {bodyText}
-                    </p>
-                  </div>
-                )}
-
-                {/* Action button */}
-                <button
-                  type="button"
-                  onClick={() => setExpandedVerdict(!expandedVerdict)}
-                  className={cn(
-                    "mt-1 self-start px-3 py-1.5 rounded-lg text-[11px] font-semibold uppercase tracking-widest transition-colors",
-                    expandedVerdict
-                      ? "bg-white/70 text-[#1A1D22] hover:bg-white"
-                      : "bg-white/50 text-[#5C6370] hover:bg-white/70"
-                  )}
-                >
-                  {expandedVerdict ? "Show less" : "View Full Analysis"}
-                </button>
               </div>
-            </div>
+
+              {/* Next Steps Section */}
+              <div className={cn(card, "p-5")}>
+                <div className="flex items-center gap-2 mb-4">
+                  <div className={cn("flex h-8 w-8 items-center justify-center rounded-lg text-sm font-bold",
+                    isHire ? "bg-emerald-100 text-emerald-700"
+                    : isNo ? "bg-red-100 text-red-700"
+                    : "bg-amber-100 text-amber-700"
+                  )}>→</div>
+                  <h3 className="text-sm font-extrabold text-[#1A1D22]">Next Steps</h3>
+                </div>
+                <ul className="space-y-2.5">
+                  {nextSteps.map((step, idx) => (
+                    <li key={idx} className="flex gap-3 text-[13px] leading-relaxed text-[#1A1D22]">
+                      <span className={cn("mt-1 h-1.5 w-1.5 shrink-0 rounded-full",
+                        isHire ? "bg-emerald-600"
+                        : isNo ? "bg-red-600"
+                        : "bg-amber-600"
+                      )} />
+                      <span>{step}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </>
           );
         })()}
 
