@@ -1734,15 +1734,13 @@ export function TechnicalScoreCard({ pct, questions, tag: _tag, scores }: {
 
 function QuestionAnalysisCard({ transcript, questions, onTranscriptSeek, recordingDurationSec }: { transcript: SreevaAIInterviewViewModel["transcript"]; questions: SreevaAIInterviewViewModel["questionAnalysis"]; onTranscriptSeek?: (seconds: number) => void; recordingDurationSec?: number | null }) {
   return (
-    <div className={cn(card, "flex h-full min-h-0 min-w-0 flex-col overflow-hidden p-0")}>
-      <div className="border-b border-[#E8EAED] px-4 py-3">
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-sm font-extrabold text-[#1A1D22]">Conversation review</p>
-          <span className="rounded-md bg-[#F3F4F6] px-2 py-1 text-[10px] font-bold text-[#6B7079]">{questions.length} total</span>
-        </div>
-      </div>
+    <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
       <Tabs defaultValue="analysis" className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
         <div className="border-b border-[#E8EAED] px-3 py-3">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <p className="text-sm font-extrabold text-[#1A1D22]">Conversation review</p>
+            <span className="rounded-md bg-[#F3F4F6] px-2 py-1 text-[10px] font-bold text-[#6B7079]">{questions.length} total</span>
+          </div>
           <TabsList className="h-auto w-full justify-start gap-2 rounded-none bg-transparent p-0">
             <TabsTrigger value="analysis" className="rounded-full border border-transparent bg-[#F3F4F6] px-4 py-2 text-[10px] font-extrabold uppercase tracking-widest text-[#5C6370] data-[state=active]:border-[#C9E2FF] data-[state=active]:bg-[#F4F8FF] data-[state=active]:text-[#0B5FFF]">
               Question analysis
@@ -2159,67 +2157,78 @@ export function InterviewReportSreevaAI({
           </div>
         </div>
 
-        {/* ── Conversation + Recording (equal height) ── */}
-        <div className="grid min-h-0 grid-cols-1 gap-4 xl:grid-cols-2" style={{ gridAutoRows: "600px" }}>
-          {/* Conversation */}
-          <div className="min-h-0 min-w-0 h-[600px]">
-            <QuestionAnalysisCard transcript={model.transcript} questions={model.questionAnalysis} onTranscriptSeek={handleSeek} recordingDurationSec={model.recordingDurationSec} />
+        {/* ── Conversation review ── */}
+        <div className={cn(card, "overflow-hidden")}>
+          <div className="border-b border-[#E8EAED] px-4 py-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-extrabold text-[#1A1D22]">Conversation review</p>
+              <span className="rounded-md bg-[#F3F4F6] px-2 py-1 text-[10px] font-bold text-[#6B7079]">{model.questionAnalysis.length} questions</span>
+            </div>
           </div>
-
-          {/* Recording */}
-          <div className="min-h-0 min-w-0 h-[600px]">
-            <div className={cn(card, "flex flex-col overflow-hidden p-0 h-full")}>
-              <div className="border-b border-[#E8EAED] px-4 py-3 shrink-0">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-extrabold text-[#1A1D22]">Recording</p>
-                  <span className="rounded-md bg-[#F3F4F6] px-2 py-1 text-[10px] font-bold text-[#6B7079]">{model.totalTime}</span>
-                </div>
-              </div>
-
-              {model.videoUrl ? (
-                <div className="aspect-video w-full shrink-0 bg-black">
-                  <Plyr
-                    ref={plyrRef}
-                    source={{ type: "video", sources: [{ src: model.videoUrl, type: "video/mp4" }] }}
-                    options={{ duration: model.recordingDurationSec || undefined }}
-                  />
-                </div>
-              ) : (
-                <div className="flex shrink-0 items-center justify-center gap-3 px-4 py-6 border-b border-[#E8EAED] bg-[#FAFBFC]">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#F0F1F3]">
-                    <Play className="h-5 w-5 text-[#6B7079]" />
+          <div className="grid min-h-0 grid-cols-1 gap-4 xl:grid-cols-2 p-4" style={{ gridAutoRows: "600px" }}>
+            {/* Recording */}
+            <div className="min-h-0 min-w-0 h-[600px]">
+              <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-[#E8EAED] bg-white p-0">
+                <div className="border-b border-[#E8EAED] px-4 py-3 shrink-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-extrabold text-[#1A1D22]">Recording</p>
+                    <span className="rounded-md bg-[#F3F4F6] px-2 py-1 text-[10px] font-bold text-[#6B7079]">{model.totalTime}</span>
                   </div>
-                  <p className="text-[12px] font-medium text-[#6B7079]">Recording not yet available</p>
                 </div>
-              )}
 
-              {/* Integrity signal timeline */}
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-t border-[#E8EAED]">
-                <div className="shrink-0 px-4 pt-3 pb-2 flex items-center justify-between">
-                  <p className="text-[10px] font-extrabold uppercase tracking-widest text-[#5C6370]">Signal timeline</p>
-                  <span className="text-[10px] font-bold text-[#9AA0AC]">{model.signalTimeline.length} event{model.signalTimeline.length !== 1 ? "s" : ""}</span>
+                {model.videoUrl ? (
+                  <div className="aspect-video w-full shrink-0 bg-black">
+                    <Plyr
+                      ref={plyrRef}
+                      source={{ type: "video", sources: [{ src: model.videoUrl, type: "video/mp4" }] }}
+                      options={{ duration: model.recordingDurationSec || undefined }}
+                    />
+                  </div>
+                ) : (
+                  <div className="flex shrink-0 items-center justify-center gap-3 px-4 py-6 border-b border-[#E8EAED] bg-[#FAFBFC]">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#F0F1F3]">
+                      <Play className="h-5 w-5 text-[#6B7079]" />
+                    </div>
+                    <p className="text-[12px] font-medium text-[#6B7079]">Recording not yet available</p>
+                  </div>
+                )}
+
+                {/* Integrity signal timeline */}
+                <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-t border-[#E8EAED]">
+                  <div className="shrink-0 px-4 pt-3 pb-2 flex items-center justify-between">
+                    <p className="text-[10px] font-extrabold uppercase tracking-widest text-[#5C6370]">Signal timeline</p>
+                    <span className="text-[10px] font-bold text-[#9AA0AC]">{model.signalTimeline.length} event{model.signalTimeline.length !== 1 ? "s" : ""}</span>
+                  </div>
+                  <div className="min-h-0 flex-1 overflow-y-auto" style={{ scrollbarWidth: "thin", scrollbarColor: "#CBD5E1 transparent" }}>
+                    <IntegrityTimeline events={model.signalTimeline} onTimelineClick={handleSeek} />
+                  </div>
                 </div>
-                <div className="min-h-0 flex-1 overflow-y-auto" style={{ scrollbarWidth: "thin", scrollbarColor: "#CBD5E1 transparent" }}>
-                  <IntegrityTimeline events={model.signalTimeline} onTimelineClick={handleSeek} />
-                </div>
+
+                {/* Proctoring headline */}
+                {model.proctoringHeadline && model.proctoringHeadline !== "No proctoring summary available." && (
+                  <div className={cn("shrink-0 px-3 py-2 text-[12px] font-semibold",
+                    model.proctoringFlags > 0
+                      ? "border-t border-amber-100 bg-amber-50/80 text-amber-900"
+                      : "border-t border-emerald-100 bg-emerald-50/60 text-emerald-900"
+                  )}>
+                    {model.proctoringHeadline}
+                  </div>
+                )}
               </div>
+            </div>
 
-              {/* Proctoring headline */}
-              {model.proctoringHeadline && model.proctoringHeadline !== "No proctoring summary available." && (
-                <div className={cn("shrink-0 px-3 py-2 text-[12px] font-semibold",
-                  model.proctoringFlags > 0
-                    ? "border-t border-amber-100 bg-amber-50/80 text-amber-900"
-                    : "border-t border-emerald-100 bg-emerald-50/60 text-emerald-900"
-                )}>
-                  {model.proctoringHeadline}
-                </div>
-              )}
+            {/* Transcript + Question analysis */}
+            <div className="min-h-0 min-w-0 h-[600px]">
+              <div className={cn(card, "h-full overflow-hidden p-0")}>
+                <QuestionAnalysisCard transcript={model.transcript} questions={model.questionAnalysis} onTranscriptSeek={handleSeek} recordingDurationSec={model.recordingDurationSec} />
+              </div>
             </div>
           </div>
         </div>
 
         {/* ── Final Decision Note — matches resume report style ── */}
         {!model.isFallback && (() => {
+          const [expandedVerdict, setExpandedVerdict] = useState(false);
           const color = model.recommendationColor;
           const isHire = color === "green";
           const isNo   = color === "red";
@@ -2233,30 +2242,53 @@ export function InterviewReportSreevaAI({
           const stampBg = isHire ? "bg-emerald-600 text-white" : isNo ? "bg-red-100 text-red-700" : "bg-black text-white";
           const whyLabel = isHire ? `Why ${model.recommendation}` : isNo ? "Why Not Hired" : "Review Required";
           const bodyText = [model.verdictSummary, model.verdictRecommendationReason].filter(Boolean).join("\n\n");
+          const firstSentence = (() => {
+            if (!bodyText) return "No AI verdict available for this session.";
+            const parts = bodyText.split(/(?<=\.)\s+/).map(s => s.trim()).filter(Boolean);
+            return parts[0] || bodyText;
+          })();
           return (
             <div className={cn("rounded-3xl border p-[1.5px] shadow-2xl transition-all duration-500", gradientCls)}>
-              <div className="flex flex-col gap-4 rounded-[calc(1.5rem-1.5px)] bg-white/60 backdrop-blur-sm px-6 py-5 sm:flex-row sm:items-start sm:justify-between">
-                <div className="flex min-w-0 flex-1 items-start gap-4">
+              <div className="flex flex-col gap-3 rounded-[calc(1.5rem-1.5px)] bg-white/60 backdrop-blur-sm px-6 py-4 sm:py-5">
+                <div className="flex items-start gap-4">
                   <div className={cn("mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl shadow-sm", iconBg)}>
                     {isHire ? <Shield className="h-5 w-5" /> : isNo ? <Zap className="h-5 w-5" /> : <Activity className="h-5 w-5" />}
                   </div>
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <p className={cn("text-[10px] font-semibold uppercase tracking-[0.2em]", labelCls)}>{whyLabel}</p>
-                    <p className="mt-3 text-[13px] leading-7 text-[#1A1D22] whitespace-pre-wrap">
-                      {(() => {
-                        if (!bodyText) return <span className="text-[#6B7079]">No AI verdict available for this session.</span>;
-                        const parts = bodyText.split(/(?<=\.)\s+/).map(s => s.trim()).filter(Boolean);
-                        if (parts.length === 0) return bodyText;
-                        return <><strong>{parts[0]} </strong>{parts.slice(1).join(" ")}</>;
-                      })()}
+                    <p className="mt-2 text-[13px] leading-relaxed text-[#1A1D22]">
+                      <strong>{firstSentence.replace(/\.$/, "")}.</strong>
                     </p>
                   </div>
-                </div>
-                <div className="flex shrink-0 items-center gap-3">
-                  <div className={cn("rounded-xl px-4 py-2 text-[11px] font-black uppercase tracking-widest shadow-sm", stampBg)}>
-                    {model.recommendation}
+                  <div className="flex shrink-0 items-center gap-2">
+                    <div className={cn("rounded-xl px-3 py-1.5 text-[10px] font-black uppercase tracking-widest shadow-sm whitespace-nowrap", stampBg)}>
+                      {model.recommendation}
+                    </div>
                   </div>
                 </div>
+
+                {/* Expandable section */}
+                {expandedVerdict && (
+                  <div className="mt-3 pt-3 border-t border-white/30">
+                    <p className="text-[12px] leading-relaxed text-[#1A1D22]">
+                      {bodyText}
+                    </p>
+                  </div>
+                )}
+
+                {/* Action button */}
+                <button
+                  type="button"
+                  onClick={() => setExpandedVerdict(!expandedVerdict)}
+                  className={cn(
+                    "mt-1 self-start px-3 py-1.5 rounded-lg text-[11px] font-semibold uppercase tracking-widest transition-colors",
+                    expandedVerdict
+                      ? "bg-white/70 text-[#1A1D22] hover:bg-white"
+                      : "bg-white/50 text-[#5C6370] hover:bg-white/70"
+                  )}
+                >
+                  {expandedVerdict ? "Show less" : "View Full Analysis"}
+                </button>
               </div>
             </div>
           );
