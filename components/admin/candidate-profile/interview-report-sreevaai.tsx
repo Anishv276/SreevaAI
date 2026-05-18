@@ -1394,8 +1394,8 @@ export function CommunicationScoreCardDonutLive({ comm }: { comm: SreevaAIInterv
             },
           };
           return (
-            <div className="absolute right-0 top-1/2 z-30 -translate-y-1/2 -translate-x-full pr-3 pointer-events-none">
-              <div className="rounded-xl border border-neutral-200 bg-white shadow-2xl overflow-hidden" style={{ minWidth: 300, pointerEvents: "auto" }}>
+            <div className="absolute -right-full top-1/2 z-30 -translate-y-1/2 pl-4 pointer-events-none">
+              <div className="rounded-xl border border-neutral-200 bg-white shadow-2xl overflow-hidden" style={{ width: 280, pointerEvents: "auto" }}>
                 <div className="px-3 pt-2.5 pb-2 border-b border-neutral-100" style={{ borderLeftColor: activeSegment?.color || "#000", borderLeftWidth: 3 }}>
                   <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: activeSegment?.color || "#000" }}>{activeSegment?.label}</p>
                   <p className="mt-0.5 text-[10px] text-[#98A2B3] leading-snug">{WHY[activeSegment?.key as keyof typeof WHY]?.what}</p>
@@ -2320,30 +2320,37 @@ export function InterviewReportSreevaAI({
                 </div>
               </div>
 
-              {/* Next Steps Section */}
-              <div className={cn(card, "p-5")}>
-                <div className="flex items-center gap-2 mb-4">
-                  <div className={cn("flex h-8 w-8 items-center justify-center rounded-lg text-sm font-bold",
-                    isHire ? "bg-emerald-100 text-emerald-700"
-                    : isNo ? "bg-red-100 text-red-700"
-                    : "bg-amber-100 text-amber-700"
-                  )}>→</div>
-                  <h3 className="text-sm font-extrabold text-[#1A1D22]">Next Steps</h3>
-                </div>
-                <ul className="space-y-2.5">
-                  {nextSteps.map((step, idx) => (
-                    <li key={idx} className="flex gap-3 text-[13px] leading-relaxed text-[#1A1D22]">
-                      <span className={cn("mt-1 h-1.5 w-1.5 shrink-0 rounded-full",
-                        isHire ? "bg-emerald-600"
-                        : isNo ? "bg-red-600"
-                        : "bg-amber-600"
-                      )} />
-                      <span>{step}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
             </>
+          );
+        })()}
+
+        {/* Next Steps inline section */}
+        {!model.isFallback && (() => {
+          const color = model.recommendationColor;
+          const isHire = color === "green";
+          const isNo   = color === "red";
+          const nextSteps = isHire
+            ? ["Schedule onboarding and skill assessment in identified gap areas", "Set up 90-day mentoring plan for role-specific knowledge", "Conduct reference checks to confirm background"]
+            : isNo
+            ? ["Archive application and provide constructive feedback", "Consider for future roles if requirements shift", "Offer option for skill development and reapplication"]
+            : ["Schedule follow-up technical deep-dive interview", "Validate specific claims with hands-on assessment", "Get additional perspective from another senior team member"];
+
+          return (
+            <div className="space-y-3">
+              <p className="text-[11px] font-extrabold uppercase tracking-widest text-[#5C6370]">Next Steps</p>
+              <ul className="space-y-2">
+                {nextSteps.map((step, idx) => (
+                  <li key={idx} className="flex gap-2.5 text-[12px] leading-snug text-[#1A1D22]">
+                    <span className={cn("mt-1.5 h-1 w-1 shrink-0 rounded-full",
+                      isHire ? "bg-emerald-600"
+                      : isNo ? "bg-red-600"
+                      : "bg-amber-600"
+                    )} />
+                    <span>{step}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           );
         })()}
 
