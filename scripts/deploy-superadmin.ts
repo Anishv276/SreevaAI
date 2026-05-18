@@ -1,12 +1,13 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { generateId } from "../lib/ids";
+import { normalizeEmail } from "../lib/email";
 
 const prisma = new PrismaClient();
 
 async function main() {
-    const oldEmail = "lumoscale@gmail.com";
-    const newEmail = "support@sreevaai.com";
+    const oldEmail = normalizeEmail("lumoscale@gmail.com");
+    const newEmail = normalizeEmail("support@sreevaai.com");
     const password = "sreevaai@123";
     const name = "Super Administrator";
 
@@ -15,8 +16,22 @@ async function main() {
     const hashedPassword = await bcrypt.hash(password, 10);
 
     // 1. Resolve conflict & Update existing SuperAdmin record
-    const existingOld = await prisma.superAdmin.findUnique({ where: { email: oldEmail } });
-    const existingNew = await prisma.superAdmin.findUnique({ where: { email: newEmail } });
+    const existingOld = await prisma.superAdmin.findFirst({
+        where: {
+            email: {
+                equals: oldEmail,
+                mode: "insensitive",
+            },
+        },
+    });
+    const existingNew = await prisma.superAdmin.findFirst({
+        where: {
+            email: {
+                equals: newEmail,
+                mode: "insensitive",
+            },
+        },
+    });
     
     if (existingOld) {
         console.log(`Found legacy account ${oldEmail}. migrating...`);
@@ -44,8 +59,22 @@ async function main() {
     }
 
     // 2. Sync User record
-    const existingUserOld = await prisma.user.findUnique({ where: { email: oldEmail } });
-    const existingUserNew = await prisma.user.findUnique({ where: { email: newEmail } });
+    const existingUserOld = await prisma.user.findFirst({
+        where: {
+            email: {
+                equals: oldEmail,
+                mode: "insensitive",
+            },
+        },
+    });
+    const existingUserNew = await prisma.user.findFirst({
+        where: {
+            email: {
+                equals: newEmail,
+                mode: "insensitive",
+            },
+        },
+    });
 
     if (existingUserOld) {
         if (existingUserNew && existingUserOld.id !== existingUserNew.id) {

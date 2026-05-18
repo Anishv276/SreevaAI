@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
-import { Lock, ArrowRight, Phone, ShieldAlert } from "lucide-react";
+import { Lock, ArrowRight, Phone } from "lucide-react";
 import Link from "next/link";
 import { getSupportComposeUrl, isOrgRestrictedStatus } from "@/lib/interview-quota";
 
@@ -45,74 +45,49 @@ export function AccountStatusHandler({ status }: AccountStatusHandlerProps) {
 
     if (!isRestricted || normalizedStatus === "SUSPENDED") return null;
 
-    if (isRestricted) {
+    if (normalizedStatus === "CLOSED") {
         return (
-            <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-gray-950/80 backdrop-blur-md p-4">
-                <motion.div 
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
+                <motion.div
                     initial={{ opacity: 0, scale: 0.9, y: 20 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
-                    className="w-full max-w-md overflow-hidden rounded-[2.5rem] border border-white/10 bg-[#1A1A1A] text-white shadow-[0_40px_100px_rgba(0,0,0,0.5)]"
+                    className="w-full max-w-lg overflow-hidden rounded-[2.25rem] border border-slate-200 bg-white text-slate-950 shadow-[0_30px_90px_rgba(15,23,42,0.22)]"
                 >
-                    <div className="p-10 text-center">
-                        <div className={`mx-auto mb-8 flex h-24 w-24 items-center justify-center rounded-3xl ${normalizedStatus === "CLOSED" ? "bg-rose-500/10 text-rose-500 ring-1 ring-rose-500/20" : "bg-amber-500/10 text-amber-500 ring-1 ring-amber-500/20"}`}>
-                            {normalizedStatus === "CLOSED" ? <Lock className="h-10 w-10" /> : <ShieldAlert className="h-10 w-10" />}
+                    <div className="border-b border-slate-100 bg-slate-50/80 px-8 py-7 text-center">
+                        <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-rose-50 text-rose-600 ring-1 ring-rose-100">
+                            <Lock className="h-8 w-8" />
                         </div>
-                        <h2 className="mb-4 text-3xl font-black tracking-tight">
-                            {normalizedStatus === "CLOSED" ? "Account Restricted" : "Action Restricted"}
+                        <h2 className="text-3xl font-black tracking-tight text-slate-950">
+                            Account Closed
                         </h2>
-                        <p className="mb-10 text-gray-400 font-medium leading-relaxed">
-                            {normalizedStatus === "CLOSED"
-                                ? "Your account has been closed. Please contact the system administrator to resolve this and restore access."
-                                : "Your account got suspended because no interviews are left. Please recharge immediately and contact support@sreevaai.com."}
+                        <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-600">
+                            This account has been closed by a super admin. Please return to login to sign in with another account or contact support if this was unexpected.
                         </p>
-                        
-                        <div className="space-y-4">
-                            {normalizedStatus === "SUSPENDED" ? (
-                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                    <Link
-                                        href="/admin/billing"
-                                        className="flex w-full items-center justify-center gap-3 rounded-2xl bg-white px-8 py-4 text-sm font-black text-black transition-all hover:bg-gray-100 active:scale-95 shadow-lg"
-                                    >
-                                        <ArrowRight className="h-4 w-4" />
-                                        Recharge Now
-                                    </Link>
-                                    <a
-                                        href={getSupportComposeUrl({
-                                            subject: "Urgent: interview quota exhausted",
-                                            body: "Hi support team,\n\nOur account got suspended because no interviews are left. Please help us recharge immediately.\n",
-                                        })}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="flex w-full items-center justify-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-8 py-4 text-sm font-black text-white transition-all hover:bg-white/10 active:scale-95 shadow-lg"
-                                    >
-                                        <Phone className="h-4 w-4" />
-                                        Contact Support
-                                    </a>
-                                </div>
-                            ) : (
-                                <a
-                                    href={getSupportComposeUrl({
-                                        subject: "Account support request",
-                                        body: "Hi support team,\n\nMy account is currently closed. Please help me review this.\n",
-                                    })}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="flex w-full items-center justify-center gap-3 rounded-2xl bg-white px-8 py-4 text-sm font-black text-black transition-all hover:bg-gray-100 active:scale-95 shadow-lg"
-                                >
-                                    <Phone className="h-4 w-4" />
-                                    Contact Support
-                                </a>
-                            )}
-                            <Link
-                                href={normalizedStatus === "SUSPENDED" ? "/admin/billing" : "/admin"}
-                                className="inline-block text-[11px] font-black uppercase tracking-[0.2em] text-gray-500 hover:text-white transition-colors"
-                            >
-                                {normalizedStatus === "SUSPENDED" ? "Open Billing" : "Back to Dashboard"}
-                            </Link>
-                        </div>
                     </div>
-                    <div className="bg-white/[0.02] border-t border-white/5 py-5 text-center">
-                        <div className="text-[10px] font-black uppercase tracking-[0.3em] text-gray-600">Enterprise Security</div>
+
+                    <div className="space-y-4 px-8 py-8">
+                        <Link
+                            href="/login?from=admin"
+                            className="flex w-full items-center justify-center gap-3 rounded-2xl bg-slate-950 px-6 py-4 text-sm font-black text-white transition-all hover:bg-slate-800 active:scale-[0.99]"
+                        >
+                            Back to Login
+                            <ArrowRight className="h-4 w-4" />
+                        </Link>
+                        <a
+                            href={getSupportComposeUrl({
+                                subject: "Account closure support request",
+                                body: "Hi support team,\n\nMy account has been closed. Please review this closure.\n",
+                            })}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="flex w-full items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white px-6 py-4 text-sm font-black text-slate-700 transition-all hover:bg-slate-50 active:scale-[0.99]"
+                        >
+                            <Phone className="h-4 w-4" />
+                            Contact Support
+                        </a>
+                    </div>
+                    <div className="border-t border-slate-100 bg-slate-50 px-8 py-4 text-center">
+                        <div className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Enterprise Security</div>
                     </div>
                 </motion.div>
             </div>

@@ -11,6 +11,7 @@ import { normalizeProctoringSignals } from "@/lib/proctoring-signals";
 import { normalizeOrgAiConfig } from "@/lib/ai-provider-config";
 import { normalizeOrgLimitInput } from "@/lib/org-limits";
 import { normalizeOrgStatusControl, ORG_STATUS_CONTROL_MANUAL } from "@/lib/credits";
+import { normalizeEmail } from "@/lib/email";
 
 // GET /api/super-admin/orgs - list organizations with stats, pagination, and search
 export async function GET(request: Request) {
@@ -283,6 +284,32 @@ export async function POST(request: Request) {
         if (!EMAIL_REGEX.test(adminEmail)) {
             return NextResponse.json({ error: "Invalid admin email format" }, { status: 400 });
         }
+        const normalizedAdminEmail = normalizeEmail(adminEmail);
+
+        const [existingSuperAdmin, existingUser] = await Promise.all([
+            prisma.superAdmin.findFirst({
+                where: {
+                    email: {
+                        equals: normalizedAdminEmail,
+                        mode: "insensitive",
+                    },
+                },
+                select: { id: true },
+            }),
+            prisma.user.findFirst({
+                where: {
+                    email: {
+                        equals: normalizedAdminEmail,
+                        mode: "insensitive",
+                    },
+                },
+                select: { id: true },
+            }),
+        ]);
+
+        if (existingSuperAdmin || existingUser) {
+            return NextResponse.json({ error: "Email already exists. Choose another one." }, { status: 409 });
+        }
 
         // Admin Password Validation
         const { isValid: isPasswordValid, error: passwordError } = validatePasswordStrength(adminPassword);
@@ -335,7 +362,7 @@ export async function POST(request: Request) {
             );
 
             const orgId = generateId("org", orgName);
-            const userName = adminName || adminEmail.split("@")[0];
+            const userName = adminName || normalizedAdminEmail.split("@")[0];
             const userId = generateId("usr", userName);
 
             const org = await tx.organization.create({
@@ -345,7 +372,7 @@ export async function POST(request: Request) {
             const admin = await tx.user.create({
                 data: {
                     id: userId,
-                    email: adminEmail.toLowerCase().trim(),
+                    email: normalizedAdminEmail,
                     name: userName,
                     role: "ORG_ADMIN",
                     orgRole: "ADMIN",

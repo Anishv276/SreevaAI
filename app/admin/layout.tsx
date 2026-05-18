@@ -10,7 +10,6 @@ import { AdminStatusGate } from "@/components/admin/AdminStatusGate";
 import { LowCreditsBanner } from "../../components/admin/LowCreditsBanner";
 import { prisma } from "@/lib/prisma";
 import { canUseRecruiterAssistant } from "@/lib/org-plans";
-import { getEffectiveOrgStatus } from "@/lib/credits";
 import { AdminOrgProvider } from "@/context/admin-org-context";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -24,26 +23,29 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     let orgData: Record<string, any> = { status: "ACTIVE", onboardingComplete: session.onboardingComplete === true };
     if (session.orgId) {
         try {
-            const [org, effectiveStatus] = await Promise.all([
-                prisma.organization.findUnique({
-                    where: { id: session.orgId },
-                    select: {
-                        status: true,
-                        onboardingComplete: true,
-                        plan: true,
-                        name: true,
-                        logoUrl: true,
-                        interviewQuotaTotal: true,
-                        interviewQuotaUsed: true,
-                    },
-                }),
-                getEffectiveOrgStatus(session.orgId),
-            ]);
+            const org = await prisma.organization.findUnique({
+                where: { id: session.orgId },
+                select: {
+                    status: true,
+                    statusControl: true,
+                    onboardingComplete: true,
+                    plan: true,
+                    name: true,
+                    logoUrl: true,
+                    interviewQuotaTotal: true,
+                    interviewQuotaUsed: true,
+                },
+            });
 
             if (org) {
+                // Derive effective status inline — same logic as getEffectiveOrgStatus but no extra DB round-trip
+                let effectiveStatus = String(org.status || "ACTIVE").toUpperCase();
+                if (org.statusControl === "QUOTA" && org.interviewQuotaTotal > 0 && org.interviewQuotaUsed >= org.interviewQuotaTotal) {
+                    effectiveStatus = "QUOTA_EXCEEDED";
+                }
                 orgData = {
                     ...org,
-                    status: String(effectiveStatus || org.status || "ACTIVE").toUpperCase(),
+                    status: effectiveStatus,
                 };
             }
         } catch (error) {

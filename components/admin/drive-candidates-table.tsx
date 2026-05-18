@@ -83,10 +83,16 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
         candidateName?: string;
         resumeStatus?: string;
     } | null>(null);
+    const [deleteConfirm, setDeleteConfirm] = useState<{
+        mode: "single" | "bulk";
+        candidateId?: string;
+        candidateName?: string;
+    } | null>(null);
     // ⚡ Read from shared context — no fetch needed
     const adminOrg = useAdminOrg();
     const quotaLocked = isInterviewQuotaLocked(adminOrg ?? {});
-    const isSuspended = isOrgRestrictedStatus(organization?.status);
+    const orgStatus = String(adminOrg?.status || organization?.status || "").trim().toUpperCase();
+    const isSuspended = isOrgRestrictedStatus(orgStatus);
     const isInterviewActionBlocked = isSuspended || quotaLocked;
     const interviewActionBlockedMessage = getInterviewActionBlockedMessage(isSuspended);
     useEffect(() => {
@@ -267,6 +273,29 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
             setIsBulkLoading(false);
         }
     };
+    const handleDeleteConfirmed = async () => {
+        if (!deleteConfirm) return;
+        setIsBulkLoading(true);
+        try {
+            if (deleteConfirm.mode === "single" && deleteConfirm.candidateId) {
+                const res = await fetch(`/api/candidates/${deleteConfirm.candidateId}`, { method: "DELETE" });
+                if (res.ok) {
+                    toast.success(`${deleteConfirm.candidateName || "Candidate"} deleted`);
+                    fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, undefined, undefined, searchTerm, scoreSort);
+                } else {
+                    const data = await res.json().catch(() => null);
+                    toast.error(data?.error || "Failed to delete candidate");
+                }
+            } else if (deleteConfirm.mode === "bulk") {
+                await handleBulkStatus("delete");
+            }
+        } catch {
+            toast.error("Failed to delete candidate");
+        } finally {
+            setIsBulkLoading(false);
+            setDeleteConfirm(null);
+        }
+    };
     const handleBulkSendInterviewLink = async () => {
         if (!selectedCount || isBulkLoading) return;
         if (isInterviewActionBlocked) {
@@ -294,6 +323,10 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
     };
     const handleSendEmailConfirmed = async () => {
         if (!emailConfirm) return;
+        if (isSuspended) {
+            setEmailConfirm(null);
+            return;
+        }
         setIsBulkLoading(true);
         try {
             if (emailConfirm.mode === "single" && emailConfirm.candidateId) {
@@ -338,6 +371,10 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
     };
 
     const openSendEmailConfirm = (candidate: { id: string; name: string; resumeStatus?: string }) => {
+        if (isSuspended) {
+            toast.error(interviewActionBlockedMessage);
+            return;
+        }
         const status = normalizeStatusKey(candidate.resumeStatus);
         if (status !== "shortlisted" && status !== "rejected") {
             toast.error("Candidate must be shortlisted or rejected to send an email.");
@@ -449,14 +486,16 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                             >
                                 <UserX className="h-3.5 w-3.5" /> Reject
                             </Button>
-                            <Button
-                                size="sm"
-                                onClick={openBulkSendEmailConfirm}
-                                disabled={isBulkLoading}
-                                className="h-8 px-3 rounded-xl border border-gray-200 bg-white text-gray-900 font-bold text-xs flex items-center gap-1.5 shadow-sm hover:bg-gray-50"
-                            >
-                                <Mail className="h-3.5 w-3.5" /> Send Email
-                            </Button>
+                            {!isSuspended && (
+                                <Button
+                                    size="sm"
+                                    onClick={openBulkSendEmailConfirm}
+                                    disabled={isBulkLoading}
+                                    className="h-8 px-3 rounded-xl border border-gray-200 bg-white text-gray-900 font-bold text-xs flex items-center gap-1.5 shadow-sm hover:bg-gray-50"
+                                >
+                                    <Mail className="h-3.5 w-3.5" /> Send Email
+                                </Button>
+                            )}
                         </div>
                     </div>
 
@@ -483,21 +522,22 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                         </div>
                     </div>
 
-                    {/* Group 3: Interview */}
-                    <div className="rounded-2xl border border-orange-100 bg-orange-50/40 px-3 py-2.5">
-                        <p className="text-[9px] font-black uppercase tracking-[0.22em] text-orange-600 mb-2">Interview Link</p>
-                        <div className="flex flex-wrap items-center gap-2">
-                            <Button
-                                size="sm"
-                                onClick={handleBulkSendInterviewLink}
-                                disabled={isBulkLoading || isInterviewActionBlocked}
-                                title={isInterviewActionBlocked ? interviewActionBlockedMessage : undefined}
-                                className="h-8 px-3 rounded-xl border border-gray-200 bg-white text-gray-900 font-bold text-xs flex items-center gap-1.5 shadow-sm hover:bg-gray-50"
-                            >
-                                {isInterviewActionBlocked ? <Lock className="h-3.5 w-3.5" /> : <RefreshCw className="h-3.5 w-3.5" />} Resend Link
-                            </Button>
+                    {!isSuspended && (
+                        <div className="rounded-2xl border border-orange-100 bg-orange-50/40 px-3 py-2.5">
+                            <p className="text-[9px] font-black uppercase tracking-[0.22em] text-orange-600 mb-2">Interview Link</p>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <Button
+                                    size="sm"
+                                    onClick={handleBulkSendInterviewLink}
+                                    disabled={isBulkLoading || isInterviewActionBlocked}
+                                    title={isInterviewActionBlocked ? interviewActionBlockedMessage : undefined}
+                                    className="h-8 px-3 rounded-xl border border-gray-200 bg-white text-gray-900 font-bold text-xs flex items-center gap-1.5 shadow-sm hover:bg-gray-50"
+                                >
+                                    {isInterviewActionBlocked ? <Lock className="h-3.5 w-3.5" /> : <RefreshCw className="h-3.5 w-3.5" />} Resend Link
+                                </Button>
+                            </div>
                         </div>
-                    </div>
+                    )}
 
                     {/* Group 4: Delete */}
                     <div className="rounded-2xl border border-red-100 bg-red-50/40 px-3 py-2.5">
@@ -506,7 +546,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                             <Button
                                 size="sm"
                                 variant="outline"
-                                onClick={() => handleBulkStatus("delete")}
+                                onClick={() => setDeleteConfirm({ mode: "bulk" })}
                                 disabled={isBulkLoading}
                                 className="h-8 px-3 rounded-xl border-red-200 text-red-600 font-bold text-xs flex items-center gap-1.5 hover:bg-red-50"
                             >
@@ -814,13 +854,15 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                                             <UserX className="h-4 w-4 mr-2 shrink-0" />
                                                             Reject
                                                         </DropdownMenuItem>
-                                                        <DropdownMenuItem
-                                                            onClick={() => openSendEmailConfirm({ id: candidate.id, name: displayName, resumeStatus: candidate.status })}
-                                                            className="rounded-xl px-2.5 py-2 text-sm font-semibold text-blue-600 cursor-pointer focus:text-blue-700 focus:bg-blue-50 transition-colors"
-                                                        >
-                                                            <Mail className="h-4 w-4 mr-2 shrink-0" />
-                                                            Send Email
-                                                        </DropdownMenuItem>
+                                                        {!isSuspended && (
+                                                            <DropdownMenuItem
+                                                                onClick={() => openSendEmailConfirm({ id: candidate.id, name: displayName, resumeStatus: candidate.status })}
+                                                                className="rounded-xl px-2.5 py-2 text-sm font-semibold text-blue-600 cursor-pointer focus:text-blue-700 focus:bg-blue-50 transition-colors"
+                                                            >
+                                                                <Mail className="h-4 w-4 mr-2 shrink-0" />
+                                                                Send Email
+                                                            </DropdownMenuItem>
+                                                        )}
                                                         <DropdownMenuLabel className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400">Hire</DropdownMenuLabel>
                                                         <DropdownMenuItem
                                                             onClick={() => handleUpdateStatus(candidate.id, { hiringStatus: "hired" }, `${displayName} hired - confirmation email sent`)}
@@ -836,45 +878,36 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                                             <XCircle className="h-4 w-4 mr-2 shrink-0" />
                                                             Not Hired
                                                         </DropdownMenuItem>
-                                                        <DropdownMenuLabel className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400">Manage</DropdownMenuLabel>
+                                                        {!isSuspended && (
+                                                            <>
+                                                                <DropdownMenuLabel className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400">Manage</DropdownMenuLabel>
+                                                                <DropdownMenuItem
+                                                                    onClick={() => {
+                                                                        if (isInterviewActionBlocked) {
+                                                                            toast.error(interviewActionBlockedMessage);
+                                                                            return;
+                                                                        }
+                                                                        handleSendInterviewLink({ id: candidate.id, name: displayName, interviewStatus: candidate.interviewStatus });
+                                                                    }}
+                                                                    disabled={sendingInterviewLinkId === candidate.id || !canResendInterview || isInterviewActionBlocked}
+                                                                    className={cn(
+                                                                        "rounded-xl px-2.5 py-2 text-sm font-semibold cursor-pointer transition-colors",
+                                                                        sendingInterviewLinkId === candidate.id
+                                                                            ? "text-gray-400 opacity-70"
+                                                                            : isInterviewActionBlocked
+                                                                                ? "text-gray-400 opacity-70"
+                                                                                : canResendInterview
+                                                                                    ? "text-blue-600 focus:text-blue-700 focus:bg-blue-50"
+                                                                                    : "text-gray-400 opacity-70"
+                                                                    )}
+                                                                >
+                                                                    {isInterviewActionBlocked ? <Lock className="h-4 w-4 mr-2 shrink-0" /> : <RefreshCw className={cn("h-4 w-4 mr-2 shrink-0", sendingInterviewLinkId === candidate.id && "animate-spin")} />}
+                                                                    {sendingInterviewLinkId === candidate.id ? "Sending..." : "Resend Interview Link"}
+                                                                </DropdownMenuItem>
+                                                            </>
+                                                        )}
                                                         <DropdownMenuItem
-                                                            onClick={() => {
-                                                                if (isInterviewActionBlocked) {
-                                                                    toast.error(interviewActionBlockedMessage);
-                                                                    return;
-                                                                }
-                                                                handleSendInterviewLink({ id: candidate.id, name: displayName, interviewStatus: candidate.interviewStatus });
-                                                            }}
-                                                            disabled={sendingInterviewLinkId === candidate.id || !canResendInterview || isInterviewActionBlocked}
-                                                            className={cn(
-                                                                "rounded-xl px-2.5 py-2 text-sm font-semibold cursor-pointer transition-colors",
-                                                                sendingInterviewLinkId === candidate.id
-                                                                    ? "text-gray-400 opacity-70"
-                                                                    : isInterviewActionBlocked
-                                                                        ? "text-gray-400 opacity-70"
-                                                                        : canResendInterview
-                                                                            ? "text-blue-600 focus:text-blue-700 focus:bg-blue-50"
-                                                                            : "text-gray-400 opacity-70"
-                                                            )}
-                                                        >
-                                                            {isInterviewActionBlocked ? <Lock className="h-4 w-4 mr-2 shrink-0" /> : <RefreshCw className={cn("h-4 w-4 mr-2 shrink-0", sendingInterviewLinkId === candidate.id && "animate-spin")} />}
-                                                            {sendingInterviewLinkId === candidate.id ? "Sending..." : "Resend Interview Link"}
-                                                        </DropdownMenuItem>
-                                                        <DropdownMenuItem
-                                                            onClick={async () => {
-                                                                try {
-                                                                    const res = await fetch(`/api/candidates/${candidate.id}`, { method: "DELETE" });
-                                                                    if (res.ok) {
-                                                                        toast.success(`${displayName} deleted`);
-                                                                        fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, undefined, undefined, searchTerm, scoreSort);
-                                                                    } else {
-                                                                        const data = await res.json().catch(() => null);
-                                                                        toast.error(data?.error || "Failed to delete candidate");
-                                                                    }
-                                                                } catch {
-                                                                    toast.error("Failed to delete candidate");
-                                                                }
-                                                            }}
+                                                            onClick={() => setDeleteConfirm({ mode: "single", candidateId: candidate.id, candidateName: displayName })}
                                                             className="rounded-xl px-2.5 py-2 text-sm font-semibold cursor-pointer text-gray-600 focus:text-gray-900 focus:bg-gray-50 transition-colors"
                                                         >
                                                             <Trash2 className="h-4 w-4 mr-2 shrink-0" />
@@ -964,6 +997,36 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                     className="h-10 px-6 rounded-2xl bg-blue-600 text-white font-bold hover:bg-blue-700 transition-colors disabled:opacity-60"
                                 >
                                     {isBulkLoading ? "Sending..." : "Send"}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
+            {deleteConfirm && (() => {
+                const isBulk = deleteConfirm.mode === "bulk";
+                const deleteCount = isBulk ? selectedCount : 1;
+                return (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
+                        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden">
+                            <div className="px-6 pt-6 pb-4">
+                                <h2 className="text-lg font-black text-gray-900 tracking-tight">Confirm Delete</h2>
+                                <p className="mt-2 text-sm text-gray-600">
+                                    {isBulk
+                                        ? <>Delete <span className="font-bold text-rose-700">{deleteCount} selected candidate(s)</span>? This cannot be undone.</>
+                                        : <>Delete <span className="font-bold text-rose-700">{deleteConfirm.candidateName}</span>? This cannot be undone.</>}
+                                </p>
+                            </div>
+                            <div className="flex items-center justify-end gap-3 px-6 py-4 bg-gray-50/50 border-t border-gray-100">
+                                <button onClick={() => setDeleteConfirm(null)} className="h-10 px-5 rounded-2xl font-bold text-gray-500 hover:bg-gray-100 transition-colors">
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleDeleteConfirmed}
+                                    disabled={isBulkLoading}
+                                    className="h-10 px-6 rounded-2xl bg-rose-600 text-white font-bold hover:bg-rose-700 transition-colors disabled:opacity-60"
+                                >
+                                    {isBulkLoading ? "Deleting..." : "Delete"}
                                 </button>
                             </div>
                         </div>

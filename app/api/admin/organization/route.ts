@@ -37,41 +37,46 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        const activeDriveCount = await prisma.drive.count({
-            where: { orgId }
-        });
-
-        const org = await prisma.organization.findUnique({
-            where: { id: orgId },
-            select: {
-                name: true,
-                plan: true,
-                industry: true,
-                size: true,
-                website: true,
-                logoUrl: true,
-                onboardingComplete: true,
-                location: true,
-                status: true,
-                voiceId: true,
-                allowedVoices: true,
-                deepgramModel: true,
-                llmModel: true,
-                llmTemperature: true,
-                maxActiveDrives: true,
-                proctoringSignals: true,
-            }
-        });
+        const [org, activeDriveCount] = await Promise.all([
+            prisma.organization.findUnique({
+                where: { id: orgId },
+                select: {
+                    name: true,
+                    plan: true,
+                    industry: true,
+                    size: true,
+                    website: true,
+                    logoUrl: true,
+                    onboardingComplete: true,
+                    location: true,
+                    status: true,
+                    statusControl: true,
+                    voiceId: true,
+                    allowedVoices: true,
+                    deepgramModel: true,
+                    llmModel: true,
+                    llmTemperature: true,
+                    maxActiveDrives: true,
+                    proctoringSignals: true,
+                    interviewQuotaTotal: true,
+                    interviewQuotaUsed: true,
+                }
+            }),
+            prisma.drive.count({ where: { orgId } })
+        ]);
 
         if (!org) {
             return NextResponse.json({ error: "Organization not found" }, { status: 404 });
         }
 
-        const effectiveStatus = await getEffectiveOrgStatus(orgId);
+        let effectiveStatus = String(org.status || "ACTIVE").toUpperCase();
+        if ((org as any).statusControl === "QUOTA" && (org as any).interviewQuotaTotal > 0 && (org as any).interviewQuotaUsed >= (org as any).interviewQuotaTotal) {
+            effectiveStatus = "QUOTA_EXCEEDED";
+        }
 
         return NextResponse.json({
             ...org,
-            status: String(effectiveStatus || org.status || "ACTIVE").toUpperCase(),
+            status: effectiveStatus,
             activeDriveCount,
         }, {
             headers: {

@@ -9,6 +9,7 @@ import { normalizeProctoringSignals } from "@/lib/proctoring-signals";
 import { normalizeOrgAiConfig } from "@/lib/ai-provider-config";
 import { ORG_STATUS_CONTROL_MANUAL, ORG_STATUS_CONTROL_QUOTA, getEffectiveOrgStatus, normalizeOrgStatusControl, syncOrgStatusWithInterviewQuota } from "@/lib/credits";
 import { normalizeOrgLimitInput } from "@/lib/org-limits";
+import { normalizeEmail } from "@/lib/email";
 
 // GET /api/super-admin/orgs/[id] - fetch org for editing
 export async function GET(
@@ -230,10 +231,31 @@ export async function PATCH(
 
         // -- EMAIL CONFLICT CHECK ----------------------------
         if (adminEmail) {
-            const normalizedEmail = adminEmail.toLowerCase().trim();
-            const existingUser = await prisma.user.findUnique({
-                where: { email: normalizedEmail }
-            });
+            const normalizedEmail = normalizeEmail(adminEmail);
+            const [existingUser, existingSuperAdmin] = await Promise.all([
+                prisma.user.findFirst({
+                    where: {
+                        email: {
+                            equals: normalizedEmail,
+                            mode: "insensitive",
+                        },
+                    }
+                }),
+                prisma.superAdmin.findFirst({
+                    where: {
+                        email: {
+                            equals: normalizedEmail,
+                            mode: "insensitive",
+                        },
+                    }
+                }),
+            ]);
+
+            if (existingSuperAdmin) {
+                return NextResponse.json({
+                    error: `The email "${normalizedEmail}" is already registered with another account. Please use a different one.`
+                }, { status: 400 });
+            }
 
             if (existingUser) {
                 // Find the actual primary admin for this org
@@ -292,7 +314,7 @@ export async function PATCH(
                 if (admin) {
                     const adminUpdate: any = {};
                     if (adminName) adminUpdate.name = adminName;
-                    if (adminEmail) adminUpdate.email = adminEmail.toLowerCase().trim();
+                    if (adminEmail) adminUpdate.email = normalizeEmail(adminEmail);
 
                     await tx.user.update({
                         where: { id: admin.id },

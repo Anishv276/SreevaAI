@@ -53,6 +53,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast-custom";
 import { formatOrgPlan } from "@/lib/org-plans";
 import { DateFilter, type DateRange } from "@/components/admin/date-filter";
+import { ALL_VOICES } from "@/lib/constants/voices";
 interface Org {
     id: string;
     name: string;
@@ -64,15 +65,10 @@ interface Org {
     driveCount: number;
     candidateCount: number;
     // AI Config (Setup)
-    llmProvider?: string;
+    voiceId?: string;
+    allowedVoices?: string[];
     llmModel?: string;
-    ttsProvider?: string;
-    cartesiaModel?: string;
-    elevenlabsModel?: string;
-    sarvamModel?: string;
-    sttProvider?: string;
     deepgramModel?: string;
-    sarvamSttModel?: string;
     creditsUsed?: number;
     interviewsCompleted?: number;
     interviewQuotaTotal?: number;
@@ -158,10 +154,26 @@ export default function OrgsPage() {
             setRateLoading(false);
         }
     };
+    useEffect(() => {
+        try {
+            const saved = window.localStorage.getItem("super-admin-org-currency");
+            if (saved === "USD" || saved === "INR") {
+                setCurrency(saved);
+            }
+        } catch {
+            // Ignore storage issues and keep the default currency.
+        }
+    }, []);
+    useEffect(() => {
+        try {
+            window.localStorage.setItem("super-admin-org-currency", currency);
+        } catch {
+            // Ignore storage issues.
+        }
+    }, [currency]);
     // Called when Consumption Hub opens
     const openMetricsOrg = (org: Org) => {
         setMetricsOrg(org);
-        setCurrency('USD'); // reset to USD on open
         fetchExchangeRate();
     };
     useEffect(() => {
@@ -216,6 +228,7 @@ export default function OrgsPage() {
         }
         return `$${usd.toFixed(2)}`;
     };
+    const fmtHistory = (usd: number) => fmt(Number(usd || 0));
     const metricSections: { key: BillingFeatureKey; label: string }[] = [
         { key: "resumeExtraction", label: "LLM - Resume" },
         { key: "chatbot", label: "LLM - Chatbot" },
@@ -253,21 +266,21 @@ export default function OrgsPage() {
         // Strip date version suffix (e.g. "gpt-4o-mini-2024-07-18" -> "gpt-4o-mini")
         return base.replace(/-\d{4}-\d{2}-\d{2}$/, '');
     };
-    const getSetupModel = (org: Org, type: 'LLM' | 'TTS' | 'STT') => {
+    const getVoicesForOrg = (org: Org) => {
+        const ids = Array.isArray(org.allowedVoices) && org.allowedVoices.length > 0
+            ? org.allowedVoices
+            : org.voiceId ? [org.voiceId] : [];
+        return ids.map(id => ALL_VOICES.find(v => v.id === id)).filter(Boolean) as typeof ALL_VOICES;
+    };
+    const getSetupModel = (org: Org, type: 'LLM' | 'STT') => {
         if (type === 'LLM') return org.llmModel;
-        if (type === 'TTS') {
-            const provider = (org.ttsProvider || "").toUpperCase();
-            if (provider === 'SARVAM') return org.sarvamModel;
-            if (provider === 'ELEVENLABS') return org.elevenlabsModel || 'eleven_turbo_v2_5';
-            return org.cartesiaModel;
-        }
-        if (type === 'STT') return org.sttProvider === 'SARVAM' ? org.sarvamSttModel : org.deepgramModel;
+        if (type === 'STT') return org.deepgramModel ?? 'nova-3-general';
         return null;
     };
     const getUsageSummary = (usageMetrics?: Record<string, unknown> | null) => {
-        if (!usageMetrics || typeof usageMetrics !== "object") return "$0.00";
+        if (!usageMetrics || typeof usageMetrics !== "object") return fmt(0);
         const cost = getOrgTotalBillingCost({ usageMetrics } as any);
-        return `$${cost.toFixed(2)}`;
+        return fmt(cost);
     };
     const fetchOrgs = async (currentPage = page, query = search, dateRange = timeFilter) => {
         setLoading(true);
@@ -686,7 +699,7 @@ export default function OrgsPage() {
                                 <div className="flex items-center gap-6 mt-4">
                                     <div className="flex items-center gap-2">
                                         <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Credits Used:</span>
-                                        <span className="text-[14px] font-black text-gray-900 tabular-nums">${Number(metricsOrg.creditsUsed || 0).toFixed(2)}</span>
+                                        <span className="text-[14px] font-black text-gray-900 tabular-nums">{fmt(Number(metricsOrg.creditsUsed || 0))}</span>
                                     </div>
                                     <div className="w-[1px] h-3 bg-gray-200" />
                                     <div className="flex items-center gap-2">
@@ -756,7 +769,6 @@ export default function OrgsPage() {
                                 const ttsModels = Object.keys(feature.ttsByModel || {});
                                 const sttModels = Object.keys(feature.sttByModel || {});
                                 const setupLlm = getSetupModel(metricsOrg, 'LLM');
-                                const setupTts = getSetupModel(metricsOrg, 'TTS');
                                 const setupStt = getSetupModel(metricsOrg, 'STT');
                                 return (
                                     <div className="flex flex-col gap-12">
@@ -851,20 +863,18 @@ export default function OrgsPage() {
                                                     </div>
                                                     <div className="flex flex-wrap gap-2 pt-6 border-t border-gray-100">
                                                         {(() => {
-                                                            // Show active TTS model from org setup config
-                                                            const ttsModel = getSetupModel(metricsOrg, 'TTS');
-                                                            const provider = metricsOrg.ttsProvider || 'CARTESIA';
-                                                            return ttsModel ? (
+                                                            const voices = getVoicesForOrg(metricsOrg);
+                                                            if (!voices.length) return <span className="text-[10px] font-bold text-gray-500 italic bg-gray-50 px-3 py-1.5 rounded-md border border-gray-200 border-dashed">NO TTS</span>;
+                                                            const providers = [...new Set(voices.map(v => v.provider))];
+                                                            return (
                                                                 <>
-                                                                    <span className="px-3 py-1.5 bg-blue-50 text-blue-700 text-[10px] font-[700] rounded-md border border-blue-100 uppercase tracking-wide">
-                                                                        {cleanName(ttsModel)}
-                                                                    </span>
-                                                                    <span className="px-3 py-1.5 bg-gray-50 text-gray-500 text-[10px] font-[700] rounded-md border border-gray-200 uppercase tracking-wide">
-                                                                        {provider}
-                                                                    </span>
+                                                                    {providers.map(p => (
+                                                                        <span key={p} className="px-3 py-1.5 bg-gray-50 text-gray-500 text-[10px] font-[700] rounded-md border border-gray-200 uppercase tracking-wide">{p}</span>
+                                                                    ))}
+                                                                    {[...new Set(voices.map(v => v.model))].map(m => (
+                                                                        <span key={m} className="px-3 py-1.5 bg-blue-50 text-blue-700 text-[10px] font-[700] rounded-md border border-blue-100 uppercase tracking-wide">{cleanName(m)}</span>
+                                                                    ))}
                                                                 </>
-                                                            ) : (
-                                                                <span className="text-[10px] font-bold text-gray-500 italic bg-gray-50 px-3 py-1.5 rounded-md border border-gray-200 border-dashed">NO TTS</span>
                                                             );
                                                         })()}
                                                     </div>
@@ -890,16 +900,14 @@ export default function OrgsPage() {
                                                     </div>
                                                     <div className="flex flex-wrap gap-2 pt-6 border-t border-gray-100">
                                                         {(() => {
-                                                            // Show active STT model from org setup config
                                                             const sttModel = getSetupModel(metricsOrg, 'STT');
-                                                            const provider = metricsOrg.sttProvider || 'DEEPGRAM';
                                                             return sttModel ? (
                                                                 <>
                                                                     <span className="px-3 py-1.5 bg-orange-50 text-orange-700 text-[10px] font-[700] rounded-md border border-orange-100 uppercase tracking-wide">
                                                                         {cleanName(sttModel)}
                                                                     </span>
                                                                     <span className="px-3 py-1.5 bg-gray-50 text-gray-500 text-[10px] font-[700] rounded-md border border-gray-200 uppercase tracking-wide">
-                                                                        {provider}
+                                                                        DEEPGRAM
                                                                     </span>
                                                                 </>
                                                             ) : (
@@ -1024,12 +1032,18 @@ export default function OrgsPage() {
                                                         <div className="text-[10px] font-[800] uppercase tracking-[0.2em] text-gray-500 mb-3 hover:text-[#3B82F6] transition-colors">TTS</div>
                                                         <div className="flex flex-wrap gap-2">
                                                             {(() => {
-                                                                return setupTts ? (
-                                                                    <span className="px-3 py-1 bg-[#3B82F6]/10 text-[#3B82F6] text-[10px] font-[700] rounded-md border border-[#3B82F6]/20 uppercase tracking-wide">
-                                                                        {cleanName(setupTts)}
-                                                                    </span>
-                                                                ) : (
-                                                                    <span className="text-[10px] font-[700] text-gray-500 italic">NO TTS</span>
+                                                                const voices = getVoicesForOrg(metricsOrg);
+                                                                if (!voices.length) return <span className="text-[10px] font-[700] text-gray-500 italic">NO TTS</span>;
+                                                                const providers = [...new Set(voices.map(v => v.provider))];
+                                                                return (
+                                                                    <>
+                                                                        {[...new Set(voices.map(v => v.model))].map(m => (
+                                                                            <span key={m} className="px-3 py-1 bg-[#3B82F6]/10 text-[#3B82F6] text-[10px] font-[700] rounded-md border border-[#3B82F6]/20 uppercase tracking-wide">{cleanName(m)}</span>
+                                                                        ))}
+                                                                        {providers.map(p => (
+                                                                            <span key={p} className="px-3 py-1 bg-gray-50 text-gray-500 text-[10px] font-[700] rounded-md border border-gray-200 uppercase tracking-wide">{p}</span>
+                                                                        ))}
+                                                                    </>
                                                                 );
                                                             })()}
                                                         </div>
@@ -1112,16 +1126,16 @@ export default function OrgsPage() {
                                                                 {(Number(row.durationSec || 0) / 60).toFixed(1)} min
                                                             </td>
                                                             <td className="px-6 py-4 text-right text-sm font-bold text-gray-900">
-                                                                {row.hasBillingSnapshot ? `$${Number(row.llmCostUsd || 0).toFixed(2)}` : "-"}
+                                                                {row.hasBillingSnapshot ? fmtHistory(row.llmCostUsd) : "-"}
                                                             </td>
                                                             <td className="px-6 py-4 text-right text-sm font-bold text-gray-900">
-                                                                {row.hasBillingSnapshot ? `$${Number(row.ttsCostUsd || 0).toFixed(2)}` : "-"}
+                                                                {row.hasBillingSnapshot ? fmtHistory(row.ttsCostUsd) : "-"}
                                                             </td>
                                                             <td className="px-6 py-4 text-right text-sm font-bold text-gray-900">
-                                                                {row.hasBillingSnapshot ? `$${Number(row.sttCostUsd || 0).toFixed(2)}` : "-"}
+                                                                {row.hasBillingSnapshot ? fmtHistory(row.sttCostUsd) : "-"}
                                                             </td>
                                                             <td className="px-6 py-4 text-right text-sm font-black text-gray-900">
-                                                                {row.hasBillingSnapshot ? `$${Number(row.totalCostUsd || 0).toFixed(2)}` : "-"}
+                                                                {row.hasBillingSnapshot ? fmtHistory(row.totalCostUsd) : "-"}
                                                             </td>
                                                             <td className="px-6 py-4 text-right text-[11px] font-semibold text-gray-500">
                                                                 {new Date(row.date).toLocaleDateString(undefined, {

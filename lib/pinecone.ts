@@ -1,4 +1,5 @@
 import { Pinecone } from "@pinecone-database/pinecone";
+import { getEmbedding } from "./openai";
 
 /**
  * Interface for the metadata stored in Pinecone
@@ -14,12 +15,50 @@ export interface CandidateMetadata {
     resumeStatus: string;   // shortlisted, rejected, pending
     aiScore: number;        // 0-100 screening score
     contentChunk: string;
-    type: "resume" | "transcript" | "summary" | "report";
+    type: "resume" | "resume_report" | "interview_transcript" | "interview_report";
     createdAt: string;
+    chunkIndex?: number;
+    chunkCount?: number;
+    chunkSizeChars?: number;
 }
+
+export type CandidatePineconeContentType = CandidateMetadata["type"];
+
+export type CandidatePineconeDocument = {
+    type: CandidatePineconeContentType;
+    text: unknown;
+    createdAt: string;
+};
+
+export type CandidatePineconeSyncInput = {
+    applicationId: string;
+    orgId: string;
+    fullName: string;
+    email: string;
+    jobTitle: string;
+    driveId: string;
+    status: string;
+    resumeStatus: string;
+    aiScore: number;
+    createdAt: string;
+    maxCharsPerChunk?: number;
+    documents: CandidatePineconeDocument[];
+};
+
+export type CandidatePineconeSyncResult = {
+    indexedCount: number;
+    skippedCount: number;
+    failedCount: number;
+    errors: Array<{ type: CandidatePineconeContentType; error: string }>;
+};
 
 const apiKey = process.env.PINECONE_API_KEY;
 const indexName = process.env.PINECONE_INDEX_NAME || "transcripts";
+const DEFAULT_PINECONE_CHUNK_SIZE_CHARS = (() => {
+    const parsed = Number(process.env.PINECONE_SYNC_CHUNK_SIZE_CHARS || 10000);
+    if (!Number.isFinite(parsed) || parsed <= 0) return 10000;
+    return Math.max(1000, Math.floor(parsed));
+})();
 
 let pc: any = null;
 let index: any = null;
@@ -42,6 +81,125 @@ export const pineconeIndex = index;
 /**
  * Helpers for managing embeddings in Pinecone
  */
+
+function serializeEmbeddingValue(value: unknown, depth = 0): string {
+    if (value == null) return "";
+    if (typeof value === "string") {
+        const trimmed = value.trim();
+        if (!trimmed) return "";
+        if (depth < 2 && ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]")))) {
+            try {
+                const parsed = JSON.parse(trimmed);
+                if (parsed && typeof parsed === "object") {
+                    return serializeEmbeddingValue(parsed, depth + 1);
+                }
+            } catch {
+                // Fall back to the raw string.
+            }
+        }
+        return trimmed;
+    }
+    if (typeof value === "number" || typeof value === "boolean") {
+        return String(value);
+    }
+    if (Array.isArray(value)) {
+        return value
+            .map((item) => serializeEmbeddingValue(item, depth + 1))
+            .filter(Boolean)
+            .join("\n");
+    }
+    if (typeof value === "object") {
+        if (depth >= 4) return "";
+        const obj = value as Record<string, unknown>;
+        const priorityKeys = [
+            "summary",
+            "verdict",
+            "decision",
+            "recommendation",
+            "recommendation_reason",
+            "result",
+            "title",
+            "label",
+            "text",
+            "message",
+            "reason",
+            "reasoning",
+            "evidence",
+            "question",
+            "answer",
+            "description",
+            "body",
+            "details",
+            "note",
+        ];
+        const parts: string[] = [];
+        const seen = new Set<string>();
+
+        for (const key of priorityKeys) {
+            if (!Object.prototype.hasOwnProperty.call(obj, key)) continue;
+            const text = serializeEmbeddingValue(obj[key], depth + 1);
+            if (text) {
+                parts.push(`${key}: ${text}`);
+                seen.add(key);
+            }
+        }
+
+        for (const [key, val] of Object.entries(obj)) {
+            if (seen.has(key)) continue;
+            const text = serializeEmbeddingValue(val, depth + 1);
+            if (text) {
+                parts.push(`${key}: ${text}`);
+            }
+        }
+
+        return parts.join("\n");
+    }
+    return "";
+}
+
+function normalizeEmbeddingText(value: unknown): string {
+    const serialized = serializeEmbeddingValue(value);
+    return serialized.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function splitEmbeddingTextIntoChunks(text: string, maxChars: number): string[] {
+    const normalized = text.trim();
+    if (!normalized) return [];
+    if (normalized.length <= maxChars) return [normalized];
+
+    const chunks: string[] = [];
+    const words = normalized.split(/\s+/);
+    let current = "";
+
+    for (const rawWord of words) {
+        const word = rawWord.trim();
+        if (!word) continue;
+
+        if (word.length > maxChars) {
+            if (current) {
+                chunks.push(current);
+                current = "";
+            }
+
+            for (let i = 0; i < word.length; i += maxChars) {
+                chunks.push(word.slice(i, i + maxChars));
+            }
+            continue;
+        }
+
+        const candidate = current ? `${current} ${word}` : word;
+        if (candidate.length <= maxChars) {
+            current = candidate;
+            continue;
+        }
+
+        if (current) chunks.push(current);
+        current = word;
+    }
+
+    if (current) chunks.push(current);
+    return chunks;
+}
 
 /**
  * Upsert a candidate's data to Pinecone
@@ -71,6 +229,71 @@ export async function upsertCandidateEmbedding(
         console.error("[PINECONE_UPSERT_ERROR]:", error.message);
         throw error;
     }
+}
+
+export async function syncCandidateCorpusToPinecone(input: CandidatePineconeSyncInput): Promise<CandidatePineconeSyncResult> {
+    const chunkSizeChars = Math.max(
+        1000,
+        Math.floor(input.maxCharsPerChunk || DEFAULT_PINECONE_CHUNK_SIZE_CHARS)
+    );
+    const sharedMeta = {
+        applicationId: input.applicationId,
+        orgId: input.orgId,
+        fullName: input.fullName,
+        email: input.email,
+        jobTitle: input.jobTitle,
+        driveId: input.driveId,
+        status: input.status,
+        resumeStatus: input.resumeStatus,
+        aiScore: input.aiScore ?? 0,
+    };
+
+    let indexedCount = 0;
+    let skippedCount = 0;
+    let failedCount = 0;
+    const errors: Array<{ type: CandidatePineconeContentType; error: string }> = [];
+
+    for (const document of input.documents) {
+        const text = normalizeEmbeddingText(document.text);
+        if (!text) {
+            skippedCount += 1;
+            continue;
+        }
+
+        const chunks = splitEmbeddingTextIntoChunks(text, chunkSizeChars);
+        if (!chunks.length) {
+            skippedCount += 1;
+            continue;
+        }
+
+        const chunkCount = chunks.length;
+        for (let chunkIndex = 0; chunkIndex < chunkCount; chunkIndex += 1) {
+            const chunkText = chunks[chunkIndex];
+            try {
+                const vector = await getEmbedding(chunkText);
+                await upsertCandidateEmbedding(`${input.applicationId}-${document.type}-${chunkIndex + 1}`, vector, {
+                    ...sharedMeta,
+                    contentChunk: chunkText.substring(0, 3000),
+                    type: document.type,
+                    createdAt: document.createdAt,
+                    chunkIndex: chunkIndex + 1,
+                    chunkCount,
+                    chunkSizeChars,
+                });
+                indexedCount += 1;
+            } catch (error: any) {
+                failedCount += 1;
+                const message = error?.message || String(error);
+                errors.push({ type: document.type, error: message });
+                console.error(
+                    `[PINECONE_SYNC_ERROR:${document.type}#${chunkIndex + 1}/${chunkCount}]`,
+                    message
+                );
+            }
+        }
+    }
+
+    return { indexedCount, skippedCount, failedCount, errors };
 }
 
 /**

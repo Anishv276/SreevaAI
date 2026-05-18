@@ -14,6 +14,7 @@ export async function GET(req: Request) {
         const { searchParams } = new URL(req.url);
         const range = searchParams.get("range") ?? "month";
         const from = searchParams.get("from") ?? undefined;
+        const limit = Math.min(20, Math.max(1, parseInt(searchParams.get("limit") || "20")));
         const start = getRangeStart(range, from);
 
         const drives = await prisma.drive.findMany({
@@ -33,7 +34,7 @@ export async function GET(req: Request) {
                 },
             },
             orderBy: { createdAt: "desc" },
-            take: 20,
+            take: limit,
         });
 
         const result = drives.map((drive: (typeof drives)[number]) => {

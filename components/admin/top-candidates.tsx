@@ -1,8 +1,7 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Loader2 } from "lucide-react";
-import { ErrorState } from "./error-state";
+import { Loader2, ArrowRight, Trophy } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -20,20 +19,44 @@ interface TopCandidate {
     status: string;
 }
 
-const AVATAR_AURA = [
-    "from-blue-400 to-indigo-500",
-    "from-emerald-400 to-teal-500",
-    "from-slate-500 to-slate-700",
-    "from-purple-400 to-fuchsia-500",
-    "from-rose-400 to-pink-500",
+// Top 3 get rank badges; all get distinct avatar colours
+const AVATAR_COLORS = [
+    "bg-blue-500",
+    "bg-emerald-500",
+    "bg-violet-500",
+    "bg-pink-500",
+    "bg-amber-500",
+    "bg-slate-500",
 ];
 
-const STATUS_GLOW: Record<string, string> = {
-    Shortlisted:  "bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.3)]",
-    Hired:        "bg-slate-500 shadow-[0_0_12px_rgba(100,116,139,0.25)]",
-    Reviewing:    "bg-gray-400 shadow-[0_0_12px_rgba(156,163,175,0.2)]",
-    "In progress":"bg-blue-500 shadow-[0_0_12px_rgba(59,130,246,0.3)]",
+const RANK_BADGE: Record<number, { bg: string; text: string; label: string }> = {
+    0: { bg: "bg-amber-100",  text: "text-amber-700",  label: "#1" },
+    1: { bg: "bg-slate-100",  text: "text-slate-600",  label: "#2" },
+    2: { bg: "bg-orange-100", text: "text-orange-700", label: "#3" },
 };
+
+const STATUS_CONFIG: Record<string, { dot: string; text: string; bg: string; label: string }> = {
+    Shortlisted:   { dot: "bg-emerald-500", text: "text-emerald-700", bg: "bg-emerald-50",  label: "Shortlisted" },
+    Hired:         { dot: "bg-gray-500",    text: "text-gray-700",    bg: "bg-gray-100",    label: "Hired" },
+    Reviewing:     { dot: "bg-amber-500",   text: "text-amber-700",   bg: "bg-amber-50",    label: "Reviewing" },
+    "In progress": { dot: "bg-blue-500",    text: "text-blue-700",    bg: "bg-blue-50",     label: "In Progress" },
+    Pending:       { dot: "bg-gray-300",    text: "text-gray-500",    bg: "bg-gray-50",     label: "Pending" },
+    Rejected:      { dot: "bg-red-400",     text: "text-red-600",     bg: "bg-red-50",      label: "Rejected" },
+};
+
+function scoreLabel(score: number) {
+    if (score >= 80) return { text: "Excellent", color: "text-emerald-600" };
+    if (score >= 60) return { text: "Good",      color: "text-blue-600" };
+    if (score >= 40) return { text: "Average",   color: "text-amber-600" };
+    return                  { text: "Below Avg", color: "text-red-500" };
+}
+
+function scoreBarColor(score: number) {
+    if (score >= 80) return "#10B981";
+    if (score >= 60) return "#3B82F6";
+    if (score >= 40) return "#F59E0B";
+    return "#F87171";
+}
 
 interface TopCandidatesProps {
     dateRange: DateRange;
@@ -43,140 +66,160 @@ export function TopCandidates({ dateRange }: TopCandidatesProps) {
     const [candidates, setCandidates] = useState<TopCandidate[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [retryKey, setRetryKey] = useState(0);
     const router = useRouter();
-
-    const fetchCandidates = useCallback(async (signal?: AbortSignal) => {
-        setLoading(true);
-        setError(null);
-        try {
-            const params = new URLSearchParams();
-            if (dateRange.type === "custom") {
-                params.set("range", "custom");
-                params.set("from", dateRange.from);
-                params.set("to", dateRange.to);
-            } else {
-                params.set("range", dateRange.type);
-            }
-
-            const res = await fetch(`/api/admin/top-candidates?${params.toString()}`, { signal });
-            if (res.ok) {
-                const data = await res.json();
-                if (!signal?.aborted) setCandidates(data.candidates ?? []);
-            } else {
-                if (!signal?.aborted) setError("Talent sync failed.");
-            }
-        } catch (err: unknown) {
-            if (!(err instanceof DOMException && err.name === "AbortError")) {
-                setError("Talent stream unavailable.");
-            }
-        } finally {
-            if (!signal?.aborted) setLoading(false);
-        }
-    }, [dateRange]);
 
     useEffect(() => {
         const controller = new AbortController();
-        fetchCandidates(controller.signal);
+        const { signal } = controller;
+
+        setLoading(true);
+        setError(null);
+
+        const params = new URLSearchParams();
+        if (dateRange.type === "custom") {
+            params.set("range", "custom");
+            params.set("from", dateRange.from);
+            params.set("to", dateRange.to);
+        } else {
+            params.set("range", dateRange.type);
+        }
+
+        fetch(`/api/admin/top-candidates?${params.toString()}`, { signal })
+            .then(async (res) => {
+                if (!signal.aborted) {
+                    if (res.ok) setCandidates((await res.json()).candidates ?? []);
+                    else setError("Failed to load top candidates.");
+                }
+            })
+            .catch((err) => {
+                if (!signal.aborted && err.name !== "AbortError") setError("Network error.");
+            })
+            .finally(() => { if (!signal.aborted) setLoading(false); });
+
         return () => controller.abort();
-    }, [fetchCandidates]);
+    }, [dateRange, retryKey]);
 
     return (
-        <div className="bg-white/40 backdrop-blur-xl rounded-[2.5rem] border border-white/60 shadow-[0_8px_32px_rgba(0,0,0,0.02)] flex flex-col h-full overflow-hidden hover:shadow-[0_20px_60px_rgba(0,0,0,0.06)] transition-all duration-700">
+        <div className="bg-white rounded-2xl border border-gray-200 flex flex-col overflow-hidden">
             {/* Header */}
-            <div className="flex items-center justify-between px-8 py-6 border-b border-gray-100/50">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
                 <div>
-                    <h3 className="text-xl font-black text-gray-900 tracking-tight text-premium">Top Talent</h3>
-                    <p className="text-[11px] font-bold text-gray-400 mt-1 uppercase tracking-[0.2em]">Neural Match Index</p>
+                    <h3 className="text-base font-bold text-gray-900 tracking-tight">Top Talent</h3>
+                    <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">Ranked by interview score</p>
                 </div>
-                <Link href="/admin/candidates">
-                    <button className="text-[11px] font-black text-gray-400 border border-gray-100 rounded-xl px-4 py-2 hover:border-slate-300 hover:text-slate-950 transition-all uppercase tracking-widest bg-white shadow-sm">
-                        Database
-                    </button>
+                <Link
+                    href="/admin/candidates"
+                    className="inline-flex items-center gap-1.5 text-xs font-bold text-gray-500 border border-gray-200 rounded-xl px-3 py-1.5 hover:border-gray-300 hover:text-gray-900 transition-all uppercase tracking-widest"
+                >
+                    All Candidates <ArrowRight className="h-3 w-3" />
                 </Link>
             </div>
 
             {/* Body */}
-            <div className="flex-1 overflow-y-auto px-6 py-4 custom-scrollbar">
+            <div className="flex-1 px-5 py-4">
                 {loading ? (
-                    <div className="flex items-center justify-center h-48">
-                        <Loader2 className="h-8 w-8 text-slate-400 animate-spin" />
+                    <div className="flex items-center justify-center h-44">
+                        <Loader2 className="h-6 w-6 text-gray-300 animate-spin" />
                     </div>
                 ) : error ? (
-                    <div className="flex items-center justify-center h-48 py-8">
-                        <ErrorState 
-                            message={error} 
-                            onRetry={fetchCandidates} 
-                            compact 
-                            className="bg-transparent border-none shadow-none"
-                        />
+                    <div className="flex flex-col items-center justify-center h-44 gap-2">
+                        <p className="text-sm font-semibold text-gray-500">{error}</p>
+                        <button
+                            onClick={() => setRetryKey((k) => k + 1)}
+                            className="text-xs font-bold text-gray-600 underline underline-offset-2 hover:text-gray-900"
+                        >
+                            Retry
+                        </button>
                     </div>
                 ) : candidates.length === 0 ? (
-                    <div className="flex items-center justify-center h-48 text-[12px] font-bold text-gray-500 uppercase tracking-widest">
-                        Zero matches processed
+                    <div className="flex flex-col items-center justify-center h-44 gap-2 text-center">
+                        <Trophy className="h-8 w-8 text-gray-200" />
+                        <p className="text-sm font-bold text-gray-500">No completed interviews yet</p>
+                        <p className="text-xs text-gray-400">Top candidates appear here after interviews finish</p>
                     </div>
                 ) : (
-                    <motion.div 
+                    <motion.div
                         initial="hidden"
                         animate="visible"
-                        variants={{
-                            hidden: { opacity: 0 },
-                            visible: {
-                                opacity: 1,
-                                transition: { staggerChildren: 0.1 }
-                            }
-                        }}
-                        className="space-y-3"
+                        variants={{ hidden: { opacity: 0 }, visible: { opacity: 1, transition: { staggerChildren: 0.07 } } }}
+                        className="space-y-2"
                     >
-                        {candidates.map((c, i) => (
-                            <motion.div
-                                key={c.id}
-                                variants={{
-                                    hidden: { opacity: 0, scale: 0.95 },
-                                    visible: { opacity: 1, scale: 1 }
-                                }}
-                                className="group flex items-center gap-4 p-4 rounded-[1.75rem] border border-gray-50/50 hover:border-slate-200 hover:bg-white transition-all duration-500 cursor-pointer shadow-sm hover:shadow-[0_15px_30px_rgba(15,23,42,0.04)]"
-                                onClick={() => router.push(`/admin/candidates/${c.id}`)}
-                            >
-                                {/* Avatar with Aura */}
-                                <div className="relative shrink-0">
-                                    <div className={cn(
-                                        "h-11 w-11 rounded-2xl bg-gradient-to-br flex items-center justify-center text-[13px] font-black text-white shadow-lg transition-transform group-hover:scale-110",
-                                        AVATAR_AURA[i % AVATAR_AURA.length]
-                                    )}>
-                                        {c.initials}
-                                    </div>
-                                    {/* Indicator Dot */}
-                                    <div className={cn(
-                                        "absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full border-2 border-white transition-all",
-                                        STATUS_GLOW[c.status] ?? STATUS_GLOW["Reviewing"]
-                                    )} />
-                                </div>
+                        {candidates.map((c, i) => {
+                            const rank = RANK_BADGE[i];
+                            const status = STATUS_CONFIG[c.status] ?? STATUS_CONFIG["Reviewing"];
+                            const score = c.interviewScore ?? 0;
+                            const sl = scoreLabel(score);
 
-                                {/* Identity */}
-                                <div className="flex-1 min-w-0">
-                                    <div className="flex items-baseline justify-between mb-0.5">
-                                        <p className="text-[14px] font-black text-gray-900 leading-tight group-hover:text-slate-700 transition-colors truncate">
-                                            {c.name}
-                                        </p>
-                                        <div className="flex items-center gap-2">
-                                            {c.interviewScore != null && (
-                                                <div className="flex flex-col items-end">
-                                                    <span className="text-[11px] font-black text-gray-900 tracking-tighter tabular-nums">IV {c.interviewScore}</span>
-                                                    <div className="h-0.5 w-6 bg-slate-400 rounded-full" />
-                                                </div>
-                                            )}
+                            return (
+                                <motion.div
+                                    key={c.id}
+                                    variants={{ hidden: { opacity: 0, y: 8 }, visible: { opacity: 1, y: 0 } }}
+                                    onClick={() => router.push(`/admin/candidates/${c.id}`)}
+                                    className="group flex items-center gap-3 p-3 rounded-2xl border border-gray-100 hover:border-gray-200 hover:bg-gray-50/50 hover:shadow-sm transition-all duration-200 cursor-pointer"
+                                >
+                                    {/* Avatar + rank badge */}
+                                    <div className="relative shrink-0">
+                                        <div className={cn(
+                                            "h-10 w-10 rounded-xl flex items-center justify-center text-[12px] font-bold text-white",
+                                            AVATAR_COLORS[i % AVATAR_COLORS.length]
+                                        )}>
+                                            {c.initials}
                                         </div>
+                                        {rank && (
+                                            <span className={cn(
+                                                "absolute -top-1.5 -right-1.5 text-[8px] font-bold px-1 py-0.5 rounded-md border border-white",
+                                                rank.bg, rank.text
+                                            )}>
+                                                {rank.label}
+                                            </span>
+                                        )}
                                     </div>
-                                    <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest leading-none mt-1">
-                                        {c.role}
-                                    </p>
-                                </div>
-                            </motion.div>
-                        ))}
+
+                                    {/* Info */}
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center justify-between gap-2 mb-0.5">
+                                            <p className="text-sm font-bold text-gray-900 truncate group-hover:text-gray-700">
+                                                {c.name}
+                                            </p>
+                                            {/* Status pill */}
+                                            <span className={cn(
+                                                "shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-widest",
+                                                status.bg, status.text
+                                            )}>
+                                                <span className={cn("h-1.5 w-1.5 rounded-full", status.dot)} />
+                                                {status.label}
+                                            </span>
+                                        </div>
+
+                                        {/* Role · Drive */}
+                                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest truncate mb-1.5">
+                                            {c.role} · {c.driveTitle}
+                                        </p>
+
+                                        {/* Score bar */}
+                                        {c.interviewScore != null && (
+                                            <div className="flex items-center gap-2">
+                                                <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                                                    <motion.div
+                                                        initial={{ width: 0 }}
+                                                        animate={{ width: `${score}%` }}
+                                                        transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1], delay: i * 0.05 }}
+                                                        className="h-full rounded-full"
+                                                        style={{ backgroundColor: scoreBarColor(score) }}
+                                                    />
+                                                </div>
+                                                <span className="text-[10px] font-bold text-gray-700 tabular-nums shrink-0">{score}</span>
+                                                <span className={cn("text-[9px] font-bold shrink-0", sl.color)}>{sl.text}</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                </motion.div>
+                            );
+                        })}
                     </motion.div>
                 )}
             </div>
         </div>
     );
 }
-

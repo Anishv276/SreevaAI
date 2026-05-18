@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendOtpEmail } from "@/lib/mail";
 import { isRateLimited } from "@/lib/rate-limit";
+import { normalizeEmail } from "@/lib/email";
 
 export async function POST(request: Request) {
     try {
@@ -11,7 +12,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Email is required" }, { status: 400 });
         }
 
-        const normalizedEmail = email.toLowerCase().trim();
+        const normalizedEmail = normalizeEmail(email);
 
         const isLimited = await isRateLimited(`otp:${normalizedEmail}`, 1, 30);
         if (isLimited) {
@@ -20,13 +21,23 @@ export async function POST(request: Request) {
             }, { status: 429 });
         }
 
-        const superAdminRecord = await prisma.superAdmin.findUnique({
-            where: { email: normalizedEmail },
+        const superAdminRecord = await prisma.superAdmin.findFirst({
+            where: {
+                email: {
+                    equals: normalizedEmail,
+                    mode: "insensitive",
+                },
+            },
             select: { id: true, name: true }
         });
 
-        const userRecord = await prisma.user.findUnique({
-            where: { email: normalizedEmail },
+        const userRecord = await prisma.user.findFirst({
+            where: {
+                email: {
+                    equals: normalizedEmail,
+                    mode: "insensitive",
+                },
+            },
             select: { id: true, name: true, role: true, orgId: true }
         });
 

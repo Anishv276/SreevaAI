@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { isRateLimited } from "@/lib/rate-limit";
 import { sendPasswordChangeOtpEmail } from "@/lib/mail";
+import { normalizeEmail } from "@/lib/email";
 
 export async function POST() {
     try {
@@ -15,7 +16,7 @@ export async function POST() {
         const isSuperAdmin = session.role === "SUPER_ADMIN";
 
         if (isSuperAdmin) {
-            targetEmail = process.env.MASTER_ADMIN_EMAIL || "";
+            targetEmail = normalizeEmail(process.env.MASTER_ADMIN_EMAIL || "");
             if (!targetEmail) return NextResponse.json({ error: "Master identity not configured" }, { status: 500 });
         } else {
             const user = await prisma.user.findUnique({
@@ -23,7 +24,7 @@ export async function POST() {
                 select: { email: true }
             });
             if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
-            targetEmail = user.email;
+            targetEmail = normalizeEmail(user.email);
         }
 
         const isLimited = await isRateLimited(`otp-send:${targetEmail}`, 5, 60);

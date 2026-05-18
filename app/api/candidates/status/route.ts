@@ -1,10 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { z } from "zod";
 import { getSession } from "@/lib/auth";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
-
-const emailSchema = z.string().email("Valid email required");
+import { normalizeEmail } from "@/lib/email";
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
 export async function GET(request: Request) {
@@ -14,13 +12,18 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        const email = session.email;
-        if (!email) {
+        const normalizedEmail = normalizeEmail(session.email);
+        if (!normalizedEmail) {
             return NextResponse.json({ error: "Session missing email identity" }, { status: 400 });
         }
 
         const applications = await prisma.application.findMany({
-            where: { email: email.toLowerCase() },
+            where: {
+                email: {
+                    equals: normalizedEmail,
+                    mode: "insensitive",
+                },
+            },
             include: {
                 drive: {
                     select: {

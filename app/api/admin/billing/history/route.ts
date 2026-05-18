@@ -28,29 +28,25 @@ export async function GET(request: Request) {
 
     const interviews = await prisma.interview.findMany({
       where: {
-        application: {
-          drive: {
-            orgId,
-          },
-        },
+        status: { not: "PENDING" },
+        application: { drive: { orgId } },
       },
-      include: {
+      select: {
+        id: true,
+        status: true,
+        updatedAt: true,
+        completedAt: true,
+        interviewDuration: true,
+        recordingDurationSec: true,
         application: {
           select: {
             fullName: true,
-            drive: {
-              select: {
-                title: true,
-                role: true,
-              },
-            },
+            drive: { select: { title: true, role: true } },
           },
         },
       },
-      orderBy: {
-        updatedAt: "desc",
-      },
-      take: 100,
+      orderBy: { updatedAt: "desc" },
+      take: 50,
     });
 
     const rows = interviews
@@ -69,7 +65,9 @@ export async function GET(request: Request) {
       })
       .filter((row) => row.status !== "pending");
 
-    return NextResponse.json({ rows });
+    return NextResponse.json({ rows }, {
+      headers: { 'Cache-Control': 'private, max-age=120' }
+    });
   } catch (error) {
     console.error("[BILLING_HISTORY] GET error:", error);
     return NextResponse.json({ error: "Failed to fetch billing history" }, { status: 500 });

@@ -58,6 +58,7 @@ import {
 
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ALL_VOICES } from "@/lib/constants/voices";
 
 import { ActionConfirmModal } from "@/components/ui/action-confirm-modal";
 
@@ -93,25 +94,11 @@ interface OrgDetail {
 
     creditsUsed?: number;
 
-    ttsProvider?: string;
+    voiceId?: string;
 
-    cartesiaVoiceId?: string;
-
-    cartesiaModel?: string;
-
-    elevenlabsModel?: string;
-
-    sarvamModel?: string;
-
-    sarvamVoice?: string;
-
-    sttProvider?: string;
+    allowedVoices?: string[];
 
     deepgramModel?: string;
-
-    sarvamSttModel?: string;
-
-    llmProvider?: string;
 
     llmModel?: string;
 
@@ -226,6 +213,32 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
     const [isDeleting, setIsDeleting] = useState(false);
 
     const [showMetrics, setShowMetrics] = useState(false);
+    const [currency, setCurrency] = useState<"USD" | "INR">("USD");
+    const [usdToInr, setUsdToInr] = useState<number>(84.5);
+    const [rateLoading, setRateLoading] = useState(false);
+    const [rateUpdatedAt, setRateUpdatedAt] = useState("");
+
+    const fetchExchangeRate = async () => {
+        setRateLoading(true);
+        try {
+            const res = await fetch("/api/super-admin/exchange-rate");
+            if (res.ok) {
+                const data = await res.json();
+                setUsdToInr(Number(data.rate || 84.5));
+                setRateUpdatedAt(String(data.updatedAt || ""));
+            }
+        } catch {
+            // Keep existing rate
+        } finally {
+            setRateLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (showMetrics && currency === "INR" && !rateUpdatedAt) {
+            void fetchExchangeRate();
+        }
+    }, [showMetrics, currency, rateUpdatedAt]);
 
 
 
@@ -243,6 +256,13 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
 
         return configured || "-";
 
+    };
+
+    const fmt = (usd: number) => {
+        if (currency === "INR") {
+            return `₹${(usd * usdToInr).toFixed(0)}`;
+        }
+        return `$${usd.toFixed(2)}`;
     };
 
 
@@ -865,17 +885,40 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
 
                             </div>
 
-                            <button
-
-                                onClick={() => setShowMetrics(false)}
-
-                                className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-2 text-sm font-bold text-gray-600 hover:bg-gray-100"
-
-                            >
-
-                                Close
-
-                            </button>
+                            <div className="flex items-center gap-3">
+                                <div className="flex items-center bg-gray-100 rounded-[10px] p-1 gap-1">
+                                    {(["USD", "INR"] as const).map((c) => (
+                                        <button
+                                            key={c}
+                                            onClick={() => {
+                                                setCurrency(c);
+                                                if (c === "INR" && !rateLoading) {
+                                                    void fetchExchangeRate();
+                                                }
+                                            }}
+                                            className={`px-3 py-1.5 rounded-[8px] text-[11px] font-[700] uppercase tracking-wide transition-all ${
+                                                currency === c
+                                                    ? "bg-white text-gray-900 shadow-sm"
+                                                    : "text-gray-500 hover:text-gray-700"
+                                            }`}
+                                        >
+                                            {c === "INR" ? "₹ INR" : "$ USD"}
+                                        </button>
+                                    ))}
+                                </div>
+                                {currency === "INR" && (
+                                    <span className="text-[10px] font-bold text-gray-400 tabular-nums">
+                                        {rateLoading ? "Fetching…" : `1 USD = ₹${usdToInr.toFixed(2)}`}
+                                        {rateUpdatedAt && !rateLoading && <span className="ml-1 opacity-60">({rateUpdatedAt})</span>}
+                                    </span>
+                                )}
+                                <button
+                                    onClick={() => setShowMetrics(false)}
+                                    className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-2 text-sm font-bold text-gray-600 hover:bg-gray-100"
+                                >
+                                    Close
+                                </button>
+                            </div>
 
                         </div>
 
@@ -915,7 +958,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
 
                                 const interviewTtsCost = section.key === "interview"
 
-                                    ? Number(billing?.ttsCostUsd || 0).toFixed(2)
+                                    ? Number(billing?.ttsCostUsd || 0)
 
                                     : null;
 
@@ -927,7 +970,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
 
                                 const interviewSttCost = section.key === "interview"
 
-                                    ? Number(billing?.sttCostUsd || 0).toFixed(2)
+                                    ? Number(billing?.sttCostUsd || 0)
 
                                     : null;
 
@@ -939,36 +982,19 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
 
                                 const llmModels = formatModelNames(billing?.byModel, org?.llmModel || "");
 
+                                const orgVoice = section.key === "interview" ? (() => {
+                                    const ids = Array.isArray(org?.allowedVoices) && org!.allowedVoices!.length > 0
+                                        ? org!.allowedVoices!
+                                        : org?.voiceId ? [org.voiceId] : [];
+                                    return ALL_VOICES.find(v => ids.includes(v.id)) ?? null;
+                                })() : null;
+
                                 const ttsModels = section.key === "interview"
-
-                                    ? formatModelNames(
-
-                                        billing?.ttsByModel,
-
-                                        (org?.ttsProvider || "").toUpperCase() === "SARVAM"
-                                            ? (org?.sarvamModel || "bulbul:v3")
-                                            : (org?.ttsProvider || "").toUpperCase() === "ELEVENLABS"
-                                                ? (org?.elevenlabsModel || "eleven_turbo_v2_5")
-                                                : (org?.cartesiaModel || "cartesia/sonic-3"),
-
-                                    )
-
+                                    ? formatModelNames(billing?.ttsByModel, orgVoice?.model || "")
                                     : null;
 
                                 const sttModels = section.key === "interview"
-
-                                    ? formatModelNames(
-
-                                        billing?.sttByModel,
-
-                                        (org?.sttProvider || "").toUpperCase() === "SARVAM"
-
-                                            ? (org?.sarvamSttModel || "saaras:v3")
-
-                                            : (org?.deepgramModel || "nova-3-general"),
-
-                                    )
-
+                                    ? formatModelNames(billing?.sttByModel, org?.deepgramModel || "nova-3-general")
                                     : null;
 
                                 return (
@@ -977,7 +1003,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
 
                                         <div className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">{section.label}</div>
 
-                                        <div className="mt-2 text-3xl font-black text-gray-900">${Number(billing?.costUsd || 0).toFixed(2)}</div>
+                                        <div className="mt-2 text-3xl font-black text-gray-900">{fmt(Number(billing?.costUsd || 0))}</div>
 
                                         <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
 
@@ -1021,7 +1047,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
 
                                             <div className="mt-1 text-xs font-bold text-gray-500 uppercase tracking-wider">
 
-                                                TTS cost: <span className="text-gray-900">${interviewTtsCost}</span>
+                                                TTS cost: <span className="text-gray-900">{fmt(interviewTtsCost)}</span>
 
                                             </div>
 
@@ -1041,7 +1067,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
 
                                             <div className="mt-1 text-xs font-bold text-gray-500 uppercase tracking-wider">
 
-                                                TTS model: <span className="text-gray-900">{ttsModels}</span>
+                                                TTS ({orgVoice?.provider ?? ""}): <span className="text-gray-900">{ttsModels}</span>
 
                                             </div>
 
@@ -1051,7 +1077,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
 
                                             <div className="mt-1 text-xs font-bold text-gray-500 uppercase tracking-wider">
 
-                                                STT cost: <span className="text-gray-900">${interviewSttCost}</span>
+                                                STT cost: <span className="text-gray-900">{fmt(interviewSttCost)}</span>
 
                                             </div>
 
@@ -1071,7 +1097,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
 
                                             <div className="mt-1 text-xs font-bold text-gray-500 uppercase tracking-wider">
 
-                                                STT model: <span className="text-gray-900">{sttModels}</span>
+                                                STT (DEEPGRAM): <span className="text-gray-900">{sttModels}</span>
 
                                             </div>
 
@@ -1093,7 +1119,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
 
                                 <span className="text-gray-900">
 
-                                    ${[
+                                    {fmt([
 
                                         "interview",
 
@@ -1124,7 +1150,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
 
                                         );
 
-                                    }, 0).toFixed(2)}
+                                    }, 0))}
 
                                 </span>
 

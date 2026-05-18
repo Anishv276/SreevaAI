@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { sendApplicationStatusEmail } from "@/lib/mail";
 import { getSession, isAdminRole } from "@/lib/auth";
 import { getOrgBillingStatus } from "@/lib/credits";
-import { getInterviewQuotaSupportMessage, isOrgRestrictedStatus } from "@/lib/interview-quota";
+import { getInterviewQuotaSupportMessage } from "@/lib/interview-quota";
 import { appendCandidateActivity } from "@/lib/candidate-activity";
 import { generateId } from "@/lib/ids";
 
@@ -39,14 +39,6 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         }
 
         if (session.orgId) {
-            const org = await prisma.organization.findUnique({
-                where: { id: session.orgId },
-                select: { status: true }
-            });
-            if (isOrgRestrictedStatus(org?.status)) {
-                return NextResponse.json({ error: "Interview links are blocked because your organization is restricted." }, { status: 403 });
-            }
-
             const billingStatus = await getOrgBillingStatus(session.orgId);
             if (billingStatus.interviewQuotaTotal > 0 && !billingStatus.hasSufficientInterviews) {
                 return NextResponse.json(

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { isRateLimited } from "@/lib/rate-limit";
 import { invalidateUserSessions } from "@/lib/auth";
+import { normalizeEmail } from "@/lib/email";
 
 export async function POST(request: Request) {
     try {
@@ -12,7 +13,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
         }
 
-        const normalizedEmail = email.toLowerCase().trim();
+        const normalizedEmail = normalizeEmail(email);
 
         const isLimited = await isRateLimited(`reset-otp:${normalizedEmail}`, 1, 30);
         if (isLimited) {
@@ -22,8 +23,13 @@ export async function POST(request: Request) {
         }
 
         // 1. Re-verify OTP for security in the final step (check both account types)
-        const user = await prisma.user.findUnique({
-            where: { email: normalizedEmail },
+        const user = await prisma.user.findFirst({
+            where: {
+                email: {
+                    equals: normalizedEmail,
+                    mode: "insensitive",
+                },
+            },
             select: { 
                 id: true, 
                 resetOtp: true, 
@@ -31,8 +37,13 @@ export async function POST(request: Request) {
             }
         });
 
-        const superAdmin = await prisma.superAdmin.findUnique({
-            where: { email: normalizedEmail },
+        const superAdmin = await prisma.superAdmin.findFirst({
+            where: {
+                email: {
+                    equals: normalizedEmail,
+                    mode: "insensitive",
+                },
+            },
             select: { id: true, resetOtp: true, resetOtpExpires: true }
         });
 

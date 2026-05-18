@@ -1,17 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import { Camera, Mic, CheckCircle2, AlertCircle, Loader2, RefreshCw, Volume2, Activity, ChevronDown, Monitor, AudioLines, Wifi, Shield, Zap, Play } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Camera, Mic, CheckCircle2, AlertCircle, Loader2, RefreshCw, Volume2, ChevronDown, Zap, Play } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 
-const VERIFICATION_PHRASES = [
-    "Testing testing one two three",
-    "My microphone is working now",
-    "I can hear everything clearly",
-    "The environment is quiet",
-    "I am ready for the interview",
+const VERIFICATION_SENTENCES = [
+    "I am ready for my interview today",
+    "Hello I am here and ready to begin",
+    "My microphone is working perfectly fine",
+    "I can speak clearly for this interview",
+    "Please verify my microphone is working",
 ];
 
 interface HardwareCheckProps {
@@ -49,18 +48,15 @@ export function HardwareCheck({
     const verifiedRef = useRef(false);
     const verifiedPhraseRef = useRef(""); // Always holds latest phrase - avoids stale closure in speech effect
     const snapshotDoneRef = useRef(false);
-    const currentStepRef = useRef(0);
     const lastNoiseUpdateTimeRef = useRef(0);
     const smoothDbRef = useRef<number | null>(null);
     const noiseHistoryRef = useRef<number[]>([]);
     const sessionFinalTextRef = useRef("");
+    const liveTranscriptRef = useRef(""); // Always fresh, avoids stale closure in sendToDeepgram
     const faceCountHistoryRef = useRef<number[]>([]); // 5-frame buffer for temporal consensus
 
     const [cameraStatus, setCameraStatus] = useState<CheckStatus>("idle");
     const [micStatus, setMicStatus] = useState<CheckStatus>("idle");
-    const [verifiedPhrase, setVerifiedPhrase] = useState("");
-    const [micVerified, setMicVerified] = useState(false);
-    const [speechSupported, setSpeechSupported] = useState(true);
     const [activeStep, setActiveStep] = useState(0);
     const [frequencies, setFrequencies] = useState<number[]>(new Array(40).fill(0));
     const [error, setError] = useState<string | null>(null);
@@ -72,13 +68,18 @@ export function HardwareCheck({
     const [liveTranscript, setLiveTranscript] = useState("");
     const [interimTranscript, setInterimTranscript] = useState("");
     const [micRetryToken, setMicRetryToken] = useState(0);
+    // Live mic volume level for visual feedback (0-1)
+    const [micVolumeLevel, setMicVolumeLevel] = useState(0);
 
-    // Pick a default phrase on mount - "I am ready for the interview" as requested
-    useEffect(() => {
-        const defaultPhrase = "I am ready for the interview";
-        verifiedPhraseRef.current = defaultPhrase;
-        setVerifiedPhrase(defaultPhrase);
-    }, []);
+    // Pick a default sentence on mount - initialized instantly to prevent blank render frames
+    const [verifiedPhrase, setVerifiedPhrase] = useState(() => {
+        const sentence = VERIFICATION_SENTENCES[Math.floor(Math.random() * VERIFICATION_SENTENCES.length)];
+        verifiedPhraseRef.current = sentence;
+        return sentence;
+    });
+
+    // Keep ref in sync with state so useCallback closures always read the current phrase
+    useEffect(() => { verifiedPhraseRef.current = verifiedPhrase; }, [verifiedPhrase]);
 
     // Countdown logic for future slots
     const [timeRemainingSeconds, setTimeRemainingSeconds] = useState<number>(0);
@@ -109,22 +110,31 @@ export function HardwareCheck({
     const [isMicDropdownOpen, setIsMicDropdownOpen] = useState(false);
 
     const refreshPhrase = useCallback(() => {
-        const remaining = VERIFICATION_PHRASES.filter(p => p !== verifiedPhrase);
-        const randomPhrase = remaining[Math.floor(Math.random() * remaining.length)] || VERIFICATION_PHRASES[0];
-        verifiedPhraseRef.current = randomPhrase;
-        setVerifiedPhrase(randomPhrase);
+        const remaining = VERIFICATION_SENTENCES.filter(s => s !== verifiedPhrase);
+        const next = remaining[Math.floor(Math.random() * remaining.length)] || VERIFICATION_SENTENCES[0];
+        verifiedPhraseRef.current = next;
+        setVerifiedPhrase(next);
         setMicVerified(false);
         verifiedRef.current = false;
         sessionFinalTextRef.current = "";
+        liveTranscriptRef.current = "";
         setLiveTranscript("");
         setInterimTranscript("");
         setMicRetryToken(t => t + 1);
     }, [verifiedPhrase]);
 
     const retryMic = useCallback(() => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+            try { mediaRecorderRef.current.stop(); } catch { }
+        }
+        mediaRecorderRef.current = null;
+        audioChunksRef.current = [];
+        setIsRecording(false);
+        setIsVerifying(false);
         setMicVerified(false);
         verifiedRef.current = false;
         sessionFinalTextRef.current = "";
+        liveTranscriptRef.current = "";
         setLiveTranscript("");
         setInterimTranscript("");
         setMicRetryToken(t => t + 1);
@@ -183,7 +193,7 @@ export function HardwareCheck({
 
     const hardwareStatusMsg = useMemo(() => {
         switch (networkQuality) {
-            case "stable": return "Your connection looks good-we should have a smooth interview 👍";
+            case "stable": return "Your connection looks good - we should have a smooth interview!";
             case "acceptable": return "Your connection is okay, but you might notice slight delays.";
             case "poor": return "Your connection may affect the interview quality. If possible, try switching to a better network.";
             default: return "Analyzing your connection quality...";
@@ -309,12 +319,12 @@ export function HardwareCheck({
                     setVisualSignals({ alignment: isAligned, proximity: isProxGood, lighting: lastLightGood });
 
                     const errors: string[] = [];
-                    if (!isAligned) errors.push(cx < 0.35 ? "Move right" : cx > 0.65 ? "Move left" : "Center your face");
+                    if (!isAligned) errors.push(cx < 0.35 ? "Move right" : cx > 0.65 ? "Move left" : "Center face");
                     if (!isProxGood) errors.push(widthRatio < 0.20 ? "Move closer" : "Move further back");
                     if (!lastLightGood) errors.push("Lighting is poor");
 
                     if (errors.length > 0) {
-                        setVisualStatusMsg(errors.join(" • "));
+                        setVisualStatusMsg(errors.join(" | "));
                     } else {
                         setVisualStatusMsg("Face detected");
                     }
@@ -337,6 +347,14 @@ export function HardwareCheck({
         };
     }, [cameraStatus]);
 
+    // Defensive: Ensure camera live feed stream is bound and never freezes on step transition/re-renders
+    useEffect(() => {
+        if (videoRef.current && streamRef.current && videoRef.current.srcObject !== streamRef.current) {
+            videoRef.current.srcObject = streamRef.current;
+            videoRef.current.play().catch(() => { });
+        }
+    });
+
     // Browser compatibility
     const [browserSupported, setBrowserSupported] = useState(true);
     const [browserName, setBrowserName] = useState("");
@@ -357,6 +375,7 @@ export function HardwareCheck({
         }
     }, []);
 
+    const [micVerified, setMicVerified] = useState(false);
     const allReady = cameraStatus === "granted" &&
         micStatus === "granted" &&
         micVerified &&
@@ -424,90 +443,176 @@ export function HardwareCheck({
         onComplete({ cameraId: selectedCameraId || undefined, micId: selectedMicId || undefined });
     }, [onComplete, selectedCameraId, selectedMicId, uploadSnapshot]);
 
-    //  Speech detection with live transcript display 
-    // KEY BUGS FIXED:
-    // 1. Use event.resultIndex to process ONLY new results - not re-accumulate
-    //    all results from index 0 (which caused "stuck" display as old results
-    //    kept overwriting the live text with stale final segments).
-    // 2. Persist finalTranscript across session restarts in a ref - Chrome's
-    //    SpeechRecognition stops and restarts frequently; without a ref the
-    //    accumulated final text is lost on each restart.
-    // 3. Read verifiedPhrase from verifiedPhraseRef (not the state closure) so
-    //    the effect always has the current phrase even if it was set after mount.
+    // -----------------------------------------------------------------
+    // SPEECH RECOGNITION
+    // Strategy: MediaRecorder captures audio → Deepgram nova-3 transcribes
+    // Web Speech API used only for live "Heard:" display (not for pass/fail)
+    // -----------------------------------------------------------------
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    const audioChunksRef = useRef<Blob[]>([]);
+    const [isRecording, setIsRecording] = useState(false);
+    const [isVerifying, setIsVerifying] = useState(false);
+
+    // Volume level update (display only)
+    useEffect(() => {
+        if (micStatus !== "granted") return;
+        const interval = setInterval(() => {
+            const analyzer = analyzerRef.current;
+            if (!analyzer) return;
+            const td = new Uint8Array(analyzer.fftSize);
+            analyzer.getByteTimeDomainData(td);
+            let sumSq = 0;
+            for (let i = 0; i < td.length; i++) {
+                const v = (td[i] - 128) / 128;
+                sumSq += v * v;
+            }
+            setMicVolumeLevel(Math.min(1, Math.sqrt(sumSq / td.length) * 20));
+        }, 100);
+        return () => clearInterval(interval);
+    }, [micStatus]);
+
+    // Web Speech API — live display only, no pass/fail logic
     useEffect(() => {
         if (micStatus !== "granted" || verifiedRef.current) return;
-
         const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-        if (!SR) { setSpeechSupported(false); return; }
-
+        if (!SR) return;
         const r = new SR();
         r.continuous = true;
         r.interimResults = true;
         r.lang = "en-US";
         recogRef.current = r;
-
         r.onresult = (event: any) => {
             if (verifiedRef.current) return;
-
-            // Only process results that are new since the last event
-            let newFinal = "";
-            let interimText = "";
-            for (let i = event.resultIndex; i < event.results.length; i++) {
-                const result = event.results[i];
-                if (result.isFinal) newFinal += result[0].transcript + " ";
-                else interimText += result[0].transcript;
+            let final = "", interim = "";
+            for (let i = 0; i < event.results.length; i++) {
+                if (event.results[i].isFinal) final += event.results[i][0].transcript + " ";
+                else interim = event.results[i][0].transcript;
             }
-
-            if (newFinal) sessionFinalTextRef.current += newFinal;
-
-            const displayFinal = sessionFinalTextRef.current.trim();
-            setLiveTranscript(displayFinal);
-            setInterimTranscript(interimText.trim());
-
-            const combined = (sessionFinalTextRef.current + " " + interimText).toLowerCase().trim();
-            // Always read from ref - avoids stale closure if phrase was set after effect ran
-            const targetPhrase = verifiedPhraseRef.current.toLowerCase();
-            if (!targetPhrase) return;
-
-            // 80% word match - handles accents and partial recognition
-            const targetWords = targetPhrase.split(/\s+/).filter(Boolean);
-            const matchedWords = targetWords.filter(w => combined.includes(w));
-            const matchRatio = matchedWords.length / targetWords.length;
-
-            if (matchRatio >= 0.8 || combined.includes(targetPhrase)) {
-                verifiedRef.current = true;
-                setMicVerified(true);
-                setActiveStep(1);
-                setInterimTranscript("");
-                try { r.stop(); } catch { }
-            }
+            const t = (final + interim).trim();
+            liveTranscriptRef.current = t;
+            setLiveTranscript(t);
         };
-
-        r.onerror = (event: any) => {
-            // no-speech and aborted are normal during continuous recognition - ignore them
-            if (event.error === "no-speech" || event.error === "aborted") return;
-            console.warn("[SpeechRecog] error:", event.error);
-        };
-
+        r.onerror = () => {};
         r.onend = () => {
             if (!verifiedRef.current && recogRef.current === r) {
-                // Short delay then restart - keeps recognition running continuously
-                setTimeout(() => {
-                    if (!verifiedRef.current && recogRef.current === r) {
-                        try { r.start(); } catch { }
-                    }
-                }, 300);
+                setTimeout(() => { try { r.start(); } catch { } }, 300);
             }
         };
-
         try { r.start(); } catch { }
-
         return () => {
             if (recogRef.current === r) { try { r.abort(); } catch { } recogRef.current = null; }
         };
-        // Re-run when micStatus OR micRetryToken changes - forces hard reset of engine
-
     }, [micStatus, micRetryToken]);
+
+    // Start recording audio via MediaRecorder
+    const startRecording = useCallback(() => {
+        // Stop any existing recorder first
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+            try { mediaRecorderRef.current.stop(); } catch { }
+        }
+
+        const stream = streamRef.current;
+        if (!stream) return;
+
+        const audioTracks = stream.getAudioTracks();
+        if (audioTracks.length === 0) return;
+        const audioStream = new MediaStream(audioTracks);
+
+        const mimeType = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg", ""]
+            .find(m => m === "" || MediaRecorder.isTypeSupported(m)) ?? "";
+
+        audioChunksRef.current = [];
+        sessionFinalTextRef.current = "";
+        liveTranscriptRef.current = "";
+        setLiveTranscript("");
+        setInterimTranscript("");
+
+        const mr = new MediaRecorder(audioStream, mimeType ? { mimeType } : undefined);
+        mr.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
+        mediaRecorderRef.current = mr;
+
+        mr.onstart = () => setIsRecording(true);
+        mr.onerror = () => setIsRecording(false);
+
+        mr.start(250);
+    }, []);
+
+    // Send recorded audio to Deepgram and verify
+    const sendToDeepgram = useCallback(async (chunks: Blob[], mimeType: string) => {
+        setIsVerifying(true);
+
+        // Read from refs — never stale inside useCallback
+        const wsTranScript = liveTranscriptRef.current.trim() || sessionFinalTextRef.current.trim();
+
+        const expand = (s: string) => s
+            .replace(/i'm/gi, "i am").replace(/i've/gi, "i have").replace(/i'll/gi, "i will")
+            .replace(/it's/gi, "it is").replace(/that's/gi, "that is").replace(/\bm\b/gi, "am");
+        const norm = (s: string) => expand(s).toLowerCase().replace(/[^a-z\s]/g, " ").replace(/\s+/g, " ").trim();
+
+        const checkMatch = (transcript: string) => {
+            const spokenNorm = norm(transcript);
+            const targetNorm = norm(verifiedPhraseRef.current);
+            const targetWords = targetNorm.split(" ").filter(Boolean);
+            const spokenWords = new Set(spokenNorm.split(" ").filter(Boolean));
+            const matchedCount = targetWords.filter(w => spokenWords.has(w)).length;
+            return matchedCount >= Math.ceil(targetWords.length * 0.8);
+        };
+
+        try {
+            const audioBlob = new Blob(chunks, { type: mimeType || "audio/webm" });
+            const formData = new FormData();
+            formData.append("audio", audioBlob, "mic-check.webm");
+            formData.append("targetPhrase", verifiedPhraseRef.current);
+
+            const res = await fetch("/api/verify-speech", { method: "POST", body: formData });
+            const data = await res.json();
+
+            const deepgramTranscript = data.transcript as string;
+
+            if (deepgramTranscript) {
+                // Use Deepgram transcript as source of truth
+                setLiveTranscript(deepgramTranscript);
+                if (data.matched) {
+                    verifiedRef.current = true;
+                    setMicVerified(true);
+                }
+            } else {
+                // Deepgram returned empty — fall back to Web Speech transcript
+                console.warn("[verify-speech] Empty Deepgram transcript, falling back to Web Speech");
+                if (wsTranScript && checkMatch(wsTranScript)) {
+                    setLiveTranscript(wsTranScript);
+                    verifiedRef.current = true;
+                    setMicVerified(true);
+                }
+            }
+        } catch (err) {
+            console.error("[verify-speech]", err);
+            // Network error — fall back to Web Speech transcript
+            if (wsTranScript && checkMatch(wsTranScript)) {
+                setLiveTranscript(wsTranScript);
+                verifiedRef.current = true;
+                setMicVerified(true);
+            }
+        } finally {
+            setIsVerifying(false);
+        }
+    }, []);
+
+    // Stop recording and trigger verification
+    const stopAndVerify = useCallback(() => {
+        const mr = mediaRecorderRef.current;
+        if (!mr) return;
+        setIsRecording(false);
+
+        if (mr.state === "inactive") {
+            // Already stopped — use whatever chunks we have
+            sendToDeepgram(audioChunksRef.current, mr.mimeType);
+            return;
+        }
+
+        mr.onstop = () => sendToDeepgram(audioChunksRef.current, mr.mimeType);
+        try { mr.stop(); } catch (err) { console.error("[Record] stop error:", err); setIsVerifying(false); }
+    }, [sendToDeepgram]);
 
     //  Audio visualizer 
     const startVisualizer = useCallback(() => {
@@ -575,17 +680,7 @@ export function HardwareCheck({
         animRef.current = requestAnimationFrame(tick);
     }, []);
 
-    // (measureNoiseFloor removed as it's now integrated and continuous)
-
     //  Speaker / Audio Playback Test 
-    // ROOT CAUSE OF SILENCE: Chrome creates AudioContext in "suspended" state
-    // when a mic AudioContext already exists. The previous code called
-    // scheduleAudio() before resume() had actually resolved - so actx.currentTime
-    // was still 0 and the oscillator start/stop times were wrong.
-    // FIX: make the entire function async, always await resume(), then schedule.
-    // A fresh AudioContext is used every time to avoid any state from the mic ctx.
-    // setTimeout fallback ensures confirm buttons always appear even if onended
-    // doesn't fire (unreliable in some Chrome versions).
     const playSpeakerTest = useCallback(async () => {
         setSpeakerStatus("playing");
         setSpeakerPlaying(true);
@@ -638,7 +733,7 @@ export function HardwareCheck({
     }, [SPEAKER_KEYWORDS]);
 
     const handleSpeakerFailure = () => {
-        setSpeakerStatus("failed");
+        setSpeakerStatus("idle"); // Reset status back to idle so play button shows up again!
         setSpeakerRetryMsg(true);
     };
 
@@ -675,7 +770,6 @@ export function HardwareCheck({
         setMicStatus("requesting");
         setMicVerified(false);
         setActiveStep(0);
-        currentStepRef.current = 0;
         verifiedRef.current = false;
         snapshotDoneRef.current = false;
         setSnapshotUrl(null);
@@ -769,20 +863,11 @@ export function HardwareCheck({
         visualReady,
     ];
     const readyCount = checks.filter(Boolean).length;
-    const progressPct = Math.round((readyCount / checks.length) * 100);
 
-    //  Status helpers 
-    const StatusIcon = ({ ok, loading, type }: { ok: boolean; loading?: boolean; type?: "success" | "warning" | "error" }) => {
-        if (loading) return <Loader2 className="w-4 h-4 animate-spin text-orange-500" />;
-
-        // If an explicit type is provided (like for noise), use it
-        if (type === "success") return <CheckCircle2 className="w-4 h-4 text-green-500" />;
-        if (type === "warning") return <AlertCircle className="w-4 h-4 text-yellow-500" />;
-        if (type === "error") return <AlertCircle className="w-4 h-4 text-red-500" />;
-
-        // Fallback to simple boolean logic
-        if (ok) return <CheckCircle2 className="w-4 h-4 text-green-500" />;
-        return <AlertCircle className="w-4 h-4 text-red-400" />;
+    const formatTime = (secs: number) => {
+        const m = Math.floor(secs / 60);
+        const s = secs % 60;
+        return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
     };
 
     if (!browserSupported) {
@@ -799,394 +884,507 @@ export function HardwareCheck({
     }
 
     return (
-        <div className="min-h-screen bg-white">
-            {/* Header */}
-            <div className="border-b border-gray-100 px-6 py-4">
-                <div className="max-w-6xl mx-auto flex items-center justify-between">
-                    <div>
-                        <h1 className="text-lg font-semibold text-gray-900">{title}</h1>
-                        <p className="text-sm text-gray-500">Hi {candidateName} - let&apos;s make sure everything is set up before we begin.</p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                        <span className="text-sm text-gray-500">{readyCount}/{checks.length} ready</span>
-                        <div className="w-32 h-2 bg-gray-100 rounded-full overflow-hidden">
-                            <motion.div
-                                className="h-full bg-orange-500 rounded-full"
-                                animate={{ width: `${progressPct}%` }}
-                                transition={{ duration: 0.4 }}
-                            />
+        <div className="min-h-screen bg-[#f8f9fa] flex flex-col items-center justify-center p-6 font-sans">
+
+            {/* Header: Environment Check with Dynamic Countdown Timer */}
+            <div className="max-w-4xl w-full mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 animate-fadeIn text-left">
+                <div>
+                    <h1 className="text-2xl font-bold text-gray-900 tracking-tight flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-orange-500 animate-pulse" />
+                        Environment Check
+                    </h1>
+                    <p className="text-xs text-gray-500 mt-1">Hi {candidateName} - let&apos;s make sure everything is set up before we begin.</p>
+                </div>
+
+                {/* Visual Countdown Timer (Resolves Countdown Request) */}
+                <div className="flex-shrink-0">
+                    {bookedSlot && timeRemainingSeconds > 0 ? (
+                        <div className="bg-orange-50 border border-orange-100 rounded-full px-4 py-2 flex items-center gap-2 text-xs font-bold text-orange-600 shadow-sm animate-pulse-slow">
+                            <span className="w-2 h-2 rounded-full bg-orange-550 animate-ping" />
+                            Interview starts in: {formatTime(timeRemainingSeconds)}
                         </div>
-                    </div>
+                    ) : (
+                        <div className="bg-green-50 border border-green-100 rounded-full px-4 py-2 flex items-center gap-2 text-xs font-bold text-green-700 shadow-sm">
+                            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                            Live &amp; Ready to Begin
+                        </div>
+                    )}
                 </div>
             </div>
 
-            {/* Error Banner */}
-            <AnimatePresence>
-                {(error || errorMessage) && (
-                    <motion.div
-                        initial={{ opacity: 0, y: -8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -8 }}
-                        className="bg-red-50 border-b border-red-100 px-6 py-3"
-                    >
-                        <div className="max-w-6xl mx-auto flex items-center gap-2 text-sm text-red-600">
-                            <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                            {error || errorMessage}
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
+            {/* Super Clean Outer Container Grid (Match 2nd Pic Exactly) */}
+            <div className="max-w-4xl w-full grid grid-cols-1 md:grid-cols-2 gap-6 animate-fadeIn">
 
-            {/* Main Grid */}
-            <div className="max-w-6xl mx-auto px-6 py-6 grid grid-cols-1 lg:grid-cols-3 gap-5">
+                {/* Left Card: Live Camera Monitor with Dynamic Dynamic Recommendation Banner */}
+                <div className="bg-white rounded-[28px] shadow-sm border border-gray-100 flex flex-col justify-between overflow-hidden">
+                    <div className="p-6 pb-2">
+                        <h2 className="text-xl font-bold text-gray-900 tracking-tight mb-4">
+                            Live Camera Monitor
+                        </h2>
 
-                {/*  Column 1: Camera  */}
-                <div className="bg-white border border-gray-200 shadow-sm rounded-2xl flex flex-col relative">
-                    <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between rounded-t-2xl">
-                        <div className="flex items-center gap-2">
-                            <Camera className="w-4 h-4 text-gray-600" />
-                            <span className="font-medium text-gray-900 text-sm">Camera</span>
+                        {/* Video Frame */}
+                        <div className="relative aspect-[4/3] bg-gray-50 rounded-[20px] overflow-hidden border border-gray-100/50 shadow-inner">
+                            <video ref={videoRef} autoPlay muted playsInline className="w-full h-full object-cover scale-x-[-1]" />
+
+                            {cameraStatus !== "granted" && (
+                                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-gray-100 text-gray-400">
+                                    <Camera className="w-8 h-8 text-gray-300 animate-pulse" />
+                                    <span className="text-xs font-semibold">
+                                        {cameraStatus === "requesting" ? "Requesting access..." : "Camera offline"}
+                                    </span>
+                                </div>
+                            )}
+
+                            {snapshotUploading && (
+                                <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-md text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                                    <Loader2 className="w-3 h-3 animate-spin text-orange-500" /> Uploading snapshot...
+                                </div>
+                            )}
                         </div>
-                        <StatusIcon ok={cameraStatus === "granted"} loading={cameraStatus === "requesting"} />
+
+                        {/* Simple Functional Checkboxes (Matching 2nd Pic) */}
+                        <div className="flex items-center justify-center gap-6 mt-4 pb-2">
+                            <div className="flex items-center gap-2 text-xs font-semibold text-gray-700">
+                                <span className={cn(
+                                    "w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-bold transition-all duration-300",
+                                    faceCountHistoryRef.current.filter(c => c === 1).length >= 3 ? "bg-[#34c759]" : "bg-gray-200 text-gray-400"
+                                )}>
+                                    ✓
+                                </span>
+                                <span>Face Detected</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-xs font-semibold text-gray-700">
+                                <span className={cn(
+                                    "w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-bold transition-all duration-300",
+                                    visualSignals.lighting ? "bg-[#34c759]" : "bg-gray-200 text-gray-400"
+                                )}>
+                                    ✓
+                                </span>
+                                <span>Optimal Lighting</span>
+                            </div>
+                        </div>
                     </div>
 
-                    {/* Video preview */}
-                    <div className="relative bg-gray-950 flex-1 h-[320px] overflow-hidden group">
-                        <video ref={videoRef} autoPlay muted playsInline className="w-full h-full object-cover" />
+                    {/* Dynamic Diagnostic Recommendation Banner with Green, Orange, and Red states */}
+                    <div className={cn(
+                        "px-5 py-3.5 text-xs font-bold text-center border-t transition-all duration-300 flex items-center justify-center gap-2",
+                        cameraStatus !== "granted"
+                            ? "bg-gray-50 border-gray-100 text-gray-400"
+                            : !visualSignals.alignment && !visualSignals.proximity && !visualSignals.lighting && faceCountHistoryRef.current.filter(c => c === 1).length < 3
+                                ? "bg-red-50 border-red-100 text-red-600 animate-pulse"
+                                : visualReady
+                                    ? "bg-green-50 border-green-100 text-green-700 font-extrabold"
+                                    : "bg-orange-50 border-orange-100 text-orange-600"
+                    )}>
+                        {cameraStatus !== "granted" ? (
+                            <span>Camera Access Required</span>
+                        ) : !visualSignals.alignment && !visualSignals.proximity && !visualSignals.lighting && faceCountHistoryRef.current.filter(c => c === 1).length < 3 ? (
+                            <span>No face detected. Please center your face.</span>
+                        ) : visualReady ? (
+                            <span>Camera Secured &amp; Perfectly Aligned</span>
+                        ) : (
+                            <span>Adjust Position: {visualStatusMsg}</span>
+                        )}
+                    </div>
+                </div>
 
-                        {/* Visual Integrity Alert Notification (Simple bottom bar replacement) */}
-                        {cameraStatus === "granted" && (
-                            <AnimatePresence>
-                                {visualStatusMsg && (
-                                    <motion.div
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        exit={{ opacity: 0, y: 10 }}
-                                        className="absolute bottom-4 inset-x-4 z-20 flex justify-center pointer-events-none"
-                                    >
-                                        <div className={cn(
-                                            "text-white px-4 py-2.5 rounded-xl shadow-lg border flex items-center gap-2.5 max-w-[90%] pointer-events-auto transition-colors duration-300",
-                                            visualReady ? "bg-green-600 border-green-500/50" : "bg-orange-500 border-orange-400/50"
-                                        )}>
-                                            <div className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center shrink-0">
-                                                {visualReady ? (
-                                                    <CheckCircle2 className="w-3.5 h-3.5 text-white" />
+                {/* Right Card: Interactive Steps Console */}
+                <div className="bg-white rounded-[28px] p-6 shadow-sm border border-gray-100 flex flex-col justify-between min-h-[420px]">
+
+                    {/* Top Inline Timeline Steps (Match 2nd Pic Exactly) */}
+                    <div className="flex items-center gap-2.5 text-xs text-gray-400 font-bold tracking-wide">
+                        <span className={cn(
+                            "transition-all duration-300 px-3.5 py-1.5 rounded-full text-[11px]",
+                            activeStep === 0
+                                ? "bg-orange-500 text-white font-black"
+                                : "text-gray-400 font-semibold"
+                        )}>
+                            1. Microphone
+                        </span>
+                        <span className="text-gray-300 font-normal">&gt;</span>
+                        <span className={cn(
+                            "transition-all duration-300 px-3.5 py-1.5 rounded-full text-[11px]",
+                            activeStep === 1
+                                ? "bg-orange-500 text-white font-black"
+                                : "text-gray-400 font-semibold"
+                        )}>
+                            2. Speakers
+                        </span>
+                        <span className="text-gray-300 font-normal">&gt;</span>
+                        <span className={cn(
+                            "transition-all duration-300 px-3.5 py-1.5 rounded-full text-[11px]",
+                            activeStep === 2
+                                ? "bg-orange-500 text-white font-black"
+                                : "text-gray-400 font-semibold"
+                        )}>
+                            3. Consent
+                        </span>
+                    </div>
+
+                    {/* Step Card Inner Screens */}
+                    <div className="flex-1 flex flex-col justify-center mt-6">
+                        <AnimatePresence mode="wait">
+
+                            {/* STAGE 1: Microphone Check */}
+                            {activeStep === 0 && (
+                                <motion.div
+                                    key="mic-tab"
+                                    initial={{ opacity: 0, y: 8 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: -8 }}
+                                    className="flex flex-col justify-between h-full"
+                                >
+                                    {/* Sentence prompt card - prominent, clear, readable */}
+                                    <div className="text-center my-2 animate-fadeIn">
+                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Please read this sentence aloud:</p>
+
+                                        <div className="bg-orange-50 border border-orange-200 rounded-2xl px-5 py-4 my-2 w-full shadow-sm">
+                                            <span className="text-base font-bold text-orange-600 leading-snug block">
+                                                &ldquo;{verifiedPhrase || "I am ready for my interview today"}&rdquo;
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    {/* Static circle progress — fills based on words matched */}
+                                    {(() => {
+                                        const targetWords = (verifiedPhrase || "").toLowerCase().replace(/[^a-z\s]/g, "").split(/\s+/).filter(Boolean);
+                                        const spokenWordSet = new Set((liveTranscript + " " + interimTranscript).toLowerCase().replace(/[^a-z\s]/g, "").split(/\s+/).filter(Boolean));
+                                        const matchedCount = micVerified ? targetWords.length : targetWords.filter(w => spokenWordSet.has(w)).length;
+                                        const progress = targetWords.length > 0 ? matchedCount / targetWords.length : 0;
+                                        const r = 28, circ = 2 * Math.PI * r;
+                                        const dash = circ * progress;
+                                        return (
+                                            <div className="relative w-20 h-20 mx-auto my-3 flex items-center justify-center">
+                                                <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 64 64">
+                                                    <circle cx="32" cy="32" r={r} fill="none" stroke="#e5e7eb" strokeWidth="4" />
+                                                    <circle cx="32" cy="32" r={r} fill="none"
+                                                        stroke={micVerified ? "#34c759" : "#f97316"}
+                                                        strokeWidth="4"
+                                                        strokeLinecap="round"
+                                                        strokeDasharray={`${dash} ${circ}`}
+                                                        style={{ transition: "stroke-dasharray 0.3s ease" }}
+                                                    />
+                                                </svg>
+                                                {micVerified ? (
+                                                    <CheckCircle2 className="w-8 h-8 text-green-500" />
                                                 ) : (
-                                                    <AlertCircle className="w-3.5 h-3.5 text-white" />
+                                                    <Mic className="w-6 h-6 text-orange-500" />
                                                 )}
                                             </div>
-                                            <p className="text-[11px] font-black uppercase tracking-widest leading-none drop-shadow-sm">
-                                                {visualStatusMsg}
+                                        );
+                                    })()}
+
+                                    {/* Volume bar + captions + verified state */}
+                                    {micVerified ? (
+                                        /* SUCCESS STATE - big, unmissable green banner */
+                                        <motion.div
+                                            initial={{ opacity: 0, y: 6 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            className="flex flex-col items-center gap-3 my-2"
+                                        >
+                                            <div className="w-full bg-green-50 border border-green-200 rounded-2xl px-5 py-3 flex items-center gap-3">
+                                                <CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" />
+                                                <div>
+                                                    <p className="text-xs font-black text-green-700">Microphone Verified!</p>
+                                                    <p className="text-[10px] text-green-600 font-semibold">
+                                                        {liveTranscript ? `We heard: "${liveTranscript.slice(0, 60)}"` : "Audio signal confirmed - mic is working."}
+                                                    </p>
+                                                </div>
+                                            </div>
+
+                                            {/* Outlined Action footer */}
+                                            <div className="w-full flex justify-end items-center pt-3 border-t border-gray-50 mt-2">
+                                                <button
+                                                    onClick={() => setActiveStep(1)}
+                                                    className="rounded-full px-7 py-2.5 text-xs font-black transition-all shadow-lg bg-orange-500 hover:bg-orange-600 text-white flex items-center gap-2"
+                                                >
+                                                    Next Step &rarr;
+                                                </button>
+                                            </div>
+                                        </motion.div>
+                                    ) : (
+                                        /* LISTENING / RECORD STATE */
+                                        <div className="flex flex-col gap-3">
+                                            {/* Live Mic Volume Bar */}
+                                            <div className="w-full px-2">
+                                                <div className="flex items-center gap-2">
+                                                    <Mic className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                                                    <div className="flex-1 h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                                                        <motion.div
+                                                            className={cn(
+                                                                "h-full rounded-full",
+                                                                micVolumeLevel > 0.4 ? "bg-green-500" : micVolumeLevel > 0.1 ? "bg-orange-400" : "bg-gray-300"
+                                                            )}
+                                                            animate={{ width: `${Math.max(2, micVolumeLevel * 100)}%` }}
+                                                            transition={{ duration: 0.08 }}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Live transcript — every word shown as spoken */}
+                                            <p className="text-[11px] text-center font-semibold tracking-wide min-h-[18px]">
+                                                {isVerifying ? (
+                                                    <span className="text-gray-400 flex items-center justify-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> Verifying with Deepgram...</span>
+                                                ) : liveTranscript ? (
+                                                    <span className="text-orange-500 font-bold">&ldquo;{liveTranscript}&rdquo;</span>
+                                                ) : isRecording ? (
+                                                    <span className="text-gray-400 animate-pulse">Listening... speak now</span>
+                                                ) : (
+                                                    <span className="text-gray-300">Press Record, say the sentence, then press Stop</span>
+                                                )}
                                             </p>
+
+                                            {/* Mismatch error + retry */}
+                                            {liveTranscript && !micVerified && !isVerifying && !isRecording && (
+                                                <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
+                                                    className="flex flex-col items-center gap-1.5">
+                                                    <p className="text-[10px] text-red-500 font-semibold text-center">Didn&apos;t match. Please say the exact sentence and try again.</p>
+                                                    <button
+                                                        onClick={() => { retryMic(); }}
+                                                        className="flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[10px] font-bold border border-gray-200 text-gray-600 bg-white hover:bg-gray-50 transition-all shadow-sm"
+                                                    >
+                                                        <RefreshCw className="w-3 h-3" /> Try Again
+                                                    </button>
+                                                </motion.div>
+                                            )}
+
+                                            {/* Record / Stop buttons */}
+                                            <div className="flex items-center justify-center gap-3">
+                                                {!isRecording ? (
+                                                    <button
+                                                        onClick={startRecording}
+                                                        disabled={isVerifying}
+                                                        className="flex items-center gap-2 rounded-full px-5 py-2 text-xs font-bold bg-orange-500 hover:bg-orange-600 text-white shadow-sm transition-all disabled:opacity-50"
+                                                    >
+                                                        <Mic className="w-3.5 h-3.5" /> Record
+                                                    </button>
+                                                ) : (
+                                                    <button
+                                                        onClick={stopAndVerify}
+                                                        className="flex items-center gap-2 rounded-full px-5 py-2 text-xs font-bold bg-red-500 hover:bg-red-600 text-white shadow-sm transition-all animate-pulse"
+                                                    >
+                                                        <span className="w-2.5 h-2.5 rounded-sm bg-white" /> Stop & Verify
+                                                    </button>
+                                                )}
+                                            </div>
+
+                                            {/* Disabled Next Step footer */}
+                                            <div className="flex justify-end pt-3 border-t border-gray-50">
+                                                <button disabled className="rounded-full px-6 py-2.5 text-xs font-bold border border-gray-200 bg-gray-50 text-gray-300 cursor-not-allowed">
+                                                    Next Step
+                                                </button>
+                                            </div>
                                         </div>
-                                    </motion.div>
-                                )}
-                            </AnimatePresence>
-                        )}
-
-                        {cameraStatus !== "granted" && (
-                            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-                                <Camera className="w-8 h-8 text-gray-500" />
-                                <span className="text-xs text-gray-400">
-                                    {cameraStatus === "requesting" ? "Requesting access..." : cameraStatus === "denied" ? "Camera denied" : "Camera off"}
-                                </span>
-                            </div>
-                        )}
-                        {snapshotUploading && (
-                            <div className="absolute top-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded-lg flex items-center gap-1">
-                                <Loader2 className="w-3 h-3 animate-spin" /> Saving...
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Camera device selector */}
-                    <div className="px-5 py-4 flex flex-col gap-3">
-                        {cameraStatus === "denied" && (
-                            <p className="text-xs text-red-500">Camera access was denied. Please allow it in your browser settings and refresh.</p>
-                        )}
-                        {devices.filter(d => d.kind === "videoinput").length > 1 && (
-                            <div className="relative" ref={camDropdownRef}>
-                                <button
-                                    onClick={() => setIsCamDropdownOpen(v => !v)}
-                                    className="w-full flex items-center justify-between text-xs bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-700 hover:bg-gray-100 transition-colors"
-                                >
-                                    <span className="truncate">{devices.find(d => d.kind === "videoinput" && d.deviceId === selectedCameraId)?.label || "Select camera"}</span>
-                                    <ChevronDown className="w-3 h-3 ml-2 flex-shrink-0" />
-                                </button>
-                                <AnimatePresence>
-                                    {isCamDropdownOpen && (
-                                        <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
-                                            className="absolute z-20 top-full mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
-                                            {devices.filter(d => d.kind === "videoinput").map(d => (
-                                                <button key={d.deviceId} onClick={() => { setSelectedCameraId(d.deviceId); setIsCamDropdownOpen(false); }}
-                                                    className={cn("w-full text-left text-xs px-3 py-2 hover:bg-gray-50 transition-colors", d.deviceId === selectedCameraId && "bg-orange-50 text-orange-600")}>
-                                                    {d.label || `Camera ${d.deviceId.slice(0, 6)}`}
-                                                </button>
-                                            ))}
-                                        </motion.div>
                                     )}
-                                </AnimatePresence>
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-                {/*  Column 2: Microphone  */}
-                <div className="bg-white border border-gray-200 shadow-sm rounded-2xl flex flex-col relative">
-                    <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between rounded-t-2xl">
-                        <div className="flex items-center gap-2">
-                            <Mic className="w-4 h-4 text-gray-600" />
-                            <span className="font-medium text-gray-900 text-sm">Microphone</span>
-                        </div>
-                        <StatusIcon ok={micStatus === "granted" && micVerified} loading={micStatus === "requesting"} />
-                    </div>
-
-                    <div className="px-5 py-5 flex flex-col gap-5 flex-1 h-[320px] justify-between">
-                        {/* Waveform visualizer */}
-                        <div className="flex flex-col items-center justify-center gap-3">
-                            <div className="flex items-end justify-center gap-1 h-14 bg-gray-50/50 w-full rounded-2xl px-6 border border-gray-100/50">
-                                {frequencies.slice(0, 30).map((v, i) => (
-                                    <motion.div
-                                        key={i}
-                                        className={cn(
-                                            "w-1 rounded-full bg-gradient-to-t",
-                                            micVerified ? "from-green-500 to-green-300" : "from-orange-500 to-orange-300"
-                                        )}
-                                        animate={{ height: `${Math.max(4, v * 48)}px` }}
-                                        transition={{ duration: 0.05 }}
-                                    />
-                                ))}
-                            </div>
-                        </div>
-
-                        {/* Verification phrase header */}
-                        <div className="flex items-center justify-between px-2 mb-1.5">
-                            <span className="text-[10px] font-bold text-orange-600 uppercase tracking-widest">
-                                Just say aloud
-                            </span>
-                            <button onClick={retryMic} className="flex items-center gap-1.5 px-2 py-1 hover:bg-orange-50 rounded-lg text-orange-500 transition-all group" title="Retry">
-                                <RefreshCw className="w-3 h-3 group-hover:rotate-180 transition-transform duration-500" />
-                                <span className="text-[10px] font-bold uppercase tracking-wider">Retry</span>
-                            </button>
-                        </div>
-
-                        <div className="bg-white border border-orange-100 rounded-2xl px-4 py-5 shadow-sm shadow-orange-50/50 relative overflow-hidden">
-                            <p className="text-lg font-bold text-gray-900 leading-tight text-center">&ldquo;{verifiedPhrase}&rdquo;</p>
-                        </div>
-
-                        {/* Live transcript - Sleeker design */}
-                        <div className="bg-gray-50/50 border border-gray-100 rounded-2xl px-4 py-3 min-h-[70px] flex flex-col justify-center">
-                            {micVerified ? (
-                                <div className="flex items-center justify-center gap-2 text-green-600">
-                                    <CheckCircle2 className="w-4 h-4" />
-                                    <span className="text-sm font-bold tracking-tight">Perfect - clear audio 👍</span>
-                                </div>
-                            ) : !speechSupported ? (
-                                <p className="text-[10px] text-red-500 text-center uppercase font-bold">Transcription unsupported</p>
-                            ) : micStatus !== "granted" ? (
-                                <p className="text-[10px] text-gray-400 text-center uppercase font-bold tracking-widest">Awaiting access...</p>
-                            ) : (
-                                <div className="text-center">
-                                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-1.5">Hearing you</p>
-                                    <p className="text-sm text-gray-700 leading-snug font-medium italic">
-                                        {liveTranscript || <span className="text-gray-300">Wait for cue...</span>}
-                                        {interimTranscript && <span className="text-gray-400"> {interimTranscript}</span>}
-                                    </p>
-                                </div>
+                                </motion.div>
                             )}
-                        </div>
 
-                        {/* Mic device selector */}
-                        {devices.filter(d => d.kind === "audioinput").length > 1 && (
-                            <div className="relative" ref={micDropdownRef}>
-                                <button
-                                    onClick={() => setIsMicDropdownOpen(v => !v)}
-                                    className="w-full flex items-center justify-between text-xs bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-700 hover:bg-gray-100 transition-colors"
+                            {/* STAGE 2: Speakers Check */}
+                            {activeStep === 1 && (
+                                <motion.div
+                                    key="speaker-tab"
+                                    initial={{ opacity: 0, y: 8 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: -8 }}
+                                    className="flex flex-col justify-between h-full"
                                 >
-                                    <span className="truncate">{devices.find(d => d.kind === "audioinput" && d.deviceId === selectedMicId)?.label || "Select microphone"}</span>
-                                    <ChevronDown className="w-3 h-3 ml-2 flex-shrink-0" />
-                                </button>
-                                <AnimatePresence>
-                                    {isMicDropdownOpen && (
-                                        <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
-                                            className="absolute z-20 top-full mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
-                                            {devices.filter(d => d.kind === "audioinput").map(d => (
-                                                <button key={d.deviceId} onClick={() => { setSelectedMicId(d.deviceId); setIsMicDropdownOpen(false); }}
-                                                    className={cn("w-full text-left text-xs px-3 py-2 hover:bg-gray-50 transition-colors", d.deviceId === selectedMicId && "bg-orange-50 text-orange-600")}>
-                                                    {d.label || `Mic ${d.deviceId.slice(0, 6)}`}
-                                                </button>
-                                            ))}
-                                        </motion.div>
-                                    )}
-                                </AnimatePresence>
-                            </div>
-                        )}
-                    </div>
-                </div>
+                                    <div className="text-center my-4">
+                                        <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">Click Play to verify speakers</p>
 
-                {/*  Column 3: Noise + Speaker + Network  */}
-                <div className="flex flex-col gap-[18px]">
-
-                    {/* Background Noise */}
-                    <div className="bg-white border border-gray-200 shadow-sm rounded-2xl px-5 py-4">
-                        <div className="flex items-center justify-between mb-3">
-                            <div className="flex items-center gap-2">
-                                <AudioLines className="w-4 h-4 text-gray-600" />
-                                <span className="font-medium text-gray-900 text-sm">Background Noise</span>
-                            </div>
-                            <StatusIcon
-                                ok={noiseBypass || noisePassed}
-                                loading={noiseMeasuring}
-                                type={noiseBypass ? "success" : noiseStatusType === "good" ? "success" : noiseStatusType === "moderate" ? "warning" : "error"}
-                            />
-                        </div>
-                        {noiseBypass ? (
-                            <p className="text-xs text-gray-400">Skipped</p>
-                        ) : noiseDb !== null ? (
-                            <div className="space-y-2">
-                                <div className="flex items-center gap-3">
-                                    <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                                        <div className={cn(
-                                            "h-full rounded-full transition-all duration-500",
-                                            noiseStatusType === "good" ? "bg-green-400" :
-                                                noiseStatusType === "moderate" ? "bg-yellow-400" : "bg-red-400"
-                                        )}
-                                            style={{ width: `${Math.min(100, (noiseDb / 80) * 100)}%` }} />
+                                        {/* Play Sound trigger button */}
+                                        <div className="flex flex-col items-center justify-center min-h-[90px]">
+                                            <AnimatePresence mode="wait">
+                                                {speakerStatus === "idle" ? (
+                                                    <motion.button
+                                                        key="play-btn"
+                                                        onClick={playSpeakerTest}
+                                                        className="w-14 h-14 rounded-full bg-orange-500 hover:bg-orange-600 text-white flex items-center justify-center shadow-lg shadow-orange-500/15 transition-all"
+                                                    >
+                                                        <Play className="w-5 h-5 fill-current ml-0.5" />
+                                                    </motion.button>
+                                                ) : speakerStatus === "playing" ? (
+                                                    <motion.div key="playing-pulse" className="flex items-center gap-1.5 h-14">
+                                                        {[1, 2, 3, 4].map(i => (
+                                                            <motion.div
+                                                                key={i}
+                                                                animate={{ scaleY: [1, 1.8, 1], opacity: [0.4, 1, 0.4] }}
+                                                                transition={{ repeat: Infinity, duration: 0.6, delay: i * 0.1 }}
+                                                                className="w-1 h-6 bg-orange-500 rounded-full"
+                                                            />
+                                                        ))}
+                                                    </motion.div>
+                                                ) : speakerStatus === "passed" ? (
+                                                    <motion.div key="passed-badge" className="flex flex-col items-center gap-1">
+                                                        <div className="w-14 h-14 rounded-full bg-[#34c759] text-white flex items-center justify-center shadow-lg shadow-green-500/10">
+                                                            <CheckCircle2 className="w-6 h-6" />
+                                                        </div>
+                                                        <span className="text-[10px] font-bold text-[#34c759] mt-2 uppercase tracking-wider">Audio Passed</span>
+                                                    </motion.div>
+                                                ) : null}
+                                            </AnimatePresence>
+                                        </div>
                                     </div>
-                                    <span className={cn(
-                                        "text-xs font-semibold whitespace-nowrap",
-                                        noiseStatusType === "good" ? "text-green-600" :
-                                            noiseStatusType === "moderate" ? "text-yellow-600" : "text-red-500"
-                                    )}>{noiseDb.toFixed(0)} dB</span>
-                                </div>
-                                <div className="flex items-center justify-between gap-1.5">
-                                    {noiseStatusType === "good" && <p className="text-[10px] text-green-600 font-medium">🟢 Clean audio - Excellent</p>}
-                                    {noiseStatusType === "moderate" && <p className="text-[10px] text-yellow-600 font-medium">🟡 Acceptable noise - Please minimize sound</p>}
-                                    {noiseStatusType === "high" && <p className="text-[10px] text-red-500 font-medium">🔴 High noise - Please quiet the room</p>}
 
-                                    {noiseStatusType === "high" && (
-                                        <button onClick={() => setNoiseBypass(true)} className="text-[10px] text-gray-400 hover:text-gray-600 underline">Skip</button>
-                                    )}
-                                </div>
-                            </div>
-                        ) : (
-                            <p className="text-xs text-gray-400 italic">Listening for room noise...</p>
-                        )}
-                    </div>
-
-                    {/* Speaker Test */}
-                    <div className="bg-white border border-gray-200 shadow-sm rounded-2xl px-5 py-4">
-                        <div className="flex items-center justify-between mb-3">
-                            <div className="flex items-center gap-2">
-                                <Volume2 className="w-4 h-4 text-gray-600" />
-                                <span className="font-medium text-gray-900 text-sm">Speaker Verification</span>
-                            </div>
-                            <StatusIcon ok={speakerStatus === "passed"} loading={speakerStatus === "playing"} />
-                        </div>
-
-                        <div className="space-y-3">
-                            <AnimatePresence mode="wait">
-                                {speakerStatus === "idle" || speakerStatus === "failed" ? (
-                                    <motion.div key="play" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                                        <button onClick={playSpeakerTest} disabled={speakerPlaying}
-                                            className="w-full flex items-center justify-center gap-2 bg-orange-50 hover:bg-orange-100 text-orange-600 text-xs font-semibold py-2.5 rounded-xl transition-all border border-orange-100 disabled:opacity-50">
-                                            {speakerPlaying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
-                                            {speakerRetryMsg ? "Try once more" : "Play Voice Check"}
-                                        </button>
-                                        {speakerRetryMsg && (
-                                            <p className="mt-2 text-[10px] text-gray-500 italic text-center leading-relaxed">
-                                                No worries - let's try that once more. <br />Ensure your volume is up 👍
-                                            </p>
-                                        )}
-                                    </motion.div>
-                                ) : speakerStatus === "playing" ? (
-                                    <motion.div key="playing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                                        className="bg-orange-50/50 border border-orange-100 rounded-xl p-3 text-center">
-                                        <div className="flex justify-center gap-1 mb-2">
-                                            {[1, 2, 3].map(i => (
-                                                <motion.div key={i} animate={{ scaleY: [1, 1.5, 1], opacity: [0.5, 1, 0.5] }} transition={{ repeat: Infinity, duration: 0.6, delay: i * 0.1 }}
-                                                    className="w-1 h-3 bg-orange-400 rounded-full" />
-                                            ))}
+                                    {/* Yes / No simple options (Hides on idle retry loop to prevent overlap) */}
+                                    {speakerStatus === "playing" && (
+                                        <div className="flex items-center justify-center gap-4 my-2 animate-fadeIn">
+                                            <button
+                                                onClick={() => { setSpeakerStatus("passed"); setSpeakerRetryMsg(false); }}
+                                                className="rounded-full px-5 py-2 text-xs font-bold border border-green-200 text-green-700 bg-green-50 hover:bg-green-100 transition-all"
+                                            >
+                                                Yes, I heard it
+                                            </button>
+                                            <button
+                                                onClick={handleSpeakerFailure}
+                                                className="rounded-full px-5 py-2 text-xs font-bold border border-red-200 text-red-650 bg-red-50 hover:bg-red-100 transition-all"
+                                            >
+                                                No sound
+                                            </button>
                                         </div>
-                                        <p className="text-[11px] text-orange-700 font-medium">Click YES when you hear: <span className="font-bold underline">{speakerTargetWord}</span></p>
-                                    </motion.div>
-                                ) : null}
-                            </AnimatePresence>
+                                    )}
 
-                            {!speakerPlaying && (speakerStatus === "playing" || (speakerStatus === "failed" && !speakerRetryMsg)) && (
-                                <motion.div key="actions" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="flex gap-2">
-                                    <button onClick={() => { setSpeakerStatus("passed"); setSpeakerRetryMsg(false); }}
-                                        className="flex-1 text-xs font-semibold px-3 py-2 rounded-xl bg-green-50 border border-green-200 text-green-700 hover:bg-green-100 transition-colors">
-                                        Yes, I heard it
-                                    </button>
-                                    <button onClick={handleSpeakerFailure}
-                                        className="flex-1 text-xs font-semibold px-3 py-2 rounded-xl bg-gray-50 border border-gray-200 text-gray-600 hover:bg-gray-100 transition-colors">
-                                        No sound
-                                    </button>
+                                    {/* Outlined Action footer */}
+                                    <div className="mt-8 flex justify-between items-center pt-4 border-t border-gray-50">
+                                        <button
+                                            onClick={() => setActiveStep(0)}
+                                            className="text-[11px] font-bold text-gray-400 hover:text-gray-600 transition-colors"
+                                        >
+                                            Back
+                                        </button>
+
+                                        <button
+                                            onClick={() => setActiveStep(2)}
+                                            disabled={speakerStatus !== "passed"}
+                                            className={cn(
+                                                "rounded-full px-6 py-2.5 text-xs font-bold transition-all shadow-sm border",
+                                                speakerStatus === "passed"
+                                                    ? "border-gray-300 hover:bg-gray-50 text-gray-700 cursor-pointer"
+                                                    : "border-gray-200 bg-gray-50 text-gray-300 cursor-not-allowed"
+                                            )}
+                                        >
+                                            Next Step
+                                        </button>
+                                    </div>
                                 </motion.div>
                             )}
 
-                            {speakerStatus === "passed" && (
-                                <motion.div key="passed" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
-                                    className="flex items-center gap-2 text-green-600 bg-green-50 border border-green-100 rounded-xl px-3 py-2">
-                                    <CheckCircle2 className="w-3.5 h-3.5" />
-                                    <span className="text-[11px] font-medium">Speaker verified successfully</span>
+                            {/* STAGE 3: Checklist Consent & Complete */}
+                            {activeStep === 2 && (
+                                <motion.div
+                                    key="consent-tab"
+                                    initial={{ opacity: 0, y: 8 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: -8 }}
+                                    className="flex flex-col justify-between h-full"
+                                >
+                                    <div className="space-y-4 my-2 animate-fadeIn">
+                                        {/* Live status checklist — reads from actual verified state */}
+                                        <div className="bg-gray-50 rounded-2xl p-4 space-y-2 border border-gray-100/50">
+                                            <div className="flex items-center justify-between text-xs text-gray-600 font-semibold">
+                                                <span>Camera Feed</span>
+                                                {visualReady ? (
+                                                    <span className="text-[#34c759] font-bold">✓ Calibrated</span>
+                                                ) : (
+                                                    <span className="text-orange-500 font-bold">⚠ Not Ready</span>
+                                                )}
+                                            </div>
+                                            <div className="flex items-center justify-between text-xs text-gray-600 font-semibold">
+                                                <span>Microphone</span>
+                                                {micVerified ? (
+                                                    <span className="text-[#34c759] font-bold">✓ Verified</span>
+                                                ) : (
+                                                    <span className="text-orange-500 font-bold">⚠ Not Verified</span>
+                                                )}
+                                            </div>
+                                            <div className="flex items-center justify-between text-xs text-gray-600 font-semibold">
+                                                <span>Speaker Output</span>
+                                                {speakerStatus === "passed" ? (
+                                                    <span className="text-[#34c759] font-bold">✓ Verified</span>
+                                                ) : speakerStatus === "failed" ? (
+                                                    <span className="text-orange-500 font-bold">⚠ Check Speakers</span>
+                                                ) : (
+                                                    <span className="text-orange-500 font-bold">⚠ Not Tested</span>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Dynamic mic source selector dropdown */}
+                                        {devices.filter(d => d.kind === "audioinput").length > 1 && (
+                                            <div className="relative" ref={micDropdownRef}>
+                                                <button
+                                                    onClick={() => setIsMicDropdownOpen(v => !v)}
+                                                    className="w-full flex items-center justify-between text-[11px] bg-white border border-gray-200 rounded-xl px-4 py-2 text-gray-600 hover:bg-gray-50 transition-colors font-semibold shadow-sm"
+                                                >
+                                                    <span className="truncate">{devices.find(d => d.kind === "audioinput" && d.deviceId === selectedMicId)?.label || "Choose microphone"}</span>
+                                                    <ChevronDown className="w-3.5 h-3.5 ml-2 flex-shrink-0" />
+                                                </button>
+                                                <AnimatePresence>
+                                                    {isMicDropdownOpen && (
+                                                        <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
+                                                            className="absolute z-20 bottom-full mb-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden max-h-36 overflow-y-auto">
+                                                            {devices.filter(d => d.kind === "audioinput").map(d => (
+                                                                <button key={d.deviceId} onClick={() => { setSelectedMicId(d.deviceId); setIsMicDropdownOpen(false); }}
+                                                                    className={cn("w-full text-left text-xs px-4 py-2 hover:bg-gray-50 transition-colors font-medium", d.deviceId === selectedMicId && "bg-orange-50 text-orange-600")}>
+                                                                    {d.label || `Mic ${d.deviceId.slice(0, 6)}`}
+                                                                </button>
+                                                            ))}
+                                                        </motion.div>
+                                                    )}
+                                                </AnimatePresence>
+                                            </div>
+                                        )}
+
+                                        {/* Consent Box (Native accent-orange style prevents any orange overlay blending/messiness) */}
+                                        <div className="border border-orange-100 bg-orange-50/10 rounded-2xl p-4">
+                                            <label className="group flex items-start gap-3 cursor-pointer select-none">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={consentChecked}
+                                                    onChange={(e) => setConsentChecked(e.target.checked)}
+                                                    className="h-4 w-4 mt-0.5 rounded border-gray-300 text-orange-600 focus:ring-orange-500 cursor-pointer flex-shrink-0 accent-orange-500"
+                                                />
+                                                <span className="text-[11px] font-semibold text-gray-600 leading-relaxed group-hover:text-gray-800 transition-colors">
+                                                    I agree and consent to capture dynamic photos during this interview session to verify my profile and ensure integrity.
+                                                </span>
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    {/* Complete / Begin CTA */}
+                                    <div className="mt-8 flex justify-between items-center pt-4 border-t border-gray-50">
+                                        <button
+                                            onClick={() => setActiveStep(1)}
+                                            className="text-[11px] font-bold text-gray-400 hover:text-gray-600 transition-colors"
+                                        >
+                                            Back
+                                        </button>
+
+                                        <button
+                                            onClick={handleBeginInterview}
+                                            disabled={!allReady || isStarting || snapshotUploading || !canBeginNow}
+                                            className={cn(
+                                                "rounded-full px-8 py-3 text-xs font-bold transition-all shadow-md flex items-center gap-2",
+                                                allReady && !isStarting && !snapshotUploading && canBeginNow
+                                                    ? "bg-gradient-to-r from-orange-500 to-orange-400 hover:from-orange-600 hover:to-orange-500 text-white shadow-lg shadow-orange-500/10"
+                                                    : "bg-gray-100 text-gray-400 cursor-not-allowed border border-transparent"
+                                            )}
+                                        >
+                                            {isStarting || snapshotUploading ? (
+                                                <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Securing...</>
+                                            ) : (
+                                                <><Zap className="w-3.5 h-3.5" /> Begin Interview</>
+                                            )}
+                                        </button>
+                                    </div>
                                 </motion.div>
                             )}
-                        </div>
-                    </div>
-                </div>
-            </div>
 
-            {/* Bottom CTA */}
-            <div className="border-t border-gray-100 px-6 py-5">
-                <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
-                    <div className="flex flex-col gap-1.5 flex-1 max-w-xl">
-                        <label className="group flex items-start gap-3 cursor-pointer select-none">
-                            <div className="relative flex items-center mt-1">
-                                <input
-                                    type="checkbox"
-                                    checked={consentChecked}
-                                    onChange={(e) => setConsentChecked(e.target.checked)}
-                                    className="peer h-5 w-5 cursor-pointer appearance-none rounded-md border-2 border-gray-200 transition-all checked:border-orange-500 checked:bg-orange-500 hover:border-orange-300"
-                                />
-                                <CheckCircle2 className="pointer-events-none absolute left-1/2 top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 text-white opacity-0 transition-opacity peer-checked:opacity-100" />
-                            </div>
-                            <span className="text-xs font-semibold text-gray-600 group-hover:text-gray-900 transition-colors leading-relaxed">
-                                A photo is captured during hardware setup to verify your identity throughout this interview session
-                            </span>
-                        </label>
-                        <div className="text-[10px] items-center gap-1.5 text-gray-400 font-medium ml-8">
-                            {allReady
-                                ? "All checks passed - you're ready to begin!"
-                                : `${checks.length - readyCount} check${checks.length - readyCount !== 1 ? "s" : ""} remaining`}
-                        </div>
+                        </AnimatePresence>
                     </div>
 
-                    <button
-                        onClick={handleBeginInterview}
-                        disabled={!allReady || isStarting || snapshotUploading || !canBeginNow}
-                        className={cn(
-                            "flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold transition-all",
-                            allReady && !isStarting && !snapshotUploading && canBeginNow
-                                ? "bg-orange-500 hover:bg-orange-600 text-white shadow-sm"
-                                : "bg-gray-100 text-gray-400 cursor-not-allowed"
-                        )}
-                    >
-                        {isStarting || snapshotUploading ? (
-                            <><Loader2 className="w-4 h-4 animate-spin" /> {snapshotUploading ? "Securing Session..." : "Starting..."}</>
-                        ) : !canBeginNow ? (
-                            <div className="flex items-center gap-2">
-                                <AlertCircle className="w-4 h-4 text-orange-400" />
-                                <span className="text-gray-500">
-                                    Opens in {Math.floor(timeRemainingSeconds / 60)}:{String(timeRemainingSeconds % 60).padStart(2, '0')}
-                                </span>
-                            </div>
-                        ) : (
-                            <><Zap className="w-4 h-4" /> Begin Interview</>
-                        )}
-                    </button>
                 </div>
+
             </div>
         </div>
     );

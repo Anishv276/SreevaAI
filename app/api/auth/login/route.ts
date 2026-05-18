@@ -3,15 +3,7 @@ import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { createSession, normalizeRole } from "@/lib/auth";
 import { isRateLimited } from "@/lib/rate-limit";
-
-type SuperAdminDelegate = {
-    findUnique: (args: { where: { email: string } }) => Promise<{
-        id: string;
-        email: string;
-        password: string;
-        name: string;
-    } | null>;
-};
+import { normalizeEmail } from "@/lib/email";
 
 export async function POST(request: Request) {
     try {
@@ -26,7 +18,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Invalid email format" }, { status: 400 });
         }
 
-        const normalizedEmail = email.toLowerCase().trim();
+        const normalizedEmail = normalizeEmail(email);
 
         // -- RATE LIMITING -----------------------------------
         const isLimited = await isRateLimited(`login:${normalizedEmail}`, 5, 60);
@@ -37,10 +29,14 @@ export async function POST(request: Request) {
             }, { status: 429 });
         }
 
-        const prismaWithSuperAdmin = prisma as unknown as { superAdmin?: SuperAdminDelegate };
-        const superAdmin = prismaWithSuperAdmin.superAdmin
-            ? await prismaWithSuperAdmin.superAdmin.findUnique({ where: { email: normalizedEmail } })
-            : null;
+        const superAdmin = await prisma.superAdmin.findFirst({
+            where: {
+                email: {
+                    equals: normalizedEmail,
+                    mode: "insensitive",
+                },
+            },
+        });
 
         if (superAdmin) {
             const valid = await bcrypt.compare(password, superAdmin.password);
@@ -50,7 +46,7 @@ export async function POST(request: Request) {
 
             const token = await createSession({
                 userId: superAdmin.id,
-                email: superAdmin.email,
+                email: normalizedEmail,
                 name: superAdmin.name || "",
                 role: "SUPER_ADMIN",
                 orgId: null,
@@ -73,8 +69,13 @@ export async function POST(request: Request) {
             return response;
         }
 
-        const userProfile = (await prisma.user.findUnique({ 
-            where: { email: normalizedEmail },
+        const userProfile = (await prisma.user.findFirst({
+            where: {
+                email: {
+                    equals: normalizedEmail,
+                    mode: "insensitive",
+                },
+            },
             include: { organization: { select: { onboardingComplete: true, status: true } } }
         } as any)) as any;
 
@@ -95,7 +96,7 @@ export async function POST(request: Request) {
 
         const token = await createSession({
             userId: userProfile.id,
-            email: userProfile.email,
+            email: normalizedEmail,
             name: userProfile.name || "",
             role,
             orgId: userProfile.orgId || null,

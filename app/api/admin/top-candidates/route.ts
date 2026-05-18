@@ -79,7 +79,9 @@ export async function GET(req: Request) {
             };
         });
 
-        return NextResponse.json({ candidates });
+        return NextResponse.json({ candidates }, {
+            headers: { 'Cache-Control': 'private, max-age=120' }
+        });
     } catch (error: unknown) {
         console.error("Top candidates error:", error);
         return NextResponse.json(

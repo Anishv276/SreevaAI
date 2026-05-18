@@ -19,6 +19,8 @@ import {
     Rocket,
     Target,
     ArrowUpRight,
+    Globe,
+    Mic,
 } from "lucide-react";
 import {
     DropdownMenu,
@@ -33,6 +35,7 @@ import { getActiveDriveCount, isDriveCreationLocked } from "@/lib/drive-limits";
 import { getSupportComposeUrl, isInterviewQuotaLocked, isOrgRestrictedStatus } from "@/lib/interview-quota";
 import Link from "next/link";
 import { useAdminOrg } from "@/context/admin-org-context";
+import { ALL_VOICES } from "@/lib/constants/voices";
 
 export default function DrivesPage() {
     const router = useRouter();
@@ -261,109 +264,155 @@ export default function DrivesPage() {
                             day: "numeric",
                             year: "numeric",
                         }) : "Unknown";
+                        const deadlineText = drive.deadline
+                            ? new Date(drive.deadline).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
+                            : null;
+                        const isExpired = drive.deadline ? new Date(drive.deadline) < new Date() : false;
+                        const voice = ALL_VOICES.find(v => v.id === drive.voiceId);
+                        const language = drive.interviewLanguage || "English";
 
                         return (
-                            <div
-                                key={drive.id}
-                                className="group cursor-pointer w-full"
-                            >
-                                <div className="relative h-full overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.05)] transition-all duration-300 hover:-translate-y-1 hover:border-slate-300 hover:shadow-[0_18px_44px_rgba(15,23,42,0.10)] flex flex-col">
+                            <div key={drive.id} className="group cursor-pointer w-full">
+                                <div className="relative h-full flex flex-col rounded-[1.75rem] border border-slate-100 bg-white shadow-[0_4px_24px_rgba(15,23,42,0.06)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_16px_40px_rgba(15,23,42,0.11)] hover:border-slate-200 overflow-hidden">
 
+                                    {/* Top accent bar */}
+                                    <div className="h-1 w-full bg-gradient-to-r from-orange-400 via-orange-500 to-orange-300 rounded-t-[1.75rem]" />
 
-                                    {/* Card Header */}
-                                    <div className="relative p-4 pb-3.5">
-                                        <div className="mb-4 flex items-start justify-between gap-3">
-                                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-slate-700 shadow-[0_6px_20px_rgba(15,23,42,0.06)] transition-transform group-hover:scale-105">
-                                                <Briefcase className="h-4.5 w-4.5" />
+                                    {/* Header */}
+                                    <div className="px-5 pt-4 pb-3 flex items-start justify-between gap-3">
+                                        <div className="flex items-center gap-3 min-w-0">
+                                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-orange-50 border border-orange-100">
+                                                <Briefcase className="h-4 w-4 text-orange-500" />
                                             </div>
-                                            <DropdownMenu>
-                                                <DropdownMenuTrigger asChild>
-                                                    <Button variant="ghost" size="icon" className="h-8.5 w-8.5 rounded-xl text-slate-400 hover:text-slate-900 hover:bg-slate-100 transition-all">
-                                                        <MoreHorizontal className="h-4 w-4" />
-                                                    </Button>
-                                                </DropdownMenuTrigger>
-                                                <DropdownMenuContent align="end" className="w-[220px] p-2 rounded-2xl bg-white/95 backdrop-blur-2xl border border-slate-200 shadow-[0_20px_60px_rgba(15,23,42,0.10)]">
-                                                    <DropdownMenuItem
-                                                        className="rounded-xl py-2.5 px-3 focus:bg-slate-100 text-slate-700 font-medium text-[13px]"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            router.push(`/admin/create-drive?id=${drive.id}&mode=edit${orgId ? `&orgId=${orgId}` : ""}`);
-                                                        }}
-                                                    >
-                                                        <Edit className="h-4 w-4 mr-2" />
-                                                        Edit Details
-                                                    </DropdownMenuItem>
-                                                    <div className="h-px bg-slate-100 my-1.5 mx-2" />
-                                                    <DropdownMenuItem
-                                                        className="rounded-xl py-2.5 px-3 focus:bg-red-50 text-red-600 font-medium text-[13px]"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            setDriveToDelete(drive.id);
-                                                            setIsDeleteModalOpen(true);
-                                                        }}
-                                                    >
-                                                        <Trash2 className="h-4 w-4 mr-2" />
-                                                        Delete
-                                                    </DropdownMenuItem>
-                                                </DropdownMenuContent>
-                                            </DropdownMenu>
+                                            <div className="min-w-0">
+                                                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Active Job</p>
+                                                <h3 className="text-[15px] font-extrabold text-slate-900 tracking-tight leading-snug line-clamp-1 mt-0.5">
+                                                    {drive.title}
+                                                </h3>
+                                            </div>
                                         </div>
-
-                                        <h3 className="text-[16px] font-extrabold leading-snug tracking-tight text-slate-950 mb-2 line-clamp-2 group-hover:text-slate-700 transition-colors">
-                                            {drive.title}
-                                        </h3>
-                                        <div className="flex flex-wrap items-center gap-2">
-                                            <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-slate-500">
-                                                Job
-                                            </span>
-                                        </div>
+                                        <DropdownMenu>
+                                            <DropdownMenuTrigger asChild>
+                                                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl shrink-0 text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all">
+                                                    <MoreHorizontal className="h-4 w-4" />
+                                                </Button>
+                                            </DropdownMenuTrigger>
+                                            <DropdownMenuContent align="end" className="w-[200px] p-2 rounded-2xl bg-white/95 backdrop-blur-2xl border border-slate-200 shadow-[0_20px_60px_rgba(15,23,42,0.10)]">
+                                                <DropdownMenuItem
+                                                    className="rounded-xl py-2.5 px-3 focus:bg-slate-100 text-slate-700 font-medium text-[13px]"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        router.push(`/admin/create-drive?id=${drive.id}&mode=edit${orgId ? `&orgId=${orgId}` : ""}`);
+                                                    }}
+                                                >
+                                                    <Edit className="h-4 w-4 mr-2" />
+                                                    Edit Details
+                                                </DropdownMenuItem>
+                                                <div className="h-px bg-slate-100 my-1.5 mx-2" />
+                                                <DropdownMenuItem
+                                                    className="rounded-xl py-2.5 px-3 focus:bg-red-50 text-red-600 font-medium text-[13px]"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setDriveToDelete(drive.id);
+                                                        setIsDeleteModalOpen(true);
+                                                    }}
+                                                >
+                                                    <Trash2 className="h-4 w-4 mr-2" />
+                                                    Delete
+                                                </DropdownMenuItem>
+                                            </DropdownMenuContent>
+                                        </DropdownMenu>
                                     </div>
 
-                                    {/* Card Body */}
-                                    <div className="relative px-4 pb-3.5 space-y-3 flex-1">
-                                        <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
-                                            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400 mb-1.5">Role</p>
-                                            <p className="text-[12px] font-semibold text-slate-800 leading-relaxed line-clamp-2">
-                                                {drive.role || "Not specified"}
+                                    {/* Role tile */}
+                                    <div className="px-5 pb-3">
+                                        <div className="rounded-2xl bg-slate-50 border border-slate-100 px-4 py-3">
+                                            <p className="text-[9px] font-black uppercase tracking-[0.22em] text-slate-400 mb-1">Role</p>
+                                            <p className="text-[13px] font-semibold text-slate-800 line-clamp-2 leading-snug">
+                                                {drive.role || drive.title}
                                             </p>
                                         </div>
+                                    </div>
 
+                                    {/* Bento stats grid */}
+                                    <div className="px-5 pb-3 flex-1 space-y-2.5">
+                                        {/* Row 1: Candidates + Deadline */}
                                         <div className="grid grid-cols-2 gap-2.5">
-                                            <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_2px_10px_rgba(15,23,42,0.03)]">
-                                                <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.22em] text-slate-400 mb-1.5">
-                                                    <Users className="h-3 w-3 text-slate-500" />
-                                                    Candidates
+                                            {/* Candidates tile */}
+                                            <div className="rounded-2xl bg-white border border-slate-100 shadow-[0_2px_8px_rgba(15,23,42,0.04)] px-4 py-3 flex flex-col gap-1">
+                                                <div className="flex items-center gap-1.5">
+                                                    <div className="h-5 w-5 rounded-lg bg-blue-50 flex items-center justify-center">
+                                                        <Users className="h-3 w-3 text-blue-500" />
+                                                    </div>
+                                                    <p className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">Candidates</p>
                                                 </div>
-                                                <p className="text-[20px] font-black text-slate-950 leading-none">{applicants}</p>
+                                                <p className="text-[26px] font-black text-slate-900 leading-none tracking-tight">{applicants}</p>
+                                                <p className="text-[9px] font-semibold text-slate-400">Total applied</p>
                                             </div>
-                                            <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_2px_10px_rgba(15,23,42,0.03)]">
-                                                <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.22em] text-slate-400 mb-1.5">
-                                                    <Target className="h-3 w-3 text-slate-500" />
-                                                    Created
+
+                                            {/* Deadline / Created tile */}
+                                            <div className="rounded-2xl bg-white border border-slate-100 shadow-[0_2px_8px_rgba(15,23,42,0.04)] px-4 py-3 flex flex-col gap-1">
+                                                <div className="flex items-center gap-1.5">
+                                                    <div className={`h-5 w-5 rounded-lg flex items-center justify-center ${deadlineText ? (isExpired ? "bg-red-50" : "bg-emerald-50") : "bg-slate-50"}`}>
+                                                        <Target className={`h-3 w-3 ${deadlineText ? (isExpired ? "text-red-500" : "text-emerald-500") : "text-slate-400"}`} />
+                                                    </div>
+                                                    <p className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">
+                                                        {deadlineText ? "Deadline" : "Created"}
+                                                    </p>
                                                 </div>
-                                                <p className="text-[13px] font-bold text-slate-800 leading-tight">
-                                                    {createdAt}
+                                                <p className={`text-[13px] font-bold leading-tight mt-1 ${deadlineText && isExpired ? "text-red-500" : "text-slate-800"}`}>
+                                                    {deadlineText ?? createdAt}
                                                 </p>
+                                                {deadlineText && (
+                                                    <p className="text-[9px] font-semibold text-slate-400">{isExpired ? "Expired" : "Open"}</p>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Row 2: Voice + Language */}
+                                        <div className="grid grid-cols-2 gap-2.5">
+                                            {/* Voice tile */}
+                                            <div className="rounded-2xl bg-white border border-slate-100 shadow-[0_2px_8px_rgba(15,23,42,0.04)] px-4 py-3 flex flex-col gap-1">
+                                                <div className="flex items-center gap-1.5">
+                                                    <div className="h-5 w-5 rounded-lg bg-orange-50 flex items-center justify-center">
+                                                        <Mic className="h-3 w-3 text-orange-500" />
+                                                    </div>
+                                                    <p className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">Voice</p>
+                                                </div>
+                                                <p className="text-[13px] font-bold text-slate-800 leading-tight mt-1 truncate">
+                                                    {voice?.name ?? "Default"}
+                                                </p>
+                                                <p className="text-[9px] font-semibold text-slate-400 truncate">{voice?.provider ?? "Cartesia"}</p>
+                                            </div>
+
+                                            {/* Language tile */}
+                                            <div className="rounded-2xl bg-white border border-slate-100 shadow-[0_2px_8px_rgba(15,23,42,0.04)] px-4 py-3 flex flex-col gap-1">
+                                                <div className="flex items-center gap-1.5">
+                                                    <div className="h-5 w-5 rounded-lg bg-purple-50 flex items-center justify-center">
+                                                        <Globe className="h-3 w-3 text-purple-500" />
+                                                    </div>
+                                                    <p className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">Language</p>
+                                                </div>
+                                                <p className="text-[13px] font-bold text-slate-800 leading-tight mt-1 truncate">
+                                                    {language}
+                                                </p>
+                                                <p className="text-[9px] font-semibold text-slate-400">Interview lang</p>
                                             </div>
                                         </div>
                                     </div>
 
-                                    {/* Card Footer */}
-                                    <div className="relative p-4 pt-0 mt-auto">
-                                        <div className="mb-3 h-px bg-gradient-to-r from-slate-200 via-slate-100 to-transparent" />
-                                        <div className="grid grid-cols-1 gap-3">
-                                            <Button
-                                                size="sm"
-                                                className="h-9 rounded-xl bg-slate-950 text-white font-bold shadow-[0_10px_20px_rgba(15,23,42,0.14)] transition-all hover:bg-slate-800 hover:shadow-[0_14px_30px_rgba(15,23,42,0.18)] text-[13px]"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    router.push(`/admin/candidates/drive/${encodeURIComponent(drive.id)}`);
-                                                }}
-                                            >
-                                                View Candidates
-                                                <ArrowUpRight className="ml-2 h-3.5 w-3.5" />
-                                            </Button>
-                                        </div>
+                                    {/* Footer CTA */}
+                                    <div className="px-5 pb-5 pt-1">
+                                        <Button
+                                            className="w-full h-10 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-[12px] tracking-wide shadow-[0_4px_14px_rgba(15,23,42,0.18)] transition-all duration-200 hover:shadow-[0_8px_20px_rgba(15,23,42,0.22)]"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                router.push(`/admin/candidates/drive/${encodeURIComponent(drive.id)}`);
+                                            }}
+                                        >
+                                            View Candidates
+                                            <ArrowUpRight className="ml-2 h-3.5 w-3.5" />
+                                        </Button>
                                     </div>
                                 </div>
                             </div>

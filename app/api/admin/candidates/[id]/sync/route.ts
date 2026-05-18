@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getEmbedding } from "@/lib/openai";
-import { upsertCandidateEmbedding } from "@/lib/pinecone";
+import { syncCandidateCorpusToPinecone } from "@/lib/pinecone";
 import { getSession, isAdminRole } from "@/lib/auth";
 
 /**
@@ -47,7 +46,7 @@ export async function POST(
 
         console.log(`[SYNC_ENGINE]: Syncing ${app.fullName} to Pinecone...`);
 
-        const sharedMeta = {
+        const syncResult = await syncCandidateCorpusToPinecone({
             applicationId: app.id,
             orgId: app.drive.orgId || "",
             fullName: app.fullName,
@@ -57,62 +56,35 @@ export async function POST(
             status: app.hiringStatus,
             resumeStatus: app.resumeStatus,
             aiScore: app.aiScore ?? 0,
-        };
+            createdAt: app.createdAt.toISOString(),
+            documents: [
+                {
+                    type: "resume",
+                    text: app.resumeText,
+                    createdAt: app.createdAt.toISOString(),
+                },
+                {
+                    type: "resume_report",
+                    text: app.aiReport,
+                    createdAt: app.createdAt.toISOString(),
+                },
+                {
+                    type: "interview_transcript",
+                    text: app.interview?.interviewTranscript,
+                    createdAt: app.interview?.createdAt?.toISOString() || app.createdAt.toISOString(),
+                },
+                {
+                    type: "interview_report",
+                    text: app.interview?.interviewReport,
+                    createdAt: app.interview?.createdAt?.toISOString() || app.createdAt.toISOString(),
+                },
+            ],
+        });
 
-        const sources = [
-            {
-                key: "resume",
-                text: app.resumeText,
-                createdAt: app.createdAt.toISOString(),
-            },
-            {
-                key: "transcript",
-                text: app.interview?.interviewTranscript,
-                createdAt: app.interview?.createdAt?.toISOString() || app.createdAt.toISOString(),
-            },
-            {
-                key: "summary",
-                text: app.interview?.aiSummary,
-                createdAt: app.interview?.createdAt?.toISOString() || app.createdAt.toISOString(),
-            },
-            {
-                key: "report",
-                text: app.aiReport,
-                createdAt: app.createdAt.toISOString(),
-            },
-        ] as const;
-
-        let indexedCount = 0;
-        let skippedCount = 0;
-
-        for (const source of sources) {
-            const text = typeof source.text === "string" ? source.text.trim() : "";
-            if (!text) {
-                skippedCount += 1;
-                continue;
-            }
-
-            const vector = await getEmbedding(text);
-            await upsertCandidateEmbedding(`${app.id}-${source.key}`, vector, {
-                ...sharedMeta,
-                contentChunk: text.substring(0, 3000),
-                type: source.key,
-                createdAt: source.createdAt,
-            });
-            indexedCount += 1;
-        }
-
-        if (indexedCount === 0) {
-            console.log(`[SYNC_ENGINE]: No indexable text found for ${app.fullName}; Pinecone sync skipped.`);
-            return NextResponse.json({
-                success: true,
-                indexedCount,
-                skippedCount,
-                message: "No indexable content available",
-            });
-        }
-
-        return NextResponse.json({ success: true, indexedCount, skippedCount });
+        return NextResponse.json({
+            success: true,
+            ...syncResult,
+        });
     } catch (error: any) {
         console.error("[SYNC_ENGINE_ERROR]:", error.message);
         return NextResponse.json({ error: error.message }, { status: 500 });

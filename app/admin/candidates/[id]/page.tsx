@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { InterviewReportSreevaAI, buildSreevaAIInterviewViewModel } from "@/components/admin/candidate-profile/interview-report-sreevaai";
 import { ResumeReportSreevaAI, buildSreevaAIResumeViewModel } from "@/components/admin/candidate-profile/resume-report-sreevaai";
+import { useAdminOrg } from "@/context/admin-org-context";
+import { isOrgRestrictedStatus } from "@/lib/interview-quota";
 
 function toTextList(value: unknown): string[] {
     const toLine = (item: unknown): string => {
@@ -60,6 +62,7 @@ export default function CandidateProfilePage() {
     const reportMode = (searchParams.get("report") || "interview").toLowerCase();
     const backHref = searchParams.get("back") || "/admin/candidates";
     const orgIdParam = searchParams.get("orgId");
+    const adminOrg = useAdminOrg();
     const [candidate, setCandidate] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -67,6 +70,8 @@ export default function CandidateProfilePage() {
     const [resumeReportOpen, setResumeReportOpen] = useState(false);
     const [isUpdating, setIsUpdating] = useState(false);
     const [confirmDialog, setConfirmDialog] = useState<{ action: string; title: string; description: string } | null>(null);
+    const orgStatus = String(adminOrg?.status || candidate?.organization?.status || "").trim().toUpperCase();
+    const isSuspended = isOrgRestrictedStatus(orgStatus);
 
     useEffect(() => {
         setMounted(true);
@@ -492,6 +497,9 @@ export default function CandidateProfilePage() {
 
     const handleResendInterviewLink = useCallback(async () => {
         if (!candidate?.id) return;
+        if (isSuspended) {
+            return;
+        }
         setIsUpdating(true);
         try {
             const url = new URL(`/api/candidates/${candidate.id}/send-interview-link`, window.location.origin);
@@ -508,10 +516,15 @@ export default function CandidateProfilePage() {
         } finally {
             setIsUpdating(false);
         }
-    }, [candidate?.id, orgIdParam, fetchCandidate]);
+    }, [candidate?.id, orgIdParam, fetchCandidate, isSuspended]);
 
     const handleConfirmAction = useCallback(async () => {
         if (!confirmDialog) return;
+
+        if (confirmDialog.action === "resend_link" && isSuspended) {
+            setConfirmDialog(null);
+            return;
+        }
 
         if (confirmDialog.action === "hire") {
             await handleHiringAction("hire");
@@ -522,7 +535,7 @@ export default function CandidateProfilePage() {
         }
 
         setConfirmDialog(null);
-    }, [confirmDialog, handleHiringAction, handleResendInterviewLink]);
+    }, [confirmDialog, handleHiringAction, handleResendInterviewLink, isSuspended]);
 
     if (loading) {
         return (
@@ -603,20 +616,22 @@ export default function CandidateProfilePage() {
                             Resume report
                         </Button>
                         <div className="flex items-center gap-2 border-l border-[#DDE1E5] pl-2">
-                            <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                disabled={isUpdating}
-                                onClick={() => setConfirmDialog({
-                                    action: "resend_link",
-                                    title: "Resend Interview Link?",
-                                    description: "Send a new interview scheduling link to the candidate so they can reschedule if needed."
-                                })}
-                                className="h-8 rounded-lg border-blue-200 bg-blue-50 px-3 text-[11px] font-bold text-blue-700 hover:bg-blue-100"
-                            >
-                                Resend Link
-                            </Button>
+                            {!isSuspended && (
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setConfirmDialog({
+                                        action: "resend_link",
+                                        title: "Resend Interview Link?",
+                                        description: "Send a new interview scheduling link to the candidate so they can reschedule if needed."
+                                    })}
+                                    disabled={isUpdating}
+                                    className="h-8 rounded-lg border-blue-200 bg-blue-50 px-3 text-[11px] font-bold text-blue-700 hover:bg-blue-100"
+                                >
+                                    Resend Link
+                                </Button>
+                            )}
                             <Button
                                 type="button"
                                 variant={isHired ? "default" : "outline"}

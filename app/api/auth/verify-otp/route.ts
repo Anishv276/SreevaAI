@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { normalizeEmail } from "@/lib/email";
 
 export async function POST(request: Request) {
     try {
@@ -9,10 +10,15 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Email and OTP are required" }, { status: 400 });
         }
 
-        const normalizedEmail = email.toLowerCase().trim();
+        const normalizedEmail = normalizeEmail(email);
 
-        const superAdmin = await prisma.superAdmin.findUnique({
-            where: { email: normalizedEmail },
+        const superAdmin = await prisma.superAdmin.findFirst({
+            where: {
+                email: {
+                    equals: normalizedEmail,
+                    mode: "insensitive",
+                },
+            },
             select: {
                 id: true,
                 resetOtp: true,
@@ -33,8 +39,13 @@ export async function POST(request: Request) {
             return NextResponse.json({ success: true, message: "Code verified." });
         }
 
-        const user = await prisma.user.findUnique({
-            where: { email: normalizedEmail },
+        const user = await prisma.user.findFirst({
+            where: {
+                email: {
+                    equals: normalizedEmail,
+                    mode: "insensitive",
+                },
+            },
             select: {
                 id: true,
                 resetOtp: true,

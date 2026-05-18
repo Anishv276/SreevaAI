@@ -19,6 +19,9 @@ export type Job = {
     role?: string;
     deadline?: string | null;
     createdAt: string;
+    voiceId?: string;
+    interviewLanguage?: string;
+    aiName?: string;
 };
 
 interface Pagination {

@@ -37,7 +37,9 @@ export async function GET(request: Request) {
         }
 
         const status = await getOrgBillingStatus(orgId);
-        return NextResponse.json(status);
+        return NextResponse.json(status, {
+            headers: { 'Cache-Control': 'private, max-age=60' }
+        });
     } catch (error) {
         console.error("[CREDITS] GET error:", error);
         return NextResponse.json({ error: "Failed to fetch credits" }, { status: 500 });

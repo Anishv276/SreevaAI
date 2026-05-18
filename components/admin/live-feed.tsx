@@ -1,18 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import {
-    UserPlus,
-    FileCheck,
-    XCircle,
-    Sparkles,
-    TriangleAlert,
-    ChevronRight,
-    Loader2,
-} from "lucide-react";
+import { UserPlus, FileCheck, XCircle, TriangleAlert, ChevronRight, Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
-import { ErrorState } from "./error-state";
 import { type DateRange } from "./date-filter";
 
 type ActivityType = "application" | "interview_completed" | "rejection";
@@ -30,11 +21,11 @@ interface FeedItem {
 function getIconProps(type: ActivityType) {
     switch (type) {
         case "application":
-            return { icon: UserPlus, color: "#475569", bg: "bg-slate-500/10", border: "border-slate-500/20" };
+            return { icon: UserPlus,   color: "#475569", bg: "bg-slate-100",   border: "border-slate-200" };
         case "interview_completed":
-            return { icon: FileCheck, color: "#10B981", bg: "bg-emerald-500/10", border: "border-emerald-500/20" };
+            return { icon: FileCheck,  color: "#10B981", bg: "bg-emerald-50",  border: "border-emerald-100" };
         case "rejection":
-            return { icon: XCircle, color: "#EF4444", bg: "bg-red-500/10", border: "border-red-500/20" };
+            return { icon: XCircle,    color: "#EF4444", bg: "bg-red-50",      border: "border-red-100" };
     }
 }
 
@@ -46,7 +37,7 @@ function useActivityFeed(dateRange: DateRange) {
 
     useEffect(() => {
         const controller = new AbortController();
-        const signal = controller.signal;
+        const { signal } = controller;
 
         const fetchFeed = async () => {
             setError(null);
@@ -60,17 +51,16 @@ function useActivityFeed(dateRange: DateRange) {
                 } else {
                     params.set("range", dateRange.type);
                 }
-
                 const res = await fetch(`/api/admin/activity?${params.toString()}`, { signal });
                 if (res.ok) {
                     const data = await res.json();
                     if (!signal.aborted) setFeedItems(data.feed ?? []);
                 } else if (!signal.aborted) {
-                    setError("Activity sync failed.");
+                    setError("Failed to load activity.");
                 }
             } catch (err: unknown) {
                 if (!(err instanceof DOMException && err.name === "AbortError")) {
-                    setError("Activity stream unavailable.");
+                    setError("Network error.");
                 }
             } finally {
                 if (!signal.aborted) setLoading(false);
@@ -79,7 +69,11 @@ function useActivityFeed(dateRange: DateRange) {
 
         fetchRef.current = fetchFeed;
         fetchFeed();
-        const interval = setInterval(fetchFeed, 30_000);
+
+        // Pause polling when tab is hidden
+        const interval = setInterval(() => {
+            if (!document.hidden) fetchFeed();
+        }, 30_000);
 
         return () => {
             controller.abort();
@@ -87,19 +81,14 @@ function useActivityFeed(dateRange: DateRange) {
         };
     }, [dateRange]);
 
-    return {
-        feedItems,
-        loading,
-        error,
-        fetchFeed: () => fetchRef.current?.(),
-    };
+    return { feedItems, loading, error, retry: () => fetchRef.current?.() };
 }
 
-function summarizeFeed(feedItems: FeedItem[]) {
+function summarize(items: FeedItem[]) {
     return {
-        applications: feedItems.filter((item) => item.type === "application").length,
-        interviews: feedItems.filter((item) => item.type === "interview_completed").length,
-        rejections: feedItems.filter((item) => item.type === "rejection").length,
+        uploads:    items.filter((i) => i.type === "application").length,
+        interviews: items.filter((i) => i.type === "interview_completed").length,
+        rejections: items.filter((i) => i.type === "rejection").length,
     };
 }
 
@@ -108,112 +97,92 @@ interface LiveFeedProps {
 }
 
 export function LiveFeed({ dateRange }: LiveFeedProps) {
-    const { feedItems, loading, error, fetchFeed } = useActivityFeed(dateRange);
-    const summary = summarizeFeed(feedItems);
+    const { feedItems, loading, error, retry } = useActivityFeed(dateRange);
+    const summary = summarize(feedItems);
 
     return (
-        <div className="pb-12">
-            <div className="flex h-[600px] flex-col overflow-hidden rounded-[2.5rem] border border-white/60 bg-white/45 shadow-[0_8px_32px_rgba(0,0,0,0.02)] backdrop-blur-xl transition-all duration-700 hover:shadow-[0_20px_60px_rgba(0,0,0,0.06)]">
-                <div className="border-b border-gray-100/60 bg-white/30 px-8 py-6">
-                    <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-                        <div className="flex items-center gap-4">
-                            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-500/20 bg-slate-500/10 text-slate-700">
-                                <Sparkles className="h-5 w-5" />
-                            </div>
-                            <div>
-                                <h3 className="text-lg font-black tracking-tight text-gray-900">Recent Activity</h3>
-                                <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-gray-400">
-                                    Live recruiting pulse
-                                </p>
-                            </div>
-                        </div>
+        <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+            {/* Header */}
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between px-6 py-5 border-b border-gray-100">
+                <div>
+                    <h3 className="text-base font-bold text-gray-900 tracking-tight">Recent Activity</h3>
+                    <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">Live recruiting pulse</p>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                    <span className="rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-emerald-600">
+                        {summary.uploads} uploads
+                    </span>
+                    <span className="rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-blue-600">
+                        {summary.interviews} interviews
+                    </span>
+                    <span className="rounded-full border border-red-100 bg-red-50 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-red-600">
+                        {summary.rejections} rejections
+                    </span>
+                    {loading && <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-400" />}
+                </div>
+            </div>
 
-                        <div className="flex flex-wrap items-center gap-2">
-                            <span className="rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-600">
-                                {summary.applications} uploads
-                            </span>
-                            <span className="rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-blue-600">
-                                {summary.interviews} interviews
-                            </span>
-                            <span className="rounded-full border border-red-100 bg-red-50 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-red-600">
-                                {summary.rejections} rejections
-                            </span>
-                            {loading && <Loader2 className="h-4 w-4 animate-spin text-slate-400" />}
-                        </div>
+            {/* Feed */}
+            <div className="px-5 py-4 max-h-[420px] overflow-y-auto">
+                {error ? (
+                    <div className="flex flex-col items-center justify-center h-32 gap-2">
+                        <p className="text-sm font-semibold text-gray-500">{error}</p>
+                        <button
+                            onClick={retry}
+                            className="text-xs font-bold text-gray-600 underline underline-offset-2 hover:text-gray-900"
+                        >
+                            Retry
+                        </button>
                     </div>
-                </div>
-
-                <div className="flex-1 overflow-y-auto px-6 py-5 custom-scrollbar">
-                    {error ? (
-                        <div className="flex h-full items-center justify-center">
-                            <ErrorState
-                                message={error}
-                                onRetry={fetchFeed}
-                                compact
-                                className="border-none bg-transparent shadow-none"
-                            />
-                        </div>
-                    ) : !loading && feedItems.length === 0 ? (
-                        <div className="flex h-full flex-col items-center justify-center gap-3 text-gray-300">
-                            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gray-50">
-                                <TriangleAlert className="h-6 w-6 text-gray-300" />
-                            </div>
-                            <div className="text-center">
-                                <p className="text-[11px] font-black uppercase tracking-widest text-gray-500">
-                                    No recent activity
-                                </p>
-                                <p className="mt-1 text-[12px] text-gray-400">
-                                    New uploads, interviews, and outcomes will appear here.
-                                </p>
-                            </div>
-                        </div>
-                    ) : (
-                        <div className="space-y-4">
-                            {feedItems.map((item, idx) => {
-                                const { icon: Icon, color, bg, border } = getIconProps(item.type);
-
-                                return (
-                                    <motion.div
-                                        key={item.id}
-                                        initial={{ opacity: 0, x: -10 }}
-                                        animate={{ opacity: 1, x: 0 }}
-                                        transition={{ delay: idx * 0.05 }}
-                                        className="group relative flex items-center gap-5 rounded-[2rem] border border-white bg-white/60 px-5 py-4 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-slate-200 hover:bg-white hover:shadow-[0_15px_30px_rgba(15,23,42,0.04)]"
-                                        style={{ borderLeft: `4px solid ${color}` }}
-                                    >
-                                        <div className={cn("flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border transition-transform group-hover:scale-110", bg, border)}>
-                                            <Icon className="h-5 w-5" style={{ color }} />
-                                        </div>
-
-                                        <div className="min-w-0 flex-1">
-                                            <div className="mb-1 flex items-center gap-2">
-                                                <p className="truncate text-[14px] font-black leading-none text-gray-900 group-hover:text-slate-700">
-                                                    {item.action}
-                                                </p>
-                                                {item.isDemo && (
-                                                    <span className="shrink-0 rounded-md border border-gray-200 bg-gray-100 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-widest text-gray-400">
-                                                        System
-                                                    </span>
-                                                )}
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                <span className="truncate text-[11px] font-bold uppercase tracking-widest text-gray-400">
-                                                    {item.drive}
+                ) : !loading && feedItems.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-32 gap-2 text-center">
+                        <TriangleAlert className="h-6 w-6 text-gray-200" />
+                        <p className="text-sm font-bold text-gray-500">No recent activity</p>
+                        <p className="text-xs text-gray-400">Uploads, interviews and outcomes will appear here.</p>
+                    </div>
+                ) : (
+                    <div className="space-y-2">
+                        {feedItems.map((item, idx) => {
+                            const { icon: Icon, color, bg, border } = getIconProps(item.type);
+                            return (
+                                <motion.div
+                                    key={item.id}
+                                    initial={{ opacity: 0, x: -8 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    transition={{ delay: idx * 0.04 }}
+                                    className="group flex items-center gap-4 rounded-2xl border border-gray-100 bg-gray-50/40 px-4 py-3 hover:border-gray-200 hover:bg-white hover:shadow-sm transition-all duration-200"
+                                    style={{ borderLeft: `3px solid ${color}` }}
+                                >
+                                    <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border transition-transform group-hover:scale-105", bg, border)}>
+                                        <Icon className="h-4 w-4" style={{ color }} />
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex items-center gap-2 mb-0.5">
+                                            <p className="truncate text-sm font-bold text-gray-900 group-hover:text-gray-700">
+                                                {item.action}
+                                            </p>
+                                            {item.isDemo && (
+                                                <span className="shrink-0 rounded border border-gray-200 bg-gray-100 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-widest text-gray-400">
+                                                    System
                                                 </span>
-                                                <span className="h-1 w-1 rounded-full bg-gray-200" />
-                                                <span className="shrink-0 text-[10px] font-black uppercase text-gray-300">
-                                                    {item.time}
-                                                </span>
-                                            </div>
+                                            )}
                                         </div>
-
-                                        <ChevronRight className="h-5 w-5 text-gray-200 transition-all group-hover:translate-x-1 group-hover:text-slate-700" />
-                                    </motion.div>
-                                );
-                            })}
-                        </div>
-                    )}
-                </div>
+                                        <div className="flex items-center gap-1.5">
+                                            <span className="truncate text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                                                {item.drive}
+                                            </span>
+                                            <span className="h-1 w-1 rounded-full bg-gray-200" />
+                                            <span className="shrink-0 text-[10px] font-bold uppercase text-gray-300">
+                                                {item.time}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <ChevronRight className="h-4 w-4 text-gray-200 transition-all group-hover:translate-x-0.5 group-hover:text-gray-500" />
+                                </motion.div>
+                            );
+                        })}
+                    </div>
+                )}
             </div>
         </div>
     );

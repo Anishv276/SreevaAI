@@ -73,12 +73,12 @@ export async function GET(req: Request) {
             ]);
         }
 
-        // Try recent first
+        // Fetch activity within range; if nothing found, widen to 90 days instead of all-time
         let [recentApplications, recentInterviews, recentRejections] = await fetchActivity(start);
 
-        // Fallback to all-time if empty
         if (recentApplications.length === 0 && recentInterviews.length === 0 && recentRejections.length === 0) {
-            [recentApplications, recentInterviews, recentRejections] = await fetchActivity(null);
+            const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+            [recentApplications, recentInterviews, recentRejections] = await fetchActivity(ninetyDaysAgo);
         }
 
         // --- Build activity items ---
@@ -167,7 +167,9 @@ export async function GET(req: Request) {
         activities.sort((a, b) => b.timestamp - a.timestamp);
 
         const feed = activities.slice(0, 20);
-        return NextResponse.json({ feed });
+        return NextResponse.json({ feed }, {
+            headers: { 'Cache-Control': 'private, max-age=60' }
+        });
     } catch (error: unknown) {
         console.error("Activity feed error:", error);
         return NextResponse.json(

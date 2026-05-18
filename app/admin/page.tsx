@@ -5,7 +5,6 @@ import Link from "next/link";
 import { Plus, Lock, ArrowRight } from "lucide-react";
 
 import { useJobs } from "@/context/jobs-context";
-import { cn } from "@/lib/utils";
 import { getActiveDriveCount, isDriveCreationLocked } from "@/lib/drive-limits";
 import { getInterviewQuotaSupportMessage, getSupportComposeUrl, isInterviewQuotaLocked, isOrgRestrictedStatus } from "@/lib/interview-quota";
 
@@ -13,7 +12,7 @@ import { DateFilter, type DateRange } from "@/components/admin/date-filter";
 import { StatsGrid } from "@/components/admin/stats-grid";
 import { HiringFunnel } from "@/components/admin/hiring-funnel";
 import { ScoreDistribution } from "@/components/admin/score-distribution";
-import { ActiveDrivesSummary } from "@/components/admin/active-drives-summary";
+import { NeedsAction } from "@/components/admin/needs-action";
 import { TopCandidates } from "@/components/admin/top-candidates";
 import { LiveFeed } from "@/components/admin/live-feed";
 import { useAdminOrg } from "@/context/admin-org-context";
@@ -21,54 +20,44 @@ import { useAdminOrg } from "@/context/admin-org-context";
 export default function DashboardPage() {
     const [dateRange, setDateRange] = useState<DateRange>({ type: "month" });
 
-    // ⚡ Read from shared context — no fetch needed (was 2 API calls per load)
     const adminOrg = useAdminOrg();
     const quotaLocked = isInterviewQuotaLocked(adminOrg ?? {});
     const orgStatus = String(adminOrg?.status || "ACTIVE").toUpperCase();
 
     const { jobs, organization } = useJobs();
-    const hasNoDrives = jobs.length === 0;
     const activeDriveCount = organization?.activeDriveCount ?? getActiveDriveCount(jobs);
     const isSuspended = isOrgRestrictedStatus(orgStatus);
     const driveCreationLocked = isDriveCreationLocked(organization?.maxActiveDrives, activeDriveCount) || quotaLocked || isSuspended;
 
     return (
-        <div className="space-y-10 pb-12 animate-fade-slide" style={{ zoom: 0.88, transformOrigin: "top center" }}>
-            <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
-                <div className="group flex items-center gap-5">
-                    <div className="h-14 w-1.5 rounded-full bg-slate-900 shadow-[0_0_15px_rgba(15,23,42,0.15)] transition-all duration-500 group-hover:h-16" />
+        <div className="space-y-7 pb-10 animate-in fade-in duration-700" style={{ zoom: 0.78, transformOrigin: "top center" }}>
+            {/* Header — matches other admin pages */}
+            <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between mb-8">
+                <div className="flex items-center gap-5">
+                    <div className="h-12 w-1.5 bg-orange-600 rounded-full shadow-[0_0_15px_rgba(234,88,12,0.3)]" />
                     <div className="space-y-1">
-                        <h1 className="text-4xl font-black leading-none tracking-tighter text-slate-950 text-premium sm:text-5xl">
-                            Dashboard
-                        </h1>
+                        <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 tracking-tight">Dashboard</h1>
                         <div className="flex items-center gap-3">
                             <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-pulse" />
-                            <p className="text-[13px] font-bold uppercase tracking-[0.2em] text-slate-400">
-                                Hiring Pulse ·{" "}
-                                {new Date().toLocaleDateString(undefined, {
-                                    weekday: "long",
-                                    day: "numeric",
-                                    month: "short",
-                                })}
+                            <p className="text-gray-400 font-bold text-[11px] uppercase tracking-widest">
+                                {new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "short" })}
                             </p>
                         </div>
                     </div>
                 </div>
 
-                <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-3">
+                <div className="flex items-center gap-3 flex-wrap">
                     <DateFilter value={dateRange} onChange={setDateRange} />
 
                     {driveCreationLocked ? (
                         <div className="flex items-center gap-3">
                             <button
-                                className="cursor-not-allowed rounded-xl border border-slate-200 bg-slate-100 px-4 py-2 text-[13.5px] font-semibold text-slate-400 shadow-sm"
                                 disabled
+                                className="bg-gray-100 text-gray-400 border border-gray-200 h-10 px-5 font-bold rounded-2xl cursor-not-allowed opacity-70 flex items-center gap-2 text-sm"
                                 title={quotaLocked || isSuspended ? getInterviewQuotaSupportMessage("interviews") : "Drive limit reached"}
                             >
-                                <span className="flex items-center gap-2">
-                                    <Lock className="h-4 w-4" />
-                                    {quotaLocked || isSuspended ? "Create Locked" : "Create New Drive"}
-                                </span>
+                                <Lock className="h-4 w-4" />
+                                {quotaLocked || isSuspended ? "Locked" : "New Drive"}
                             </button>
                             {quotaLocked || isSuspended ? (
                                 <a
@@ -78,57 +67,48 @@ export default function DashboardPage() {
                                     })}
                                     target="_blank"
                                     rel="noreferrer"
-                                    className="flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-widest text-slate-700 hover:text-slate-950"
+                                    className="flex items-center gap-1.5 text-xs font-bold text-gray-600 hover:text-gray-900 uppercase tracking-widest"
                                 >
                                     Contact Support <ArrowRight className="h-3.5 w-3.5" />
                                 </a>
                             ) : (
                                 <Link
                                     href="/admin/billing"
-                                    className="flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-widest text-slate-700 hover:text-slate-950"
+                                    className="flex items-center gap-1.5 text-xs font-bold text-gray-600 hover:text-gray-900 uppercase tracking-widest"
                                 >
-                                    Go to Billing <ArrowRight className="h-3.5 w-3.5" />
+                                    Billing <ArrowRight className="h-3.5 w-3.5" />
                                 </Link>
                             )}
                         </div>
                     ) : (
                         <Link
                             href="/admin/create-drive"
-                            className="btn-shimmer flex items-center gap-2 rounded-xl bg-slate-950 px-5 py-2.5 text-[13.5px] font-semibold text-white shadow-sm shadow-slate-900/10 transition-all duration-150 hover:bg-slate-800 hover:shadow-md"
+                            className="flex items-center gap-2 h-10 px-5 bg-gray-900 text-white text-sm font-bold rounded-2xl hover:bg-gray-800 transition-colors"
                         >
                             <Plus className="h-4 w-4" />
-                            Create New Drive
+                            New Drive
                         </Link>
                     )}
                 </div>
             </div>
 
+            {/* Stats Cards */}
             <StatsGrid dateRange={dateRange} />
 
-            <div className="space-y-12">
-                <section className="animate-fade-slide [animation-delay:100ms]">
-                    <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
-                        <HiringFunnel dateRange={dateRange} />
-                        <ScoreDistribution dateRange={dateRange} />
-                    </div>
-                </section>
-
-                <section className="animate-fade-slide [animation-delay:300ms]">
-                    <div
-                        className={cn(
-                            "grid items-start gap-6",
-                            hasNoDrives ? "grid-cols-1" : "grid-cols-1 lg:grid-cols-2"
-                        )}
-                    >
-                        <ActiveDrivesSummary dateRange={dateRange} />
-                        {!hasNoDrives && <TopCandidates dateRange={dateRange} />}
-                    </div>
-                </section>
-
-                <div className="animate-fade-slide [animation-delay:400ms]">
-                    <LiveFeed dateRange={dateRange} />
-                </div>
+            {/* Funnel + Score Distribution */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                <HiringFunnel dateRange={dateRange} />
+                <ScoreDistribution dateRange={dateRange} />
             </div>
+
+            {/* Needs Action + Top Talent */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                <NeedsAction />
+                <TopCandidates dateRange={dateRange} />
+            </div>
+
+            {/* Activity Feed */}
+            <LiveFeed dateRange={dateRange} />
         </div>
     );
 }
