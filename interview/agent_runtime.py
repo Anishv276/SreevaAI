@@ -507,6 +507,11 @@ async def entrypoint(ctx: JobContext):
         logger.error(f"Invalid DB context payload type: {type(context_result)}")
         return
     context: dict[str, Any] = context_result
+    try:
+        ctx_data = InterviewContext(**context)
+    except Exception as _ctx_err:
+        logger.error("Invalid interview context from DB: %s", _ctx_err)
+        return
     connect_result = await connect_with_retry()
     if isinstance(connect_result, Exception):
         raise connect_result
@@ -542,11 +547,6 @@ async def entrypoint(ctx: JobContext):
     ]
     if not _custom_questions:
         logger.info("[2.5/6] CUSTOM QUESTIONS — none configured for this drive")
-    try:
-        ctx_data = InterviewContext(**context)
-    except Exception as _ctx_err:
-        logger.error("Invalid interview context from DB: %s", _ctx_err)
-        return
     candidate_name = ctx_data.fullName
     candidate_first_name = first_name_from_full_name(candidate_name)
     job_title = ctx_data.jobTitle
