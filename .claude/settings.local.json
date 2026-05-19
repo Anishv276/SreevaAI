@@ -5,7 +5,17 @@
       "Bash(head -100 /c/Users/vamsi/OneDrive/Desktop/HR-updates/app/interview/[id]/page.tsx)",
       "WebFetch(domain:resend.com)",
       "Bash(node -e ':*)",
-      "WebSearch"
+      "WebSearch",
+      "WebFetch(domain:docs.sarvam.ai)",
+      "WebFetch(domain:docs.livekit.io)",
+      "WebFetch(domain:livekit.com)",
+      "Bash(python -c \"import interview.agent_runtime\")",
+      "WebFetch(domain:elevenlabs.io)",
+      "WebFetch(domain:www.ncbi.nlm.nih.gov)",
+      "WebFetch(domain:pmc.ncbi.nlm.nih.gov)",
+      "WebFetch(domain:voiceinfra.ai)",
+      "WebFetch(domain:imentiv.ai)",
+      "WebFetch(domain:www.shrm.org)"
     ]
   }
 }

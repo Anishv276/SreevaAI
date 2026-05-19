@@ -1,4 +1,4 @@
-import sys
+﻿import sys
 import asyncio
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
@@ -789,7 +789,7 @@ async def entrypoint(ctx: JobContext):
     _answer_received_at: float = 0.0       # perf_counter() when candidate answer arrived
     _trust_state = init_trust_state()  # session-level trust engine state
     _contradiction_state = init_contradiction_state()  # explicit contradiction lifecycle state
-    _active_eval_task: Optional[asyncio.Task[Any]] = None  # track active eval to prevent stale injects
+    _active_eval_task: Optional[asyncio.Task[Any]] = None  # retained for compatibility; evaluator now runs inline
     _custom_q_reminder_fired: bool = False
     _custom_q_final_reminder_fired: bool = False
     # Running log of topics already covered — injected into every directive so the AI
@@ -1847,10 +1847,9 @@ async def entrypoint(ctx: JobContext):
                         chat_ctx.add_message(role="system", content=directive)
                     except Exception as e:
                         logger.warning(f"[EVAL] Evaluator injection failed turn={turn_snapshot}: {e}", exc_info=True)
-                # Cancel any stale eval task before spawning new one
-                if _active_eval_task and not _active_eval_task.done():
-                    _active_eval_task.cancel()
-                _active_eval_task = spawn_background_task(_evaluate_and_inject(), f"eval_turn_{turn_snapshot}")
+                # Run evaluator inline so NEXT_TURN_DIRECTIVE is injected before
+                # the next interviewer generation begins.
+                await _evaluate_and_inject()
         except Exception as e:
             logger.debug(f"[TRANSCRIPT] User item processing failed: {e}")
     @session.on("conversation_item_added")

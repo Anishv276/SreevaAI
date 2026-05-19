@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 DEFAULT_FOLLOW_UP_DEPTH = 2
 

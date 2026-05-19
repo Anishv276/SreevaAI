@@ -1,4 +1,4 @@
-"""
+﻿"""
 agent_providers.py
 ==================
 Provider factory layer for TTS, STT, LLM, and VAD plugins.
