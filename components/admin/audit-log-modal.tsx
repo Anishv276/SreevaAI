@@ -31,8 +31,17 @@ interface AuditLogModalProps {
     candidateName: string;
     events: ProctoringEvent[];
     recordingUrl?: string;
+    recordingMimeType?: string;
     snapshots: string[];
     interviewStartedAt?: string | Date;
+}
+
+function inferVideoMimeType(url: string, mimeType?: string): string {
+    const explicit = String(mimeType || "").trim().toLowerCase();
+    if (explicit === "video/webm" || explicit === "video/mp4") return explicit;
+    const normalized = String(url || "").toLowerCase();
+    if (normalized.includes(".mp4")) return "video/mp4";
+    return "video/webm";
 }
 
 const EVENT_LABELS: Record<string, string> = {
@@ -51,6 +60,7 @@ export function AuditLogModal({
     candidateName, 
     events = [], 
     recordingUrl = "",
+    recordingMimeType = "",
     snapshots = [], 
     interviewStartedAt 
 }: AuditLogModalProps) {
@@ -60,6 +70,7 @@ export function AuditLogModal({
     const occurrenceListRef = useRef<HTMLDivElement>(null);
     const recordingRef = useRef<HTMLVideoElement>(null);
     const pendingSeekRef = useRef<number | null>(null);
+    const resolvedRecordingMimeType = inferVideoMimeType(recordingUrl, recordingMimeType);
 
     // Auto-scroll to selected occurrence
     useEffect(() => {
@@ -368,10 +379,12 @@ export function AuditLogModal({
                                                                 className="h-full w-full object-cover"
                                                                 controls
                                                                 playsInline
-                                                            preload="metadata"
-                                                            src={recordingUrl}
-                                                            onLoadedMetadata={handleRecordingLoadedMetadata}
-                                                        />
+                                                                preload="metadata"
+                                                                key={recordingUrl}
+                                                                onLoadedMetadata={handleRecordingLoadedMetadata}
+                                                            >
+                                                                <source src={recordingUrl} type={resolvedRecordingMimeType} />
+                                                            </video>
                                                     ) : (
                                                         <div className="h-full w-full flex flex-col items-center justify-center gap-3 text-white/40">
                                                             <Camera className="h-10 w-10" />
@@ -379,6 +392,22 @@ export function AuditLogModal({
                                                             </div>
                                                         )}
                                                     </div>
+                                                    {recordingUrl ? (
+                                                        <div className="px-6 pb-4 pt-2 flex items-center justify-between gap-3 border-t border-white/10 bg-white/[0.02]">
+                                                            <p className="text-[10px] font-medium text-white/40">
+                                                                If playback fails in this browser, open the recording directly.
+                                                            </p>
+                                                            <a
+                                                                href={recordingUrl}
+                                                                target="_blank"
+                                                                rel="noreferrer"
+                                                                className="inline-flex items-center gap-1 rounded-full border border-white/10 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-white/80 hover:bg-white/5"
+                                                            >
+                                                                <ExternalLink className="h-3 w-3" />
+                                                                Open recording
+                                                            </a>
+                                                        </div>
+                                                    ) : null}
                                                     {!recordingUrl && fallbackSnapshots.length > 0 ? (
                                                         <div className="p-6 border-t border-white/10 bg-white/[0.02]">
                                                             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40 mb-4">

@@ -10,17 +10,17 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             include: { drive: { include: { organization: true } }, interview: true }
         });
         if (!app) return NextResponse.json({ error: "Application not found" }, { status: 404 });
-        
+
         if (!app?.drive?.orgId) {
             console.error("[SLOTS API] Missing orgId for app:", id);
             return NextResponse.json({ error: "Organization not found for this drive" }, { status: 400 });
         }
         const orgId = app.drive.orgId;
         console.log("[SLOTS API] Generating slots for org:", orgId);
-        
+
         const roleLabel = app.drive.role || app.drive.title;
         const companyName = app.drive.organization?.name || "Company";
-        
+
         const bookedSlot = app.interview?.scheduledAt ? app.interview.scheduledAt.getTime() : null;
 
         const now = new Date();
@@ -42,7 +42,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         }
 
         const availableSlots = [];
-        
+
         let currentTime = new Date();
         // Round up to next 20 minute boundary
         const remainder = currentTime.getMinutes() % 20;
@@ -51,7 +51,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         while (currentTime < end) {
             const timeMs = currentTime.getTime();
             const existing = slotMap.get(timeMs);
-            
+
             if (!existing || existing.bookedCount < existing.maxCapacity) {
                 availableSlots.push({
                     slotId: existing?.id || `slot_${orgId}_${timeMs}`,
@@ -64,7 +64,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         }
 
         console.log(`[SLOTS API] Found ${availableSlots.length} available slots`);
-        return NextResponse.json({ 
+        return NextResponse.json({
             slots: availableSlots,
             bookedSlot,
             role: roleLabel,

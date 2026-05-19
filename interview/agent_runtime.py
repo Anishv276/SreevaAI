@@ -1,4 +1,4 @@
-﻿import sys
+import sys
 import asyncio
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
@@ -94,6 +94,145 @@ WARMUP_FIXED_SECONDS = 120
 NO_NEW_QUESTION_CUTOFF_SECONDS = 15
 # Stage 1 (RESUME) = 10 min. Stage 2 (SKILL) = remainder until final 15s.
 STAGE1_BUDGET_SECONDS = 600  # 10 min
+
+# Custom-question normalisation constants — module-level so they are allocated once.
+_CUSTOM_Q_PREFIXES: tuple[str, ...] = (
+    "ask him about",
+    "ask her about",
+    "ask them about",
+    "ask about",
+    "please ask about",
+    "question:",
+)
+_CUSTOM_Q_TOKEN_SYNONYMS: dict[str, set[str]] = {
+    "education": {"education", "educational", "study", "studied", "degree", "college", "university", "school", "background", "academics", "academic"},
+    "experience": {"experience", "worked", "work", "role", "roles", "internship", "intern"},
+}
+
+# Language codes for STT and TTS — keyed by DB language field value.
+_LANGUAGE_CODES: dict[str, dict[str, str]] = {
+    "English": {"stt": "en-US", "tts": "en"},
+    "Hindi":   {"stt": "hi",    "tts": "hi"},
+}
+
+# TTS provider lookup tables — O(1) replacement for if/elif chains.
+_TTS_DEFAULT_MODELS: dict[str, str] = {
+    "SARVAM":     "bulbul:v3",
+    "ELEVENLABS": "eleven_turbo_v2_5",
+    "CARTESIA":   "cartesia/sonic-3",
+}
+
+# Compiled once — matches greeting echo fragments that leak back into STT after AI speaks.
+_GREETING_ECHO_RE = re.compile(
+    r"^\s*(?:hi|hello|hey|okay|ok|yeah|yes|yep|mmhmm|mhm|good morning|good afternoon)\s*$",
+    re.IGNORECASE,
+)
+
+# STT noise-suppression helpers — compiled at import time.
+_STT_WHITESPACE_RE = re.compile(r"\s+")
+_STT_NON_ALPHA_RE = re.compile(r"[^a-zA-Z]")
+_STT_VOWEL_RE = re.compile(r"[aeiou]")
+
+
+def _find_covered_keywords(sources: list[str], transcript_text: str) -> list[str]:
+    """Return items from *sources* whose first segment appears in *transcript_text* (word-boundary match)."""
+    found: list[str] = []
+    for item in sources:
+        short = str(item).split(" - ")[0].strip()
+        kw = short.lower()
+        if not kw:
+            continue
+        if re.search(r'\b' + re.escape(kw) + r'\b', transcript_text):
+            found.append(short)
+    return found
+
+
+# Inactivity nudge strategy map — (compiled pattern, message list with {name} placeholder).
+# Evaluated top-to-bottom; first match wins. Generic fallback is the last entry (pattern=None).
+_NUDGE_STRATEGIES: list[tuple[Optional[re.Pattern], list[str]]] = [
+    (
+        re.compile(r"\b(how|why|explain|walk me through|describe|what happened|tell me about)\b", re.I),
+        [
+            "Take your time, {name} — I want to hear the full picture.",
+            "No rush — think it through and share whenever you're ready.",
+            "If it helps, start with a specific example and work from there.",
+        ],
+    ),
+    (
+        re.compile(r"\b(feel|think|would you|looking back|what would you|in hindsight)\b", re.I),
+        [
+            "No rush — happy to wait while you think that through.",
+            "Take a moment, {name}. There is no right answer here.",
+        ],
+    ),
+    (
+        re.compile(r"\b(example|specific|moment|situation|time when|instance)\b", re.I),
+        [
+            "Pick whichever example comes to mind first — the specifics matter more than finding the perfect one.",
+            "You can also answer with just one concrete example if that is easier, {name}.",
+        ],
+    ),
+    (
+        None,  # generic fallback
+        [
+            "If you're thinking aloud, feel free to keep going — that helps me follow your reasoning.",
+            "Just checking in, {name} — whenever you're ready.",
+            "If you went quiet mid-thought, you can continue right from there.",
+        ],
+    ),
+]
+
+
+# Compiled once — quota detection for situational and behavioral questions.
+_SITUATIONAL_RE = re.compile(
+    r"what would you do|what if|how would you handle|if it suddenly|if that|imagine|suppose|what breaks",
+    re.IGNORECASE,
+)
+_BEHAVIORAL_RE = re.compile(
+    r"tell me about a time|tell me about a moment|walk me through a time|"
+    r"when something went wrong|a time when|give me an example of when|describe a time",
+    re.IGNORECASE,
+)
+
+
+def _normalize_custom_question_text(raw: str) -> str:
+    text = re.sub(r"\s+", " ", str(raw or "").strip().lower())
+    for p in _CUSTOM_Q_PREFIXES:
+        if text.startswith(p):
+            text = text[len(p):].strip()
+            break
+    return re.sub(r"[^a-z0-9\s]", " ", text).strip()
+
+
+def _expand_custom_q_tokens(text: str) -> set[str]:
+    tokens = {t for t in text.split() if len(t) >= 4}
+    expanded = set(tokens)
+    for t in list(tokens):
+        for root, family in _CUSTOM_Q_TOKEN_SYNONYMS.items():
+            if t in family:
+                expanded |= family
+                expanded.add(root)
+    return expanded
+
+
+def _clean_stt_text(raw_text: str) -> str:
+    """Remove STT noise/hallucination artifacts from a candidate transcript turn."""
+    text = _STT_WHITESPACE_RE.sub(" ", (raw_text or "").strip())
+    if not text:
+        return ""
+    if text.lower().strip(" .!?") == "candidate response unavailable":
+        return ""
+    cleaned_tokens: list[str] = []
+    for token in text.split():
+        alpha = _STT_NON_ALPHA_RE.sub("", token).lower()
+        # Drop very short consonant-only fragments (filler noise).
+        if alpha and len(alpha) <= 2 and not _STT_VOWEL_RE.search(alpha):
+            continue
+        # Collapse immediate duplicates ("name name", "a a a").
+        if cleaned_tokens and cleaned_tokens[-1].lower() == token.lower():
+            continue
+        cleaned_tokens.append(token)
+    return _STT_WHITESPACE_RE.sub(" ", " ".join(cleaned_tokens)).strip()
 
 
 class InterviewAgent(Agent):
@@ -205,47 +344,86 @@ from interview.agent_scoring import (
     notify_sync_engine,
     score_answer_quality,
 )
-_EVALUATION_SIGNAL_KEYS = {
-    "ownership_ambiguity",
-    "example_evasion",
-    "latency_mismatch",
-    "resume_claim_mismatch",
-    "follow_up_collapse",
-    "contradiction",
-    "complexity_latency_mismatch",
-    "depth_decay",
-}
-def _toggle_bool(value: Any, default: bool = True) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        normalized = value.strip().lower()
-        if normalized in ("true", "1", "yes", "on"):
-            return True
-        if normalized in ("false", "0", "no", "off"):
-            return False
-    if isinstance(value, (int, float)):
-        return bool(value)
-    return default
+from pydantic import BaseModel, field_validator
+
+
+class _EvalSignalToggles(BaseModel):
+    """Validated signal enable/disable flags. All default OFF. Coerces any truthy DB value."""
+    ownership_ambiguity: bool = False
+    example_evasion: bool = False
+    latency_mismatch: bool = False
+    resume_claim_mismatch: bool = False
+    follow_up_collapse: bool = False
+    contradiction: bool = False
+    complexity_latency_mismatch: bool = False
+    depth_decay: bool = False
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _coerce(cls, v: Any) -> bool:
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, str):
+            return v.strip().lower() in ("true", "1", "yes", "on")
+        if isinstance(v, (int, float)):
+            return bool(v)
+        return False
+
+
 def _extract_evaluation_signal_toggles(raw_signals: Any) -> dict[str, bool]:
-    parsed: dict[str, Any] | None = None
+    """Parse DB proctoringSignals JSON into a validated bool dict. All keys default OFF."""
+    parsed: dict[str, Any] = {}
     if isinstance(raw_signals, dict):
         parsed = raw_signals
     elif isinstance(raw_signals, str):
         try:
-            maybe_obj = json.loads(raw_signals)
-            if isinstance(maybe_obj, dict):
-                parsed = maybe_obj
+            maybe = json.loads(raw_signals)
+            if isinstance(maybe, dict):
+                parsed = maybe
         except Exception:
-            parsed = None
-    if parsed is None:
-        # No signals configured at all (null DB value)  -  default everything OFF
-        return {key: False for key in _EVALUATION_SIGNAL_KEYS}
-    # Signals object exists  -  missing keys default OFF (explicit disable is respected)
-    return {
-        key: _toggle_bool(parsed.get(key), False)
-        for key in _EVALUATION_SIGNAL_KEYS
-    }
+            pass
+    return _EvalSignalToggles(**parsed).model_dump()
+
+
+class InterviewContext(BaseModel):
+    """Typed, validated view of the DB row returned by get_interview_context().
+    Required fields raise ValidationError on construction — no manual require_db_value calls needed.
+    """
+    fullName: str
+    jobTitle: str
+    language: str
+    orgId: Optional[str] = None
+    orgName: Optional[str] = None
+    orgLocation: Optional[str] = None
+    driveLocation: Optional[str] = None
+    aiName: Optional[str] = "Ishita"
+    voiceId: Optional[str] = None
+    voiceProvider: Optional[str] = None
+    voiceModel: Optional[str] = None
+    deepgramModel: Optional[str] = None
+    llmModel: Optional[str] = None
+    llmTemperature: Optional[float] = 0.7
+    resumeData: Any = None
+    extractedDetails: Any = None
+    interviewQuestions: Any = None
+    proctoringSignals: Any = None
+
+    @field_validator("fullName", "jobTitle", "language", mode="before")
+    @classmethod
+    def _require_nonempty(cls, v: Any) -> str:
+        s = str(v).strip() if v is not None else ""
+        if not s:
+            raise ValueError("Required field is empty")
+        return s
+
+
+class CustomQuestion(BaseModel):
+    """Single custom question with its coverage state. Replaces the fragile parallel-list pattern."""
+    raw: str
+    normalized: str
+    asked: bool = False
+
+
 async def entrypoint(ctx: JobContext):
     entry_started_at = time.perf_counter()
     logger.info(f"Connecting to room {ctx.room.name}")
@@ -378,12 +556,10 @@ async def entrypoint(ctx: JobContext):
     connect_result = await connect_with_retry()
     if isinstance(connect_result, Exception):
         raise connect_result
-    evaluation_signal_toggles = _extract_evaluation_signal_toggles(
-        context.get("proctoringSignals")
-    )
-    extracted_details = _coerce_jsonish(context.get("extractedDetails") or "{}")
-    structured_resume = _coerce_jsonish(context.get("resumeData") or "{}")
-    _raw_interview_questions = context.get("interviewQuestions")
+    evaluation_signal_toggles = _extract_evaluation_signal_toggles(ctx_data.proctoringSignals)
+    extracted_details = _coerce_jsonish(ctx_data.extractedDetails or "{}")
+    structured_resume = _coerce_jsonish(ctx_data.resumeData or "{}")
+    _raw_interview_questions = ctx_data.interviewQuestions
     _interview_questions: list = []
     if _raw_interview_questions:
         try:
@@ -405,78 +581,37 @@ async def entrypoint(ctx: JobContext):
             [str(q)[:120] for q in _interview_questions],
         )
 
-    _CUSTOM_Q_PREFIXES = (
-        "ask him about",
-        "ask her about",
-        "ask them about",
-        "ask about",
-        "please ask about",
-        "question:",
-    )
-    _CUSTOM_Q_TOKEN_SYNONYMS: dict[str, set[str]] = {
-        "education": {"education", "educational", "study", "studied", "degree", "college", "university", "school", "background", "academics", "academic"},
-        "experience": {"experience", "worked", "work", "role", "roles", "internship", "intern"},
-    }
-
-    def _normalize_custom_question_text(raw: str) -> str:
-        text = re.sub(r"\s+", " ", str(raw or "").strip().lower())
-        for p in _CUSTOM_Q_PREFIXES:
-            if text.startswith(p):
-                text = text[len(p):].strip()
-                break
-        return re.sub(r"[^a-z0-9\s]", " ", text).strip()
-
-    def _expand_custom_q_tokens(text: str) -> set[str]:
-        tokens = {t for t in text.split() if len(t) >= 4}
-        expanded = set(tokens)
-        for t in list(tokens):
-            for root, family in _CUSTOM_Q_TOKEN_SYNONYMS.items():
-                if t in family:
-                    expanded |= family
-                    expanded.add(root)
-        return expanded
-
-    _custom_q_items: list[tuple[str, str]] = []
-    for _raw_q in _interview_questions:
-        _norm_q = _normalize_custom_question_text(_raw_q)
-        if _norm_q:
-            _custom_q_items.append((str(_raw_q).strip(), _norm_q))
-    if not _custom_q_items:
+    _custom_questions: list[CustomQuestion] = [
+        CustomQuestion(raw=str(_raw_q).strip(), normalized=_normalize_custom_question_text(_raw_q))
+        for _raw_q in _interview_questions
+        if _normalize_custom_question_text(_raw_q)
+    ]
+    if not _custom_questions:
         logger.info("[2.5/6] CUSTOM QUESTIONS — none configured for this drive")
-    def require_db_value(key: str, default: Any = None, required: bool = True):
-        value = context.get(key)
-        if value is None:
-            if not required:
-                return default
-            raise RuntimeError(f"Missing required DB field: {key}")
-        if isinstance(value, str) and not value.strip():
-            if not required:
-                return default
-            raise RuntimeError(f"Missing required DB field: {key}")
-        return value
-    candidate_name = require_db_value("fullName")
+    try:
+        ctx_data = InterviewContext(**context)
+    except Exception as _ctx_err:
+        logger.error("Invalid interview context from DB: %s", _ctx_err)
+        return
+    candidate_name = ctx_data.fullName
     candidate_first_name = first_name_from_full_name(candidate_name)
-    job_title = require_db_value("jobTitle")
-
-    interview_lang = require_db_value("language")
+    job_title = ctx_data.jobTitle
+    interview_lang = ctx_data.language
     time_limit_mins = FIXED_INTERVIEW_DURATION_MINUTES
-    # Keep follow-up loops tight so stage transitions happen reliably.
     follow_up_depth = 2
-    org_id = context.get("orgId")
+    org_id = ctx_data.orgId
     session_log_context.update(
         {
             "org_id": org_id,
-            "org_name": _compact_optional(context.get("orgName")),
-            "org_location": _compact_optional(context.get("orgLocation")),
-            "drive_location": _compact_optional(context.get("driveLocation")),
+            "org_name": _compact_optional(ctx_data.orgName),
+            "org_location": _compact_optional(ctx_data.orgLocation),
+            "drive_location": _compact_optional(ctx_data.driveLocation),
             "candidate": candidate_name,
             "candidate_first_name": candidate_first_name,
             "job_title": job_title,
             "time_limit_mins": time_limit_mins,
         }
     )
-    # Stage budgets are initialized once and then dynamically rebalanced after each stage.
-    _initialize_stage_budgets_called = False
     started_at = time.perf_counter()
     async def _log_shutdown(_reason: str = "") -> None:
         elapsed_sec = round(time.perf_counter() - started_at, 1)
@@ -490,40 +625,28 @@ async def entrypoint(ctx: JobContext):
     ctx.add_shutdown_callback(_log_shutdown)
     # Org-specific model settings.
     # Resolve voice → provider + model from registry.
-    voice_id = str(require_db_value("voiceId", default=DEFAULT_VOICE_ID, required=False) or DEFAULT_VOICE_ID)
+    voice_id = str(ctx_data.voiceId or DEFAULT_VOICE_ID)
     voice_entry = VOICE_REGISTRY.get(voice_id)
     if voice_entry:
         org_tts_provider = voice_entry["provider"]
         org_tts_model = voice_entry["model"]
     else:
-        db_provider = str(context.get("voiceProvider") or "").strip().upper()
-        db_model = str(context.get("voiceModel") or "").strip()
-        if db_provider in {"CARTESIA", "SARVAM", "ELEVENLABS"}:
+        db_provider = str(ctx_data.voiceProvider or "").strip().upper()
+        db_model = str(ctx_data.voiceModel or "").strip()
+        if db_provider in _TTS_DEFAULT_MODELS:
             org_tts_provider = db_provider
-            if db_model:
-                org_tts_model = db_model
-            elif db_provider == "SARVAM":
-                org_tts_model = "bulbul:v3"
-            elif db_provider == "ELEVENLABS":
-                org_tts_model = "eleven_turbo_v2_5"
-            else:
-                org_tts_model = "cartesia/sonic-3"
+            org_tts_model = db_model or _TTS_DEFAULT_MODELS[db_provider]
         else:
             fallback_voice = VOICE_REGISTRY[DEFAULT_VOICE_ID]
             org_tts_provider = fallback_voice["provider"]
             org_tts_model = fallback_voice["model"]
-    org_deepgram_model: str = str(require_db_value("deepgramModel", default=STT_MODEL, required=False) or STT_MODEL)
-    org_llm_model: str = str(require_db_value("llmModel", default=LLM_MODEL, required=False) or LLM_MODEL)
-    org_llm_temperature: float = float(require_db_value("llmTemperature", default=0.7, required=False) or 0.7)
+    org_deepgram_model: str = str(ctx_data.deepgramModel or STT_MODEL)
+    org_llm_model: str = str(ctx_data.llmModel or LLM_MODEL)
+    org_llm_temperature: float = float(ctx_data.llmTemperature or 0.7)
     analysis_client = AsyncOpenAI()
     analysis_model = org_llm_model
 
-    # Language Mapping for STT and TTS
-    LANGUAGE_MAPPING = {
-        "English": {"stt": "en-US", "tts": "en"},
-        "Hindi": {"stt": "hi", "tts": "hi"},
-    }
-    lang_codes = LANGUAGE_MAPPING.get(interview_lang)
+    lang_codes = _LANGUAGE_CODES.get(interview_lang)
     if not lang_codes:
         raise RuntimeError(f"Unsupported interview language in DB: {interview_lang}")
 
@@ -586,10 +709,10 @@ async def entrypoint(ctx: JobContext):
         time_limit_mins=time_limit_mins,
         depth_instruction=session_context.depth_instruction,
         candidate_band=session_context.candidate_band,
-        ai_name=_compact_optional(context.get("aiName")),
-        org_name=_compact_optional(context.get("orgName")),
-        org_location=_compact_optional(context.get("orgLocation")),
-        drive_location=_compact_optional(context.get("driveLocation")),
+        ai_name=_compact_optional(ctx_data.aiName),
+        org_name=_compact_optional(ctx_data.orgName),
+        org_location=_compact_optional(ctx_data.orgLocation),
+        drive_location=_compact_optional(ctx_data.driveLocation),
     )
     evaluation_layer_prompt = build_evaluation_layer_prompt(
         live_prompt_context=session_context.live_prompt_context,
@@ -609,27 +732,17 @@ async def entrypoint(ctx: JobContext):
 
     vad_instance = ctx.proc.userdata.get("vad") or build_vad()
     stt_plugin = build_stt(language_code=lang_codes["stt"], model=org_deepgram_model)
-    if org_tts_provider == "SARVAM":
-        logger.info(f"[TTS] Using Sarvam — voice={voice_id} model={org_tts_model}")
-        tts_plugin = build_sarvam_tts(
-            language=lang_codes["tts"],
-            model=org_tts_model,
-            voice_id=voice_id,
-        )
-    elif org_tts_provider == "ELEVENLABS":
-        logger.info(f"[TTS] Using ElevenLabs — voice={voice_id} model={org_tts_model}")
-        tts_plugin = build_elevenlabs_tts(
-            language=lang_codes["tts"],
-            model=org_tts_model,
-            voice_id=voice_id,
-        )
-    else:
-        logger.info(f"[TTS] Using Cartesia — voice={voice_id} model={org_tts_model}")
-        tts_plugin = build_cartesia_tts(
-            language=lang_codes["tts"],
-            model=org_tts_model,
-            voice_id=voice_id,
-        )
+    _tts_builder = {
+        "SARVAM":     build_sarvam_tts,
+        "ELEVENLABS": build_elevenlabs_tts,
+        "CARTESIA":   build_cartesia_tts,
+    }.get(org_tts_provider, build_cartesia_tts)
+    logger.info(f"[TTS] Using %s — voice=%s model=%s", org_tts_provider, voice_id, org_tts_model)
+    tts_plugin = _tts_builder(
+        language=lang_codes["tts"],
+        model=org_tts_model,
+        voice_id=voice_id,
+    )
     llm_plugin = build_llm(model=org_llm_model, temperature=org_llm_temperature)
     turn_detector = ctx.proc.userdata.get("turn_detector")
     session_kwargs = {
@@ -643,20 +756,23 @@ async def entrypoint(ctx: JobContext):
             preemptive_generation={"enabled": False},
             turn_detection=turn_detector,
             endpointing=EndpointingOptions(
-                min_delay=1.5,
-                max_delay=3.0,
+                min_delay=1.2,
+                max_delay=2.0,
                 mode="dynamic",
             ),
             interruption=InterruptionOptions(
                 enabled=True,
-                # Avoid startup-time adaptive interruption websocket timeouts (408)
-                # and keep interruption stable using VAD mode.
-                mode="vad",
+                # Adaptive mode uses ML to distinguish backchannels (hmm/yeah/okay)
+                # from genuine interruptions — avoids cutting off thinking candidates.
+                mode="adaptive",
                 min_duration=1.5,
                 min_words=4,
                 discard_audio_if_uninterruptible=False,
                 resume_false_interruption=True,
                 false_interruption_timeout=3.0,
+                # Suppress interruption detection at turn boundaries so candidate
+                # backchannels right after agent finishes don't trigger a new turn.
+                backchannel_boundary=(1.0, 3.5),
             ),
         ),
         "use_tts_aligned_transcript": False,
@@ -665,7 +781,7 @@ async def entrypoint(ctx: JobContext):
             _tts_acronym_transform,
             _single_question_transform,
         ],
-        "aec_warmup_duration": 2.5,
+        "aec_warmup_duration": 0.5,
     }
     latest_session_usage: Optional[AgentSessionUsage] = None
     session = AgentSession(**session_kwargs)
@@ -722,14 +838,8 @@ async def entrypoint(ctx: JobContext):
     _trust_state = init_trust_state()  # session-level trust engine state
     _contradiction_state = init_contradiction_state()  # explicit contradiction lifecycle state
     _active_eval_task: Optional[asyncio.Task[Any]] = None  # track active eval to prevent stale injects
-    # When candidate asks for clarification, the re-answer after the re-ask should NOT
-    # consume a follow-up slot — the clarification itself was not a real answer.
-    _pending_clarification: bool = False
-    # Custom question coverage tracking: parallel bool list — True when that question
-    # has been asked (detected via keyword match against assistant transcript turns).
-    _custom_q_asked: list[bool] = [False] * len(_custom_q_items) if _custom_q_items else []
-    _custom_q_reminder_fired: bool = False   # True after first coverage reminder injected
-    _custom_q_final_reminder_fired: bool = False  # True after final-window reminder injected
+    _custom_q_reminder_fired: bool = False
+    _custom_q_final_reminder_fired: bool = False
     # Running log of topics already covered — injected into every directive so the AI
     # never re-explores something already discussed, across all stages.
     _discussed_log: list[str] = []
@@ -744,6 +854,30 @@ async def entrypoint(ctx: JobContext):
         nonlocal suspicion_score
         suspicion_score = compose_risk_score(integrity_risk, depth_risk)
         return suspicion_score
+
+    def _build_proctoring_data(exit_reason: str, *, full: bool = True) -> dict:
+        """Single builder for proctoring_data dict — eliminates duplicate construction."""
+        data: dict = {
+            "role_category": session_context.candidate_band,
+            "candidate_band": session_context.candidate_band,
+            "total_turns": turn_count,
+            "suspicion_score": suspicion_score,
+            "environment_risk": environment_risk,
+            "integrity_risk": integrity_risk,
+            "depth_risk": depth_risk,
+            "composite_risk": suspicion_score,
+            "current_mode": current_interview_mode,
+            "exit_reason": exit_reason,
+            "events": proctoring_events,
+            "contradiction_state": summarize_contradiction_state(_contradiction_state),
+            "stage_history": session_context.stage_history,
+            "stage_transition_events": _stage_transition_events,
+            "total_stages_covered": _current_stage_index + 1,
+        }
+        if full:
+            data["contradictions"] = _contradictions_found
+            data["claim_index"] = _claim_index
+        return data
     def _remaining_total_seconds_now() -> float:
         if session_start_time is None:
             return float(time_limit_mins * 60)
@@ -763,25 +897,8 @@ async def entrypoint(ctx: JobContext):
 
     def _build_stage_2_directive() -> Optional[str]:
         rb = session_context.resume_brief
-        all_transcript_text = " ".join(
-            l.split(":", 1)[-1].strip().lower() for l in transcript_lines
-        )
-        def _covered_keywords(sources: list[str]) -> list[str]:
-            found = []
-            for item in sources:
-                short = str(item).split(" - ")[0].strip()
-                kw = short.lower()
-                if not kw:
-                    continue
-                pattern = re.compile(r'\b' + re.escape(kw) + r'\b')
-                if pattern.search(all_transcript_text):
-                    found.append(short)
-            return found
-        def _get_list(attr: str) -> list[str]:
-            if isinstance(rb, dict):
-                return list(rb.get(attr, []) or [])
-            return list(getattr(rb, attr, None) or [])
-        covered_in_s1 = _covered_keywords(_get_list("skills") + _get_list("projects"))
+        transcript_text = " ".join(l.split(":", 1)[-1].strip().lower() for l in transcript_lines)
+        covered_in_s1 = _find_covered_keywords(rb.skills + rb.projects, transcript_text)
         logger.info("[STAGE 2 BUILD] covered_in_stage1=%s", covered_in_s1)
         return build_stage_2_skill_directive(
             band=session_context.candidate_band,
@@ -793,14 +910,10 @@ async def entrypoint(ctx: JobContext):
 
     def _resume_topic_candidates() -> list[str]:
         rb = session_context.resume_brief
-        if isinstance(rb, dict):
-            projects = list(rb.get("projects", []) or [])
-            work = list(rb.get("work_history", []) or [])
-            internships = list(rb.get("internships", []) or [])
-        else:
-            projects = list(getattr(rb, "projects", []) or [])
-            work = list(getattr(rb, "work_history", []) or [])
-            internships = list(getattr(rb, "internships", []) or [])
+        # rb is always a ResumeBrief (Pydantic) — list fields always present, never None
+        projects = list(rb.projects)
+        work = list(rb.work_history)
+        internships = list(rb.internships)
         topics: list[str] = []
         for raw in (projects + work + internships):
             txt = str(raw).strip()
@@ -828,9 +941,7 @@ async def entrypoint(ctx: JobContext):
         return None
 
     def _pending_custom_questions() -> list[str]:
-        if not _custom_q_items or not _custom_q_asked:
-            return []
-        return [raw for (raw, _), asked in zip(_custom_q_items, _custom_q_asked) if not asked]
+        return [cq.raw for cq in _custom_questions if not cq.asked]
 
     def _is_question_already_covered(question_text: str) -> bool:
         q = (question_text or "").strip().lower()
@@ -1040,7 +1151,7 @@ async def entrypoint(ctx: JobContext):
             _topic_follow_up_count, current_interview_mode, answer_scores, \
             _claim_index, _contradictions_found, \
             _topic_depth_history, _trust_state, _contradiction_state, _active_eval_task, greeting_delivered_at, \
-            _ai_signal_flush_counter, _ai_signal_flushed_count, _pending_clarification
+            _ai_signal_flush_counter, _ai_signal_flushed_count
         try:
             if not content or role != "user":
                 return
@@ -1049,25 +1160,6 @@ async def entrypoint(ctx: JobContext):
                 logger.info("[GREETING_BLOCK] Candidate spoke before greeting finished  -  ignoring until greeting delivered")
                 return
             # --- STT text cleanup / noise suppression ---
-            def _clean_stt_text(raw_text: str) -> str:
-                text = re.sub(r"\s+", " ", (raw_text or "").strip())
-                if not text:
-                    return ""
-                if text.lower().strip(" .!?") == "candidate response unavailable":
-                    return ""
-                tokens = [t for t in text.split(" ") if t]
-                cleaned_tokens: list[str] = []
-                for token in tokens:
-                    alpha = re.sub(r"[^a-zA-Z]", "", token).lower()
-                    # RELAXED: Only drop very short consonant-only fragments if they look like filler.
-                    # "thr" or "qu" might be part of "through" or "quite" being evolving.
-                    if alpha and len(alpha) <= 2 and not re.search(r"[aeiou]", alpha):
-                        continue
-                    if cleaned_tokens and cleaned_tokens[-1].lower() == token.lower():
-                        # Collapse immediate duplicates like "name name", "a a a".
-                        continue
-                    cleaned_tokens.append(token)
-                return re.sub(r"\s+", " ", " ".join(cleaned_tokens)).strip()
             content = _clean_stt_text(content)
             if not content:
                 return
@@ -1079,11 +1171,7 @@ async def entrypoint(ctx: JobContext):
             if first_agent_turn_committed_at is not None:
                 since_first_ai_turn = time.monotonic() - first_agent_turn_committed_at
                 if since_first_ai_turn <= greeting_echo_suppression_secs:
-                    echo_like = re.compile(
-                        r"^\s*(?:hi|hello|hey|okay|ok|yeah|yes|yep|mmhmm|mhm|good morning|good afternoon)\s*$",
-                        re.IGNORECASE,
-                    )
-                    if echo_like.match(content) or len(content.split()) <= 2:
+                    if _GREETING_ECHO_RE.match(content) or len(content.split()) <= 2:
                         logger.debug(
                             f"[TRANSCRIPT] Suppressing early greeting echo fragment: '{content[:60]}'"
                         )
@@ -1202,7 +1290,7 @@ async def entrypoint(ctx: JobContext):
                         answer_scores, _claim_index, _contradictions_found, \
                         _topic_depth_history, _trust_state, _contradiction_state, _collapse_stage, \
                         _last_depth_decay_turn, _depth_decay_ever_fired, _consecutive_low_signal_move_on, _last_action_was_move_on, \
-                        _ai_signal_flush_counter, _ai_signal_flushed_count, _pending_clarification
+                        _ai_signal_flush_counter, _ai_signal_flushed_count
                     try:
                         # Step 1: Extract claims and check consistency (before quality eval)
                         # Only runs when contradiction signal is enabled  -  adds 1 LLM call/turn
@@ -1314,17 +1402,17 @@ async def entrypoint(ctx: JobContext):
                         disturbance_signal_names = {
                             "ownership_ambiguity",
                             "example_evasion",
-                            "resume_claim_mismatch",
-                            "follow_up_collapse",
                             "contradiction",
-                            "latency_mismatch",
-                            "complexity_latency_mismatch",
                         }
                         disturbance_hits = [
                             ev.get("signal_name")
                             for ev in signal_events
                             if ev.get("signal_name") in disturbance_signal_names
                         ]
+                        contradiction_hit = "contradiction" in disturbance_hits
+                        ownership_or_example_hit = any(
+                            sig in disturbance_hits for sig in ("ownership_ambiguity", "example_evasion")
+                        )
                         freeze_followup_increment = False
                         depth_signal = "SURFACE"
                         quality_avg = (
@@ -1335,28 +1423,52 @@ async def entrypoint(ctx: JobContext):
                         # first answers. Let evaluator intent drive the next action.
                         topic_follow_up_cap = follow_up_depth
                         if disturbance_hits:
-                            # Disturbance policy: stop normal follow-up flow for this turn,
-                            # ask one clarification question, keep follow-up counter unchanged.
                             action = "VERIFY"
                             td["decision"]["action"] = "VERIFY"
                             td["decision"]["mode"] = "clarification"
-                            td["decision"]["next_goal"] = (
-                                "One clarification question only. Resolve the detected disturbance anchored to their "
-                                "previous statement. Do not advance topic and do not consume a new follow-up slot."
-                            )
-                            directive = (
-                                "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
-                                "DECISION: VERIFY (CLARIFICATION)\n"
-                                f"SIGNALS TRIGGERED: {', '.join(str(x) for x in disturbance_hits if x)}\n"
-                                "NEXT MOVE: Ask one concise clarification question about the exact conflicting/vague point. "
-                                "Keep follow-up count unchanged this turn. After answer, continue from current follow-up stage.\n"
-                                "QUESTION STYLE: Human, calm, curious, specific."
-                            )
-                            freeze_followup_increment = True
-                            logger.info(
-                                "[DISTURBANCE] Signals triggered (%s) — freezing follow-up increment for this turn",
-                                ", ".join(str(x) for x in disturbance_hits if x),
-                            )
+                            if contradiction_hit:
+                                # Only contradiction can freeze follow-up progression.
+                                td["decision"]["next_goal"] = (
+                                    "One clarification question only. Resolve the contradiction anchored to their "
+                                    "previous statement. Do not advance topic and do not consume a new follow-up slot."
+                                )
+                                directive = (
+                                    "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
+                                    "DECISION: VERIFY (CLARIFICATION)\n"
+                                    f"SIGNALS TRIGGERED: {', '.join(str(x) for x in disturbance_hits if x)}\n"
+                                    "NEXT MOVE: Ask one concise contradiction-clarification question. "
+                                    "Keep follow-up count unchanged this turn. After answer, continue from current follow-up stage.\n"
+                                    "QUESTION STYLE: Human, calm, curious, specific."
+                                )
+                                freeze_followup_increment = True
+                                logger.info(
+                                    "[DISTURBANCE] Signals triggered (%s) — freezing follow-up increment for contradiction turn",
+                                    ", ".join(str(x) for x in disturbance_hits if x),
+                                )
+                            elif ownership_or_example_hit:
+                                # Ownership/example issues should clarify, but still progress.
+                                # If they appear at follow-up 2+, allow exactly one extra clarifier turn
+                                # (follow-up 3) and then move on via cap exhaustion.
+                                if follow_ups >= follow_up_depth:
+                                    topic_follow_up_cap = follow_up_depth + 1
+                                td["decision"]["next_goal"] = (
+                                    "Ask one concise clarification question to make the answer concrete and personal. "
+                                    "If still vague after this clarification flow, move on to the next topic."
+                                )
+                                directive = (
+                                    "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
+                                    "DECISION: VERIFY (CLARIFICATION)\n"
+                                    f"SIGNALS TRIGGERED: {', '.join(str(x) for x in disturbance_hits if x)}\n"
+                                    "NEXT MOVE: Ask one concise clarification question focused on one concrete example "
+                                    "and what they personally owned. Continue follow-up progression (do not freeze). "
+                                    "If this is already follow-up 2+, this turn is the final clarifier before move-on.\n"
+                                    "QUESTION STYLE: Human, calm, curious, specific."
+                                )
+                                logger.info(
+                                    "[DISTURBANCE] Signals triggered (%s) — clarification without freeze (cap=%d)",
+                                    ", ".join(str(x) for x in disturbance_hits if x),
+                                    topic_follow_up_cap,
+                                )
                         # Stage 1 resume flow: once we get one solid answer + one follow-up,
                         # pivot to a fresh resume topic to keep breadth and avoid repetitive probing.
                         if (
@@ -1404,7 +1516,6 @@ async def entrypoint(ctx: JobContext):
                                 f"NEXT MOVE: This was already covered {anchor}. Say a short acknowledgement like "
                                 f"'Thanks, I think we already covered this {anchor}' and ask one fresh ownership-focused question."
                             )
-                            freeze_followup_increment = True
                             logger.info("[DEDUPE] Current question already covered — forcing MOVE_ON")
                         if quality_avg >= 7.0:
                             depth_signal = "DEEP"
@@ -1507,7 +1618,6 @@ async def entrypoint(ctx: JobContext):
                                         _topic_depth_history = []
                                         _collapse_stage = 0
                                         _last_action_was_move_on = True
-                                        _pending_clarification = False
                                     else:
                                         logger.info("[FOLLOWUP] Follow-up %d — continuing PROBE (quality=%.1f)", _topic_follow_up_count, quality_avg)
                                         if collapse_fired:
@@ -1566,10 +1676,6 @@ async def entrypoint(ctx: JobContext):
                             # Contradiction recovery: if last turn surfaced a contradiction and
                             # this turn the candidate moved on cleanly with decent quality,
                             # treat it as resolved and restore hard_integrity.
-                            quality_avg_for_recovery = (
-                                td["quality"]["clarity"] + td["quality"]["depth"] +
-                                td["quality"]["specificity"] + td["quality"]["grounding"]
-                            ) / 4.0
                             contradiction_enabled = bool(evaluation_signal_toggles.get("contradiction", False))
                             contradiction_resolved_enabled = bool(
                                 evaluation_signal_toggles.get("contradiction_resolved", False)
@@ -1580,7 +1686,7 @@ async def entrypoint(ctx: JobContext):
                                     contradiction_alert,
                                     turn=turn,
                                     action=action,
-                                    quality_avg=quality_avg_for_recovery,
+                                    quality_avg=quality_avg,
                                 )
                                 if contradiction_state_event:
                                     _c_status = contradiction_state_event["status"]
@@ -1716,7 +1822,7 @@ async def entrypoint(ctx: JobContext):
             _last_interviewer_question, _topic_follow_up_count, _topic_depth_history, _last_action_was_move_on, \
             _question_asked_at, _answer_received_at, warmup_responses_received, warmup_complete, llm_spoke_event, _stage_start_time, _candidate_turn_since_last_assistant, \
             _stage_situational_asked, _stage_behavioral_asked, \
-            _custom_q_asked, _custom_q_reminder_fired, _custom_q_final_reminder_fired
+            _custom_q_reminder_fired, _custom_q_final_reminder_fired
         try:
             item = event.item
             role = getattr(item, "role", None)
@@ -1813,45 +1919,37 @@ async def entrypoint(ctx: JobContext):
                     _last_interviewer_question = q_match.group(1).strip()
                 # Detect whether this assistant turn contained a situational or behavioral question
                 # so we know if the mandatory quota has been fulfilled for the current stage.
-                _q_lower = clean_content.lower()
-                _SITUATIONAL_MARKERS = ("what would you do", "what if", "how would you handle", "if it suddenly", "if that", "imagine", "suppose", "what breaks")
-                _BEHAVIORAL_MARKERS = ("tell me about a time", "tell me about a moment", "walk me through a time", "when something went wrong", "a time when", "give me an example of when", "describe a time")
-                if any(m in _q_lower for m in _SITUATIONAL_MARKERS):
+                if _SITUATIONAL_RE.search(clean_content):
                     if not _stage_situational_asked:
                         logger.info("[QUOTA] Situational question detected in assistant turn — quota fulfilled for this stage")
                     _stage_situational_asked = True
-                if any(m in _q_lower for m in _BEHAVIORAL_MARKERS):
+                if _BEHAVIORAL_RE.search(clean_content):
                     if not _stage_behavioral_asked:
                         logger.info("[QUOTA] Behavioral question detected in assistant turn — quota fulfilled for this stage")
                     _stage_behavioral_asked = True
                 # Detect which custom questions were asked in this assistant turn.
                 # Match by checking if the key words of each custom question appear in the output.
-                if _custom_q_items and _custom_q_asked:
-                    for _cqi, (_cq_raw, _cq_norm) in enumerate(_custom_q_items):
-                        if _custom_q_asked[_cqi]:
+                if _custom_questions:
+                    _q_lower = clean_content.lower()
+                    _asked_words = _expand_custom_q_tokens(re.sub(r"[^a-z0-9\\s]", " ", _q_lower))
+                    for _cqi, _cq in enumerate(_custom_questions):
+                        if _cq.asked:
                             continue
-                        # Consider a custom question covered when the assistant asks
-                        # semantically equivalent wording (not only near-exact overlap).
-                        _cq_words = _expand_custom_q_tokens(_cq_norm)
+                        _cq_words = _expand_custom_q_tokens(_cq.normalized)
                         if not _cq_words:
                             continue
-                        _asked_words = _expand_custom_q_tokens(
-                            re.sub(r"[^a-z0-9\\s]", " ", _q_lower)
-                        )
-                        overlap = len(_cq_words & _asked_words)
-                        ratio = overlap / max(1, len(_cq_words))
-                        # Direct phrase match OR meaningful token overlap.
-                        if _cq_norm in _q_lower or ratio >= 0.34:
-                            _custom_q_asked[_cqi] = True
-                            _discussed_log.append(f"- custom question covered: {_cq_raw[:80]}")
+                        ratio = len(_cq_words & _asked_words) / max(1, len(_cq_words))
+                        if _cq.normalized in _q_lower or ratio >= 0.34:
+                            _cq.asked = True
+                            _discussed_log.append(f"- custom question covered: {_cq.raw[:80]}")
                             logger.info(
                                 "[CUSTOM_Q] Question %d/%d detected as asked: '%s'",
-                                _cqi + 1, len(_custom_q_items), _cq_raw[:100],
+                                _cqi + 1, len(_custom_questions), _cq.raw[:100],
                             )
-                    _unasked_count = sum(1 for x in _custom_q_asked if not x)
+                    _unasked_count = sum(1 for cq in _custom_questions if not cq.asked)
                     logger.debug(
                         "[CUSTOM_Q] Coverage after this turn: %d/%d asked, %d remaining",
-                        len(_custom_q_asked) - _unasked_count, len(_custom_q_asked), _unasked_count,
+                        len(_custom_questions) - _unasked_count, len(_custom_questions), _unasked_count,
                     )
             # --- Per-Turn Answer Evaluator (Decision Engine) ---
             # Fires on every candidate response. Evaluates answer quality in real-time
@@ -1965,23 +2063,7 @@ async def entrypoint(ctx: JobContext):
         )
         # Phase 5: Mark interview as NO_SHOW in database
         try:
-            proctoring_data = {
-                "role_category": session_context.candidate_band,
-                "candidate_band": session_context.candidate_band,
-                "total_turns": turn_count,
-                "suspicion_score": suspicion_score,
-                "environment_risk": environment_risk,
-                "integrity_risk": integrity_risk,
-                "depth_risk": depth_risk,
-                "composite_risk": suspicion_score,
-                "current_mode": current_interview_mode,
-                "exit_reason": "no_show_timeout",
-                "events": proctoring_events,
-                "contradiction_state": summarize_contradiction_state(_contradiction_state),
-                "stage_history": session_context.stage_history,
-                "stage_transition_events": _stage_transition_events,
-                "total_stages_covered": _current_stage_index + 1,
-            }
+            proctoring_data = _build_proctoring_data("no_show_timeout", full=False)
             await persist_transcript(
                 app_id,
                 [],
@@ -2016,20 +2098,18 @@ async def entrypoint(ctx: JobContext):
     await _warm_greeting_tts(tts_plugin)
     if ready_event.is_set() and not disconnect_event.is_set():
         session_start_time = time.time()
-        if not _initialize_stage_budgets_called:
-            _initialize_stage_budgets()
-            _initialize_stage_budgets_called = True
+        _initialize_stage_budgets()
         logger.info(
             "━━━ SESSION START ━━━ app_id=%s | candidate=%s | role=%s | band=%s | org=%s | lang=%s | tts=%s | stt=%s | llm=%s",
             app_id, candidate_name, job_title,
             session_context.candidate_band,
-            context.get("orgName", ""),
+            ctx_data.orgName or "",
             interview_lang,
             org_tts_provider,
             "DEEPGRAM",
             org_llm_model,
         )
-        ai_name = context.get("aiName") or "Ishita"
+        ai_name = ctx_data.aiName or "Ishita"
         welcome_text = build_greeting_text(
             candidate_first_name or candidate_name,
             ai_name,
@@ -2123,38 +2203,13 @@ async def entrypoint(ctx: JobContext):
         except Exception as e:
             logger.warning(f"Failed to send termination signal: {e}")
     def _pick_nudge() -> str:
-        """Return a context-aware inactivity nudge based on the type of question asked."""
+        """Return a context-aware inactivity nudge using the module-level strategy map."""
         name = candidate_first_name or candidate_name
-        q = (_last_interviewer_question or "").lower()
-        # Technical/explanatory questions  -  candidate may need thinking time
-        if any(w in q for w in ("how", "why", "explain", "walk me through", "describe", "what happened", "tell me about")):
-            technical_nudges = [
-                f"Take your time, {name}  -  I want to hear the full picture.",
-                "No rush  -  think it through and share whenever you're ready.",
-                "If it helps, start with a specific example and work from there.",
-            ]
-            return technical_nudges[inactivity_nudge_count % len(technical_nudges)]
-        # Reflective questions  -  candidate may be searching for the right words
-        if any(w in q for w in ("feel", "think", "would you", "looking back", "what would you", "in hindsight")):
-            reflective_nudges = [
-                "No rush  -  happy to wait while you think that through.",
-                f"Take a moment, {name}. There is no right answer here.",
-            ]
-            return reflective_nudges[inactivity_nudge_count % len(reflective_nudges)]
-        # Example / story requests  -  candidate may be picking which story to tell
-        if any(w in q for w in ("example", "specific", "moment", "situation", "time when", "instance")):
-            example_nudges = [
-                "Pick whichever example comes to mind first  -  the specifics matter more than finding the perfect one.",
-                f"You can also answer with just one concrete example if that is easier, {name}.",
-            ]
-            return example_nudges[inactivity_nudge_count % len(example_nudges)]
-        # Generic fallback nudges
-        generic_nudges = [
-            f"If you're thinking aloud, feel free to keep going  -  that helps me follow your reasoning.",
-            f"Just checking in, {name}  -  whenever you're ready.",
-            "If you went quiet mid-thought, you can continue right from there.",
-        ]
-        return generic_nudges[inactivity_nudge_count % len(generic_nudges)]
+        q = _last_interviewer_question or ""
+        for pattern, messages in _NUDGE_STRATEGIES:
+            if pattern is None or pattern.search(q):
+                return messages[inactivity_nudge_count % len(messages)].format(name=name)
+        return ""  # unreachable — last strategy always has pattern=None
     session_loop_start = time.monotonic()
     _last_periodic_stage_check = time.monotonic()
     while True:
@@ -2207,19 +2262,15 @@ async def entrypoint(ctx: JobContext):
         # custom questions are still unasked. This is a hard nudge: they MUST be asked.
         if (
             warmup_complete
-            and _custom_q_items
-            and _custom_q_asked
+            and _custom_questions
             and not _custom_q_reminder_fired
             and not is_agent_speaking
         ):
             _total_secs = float(time_limit_mins * 60)
             _elapsed = _total_secs - remaining
             if _elapsed >= _total_secs * 0.75:
-                _unasked_cqs = [
-                    f"{i+1}. {q}" for i, ((q, _), asked) in enumerate(zip(_custom_q_items, _custom_q_asked)) if not asked
-                ]
+                _unasked_cqs = [f"{i+1}. {cq.raw}" for i, cq in enumerate(_custom_questions) if not cq.asked]
                 if _unasked_cqs:
-                    _unasked_block = "\n".join(_unasked_cqs)
                     remove_system_messages(chat_ctx, "[CUSTOM Q REMINDER]")
                     chat_ctx.add_message(
                         role="system",
@@ -2228,13 +2279,13 @@ async def entrypoint(ctx: JobContext):
                             f"The recruiter REQUIRES these questions to be asked before the interview ends. "
                             f"You have not asked them yet. Ask each one naturally within the next few turns — "
                             f"weave them into the conversation, do not announce them as special questions:\n"
-                            f"{_unasked_block}"
+                            f"{chr(10).join(_unasked_cqs)}"
                         ),
                     )
                     logger.info(
                         "[CUSTOM_Q] 75%% reminder fired — %d unasked: %s",
                         len(_unasked_cqs),
-                        [q[:80] for (q, _), asked in zip(_custom_q_items, _custom_q_asked) if not asked][:3],
+                        [cq.raw[:80] for cq in _custom_questions if not cq.asked][:3],
                     )
                 else:
                     logger.info("[CUSTOM_Q] 75%% checkpoint — all custom questions already asked")
@@ -2243,17 +2294,13 @@ async def entrypoint(ctx: JobContext):
         # At this point it's urgent: ask NOW, not gradually.
         if (
             warmup_complete
-            and _custom_q_items
-            and _custom_q_asked
+            and _custom_questions
             and not _custom_q_final_reminder_fired
             and not is_agent_speaking
             and remaining <= 60.0
         ):
-            _unasked_cqs_final = [
-                f"{i+1}. {q}" for i, ((q, _), asked) in enumerate(zip(_custom_q_items, _custom_q_asked)) if not asked
-            ]
+            _unasked_cqs_final = [f"{i+1}. {cq.raw}" for i, cq in enumerate(_custom_questions) if not cq.asked]
             if _unasked_cqs_final:
-                _unasked_block_final = "\n".join(_unasked_cqs_final)
                 remove_system_messages(chat_ctx, "[CUSTOM Q REMINDER]")
                 chat_ctx.add_message(
                     role="system",
@@ -2261,7 +2308,7 @@ async def entrypoint(ctx: JobContext):
                         f"[CUSTOM Q REMINDER — DO NOT SAY ALOUD]\n"
                         f"URGENT — less than 60 seconds remain. These recruiter-required questions have NOT been asked yet. "
                         f"Ask them immediately. Keep each one brief and natural:\n"
-                        f"{_unasked_block_final}"
+                        f"{chr(10).join(_unasked_cqs_final)}"
                     ),
                 )
                 logger.info(
@@ -2358,12 +2405,12 @@ async def entrypoint(ctx: JobContext):
         if candidate_turns_final >= 4:
             goodbye_text = (
                 f"That concludes our interview, {candidate_first_name or candidate_name}. "
-                "Thank you for your time today. I -™m ending the session now, and I wish you all the best."
+                "Thank you for your time today. I'm ending the session now, and I wish you all the best."
             )
         else:
             goodbye_text = (
                 f"That concludes our interview, {candidate_first_name or candidate_name}. "
-                "Thank you for joining today. I -™m ending the session now, and I wish you all the best."
+                "Thank you for joining today. I'm ending the session now, and I wish you all the best."
             )
         try:
             await session.say(goodbye_text)
@@ -2386,25 +2433,9 @@ async def entrypoint(ctx: JobContext):
     )
     await asyncio.sleep(2)
     # âœ… Final definitive save - Phase 5 includes proctoring report + answer scores
-    proctoring_data = {
-        "role_category": session_context.candidate_band,
-        "candidate_band": session_context.candidate_band,
-        "total_turns": turn_count,
-        "suspicion_score": suspicion_score,
-        "environment_risk": environment_risk,
-        "integrity_risk": integrity_risk,
-        "depth_risk": depth_risk,
-        "composite_risk": suspicion_score,
-        "current_mode": current_interview_mode,
-        "exit_reason": "time_expired" if time_expired else "interview_finished",
-        "events": proctoring_events,
-        "contradictions": _contradictions_found,
-        "claim_index": _claim_index,
-        "contradiction_state": summarize_contradiction_state(_contradiction_state),
-        "stage_history": session_context.stage_history,
-        "stage_transition_events": _stage_transition_events,
-        "total_stages_covered": _current_stage_index + 1,
-    }
+    proctoring_data = _build_proctoring_data(
+        "time_expired" if time_expired else "interview_finished"
+    )
     # Finalize Trust Engine and build recruiter summary before persisting
     _trust_state = finalize_trust_state(_trust_state)
     recruiter_summary = build_recruiter_summary(
@@ -2466,16 +2497,7 @@ async def entrypoint(ctx: JobContext):
                     transcript_lines,
                     answer_scores,
                     job_title,
-                    proctoring_data={
-                        "role_category": session_context.candidate_band,
-                        "candidate_band": session_context.candidate_band,
-                        "suspicion_score": suspicion_score,
-                        "current_mode": current_interview_mode,
-                        "events": proctoring_events,
-                        "contradictions": _contradictions_found,
-                        "claim_index": _claim_index,
-                        "contradiction_state": _contradiction_state,
-                    },
+                    proctoring_data=proctoring_data,
                     org_id=org_id,
                     llm_model=analysis_model,
                 ),

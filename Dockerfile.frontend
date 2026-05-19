@@ -31,6 +31,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     openssl \
     ca-certificates \
+    ffmpeg \
     python3 \
     python3-pip \
     python3-venv \

@@ -327,7 +327,7 @@ export default function SchedulePage({ params }: { params: Promise<{ id: string 
                                                 </div>
                                             ) : (
                                                 <div className="max-h-[480px] overflow-y-auto pr-1 custom-scrollbar">
-                                                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2 gap-2.5">
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 gap-2.5">
                                                         {selectedSlots.map((slot, index) => {
                                                             const start = new Date(slot.startTime);
                                                             const isHighPriority = index < 3;

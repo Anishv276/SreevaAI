@@ -16,7 +16,7 @@ import { CandidateRatingForm } from "@/components/careers/interview/CandidateRat
 import { FIXED_INTERVIEW_DURATION_MINUTES } from "@/lib/drive-limits";
 import { useSearchParams } from "next/navigation";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
-import { DEFAULT_PROCTORING_SIGNALS, normalizeProctoringSignals } from "@/lib/proctoring-signals";
+import { BASIC_PLAN_SIGNALS, normalizeProctoringSignals } from "@/lib/proctoring-signals";
 import {
     LiveKitRoom,
     RoomAudioRenderer,
@@ -144,7 +144,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     //  Connection Proctoring 
     const [connectionAlert, setConnectionAlert] = useState<{ eventType: string; reason: string } | null>(null);
     const connectionAlertTimerRef = useRef<NodeJS.Timeout | null>(null);
-    const [proctoringSignals, setProctoringSignals] = useState(DEFAULT_PROCTORING_SIGNALS);
+    const [proctoringSignals, setProctoringSignals] = useState(BASIC_PLAN_SIGNALS);
     const [supportDialogOpen, setSupportDialogOpen] = useState(false);
     const [instructionsDialogOpen, setInstructionsDialogOpen] = useState(false);
     const [supportSubmitting, setSupportSubmitting] = useState(false);
@@ -514,7 +514,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             room.disconnect();
         } catch { }
     }, []);
-        const resetToHardwareCheck = useCallback(async (message?: string) => {
+    const resetToHardwareCheck = useCallback(async (message?: string) => {
         if (launchRecoveryTimerRef.current !== null) {
             window.clearTimeout(launchRecoveryTimerRef.current);
             launchRecoveryTimerRef.current = null;
@@ -555,7 +555,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         setPhase("check");
     }, [exitFullscreenMode, stopInterviewMedia]);
     // Hard timeout: if agent never becomes ready within 1.5 minutes (90s), show a popup and return to check.
-        useEffect(() => {
+    useEffect(() => {
         if (phase !== "launching") return;
         if (launchTimeoutCheck >= 90 && !agentReadyCommittedRef.current) {
             setJoinError("AI interviewer didn't respond in time. Please reload the website and try again.");
@@ -979,13 +979,15 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         key="completed"
                         initial={{ opacity: 0, scale: 0.9 }}
                         animate={{ opacity: 1, scale: 1 }}
-                        className="flex-1 min-h-screen w-full flex items-center justify-center bg-white z-[100] absolute inset-0"
+                        className="flex-1 w-full bg-white z-[100] absolute inset-0 overflow-y-auto"
                     >
-                        {endMode === "timeout" ? (
-                            <TimeoutThankYouView candidateName={candidateDisplayName} />
-                        ) : (
-                            <CompletionView id={id} interviewToken={interviewToken} />
-                        )}
+                        <div className="min-h-full w-full flex items-center justify-center py-8 sm:py-16 px-4">
+                            {endMode === "timeout" ? (
+                                <TimeoutThankYouView candidateName={candidateDisplayName} />
+                            ) : (
+                                <CompletionView id={id} interviewToken={interviewToken} />
+                            )}
+                        </div>
                     </motion.div>
                 )}
             </AnimatePresence>

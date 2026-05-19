@@ -80,6 +80,7 @@ export type SreevaAIInterviewViewModel = {
     scoreBreakdown: { clarity: number; depth: number; technical_accuracy: number; practical_application: number } | null;
   }[];
   videoUrl: string | null;
+  videoMimeType: string | null;
   recordingDurationSec: number | null;
   proctoringHeadline: string;
   integrityScore: number;
@@ -102,7 +103,9 @@ function formatDurationM(totalSeconds: number) {
   return `${m}:${s.toString().padStart(2, "0")} min`;
 }
 
-function inferVideoMimeType(url: string): "video/webm" | "video/mp4" {
+function inferVideoMimeType(url: string, mimeType?: string | null): string {
+  const explicit = String(mimeType || "").trim().toLowerCase();
+  if (explicit === "video/webm" || explicit === "video/mp4") return explicit;
   const normalized = String(url || "").toLowerCase();
   if (normalized.includes(".webm")) return "video/webm";
   if (normalized.includes(".mp4")) return "video/mp4";
@@ -839,6 +842,7 @@ export function buildSreevaAIInterviewViewModel(i: {
     transcript,
     questionAnalysis,
     videoUrl: i.interviewRecordingUrl || null,
+    videoMimeType: String(c.interview?.recordingMimeType || "").trim() || inferVideoMimeType(String(i.interviewRecordingUrl || "")),
     recordingDurationSec: i.recordingDurationSec,
     proctoringHeadline: i.proctoringVerdictSummary,
     integrityScore: rawIntegrityScore,
@@ -2608,7 +2612,7 @@ export function InterviewReportSreevaAI({
                       ref={plyrRef}
                       source={{
                         type: "video",
-                        sources: [{ src: model.videoUrl, type: inferVideoMimeType(model.videoUrl) }],
+                        sources: [{ src: model.videoUrl, type: inferVideoMimeType(model.videoUrl, model.videoMimeType) }],
                       }}
                       options={{ duration: model.recordingDurationSec || undefined }}
                     />

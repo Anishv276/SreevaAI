@@ -116,6 +116,32 @@ async function runPythonJson(args: string[], timeoutMs = 180000): Promise<any> {
   });
 }
 
+async function runFfmpeg(args: string[], context: string): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const ff = spawn("ffmpeg", args);
+    const logs: string[] = [];
+
+    ff.stderr.on("data", (d: Buffer) => {
+      const line = d.toString().trim();
+      if (!line) return;
+      logs.push(line);
+      console.log(`[FFMPEG:${context}] ${line}`);
+    });
+
+    ff.on("close", (code: number) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      reject(new Error(`ffmpeg exited with code ${code}. Last log: ${logs.slice(-3).join(" | ")}`));
+    });
+
+    ff.on("error", (err: Error) => {
+      reject(new Error(`ffmpeg spawn failed: ${err.message}`));
+    });
+  });
+}
+
 async function setDriveCandidateStage(
   candidateId: string,
   stage: string,
@@ -1621,17 +1647,45 @@ if (isQueueEnabled("interview-recording")) {
         console.warn(`[RECORDING_WORKER] ffmpeg failed, falling back to raw concat: ${ffErr}`);
       }
 
-      // ── 5. Build final buffer & validate ─────────────────────────────────
+      // ── 5. Build final artifact & validate ────────────────────────────────
       const { readFile } = await import("fs/promises");
-      let finalBuffer: Buffer;
+      let finalArtifactPath = "";
+      let finalMimeType = mimeType;
 
       if (ffmpegOk) {
-        finalBuffer = await readFile(outputPath);
+        finalArtifactPath = outputPath;
       } else {
         // Raw concat fallback — works for single chunk or pre-valid webm segments
         const rawBufs = await Promise.all(chunkPaths.map(p => readFile(p).catch(() => Buffer.alloc(0))));
-        finalBuffer = Buffer.concat(rawBufs.filter(b => b.length > 0));
+        const rawBuffer = Buffer.concat(rawBufs.filter(b => b.length > 0));
+        finalArtifactPath = join(tmpDir, `raw-merged-${applicationId}-${effectiveSession}.webm`);
+        await writeFile(finalArtifactPath, rawBuffer);
       }
+
+      if (ffmpegOk) {
+        try {
+          const mp4Path = join(tmpDir, `merged-${applicationId}-${effectiveSession}.mp4`);
+          await runFfmpeg([
+            "-y",
+            "-i", finalArtifactPath,
+            "-c:v", "libx264",
+            "-preset", "veryfast",
+            "-crf", "23",
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
+            "-b:a", "128k",
+            "-movflags", "+faststart",
+            mp4Path,
+          ], `${applicationId}:transcode`);
+          finalArtifactPath = mp4Path;
+          finalMimeType = "video/mp4";
+          console.log(`[RECORDING_WORKER] Transcoded merged recording to MP4 for ${applicationId}`);
+        } catch (transcodeErr) {
+          console.warn(`[RECORDING_WORKER] MP4 transcode failed; keeping original container: ${transcodeErr}`);
+        }
+      }
+
+      const finalBuffer = await readFile(finalArtifactPath);
 
       // BUG FIX #2: Validate buffer before uploading
       if (!finalBuffer || finalBuffer.length === 0) {
@@ -1640,8 +1694,9 @@ if (isQueueEnabled("interview-recording")) {
       console.log(`[RECORDING_WORKER] Final buffer size: ${(finalBuffer.length / 1024 / 1024).toFixed(2)} MB`);
 
       // ── 6. Upload merged file ─────────────────────────────────────────────
-      const finalKey = `${CANDIDATES_PREFIX}/${safeCandidate}/recordings/${Date.now()}-interview-${effectiveSession}.webm`;
-      const recordingUrl = await putObject(bucket, finalKey, finalBuffer, mimeType);
+      const finalExtension = finalMimeType === "video/mp4" ? "mp4" : "webm";
+      const finalKey = `${CANDIDATES_PREFIX}/${safeCandidate}/recordings/${Date.now()}-interview-${effectiveSession}.${finalExtension}`;
+      const recordingUrl = await putObject(bucket, finalKey, finalBuffer, finalMimeType);
       const finalRecordingUrl = typeof recordingUrl === "string" ? recordingUrl : String(recordingUrl);
       console.log(`[RECORDING_WORKER] Uploaded merged video for ${applicationId} → ${finalKey}`);
 
@@ -1650,6 +1705,7 @@ if (isQueueEnabled("interview-recording")) {
         ...chunkPaths.map(p => unlink(p).catch(() => {})),
         unlink(concatListPath).catch(() => {}),
         unlink(outputPath).catch(() => {}),
+        finalArtifactPath !== outputPath ? unlink(finalArtifactPath).catch(() => {}) : Promise.resolve(),
       ]).catch(() => {});
 
       // ── 7. Persist recording metadata to DB ──────────────────────────────
@@ -1666,7 +1722,7 @@ if (isQueueEnabled("interview-recording")) {
         finalRecordingUrl,
         completedAt,
         durationSec || null,
-        mimeType,
+        finalMimeType,
         applicationId
       );
       console.log(`[RECORDING_WORKER] DB updated for ${applicationId}`);
