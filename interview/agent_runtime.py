@@ -1,7 +1,5 @@
-import sys
+﻿import sys
 import asyncio
-if sys.platform == "win32":
-    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 import json
 import time
 import asyncpg
@@ -505,10 +503,20 @@ async def entrypoint(ctx: JobContext):
                 logger.warning(f"Connection attempt {attempt + 1} failed: {e}. Retrying in 2s...")
                 await asyncio.sleep(2)
         return RuntimeError("Failed to connect after 3 attempts")
+    # Run DB fetch and room connect in parallel to minimize startup latency.
     try:
-        context_result = await get_interview_context(app_id)
+        context_result, connect_result = await asyncio.gather(
+            get_interview_context(app_id),
+            connect_with_retry(),
+            return_exceptions=True,
+        )
     except Exception as e:
-        logger.error(f"Failed to load interview context from DB: {e}")
+        logger.error(f"Startup gather failed: {e}")
+        return
+    if isinstance(connect_result, Exception):
+        raise connect_result
+    if isinstance(context_result, Exception):
+        logger.error(f"Failed to load interview context from DB: {context_result}")
         return
     if not isinstance(context_result, dict):
         logger.error(f"Invalid DB context payload type: {type(context_result)}")
@@ -519,9 +527,6 @@ async def entrypoint(ctx: JobContext):
     except Exception as _ctx_err:
         logger.error("Invalid interview context from DB: %s", _ctx_err)
         return
-    connect_result = await connect_with_retry()
-    if isinstance(connect_result, Exception):
-        raise connect_result
     evaluation_signal_toggles = _extract_evaluation_signal_toggles(ctx_data.proctoringSignals)
     extracted_details = _coerce_jsonish(ctx_data.extractedDetails or "{}")
     structured_resume = _coerce_jsonish(ctx_data.resumeData or "{}")
@@ -533,18 +538,12 @@ async def entrypoint(ctx: JobContext):
             _interview_questions = _parsed if isinstance(_parsed, list) else []
         except Exception:
             _interview_questions = []
-    logger.info("[1/6] RESUME FETCH — resumeData present=%s keys=%s",
-        bool(structured_resume),
-        list(structured_resume.keys()) if isinstance(structured_resume, dict) else "empty",
-    )
-    logger.info("[2/6] JD FETCH — extractedDetails present=%s keys=%s",
-        bool(extracted_details),
-        list(extracted_details.keys()) if isinstance(extracted_details, dict) else "empty",
-    )
+    logger.info("[FLOW] Resume fetched — present=%s", bool(structured_resume))
+    logger.info("[FLOW] JD fetched — present=%s", bool(extracted_details))
     if _interview_questions:
-        logger.info("[2.5/6] CUSTOM QUESTIONS — count=%d questions=%s",
+        logger.info("[FLOW] Custom questions — count=%d: %s",
             len(_interview_questions),
-            [str(q)[:120] for q in _interview_questions],
+            [str(q)[:80] for q in _interview_questions],
         )
 
     _custom_questions: list[CustomQuestion] = [
@@ -553,7 +552,7 @@ async def entrypoint(ctx: JobContext):
         if _normalize_custom_question_text(_raw_q)
     ]
     if not _custom_questions:
-        logger.info("[2.5/6] CUSTOM QUESTIONS — none configured for this drive")
+        logger.info("[FLOW] Custom questions — none configured")
     candidate_name = ctx_data.fullName
     candidate_first_name = first_name_from_full_name(candidate_name)
     job_title = ctx_data.jobTitle
@@ -616,14 +615,13 @@ async def entrypoint(ctx: JobContext):
         "",
     )
     candidate_band = infer_candidate_band(resume_context, "")
-    logger.info("[3/6] BAND CHECKED — band=%s", candidate_band)
+    logger.info("[FLOW] Band=%s | candidate=%s | role=%s", candidate_band, candidate_name, job_title)
     resume_brief = build_resume_brief(candidate_band, resume_context)
     base_coverage_items = [
         *[str(s).strip() for s in resume_context.skills[:6] if str(s).strip()],
         *[str(p).strip() for p in resume_context.projects[:4] if str(p).strip()],
         *[str(w).strip() for w in resume_context.work_history[:3] if str(w).strip()],
     ]
-    # Keep deterministic order while de-duplicating.
     base_coverage_items = list(dict.fromkeys(base_coverage_items))
     session_context = CandidateBandContext(
         candidate_band=candidate_band,
@@ -644,24 +642,17 @@ async def entrypoint(ctx: JobContext):
     )
     refresh_candidate_band_context(session_context)
     logger.info(
-        "[4/6] BRIEF CREATED — band=%s anchor=%s anchor_type=%s skills=%s projects=%d work=%d",
-        session_context.candidate_band,
-        str(session_context.resume_brief.anchor_item or "NOT STATED")[:80],
+        "[FLOW] Brief built — anchor=%s anchor_type=%s skills=%s",
+        str(session_context.resume_brief.anchor_item or "none")[:60],
         session_context.resume_brief.anchor_type or "none",
         session_context.resume_brief.skills[:4],
-        len(session_context.resume_brief.projects),
-        len(session_context.resume_brief.work_history or session_context.resume_brief.internships),
     )
-    logger.info("[4/6] MERGED BRIEF —\n%s", session_context.merged_brief_block or "(empty)")
     stage1_directive_cached = build_stage_1_resume_directive(
         band=session_context.candidate_band,
         resume_brief=session_context.resume_brief,
         custom_questions=_interview_questions or None,
     )
-    # Stages 2-4 are built dynamically at injection time so they reflect what was
-    # actually covered in prior stages. Stage 1 is built once because it has no prior context.
-    logger.info("[5/6] STAGE 1 BUILT — %dbytes", len(stage1_directive_cached))
-    logger.info("[STAGE 1 CONTENT]\n%s", stage1_directive_cached)
+    logger.info("[FLOW] Stage 1 directive ready (%d chars)", len(stage1_directive_cached))
     voice_layer_prompt = build_voice_layer_prompt(
         candidate_name=candidate_first_name or candidate_name,
         job_title=job_title,
@@ -686,7 +677,7 @@ async def entrypoint(ctx: JobContext):
     chat_ctx.add_message(role="system", content=system_prompt)
     warmup_directive = build_warmup_directive()
     chat_ctx.add_message(role="system", content=warmup_directive)
-    logger.info("[6/6] WARMUP INJECTED — stage 1 fires after 1 candidate response")
+    logger.info("[FLOW] System prompt ready — greeting → warmup → Stage 1")
     ctx.proc.userdata["candidate_band_context"] = session_context
 
     vad_instance = ctx.proc.userdata.get("vad") or build_vad()
@@ -755,8 +746,9 @@ async def entrypoint(ctx: JobContext):
     interview_finished_event = asyncio.Event()
     interview_marked_finished = False
     turn_count = 0
-    warmup_responses_received = 0  # counts candidate responses; warmup ends after 1
-    warmup_complete = False  # True after the 1st candidate response
+    warmup_responses_received = 0  # counts candidate responses during warmup window
+    warmup_required_responses = 2  # greeting reply + explicit warmup reply -> then Stage 1
+    warmup_complete = False  # True after required warmup responses are received
     # Stage interview tracker
     _current_stage_index: int = 0
     _stage_start_time: float = 0.0
@@ -796,7 +788,6 @@ async def entrypoint(ctx: JobContext):
     _answer_received_at: float = 0.0       # perf_counter() when candidate answer arrived
     _trust_state = init_trust_state()  # session-level trust engine state
     _contradiction_state = init_contradiction_state()  # explicit contradiction lifecycle state
-    _active_eval_task: Optional[asyncio.Task[Any]] = None  # retained for compatibility; evaluator now runs inline
     _custom_q_reminder_fired: bool = False
     _custom_q_final_reminder_fired: bool = False
     _resume_topic_questions_asked: int = 0  # stage-1 resume ownership questions asked so far
@@ -804,6 +795,8 @@ async def entrypoint(ctx: JobContext):
     _covered_skill_topic_keys: set[str] = set()
     _user_turn_chain: Optional[asyncio.Task[Any]] = None  # serialize user-turn processing
     _expected_topic_kind: Optional[str] = None  # runtime source of truth: "NEW" | "FOLLOWUP"
+    _enforce_move_on_until_new: bool = False
+    _forced_next_topic_hint: Optional[str] = None
     # Running log of topics already covered — injected into every directive so the AI
     # never re-explores something already discussed, across all stages.
     _discussed_log: list[str] = []
@@ -855,15 +848,71 @@ async def entrypoint(ctx: JobContext):
             1: max(0, int(time_limit_mins * 60) - GREETING_FIXED_SECONDS - WARMUP_FIXED_SECONDS - STAGE1_BUDGET_SECONDS - NO_NEW_QUESTION_CUTOFF_SECONDS),
         }
         logger.info(
-            "[STAGE BUDGET] Stage1(RESUME)=%ds  Stage2(SKILL)=%ds  total=%ds",
+            "[TIMER] Stage budgets — Stage1=%ds Stage2=%ds total=%ds",
             _stage_budgets_secs[0], _stage_budgets_secs[1], int(time_limit_mins * 60),
         )
+
+    async def _advance_stage_if_due_async(now_mono: float) -> None:
+        """Async stage advancement with lock protection to prevent concurrent transitions."""
+        nonlocal _current_stage_index, _stage_start_time, _active_skill_topic, _stage_situational_asked, \
+            _stage_behavioral_asked, _stage_quota_reminder_fired, _stage_bridge_pending
+        async with _session_state_lock:
+            if _current_stage_index >= len(STAGE_CONFIGS) - 1:
+                return
+            if _stage_start_time <= 0:
+                return
+            if _stage_bridge_pending:
+                return
+            stage_cfg = STAGE_CONFIGS[_current_stage_index]
+            time_in_stage = max(0.0, now_mono - _stage_start_time)
+            stage_budget = max(0, int(_stage_budgets_secs.get(_current_stage_index, 0)))
+            if time_in_stage < stage_budget:
+                return
+            # Transition to next stage
+            _stage_bridge_pending = True
+            next_stage_index = _current_stage_index + 1
+            next_stage = STAGE_CONFIGS[next_stage_index]
+            logger.info(
+                "[STAGE] Transition %s -> %s | elapsed=%ds budget=%ds reason=timeout",
+                stage_cfg.label, next_stage.label, int(time_in_stage), stage_budget,
+            )
+            remove_system_messages(chat_ctx, f"[STAGE {_current_stage_index + 1}:")
+            stage_directive = _build_stage_2_directive()
+            session_context.stage_history.append({
+                "stage": _current_stage_index,
+                "name": stage_cfg.label,
+                "seconds": int(time_in_stage),
+                "budget_seconds": stage_budget,
+                "transition_reason": "timeout",
+            })
+            _stage_transition_events.append({
+                "from_stage": stage_cfg.label,
+                "to_stage": next_stage.label,
+                "from_index": _current_stage_index,
+                "to_index": next_stage_index,
+                "time_in_stage_seconds": int(time_in_stage),
+                "budget_seconds": stage_budget,
+                "transition_reason": "timeout",
+                "at_turn": turn_count,
+                "timestamp": int(time.time() * 1000),
+            })
+            _current_stage_index = next_stage_index
+            _stage_start_time = now_mono
+            _stage_bridge_pending = False
+            _stage_situational_asked = False
+            _stage_behavioral_asked = False
+            _stage_quota_reminder_fired = False
+            if _current_stage_index == 1:
+                _active_skill_topic = _next_uncovered_skill_topic()
+            if stage_directive:
+                chat_ctx.add_message(role="system", content=stage_directive)
+                logger.info("[STAGE] Stage 2 injected — %d chars", len(stage_directive))
 
     def _build_stage_2_directive() -> Optional[str]:
         rb = session_context.resume_brief
         transcript_text = " ".join(l.split(":", 1)[-1].strip().lower() for l in transcript_lines)
         covered_in_s1 = _find_covered_keywords(rb.skills + rb.projects, transcript_text)
-        logger.info("[STAGE 2 BUILD] covered_in_stage1=%s", covered_in_s1)
+        logger.info("[STAGE] Stage 2 build - covered in Stage 1: %s", covered_in_s1)
         return build_stage_2_skill_directive(
             band=session_context.candidate_band,
             resume_brief=rb,
@@ -950,6 +999,38 @@ async def entrypoint(ctx: JobContext):
                 return t
         return None
 
+    def _fallback_next_topic(*, stage_index: int, exclude_topic: str | None = None) -> str:
+        """Pick a concrete next topic hint for MOVE_ON paths.
+
+        Prefer uncovered topics, then a different listed topic, and only then a
+        stage-appropriate generic bridge. This keeps the interviewer from
+        falling back to a vague repeat of the same thread.
+        """
+        excluded_key = _normalize_topic_key(exclude_topic or "")
+        if stage_index == 0:
+            next_topic = _next_uncovered_resume_topic(exclude_topic=exclude_topic)
+            if next_topic:
+                return next_topic
+            for topic in _resume_topic_candidates():
+                topic_key = _normalize_topic_key(topic)
+                if topic_key and topic_key != excluded_key:
+                    return topic
+            if _resume_topic_questions_asked >= 2:
+                return "their education or training path"
+            return "another resume project"
+
+        if stage_index == 1:
+            next_topic = _next_uncovered_skill_topic(exclude_topic=exclude_topic)
+            if next_topic:
+                return next_topic
+            for topic in _skill_topic_candidates():
+                topic_key = _normalize_topic_key(topic)
+                if topic_key and topic_key != excluded_key:
+                    return topic
+            return f"a concrete example using one of the {job_title} role skills"
+
+        return "the next relevant topic"
+
     def _pending_custom_questions() -> list[str]:
         return [cq.raw for cq in _custom_questions if not cq.asked]
 
@@ -980,86 +1061,6 @@ async def entrypoint(ctx: JobContext):
             return "earlier in our discussion"
         return f"during our discussion on {latest}"
 
-    def _advance_stage(reason: str, now_mono: float) -> bool:
-        nonlocal _current_stage_index, _stage_start_time, _stage_bridge_pending, \
-            _stage_situational_asked, _stage_behavioral_asked, _stage_quota_reminder_fired, _active_skill_topic
-        if not warmup_complete:
-            return False
-        if _current_stage_index >= len(STAGE_CONFIGS) - 1:
-            return False
-        if _stage_start_time <= 0:
-            return False
-        if _stage_bridge_pending:
-            return False
-
-        _stage_bridge_pending = True
-        stage_cfg = STAGE_CONFIGS[_current_stage_index]
-        next_stage_index = _current_stage_index + 1
-        next_stage = STAGE_CONFIGS[next_stage_index]
-        time_in_stage = max(0.0, now_mono - _stage_start_time)
-        stage_budget = max(0, int(_stage_budgets_secs.get(_current_stage_index, 0)))
-
-        logger.info(
-            "[STAGE TRANSITION] %s → %s | elapsed=%ds budget=%ds reason=%s",
-            stage_cfg.label, next_stage.label, int(time_in_stage), stage_budget, reason,
-        )
-
-        remove_system_messages(chat_ctx, f"[STAGE {_current_stage_index + 1}:")
-        stage_directive = _build_stage_2_directive()
-        session_context.stage_history.append({
-            "stage": _current_stage_index,
-            "name": stage_cfg.label,
-            "seconds": int(time_in_stage),
-            "budget_seconds": stage_budget,
-            "transition_reason": reason,
-        })
-        _stage_transition_events.append({
-            "from_stage": stage_cfg.label,
-            "to_stage": next_stage.label,
-            "from_index": _current_stage_index,
-            "to_index": next_stage_index,
-            "time_in_stage_seconds": int(time_in_stage),
-            "budget_seconds": stage_budget,
-            "transition_reason": reason,
-            "at_turn": turn_count,
-            "timestamp": int(time.time() * 1000),
-        })
-        _current_stage_index = next_stage_index
-        _stage_start_time = now_mono
-        _stage_bridge_pending = False
-        _stage_situational_asked = False
-        _stage_behavioral_asked = False
-        _stage_quota_reminder_fired = False
-        if _current_stage_index == 1:
-            _active_skill_topic = _next_uncovered_skill_topic()
-
-        if stage_directive:
-            chat_ctx.add_message(role="system", content=stage_directive)
-            logger.info("[STAGE 2 INJECTED] %d chars", len(stage_directive))
-            if _current_stage_index >= 1:
-                remove_system_messages(chat_ctx, "[STAGE_2_LOCK]")
-                chat_ctx.add_message(
-                    role="system",
-                    content=(
-                        "[STAGE_2_LOCK — DO NOT SAY ALOUD]\n"
-                        "Stage 2 has started. Hard rule: do NOT ask Stage-1 resume walkthrough questions. "
-                        "From now until final wrap-up, ask only skill-depth questions and weave situational/behavioral."
-                    ),
-                )
-        else:
-            logger.warning("[STAGE 2] No directive built — stage fires without guidance")
-        return True
-
-    def _advance_stage_if_due(now_mono: float) -> bool:
-        if not warmup_complete or _current_stage_index >= len(STAGE_CONFIGS) - 1 or _stage_start_time <= 0:
-            return False
-        stage_budget = max(0, int(_stage_budgets_secs.get(_current_stage_index, 0)))
-        time_in_stage = max(0.0, now_mono - _stage_start_time)
-        if time_in_stage < stage_budget:
-            return False
-        if is_candidate_speaking:
-            return False
-        return _advance_stage("time_cap", now_mono)
     @ctx.room.on("disconnected")
     def on_disconnected(reason):
         disconnect_event.set()
@@ -1162,8 +1163,8 @@ async def entrypoint(ctx: JobContext):
         nonlocal suspicion_score, proctoring_events, _last_interviewer_question, \
             _topic_follow_up_count, current_interview_mode, answer_scores, \
             _claim_index, _contradictions_found, \
-            _topic_depth_history, _trust_state, _contradiction_state, _active_eval_task, greeting_delivered_at, \
-            _ai_signal_flush_counter, _ai_signal_flushed_count
+            _topic_depth_history, _trust_state, _contradiction_state, greeting_delivered_at, \
+            _ai_signal_flush_counter, _ai_signal_flushed_count, _enforce_move_on_until_new, _forced_next_topic_hint
         try:
             if not content or role != "user":
                 return
@@ -1304,7 +1305,8 @@ async def entrypoint(ctx: JobContext):
                         _last_depth_decay_turn, _last_action_was_move_on, \
                         _active_resume_topic, _active_skill_topic, \
                         _ai_signal_flush_counter, _ai_signal_flushed_count, _resume_topic_questions_asked, \
-                        _covered_resume_topic_keys, _covered_skill_topic_keys, _expected_topic_kind
+                        _covered_resume_topic_keys, _covered_skill_topic_keys, _expected_topic_kind, \
+                        _enforce_move_on_until_new, _forced_next_topic_hint
                     try:
                         # Step 1: Extract claims and check consistency (before quality eval)
                         # Only runs when contradiction signal is enabled  -  adds 1 LLM call/turn
@@ -1391,9 +1393,10 @@ async def entrypoint(ctx: JobContext):
                             )
                             if follow_ups >= follow_up_depth:
                                 _fallback_action = "MOVE_ON"
-                                _fallback_next = (
-                                    "Follow-up cap reached. Bridge naturally to the next topic "
-                                    f"within the {_fallback_stage_label} stage. Do not announce a stage change."
+                                _exclude = _active_resume_topic if _current_stage_index == 0 else _active_skill_topic
+                                _fallback_next = _fallback_next_topic(
+                                    stage_index=_current_stage_index,
+                                    exclude_topic=_exclude,
                                 )
                             else:
                                 _fallback_action = "PROBE"
@@ -1467,10 +1470,9 @@ async def entrypoint(ctx: JobContext):
                                 )
                             elif ownership_or_example_hit:
                                 # Ownership/example issues should clarify, but still progress.
-                                # If they appear at follow-up 2+, allow exactly one extra clarifier turn
-                                # (follow-up 3) and then move on via cap exhaustion.
-                                if follow_ups >= follow_up_depth:
-                                    topic_follow_up_cap = follow_up_depth + 1
+                                # Deterministic rule: allow exactly one extra clarifier slot (cap=3)
+                                # for this thread, then force move-on by cap exhaustion.
+                                topic_follow_up_cap = follow_up_depth + 1
                                 td["decision"]["next_goal"] = (
                                     "Ask one concise clarification question to make the answer concrete and personal. "
                                     "If still vague after this clarification flow, move on to the next topic."
@@ -1498,12 +1500,12 @@ async def entrypoint(ctx: JobContext):
                             and follow_ups >= 1
                             and not disturbance_hits
                         ):
-                            next_resume_topic = (
-                                _next_uncovered_resume_topic(exclude_topic=_active_resume_topic)
-                                or (uncovered_topics[0] if uncovered_topics else None)
-                                or "another resume project"
+                            next_resume_topic = _fallback_next_topic(
+                                stage_index=0,
+                                exclude_topic=_active_resume_topic,
                             )
-                            _active_resume_topic = next_resume_topic if next_resume_topic != "another resume project" else _active_resume_topic
+                            if next_resume_topic != "another resume project":
+                                _active_resume_topic = next_resume_topic
                             action = "MOVE_ON"
                             td["decision"]["action"] = "MOVE_ON"
                             td["decision"]["next_goal"] = (
@@ -1526,22 +1528,18 @@ async def entrypoint(ctx: JobContext):
                             and _is_question_already_covered(question)
                         ):
                             if _current_stage_index == 0:
-                                next_topic_hint = (
-                                    _next_uncovered_resume_topic(exclude_topic=_active_resume_topic)
-                                    or (uncovered_topics[0] if uncovered_topics else "another resume ownership topic")
+                                next_topic_hint = _fallback_next_topic(
+                                    stage_index=0,
+                                    exclude_topic=_active_resume_topic,
                                 )
-                                if isinstance(next_topic_hint, str) and next_topic_hint and not next_topic_hint.startswith("another "):
+                                if next_topic_hint:
                                     _active_resume_topic = next_topic_hint
                             else:
-                                next_topic_hint = (
-                                    _next_uncovered_skill_topic(exclude_topic=_active_skill_topic)
-                                    or (uncovered_topics[0] if uncovered_topics else f"another skill-focused topic for the {job_title} role")
+                                next_topic_hint = _fallback_next_topic(
+                                    stage_index=1,
+                                    exclude_topic=_active_skill_topic,
                                 )
-                                if (
-                                    isinstance(next_topic_hint, str)
-                                    and next_topic_hint
-                                    and not next_topic_hint.startswith("another skill-focused")
-                                ):
+                                if next_topic_hint:
                                     _active_skill_topic = next_topic_hint
                             anchor = _recent_discussion_anchor()
                             action = "MOVE_ON"
@@ -1561,7 +1559,7 @@ async def entrypoint(ctx: JobContext):
                             depth_signal = "DEEP"
                         elif quality_avg >= 4.5:
                             depth_signal = "SPECIFIC"
-                        # Stage transitions are strictly time-driven via _advance_stage_if_due().
+                        # Stage transitions are strictly time-driven via _advance_stage_if_due_async().
                         # Low-quality streaks can still trigger topic pivots via the evaluator, but must not advance stage.
                         # All I/O is done. Acquire lock before mutating any shared session state.
                         # This keeps background turn processing from interleaving shared counters.
@@ -1587,7 +1585,7 @@ async def entrypoint(ctx: JobContext):
                                 _topic_depth_history = []
                                 _collapse_stage = 0
                                 _last_action_was_move_on = False
-                                logger.info("[FOLLOWUP] New topic detected — counter reset to 0")
+                                logger.info("[FOLLOWUP] New topic - counter reset")
                             _topic_depth_history.append(td["quality"]["depth"])
                             collapse_fired = any(
                                 ev.get("signal_name") == "follow_up_collapse"
@@ -1595,7 +1593,7 @@ async def entrypoint(ctx: JobContext):
                             )
                             stage_label_now = STAGE_CONFIGS[_current_stage_index].label if _current_stage_index < len(STAGE_CONFIGS) else "?"
                             logger.info(
-                                "[TURN] Stage=%d(%s) | evaluator=%s | quality=%.1f | follow_ups=%d/%d(cap=%d) | depth_history=%s",
+                                "[EVAL] Stage=%d(%s) action=%s quality=%.1f follow_ups=%d/%d(cap=%d) depth=%s",
                                 _current_stage_index + 1, stage_label_now, action, quality_avg,
                                 _topic_follow_up_count, follow_up_depth,
                                 topic_follow_up_cap,
@@ -1604,7 +1602,7 @@ async def entrypoint(ctx: JobContext):
                             if action in ("PROBE", "VERIFY"):
                                 if freeze_followup_increment:
                                     logger.info(
-                                        "[FOLLOWUP] Disturbance clarification turn — keeping follow-up count unchanged at %d",
+                                        "[FOLLOWUP] Contradiction clarification - counter frozen at %d",
                                         _topic_follow_up_count,
                                     )
                                 else:
@@ -1624,33 +1622,23 @@ async def entrypoint(ctx: JobContext):
                                     if hard_cap_hit or (last_two_low and _topic_follow_up_count >= 2):
                                         reason_note = "cap" if hard_cap_hit else "quality exhausted"
                                         action = "MOVE_ON"
-                                        stage_advance_forced = False
-                                        # Never force stage transition on low-quality follow-up cap alone.
-                                        # Stage transitions should respect stage budget/time logic.
+                                        # Stage transitions are strictly time-driven; MOVE_ON only pivots topic.
                                         next_stage_idx = _current_stage_index + 1
-                                        if not stage_advance_forced and next_stage_idx < len(STAGE_CONFIGS):
+                                        if next_stage_idx < len(STAGE_CONFIGS):
                                             next_stage_label = STAGE_CONFIGS[next_stage_idx].label
                                             if _current_stage_index == 0:
-                                                next_topic_hint = (
-                                                    _next_uncovered_resume_topic(exclude_topic=_active_resume_topic)
-                                                    or (uncovered_topics[0] if uncovered_topics else f"a key skill for the {job_title} role")
+                                                next_topic_hint = _fallback_next_topic(
+                                                    stage_index=0,
+                                                    exclude_topic=_active_resume_topic,
                                                 )
-                                                if (
-                                                    isinstance(next_topic_hint, str)
-                                                    and next_topic_hint
-                                                    and not next_topic_hint.startswith(("a key skill", "another "))
-                                                ):
+                                                if next_topic_hint:
                                                     _active_resume_topic = next_topic_hint
                                             else:
-                                                next_topic_hint = (
-                                                    _next_uncovered_skill_topic(exclude_topic=_active_skill_topic)
-                                                    or (uncovered_topics[0] if uncovered_topics else f"another skill-focused topic for the {job_title} role")
+                                                next_topic_hint = _fallback_next_topic(
+                                                    stage_index=1,
+                                                    exclude_topic=_active_skill_topic,
                                                 )
-                                                if (
-                                                    isinstance(next_topic_hint, str)
-                                                    and next_topic_hint
-                                                    and not next_topic_hint.startswith("another skill-focused")
-                                                ):
+                                                if next_topic_hint:
                                                     _active_skill_topic = next_topic_hint
                                             next_goal = (
                                                 f"This thread is exhausted. Acknowledge briefly, close the current thread, and move on. "
@@ -1666,13 +1654,14 @@ async def entrypoint(ctx: JobContext):
                                             f"DECISION: MOVE_ON\n"
                                             f"NEXT MOVE: {next_goal}"
                                         )
-                                        logger.info("[FOLLOWUP] Moving on (%s, follow_ups=%d/%d) — strict cap or exhaustion", reason_note, _topic_follow_up_count, topic_follow_up_cap)
+                                        logger.info("[FOLLOWUP] Moving on - reason=%s follow_ups=%d/%d", reason_note, _topic_follow_up_count, topic_follow_up_cap)
+                                        logger.info("[TOPIC] Moving to next topic = %s", next_topic_hint or "TBD")
                                         _topic_follow_up_count = 0
                                         _topic_depth_history = []
                                         _collapse_stage = 0
                                         _last_action_was_move_on = True
                                     else:
-                                        logger.info("[FOLLOWUP] Follow-up %d — continuing PROBE (quality=%.1f)", _topic_follow_up_count, quality_avg)
+                                        logger.info("[FOLLOWUP] Probing #%d quality=%.1f", _topic_follow_up_count, quality_avg)
                                         if collapse_fired:
                                             _collapse_stage += 1
                                         elif _collapse_stage > 0 and not collapse_fired:
@@ -1838,7 +1827,27 @@ async def entrypoint(ctx: JobContext):
                                 + "\n"
                             )
                             directive = directive + covered_block
-                        expected_topic_tag = "NEW" if action == "MOVE_ON" else "FOLLOWUP"
+                        # If a previous MOVE_ON was not honoured (drift guard active),
+                        # override any PROBE/VERIFY to MOVE_ON so the directive is fully
+                        # a pivot, not a mixed "probe but also move on" message.
+                        if _enforce_move_on_until_new and action in ("PROBE", "VERIFY"):
+                            action = "MOVE_ON"
+                            td["decision"]["action"] = "MOVE_ON"
+                            forced_hint = (_forced_next_topic_hint or "").strip()
+                            td["decision"]["next_goal"] = (
+                                "Previous topic was exhausted. Move to a completely different topic now. "
+                                + (f"Ask about: {forced_hint}." if forced_hint else "Pick the next uncovered resume/skill topic.")
+                            )
+                            directive = (
+                                "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
+                                "DECISION: MOVE_ON (ENFORCED)\n"
+                                f"NEXT MOVE: {td['decision']['next_goal']}"
+                            )
+                            logger.info("[TOPIC] Drift override - enforcing MOVE_ON (was %s)", action)
+                        if action == "MOVE_ON":
+                            _enforce_move_on_until_new = True
+                            _forced_next_topic_hint = (td.get("decision", {}).get("next_goal") or "").strip() or None
+                        expected_topic_tag = "NEW" if (action == "MOVE_ON" or _enforce_move_on_until_new) else "FOLLOWUP"
                         _expected_topic_kind = expected_topic_tag
                         directive = (
                             directive
@@ -1846,28 +1855,26 @@ async def entrypoint(ctx: JobContext):
                             + f"Start your next response with exactly [TOPIC:{expected_topic_tag}] on its own line. "
                             + "Then write your natural interviewer response."
                         )
-                        if action == "MOVE_ON":
+                        if action == "MOVE_ON" or _enforce_move_on_until_new:
+                            forced_topic = (_forced_next_topic_hint or "").strip()
                             directive = (
                                 directive
                                 + "\n[STRICT_MOVE_ON_RULE - DO NOT SAY ALOUD]\n"
                                 + "You MUST pivot to a different topic in your very next question. "
                                 + "Do NOT ask another follow-up on the same topic."
+                                + (f"\nTarget next topic: {forced_topic}" if forced_topic else "")
                             )
-                        # Guardrails: no early closing and strict stage boundaries.
-                        if _remaining_total_seconds_now() > NO_NEW_QUESTION_CUTOFF_SECONDS:
+                        # Stage boundary guard — only inject when we're close to the end or
+                        # in final seconds so we don't bloat context every turn.
+                        if _remaining_total_seconds_now() <= NO_NEW_QUESTION_CUTOFF_SECONDS + 30:
                             directive = (
                                 directive
                                 + "\n[NO_EARLY_CLOSING_GUARD — DO NOT SAY ALOUD]\n"
                                 + "Do NOT end the interview, do NOT say goodbye/thanks-for-your-time/next-steps yet. "
                                 + "Continue with the next interview question naturally."
                             )
-                        if _current_stage_index >= 1:
-                            directive = (
-                                directive
-                                + "\n[STAGE_2_BOUNDARY_GUARD — DO NOT SAY ALOUD]\n"
-                                + "Stage 2 is active. Do NOT ask resume walkthrough/background-summary questions. "
-                                + "Ask only skill-depth, situational, and behavioral questions."
-                            )
+                        # Stage 1 priority guard — only inject during the first 2 resume questions
+                        # to prevent the LLM from asking custom/background before resume topics.
                         if _current_stage_index == 0 and _resume_topic_questions_asked < 2:
                             directive = (
                                 directive
@@ -1883,9 +1890,11 @@ async def entrypoint(ctx: JobContext):
                         if action == "MOVE_ON":
                             remove_system_messages(chat_ctx, "[RECENT_CONTEXT")
                         logger.info(
-                            "[DIRECTIVE] action=%s mode=%s turn=%d collapse_stage=%d",
-                            td["decision"]["action"], td["decision"]["mode"],
-                            turn, _collapse_stage,
+                            "[ROUTER] action=%s mode=%s turn=%d topic=%s follow_ups=%d",
+                            td["decision"]["action"], td["decision"].get("mode", "normal"),
+                            turn,
+                            (_active_resume_topic if _current_stage_index == 0 else _active_skill_topic or "?")[:40],
+                            _topic_follow_up_count,
                         )
                         chat_ctx.add_message(role="system", content=directive)
                     except Exception as e:
@@ -1901,7 +1910,7 @@ async def entrypoint(ctx: JobContext):
             _last_interviewer_question, _topic_follow_up_count, _topic_depth_history, _last_action_was_move_on, \
             _question_asked_at, _answer_received_at, warmup_responses_received, warmup_complete, llm_spoke_event, _stage_start_time, _candidate_turn_since_last_assistant, \
             _stage_situational_asked, _stage_behavioral_asked, \
-            _custom_q_reminder_fired, _custom_q_final_reminder_fired, _resume_topic_questions_asked, _user_turn_chain, _expected_topic_kind
+            _custom_q_reminder_fired, _custom_q_final_reminder_fired, _resume_topic_questions_asked, _user_turn_chain, _expected_topic_kind, _enforce_move_on_until_new, _forced_next_topic_hint
         try:
             item = event.item
             role = getattr(item, "role", None)
@@ -1918,28 +1927,69 @@ async def entrypoint(ctx: JobContext):
                     elif _stripped.startswith("[TOPIC:FOLLOWUP"):
                         emitted_topic_tag = "FOLLOWUP"
                         break
-                # Runtime source of truth for topic-kind transitions.
-                if _expected_topic_kind == "NEW":
-                    _topic_follow_up_count = 0
-                    _topic_depth_history = []
-                    _last_action_was_move_on = False
-                    logger.info("[TOPIC_RUNTIME] expected=NEW -> counter reset")
-                elif _expected_topic_kind == "FOLLOWUP":
-                    logger.info("[TOPIC_RUNTIME] expected=FOLLOWUP -> counter stays at %d", _topic_follow_up_count)
-                else:
-                    logger.debug("[TOPIC_RUNTIME] no expected topic kind set -> state unchanged (%d)", _topic_follow_up_count)
-
-                # Drift telemetry: model output vs runtime expectation.
-                if _expected_topic_kind and emitted_topic_tag and emitted_topic_tag != _expected_topic_kind:
-                    logger.warning(
-                        "[TOPIC_DRIFT] expected=%s emitted=%s",
-                        _expected_topic_kind, emitted_topic_tag,
+                # Apply/consume topic expectation only on substantive assistant turns.
+                # LiveKit can emit assistant items with empty/control content before the
+                # real question text; consuming expectation there causes follow-up drift.
+                _assistant_text = (raw_content or "").strip()
+                _is_substantive_assistant_turn = bool(_assistant_text) and _assistant_text != "<wait for response>"
+                if _is_substantive_assistant_turn:
+                    # Check drift FIRST before resetting counters, so we know if the AI complied.
+                    _drift_detected = (
+                        _expected_topic_kind == "NEW"
+                        and emitted_topic_tag is not None
+                        and emitted_topic_tag != "NEW"
                     )
-                elif _expected_topic_kind and not emitted_topic_tag:
-                    logger.warning("[TOPIC_DRIFT] expected=%s emitted=NONE", _expected_topic_kind)
+                    if _expected_topic_kind and emitted_topic_tag and emitted_topic_tag != _expected_topic_kind:
+                        logger.warning("[TOPIC_DRIFT] expected=%s emitted=%s", _expected_topic_kind, emitted_topic_tag)
+                        if _drift_detected:
+                            # AI ignored MOVE_ON — keep MOVE_ON state alive, inject hard directive.
+                            _enforce_move_on_until_new = True
+                            _topic_follow_up_count = 0
+                            _topic_depth_history = []
+                            _last_action_was_move_on = True
+                            remove_system_messages(chat_ctx, "[RECENT_CONTEXT")
+                            remove_system_messages(chat_ctx, "[NEXT_TURN_DIRECTIVE")
+                            _forced_hint = (_forced_next_topic_hint or "").strip()
+                            chat_ctx.add_message(role="system", content=(
+                                "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
+                                "DECISION: MOVE_ON (RUNTIME GUARD)\n"
+                                "NEXT MOVE: You must ask about a different topic in your very next question. "
+                                "Do not ask another follow-up on the previous thread."
+                                + (f"\nTarget next topic: {_forced_hint}" if _forced_hint else "")
+                                + "\n[TOPIC_TAG_RULE - DO NOT SAY ALOUD]\n"
+                                "Start your next response with exactly [TOPIC:NEW] on its own line."
+                            ))
+                            logger.warning("[TOPIC_DRIFT] Applied runtime guard to force next turn pivot")
+                    elif _expected_topic_kind and not emitted_topic_tag:
+                        logger.warning("[TOPIC_DRIFT] expected=%s emitted=NONE", _expected_topic_kind)
+                        if _expected_topic_kind == "NEW":
+                            _enforce_move_on_until_new = True
+                    elif emitted_topic_tag == "NEW":
+                        # AI complied — clear drift guard and reset counters for fresh topic.
+                        _enforce_move_on_until_new = False
+                        _forced_next_topic_hint = None
+                        _topic_follow_up_count = 0
+                        _topic_depth_history = []
+                        _last_action_was_move_on = False
+                        logger.info("[TOPIC] New topic confirmed (emitted NEW) — counter reset")
+                    elif _expected_topic_kind == "NEW" and not _drift_detected:
+                        # Expected NEW, got NEW (covered above) or no tag — reset counters.
+                        _topic_follow_up_count = 0
+                        _topic_depth_history = []
+                        _last_action_was_move_on = False
+                        logger.info("[TOPIC] New topic confirmed — counter reset")
+                    elif _expected_topic_kind == "FOLLOWUP":
+                        logger.debug("[TOPIC] expected=FOLLOWUP -> counter stays at %d", _topic_follow_up_count)
+                    else:
+                        logger.debug("[TOPIC] no expected topic kind set -> state unchanged (%d)", _topic_follow_up_count)
 
-                # Consume expectation after assistant turn.
-                _expected_topic_kind = None
+                    # Consume expectation after substantive assistant turn only.
+                    _expected_topic_kind = None
+                else:
+                    logger.debug(
+                        "[TOPIC] assistant control/empty turn -> deferring expectation consume (expected=%s)",
+                        _expected_topic_kind or "NONE",
+                    )
                 content = sanitize_candidate_facing_text(content)
             if not role:
                 return
@@ -1956,11 +2006,17 @@ async def entrypoint(ctx: JobContext):
             if role == "user":
                 _answer_received_at = time.perf_counter()
                 _candidate_turn_since_last_assistant = True
-                # ── Phase 1 → Phase 2: warmup ends after 1 candidate response ──────
+                # ── Phase 1 → Phase 2: keep warmup as an explicit exchange
+                # before Stage 1 begins.
                 if not warmup_complete:
                     warmup_responses_received += 1
-                    logger.info("[WARMUP] ✓ DONE — candidate responded, injecting Stage 1")
-                    if warmup_responses_received >= 1:
+                    logger.info(
+                        "[FLOW] Warmup response %d/%d received",
+                        warmup_responses_received,
+                        warmup_required_responses,
+                    )
+                    if warmup_responses_received >= warmup_required_responses:
+                        logger.info("[FLOW] Warmup done - injecting Stage 1")
                         warmup_complete = True
                         remove_system_messages(chat_ctx, "[WARMUP PHASE]")
                         stage1_directive = stage1_directive_cached or build_stage_1_resume_directive(
@@ -1968,20 +2024,23 @@ async def entrypoint(ctx: JobContext):
                             resume_brief=session_context.resume_brief,
                         )
                         chat_ctx.add_message(role="system", content=stage1_directive)
+                        chat_ctx.add_message(
+                            role="system",
+                            content=(
+                                "[STAGE_1_PRIORITY_GUARD — DO NOT SAY ALOUD]\n"
+                                "Your FIRST question must be about the resume anchor project. "
+                                "Do NOT ask educational background, generic introduction, or recruiter custom questions first. "
+                                "Start by asking what they personally built or owned in the anchor project listed above."
+                            ),
+                        )
                         _active_resume_topic = (
                             str(getattr(session_context.resume_brief, "anchor_item", "") or "").split(" - ", 1)[0].strip()
                             or (_resume_topic_candidates()[0] if _resume_topic_candidates() else None)
                         )
                         _stage_start_time = time.monotonic()
                         stage1_budget = _stage_budgets_secs.get(0, 0)
-                        logger.info(
-                            "┌─ STAGE 1 INJECTED (Resume) ─────────────────────────────────\n"
-                            "│  budget=%ds (%dm) | directive_len=%d chars\n"
-                            "│  Preview: %s\n"
-                            "└─────────────────────────────────────────────────────────────",
-                            stage1_budget, stage1_budget // 60, len(stage1_directive),
-                            stage1_directive[:120].replace("\n", " "),
-                        )
+                        logger.info("[STAGE] Stage 1 started - budget=%ds", stage1_budget)
+                        logger.info("[TOPIC] Active topic = %s", _active_resume_topic or "none")
                 # Append candidate response to transcript before background processing
                 candidate_text = content.replace("<wait for response>", "").strip()
                 if candidate_text:
@@ -2059,7 +2118,7 @@ async def entrypoint(ctx: JobContext):
                             _cq.asked = True
                             _discussed_log.append(f"- custom question covered: {_cq.raw[:80]}")
                             logger.info(
-                                "[CUSTOM_Q] Question %d/%d detected as asked: '%s'",
+                                "[FLOW] Custom question %d/%d marked covered: '%s'",
                                 _cqi + 1, len(_custom_questions), _cq.raw[:100],
                             )
                     _unasked_count = sum(1 for cq in _custom_questions if not cq.asked)
@@ -2077,7 +2136,11 @@ async def entrypoint(ctx: JobContext):
                 turn_count += 1
             # ── Stage advance check on every turn (assistant or candidate) ──────
             if warmup_complete:
-                _advance_stage_if_due(time.monotonic())
+                _now_mono = time.monotonic()
+                spawn_background_task(
+                    _advance_stage_if_due_async(_now_mono),
+                    "advance_stage_check",
+                )
             # --- Periodic auto-save every 5 turns to prevent data loss ---
             if len(transcript_lines) > 0:
                 start_t = session_start_time
@@ -2087,7 +2150,7 @@ async def entrypoint(ctx: JobContext):
                     try:
                         await persist_transcript(app_id_snap, lines_snapshot, start_t)
                         logger.info(
-                            f"[TRANSCRIPT] Turn auto-save at {len(lines_snapshot)} lines"
+                            f"[PERSIST] Transcript auto-saved at {len(lines_snapshot)} lines"
                         )
                     except Exception as save_err:
                         logger.warning(f"[TRANSCRIPT] Periodic save failed: {save_err}")
@@ -2208,22 +2271,18 @@ async def entrypoint(ctx: JobContext):
                 result = warmup_method()
                 if asyncio.iscoroutine(result):
                     await result
-                logger.info("[GREETING] TTS warmup completed before greeting")
+                logger.info("[FLOW] TTS warmup done")
             except Exception as e:
-                logger.warning(f"[GREETING] TTS warmup failed before greeting: {e}")
+                logger.warning(f"[FLOW] TTS warmup failed (non-fatal): {e}")
     await _warm_greeting_tts(tts_plugin)
     if ready_event.is_set() and not disconnect_event.is_set():
         session_start_time = time.time()
         _initialize_stage_budgets()
         logger.info(
-            "━━━ SESSION START ━━━ app_id=%s | candidate=%s | role=%s | band=%s | org=%s | lang=%s | tts=%s | stt=%s | llm=%s",
-            app_id, candidate_name, job_title,
-            session_context.candidate_band,
-            ctx_data.orgName or "",
-            interview_lang,
-            org_tts_provider,
-            "DEEPGRAM",
-            org_llm_model,
+            "[FLOW] Session started — candidate=%s role=%s band=%s tts=%s llm=%s boot=%dms",
+            candidate_name, job_title, session_context.candidate_band,
+            org_tts_provider, org_llm_model,
+            int((time.perf_counter() - entry_started_at) * 1000),
         )
         ai_name = ctx_data.aiName or "Ishita"
         welcome_text = build_greeting_text(
@@ -2234,13 +2293,12 @@ async def entrypoint(ctx: JobContext):
         # Mark as started in DB while greeting starts immediately.
         spawn_background_task(mark_interview_started(app_id), "mark_interview_started")
         try:
-            startup_latency_ms = int((time.perf_counter() - entry_started_at) * 1000)
-            logger.info("[GREETING] ▶ STARTED — boot=%dms", startup_latency_ms)
+            logger.info("[FLOW] Greeting started")
             # Only deliver scripted welcome if the LLM hasn't already spoken
             # (prevents double-greeting when candidate says hello first)
             if llm_spoke_event.is_set():
                 logger.info(
-                    "[GREETING] LLM already responded to candidate - skipping scripted welcome to avoid double-greeting"
+                    "[FLOW] LLM spoke first — skipping scripted greeting"
                 )
                 greeting_delivered_at = time.time()
             else:
@@ -2250,13 +2308,11 @@ async def entrypoint(ctx: JobContext):
                 greeting_delivered = False
                 for _attempt in range(3):
                     try:
-                        # Small delay after AEC warmup to ensure clear start
-                        await asyncio.sleep(0.5)
                         # allow_interruptions=False for greeting prevents 'break voice' from echo bleed
                         await session.say(welcome_text, allow_interruptions=False)
                         greeting_delivered = True
                         greeting_delivered_at = time.time()  # Mark when greeting completed
-                        logger.info("[GREETING] ✓ COMPLETED")
+                        logger.info("[FLOW] Greeting completed")
                         break
                     except Exception as _tts_err:
                         err_str = str(_tts_err).lower()
@@ -2285,7 +2341,7 @@ async def entrypoint(ctx: JobContext):
             if greeting_delivered_at is None and not disconnect_event.is_set():
                 # Fail open so the interview never deadlocks waiting on greeting state.
                 greeting_delivered_at = time.time()
-                logger.info("[GREETING] Greeting flow completed - STT unblocked")
+                logger.info("[FLOW] STT unblocked after greeting")
     # CRITICAL: Start inactivity clock after greeting finishes (or is skipped).
     # session.say() is a scripted call - it does NOT fire agent_speech_committed, so the
     # normal "AI finished speaking" hook may not run for this scripted audio.
@@ -2328,6 +2384,7 @@ async def entrypoint(ctx: JobContext):
         return ""  # unreachable — last strategy always has pattern=None
     session_loop_start = time.monotonic()
     _last_periodic_stage_check = time.monotonic()
+    _last_timer_log = time.monotonic()
     while True:
         elapsed = time.monotonic() - session_loop_start
         remaining = total_seconds - elapsed
@@ -2335,13 +2392,15 @@ async def entrypoint(ctx: JobContext):
             break
         if remaining <= 0:
             break
-        # ── Periodic stage advance: fires every 10s unconditionally ──────────
-        # The event-driven check fires on assistant turns only, which may be
-        # infrequent or missing with some TTS/STT providers. This guarantees
-        # stage budgets are enforced even during continuous conversation.
         _now = time.monotonic()
+        # Log remaining time every 60s so it's visible in terminal
+        if _now - _last_timer_log >= 60.0:
+            stage_label = STAGE_CONFIGS[_current_stage_index].label if _current_stage_index < len(STAGE_CONFIGS) else "?"
+            logger.info("[TIMER] remaining=%.0fs stage=%s(%d) turn=%d", remaining, stage_label, _current_stage_index + 1, turn_count)
+            _last_timer_log = _now
+        # Periodic stage advance every 10s
         if warmup_complete and _now - _last_periodic_stage_check >= 10.0:
-            _advance_stage_if_due(_now)
+            await _advance_stage_if_due_async(_now)
             _last_periodic_stage_check = _now
         # Mid-stage quota reminder: fires once at 50% of the current stage budget
         # if the mandatory situational or behavioral question hasn't been asked yet.
@@ -2372,7 +2431,7 @@ async def entrypoint(ctx: JobContext):
                             f"do not announce it or break the conversational flow."
                         ),
                     )
-                    logger.info("[QUOTA] Mid-stage reminder fired — missing: %s", _quota_msg)
+                    logger.info("[FLOW] Quota reminder — missing: %s", _quota_msg)
                 _stage_quota_reminder_fired = True
         # Custom question coverage reminder — fires at 75% of total interview time if any
         # custom questions are still unasked. This is a hard nudge: they MUST be asked.
@@ -2399,12 +2458,12 @@ async def entrypoint(ctx: JobContext):
                         ),
                     )
                     logger.info(
-                        "[CUSTOM_Q] 75%% reminder fired — %d unasked: %s",
+                        "[FLOW] Custom Q 75%% reminder fired — %d unasked: %s",
                         len(_unasked_cqs),
                         [cq.raw[:80] for cq in _custom_questions if not cq.asked][:3],
                     )
                 else:
-                    logger.info("[CUSTOM_Q] 75%% checkpoint — all custom questions already asked")
+                    logger.info("[FLOW] Custom Q 75%% checkpoint — all custom questions already asked")
                 _custom_q_reminder_fired = True
         # Final-window custom question reminder — fires when <60s remain if any still unasked.
         # At this point it's urgent: ask NOW, not gradually.
@@ -2428,11 +2487,11 @@ async def entrypoint(ctx: JobContext):
                     ),
                 )
                 logger.info(
-                    "[CUSTOM_Q] Final-window reminder fired — %d still unasked",
+                    "[FLOW] Custom Q final-window reminder fired — %d still unasked",
                     len(_unasked_cqs_final),
                 )
             else:
-                logger.info("[CUSTOM_Q] Final-window checkpoint — all custom questions covered")
+                logger.info("[FLOW] Custom Q final-window checkpoint — all custom questions covered")
             _custom_q_final_reminder_fired = True
         if (
             remaining <= NO_NEW_QUESTION_CUTOFF_SECONDS
@@ -2448,7 +2507,7 @@ async def entrypoint(ctx: JobContext):
                 ),
             )
             logger.info(
-                "[TIMING] Activated final no-new-question guard (remaining=%.1fs)",
+                "[TIMER] Final window active — remaining=%.1fs",
                 remaining,
             )
         # --- Final 15 seconds: thank you and close ---
@@ -2565,12 +2624,13 @@ async def entrypoint(ctx: JobContext):
         proctoring_profile=proctoring_data,
     )
     logger.info(
-        f"[TRUST] final score={_trust_state['trust_score']} "
+        f"[TRUST] Final — score={_trust_state['trust_score']} "
         f"integrity={_trust_state['integrity_band']} "
         f"quality={_trust_state['quality_band']} "
         f"trend={_trust_state['trend']} "
         f"recommendation={recruiter_summary['recommendation']}"
     )
+    logger.info("[PERSIST] Saving final transcript (%d lines) and scores (%d turns)", len(transcript_lines), len(answer_scores))
     await persist_transcript(
         app_id,
         transcript_lines,
@@ -2578,8 +2638,8 @@ async def entrypoint(ctx: JobContext):
         proctoring_data=proctoring_data,
         final_status="COMPLETED",
     )
-    # Save answer quality scores
     await persist_answer_scores(app_id, answer_scores)
+    logger.info("[PERSIST] Transcript and scores saved")
     await persist_org_usage_metrics(
         org_id,
         latest_session_usage or session.usage,

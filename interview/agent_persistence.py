@@ -21,6 +21,9 @@ from interview.agent_runtime_support import (
 from interview.agent_utils import _coerce_jsonish, truncate_to_tokens
 from livekit.agents.metrics import AgentSessionUsage
 from openai import AsyncOpenAI
+
+_DB_POOL_LOCK = asyncio.Lock()
+
 def normalize_postgres_dsn(conn_str: str) -> str:
     if conn_str.startswith("postgres://"):
         conn_str = conn_str.replace("postgres://", "postgresql://", 1)
@@ -45,15 +48,21 @@ async def get_db_pool() -> asyncpg.Pool:
     global _DB_POOL, _DB_POOL_INIT_TASK
     if _DB_POOL is not None and not _DB_POOL._closed:
         return _DB_POOL
-    # Pool absent or closed (for example stale from a prewarm subprocess) - create fresh.
-    _DB_POOL = None
-    _DB_POOL_INIT_TASK = asyncio.create_task(_create_db_pool())
-    try:
-        _DB_POOL = await _DB_POOL_INIT_TASK
-        return _DB_POOL
-    except Exception:
-        _DB_POOL_INIT_TASK = None
-        raise
+    async with _DB_POOL_LOCK:
+        if _DB_POOL is not None and not _DB_POOL._closed:
+            return _DB_POOL
+        if _DB_POOL_INIT_TASK is not None and not _DB_POOL_INIT_TASK.done():
+            _DB_POOL = await _DB_POOL_INIT_TASK
+            return _DB_POOL
+        # Pool absent or closed (for example stale from a prewarm subprocess) - create fresh.
+        _DB_POOL = None
+        _DB_POOL_INIT_TASK = asyncio.create_task(_create_db_pool())
+        try:
+            _DB_POOL = await _DB_POOL_INIT_TASK
+            return _DB_POOL
+        except Exception:
+            _DB_POOL_INIT_TASK = None
+            raise
 _USAGE_BUCKET_FIELDS: dict[str, tuple[tuple[str, str], ...]] = {
     "llm": (
         ("input_tokens", "inputTokens"),
@@ -731,6 +740,8 @@ async def get_interview_context(app_id: str):
         except Exception as e:
             last_error = e
             logger.error(f"Database error during context fetch (attempt {attempt}/5): {e}")
+            if "no interview context found in db" in str(e).lower():
+                break
             if "executor shutdown" in str(e).lower():
                 global _DB_POOL, _DB_POOL_INIT_TASK
                 _DB_POOL = None

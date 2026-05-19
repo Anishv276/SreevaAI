@@ -819,7 +819,7 @@ export function HardwareCheck({
             speakerFallbackTimerRef.current = window.setTimeout(() => {
                 setSpeakerPlaying(false);
                 if (speakerStatusRef.current === "playing") setSpeakerStatus("awaiting");
-            }, 6000);
+            }, 2000);
 
         } catch (err) {
             console.error("[Speaker] Error:", err);
