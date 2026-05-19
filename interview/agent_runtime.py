@@ -1,4 +1,4 @@
-﻿import sys
+import sys
 import asyncio
 import json
 import time
@@ -49,6 +49,7 @@ from interview.agent_runtime_helpers import (
     _tts_acronym_transform,
     remove_system_messages,
     sanitize_candidate_facing_text,
+    tts_phonetic_processor,
 )
 from interview.agent_runtime_support import (
     DEFAULT_VOICE_ID,
@@ -641,6 +642,8 @@ async def entrypoint(ctx: JobContext):
         custom_questions=_interview_questions or None,
     )
     refresh_candidate_band_context(session_context)
+    # Inject dynamic skills/tools from resume and JD into the phonetic transformer
+    tts_phonetic_processor.add_tools(session_context.coverage_items)
     logger.info(
         "[FLOW] Brief built — anchor=%s anchor_type=%s skills=%s",
         str(session_context.resume_brief.anchor_item or "none")[:60],
@@ -1308,6 +1311,8 @@ async def entrypoint(ctx: JobContext):
                         _covered_resume_topic_keys, _covered_skill_topic_keys, _expected_topic_kind, \
                         _enforce_move_on_until_new, _forced_next_topic_hint
                     try:
+                        old_active_resume = _active_resume_topic
+                        old_active_skill = _active_skill_topic
                         # Step 1: Extract claims and check consistency (before quality eval)
                         # Only runs when contradiction signal is enabled  -  adds 1 LLM call/turn
                         _contradiction_enabled = bool(evaluation_signal_toggles.get("contradiction", False))
@@ -1672,10 +1677,10 @@ async def entrypoint(ctx: JobContext):
                                 _collapse_stage = 0
                                 _last_action_was_move_on = True
                             if _last_action_was_move_on:
-                                if _current_stage_index == 0 and _active_resume_topic:
-                                    _covered_resume_topic_keys.add(_normalize_topic_key(_active_resume_topic))
-                                if _current_stage_index == 1 and _active_skill_topic:
-                                    _covered_skill_topic_keys.add(_normalize_topic_key(_active_skill_topic))
+                                if _current_stage_index == 0 and old_active_resume:
+                                    _covered_resume_topic_keys.add(_normalize_topic_key(old_active_resume))
+                                if _current_stage_index == 1 and old_active_skill:
+                                    _covered_skill_topic_keys.add(_normalize_topic_key(old_active_skill))
                             # Update depth_decay cooldown state
                             if any(ev.get("signal_name") == "depth_decay" for ev in signal_events):
                                 _last_depth_decay_turn = turn
@@ -1921,11 +1926,9 @@ async def entrypoint(ctx: JobContext):
                 emitted_topic_tag = None
                 for _raw_line in raw_content.splitlines():
                     _stripped = _raw_line.strip()
-                    if _stripped.startswith("[TOPIC:NEW"):
-                        emitted_topic_tag = "NEW"
-                        break
-                    elif _stripped.startswith("[TOPIC:FOLLOWUP"):
-                        emitted_topic_tag = "FOLLOWUP"
+                    tag_match = re.search(r"\[TOPIC\s*:\s*(NEW|FOLLOWUP)", _stripped, re.IGNORECASE)
+                    if tag_match:
+                        emitted_topic_tag = tag_match.group(1).upper()
                         break
                 # Apply/consume topic expectation only on substantive assistant turns.
                 # LiveKit can emit assistant items with empty/control content before the

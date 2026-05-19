@@ -179,6 +179,13 @@ def build_stt(language_code: str = "en", model: str = STT_MODEL):
     if "nova" in model.lower() and "enable_diarization" in supported:
         base_kwargs["enable_diarization"] = True
 
+    if "keywords" in supported:
+        base_kwargs["keywords"] = [
+            ("instantly", 10.0),
+            ("heyreach", 10.0),
+            ("n8n", 10.0),
+        ]
+
     ep_ms = _PROVIDER_DEFAULTS["deepgram_endpointing_ms"]
     if "endpointing_ms" in supported:
         base_kwargs["endpointing_ms"] = ep_ms

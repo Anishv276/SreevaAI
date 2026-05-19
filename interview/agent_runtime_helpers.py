@@ -1,4 +1,4 @@
-﻿import json
+import json
 import re
 import time
 from typing import Any
@@ -25,12 +25,7 @@ def sanitize_candidate_facing_text(text: str) -> str:
     result = (text or "").replace("<wait for response>", "").strip()
     if not result:
         return ""
-    # Remove bracketed control blocks anywhere in the sentence.
-    result = re.sub(r"\[(?:[^\[\]]|\[[^\]]*\]){0,2000}\]", " ", result)
-    # Remove known control phrases if they leak unbracketed.
-    for phrase in _CONTROL_PHRASES:
-        result = re.sub(re.escape(phrase), " ", result, flags=re.IGNORECASE)
-    # Remove legacy line-prefixed directive markers.
+    # Remove legacy line-prefixed directive markers first, while tags are intact
     cleaned_lines = []
     for line in result.splitlines():
         stripped = line.strip()
@@ -41,38 +36,28 @@ def sanitize_candidate_facing_text(text: str) -> str:
             or stripped.startswith("[NEXT_TURN_DIRECTIVE")
             or stripped.startswith("[SHORT_RESPONSE_DIRECTIVE")
             or stripped.startswith("[INTERVIEW STATE UPDATE")
-            or stripped.startswith("[TOPIC:NEW")
-            or stripped.startswith("[TOPIC:FOLLOWUP")
+            or re.search(r"TOPIC\s*:\s*(NEW|FOLLOWUP)", stripped, re.IGNORECASE)
         ):
             continue
         cleaned_lines.append(line)
     result = "\n".join(cleaned_lines).strip()
+
+    # Remove bracketed control blocks anywhere in the sentence.
+    result = re.sub(r"\[(?:[^\[\]]|\[[^\]]*\]){0,2000}\]", " ", result)
+    # Remove known control phrases if they leak unbracketed.
+    for phrase in _CONTROL_PHRASES:
+        result = re.sub(re.escape(phrase), " ", result, flags=re.IGNORECASE)
     result = re.sub(r"\s{2,}", " ", result).strip()
     return result
 
 
-# Acronym replacements that must only fire on whole words (word-boundary aware).
-# text_transforms.replace does case-insensitive substring matching which corrupts
-# normal words: "build" -> "bU Ild", "through" -> "tH Rough", "quite" -> "qU Ite".
-_ACRONYM_REPLACEMENTS = [
-    (re.compile(r"\bHR\b"), "H R"),
-    (re.compile(r"\bAPI\b"), "A P I"),
-    (re.compile(r"\bSQL\b"), "sequel"),
-    (re.compile(r"\bURL\b"), "U R L"),
-    (re.compile(r"\bUI\b"), "U I"),
-    (re.compile(r"\bUX\b"), "U X"),
-    (re.compile(r"\bSaaS\b"), "sass"),
-    (re.compile(r"\bDevOps\b"), "dev ops"),
-    (re.compile(r"\bLiveKit\b"), "Live Kit"),
-]
+from interview.tts_phonetic_processor import TTSPhoneticProcessor
+tts_phonetic_processor = TTSPhoneticProcessor().initialize_defaults()
 
 
 async def _tts_acronym_transform(text_stream):
     async for chunk in text_stream:
-        result = chunk
-        for pattern, replacement in _ACRONYM_REPLACEMENTS:
-            result = pattern.sub(replacement, result)
-        yield result
+        yield tts_phonetic_processor.transform(chunk)
 
 
 _TTS_PHONETIC_FIXES = [
