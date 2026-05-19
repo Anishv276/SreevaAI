@@ -1,4 +1,4 @@
-﻿"""
+"""
 agent_providers.py
 ==================
 Provider factory layer for TTS, STT, LLM, and VAD plugins.
@@ -34,13 +34,15 @@ _ELEVENLABS_DEFAULT_MODEL = "eleven_turbo_v2_5"
 _PROVIDER_DEFAULTS: dict[str, Any] = {
     "cartesia_speed":          0.92,
     "sarvam_pace":             1.2,
-    "sarvam_sample_rate":      22050,
-    "sarvam_output_bitrate":   "128k",
-    "sarvam_min_buffer":       50,
+    "sarvam_v3_sample_rate":   24000,
+    "sarvam_v2_sample_rate":   22050,
+    "sarvam_output_bitrate":   "64k",
+    "sarvam_output_codec":     "opus",
+    "sarvam_min_buffer":       30,
     "sarvam_max_chunk":        150,
     "sarvam_v2_pitch":         0.0,
     "sarvam_v2_loudness":      1.0,
-    "sarvam_temperature":      0.6,
+    "sarvam_temperature":      0.4,
     "deepgram_endpointing_ms": 500,
 }
 
@@ -86,27 +88,29 @@ def build_sarvam_tts(
     if not api_key:
         raise RuntimeError("SARVAM_API_KEY is not set")
     d = _PROVIDER_DEFAULTS
+    is_v2 = "v2" in model
     tts_kwargs: dict[str, Any] = {
         "target_language_code": _map_language(language, language),
         "model":                model,
         "speaker":              voice_id,
         "api_key":              api_key,
         "pace":                 d["sarvam_pace"],
-        "speech_sample_rate":   d["sarvam_sample_rate"],
+        "speech_sample_rate":   d["sarvam_v2_sample_rate"] if is_v2 else d["sarvam_v3_sample_rate"],
         "output_audio_bitrate": d["sarvam_output_bitrate"],
+        "output_audio_codec":   d["sarvam_output_codec"],
         "min_buffer_size":      d["sarvam_min_buffer"],
         "max_chunk_length":     d["sarvam_max_chunk"],
         # Explicitly request stream-completion events so the client can
         # terminate WS playback cleanly at end-of-speech.
         "send_completion_event": True,
-        # Cache repeated short phrases (greetings, fillers) for faster synthesis.
-        "enable_cached_responses": True,
     }
-    if "v2" in model:
+    if is_v2:
         tts_kwargs.update({
             "pitch":                d["sarvam_v2_pitch"],
             "loudness":             d["sarvam_v2_loudness"],
             "enable_preprocessing": True,
+            # v2-only option
+            "enable_cached_responses": True,
         })
     else:
         tts_kwargs["temperature"] = d["sarvam_temperature"]

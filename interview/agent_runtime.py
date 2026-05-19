@@ -1,4 +1,4 @@
-﻿import sys
+import sys
 import asyncio
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
@@ -188,6 +188,13 @@ _SITUATIONAL_RE = re.compile(
 _BEHAVIORAL_RE = re.compile(
     r"tell me about a time|tell me about a moment|walk me through a time|"
     r"when something went wrong|a time when|give me an example of when|describe a time",
+    re.IGNORECASE,
+)
+
+# Stage-1 priority guard: do not ask education/background/custom too early.
+_BACKGROUND_EARLY_RE = re.compile(
+    r"\b(educat|university|college|school|academic|background|"
+    r"tell me about yourself|introduce yourself)\b",
     re.IGNORECASE,
 )
 
@@ -792,6 +799,10 @@ async def entrypoint(ctx: JobContext):
     _active_eval_task: Optional[asyncio.Task[Any]] = None  # retained for compatibility; evaluator now runs inline
     _custom_q_reminder_fired: bool = False
     _custom_q_final_reminder_fired: bool = False
+    _resume_topic_questions_asked: int = 0  # stage-1 resume ownership questions asked so far
+    _covered_resume_topic_keys: set[str] = set()
+    _covered_skill_topic_keys: set[str] = set()
+    _user_turn_chain: Optional[asyncio.Task[Any]] = None  # serialize user-turn processing
     # Running log of topics already covered — injected into every directive so the AI
     # never re-explores something already discussed, across all stages.
     _discussed_log: list[str] = []
@@ -897,6 +908,8 @@ async def entrypoint(ctx: JobContext):
                 continue
             if excluded_key and topic_key == excluded_key:
                 continue
+            if topic_key in _covered_resume_topic_keys:
+                continue
             if topic_key not in covered_text:
                 return t
         return None
@@ -929,6 +942,8 @@ async def entrypoint(ctx: JobContext):
             if not topic_key:
                 continue
             if excluded_key and topic_key == excluded_key:
+                continue
+            if topic_key in _covered_skill_topic_keys:
                 continue
             if topic_key not in covered_text:
                 return t
@@ -1287,7 +1302,8 @@ async def entrypoint(ctx: JobContext):
                         _topic_depth_history, _trust_state, _contradiction_state, _collapse_stage, \
                         _last_depth_decay_turn, _last_action_was_move_on, \
                         _active_resume_topic, _active_skill_topic, \
-                        _ai_signal_flush_counter, _ai_signal_flushed_count
+                        _ai_signal_flush_counter, _ai_signal_flushed_count, _resume_topic_questions_asked, \
+                        _covered_resume_topic_keys, _covered_skill_topic_keys
                     try:
                         # Step 1: Extract claims and check consistency (before quality eval)
                         # Only runs when contradiction signal is enabled  -  adds 1 LLM call/turn
@@ -1420,8 +1436,10 @@ async def entrypoint(ctx: JobContext):
                             td["quality"]["clarity"] + td["quality"]["depth"] +
                             td["quality"]["specificity"] + td["quality"]["grounding"]
                         ) / 4.0
-                        # Follow-up policy: fixed cap, no forced override from low-quality
-                        # first answers. Let evaluator intent drive the next action.
+                        # Follow-up policy (strict, both stages):
+                        # - default cap: 2 follow-ups
+                        # - ownership/example clarification gets +1 allowance
+                        # - contradiction clarification freezes follow-up increment
                         topic_follow_up_cap = follow_up_depth
                         if disturbance_hits:
                             action = "VERIFY"
@@ -1595,11 +1613,7 @@ async def entrypoint(ctx: JobContext):
                                         _topic_follow_up_count, follow_up_depth, action, td["decision"].get("mode", "?"),
                                     )
                                 if not freeze_followup_increment:
-                                    # Quality-based exhaustion: move on when topic is genuinely exhausted.
-                                    # A topic is exhausted when:
-                                    #   (a) hard cap hit (absolute safety net), OR
-                                    #   (b) 2+ follow-ups AND last 2 answers were both low quality (< 4.0)
-                                    #       meaning candidate has nothing more to give on this thread
+                                    # Cap-based exhaustion (strict) + optional early quality exhaustion.
                                     last_two_low = (
                                         len(_topic_depth_history) >= 2
                                         and _topic_depth_history[-1] < 4.0
@@ -1651,7 +1665,7 @@ async def entrypoint(ctx: JobContext):
                                             f"DECISION: MOVE_ON\n"
                                             f"NEXT MOVE: {next_goal}"
                                         )
-                                        logger.info("[FOLLOWUP] Moving on (%s, follow_ups=%d) — topic exhausted", reason_note, _topic_follow_up_count)
+                                        logger.info("[FOLLOWUP] Moving on (%s, follow_ups=%d/%d) — strict cap or exhaustion", reason_note, _topic_follow_up_count, topic_follow_up_cap)
                                         _topic_follow_up_count = 0
                                         _topic_depth_history = []
                                         _collapse_stage = 0
@@ -1667,6 +1681,11 @@ async def entrypoint(ctx: JobContext):
                                 _topic_depth_history = []
                                 _collapse_stage = 0
                                 _last_action_was_move_on = True
+                            if _last_action_was_move_on:
+                                if _current_stage_index == 0 and _active_resume_topic:
+                                    _covered_resume_topic_keys.add(_normalize_topic_key(_active_resume_topic))
+                                if _current_stage_index == 1 and _active_skill_topic:
+                                    _covered_skill_topic_keys.add(_normalize_topic_key(_active_skill_topic))
                             # Update depth_decay cooldown state
                             if any(ev.get("signal_name") == "depth_decay" for ev in signal_events):
                                 _last_depth_decay_turn = turn
@@ -1818,6 +1837,20 @@ async def entrypoint(ctx: JobContext):
                                 + "\n"
                             )
                             directive = directive + covered_block
+                        expected_topic_tag = "NEW" if action == "MOVE_ON" else "FOLLOWUP"
+                        directive = (
+                            directive
+                            + "\n[TOPIC_TAG_RULE - DO NOT SAY ALOUD]\n"
+                            + f"Start your next response with exactly [TOPIC:{expected_topic_tag}] on its own line. "
+                            + "Then write your natural interviewer response."
+                        )
+                        if action == "MOVE_ON":
+                            directive = (
+                                directive
+                                + "\n[STRICT_MOVE_ON_RULE - DO NOT SAY ALOUD]\n"
+                                + "You MUST pivot to a different topic in your very next question. "
+                                + "Do NOT ask another follow-up on the same topic."
+                            )
                         # Guardrails: no early closing and strict stage boundaries.
                         if _remaining_total_seconds_now() > NO_NEW_QUESTION_CUTOFF_SECONDS:
                             directive = (
@@ -1832,6 +1865,14 @@ async def entrypoint(ctx: JobContext):
                                 + "\n[STAGE_2_BOUNDARY_GUARD — DO NOT SAY ALOUD]\n"
                                 + "Stage 2 is active. Do NOT ask resume walkthrough/background-summary questions. "
                                 + "Ask only skill-depth, situational, and behavioral questions."
+                            )
+                        if _current_stage_index == 0 and _resume_topic_questions_asked < 2:
+                            directive = (
+                                directive
+                                + "\n[STAGE_1_PRIORITY_GUARD — DO NOT SAY ALOUD]\n"
+                                + "You are still in early Stage 1. Ask resume ownership/project questions only. "
+                                + "Do NOT ask educational background, generic introduction, or recruiter custom questions yet. "
+                                + "You may ask those only after at least 2 resume-topic questions have already been asked."
                             )
                         # Remove previous directive to keep context clean
                         remove_system_messages(chat_ctx, "[NEXT_TURN_DIRECTIVE")
@@ -1858,7 +1899,7 @@ async def entrypoint(ctx: JobContext):
             _last_interviewer_question, _topic_follow_up_count, _topic_depth_history, _last_action_was_move_on, \
             _question_asked_at, _answer_received_at, warmup_responses_received, warmup_complete, llm_spoke_event, _stage_start_time, _candidate_turn_since_last_assistant, \
             _stage_situational_asked, _stage_behavioral_asked, \
-            _custom_q_reminder_fired, _custom_q_final_reminder_fired
+            _custom_q_reminder_fired, _custom_q_final_reminder_fired, _resume_topic_questions_asked, _user_turn_chain
         try:
             item = event.item
             role = getattr(item, "role", None)
@@ -1887,9 +1928,23 @@ async def entrypoint(ctx: JobContext):
                     else:
                         logger.info("[TOPIC_SIGNAL] Ishita signaled NEW TOPIC but evaluator said PROBE — treating as FOLLOWUP, counter stays at %d", _topic_follow_up_count)
                 elif _topic_tag == "FOLLOWUP":
-                    logger.info("[TOPIC_SIGNAL] Ishita signaled FOLLOWUP — counter stays at %d", _topic_follow_up_count)
+                    if _last_action_was_move_on:
+                        # Enforce runtime intent: if previous decision was MOVE_ON, treat this as NEW
+                        # even if model emitted FOLLOWUP tag.
+                        _topic_follow_up_count = 0
+                        _topic_depth_history = []
+                        _last_action_was_move_on = False
+                        logger.warning("[TOPIC_SIGNAL] FOLLOWUP emitted after MOVE_ON — forcing NEW topic state reset")
+                    else:
+                        logger.info("[TOPIC_SIGNAL] Ishita signaled FOLLOWUP — counter stays at %d", _topic_follow_up_count)
                 else:
-                    logger.debug("[TOPIC_SIGNAL] No topic tag in assistant response — counter unchanged (%d)", _topic_follow_up_count)
+                    if _last_action_was_move_on:
+                        _topic_follow_up_count = 0
+                        _topic_depth_history = []
+                        _last_action_was_move_on = False
+                        logger.warning("[TOPIC_SIGNAL] Missing topic tag after MOVE_ON — forcing NEW topic state reset")
+                    else:
+                        logger.debug("[TOPIC_SIGNAL] No topic tag in assistant response — counter unchanged (%d)", _topic_follow_up_count)
                 content = sanitize_candidate_facing_text(content)
             if not role:
                 return
@@ -1938,9 +1993,18 @@ async def entrypoint(ctx: JobContext):
                     append_transcript_line("Candidate", candidate_text)
                     logger.info(f"[TRANSCRIPT] Candidate: {candidate_text[:60]}...")
                 turn_snapshot = turn_count
-                spawn_background_task(
-                    _process_user_conversation_item(event, content, role, turn_snapshot),
-                    f"process_user_turn_{turn_snapshot}",
+                prev_chain = _user_turn_chain
+                async def _run_user_turn_serialized():
+                    if prev_chain:
+                        try:
+                            await prev_chain
+                        except Exception:
+                            # Previous turn failure should not block next turn processing
+                            pass
+                    await _process_user_conversation_item(event, content, role, turn_snapshot)
+                _user_turn_chain = spawn_background_task(
+                    _run_user_turn_serialized(),
+                    f"process_user_turn_serial_{turn_snapshot}",
                 )
                 return
             speaker = "Interviewer" if role == "assistant" else "Candidate"
@@ -1957,6 +2021,23 @@ async def entrypoint(ctx: JobContext):
                 q_match = re.search(r'([^.!?]+\?)\s*$', clean_content.strip())
                 if q_match:
                     _last_interviewer_question = q_match.group(1).strip()
+                if _current_stage_index == 0 and _last_interviewer_question:
+                    _q_l = _last_interviewer_question.lower()
+                    _is_background = bool(_BACKGROUND_EARLY_RE.search(_q_l))
+                    _is_custom_like = False
+                    if _custom_questions:
+                        _asked_words_q = _expand_custom_q_tokens(re.sub(r"[^a-z0-9\\s]", " ", _q_l))
+                        for _cq_for_count in _custom_questions:
+                            _cq_words_for_count = _expand_custom_q_tokens(_cq_for_count.normalized)
+                            if _cq_words_for_count and len(_cq_words_for_count.intersection(_asked_words_q)) >= 2:
+                                _is_custom_like = True
+                                break
+                    if not _is_background and not _is_custom_like:
+                        _resume_topic_questions_asked += 1
+                        logger.info(
+                            "[STAGE1] Resume-topic question count: %d",
+                            _resume_topic_questions_asked,
+                        )
                 # Detect whether this assistant turn contained a situational or behavioral question
                 # so we know if the mandatory quota has been fulfilled for the current stage.
                 if _SITUATIONAL_RE.search(clean_content):
