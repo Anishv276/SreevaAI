@@ -803,6 +803,7 @@ async def entrypoint(ctx: JobContext):
     _covered_resume_topic_keys: set[str] = set()
     _covered_skill_topic_keys: set[str] = set()
     _user_turn_chain: Optional[asyncio.Task[Any]] = None  # serialize user-turn processing
+    _expected_topic_kind: Optional[str] = None  # runtime source of truth: "NEW" | "FOLLOWUP"
     # Running log of topics already covered — injected into every directive so the AI
     # never re-explores something already discussed, across all stages.
     _discussed_log: list[str] = []
@@ -1303,7 +1304,7 @@ async def entrypoint(ctx: JobContext):
                         _last_depth_decay_turn, _last_action_was_move_on, \
                         _active_resume_topic, _active_skill_topic, \
                         _ai_signal_flush_counter, _ai_signal_flushed_count, _resume_topic_questions_asked, \
-                        _covered_resume_topic_keys, _covered_skill_topic_keys
+                        _covered_resume_topic_keys, _covered_skill_topic_keys, _expected_topic_kind
                     try:
                         # Step 1: Extract claims and check consistency (before quality eval)
                         # Only runs when contradiction signal is enabled  -  adds 1 LLM call/turn
@@ -1838,6 +1839,7 @@ async def entrypoint(ctx: JobContext):
                             )
                             directive = directive + covered_block
                         expected_topic_tag = "NEW" if action == "MOVE_ON" else "FOLLOWUP"
+                        _expected_topic_kind = expected_topic_tag
                         directive = (
                             directive
                             + "\n[TOPIC_TAG_RULE - DO NOT SAY ALOUD]\n"
@@ -1899,52 +1901,45 @@ async def entrypoint(ctx: JobContext):
             _last_interviewer_question, _topic_follow_up_count, _topic_depth_history, _last_action_was_move_on, \
             _question_asked_at, _answer_received_at, warmup_responses_received, warmup_complete, llm_spoke_event, _stage_start_time, _candidate_turn_since_last_assistant, \
             _stage_situational_asked, _stage_behavioral_asked, \
-            _custom_q_reminder_fired, _custom_q_final_reminder_fired, _resume_topic_questions_asked, _user_turn_chain
+            _custom_q_reminder_fired, _custom_q_final_reminder_fired, _resume_topic_questions_asked, _user_turn_chain, _expected_topic_kind
         try:
             item = event.item
             role = getattr(item, "role", None)
             content = item.text_content
             if role == "assistant":
-                # Read topic signal from raw LLM output BEFORE sanitization strips it.
+                # Read model-emitted topic tag from raw output (telemetry only).
                 raw_content = content or ""
-                _topic_tag = None
+                emitted_topic_tag = None
                 for _raw_line in raw_content.splitlines():
                     _stripped = _raw_line.strip()
                     if _stripped.startswith("[TOPIC:NEW"):
-                        _topic_tag = "NEW"
+                        emitted_topic_tag = "NEW"
                         break
                     elif _stripped.startswith("[TOPIC:FOLLOWUP"):
-                        _topic_tag = "FOLLOWUP"
+                        emitted_topic_tag = "FOLLOWUP"
                         break
-                if _topic_tag == "NEW":
-                    # Only reset if the system evaluator also agreed this was a MOVE_ON.
-                    # If the evaluator said PROBE, the AI is mislabeling a sub-topic pivot
-                    # as a new topic — dampen the reset to prevent infinite loops within one job.
-                    if _last_action_was_move_on:
-                        _topic_follow_up_count = 0
-                        _topic_depth_history = []
-                        _last_action_was_move_on = False
-                        logger.info("[TOPIC_SIGNAL] Ishita signaled NEW TOPIC + evaluator confirmed MOVE_ON — counter reset")
-                    else:
-                        logger.info("[TOPIC_SIGNAL] Ishita signaled NEW TOPIC but evaluator said PROBE — treating as FOLLOWUP, counter stays at %d", _topic_follow_up_count)
-                elif _topic_tag == "FOLLOWUP":
-                    if _last_action_was_move_on:
-                        # Enforce runtime intent: if previous decision was MOVE_ON, treat this as NEW
-                        # even if model emitted FOLLOWUP tag.
-                        _topic_follow_up_count = 0
-                        _topic_depth_history = []
-                        _last_action_was_move_on = False
-                        logger.warning("[TOPIC_SIGNAL] FOLLOWUP emitted after MOVE_ON — forcing NEW topic state reset")
-                    else:
-                        logger.info("[TOPIC_SIGNAL] Ishita signaled FOLLOWUP — counter stays at %d", _topic_follow_up_count)
+                # Runtime source of truth for topic-kind transitions.
+                if _expected_topic_kind == "NEW":
+                    _topic_follow_up_count = 0
+                    _topic_depth_history = []
+                    _last_action_was_move_on = False
+                    logger.info("[TOPIC_RUNTIME] expected=NEW -> counter reset")
+                elif _expected_topic_kind == "FOLLOWUP":
+                    logger.info("[TOPIC_RUNTIME] expected=FOLLOWUP -> counter stays at %d", _topic_follow_up_count)
                 else:
-                    if _last_action_was_move_on:
-                        _topic_follow_up_count = 0
-                        _topic_depth_history = []
-                        _last_action_was_move_on = False
-                        logger.warning("[TOPIC_SIGNAL] Missing topic tag after MOVE_ON — forcing NEW topic state reset")
-                    else:
-                        logger.debug("[TOPIC_SIGNAL] No topic tag in assistant response — counter unchanged (%d)", _topic_follow_up_count)
+                    logger.debug("[TOPIC_RUNTIME] no expected topic kind set -> state unchanged (%d)", _topic_follow_up_count)
+
+                # Drift telemetry: model output vs runtime expectation.
+                if _expected_topic_kind and emitted_topic_tag and emitted_topic_tag != _expected_topic_kind:
+                    logger.warning(
+                        "[TOPIC_DRIFT] expected=%s emitted=%s",
+                        _expected_topic_kind, emitted_topic_tag,
+                    )
+                elif _expected_topic_kind and not emitted_topic_tag:
+                    logger.warning("[TOPIC_DRIFT] expected=%s emitted=NONE", _expected_topic_kind)
+
+                # Consume expectation after assistant turn.
+                _expected_topic_kind = None
                 content = sanitize_candidate_facing_text(content)
             if not role:
                 return
