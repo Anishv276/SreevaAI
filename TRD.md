@@ -46,7 +46,6 @@
 - `framer-motion ^12.34.2` — page transitions, UI animations
 - `lucide-react ^0.574.0` — icons
 - `date-fns ^4.1.0` — date formatting
-- `@monaco-editor/react ^4.7.0` — code display in reports
 - `plyr-react ^6.0.0` — interview recording playback
 - `lenis ^1.3.23` — smooth scroll
 - `html2canvas ^1.4.1` + `jspdf ^4.2.1` — PDF export

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useAuth } from "@/context/auth-context";
 import {
     AlertTriangle,
     ArrowRight,
@@ -35,7 +36,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { LANDING_PACKAGES as pricingPlans } from "@/lib/landing-packages";
 type Session = {
-    role?: string;
+    // role?: string;
 };
 const problemCards = [
     {
@@ -222,7 +223,7 @@ function SectionHeading({
     );
 }
 export default function Home() {
-    const [session, setSession] = useState<Session | null>(null);
+    const { user } = useAuth();
     const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(null);
     const [activeSection, setActiveSection] = useState("hero");
     useEffect(() => {
@@ -269,10 +270,10 @@ export default function Home() {
     useEffect(() => {
         const checkAuth = async () => {
             try {
-                const res = await fetch("/api/auth/me");
-                if (res.ok) {
-                    const data = (await res.json()) as Session;
-                    setSession(data);
+                // const res = await fetch("/api/auth/me");
+                if (false) {
+                    // const data = (await res.json()) as Session;
+                    // setSession(data);
                 }
             } catch (err) {
                 console.error("Auth check failed", err);
@@ -280,9 +281,9 @@ export default function Home() {
         };
         checkAuth();
     }, []);
-    const dashboardHref = session?.role === "SUPER_ADMIN" ? "/super-admin" : "/admin";
-    const ctaHref = session ? dashboardHref : "https://cal.com/vamsivk/30min";
-    const ctaLabel = session ? "Dashboard" : "Book Demo";
+    const dashboardHref = user?.role === "SUPER_ADMIN" ? "/super-admin" : "/admin";
+    const ctaHref = user ? dashboardHref : "https://cal.com/vamsivk/30min";
+    const ctaLabel = user ? "Dashboard" : "Book Demo";
     return (
         <div className="min-h-screen overflow-x-hidden bg-surface text-on-surface selection:bg-primary-fixed selection:text-on-primary-container">
             <header className="fixed top-0 left-0 right-0 z-50 h-20 bg-white/80 backdrop-blur-md border-b border-slate-100/50">
@@ -324,7 +325,7 @@ export default function Home() {
                         })}
                     </nav>
                     <div className="flex items-center gap-3 sm:gap-4">
-                        {!session && (
+                        {!user && (
                             <Link
                                 href="/login"
                                 className="rounded-lg px-4 py-2 font-medium text-slate-600 transition-all hover:bg-orange-50"
@@ -334,8 +335,8 @@ export default function Home() {
                         )}
                         <Link
                             href={ctaHref}
-                            target={!session ? "_blank" : undefined}
-                            rel={!session ? "noreferrer" : undefined}
+                            target={!user ? "_blank" : undefined}
+                            rel={!user ? "noreferrer" : undefined}
                             className="primary-btn scale-95 px-5 py-2.5 text-sm font-bold active:scale-90 sm:px-6"
                         >
                             {ctaLabel}
@@ -361,8 +362,8 @@ export default function Home() {
                                 </div>
                             </div>
                             <div className="flex flex-col gap-4 sm:flex-row">
-                                <Link href={ctaHref} target={!session ? "_blank" : undefined} rel={!session ? "noreferrer" : undefined} className="primary-btn inline-flex items-center justify-center gap-2 px-8 py-4 text-lg font-bold">
-                                    {session ? "Open Dashboard" : "See Demo"}
+                                <Link href={ctaHref} target={!user ? "_blank" : undefined} rel={!user ? "noreferrer" : undefined} className="primary-btn inline-flex items-center justify-center gap-2 px-8 py-4 text-lg font-bold">
+                                    {user ? "Open Dashboard" : "See Demo"}
                                     <ArrowRight className="h-5 w-5" />
                                 </Link>
                             </div>
@@ -714,9 +715,9 @@ export default function Home() {
                                     ))}
                                 </ul>
                                 <Link
-                                    href={session ? dashboardHref : "#contact"}
+                                    href={user ? dashboardHref : "#contact"}
                                     onClick={(e) => {
-                                        if (!session) scrollToSection(e, "#contact");
+                                        if (!user) scrollToSection(e, "#contact");
                                     }}
                                     className={`${plan.featured ? "primary-btn" : "secondary-btn"} w-full py-3 text-center font-bold`}
                                 >
