@@ -59,7 +59,6 @@ from interview.agent_runtime_support import (
     FIXED_INTERVIEW_DURATION_MINUTES,
     REDIS_URL,
     STT_MODEL,
-    _DB_POOL_INIT_TASK,
     compose_risk_score,
     logger,
     reset_log_context,
@@ -86,8 +85,6 @@ from interview.prompt_layers import (
     build_evaluation_layer_prompt,
     build_system_prompt,
 )
-
-_LOCAL_STAGE_DIRECTIVE_CACHE: dict[str, dict[str, str]] = {}
 
 GREETING_FIXED_SECONDS = 60
 WARMUP_FIXED_SECONDS = 120
@@ -319,8 +316,6 @@ def prewarm(proc: JobProcess):
             except Exception as task_err:
                 logger.warning(f"Database pool warmup failed: {task_err}")
         db_pool_task.add_done_callback(_store_db_pool)
-        global _DB_POOL_INIT_TASK
-        _DB_POOL_INIT_TASK = db_pool_task
         logger.info("Database pool warmup scheduled.")
     except RuntimeError:
         logger.info("No running event loop in prewarm; DB pool will initialize lazily.")
@@ -471,47 +466,6 @@ async def entrypoint(ctx: JobContext):
         "app_id": app_id,
         "room_name": ctx.room.name,
     }
-    redis_client = None
-    stage_cache_key = f"interview:{app_id}:stage_directives"
-
-    async def _init_redis_client() -> None:
-        nonlocal redis_client
-        if redis_client is not None:
-            return
-        if not REDIS_URL or redis_asyncio is None:
-            return
-        try:
-            redis_client = redis_asyncio.from_url(REDIS_URL, decode_responses=True)
-            await redis_client.ping()
-        except Exception as e:
-            redis_client = None
-            logger.warning(f"[STAGE_CACHE] Redis unavailable, using in-memory cache: {e}")
-
-    async def _cache_stage_directive(stage_key: str, content: str) -> None:
-        if not content:
-            return
-        try:
-            if redis_client is not None:
-                await redis_client.hset(stage_cache_key, stage_key, content)
-                await redis_client.expire(stage_cache_key, max(900, int(time_limit_mins * 120)))
-
-                return
-        except Exception as e:
-            logger.warning(f"[STAGE_CACHE] Redis write failed for {stage_key}: {e}")
-        _LOCAL_STAGE_DIRECTIVE_CACHE.setdefault(app_id, {})[stage_key] = content
-
-
-    async def _read_stage_directive(stage_key: str) -> Optional[str]:
-        try:
-            if redis_client is not None:
-                cached = await redis_client.hget(stage_cache_key, stage_key)
-                if cached:
-                    return str(cached)
-        except Exception as e:
-            logger.warning(f"[STAGE_CACHE] Redis read failed for {stage_key}: {e}")
-        local_cached = _LOCAL_STAGE_DIRECTIVE_CACHE.get(app_id, {}).get(stage_key)
-
-        return local_cached
     if dispatch_metadata:
         session_log_context.update({
             "dispatch_application_id": dispatch_metadata.get("applicationId", app_id),
@@ -692,16 +646,14 @@ async def entrypoint(ctx: JobContext):
         len(session_context.resume_brief.work_history or session_context.resume_brief.internships),
     )
     logger.info("[4/6] MERGED BRIEF —\n%s", session_context.merged_brief_block or "(empty)")
-    await _init_redis_client()
     stage1_directive_cached = build_stage_1_resume_directive(
         band=session_context.candidate_band,
         resume_brief=session_context.resume_brief,
         custom_questions=_interview_questions or None,
     )
     # Stages 2-4 are built dynamically at injection time so they reflect what was
-    # actually covered in prior stages. Only stage 1 is cached — it has no prior context.
-    await _cache_stage_directive("stage1", stage1_directive_cached)
-    logger.info("[5/6] STAGE 1 CACHED — %dbytes", len(stage1_directive_cached))
+    # actually covered in prior stages. Stage 1 is built once because it has no prior context.
+    logger.info("[5/6] STAGE 1 BUILT — %dbytes", len(stage1_directive_cached))
     logger.info("[STAGE 1 CONTENT]\n%s", stage1_directive_cached)
     voice_layer_prompt = build_voice_layer_prompt(
         candidate_name=candidate_first_name or candidate_name,
