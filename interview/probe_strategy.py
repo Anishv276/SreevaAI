@@ -309,7 +309,11 @@ def build_directive(
         )
     elif action == "MOVE_ON" and uncovered_topics:
         next_topic = uncovered_topics[0] if uncovered_topics else "next area"
-        lines.append(f"BRIDGE NOW to: {next_topic}")
+        lines.extend([
+            f"BRIDGE NOW to: {next_topic}",
+            "NEXT TOPIC LOCK: The current topic is closed. Your very next question must be about the bridge topic above.",
+            "Do NOT ask another follow-up on the previous project, work item, skill thread, or example.",
+        ])
     if current_stage:
         lines.append(
             f"STAGE GUARD: Keep your next question strictly within {current_stage.upper()} stage intent."

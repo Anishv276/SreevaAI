@@ -810,7 +810,6 @@ async def entrypoint(ctx: JobContext):
     _stage_quota_reminder_fired: bool = False  # True after mid-stage reminder injected
     _final_no_new_question_guard = False
     _candidate_turn_since_last_assistant = True
-    _consecutive_low_signal_move_on = 0
     _stage_transition_events: list[dict[str, Any]] = []
     environment_risk = 0     # browser-side proctoring signals
     integrity_risk = 0       # integrity-related proctoring signals
@@ -829,10 +828,11 @@ async def entrypoint(ctx: JobContext):
     _oai_eval_client = analysis_client  # reused client for per-turn evaluations
     answer_scores: list[dict] = []    # log of all answer quality scores for final DB save
     _topic_depth_history: list[float] = []  # depth scores per answer on current topic (reset on MOVE_ON)
+    _active_resume_topic: Optional[str] = None  # current resume anchor we should rotate away from on MOVE_ON
+    _active_skill_topic: Optional[str] = None  # current skill thread we should rotate away from on MOVE_ON
     _last_action_was_move_on: bool = False  # True after AI pivoted to new topic; resets follow-up counter next turn
     _collapse_stage: int = 0               # 0=none, 1=first probe issued, 2+=repeated collapse (hard flag)
     _last_depth_decay_turn: int = -999     # turn number when depth_decay last fired; -999 = never
-    _depth_decay_ever_fired: bool = False  # True once depth_decay has fired at least once
     _question_asked_at: float = 0.0        # perf_counter() when Ishita finished speaking
     _answer_received_at: float = 0.0       # perf_counter() when candidate answer arrived
     _trust_state = init_trust_state()  # session-level trust engine state
@@ -930,13 +930,55 @@ async def entrypoint(ctx: JobContext):
                 unique.append(t)
         return unique[:8]
 
-    def _next_uncovered_resume_topic() -> Optional[str]:
+    def _normalize_topic_key(text: str) -> str:
+        return re.sub(r"[^a-z0-9]+", " ", str(text or "").lower()).strip()
+
+    def _next_uncovered_resume_topic(*, exclude_topic: str | None = None) -> Optional[str]:
         topics = _resume_topic_candidates()
         if not topics:
             return None
         covered_text = " ".join(_discussed_log).lower()
+        excluded_key = _normalize_topic_key(exclude_topic or "")
         for t in topics:
-            if t.lower() not in covered_text:
+            topic_key = _normalize_topic_key(t)
+            if not topic_key:
+                continue
+            if excluded_key and topic_key == excluded_key:
+                continue
+            if topic_key not in covered_text:
+                return t
+        return None
+
+    def _skill_topic_candidates() -> list[str]:
+        rb = session_context.resume_brief
+        topics: list[str] = []
+        for raw in list(rb.skills):
+            txt = str(raw).strip()
+            if not txt:
+                continue
+            topics.append(txt)
+        unique: list[str] = []
+        seen = set()
+        for t in topics:
+            key = _normalize_topic_key(t)
+            if key and key not in seen:
+                seen.add(key)
+                unique.append(t)
+        return unique[:10]
+
+    def _next_uncovered_skill_topic(*, exclude_topic: str | None = None) -> Optional[str]:
+        topics = _skill_topic_candidates()
+        if not topics:
+            return None
+        covered_text = " ".join(_discussed_log).lower()
+        excluded_key = _normalize_topic_key(exclude_topic or "")
+        for t in topics:
+            topic_key = _normalize_topic_key(t)
+            if not topic_key:
+                continue
+            if excluded_key and topic_key == excluded_key:
+                continue
+            if topic_key not in covered_text:
                 return t
         return None
 
@@ -972,7 +1014,7 @@ async def entrypoint(ctx: JobContext):
 
     def _advance_stage(reason: str, now_mono: float) -> bool:
         nonlocal _current_stage_index, _stage_start_time, _stage_bridge_pending, \
-            _stage_situational_asked, _stage_behavioral_asked, _stage_quota_reminder_fired
+            _stage_situational_asked, _stage_behavioral_asked, _stage_quota_reminder_fired, _active_skill_topic
         if not warmup_complete:
             return False
         if _current_stage_index >= len(STAGE_CONFIGS) - 1:
@@ -1020,6 +1062,8 @@ async def entrypoint(ctx: JobContext):
         _stage_situational_asked = False
         _stage_behavioral_asked = False
         _stage_quota_reminder_fired = False
+        if _current_stage_index == 1:
+            _active_skill_topic = _next_uncovered_skill_topic()
 
         if stage_directive:
             chat_ctx.add_message(role="system", content=stage_directive)
@@ -1289,7 +1333,8 @@ async def entrypoint(ctx: JobContext):
                     nonlocal _topic_follow_up_count, environment_risk, integrity_risk, depth_risk, suspicion_score, current_interview_mode, \
                         answer_scores, _claim_index, _contradictions_found, \
                         _topic_depth_history, _trust_state, _contradiction_state, _collapse_stage, \
-                        _last_depth_decay_turn, _depth_decay_ever_fired, _consecutive_low_signal_move_on, _last_action_was_move_on, \
+                        _last_depth_decay_turn, _last_action_was_move_on, \
+                        _active_resume_topic, _active_skill_topic, \
                         _ai_signal_flush_counter, _ai_signal_flushed_count
                     try:
                         # Step 1: Extract claims and check consistency (before quality eval)
@@ -1326,7 +1371,11 @@ async def entrypoint(ctx: JobContext):
                         try:
                             uncovered_topics: list[str] = []
                             if _current_stage_index == 0:
-                                nxt = _next_uncovered_resume_topic()
+                                nxt = _next_uncovered_resume_topic(exclude_topic=_active_resume_topic)
+                                if nxt:
+                                    uncovered_topics = [nxt]
+                            elif _current_stage_index == 1:
+                                nxt = _next_uncovered_skill_topic(exclude_topic=_active_skill_topic)
                                 if nxt:
                                     uncovered_topics = [nxt]
                             current_stage_name = (
@@ -1478,12 +1527,18 @@ async def entrypoint(ctx: JobContext):
                             and follow_ups >= 1
                             and not disturbance_hits
                         ):
-                            next_resume_topic = uncovered_topics[0] if uncovered_topics else "another resume project"
+                            next_resume_topic = (
+                                _next_uncovered_resume_topic(exclude_topic=_active_resume_topic)
+                                or (uncovered_topics[0] if uncovered_topics else None)
+                                or "another resume project"
+                            )
+                            _active_resume_topic = next_resume_topic if next_resume_topic != "another resume project" else _active_resume_topic
                             action = "MOVE_ON"
                             td["decision"]["action"] = "MOVE_ON"
                             td["decision"]["next_goal"] = (
-                                f"Acknowledge briefly and pivot to a fresh resume ownership topic: {next_resume_topic}. "
-                                "Ask what they personally built, owned, and decided there."
+                                f"Acknowledge briefly, close the current project thread, and pivot to this next resume topic: "
+                                f"{next_resume_topic}. Ask one fresh question about what they personally built, owned, or decided there. "
+                                "Do not ask another follow-up on the previous project."
                             )
                             directive = (
                                 "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
@@ -1500,21 +1555,35 @@ async def entrypoint(ctx: JobContext):
                             and _is_question_already_covered(question)
                         ):
                             if _current_stage_index == 0:
-                                next_topic_hint = uncovered_topics[0] if uncovered_topics else "another resume ownership topic"
+                                next_topic_hint = (
+                                    _next_uncovered_resume_topic(exclude_topic=_active_resume_topic)
+                                    or (uncovered_topics[0] if uncovered_topics else "another resume ownership topic")
+                                )
+                                if isinstance(next_topic_hint, str) and next_topic_hint and not next_topic_hint.startswith("another "):
+                                    _active_resume_topic = next_topic_hint
                             else:
-                                next_topic_hint = f"another skill-focused topic for the {job_title} role"
+                                next_topic_hint = (
+                                    _next_uncovered_skill_topic(exclude_topic=_active_skill_topic)
+                                    or (uncovered_topics[0] if uncovered_topics else f"another skill-focused topic for the {job_title} role")
+                                )
+                                if (
+                                    isinstance(next_topic_hint, str)
+                                    and next_topic_hint
+                                    and not next_topic_hint.startswith("another skill-focused")
+                                ):
+                                    _active_skill_topic = next_topic_hint
                             anchor = _recent_discussion_anchor()
                             action = "MOVE_ON"
                             td["decision"]["action"] = "MOVE_ON"
                             td["decision"]["next_goal"] = (
-                                f"This topic is already covered {anchor}. Acknowledge professionally, then pivot to {next_topic_hint}. "
-                                "Do not re-ask the same question."
+                                f"This topic is already covered {anchor}. Acknowledge professionally, close that thread, then pivot to "
+                                f"{next_topic_hint}. Ask a new question on that next topic, not a follow-up on the old one."
                             )
                             directive = (
                                 "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
                                 "DECISION: MOVE_ON\n"
                                 f"NEXT MOVE: This was already covered {anchor}. Say a short acknowledgement like "
-                                f"'Thanks, I think we already covered this {anchor}' and ask one fresh ownership-focused question."
+                                f"'Thanks, I think we already covered this {anchor}' and ask one fresh question on {next_topic_hint}."
                             )
                             logger.info("[DEDUPE] Current question already covered — forcing MOVE_ON")
                         if quality_avg >= 7.0:
@@ -1522,11 +1591,7 @@ async def entrypoint(ctx: JobContext):
                         elif quality_avg >= 4.5:
                             depth_signal = "SPECIFIC"
                         # Stage transitions are strictly time-driven via _advance_stage_if_due().
-                        # Low-quality streaks can trigger topic pivots, but must not advance stage.
-                        if quality_avg < 3.5:
-                            _consecutive_low_signal_move_on += 1
-                        else:
-                            _consecutive_low_signal_move_on = 0
+                        # Low-quality streaks can still trigger topic pivots via the evaluator, but must not advance stage.
                         # All I/O is done. Acquire lock before mutating any shared session state.
                         # This keeps background turn processing from interleaving shared counters.
                         async with _session_state_lock:
@@ -1598,9 +1663,30 @@ async def entrypoint(ctx: JobContext):
                                         next_stage_idx = _current_stage_index + 1
                                         if not stage_advance_forced and next_stage_idx < len(STAGE_CONFIGS):
                                             next_stage_label = STAGE_CONFIGS[next_stage_idx].label
-                                            next_topic_hint = (uncovered_topics[0] if uncovered_topics else f"a key skill for the {job_title} role")
+                                            if _current_stage_index == 0:
+                                                next_topic_hint = (
+                                                    _next_uncovered_resume_topic(exclude_topic=_active_resume_topic)
+                                                    or (uncovered_topics[0] if uncovered_topics else f"a key skill for the {job_title} role")
+                                                )
+                                                if (
+                                                    isinstance(next_topic_hint, str)
+                                                    and next_topic_hint
+                                                    and not next_topic_hint.startswith(("a key skill", "another "))
+                                                ):
+                                                    _active_resume_topic = next_topic_hint
+                                            else:
+                                                next_topic_hint = (
+                                                    _next_uncovered_skill_topic(exclude_topic=_active_skill_topic)
+                                                    or (uncovered_topics[0] if uncovered_topics else f"another skill-focused topic for the {job_title} role")
+                                                )
+                                                if (
+                                                    isinstance(next_topic_hint, str)
+                                                    and next_topic_hint
+                                                    and not next_topic_hint.startswith("another skill-focused")
+                                                ):
+                                                    _active_skill_topic = next_topic_hint
                                             next_goal = (
-                                                f"This thread is exhausted. Acknowledge briefly and move on. "
+                                                f"This thread is exhausted. Acknowledge briefly, close the current thread, and move on. "
                                                 f"If enough time remains in this stage, ask about {next_topic_hint}. "
                                                 f"If this stage is nearly done, bridge naturally into the {next_stage_label} stage."
                                             )
@@ -1632,7 +1718,6 @@ async def entrypoint(ctx: JobContext):
                             # Update depth_decay cooldown state
                             if any(ev.get("signal_name") == "depth_decay" for ev in signal_events):
                                 _last_depth_decay_turn = turn
-                                _depth_decay_ever_fired = True
                             # Update the canonical TrustState only. Trust deltas are folded into the
                             # single structured engine so we do not maintain a second trust line.
                             _trust_state = apply_turn_decision(
@@ -1882,6 +1967,10 @@ async def entrypoint(ctx: JobContext):
                             resume_brief=session_context.resume_brief,
                         )
                         chat_ctx.add_message(role="system", content=stage1_directive)
+                        _active_resume_topic = (
+                            str(getattr(session_context.resume_brief, "anchor_item", "") or "").split(" - ", 1)[0].strip()
+                            or (_resume_topic_candidates()[0] if _resume_topic_candidates() else None)
+                        )
                         _stage_start_time = time.monotonic()
                         stage1_budget = _stage_budgets_secs.get(0, 0)
                         logger.info(
