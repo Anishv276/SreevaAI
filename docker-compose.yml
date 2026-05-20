@@ -8,7 +8,7 @@ services:
         # NEXT_PUBLIC_LIVEKIT_URL: "wss://new-wi7dgqfb.livekit.cloud" # LiveKit Cloud (commented for now)
         NEXT_PUBLIC_LIVEKIT_URL: "wss://lk.sreevaai.com" # Deployment cloud
         NEXT_PUBLIC_APP_URL: "https://www.sreevaai.com"
-    container_name: hr-frontend
+    container_name: Frontend
     networks:
       - traefik-proxy
     env_file:
@@ -35,7 +35,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.frontend
-    container_name: hr-worker
+    container_name: Normal-worker
     command: npm run worker
     env_file:
       - .env
@@ -56,7 +56,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: hr-agent
+    container_name: Backend - python agent
     networks:
       - traefik-proxy
     env_file:
