@@ -240,19 +240,6 @@ def _clean_stt_text(raw_text: str) -> str:
 
 class InterviewAgent(Agent):
     async def tts_node(self, text, model_settings):
-        # Buffer the entire text stream into one string before sending to TTS.
-        # All TTS engines (Sarvam, Cartesia, Google) split text into sentence
-        # chunks internally. The first word of each chunk has no phoneme context,
-        # causing consonant-cluster words (build, through, quite, strength) to be
-        # synthesized letter-by-letter. Sending one complete string gives the TTS
-        # engine full context for every word.
-        full_text = ""
-        async for chunk in text:
-            full_text += chunk
-
-        if not full_text.strip():
-            return
-
         activity = self._get_activity_or_raise()
         tts_engine = activity.tts
         if tts_engine is None:
@@ -260,31 +247,62 @@ class InterviewAgent(Agent):
 
         conn_options = activity.session.conn_options.tts_conn_options
 
+        # Sentence-boundary splitter: push complete sentences to TTS as the LLM
+        # generates them, CONCURRENTLY with reading audio frames back.
+        # Works for Sarvam, Cartesia, and ElevenLabs — all implement the same
+        # SynthesizeStream base with push_text() / end_input().
+        # Benefit: candidate hears first audio after ~1 sentence (~400ms LLM time)
+        # instead of waiting for the full response (~1.5s). ~1s latency reduction.
+        # Sending complete sentences (not word-by-word) preserves phoneme context
+        # so TTS won't mispronounce consonant clusters.
+        _SENT_END = re.compile(r'(?<=[.?!])\s+')
+
+        async def _push_sentences(tts_stream) -> None:
+            buf = ""
+            n = 0
+            async for chunk in text:
+                buf += chunk
+                while True:
+                    m = _SENT_END.search(buf)
+                    if not m:
+                        break
+                    sentence = buf[:m.start() + 1].strip()
+                    buf = buf[m.end():]
+                    if sentence:
+                        tts_stream.push_text(sentence + " ")
+                        n += 1
+            if buf.strip():
+                tts_stream.push_text(buf.strip())
+                n += 1
+            tts_stream.end_input()
+            logger.info("[TTS] Streamed %d sentence(s) via WebSocket", n)
+
         try:
-            # Sarvam's native websocket stream is the flaky path here.
-            # Use the REST synthesize path for Sarvam so long answers stay stable.
-            provider = str(getattr(tts_engine, "provider", "")).lower()
-            if provider == "sarvam":
-                async with tts_engine.synthesize(full_text, conn_options=conn_options) as stream:
-                    async for ev in stream:
-                        yield ev.frame
-            elif tts_engine.capabilities.streaming:
+            if tts_engine.capabilities.streaming:
                 async with tts_engine.stream(conn_options=conn_options) as stream:
-                    stream.push_text(full_text)
-                    stream.end_input()
-                    async for ev in stream:
-                        yield ev.frame
+                    # Push text and read audio frames concurrently.
+                    # push_task sends sentences as the LLM generates them;
+                    # the stream yields audio frames as each sentence is synthesized.
+                    push_task = asyncio.create_task(_push_sentences(stream))
+                    try:
+                        async for ev in stream:
+                            yield ev.frame
+                    finally:
+                        await push_task
             else:
+                # Non-streaming provider: buffer full text, then synthesize once.
+                full_text = ""
+                async for chunk in text:
+                    full_text += chunk
+                if not full_text.strip():
+                    return
                 async with tts_engine.synthesize(full_text, conn_options=conn_options) as stream:
                     async for ev in stream:
                         yield ev.frame
+
         except asyncio.CancelledError:
-            # Normal when a speaking turn is interrupted by a newer turn.
             raise
         except Exception as e:
-            # Sarvam stream teardown can surface transient channel-close errors
-            # (e.g. ChanClosed/APIConnectionError) during interruption cleanup.
-            # Treat these as non-fatal so one failed audio turn doesn't derail session flow.
             err_text = str(e).lower()
             if any(s in err_text for s in ("chanclosed", "channel", "api connection", "tts stream failed", "closing transport")):
                 logger.warning("[TTS] Stream interrupted/closed during generation; skipping this utterance cleanly: %s", str(e)[:220])
@@ -545,14 +563,18 @@ async def entrypoint(ctx: JobContext):
     candidate_first_name = first_name_from_full_name(candidate_name)
     job_title = ctx_data.jobTitle
 
-    # Log what has been fetched from database
-    logger.info("[STARTUP] Resume fetched: %s", "YES" if structured_resume else "NO")
-    if structured_resume:
-        logger.info("[STARTUP]   - Candidate: %s | Job: %s", candidate_name, job_title)
-    logger.info("[STARTUP] JD fetched: %s", "YES" if extracted_details else "NO")
-    if extracted_details:
-        jd_skills = extracted_details.get("mustHaveSkills", [])
-        logger.info("[STARTUP]   - Required skills: %s", jd_skills[:5] if jd_skills else "none")
+    # Consolidated startup fetch log
+    _jd_skills = (extracted_details.get("mustHaveSkills") or []) if extracted_details else []
+    _jd_nice = (extracted_details.get("niceToHaveSkills") or []) if extracted_details else []
+    logger.info(
+        "[STARTUP] Fetched — resume=%s jd=%s custom_q=%d | candidate=%s | role=%s",
+        "YES" if structured_resume else "NO",
+        "YES" if extracted_details else "NO",
+        len(_interview_questions) if _interview_questions else 0,
+        candidate_name, job_title,
+    )
+    if _jd_skills or _jd_nice:
+        logger.info("[STARTUP] JD keys — must_have=%s nice_to_have=%s", _jd_skills[:6], _jd_nice[:4])
 
     if _interview_questions:
         logger.info("[STARTUP] Custom questions: %d loaded", len(_interview_questions))
@@ -662,30 +684,54 @@ async def entrypoint(ctx: JobContext):
         custom_questions=_interview_questions or None,
     )
 
-    # ── Full brief + directive dump (makes logs actually useful for debugging) ──
+    # ── Consolidated interview context (single log with all data in paragraphs) ──
     _rb = session_context.resume_brief
-    logger.info("[BRIEF] ========== FULL RESUME BRIEF ==========")
-    logger.info("[BRIEF] Anchor: %s (type=%s)", _rb.anchor_item or "none", _rb.anchor_type or "none")
-    logger.info("[BRIEF] Band: %s", session_context.candidate_band or "unknown")
-    logger.info("[BRIEF] Skills (%d): %s", len(_rb.skills or []), _rb.skills or [])
-    for i, p in enumerate(_rb.projects or []):
-        logger.info("[BRIEF] Project[%d]: %s", i, p)
-    for i, w in enumerate(_rb.work_history or []):
-        logger.info("[BRIEF] Work[%d]: %s", i, w)
-    for i, x in enumerate(_rb.internships or []):
-        logger.info("[BRIEF] Internship[%d]: %s", i, x)
-    for i, e in enumerate(_rb.education or []):
-        logger.info("[BRIEF] Education[%d]: %s", i, e)
-    logger.info("[BRIEF] ==========================================")
 
-    logger.info("[STAGE1_DIRECTIVE] ========== FULL STAGE 1 DIRECTIVE ==========")
-    for _line in stage1_directive_cached.splitlines():
-        logger.info("[STAGE1_DIRECTIVE] %s", _line)
-    logger.info("[STAGE1_DIRECTIVE] =============================================")
+    # Build consolidated context message
+    _projects_str = " | ".join([str(p).split(" - ")[0].strip() for p in (_rb.projects or [])][:4]) or "none"
+    _work_str = " | ".join([str(w).split(" - ")[0].strip() for w in (_rb.work_history or [])][:3]) or "none"
+    _internships_str = " | ".join([str(x).split(" - ")[0].strip() for x in (_rb.internships or [])][:2]) or "none"
+    _education_str = " | ".join([str(e).split(" - ")[0].strip() for e in (_rb.education or [])][:2]) or "none"
+    _skills_str = ", ".join([str(s).strip() for s in (_rb.skills or [])][:6])
 
-    logger.info("[STARTUP] Band=%s | Language=%s | TimeBudget=%dm | Stage1=%dchars",
-        session_context.candidate_band or "unknown", interview_lang or "english",
-        time_limit_mins, len(stage1_directive_cached))
+    _jd_must = ", ".join([str(s) for s in (_jd_skills or [])][:6]) or "none"
+    _jd_nice_str = ", ".join([str(s) for s in (_jd_nice or [])][:4]) or "none"
+    _coverage_str = ", ".join(base_coverage_items[:8]) or "auto"
+    _band = session_context.candidate_band or "unknown"
+    _band_note = {
+        "fresher": "probe HOW they think — real decisions, specifics, learning signals",
+        "mid": "probe individual ownership, measurable impact, decision trade-offs",
+        "experienced": "probe end-to-end ownership, architecture depth, scale constraints",
+    }.get(_band, "probe ownership, depth, and specifics")
+
+    _context_block = (
+        f"CANDIDATE: {candidate_name or 'unknown'} | ROLE: {job_title} | BAND: {_band} | TIME: {time_limit_mins}m\n"
+        f"\n"
+        f"FETCH SUMMARY:\n"
+        f"  Resume: {'fetched' if structured_resume else 'MISSING'} | JD: {'fetched' if extracted_details else 'MISSING'} | Custom Q: {len(_interview_questions) if _interview_questions else 0}\n"
+        f"  JD Must-Have Skills: {_jd_must}\n"
+        f"  JD Nice-To-Have: {_jd_nice_str}\n"
+        f"  Coverage Targets: {_coverage_str}\n"
+        f"\n"
+        f"RESUME BRIEF:\n"
+        f"  Anchor: {_rb.anchor_item or 'none'} (type: {_rb.anchor_type or 'unknown'})\n"
+        f"  Skills: {_skills_str}\n"
+        f"  Projects: {_projects_str}\n"
+        f"  Work History: {_work_str}\n"
+        f"  Internships: {_internships_str}\n"
+        f"  Education: {_education_str}\n"
+        f"\n"
+        f"STAGE 1 (RESUME - 10 min): Understand what they personally built and owned. "
+        f"Open with: '{_rb.anchor_item or 'their most recent work'}'. "
+        f"Band={_band}: {_band_note}. "
+        f"Must cover: resume ownership topics, at least 1 situational, at least 1 behavioral.\n"
+        f"\n"
+        f"STAGE 2 (SKILL - 7 min): Probe depth on role-critical skills. "
+        f"Skills: {' | '.join([str(s).strip() for s in (_rb.skills or [])][:5]) or 'auto'}. "
+        f"Must ask situational + behavioral naturally. Already covered in Stage 1: go deeper."
+    )
+
+    logger.info("[INTERVIEW_CONTEXT]\n%s", _context_block)
     voice_layer_prompt = build_voice_layer_prompt(
         candidate_name=candidate_first_name or candidate_name,
         job_title=job_title,
@@ -726,8 +772,26 @@ async def entrypoint(ctx: JobContext):
         model=org_tts_model,
         voice_id=voice_id,
     )
+    async def _warm_greeting_tts(plugin) -> None:
+        warmup_method = getattr(plugin, "warmup", None)
+        if callable(warmup_method):
+            try:
+                result = warmup_method()
+                if asyncio.iscoroutine(result):
+                    await result
+                logger.info("[FLOW] TTS warmup done")
+            except Exception as e:
+                logger.warning(f"[FLOW] TTS warmup failed (non-fatal): {e}")
+    warm_greeting_task = spawn_background_task(_warm_greeting_tts(tts_plugin), "warm_greeting_tts")
     llm_plugin = build_llm(model=org_llm_model, temperature=org_llm_temperature)
     turn_detector = ctx.proc.userdata.get("turn_detector")
+    ai_name = ctx_data.aiName or "Ishita"
+    welcome_text = build_greeting_text(
+        candidate_first_name or candidate_name,
+        ai_name,
+        job_title,
+    )
+    logger.info("[FLOW] Greeting precomputed during launching phase")
     session_kwargs = {
         "vad": vad_instance,
         "stt": stt_plugin,
@@ -739,7 +803,9 @@ async def entrypoint(ctx: JobContext):
             preemptive_generation={"enabled": False},
             turn_detection=turn_detector,
             endpointing=EndpointingOptions(
-                min_delay=1.2,
+                # Faster endpointing for warmup (short casual answers); interview turns
+                # use a longer max_delay to avoid cutting off longer answers mid-sentence.
+                min_delay=0.5,
                 max_delay=2.0,
                 mode="dynamic",
             ),
@@ -805,7 +871,7 @@ async def entrypoint(ctx: JobContext):
     # to the DB via /api/interview/proctoring. The agent does NOT process these
     # signals — only behavioral/intelligence signals influence the agent.
     ready_event = asyncio.Event()
-    ready_signal_received_at: Optional[float] = None
+    launch_prereqs_signal_sent = False
     # Per-turn decision engine state
     _last_interviewer_question = ""   # most recent question Ishita asked
     _topic_follow_up_count = 0        # consecutive follow-ups on same topic
@@ -829,6 +895,7 @@ async def entrypoint(ctx: JobContext):
     _user_turn_chain: Optional[asyncio.Task[Any]] = None  # serialize user-turn processing
     _expected_topic_kind: Optional[str] = None  # runtime source of truth: "NEW" | "FOLLOWUP"
     _enforce_move_on_until_new: bool = False
+    _last_redis_push_turn: int = -1  # dedup guard: prevents pushing same turn twice to Redis
     _forced_next_topic_hint: Optional[str] = None
     # Running log of topics already covered — injected into every directive so the AI
     # never re-explores something already discussed, across all stages.
@@ -840,10 +907,62 @@ async def entrypoint(ctx: JobContext):
     _ai_signal_flushed_count: int = 0       # total events already flushed (slice pointer)
     # Lock protecting all shared session state that is written by background tasks.
     _session_state_lock = asyncio.Lock()
+    # Redis eval worker integration — pre-computed directive from previous turn
+    _eval_redis_client = None
+    if redis_asyncio is not None and REDIS_URL:
+        try:
+            _eval_redis_client = redis_asyncio.from_url(REDIS_URL, decode_responses=False)
+            logger.info("[REDIS_EVAL] Redis eval client connected to %s", REDIS_URL)
+        except Exception as _re:
+            logger.warning("[REDIS_EVAL] Redis eval client init failed: %s — inline eval will be used", _re)
+            _eval_redis_client = None
     def refresh_composite_risk() -> int:
         nonlocal suspicion_score
         suspicion_score = compose_risk_score(integrity_risk, depth_risk)
         return suspicion_score
+
+    async def _publish_launch_prereqs_ready() -> None:
+        """Notify frontend that launch prerequisites are complete."""
+        nonlocal launch_prereqs_signal_sent
+        if launch_prereqs_signal_sent or disconnect_event.is_set():
+            return
+        prefetch_ready = bool(
+            session_context.merged_brief_block
+            and stage1_directive_cached
+            and session_context.resume_brief
+        )
+        greeting_ready = bool((welcome_text or "").strip())
+        tts_warm_ready = True
+        try:
+            await warm_greeting_task
+        except Exception as warm_err:
+            # Warmup failure should not deadlock launch; greeting can still be spoken.
+            tts_warm_ready = False
+            logger.warning("[FLOW] Greeting TTS warmup failed before launch-ready signal: %s", warm_err)
+        ready = prefetch_ready and greeting_ready and tts_warm_ready
+        if not ready:
+            logger.warning(
+                "[FLOW] Launch prerequisites not ready yet (prefetch=%s greeting=%s tts_warm=%s)",
+                prefetch_ready,
+                greeting_ready,
+                tts_warm_ready,
+            )
+            return
+        payload = json.dumps(
+            {
+                "type": "launch_prereqs_ready",
+                "ready": True,
+                "prefetch_ready": prefetch_ready,
+                "greeting_ready": greeting_ready,
+                "tts_warm_ready": tts_warm_ready,
+            }
+        ).encode("utf-8")
+        try:
+            await ctx.room.local_participant.publish_data(payload, reliable=True)
+            launch_prereqs_signal_sent = True
+            logger.info("[FLOW] launch_prereqs_ready signal sent to frontend")
+        except Exception as send_err:
+            logger.warning("[FLOW] Failed to publish launch_prereqs_ready: %s", send_err)
 
     def _build_proctoring_data(exit_reason: str, *, full: bool = True) -> dict:
         """Single builder for proctoring_data dict — eliminates duplicate construction."""
@@ -937,10 +1056,17 @@ async def entrypoint(ctx: JobContext):
             _stage_quota_reminder_fired = False
             if _current_stage_index == 1:
                 _active_skill_topic = _next_uncovered_skill_topic()
-                logger.info("[STAGE2] ========== STAGE 2 SKILL PHASE STARTED ==========")
-                logger.info("[STAGE2] Budget: %d seconds (%.1f min)", _stage_budgets_secs.get(1, 0), _stage_budgets_secs.get(1, 0)/60)
-                logger.info("[STAGE2] Opening skill topic: %s", _active_skill_topic or "auto-select")
-                logger.info("[STAGE2] Topics covered in Stage 1: %s", _covered_resume_topic_keys if _covered_resume_topic_keys else "none yet")
+                _covered_s1 = ", ".join(list(_covered_resume_topic_keys)[:5]) if _covered_resume_topic_keys else "none yet"
+                rb = session_context.resume_brief
+                _all_skills = ", ".join([str(s).strip() for s in (rb.skills or [])][:8])
+                logger.info(
+                    "[INTERVIEW_CONTEXT] === STAGE 2 TRANSITION === Time: %dm budget remaining. "
+                    "Opening skill: %s. All skills to explore: %s. Topics covered in Stage 1: %s. "
+                    "Goal: probe depth on real usage, tradeoffs, ownership. "
+                    "Still need: at least 1 situational + 1 behavioral question.",
+                    _stage_budgets_secs.get(1, 0) // 60, _active_skill_topic or "auto-select",
+                    _all_skills, _covered_s1
+                )
             if stage_directive:
                 chat_ctx.add_message(role="system", content=stage_directive)
                 logger.info("[STAGE] Stage %d directive injected (%d chars)", _current_stage_index + 1, len(stage_directive))
@@ -958,10 +1084,15 @@ async def entrypoint(ctx: JobContext):
             custom_questions=_pending_custom_questions() or None,
         )
         if directive:
-            logger.info("[STAGE2_DIRECTIVE] ========== FULL STAGE 2 DIRECTIVE ==========")
-            for _line in directive.splitlines():
-                logger.info("[STAGE2_DIRECTIVE] %s", _line)
-            logger.info("[STAGE2_DIRECTIVE] =============================================")
+            # Log stage 2 context in simple paragraph format
+            rb = session_context.resume_brief
+            _s2_skills = " | ".join([str(s).strip() for s in (rb.skills or [])][:6])
+            logger.info(
+                "[INTERVIEW_CONTEXT] STAGE 2 (SKILL): Probe depth on skills for %s role. "
+                "Skills to explore: %s. For %s: ask real usage, tradeoffs, ownership. "
+                "Must ask situational + behavioral naturally. Already covered in Stage 1: go DEEPER.",
+                job_title, _s2_skills, session_context.candidate_band
+            )
         return directive
 
     def _resume_topic_candidates() -> list[str]:
@@ -1138,8 +1269,7 @@ async def entrypoint(ctx: JobContext):
     @ctx.room.on("data_received")
     def on_data_received(*event_args):
         nonlocal \
-            interview_marked_finished, \
-            ready_signal_received_at
+            interview_marked_finished
         try:
             raw_data = None
             if not event_args:
@@ -1169,14 +1299,7 @@ async def entrypoint(ctx: JobContext):
                 )
                 return
             payload = json.loads(raw_data.decode("utf-8"))
-            if payload.get("type") == "user_ready":
-                if not ready_event.is_set():
-                    ready_signal_received_at = time.perf_counter()
-                    logger.info(
-                        f"Candidate is ready signal received (attempt={payload.get('attempt')})"
-                    )
-                ready_event.set()
-            elif payload.get("type") == "interview_finished":
+            if payload.get("type") == "interview_finished":
                 logger.info("Candidate marked interview as finished")
                 interview_marked_finished = True
                 interview_finished_event.set()
@@ -1207,7 +1330,8 @@ async def entrypoint(ctx: JobContext):
             _topic_follow_up_count, current_interview_mode, answer_scores, \
             _claim_index, _contradictions_found, \
             _topic_depth_history, _trust_state, _contradiction_state, greeting_delivered_at, \
-            _ai_signal_flush_counter, _ai_signal_flushed_count, _enforce_move_on_until_new, _forced_next_topic_hint
+            _ai_signal_flush_counter, _ai_signal_flushed_count, _enforce_move_on_until_new, _forced_next_topic_hint, \
+            _last_redis_push_turn
         try:
             if not content or role != "user":
                 return
@@ -1330,6 +1454,282 @@ async def entrypoint(ctx: JobContext):
                     if _question_asked_at > 0 and _answer_received_at > _question_asked_at
                     else None
                 )
+                # ---------------------------------------------------------------
+                # Redis eval worker: build payload for the worker, which will
+                # compute the directive for the NEXT turn while Ishita speaks.
+                # The result from the PREVIOUS turn's eval is read and applied NOW
+                # so the directive is injected before LLM generation starts.
+                # ---------------------------------------------------------------
+                def _build_eval_payload(
+                    answer=answer_snap,
+                    question=question_snap,
+                    follow_ups=follow_up_snap,
+                    lines=lines_snap_eval,
+                    turn=turn_snapshot,
+                    depth_hist=depth_snap,
+                    collapse_stage=collapse_stage_snap,
+                    score_history=score_history_snap,
+                    turns_since_decay=turns_since_decay_snap,
+                    response_latency=response_latency_snap,
+                ) -> dict:
+                    rb = session_context.resume_brief
+                    resume_topics = [
+                        str(raw).strip().split(" - ")[0].strip()
+                        for raw in (list(rb.projects) + list(rb.work_history) + list(rb.internships))
+                        if str(raw).strip()
+                    ]
+                    # Deduplicate while preserving order
+                    seen_rt: set[str] = set()
+                    unique_resume: list[str] = []
+                    for t in resume_topics:
+                        key = t.lower()
+                        if key and key not in seen_rt:
+                            seen_rt.add(key)
+                            unique_resume.append(t)
+                    skill_topics = [str(s).strip() for s in list(rb.skills or []) if str(s).strip()]
+                    seen_st: set[str] = set()
+                    unique_skills: list[str] = []
+                    for s in skill_topics:
+                        key = s.lower()
+                        if key and key not in seen_st:
+                            seen_st.add(key)
+                            unique_skills.append(s)
+                    return {
+                        "app_id": app_id,
+                        "turn": turn,
+                        "answer": answer,
+                        "question": question,
+                        "follow_up_count": follow_ups,
+                        "transcript_lines": lines[-12:],
+                        "depth_history": depth_hist,
+                        "collapse_stage": collapse_stage,
+                        "score_history": score_history,
+                        "turns_since_decay": turns_since_decay,
+                        "response_latency_sec": response_latency,
+                        "stage_index": _current_stage_index,
+                        "follow_up_depth": follow_up_depth,
+                        "signal_toggles": dict(evaluation_signal_toggles),
+                        "org_id": org_id,
+                        "llm_model": analysis_model,
+                        "active_resume_topic": _active_resume_topic,
+                        "active_skill_topic": _active_skill_topic,
+                        "covered_resume_topic_keys": list(_covered_resume_topic_keys),
+                        "covered_skill_topic_keys": list(_covered_skill_topic_keys),
+                        "discussed_log": list(_discussed_log[-8:]),
+                        "enforce_move_on_until_new": _enforce_move_on_until_new,
+                        "forced_next_topic_hint": _forced_next_topic_hint,
+                        "last_action_was_move_on": _last_action_was_move_on,
+                        "resume_topics": unique_resume[:8],
+                        "skill_topics": unique_skills[:10],
+                        "job_title": job_title,
+                        "remaining_seconds": float(_remaining_total_seconds_now()),
+                        "resume_topic_questions_asked": _resume_topic_questions_asked,
+                        "claim_index": {k: list(v) for k, v in _claim_index.items()},
+                        "contradiction_state": dict(_contradiction_state),
+                        "trust_state": dict(_trust_state),
+                        "current_interview_mode": current_interview_mode,
+                        "no_new_question_cutoff_seconds": NO_NEW_QUESTION_CUTOFF_SECONDS,
+                        # ── Candidate brief (for worker logging) ──────────────────────
+                        "candidate_name": candidate_name,
+                        "band": session_context.candidate_band or "unknown",
+                        "anchor_full": str(getattr(rb, "anchor_item", "") or ""),
+                        "projects_full": [str(p) for p in list(rb.projects or [])],
+                        "work_history_full": [str(w) for w in list(rb.work_history or [])],
+                        "internships_full": [str(i) for i in list(rb.internships or [])],
+                        "education_full": [str(e) for e in list(rb.education or [])],
+                        "time_limit_mins": getattr(session_context, "timeLimitMins", 20),
+                    }
+
+
+                async def _push_payload_to_redis(payload: dict) -> None:
+                    if _eval_redis_client is None:
+                        return
+                    try:
+                        await _eval_redis_client.lpush(
+                            "interview:eval_queue",
+                            json.dumps(payload).encode(),
+                        )
+                        logger.info(
+                            "[REDIS_EVAL] Pushed payload turn=%d to worker queue",
+                            payload.get("turn", 0),
+                        )
+                    except Exception as _re:
+                        logger.warning("[REDIS_EVAL] Failed to push payload: %s", _re)
+
+                async def _read_and_apply_eval_result(turn_for_log: int) -> bool:
+                    """Read pre-computed result from Redis and apply all mutations + inject directive.
+                    Returns True if result was found and applied, False if no result available."""
+                    nonlocal \
+                        _active_resume_topic, _active_skill_topic, \
+                        _covered_resume_topic_keys, _covered_skill_topic_keys, \
+                        _topic_follow_up_count, _topic_depth_history, \
+                        _collapse_stage, _last_action_was_move_on, \
+                        _enforce_move_on_until_new, _forced_next_topic_hint, \
+                        _expected_topic_kind, _trust_state, _contradiction_state, \
+                        _claim_index, current_interview_mode, \
+                        integrity_risk, depth_risk, suspicion_score, \
+                        _ai_signal_flush_counter, _ai_signal_flushed_count
+
+                    if _eval_redis_client is None:
+                        return False
+                    result_key = f"interview:{app_id}:eval_result"
+                    try:
+                        raw = await asyncio.wait_for(
+                            _eval_redis_client.getdel(result_key),
+                            timeout=0.5,
+                        )
+                    except asyncio.TimeoutError:
+                        logger.warning("[REDIS_EVAL] getdel timed out for turn=%d", turn_for_log)
+                        return False
+                    except Exception as _re:
+                        logger.warning("[REDIS_EVAL] getdel failed turn=%d: %s", turn_for_log, _re)
+                        return False
+                    if raw is None:
+                        logger.info("[REDIS_EVAL] No pre-computed result for turn=%d — will run inline", turn_for_log)
+                        return False
+                    try:
+                        result = json.loads(raw)
+                    except Exception as _re:
+                        logger.warning("[REDIS_EVAL] Failed to decode result turn=%d: %s", turn_for_log, _re)
+                        return False
+                    logger.info(
+                        "[REDIS_EVAL] Applying pre-computed result turn=%d action=%s",
+                        result.get("turn", 0), result.get("action", "?"),
+                    )
+                    # Apply all mutations atomically under lock
+                    # (variables already declared as nonlocal in _process_user_conversation_item scope)
+                    async with _session_state_lock:
+                        _active_resume_topic = result.get("new_active_resume_topic", _active_resume_topic)
+                        _active_skill_topic = result.get("new_active_skill_topic", _active_skill_topic)
+                        _covered_resume_topic_keys = set(result.get("new_covered_resume_topic_keys") or [])
+                        _covered_skill_topic_keys = set(result.get("new_covered_skill_topic_keys") or [])
+                        _topic_follow_up_count = result.get("new_topic_follow_up_count", _topic_follow_up_count)
+                        _topic_depth_history = result.get("new_topic_depth_history", _topic_depth_history)
+                        _collapse_stage = result.get("new_collapse_stage", _collapse_stage)
+                        _last_action_was_move_on = result.get("new_last_action_was_move_on", _last_action_was_move_on)
+                        _enforce_move_on_until_new = result.get("new_enforce_move_on_until_new", _enforce_move_on_until_new)
+                        _forced_next_topic_hint = result.get("new_forced_next_topic_hint", _forced_next_topic_hint)
+                        _expected_topic_kind = result.get("new_expected_topic_kind", _expected_topic_kind)
+                        _trust_state = result.get("new_trust_state") or _trust_state
+                        _contradiction_state = result.get("new_contradiction_state") or _contradiction_state
+                        _claim_index = {k: list(v) for k, v in (result.get("new_claim_index") or {}).items()}
+                        current_interview_mode = result.get("new_current_interview_mode", current_interview_mode)
+                        # Apply risk deltas
+                        integrity_risk = min(100, integrity_risk + int(result.get("risk_integrity_delta", 0)))
+                        depth_risk = min(100, depth_risk + int(result.get("risk_depth_delta", 0)))
+                        if result.get("risk_integrity_delta", 0) or result.get("risk_depth_delta", 0):
+                            refresh_composite_risk()
+                        # Append discussed log entry
+                        discussed_log_entry = result.get("discussed_log_entry")
+                        if discussed_log_entry:
+                            _discussed_log.append(discussed_log_entry)
+                        # Append quality record
+                        quality_record = result.get("quality_record")
+                        if quality_record:
+                            answer_scores.append(quality_record)
+                        # Append signal events to proctoring_events
+                        signal_events = result.get("signal_events") or []
+                        _now_elapsed = round(time.time() - session_start_time, 1) if session_start_time else 0.0
+                        res_turn = result.get("turn", turn_for_log)
+                        for event in signal_events:
+                            proctoring_events.append({
+                                "event": event["signal_name"],
+                                "signal_name": event["signal_name"],
+                                "signal_layer": event.get("signal_layer", ""),
+                                "risk_bucket": "integrity" if event.get("signal_layer") == "hard_integrity" else "depth",
+                                "confidence": event.get("confidence", 0.5),
+                                "evidence": event.get("evidence", ""),
+                                "trust_bucket_affected": event.get("trust_bucket_affected", ""),
+                                "score_delta": float(event.get("score_delta", 0.0) or 0.0),
+                                "probe_mode": event.get("probe_mode", ""),
+                                "recoverable": event.get("recoverable", True),
+                                "recruiter_visible": event.get("recruiter_visible", False),
+                                "turn": res_turn,
+                                "elapsed_sec": _now_elapsed,
+                                "score_after": suspicion_score,
+                            })
+                            logger.info(
+                                "[SIGNAL] %s layer=%s confidence=%.2f trust_delta=%+.2f visible=%s turn=%d",
+                                event["signal_name"], event.get("signal_layer", "?"),
+                                event.get("confidence", 0.5), float(event.get("score_delta", 0.0) or 0.0),
+                                event.get("recruiter_visible", False), res_turn,
+                            )
+                        # Contradiction state event
+                        cs_event = result.get("contradiction_state_event")
+                        if cs_event:
+                            _c_status = cs_event.get("status", "")
+                            _c_signal_name = "contradiction_resolved" if _c_status == "candidate_clarified" else "contradiction"
+                            proctoring_events.append({
+                                "event": cs_event.get("event", ""),
+                                "signal_name": _c_signal_name,
+                                "signal_layer": "hard_integrity",
+                                "source": cs_event.get("source", ""),
+                                "status": _c_status,
+                                "turn": cs_event.get("turn", res_turn),
+                                "surfaced_turn": cs_event.get("surfaced_turn", 0),
+                                "repeat_count": cs_event.get("repeat_count", 0),
+                                "probe_type": cs_event.get("probe_type", ""),
+                                "recovery_path": cs_event.get("recovery_path", ""),
+                                "recruiter_note": cs_event.get("recruiter_note", ""),
+                                "trust_delta": cs_event.get("trust_delta", 0.0),
+                                "score_delta": cs_event.get("trust_delta", 0.0),
+                                "score_after": suspicion_score,
+                                "confidence": 0.9,
+                                "recruiter_visible": True,
+                                "evidence": cs_event.get("evidence", ""),
+                                "contradiction_type": cs_event.get("contradiction_type", ""),
+                                "elapsed_sec": _now_elapsed,
+                            })
+                        # Signal checkpoint
+                        new_total = len(proctoring_events)
+                        _ai_signal_flush_counter += new_total - _ai_signal_flushed_count
+                        if _ai_signal_flush_counter >= 5:
+                            flush_slice = proctoring_events[_ai_signal_flushed_count:]
+                            _ai_signal_flushed_count = new_total
+                            _ai_signal_flush_counter = 0
+                            spawn_background_task(
+                                checkpoint_ai_signals(app_id, flush_slice),
+                                f"ai_signal_checkpoint_turn_{res_turn}",
+                            )
+                        td = result.get("td") or {}
+                        action = result.get("action", "MOVE_ON")
+                        quality_record = quality_record or {}
+                        quality_avg = float(quality_record.get("overall", 5.0))
+                        _active_topic_now = (_active_resume_topic if _current_stage_index == 0 else _active_skill_topic) or "?"
+                        stage_label_now = STAGE_CONFIGS[_current_stage_index].label if _current_stage_index < len(STAGE_CONFIGS) else "?"
+                        logger.info(
+                            "[EVAL] turn=%d stage=%s action=%s quality=%.1f followups=%d/%d topic='%s' covered=%d enforce_move_on=%s (worker)",
+                            res_turn, stage_label_now, action, quality_avg,
+                            _topic_follow_up_count, follow_up_depth,
+                            _active_topic_now[:40],
+                            len(_covered_resume_topic_keys) + len(_covered_skill_topic_keys),
+                            _enforce_move_on_until_new,
+                        )
+                        if action == "MOVE_ON":
+                            _old_active = (_active_resume_topic if _current_stage_index == 0 else _active_skill_topic) or "?"
+                            logger.info(
+                                "[MOVE_ON] FROM='%s' → TO='%s' | covered_resume=%s",
+                                _old_active[:50],
+                                (_active_resume_topic if _current_stage_index == 0 else _active_skill_topic or "TBD")[:50],
+                                list(_covered_resume_topic_keys)[:5],
+                            )
+                        # Inject directive
+                        directive = result.get("directive", "")
+                        logger.info("[DIRECTIVE] → %s", directive[:300].replace("\n", " | "))
+                        remove_system_messages(chat_ctx, "[NEXT_TURN_DIRECTIVE")
+                        if action == "MOVE_ON":
+                            remove_system_messages(chat_ctx, "[RECENT_CONTEXT")
+                        chat_ctx.add_message(role="system", content=directive)
+                        logger.info(
+                            "[ROUTER] action=%s mode=%s turn=%d topic=%s follow_ups=%d (worker)",
+                            td.get("decision", {}).get("action", action),
+                            td.get("decision", {}).get("mode", "normal"),
+                            res_turn,
+                            ((_active_resume_topic if _current_stage_index == 0 else _active_skill_topic) or "?")[:40],
+                            _topic_follow_up_count,
+                        )
+                    return True
+
                 async def _evaluate_and_inject(
                     answer=answer_snap,
                     question=question_snap,
@@ -1548,6 +1948,9 @@ async def entrypoint(ctx: JobContext):
                             and follow_ups >= 1
                             and not disturbance_hits
                         ):
+                            # Mark current topic as covered BEFORE picking next so we never return to it.
+                            if old_active_resume:
+                                _covered_resume_topic_keys.add(_normalize_topic_key(old_active_resume))
                             next_resume_topic = _fallback_next_topic(
                                 stage_index=0,
                                 exclude_topic=_active_resume_topic,
@@ -1647,18 +2050,12 @@ async def entrypoint(ctx: JobContext):
                             stage_label_now = STAGE_CONFIGS[_current_stage_index].label if _current_stage_index < len(STAGE_CONFIGS) else "?"
                             _active_topic_now = (_active_resume_topic if _current_stage_index == 0 else _active_skill_topic) or "?"
                             logger.info(
-                                "[TOPIC_STATE] active=%s | covered_resume=%s | covered_skill=%s | enforce_move_on=%s",
-                                _active_topic_now[:50],
-                                list(_covered_resume_topic_keys)[:5],
-                                list(_covered_skill_topic_keys)[:5],
-                                _enforce_move_on_until_new,
-                            )
-                            logger.info(
-                                "[EVAL] Stage=%d(%s) action=%s quality=%.1f follow_ups=%d/%d(cap=%d) depth=%s",
-                                _current_stage_index + 1, stage_label_now, action, quality_avg,
+                                "[EVAL] turn=%d stage=%s action=%s quality=%.1f followups=%d/%d topic='%s' covered=%d enforce_move_on=%s",
+                                turn, stage_label_now, action, quality_avg,
                                 _topic_follow_up_count, follow_up_depth,
-                                topic_follow_up_cap,
-                                [round(x, 1) for x in _topic_depth_history[-4:]],
+                                _active_topic_now[:40],
+                                len(_covered_resume_topic_keys) + len(_covered_skill_topic_keys),
+                                _enforce_move_on_until_new,
                             )
                             if action in ("PROBE", "VERIFY"):
                                 if freeze_followup_increment:
@@ -1729,10 +2126,35 @@ async def entrypoint(ctx: JobContext):
                                         elif _collapse_stage > 0 and not collapse_fired:
                                             _collapse_stage = max(0, _collapse_stage - 1)
                             else:
+                                # action=MOVE_ON from run_turn_evaluation directly — compute specific next topic.
                                 _topic_follow_up_count = 0
                                 _topic_depth_history = []
                                 _collapse_stage = 0
                                 _last_action_was_move_on = True
+                                if _current_stage_index == 0:
+                                    if old_active_resume:
+                                        _covered_resume_topic_keys.add(_normalize_topic_key(old_active_resume))
+                                    _inline_next = _fallback_next_topic(stage_index=0, exclude_topic=_active_resume_topic)
+                                    if _inline_next:
+                                        _active_resume_topic = _inline_next
+                                else:
+                                    if old_active_skill:
+                                        _covered_skill_topic_keys.add(_normalize_topic_key(old_active_skill))
+                                    _inline_next = _fallback_next_topic(stage_index=1, exclude_topic=_active_skill_topic)
+                                    if _inline_next:
+                                        _active_skill_topic = _inline_next
+                                _inline_goal = (
+                                    f"Acknowledge briefly and pivot to: {_inline_next}. "
+                                    "Ask one focused question about what they personally built or owned there. "
+                                    "Do NOT follow up on the previous topic."
+                                )
+                                td["decision"]["next_goal"] = _inline_goal
+                                directive = (
+                                    "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
+                                    "DECISION: MOVE_ON\n"
+                                    f"NEXT MOVE: {_inline_goal}"
+                                )
+                                logger.info("[MOVE_ON] Evaluator-driven → next_topic=%s turn=%d", _inline_next, turn)
                             if _last_action_was_move_on:
                                 if _current_stage_index == 0 and old_active_resume:
                                     _covered_resume_topic_keys.add(_normalize_topic_key(old_active_resume))
@@ -1980,9 +2402,28 @@ async def entrypoint(ctx: JobContext):
                         chat_ctx.add_message(role="system", content=directive)
                     except Exception as e:
                         logger.warning(f"[EVAL] Evaluator injection failed turn={turn_snapshot}: {e}", exc_info=True)
-                # Run evaluator inline so NEXT_TURN_DIRECTIVE is injected before
-                # the next interviewer generation begins.
-                await _evaluate_and_inject()
+                # Redis eval worker flow:
+                # 1. DEDUP GUARD FIRST — Deepgram fires 2 transcripts per turn. The guard must
+                #    wrap the ENTIRE eval block, not just the push, otherwise the 2nd transcript
+                #    runs a 4s inline eval even when the turn was already processed.
+                # 2. Apply pre-computed result from worker (~10ms Redis GET) — or inline fallback.
+                # 3. Push payload to worker AFTER mutations applied so state is current.
+                if _last_redis_push_turn == turn_snapshot:
+                    logger.info("[REDIS_EVAL] Duplicate STT transcript for turn=%d — skipping eval", turn_snapshot)
+                else:
+                    _last_redis_push_turn = turn_snapshot
+                    result_applied = await _read_and_apply_eval_result(turn_snapshot)
+                    if not result_applied:
+                        logger.info("[REDIS_EVAL] No worker result — running inline eval turn=%d", turn_snapshot)
+                        await _evaluate_and_inject()
+                    # Build payload AFTER mutations so enforce_move_on, active_topic etc. are current.
+                    _payload = _build_eval_payload()
+                    spawn_background_task(
+                        _push_payload_to_redis(_payload),
+                        f"redis_eval_push_turn_{turn_snapshot}",
+                    )
+
+
         except Exception as e:
             logger.debug(f"[TRANSCRIPT] User item processing failed: {e}")
     @session.on("conversation_item_added")
@@ -1991,7 +2432,8 @@ async def entrypoint(ctx: JobContext):
             _last_interviewer_question, _topic_follow_up_count, _topic_depth_history, _last_action_was_move_on, \
             _question_asked_at, _answer_received_at, warmup_responses_received, warmup_complete, llm_spoke_event, _stage_start_time, _candidate_turn_since_last_assistant, \
             _stage_situational_asked, _stage_behavioral_asked, \
-            _custom_q_reminder_fired, _custom_q_final_reminder_fired, _resume_topic_questions_asked, _user_turn_chain, _expected_topic_kind, _enforce_move_on_until_new, _forced_next_topic_hint
+            _custom_q_reminder_fired, _custom_q_final_reminder_fired, _resume_topic_questions_asked, _user_turn_chain, _expected_topic_kind, _enforce_move_on_until_new, _forced_next_topic_hint, \
+            _active_resume_topic
         try:
             item = event.item
             role = getattr(item, "role", None)
@@ -2094,6 +2536,12 @@ async def entrypoint(ctx: JobContext):
                 _candidate_turn_since_last_assistant = True
                 # ── Phase 1 → Phase 2: keep warmup as an explicit exchange
                 # before Stage 1 begins.
+                # INTERVIEW PHASE GATE: candidate speech is fully blocked until greeting
+                # audio has finished playing. warmup_responses_received will never
+                # increment while greeting_delivered_at is None.
+                if not warmup_complete and greeting_delivered_at is None:
+                    logger.info("[GATE] Candidate spoke during greeting — BLOCKED (interview phase not open yet)")
+                    return
                 if not warmup_complete:
                     warmup_responses_received += 1
                     logger.info(
@@ -2132,6 +2580,59 @@ async def entrypoint(ctx: JobContext):
                         logger.info("[STAGE1] Skills to explore: %s", session_context.resume_brief.skills[:3] if session_context.resume_brief.skills else "auto")
                         logger.info("[STAGE1] Start interviewing now - ask about: '%s'", _active_resume_topic or "their background")
                         logger.info("[STAGE1] All resume topic candidates: %s", _resume_topic_candidates())
+                        # Pre-seed Redis with a correct Stage 1 bootstrap directive.
+                        # At the first real answer (follow_up_count=0 on the anchor), PROBE is always
+                        # correct — we can't know quality yet, but we know we should probe the anchor
+                        # before moving on. Pure Redis SETEX (~50ms, no LLM call). By the time the
+                        # candidate finishes their first real answer, this is already in Redis and the
+                        # fast path fires instead of the 2s inline eval.
+                        _bootstrap_anchor = _active_resume_topic or "the anchor project"
+                        _bootstrap_directive = (
+                            f"[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
+                            f"DECISION: PROBE\n"
+                            f"NEXT MOVE: Dig deeper into {_bootstrap_anchor}. Ask one specific question about "
+                            f"what they personally built, decided, or owned. Focus on their role, the problem "
+                            f"they solved, and the outcome. Do NOT move on yet.\n"
+                            f"[TOPIC_TAG_RULE - DO NOT SAY ALOUD]\n"
+                            f"Start your next response with exactly [TOPIC:FOLLOWUP] on its own line."
+                        )
+                        _bootstrap_result = {
+                            "turn": turn_count + 1,
+                            "action": "PROBE",
+                            "directive": _bootstrap_directive,
+                            "new_active_resume_topic": _bootstrap_anchor,
+                            "new_active_skill_topic": None,
+                            "new_covered_resume_topic_keys": [],
+                            "new_covered_skill_topic_keys": [],
+                            "new_topic_follow_up_count": 1,
+                            "new_topic_depth_history": [],
+                            "new_collapse_stage": 0,
+                            "new_last_action_was_move_on": False,
+                            "new_enforce_move_on_until_new": False,
+                            "new_forced_next_topic_hint": None,
+                            "new_expected_topic_kind": "FOLLOWUP",
+                            "new_trust_state": None,
+                            "new_contradiction_state": None,
+                            "new_claim_index": None,
+                            "new_current_interview_mode": current_interview_mode,
+                            "risk_integrity_delta": 0,
+                            "risk_depth_delta": 0,
+                            "discussed_log_entry": None,
+                            "quality_record": None,
+                            "signal_events": [],
+                            "contradiction_state_event": None,
+                            "td": {"decision": {"action": "PROBE", "mode": "normal", "next_goal": f"Probe {_bootstrap_anchor}"}, "quality": {}},
+                        }
+                        async def _preseed_redis_bootstrap(result=_bootstrap_result, anchor=_bootstrap_anchor):
+                            if _eval_redis_client is None:
+                                return
+                            try:
+                                result_key = f"interview:{app_id}:eval_result"
+                                await _eval_redis_client.setex(result_key, 1800, json.dumps(result).encode())
+                                logger.info("[REDIS_EVAL] Bootstrap PROBE pre-seeded for first real answer — topic='%s'", anchor)
+                            except Exception as _be:
+                                logger.warning("[REDIS_EVAL] Bootstrap pre-seed failed: %s", _be)
+                        spawn_background_task(_preseed_redis_bootstrap(), "redis_bootstrap_stage1")
                 # Append candidate response to transcript before background processing
                 candidate_text = content.replace("<wait for response>", "").strip()
                 if candidate_text:
@@ -2349,25 +2850,15 @@ async def entrypoint(ctx: JobContext):
         except Exception:
             pass
         return
-    # PREWARM: Remove the wait for 'user_ready' signal. 
-    # Greet the candidate as soon as they are physically in the room.
+    # Launch gate: candidate stays on launching screen until backend says
+    # prefetch + greeting prerequisites are ready, then greeting starts.
+    # _interview_timer_start is set the moment greeting audio begins so the
+    # 20-minute window covers greeting + warmup + interview together.
+    _interview_timer_start: float = time.monotonic()  # safe fallback; overwritten below
     if not disconnect_event.is_set():
-        ready_signal_received_at = time.perf_counter()
+        await _publish_launch_prereqs_ready()
         ready_event.set()
-        logger.info(f"Pre-warming greeting for app {app_id} immediately after participant join")
-    async def _warm_greeting_tts(plugin) -> None:
-        warmup_method = getattr(plugin, "warmup", None)
-        if callable(warmup_method):
-            try:
-                result = warmup_method()
-                if asyncio.iscoroutine(result):
-                    await result
-                logger.info("[FLOW] TTS warmup done")
-            except Exception as e:
-                logger.warning(f"[FLOW] TTS warmup failed (non-fatal): {e}")
-    await _warm_greeting_tts(tts_plugin)
     if ready_event.is_set() and not disconnect_event.is_set():
-        session_start_time = time.time()
         _initialize_stage_budgets()
         logger.info(
             "[FLOW] Session started — candidate=%s role=%s band=%s tts=%s llm=%s boot=%dms",
@@ -2375,16 +2866,16 @@ async def entrypoint(ctx: JobContext):
             org_tts_provider, org_llm_model,
             int((time.perf_counter() - entry_started_at) * 1000),
         )
-        ai_name = ctx_data.aiName or "Ishita"
-        welcome_text = build_greeting_text(
-            candidate_first_name or candidate_name,
-            ai_name,
-            job_title,
-        )
         # Mark as started in DB while greeting starts immediately.
         spawn_background_task(mark_interview_started(app_id), "mark_interview_started")
+        # ── TIMER FIX: Start the 20-minute clock the moment greeting audio begins.
+        # Greeting + warmup + interview all count against the same 20-minute budget.
+        # This timestamp is used by session_loop_start (main loop) and session_start_time
+        # (transcript timestamps + remaining-time calculations).
+        _interview_timer_start = time.monotonic()
+        session_start_time = time.time()
         try:
-            logger.info("[FLOW] Greeting started")
+            logger.info("[FLOW] Greeting started — 20-min interview timer begins NOW")
             # Only deliver scripted welcome if the LLM hasn't already spoken
             # (prevents double-greeting when candidate says hello first)
             if llm_spoke_event.is_set():
@@ -2402,8 +2893,9 @@ async def entrypoint(ctx: JobContext):
                         # allow_interruptions=False for greeting prevents 'break voice' from echo bleed
                         await session.say(welcome_text, allow_interruptions=False)
                         greeting_delivered = True
-                        greeting_delivered_at = time.time()  # Mark when greeting completed
-                        logger.info("[FLOW] Greeting completed")
+                        greeting_delivered_at = time.time()
+                        # session_start_time already set above at greeting-begin — do NOT overwrite here
+                        logger.info("[FLOW] Greeting completed — warmup phase begins")
                         break
                     except Exception as _tts_err:
                         err_str = str(_tts_err).lower()
@@ -2473,7 +2965,9 @@ async def entrypoint(ctx: JobContext):
             if pattern is None or pattern.search(q):
                 return messages[inactivity_nudge_count % len(messages)].format(name=name)
         return ""  # unreachable — last strategy always has pattern=None
-    session_loop_start = time.monotonic()
+    # Use the greeting-begin timestamp so `remaining` counts from when greeting started,
+    # NOT from when the greeting audio finished. This makes the 20-min window exact.
+    session_loop_start = _interview_timer_start
     _last_periodic_stage_check = time.monotonic()
     _last_timer_log = time.monotonic()
     while True:

@@ -38,6 +38,13 @@ export async function POST(
             return NextResponse.json({ error: "Access Denied: Interview already finalized" }, { status: 403 });
         }
 
+        if (interview?.status === "IN_PROGRESS") {
+            return NextResponse.json({
+                error: "Access Denied: Interview is already in progress. Please wait for the active session to finish.",
+                code: "IN_PROGRESS",
+            }, { status: 409 });
+        }
+
         // Slot entry window:
         // Join/rejoin allowed from slot start until +10 minutes only.
         if (interview?.scheduledAt) {
@@ -57,17 +64,6 @@ export async function POST(
                 }, { status: 403 });
             }
 
-            if (!allowReopen && interview?.status === "IN_PROGRESS" && interview?.startedAt) {
-                try {
-                    await prisma.interview.update({
-                        where: { applicationId },
-                        data: { status: "PENDING", startedAt: null },
-                    });
-                    console.log(`[TOKEN] Rejoin allowed for ${applicationId} within join window, reset to PENDING`);
-                } catch (resetErr) {
-                    console.warn("[TOKEN_API] Failed to reset interview status:", resetErr);
-                }
-            }
         }
 
         if (interview?.expiresAt && interview.expiresAt < new Date()) {

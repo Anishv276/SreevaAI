@@ -18,7 +18,9 @@ export async function POST(req: NextRequest) {
         const audioBuffer = await audio.arrayBuffer();
 
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 2000);
+        // 5s timeout — Deepgram nova-3 typically responds in 300-800ms but
+        // cold-start + large audio can take up to ~3s. 2s was too tight.
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
         let response: Response;
         try {
             response = await fetch(
@@ -35,7 +37,7 @@ export async function POST(req: NextRequest) {
             );
         } catch (fetchErr) {
             if ((fetchErr as Error)?.name === "AbortError") {
-                console.warn("[verify-speech] Deepgram request timed out after 2000ms");
+                console.warn("[verify-speech] Deepgram request timed out after 5000ms");
                 return NextResponse.json({ transcript: "", matched: false, error: "timeout" });
             }
             throw fetchErr;

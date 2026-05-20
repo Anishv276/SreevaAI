@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { Camera, Mic, CheckCircle2, AlertCircle, Loader2, RefreshCw, Volume2, ChevronDown, Zap, Play } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -177,14 +177,7 @@ export function HardwareCheck({
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
-    // Background Noise
-    const [noiseDb, setNoiseDb] = useState<number | null>(null);
-    const [noiseMeasuring, setNoiseMeasuring] = useState(false);
-    const [noiseBypass, setNoiseBypass] = useState(false);
 
-    // Acoustic status logic
-    const noiseStatusType = noiseDb === null ? "unknown" : noiseDb < 50 ? "good" : noiseDb <= 65 ? "moderate" : "high";
-    const noisePassed = noiseDb !== null && noiseDb <= 65; // Block only on "high" (>65dB)
 
     // Speaker / Audio Playback
     const [speakerPlaying, setSpeakerPlaying] = useState(false);
@@ -210,34 +203,7 @@ export function HardwareCheck({
         clearSpeakerFallbackTimer();
     }, [clearSpeakerFallbackTimer]);
 
-    // Network Speed & Quality
-    const [uploadSpeedMbps, setUploadSpeedMbps] = useState<number | null>(null);
-    const [downloadSpeedMbps, setDownloadSpeedMbps] = useState<number | null>(null);
-    const [displayUpload, setDisplayUpload] = useState<number | null>(null);
-    const [displayDownload, setDisplayDownload] = useState<number | null>(null);
-    const [latencyMs, setLatencyMs] = useState<number | null>(null);
-    const [jitterMs, setJitterMs] = useState<number | null>(null);
-    const [speedTestRunning, setSpeedTestRunning] = useState(false);
-    const pulseRunningRef = useRef(false);
 
-    const [isNetworkLocked, setIsNetworkLocked] = useState(false);
-    const networkQuality = useMemo(() => {
-        if (isNetworkLocked) return "stable";
-        if (downloadSpeedMbps === null || uploadSpeedMbps === null || latencyMs === null) return "testing";
-        if (downloadSpeedMbps >= 10 && uploadSpeedMbps >= 5 && latencyMs < 80) return "stable";
-        if (downloadSpeedMbps >= 5 && uploadSpeedMbps >= 2 && latencyMs < 150) return "acceptable";
-        return "poor";
-    }, [downloadSpeedMbps, uploadSpeedMbps, latencyMs]);
-
-    const hardwareStatusMsg = useMemo(() => {
-        switch (networkQuality) {
-            case "stable": return "Your connection looks good - we should have a smooth interview!";
-            case "acceptable": return "Your connection is okay, but you might notice slight delays.";
-            case "poor": return "Your connection may affect the interview quality. If possible, try switching to a better network.";
-            default: return "Analyzing your connection quality...";
-        }
-    }, [networkQuality]);
-    const [bypassSpeedTest, setBypassSpeedTest] = useState(false);
 
     //  Visual Integrity (Signals 4, 5, 6) 
     const visualLandmarkerRef = useRef<any>(null);
@@ -419,7 +385,6 @@ export function HardwareCheck({
     const allReady = cameraFullyReady &&
         micStatus === "granted" &&
         micVerified &&
-        (noiseBypass || noisePassed) &&
         (speakerStatus === "passed" || speakerStatus === "failed") &&
         consentChecked;
 
@@ -638,7 +603,9 @@ export function HardwareCheck({
         mr.start(250);
     }, [autoStopAndVerify, clearMicTimers]);
 
-    // Send recorded audio to Deepgram and verify
+    // Verify the mic check. Strategy:
+    //   1. If Web Speech API already captured a transcript → check it immediately (zero network latency).
+    //   2. Only call Deepgram if Web Speech gave nothing (e.g. browser blocked Web Speech, no mic data).
     const sendToDeepgram = useCallback(async (chunks: Blob[], mimeType: string) => {
         setIsVerifying(true);
         let timeoutId: number | null = null;
@@ -660,6 +627,22 @@ export function HardwareCheck({
             return matchedCount >= Math.ceil(targetWords.length * 0.8);
         };
 
+        // --- FAST PATH: Web Speech API already has the transcript ---
+        if (wsTranScript) {
+            const matched = checkMatch(wsTranScript);
+            setLiveTranscript(wsTranScript);
+            if (matched) {
+                verifiedRef.current = true;
+                setMicVerified(true);
+            }
+            setIsVerifying(false);
+            clearMicTimers();
+            autoVerifyInProgressRef.current = false;
+            setIsRecording(false);
+            return;
+        }
+
+        // --- SLOW PATH: No Web Speech transcript — fall back to Deepgram ---
         try {
             const audioBlob = new Blob(chunks, { type: mimeType || "audio/webm" });
             const formData = new FormData();
@@ -667,7 +650,7 @@ export function HardwareCheck({
             formData.append("targetPhrase", verifiedPhraseRef.current);
 
             const controller = new AbortController();
-            timeoutId = window.setTimeout(() => controller.abort(), 2000);
+            timeoutId = window.setTimeout(() => controller.abort(), 8000);
             const res = await fetch("/api/verify-speech", {
                 method: "POST",
                 body: formData,
@@ -676,31 +659,16 @@ export function HardwareCheck({
             const data = await res.json();
 
             const deepgramTranscript = data.transcript as string;
-
             if (deepgramTranscript) {
-                // Use Deepgram transcript as source of truth
                 setLiveTranscript(deepgramTranscript);
                 if (data.matched) {
-                    verifiedRef.current = true;
-                    setMicVerified(true);
-                }
-            } else {
-                // Deepgram returned empty — fall back to Web Speech transcript
-                console.warn("[verify-speech] Empty Deepgram transcript, falling back to Web Speech");
-                if (wsTranScript && checkMatch(wsTranScript)) {
-                    setLiveTranscript(wsTranScript);
                     verifiedRef.current = true;
                     setMicVerified(true);
                 }
             }
         } catch (err) {
             console.error("[verify-speech]", err);
-            // Network error — fall back to Web Speech transcript
-            if (wsTranScript && checkMatch(wsTranScript)) {
-                setLiveTranscript(wsTranScript);
-                verifiedRef.current = true;
-                setMicVerified(true);
-            }
+            // Deepgram also failed — mic check simply doesn't verify; user sees retry prompt
         } finally {
             if (timeoutId !== null) window.clearTimeout(timeoutId);
             setIsVerifying(false);
@@ -730,13 +698,15 @@ export function HardwareCheck({
         try { mr.stop(); } catch (err) { console.error("[Record] stop error:", err); setIsVerifying(false); }
     }, [sendToDeepgram]);
 
-    //  Audio visualizer 
+    //  Audio visualizer
     const startVisualizer = useCallback(() => {
         const tick = () => {
+            // Always reschedule first so a missed analyzerRef never kills the loop
+            animRef.current = requestAnimationFrame(tick);
             if (!analyzerRef.current) return;
             const analyzer = analyzerRef.current;
 
-            // 1. Frequency data for waveform
+            // Frequency data for waveform bars
             const freqData = new Uint8Array(analyzer.frequencyBinCount);
             analyzer.getByteFrequencyData(freqData);
             const bars = 40;
@@ -746,52 +716,6 @@ export function HardwareCheck({
                 for (let j = 0; j < binSize; j++) sum += freqData[i * binSize + j];
                 return sum / binSize / 255;
             }));
-
-            // 2. Continuous Noise Monitoring (Time Domain)
-            const timeData = new Uint8Array(analyzer.fftSize);
-            analyzer.getByteTimeDomainData(timeData);
-
-            let sumSq = 0;
-            for (let i = 0; i < timeData.length; i++) {
-                const val = (timeData[i] - 128) / 128; // Normalize to [-1, 1]
-                sumSq += val * val;
-            }
-            const rms = Math.sqrt(sumSq / timeData.length);
-            // Formula: dB = 20 * log10(RMS) + calibration. 
-            // We adjusted calibration from +100 to +88 to better match real-world SPL (Sound Pressure Level)
-            // across consumer hardware, ensuring 'quiet' actually looks quiet (35-45dB).
-            const rawDb = 20 * Math.log10(Math.max(rms, 0.00001)) + 88;
-
-            // Apply smoothing (Exponential Moving Average)
-            const alpha = 0.15; // Adjustment speed
-            smoothDbRef.current = smoothDbRef.current === null
-                ? rawDb
-                : smoothDbRef.current * (1 - alpha) + rawDb * alpha;
-
-            // Throttle UI update to ~150ms for better readability without lag
-            const now = performance.now();
-            if (now - lastNoiseUpdateTimeRef.current > 150) {
-                // Add to history for floor estimation (P10)
-                noiseHistoryRef.current.push(rawDb);
-                if (noiseHistoryRef.current.length > 15) { // 1.5 second window (15 * 100ms approximation)
-                    noiseHistoryRef.current.shift();
-                }
-
-                if (noiseHistoryRef.current.length > 2) {
-                    // Calculate noise floor (P15 - slightly more responsive than P10)
-                    const sorted = [...noiseHistoryRef.current].sort((a, b) => a - b);
-                    const pIndex = Math.floor(sorted.length * 0.15);
-                    const noiseFloor = sorted[pIndex];
-
-                    // Add a tiny bit of random jitter (0.1) if it's perfectly stable 
-                    // to prevent the "stuck" feel, but keep it integer for the UI
-                    setNoiseDb(Math.round(noiseFloor));
-                }
-
-                lastNoiseUpdateTimeRef.current = now;
-            }
-
-            animRef.current = requestAnimationFrame(tick);
         };
         animRef.current = requestAnimationFrame(tick);
     }, []);
@@ -865,31 +789,7 @@ export function HardwareCheck({
         setSpeakerRetryMsg(true);
     };
 
-    const testNetworkSpeed = useCallback(async (isFullTest: boolean = true) => {
-        // Disabled as requested
-        return;
-    }, []);
 
-    // HYPER-LIVE: Fluctuate display speeds based on latency pulses
-    useEffect(() => {
-        if (!downloadSpeedMbps || !uploadSpeedMbps || !latencyMs) return;
-
-        // Apply a subtle, realistic fluctuation (+/- 0.5% - 2%)
-        // If latency is higher, speed tends to fluctuate more downward
-        const latencyPenalty = Math.max(0, (latencyMs - 50) / 1000);
-        const randomFactor = 1 + (Math.random() * 0.02 - (0.01 + latencyPenalty));
-
-        setDisplayDownload(prev => {
-            const next = downloadSpeedMbps * randomFactor;
-            // Smooth transition (lerp 0.3)
-            return prev ? prev * 0.7 + next * 0.3 : next;
-        });
-
-        setDisplayUpload(prev => {
-            const next = uploadSpeedMbps * randomFactor;
-            return prev ? prev * 0.7 + next * 0.3 : next;
-        });
-    }, [latencyMs, downloadSpeedMbps, uploadSpeedMbps]);
 
     const requestPermissions = useCallback(async (cameraId?: string, micId?: string) => {
         clearMicTimers();
@@ -903,11 +803,7 @@ export function HardwareCheck({
         verifiedRef.current = false;
         snapshotDoneRef.current = false;
         setSnapshotUrl(null);
-        setNoiseDb(null);
-        setNoiseMeasuring(false);
-        setNoiseBypass(false);
-        noiseHistoryRef.current = [];
-        smoothDbRef.current = null;
+
         setSpeakerStatus("idle");
         setSpeakerPlaying(false);
         setLiveTranscript("");
@@ -965,30 +861,22 @@ export function HardwareCheck({
         }
     }, [clearMicTimers, startVisualizer]);
 
-    //  Global Mount Lifecycle 
+    //  Global Mount Lifecycle
     useEffect(() => {
         requestPermissions();
-        // Run full check on mount
-        testNetworkSpeed(true);
-
-        const networkInterval = setInterval(() => {
-            testNetworkSpeed(false); // Background pulse every 25s
-        }, 25000);
 
         return () => {
-            clearInterval(networkInterval);
             if (animRef.current) cancelAnimationFrame(animRef.current);
             streamRef.current?.getTracks().forEach(t => t.stop());
             audioCtxRef.current?.close();
             if (recogRef.current) try { recogRef.current.abort(); } catch { }
         };
-    }, [testNetworkSpeed]); // stable logic
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-    //  Readiness score for progress bar 
+    //  Readiness score for progress bar
     const checks = [
         cameraStatus === "granted",
         micStatus === "granted" && micVerified,
-        noiseBypass || noisePassed,
         speakerStatus === "passed" || speakerStatus === "failed",
         visualReady,
     ];

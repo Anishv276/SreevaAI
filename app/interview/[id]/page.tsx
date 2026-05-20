@@ -114,7 +114,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const agentReadyCommittedRef = useRef(false);
     const launchStartedAtRef = useRef<number | null>(null);
     const lkRoomRef = useRef<Room | null>(null);
-    const readySignalSentFromParentRef = useRef(false);
     const connectionAttemptRef = useRef(0);
     const launchRecoveryTimerRef = useRef<number | null>(null);
     const [isAgentReady, setIsAgentReady] = useState(false);
@@ -151,6 +150,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const [supportSuccess, setSupportSuccess] = useState(false);
     const [supportError, setSupportError] = useState<string | null>(null);
     const [blockedAccessMessage, setBlockedAccessMessage] = useState<string | null>(null);
+    const [blockedAccessTitle, setBlockedAccessTitle] = useState<string>("Access Restricted");
     const [supportForm, setSupportForm] = useState({
         name: "",
         email: "",
@@ -377,11 +377,20 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             window.removeEventListener("pagehide", handleExit);
         };
     }, [id, phase]);
+
     useEffect(() => {
         if (phase !== "launching") return;
         if (!isAgentReady || agentReadyCommittedRef.current) return;
         agentReadyCommittedRef.current = true;
         interviewStartedAtRef.current = Date.now();
+        // Start the countdown timer exactly NOW — greeting audio is playing in the browser.
+        // The timer was not started during launching so it counts from this moment.
+        const dur = sessionDurationRef.current;
+        if (typeof dur === "number" && Number.isFinite(dur) && dur > 0) {
+            setInterviewEndsAt(Date.now() + dur * 1000);
+            setRemainingSeconds(dur);
+            setTimerExpired(false);
+        }
         setPhase("interview");
     }, [phase, isAgentReady]);
     useEffect(() => {
@@ -396,7 +405,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const tokenRequestRef = useRef<Promise<WarmConnectionResult> | null>(null);
     type WarmConnectionResult =
         | { ok: true }
-        | { ok: false; message: string };
+        | { ok: false; message: string; title?: string };
 
     const ensureWarmConnection = useCallback(async (): Promise<WarmConnectionResult> => {
         const requestAttempt = connectionAttemptRef.current;
@@ -434,11 +443,20 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                     return { ok: true };
                 }
                 const apiError = String(data?.error || "Invalid token payload");
+                const isInProgress = String(data?.code || "").toUpperCase() === "IN_PROGRESS" || /in progress/i.test(apiError);
                 const isFinalized = /already finalized|already completed|completed interview|session has expired|expired|invalid token|invalid token payload|token expiry|token expired/i.test(apiError);
+                if (isInProgress) {
+                    return {
+                        ok: false,
+                        title: "Interview is in progress",
+                        message: "This interview is already in progress. Please wait for the current session to finish.",
+                    };
+                }
                 if (isFinalized) {
                     const blockedMessage = "You have already completed your interview. Please contact the support team at support@sreevaai.com.";
                     return {
                         ok: false,
+                        title: "You have already completed your interview",
                         message: blockedMessage,
                     };
                 }
@@ -548,7 +566,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         setIsAgentReady(false);
         setAgentReadyLatencyMs(null);
         agentReadyCommittedRef.current = false;
-        readySignalSentFromParentRef.current = false;
         launchStartedAtRef.current = null;
         setLaunchTimeoutCheck(0);
         setLaunchRecoveryMessage(null);
@@ -576,36 +593,33 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             setIsJoining(false);
             return;
         }
-        // Move the UI into the launching state immediately so the button feels instant.
-        connectionAttemptRef.current += 1;
-        agentReadyCommittedRef.current = false;
-        readySignalSentFromParentRef.current = false;
-        launchStartedAtRef.current = performance.now();
-        setLaunchRecoveryMessage(null);
-        setIsAgentReady(false);
-        setAgentReadyLatencyMs(null);
-        setPhase("launching");
         void (async () => {
             try {
-                void requestFullscreenMode();
-                if (lkRoomRef.current) {
-                    void lkRoomRef.current.startAudio().catch(() => { });
-                }
                 const warmResult = await ensureWarmConnection();
                 if (!warmResult.ok) {
                     await resetToHardwareCheck();
+                    setBlockedAccessTitle(warmResult.title || "Access Restricted");
                     setBlockedAccessMessage(warmResult.message);
                     return;
+                }
+                // Move the UI into the launching state only after we know the interview can start.
+                connectionAttemptRef.current += 1;
+                agentReadyCommittedRef.current = false;
+                launchStartedAtRef.current = performance.now();
+                setLaunchRecoveryMessage(null);
+                setIsAgentReady(false);
+                setAgentReadyLatencyMs(null);
+                setPhase("launching");
+                void requestFullscreenMode();
+                if (lkRoomRef.current) {
+                    void lkRoomRef.current.startAudio().catch(() => { });
                 }
                 const durationSeconds = sessionDurationRef.current;
                 if (typeof durationSeconds !== "number" || !Number.isFinite(durationSeconds) || durationSeconds <= 0) {
                     throw new Error("Interview duration is not configured for this drive.");
                 }
-                if (!interviewEndsAt) {
-                    setInterviewEndsAt(Date.now() + durationSeconds * 1000);
-                    setRemainingSeconds(durationSeconds);
-                    setTimerExpired(false);
-                }
+                // Timer starts when interview phase begins (when greeting audio plays),
+                // not during launching. See the setPhase("interview") effect above.
                 setShouldConnect(true);
             } catch (err) {
                 console.error("Phase transition failed:", err);
@@ -811,7 +825,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                                 <ShieldAlert className="h-8 w-8" />
                             </div>
                             <h2 className="text-2xl font-black tracking-tight text-gray-900">
-                                You have already completed your interview
+                                {blockedAccessTitle}
                             </h2>
                             <p className="mt-3 text-sm leading-6 text-gray-600">
                                 {blockedAccessMessage}
@@ -1462,8 +1476,8 @@ function InterviewRoomContent({
             lkRoom.startAudio().catch(() => { });
         }
     }, [connectionState, lkRoom]);
-    const readySignalSentRef = useRef(false);
     const launchReadySignalSentRef = useRef(false);
+    const [launchPrereqsReady, setLaunchPrereqsReady] = useState(false);
     const finishStartedRef = useRef(false);
     const recordingStartedRef = useRef(false);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -1836,7 +1850,14 @@ function InterviewRoomContent({
             cleanupRecordingResources();
         }
     }, [cleanupRecordingResources, finalizeRecordingChunks, markRecordingAbandoned, markRecordingFailed]);
-    // Agent readiness is based on room connection plus an observable greeting signal.
+    // Agent readiness in launch phase is gated by:
+    // 1) room connection + agent presence
+    // 2) explicit backend signal that prefetch + greeting prerequisites are ready
+    // 3) assistant state MUST be "speaking" — this means greeting audio has actually
+    //    arrived at the browser. Do NOT include "listening" here: the agent briefly
+    //    enters listening state between session start and the first TTS audio chunk,
+    //    which would fire the transition before any audio plays (causing 10-15s of
+    //    silence in the interview UI while TTS is still synthesizing).
     // IMPORTANT: onAgentReady is a one-way latch. Once we fire true we never send false
     // again - the parent commits the phase change and a subsequent false (when assistantState
     // moves from "speaking" -> "listening") would race and reset isAgentReady before
@@ -1845,25 +1866,21 @@ function InterviewRoomContent({
         if (!isLaunchingActive) {
             // Reset the latch when a new launch attempt starts
             launchReadySignalSentRef.current = false;
+            setLaunchPrereqsReady(false);
             return;
         }
         // Already fired - do nothing more
         if (launchReadySignalSentRef.current) return;
         const readyNow = connectionState === "connected"
             && hasAgentPresence
-            && (
-                assistantState === "speaking"
-                // Agent present + audio track published + past initializing
-                || (assistantState !== "initializing" && Boolean(agentAudioTrack))
-                // Fallback: agent joined and is now listening (greeting already sent)
-                || assistantState === "listening"
-            );
+            && launchPrereqsReady
+            && assistantState === "speaking"; // ONLY "speaking" — never "listening"
         if (readyNow) {
             launchReadySignalSentRef.current = true;
-            console.log("[Agent] Ready in launching phase - state:", assistantState);
+            console.log("[Agent] Greeting audio confirmed playing - transitioning to interview");
             onAgentReady?.(true);
         }
-    }, [isLaunchingActive, connectionState, hasAgentPresence, assistantState, agentAudioTrack, onAgentReady]);
+    }, [isLaunchingActive, connectionState, hasAgentPresence, launchPrereqsReady, assistantState, onAgentReady]);
     // Start recording as soon as interview is active AND the agent audio track is available.
     // Waiting for agentAudioTrack ensures the AI interviewer voice is mixed into the recording.
     useEffect(() => {
@@ -1965,45 +1982,6 @@ function InterviewRoomContent({
             });
         }
     }, [isInterviewActive, localParticipant]);
-    // Send one ready signal when interview becomes active and connected.
-    useEffect(() => {
-        if (connectionState !== "connected" || !localParticipant || !isInterviewActive) {
-            if (!isInterviewActive || connectionState !== "connected") {
-                readySignalSentRef.current = false;
-            }
-            return;
-        }
-        if (readySignalSentRef.current) return;
-        readySignalSentRef.current = true;
-        const encoder = new TextEncoder();
-        let cancelled = false;
-        let attempts = 0;
-        const sendReady = async () => {
-            if (cancelled) return;
-            attempts += 1;
-            const data = encoder.encode(
-                JSON.stringify({ type: "user_ready", timestamp: Date.now(), attempt: attempts })
-            );
-            try {
-                await localParticipant.publishData(data, { reliable: true });
-                console.log("SENT READY SIGNAL", { attempt: attempts });
-            } catch (err) {
-                console.warn("[READY] failed to publish user_ready", err);
-            }
-        };
-        void sendReady();
-        const retryTimer = window.setInterval(() => {
-            if (attempts >= 6) {
-                window.clearInterval(retryTimer);
-                return;
-            }
-            void sendReady();
-        }, 700);
-        return () => {
-            cancelled = true;
-            window.clearInterval(retryTimer);
-        };
-    }, [connectionState, localParticipant, isInterviewActive]);
     useEffect(() => {
         if (agentAudioTrack && agentAudioTrack.kind === "audio") {
             onRemoteAgentAudioTrack(agentAudioTrack);
@@ -2018,6 +1996,8 @@ function InterviewRoomContent({
                 if (packet.type === "interview_terminated") {
                     setRemoteForceFinishReason(packet.reason === "inactivity_timeout" ? "timeout" : "normal");
                     setRemoteForceFinish(true);
+                } else if (packet.type === "launch_prereqs_ready") {
+                    setLaunchPrereqsReady(Boolean(packet.ready));
                 } else if (packet.type === "proctoring_violation") {
                     // Agent detected a proctoring event.
                     // Sync to candidate UI for immediate feedback

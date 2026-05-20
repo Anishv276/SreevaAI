@@ -37,7 +37,7 @@ _PROVIDER_DEFAULTS: dict[str, Any] = {
     "sarvam_v3_sample_rate":   24000,
     "sarvam_v2_sample_rate":   22050,
     "sarvam_output_bitrate":   "64k",
-    "sarvam_output_codec":     "opus",
+    "sarvam_output_codec":     "linear16",
     "sarvam_min_buffer":       30,
     "sarvam_max_chunk":        150,
     "sarvam_v2_pitch":         0.0,
@@ -184,10 +184,10 @@ def build_stt(language_code: str = "en", model: str = STT_MODEL):
     keyword_terms = ["instantly", "heyreach", "n8n"]
     # Deepgram rejects `keywords` for Nova-3. Use keyterm/keyterms there.
     if is_nova3:
-        if "keyterms" in supported:
-            base_kwargs["keyterms"] = keyword_terms
-        elif "keyterm" in supported:
+        if "keyterm" in supported:
             base_kwargs["keyterm"] = keyword_terms
+        elif "keyterms" in supported:
+            base_kwargs["keyterms"] = keyword_terms
     elif "keywords" in supported:
         base_kwargs["keywords"] = [(term, 10.0) for term in keyword_terms]
 

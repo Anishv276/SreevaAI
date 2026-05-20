@@ -49,7 +49,7 @@ async def score_answer_quality(
             client.chat.completions.create(
                 model=llm_model,
                 temperature=0.0,
-                max_tokens=280,
+                max_tokens=160,  # JSON with 7 ints + 2 short arrays < 130 tokens
                 messages=[
                     {
                         "role": "system",
