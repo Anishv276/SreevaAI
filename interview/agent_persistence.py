@@ -782,7 +782,7 @@ async def persist_transcript(
                     "interviewTranscript" = $1,
                     "interviewDuration"   = $2,
                     status                = $3,
-                    "proctoringReport"    = $4,
+                    "proctoringReport"    = COALESCE("proctoringReport", '{}'::jsonb) || COALESCE($4::jsonb, '{}'::jsonb),
                     "interviewTurns"      = $5,
                     "completedAt"         = NOW(),
                     "updatedAt"           = NOW()
@@ -1220,6 +1220,32 @@ async def generate_interview_report(
         concerns = report_data.get("concerns", [])
         role_fit = int(min(100, max(0, report_data.get("role_fit", 0))))
 
+        # Convert skills_covered and skill_ratings into structured skills_proof objects expected by frontend
+        skill_ratings = report_data.get("skill_ratings", {})
+        skills_proof = []
+        for s in skills_covered:
+            rating_val = skill_ratings.get(s)
+            rating = None
+            if rating_val is not None:
+                try:
+                    rating = int(rating_val)
+                except (ValueError, TypeError):
+                    rating = None
+
+            score = "—"
+            status = "NOT TESTED"
+            if rating is not None:
+                score = f"{rating}/10"
+                status = "PROVED" if rating >= 7 else "PARTIAL" if rating >= 4 else "NOT PROVED"
+
+            skills_proof.append({
+                "skill": s,
+                "status": status,
+                "score": score,
+                "what_they_showed": "",
+                "what_was_missing": ""
+            })
+
         final_report = {
             "technical_score": technical_score,
             "role_fit": role_fit,
@@ -1229,8 +1255,8 @@ async def generate_interview_report(
                 "communication": communication_score,
                 "communication_breakdown": comm_scores,
             },
-            "skills_proof": skills_covered,
-            "skill_ratings": report_data.get("skill_ratings", {}),
+            "skills_proof": skills_proof,
+            "skill_ratings": skill_ratings,
             "top_strengths": top_strengths if isinstance(top_strengths, list) else [],
             "concerns": concerns if isinstance(concerns, list) else [],
             "qa_blocks": qa_blocks,

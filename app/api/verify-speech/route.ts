@@ -17,17 +17,31 @@ export async function POST(req: NextRequest) {
 
         const audioBuffer = await audio.arrayBuffer();
 
-        const response = await fetch(
-            "https://api.deepgram.com/v1/listen?model=nova-3&smart_format=false&punctuate=false&language=en",
-            {
-                method: "POST",
-                headers: {
-                    "Authorization": `Token ${apiKey}`,
-                    "Content-Type": (audio.type && audio.type !== "application/octet-stream") ? audio.type : "audio/webm",
-                },
-                body: audioBuffer,
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 2000);
+        let response: Response;
+        try {
+            response = await fetch(
+                "https://api.deepgram.com/v1/listen?model=nova-3&smart_format=false&punctuate=false&language=en",
+                {
+                    method: "POST",
+                    headers: {
+                        "Authorization": `Token ${apiKey}`,
+                        "Content-Type": (audio.type && audio.type !== "application/octet-stream") ? audio.type : "audio/webm",
+                    },
+                    body: audioBuffer,
+                    signal: controller.signal,
+                }
+            );
+        } catch (fetchErr) {
+            if ((fetchErr as Error)?.name === "AbortError") {
+                console.warn("[verify-speech] Deepgram request timed out after 2000ms");
+                return NextResponse.json({ transcript: "", matched: false, error: "timeout" });
             }
-        );
+            throw fetchErr;
+        } finally {
+            clearTimeout(timeoutId);
+        }
 
         if (!response.ok) {
             const errText = await response.text();

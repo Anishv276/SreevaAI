@@ -4,6 +4,8 @@ import { generateId } from "@/lib/ids";
 import { v4 as uuidv4 } from "uuid";
 import { sendApplicationStatusEmail } from "@/lib/mail";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
+import { FIXED_INTERVIEW_DURATION_MINUTES, INTERVIEW_SLOT_INTERVAL_MINUTES } from "@/lib/drive-limits";
+import { isEmailMatchCaseInsensitive, isValidSlotBoundary } from "@/lib/interview-slot-policy";
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
     console.error("[BOOKING API] POST request received");
@@ -13,6 +15,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         const body = await request.json();
         const startTime = new Date(body.startTime);
         const providedName = String(body.name || "").trim();
+        const providedEmail = String(body.email || "").trim().toLowerCase();
         const candidateTimeZone = String(body.timeZone || "").trim();
 
         if (isNaN(startTime.getTime())) {
@@ -20,6 +23,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         }
         if (!providedName) {
             return NextResponse.json({ error: "Name is required to book a slot" }, { status: 400 });
+        }
+        if (!providedEmail) {
+            return NextResponse.json({ error: "Application email is required to book a slot" }, { status: 400 });
         }
 
         const app = await prismaAny.application.findUnique({
@@ -35,7 +41,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             return NextResponse.json({ error: "Slot already booked" }, { status: 400 });
         }
 
-        const endTime = new Date(startTime.getTime() + 20 * 60000);
+        const normalizedApplicationEmail = String(app.email || "").trim();
+        if (!normalizedApplicationEmail || !isEmailMatchCaseInsensitive(providedEmail, normalizedApplicationEmail)) {
+            return NextResponse.json(
+                { error: "Entered email does not match the application email for this interview link." },
+                { status: 400 }
+            );
+        }
+
+        const endTime = new Date(startTime.getTime() + FIXED_INTERVIEW_DURATION_MINUTES * 60000);
         const orgId = app.drive?.orgId;
         const driveId = app.drive?.id;
         const driveDeadline = app.drive?.deadline ? new Date(app.drive.deadline) : null;
@@ -46,6 +60,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
         if (driveDeadline && !Number.isNaN(driveDeadline.getTime()) && startTime.getTime() > driveDeadline.getTime()) {
             return NextResponse.json({ error: "This drive deadline has passed. Please contact HR for a new schedule link." }, { status: 400 });
+        }
+
+        if (!isValidSlotBoundary(startTime, INTERVIEW_SLOT_INTERVAL_MINUTES)) {
+            return NextResponse.json({ error: "Invalid slot time selected. Please choose one of the listed slots." }, { status: 400 });
         }
 
         const bookingResult = await prismaAny.$transaction(async (tx: any) => {

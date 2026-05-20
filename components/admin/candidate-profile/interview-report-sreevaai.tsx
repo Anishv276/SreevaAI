@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type ReactNode } from "react";
+import { useRef, useState, forwardRef, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -28,7 +28,17 @@ import {
   Zap,
 } from "lucide-react";
 
-const Plyr = dynamic(() => import("plyr-react").then((m) => m.Plyr), { ssr: false });
+const Plyr = dynamic(
+  () => import("plyr-react").then((m) => {
+    const Wrapper = forwardRef<any, any>((props, ref) => {
+      const PlyrComponent = m.Plyr as any;
+      return <PlyrComponent ref={ref} {...props} />;
+    });
+    Wrapper.displayName = "DynamicPlyrWrapper";
+    return Wrapper;
+  }),
+  { ssr: false }
+);
 
 export type IntelBadgeTone = "rose" | "sky" | "amber" | "emerald" | "slate";
 export type IntelIconKey =
@@ -2106,6 +2116,32 @@ function QuestionAnalysisCard({ transcript, questions, answerScores, onTranscrip
   onTranscriptSeek?: (seconds: number) => void;
   recordingDurationSec?: number | null;
 }) {
+  const findSeekTime = (qText: string, aText: string, fallbackTime: number): number => {
+    if (qText) {
+      const cleanQ = qText.toLowerCase().replace(/[^a-z0-9]/g, "");
+      const match = transcript.find(t => t.from === "ai" && t.seekSeconds !== undefined && t.text.toLowerCase().replace(/[^a-z0-9]/g, "").includes(cleanQ));
+      if (match && match.seekSeconds !== undefined) {
+        return match.seekSeconds;
+      }
+    }
+    if (aText) {
+      const cleanA = aText.toLowerCase().replace(/[^a-z0-9]/g, "");
+      const match = transcript.find(t => t.from === "user" && t.seekSeconds !== undefined && t.text.toLowerCase().replace(/[^a-z0-9]/g, "").includes(cleanA));
+      if (match && match.seekSeconds !== undefined) {
+        return match.seekSeconds;
+      }
+    }
+    // Try fuzzy match of first 35 chars
+    if (qText && qText.length > 10) {
+      const fuzzyQ = qText.substring(0, 35).toLowerCase().replace(/[^a-z0-9]/g, "");
+      const match = transcript.find(t => t.from === "ai" && t.seekSeconds !== undefined && t.text.toLowerCase().replace(/[^a-z0-9]/g, "").includes(fuzzyQ));
+      if (match && match.seekSeconds !== undefined) {
+        return match.seekSeconds;
+      }
+    }
+    return fallbackTime;
+  };
+
   // Prefer answerScores (live DB data) over AI report qa_blocks
   const rows: { question: string; aiQuestion?: string; answer: string; depth: number; clarity: number; fluency: number; confidence: number; overall: number; signals: string[]; reasoning?: string; tags?: string[] }[] = (() => {
     if (answerScores && answerScores.length > 0) {
@@ -2166,7 +2202,8 @@ function QuestionAnalysisCard({ transcript, questions, answerScores, onTranscrip
               const overall = item.overall;
               const qBadge: QBadge = overall >= 7 ? "STRONG" : overall >= 5 ? "AVERAGE" : overall > 0 ? "FAIR" : "PENDING";
               const duration = recordingDurationSec || 1800;
-              const seekTime = Math.max(0, Math.floor((idx / (rows.length - 1 || 1)) * duration));
+              const linearSeekTime = Math.max(0, Math.floor((idx / (rows.length - 1 || 1)) * duration));
+              const seekTime = findSeekTime(item.question, item.answer, linearSeekTime);
               return (
                 <div key={idx} className="rounded-2xl border border-[#E8EAED] bg-white p-3.5 cursor-pointer hover:shadow-md hover:border-[#0B5FFF]/30 transition-all"
                   onClick={() => onTranscriptSeek?.(seekTime)}>
@@ -2326,8 +2363,6 @@ export function InterviewReportSreevaAI({
   const plyrRef = useRef<any>(null);
 
   const handleSeek = (seconds: number) => {
-    if (!plyrRef.current) return;
-
     const setCurrentTime = (el: any) => {
       try {
         el.currentTime = seconds;
@@ -2338,13 +2373,13 @@ export function InterviewReportSreevaAI({
 
     try {
       // Try Plyr API first
-      if (plyrRef.current.plyr) {
+      if (plyrRef.current?.plyr) {
         setCurrentTime(plyrRef.current.plyr);
         return;
       }
 
       // Try direct video element
-      const videoEl = plyrRef.current.querySelector?.('video') ||
+      const videoEl = plyrRef.current?.querySelector?.('video') ||
                      document.querySelector('video');
       if (videoEl) {
         setCurrentTime(videoEl);

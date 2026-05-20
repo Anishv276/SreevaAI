@@ -168,6 +168,8 @@ def _deepgram_supported_params() -> set[str]:
 
 def build_stt(language_code: str = "en", model: str = STT_MODEL):
     supported = _deepgram_supported_params()
+    model_lc = str(model or "").lower()
+    is_nova3 = "nova-3" in model_lc
 
     base_kwargs: dict[str, Any] = {
         "model":           model,
@@ -179,12 +181,15 @@ def build_stt(language_code: str = "en", model: str = STT_MODEL):
     if "nova" in model.lower() and "enable_diarization" in supported:
         base_kwargs["enable_diarization"] = True
 
-    if "keywords" in supported:
-        base_kwargs["keywords"] = [
-            ("instantly", 10.0),
-            ("heyreach", 10.0),
-            ("n8n", 10.0),
-        ]
+    keyword_terms = ["instantly", "heyreach", "n8n"]
+    # Deepgram rejects `keywords` for Nova-3. Use keyterm/keyterms there.
+    if is_nova3:
+        if "keyterms" in supported:
+            base_kwargs["keyterms"] = keyword_terms
+        elif "keyterm" in supported:
+            base_kwargs["keyterm"] = keyword_terms
+    elif "keywords" in supported:
+        base_kwargs["keywords"] = [(term, 10.0) for term in keyword_terms]
 
     ep_ms = _PROVIDER_DEFAULTS["deepgram_endpointing_ms"]
     if "endpointing_ms" in supported:

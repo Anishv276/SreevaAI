@@ -539,13 +539,27 @@ async def entrypoint(ctx: JobContext):
             _interview_questions = _parsed if isinstance(_parsed, list) else []
         except Exception:
             _interview_questions = []
-    logger.info("[FLOW] Resume fetched — present=%s", bool(structured_resume))
-    logger.info("[FLOW] JD fetched — present=%s", bool(extracted_details))
+
+    # Extract basic context info early for logging
+    candidate_name = ctx_data.fullName
+    candidate_first_name = first_name_from_full_name(candidate_name)
+    job_title = ctx_data.jobTitle
+
+    # Log what has been fetched from database
+    logger.info("[STARTUP] Resume fetched: %s", "YES" if structured_resume else "NO")
+    if structured_resume:
+        logger.info("[STARTUP]   - Candidate: %s | Job: %s", candidate_name, job_title)
+    logger.info("[STARTUP] JD fetched: %s", "YES" if extracted_details else "NO")
+    if extracted_details:
+        jd_skills = extracted_details.get("mustHaveSkills", [])
+        logger.info("[STARTUP]   - Required skills: %s", jd_skills[:5] if jd_skills else "none")
+
     if _interview_questions:
-        logger.info("[FLOW] Custom questions — count=%d: %s",
-            len(_interview_questions),
-            [str(q)[:80] for q in _interview_questions],
-        )
+        logger.info("[STARTUP] Custom questions: %d loaded", len(_interview_questions))
+        for i, q in enumerate(_interview_questions, 1):
+            logger.info("[STARTUP]   Q%d: %s", i, str(q)[:100])
+    else:
+        logger.info("[STARTUP] Custom questions: NONE configured")
 
     _custom_questions: list[CustomQuestion] = [
         CustomQuestion(raw=str(_raw_q).strip(), normalized=_normalize_custom_question_text(_raw_q))
@@ -554,9 +568,6 @@ async def entrypoint(ctx: JobContext):
     ]
     if not _custom_questions:
         logger.info("[FLOW] Custom questions — none configured")
-    candidate_name = ctx_data.fullName
-    candidate_first_name = first_name_from_full_name(candidate_name)
-    job_title = ctx_data.jobTitle
     interview_lang = ctx_data.language
     time_limit_mins = FIXED_INTERVIEW_DURATION_MINUTES
     follow_up_depth = 2
@@ -644,18 +655,37 @@ async def entrypoint(ctx: JobContext):
     refresh_candidate_band_context(session_context)
     # Inject dynamic skills/tools from resume and JD into the phonetic transformer
     tts_phonetic_processor.add_tools(session_context.coverage_items)
-    logger.info(
-        "[FLOW] Brief built — anchor=%s anchor_type=%s skills=%s",
-        str(session_context.resume_brief.anchor_item or "none")[:60],
-        session_context.resume_brief.anchor_type or "none",
-        session_context.resume_brief.skills[:4],
-    )
+
     stage1_directive_cached = build_stage_1_resume_directive(
         band=session_context.candidate_band,
         resume_brief=session_context.resume_brief,
         custom_questions=_interview_questions or None,
     )
-    logger.info("[FLOW] Stage 1 directive ready (%d chars)", len(stage1_directive_cached))
+
+    # ── Full brief + directive dump (makes logs actually useful for debugging) ──
+    _rb = session_context.resume_brief
+    logger.info("[BRIEF] ========== FULL RESUME BRIEF ==========")
+    logger.info("[BRIEF] Anchor: %s (type=%s)", _rb.anchor_item or "none", _rb.anchor_type or "none")
+    logger.info("[BRIEF] Band: %s", session_context.candidate_band or "unknown")
+    logger.info("[BRIEF] Skills (%d): %s", len(_rb.skills or []), _rb.skills or [])
+    for i, p in enumerate(_rb.projects or []):
+        logger.info("[BRIEF] Project[%d]: %s", i, p)
+    for i, w in enumerate(_rb.work_history or []):
+        logger.info("[BRIEF] Work[%d]: %s", i, w)
+    for i, x in enumerate(_rb.internships or []):
+        logger.info("[BRIEF] Internship[%d]: %s", i, x)
+    for i, e in enumerate(_rb.education or []):
+        logger.info("[BRIEF] Education[%d]: %s", i, e)
+    logger.info("[BRIEF] ==========================================")
+
+    logger.info("[STAGE1_DIRECTIVE] ========== FULL STAGE 1 DIRECTIVE ==========")
+    for _line in stage1_directive_cached.splitlines():
+        logger.info("[STAGE1_DIRECTIVE] %s", _line)
+    logger.info("[STAGE1_DIRECTIVE] =============================================")
+
+    logger.info("[STARTUP] Band=%s | Language=%s | TimeBudget=%dm | Stage1=%dchars",
+        session_context.candidate_band or "unknown", interview_lang or "english",
+        time_limit_mins, len(stage1_directive_cached))
     voice_layer_prompt = build_voice_layer_prompt(
         candidate_name=candidate_first_name or candidate_name,
         job_title=job_title,
@@ -907,22 +937,32 @@ async def entrypoint(ctx: JobContext):
             _stage_quota_reminder_fired = False
             if _current_stage_index == 1:
                 _active_skill_topic = _next_uncovered_skill_topic()
+                logger.info("[STAGE2] ========== STAGE 2 SKILL PHASE STARTED ==========")
+                logger.info("[STAGE2] Budget: %d seconds (%.1f min)", _stage_budgets_secs.get(1, 0), _stage_budgets_secs.get(1, 0)/60)
+                logger.info("[STAGE2] Opening skill topic: %s", _active_skill_topic or "auto-select")
+                logger.info("[STAGE2] Topics covered in Stage 1: %s", _covered_resume_topic_keys if _covered_resume_topic_keys else "none yet")
             if stage_directive:
                 chat_ctx.add_message(role="system", content=stage_directive)
-                logger.info("[STAGE] Stage 2 injected — %d chars", len(stage_directive))
+                logger.info("[STAGE] Stage %d directive injected (%d chars)", _current_stage_index + 1, len(stage_directive))
 
     def _build_stage_2_directive() -> Optional[str]:
         rb = session_context.resume_brief
         transcript_text = " ".join(l.split(":", 1)[-1].strip().lower() for l in transcript_lines)
         covered_in_s1 = _find_covered_keywords(rb.skills + rb.projects, transcript_text)
         logger.info("[STAGE] Stage 2 build - covered in Stage 1: %s", covered_in_s1)
-        return build_stage_2_skill_directive(
+        directive = build_stage_2_skill_directive(
             band=session_context.candidate_band,
             resume_brief=rb,
             context_brief=session_context.merged_brief_block,
             covered_in_stage1=covered_in_s1,
             custom_questions=_pending_custom_questions() or None,
         )
+        if directive:
+            logger.info("[STAGE2_DIRECTIVE] ========== FULL STAGE 2 DIRECTIVE ==========")
+            for _line in directive.splitlines():
+                logger.info("[STAGE2_DIRECTIVE] %s", _line)
+            logger.info("[STAGE2_DIRECTIVE] =============================================")
+        return directive
 
     def _resume_topic_candidates() -> list[str]:
         rb = session_context.resume_brief
@@ -1418,6 +1458,9 @@ async def entrypoint(ctx: JobContext):
                                 "quality": {"clarity": 5.0, "depth": 5.0, "specificity": 5.0, "grounding": 5.0},
                                 "signal_events": [],
                             }
+                            # Build minimal fallback directive. The [TOPIC_TAG_RULE] and [STRICT_MOVE_ON_RULE]
+                            # are added later in the normal post-processing flow (lines 1875+) so we don't
+                            # duplicate them.
                             directive = (
                                 f"[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
                                 f"DECISION: {_fallback_action}\n"
@@ -1591,12 +1634,25 @@ async def entrypoint(ctx: JobContext):
                                 _collapse_stage = 0
                                 _last_action_was_move_on = False
                                 logger.info("[FOLLOWUP] New topic - counter reset")
+                            # SAFEGUARD: If counter is already at cap before this evaluation, force MOVE_ON
+                            # This prevents infinite loops if counter doesn't increment properly
+                            if _topic_follow_up_count >= follow_up_depth:
+                                action = "MOVE_ON"
+                                logger.info("[FOLLOWUP] SAFEGUARD: Counter at cap (%d) before eval, forcing MOVE_ON", _topic_follow_up_count)
                             _topic_depth_history.append(td["quality"]["depth"])
                             collapse_fired = any(
                                 ev.get("signal_name") == "follow_up_collapse"
                                 for ev in signal_events
                             )
                             stage_label_now = STAGE_CONFIGS[_current_stage_index].label if _current_stage_index < len(STAGE_CONFIGS) else "?"
+                            _active_topic_now = (_active_resume_topic if _current_stage_index == 0 else _active_skill_topic) or "?"
+                            logger.info(
+                                "[TOPIC_STATE] active=%s | covered_resume=%s | covered_skill=%s | enforce_move_on=%s",
+                                _active_topic_now[:50],
+                                list(_covered_resume_topic_keys)[:5],
+                                list(_covered_skill_topic_keys)[:5],
+                                _enforce_move_on_until_new,
+                            )
                             logger.info(
                                 "[EVAL] Stage=%d(%s) action=%s quality=%.1f follow_ups=%d/%d(cap=%d) depth=%s",
                                 _current_stage_index + 1, stage_label_now, action, quality_avg,
@@ -1623,6 +1679,7 @@ async def entrypoint(ctx: JobContext):
                                         and _topic_depth_history[-1] < 4.0
                                         and _topic_depth_history[-2] < 4.0
                                     )
+                                    # After incrementing, check if we're at or past cap
                                     hard_cap_hit = _topic_follow_up_count >= topic_follow_up_cap
                                     if hard_cap_hit or (last_two_low and _topic_follow_up_count >= 2):
                                         reason_note = "cap" if hard_cap_hit else "quality exhausted"
@@ -1850,8 +1907,25 @@ async def entrypoint(ctx: JobContext):
                             )
                             logger.info("[TOPIC] Drift override - enforcing MOVE_ON (was %s)", action)
                         if action == "MOVE_ON":
+                            _old_active = (_active_resume_topic if _current_stage_index == 0 else _active_skill_topic) or "?"
+                            logger.info(
+                                "[MOVE_ON] FROM='%s' → TO='%s' | covered_resume=%s",
+                                _old_active[:50],
+                                (_active_resume_topic if _current_stage_index == 0 else _active_skill_topic or "TBD")[:50],
+                                list(_covered_resume_topic_keys)[:5],
+                            )
                             _enforce_move_on_until_new = True
-                            _forced_next_topic_hint = (td.get("decision", {}).get("next_goal") or "").strip() or None
+                            # Extract just the topic name from next_goal, not the full instruction text.
+                            # next_goal is a long sentence; we want only the specific topic hint for STRICT_MOVE_ON_RULE.
+                            _next_goal_text = (td.get("decision", {}).get("next_goal") or "").strip()
+                            # Pull the short topic name: look for "pivot to: X" or "ask about: X" or first sentence fragment
+                            _topic_match = re.search(r"(?:pivot to|ask about|topic:|next topic:)\s*([^.!\n]{3,60})", _next_goal_text, re.IGNORECASE)
+                            if _topic_match:
+                                _forced_next_topic_hint = _topic_match.group(1).strip()
+                            elif _current_stage_index == 0:
+                                _forced_next_topic_hint = (_active_resume_topic or "").split(" - ")[0][:60].strip() or None
+                            else:
+                                _forced_next_topic_hint = (_active_skill_topic or "").split(" - ")[0][:60].strip() or None
                         expected_topic_tag = "NEW" if (action == "MOVE_ON" or _enforce_move_on_until_new) else "FOLLOWUP"
                         _expected_topic_kind = expected_topic_tag
                         directive = (
@@ -1888,6 +1962,8 @@ async def entrypoint(ctx: JobContext):
                                 + "Do NOT ask educational background, generic introduction, or recruiter custom questions yet. "
                                 + "You may ask those only after at least 2 resume-topic questions have already been asked."
                             )
+                        # Log the directive being injected (first 300 chars) for debugging
+                        logger.info("[DIRECTIVE] → %s", directive[:300].replace("\n", " | "))
                         # Remove previous directive to keep context clean
                         remove_system_messages(chat_ctx, "[NEXT_TURN_DIRECTIVE")
                         # On MOVE_ON, also clear RECENT_CONTEXT so the LLM doesn't
@@ -1898,7 +1974,7 @@ async def entrypoint(ctx: JobContext):
                             "[ROUTER] action=%s mode=%s turn=%d topic=%s follow_ups=%d",
                             td["decision"]["action"], td["decision"].get("mode", "normal"),
                             turn,
-                            (_active_resume_topic if _current_stage_index == 0 else _active_skill_topic or "?")[:40],
+                            ((_active_resume_topic if _current_stage_index == 0 else _active_skill_topic) or "?")[:40],
                             _topic_follow_up_count,
                         )
                         chat_ctx.add_message(role="system", content=directive)
@@ -1970,11 +2046,18 @@ async def entrypoint(ctx: JobContext):
                     elif emitted_topic_tag == "NEW":
                         # AI complied — clear drift guard and reset counters for fresh topic.
                         _enforce_move_on_until_new = False
+                        _enforce_hint_snapshot = _forced_next_topic_hint
                         _forced_next_topic_hint = None
                         _topic_follow_up_count = 0
                         _topic_depth_history = []
                         _last_action_was_move_on = False
-                        logger.info("[TOPIC] New topic confirmed (emitted NEW) — counter reset")
+                        _active_now = (_active_resume_topic if _current_stage_index == 0 else _active_skill_topic) or "?"
+                        logger.info(
+                            "[TOPIC] NEW confirmed — active_topic='%s' | expected_next='%s' | content_preview='%s'",
+                            _active_now[:50],
+                            (_enforce_hint_snapshot or "none")[:50],
+                            _assistant_text[:80],
+                        )
                     elif _expected_topic_kind == "NEW" and not _drift_detected:
                         # Expected NEW, got NEW (covered above) or no tag — reset counters.
                         _topic_follow_up_count = 0
@@ -2019,7 +2102,7 @@ async def entrypoint(ctx: JobContext):
                         warmup_required_responses,
                     )
                     if warmup_responses_received >= warmup_required_responses:
-                        logger.info("[FLOW] Warmup done - injecting Stage 1")
+                        logger.info("[FLOW] Warmup complete ✓ — ENTERING STAGE 1")
                         warmup_complete = True
                         remove_system_messages(chat_ctx, "[WARMUP PHASE]")
                         stage1_directive = stage1_directive_cached or build_stage_1_resume_directive(
@@ -2042,8 +2125,13 @@ async def entrypoint(ctx: JobContext):
                         )
                         _stage_start_time = time.monotonic()
                         stage1_budget = _stage_budgets_secs.get(0, 0)
-                        logger.info("[STAGE] Stage 1 started - budget=%ds", stage1_budget)
-                        logger.info("[TOPIC] Active topic = %s", _active_resume_topic or "none")
+                        logger.info("[STAGE1] ========== STAGE 1 RESUME PHASE STARTED ==========")
+                        logger.info("[STAGE1] Budget: %d seconds (%.1f min)", stage1_budget, stage1_budget/60)
+                        logger.info("[STAGE1] Opening topic (anchor): %s", _active_resume_topic or "auto-select")
+                        logger.info("[STAGE1] Max follow-ups per topic: 2 (default)")
+                        logger.info("[STAGE1] Skills to explore: %s", session_context.resume_brief.skills[:3] if session_context.resume_brief.skills else "auto")
+                        logger.info("[STAGE1] Start interviewing now - ask about: '%s'", _active_resume_topic or "their background")
+                        logger.info("[STAGE1] All resume topic candidates: %s", _resume_topic_candidates())
                 # Append candidate response to transcript before background processing
                 candidate_text = content.replace("<wait for response>", "").strip()
                 if candidate_text:

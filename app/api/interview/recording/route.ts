@@ -563,6 +563,53 @@ export async function POST(req: Request) {
                 return NextResponse.json({ success: true, uploadType: "mark_failed" });
             }
 
+            if (uploadType === "retry_merge") {
+                // Re-trigger merge for a session whose chunks already exist in R2.
+                // Useful when worker previously failed (e.g. ffmpeg ENOENT) and chunks are intact.
+                const currentManifest = await getManifest(applicationId);
+                const sessionIdRetry = String(body?.sessionId || currentManifest.sessionId || "").trim();
+                const chunkUrlsRetry = (currentManifest.chunkEvents || [])
+                    .map((e: { chunkUrl?: string }) => String(e.chunkUrl || "").trim())
+                    .filter(Boolean);
+                const durationSecRetry = parsePositiveInt(body?.duration)
+                    || (currentManifest.startedAt && currentManifest.completedAt
+                        ? Math.round((new Date(currentManifest.completedAt).getTime() - new Date(currentManifest.startedAt).getTime()) / 1000)
+                        : null);
+
+                if (!sessionIdRetry && !chunkUrlsRetry.length) {
+                    return NextResponse.json({ error: "No session or chunks found in manifest to retry" }, { status: 404 });
+                }
+
+                await tryUpdateRecordingState({
+                    applicationId,
+                    status: "FINALIZING",
+                    manifest: { mergeStarted: true, mergeFinished: false, lastError: null },
+                });
+
+                const retryJob = await interviewRecordingQueue.add(
+                    "merge-recording",
+                    {
+                        applicationId,
+                        sessionId: sessionIdRetry,
+                        chunkUrls: chunkUrlsRetry,
+                        chunkKeys: [],
+                        chunkCount: currentManifest.chunksReceived || chunkUrlsRetry.length || null,
+                        durationSec: durationSecRetry,
+                        mimeType: currentManifest.mimeType || "video/webm",
+                        startedAt: currentManifest.startedAt || null,
+                        completedAt: new Date().toISOString(),
+                    },
+                    {
+                        attempts: 3,
+                        backoff: { type: "exponential", delay: 2000 },
+                        removeOnComplete: true,
+                        removeOnFail: { count: 20 },
+                    }
+                );
+                console.log(`[RECORDING] retry_merge queued job ${retryJob.id} for ${applicationId} (${chunkUrlsRetry.length} chunks)`);
+                return NextResponse.json({ success: true, uploadType: "retry_merge", jobId: retryJob.id, chunks: chunkUrlsRetry.length });
+            }
+
             if (uploadType !== "finalize_chunks") {
                 return NextResponse.json({ error: "Unsupported JSON upload type" }, { status: 400 });
             }
@@ -599,9 +646,7 @@ export async function POST(req: Request) {
                 },
             });
 
-            // ── Queue the merge job and return immediately ──────────────────────
-            // The heavy work (download all chunks, Buffer.concat, re-upload to R2)
-            // now happens in the background worker — no HTTP timeout risk.
+            // Queue the merge job â€” heavy work happens in background worker, no HTTP timeout risk
             let recordingJobId: string | number | undefined;
             try {
                 const job = await interviewRecordingQueue.add(
@@ -646,3 +691,5 @@ export async function POST(req: Request) {
         }, { status: 500 });
     }
 }
+
+

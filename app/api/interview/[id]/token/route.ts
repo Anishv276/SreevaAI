@@ -2,7 +2,11 @@ import { AccessToken, AgentDispatchClient, RoomServiceClient } from "livekit-ser
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isInterviewReopenAllowed, isInterviewTokenRequired } from "@/lib/interview-access";
-import { FIXED_INTERVIEW_DURATION_MINUTES } from "@/lib/drive-limits";
+import {
+    FIXED_INTERVIEW_DURATION_MINUTES,
+    INTERVIEW_JOIN_GRACE_MINUTES,
+} from "@/lib/drive-limits";
+import { getSlotJoinDeadline } from "@/lib/interview-slot-policy";
 import crypto from "crypto";
 
 export async function POST(
@@ -30,57 +34,45 @@ export async function POST(
             return NextResponse.json({ error: "Invalid interview token" }, { status: 401 });
         }
 
-        // -- LIFECYCLE CHECK ------------------------------
         if (!allowReopen && (interview?.status === "COMPLETED" || interview?.status === "FAILED")) {
             return NextResponse.json({ error: "Access Denied: Interview already finalized" }, { status: 403 });
         }
 
-        // If interview is IN_PROGRESS, allow rejoin only if they were in for less than 5 minutes.
-        // This lets candidates retry if they had a connection drop before the interview really started.
-        const REJOIN_GRACE_MINUTES = 5;
-        if (!allowReopen && interview?.status === "IN_PROGRESS" && interview?.startedAt) {
-            const elapsedMs = Date.now() - new Date(interview.startedAt).getTime();
-            const elapsedMinutes = elapsedMs / 60000;
-            if (elapsedMinutes >= REJOIN_GRACE_MINUTES) {
+        // Slot entry window:
+        // Join/rejoin allowed from slot start until +10 minutes only.
+        if (interview?.scheduledAt) {
+            const now = Date.now();
+            const slotStart = interview.scheduledAt.getTime();
+            const joinDeadline = getSlotJoinDeadline(slotStart, INTERVIEW_JOIN_GRACE_MINUTES);
+
+            if (now < slotStart) {
                 return NextResponse.json({
-                    error: "Access Denied: Interview already in progress. You cannot rejoin after 5 minutes.",
+                    error: `Access Denied: Your interview slot opens at ${new Date(slotStart).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.`,
                 }, { status: 403 });
             }
-            // Under 5 minutes — reset to PENDING so they get a clean session
-            try {
-                await prisma.interview.update({
-                    where: { applicationId },
-                    data: { status: "PENDING", startedAt: null },
-                });
-                console.log(`[TOKEN] Rejoin allowed for ${applicationId} — elapsed ${Math.round(elapsedMinutes * 10) / 10}min < ${REJOIN_GRACE_MINUTES}min, reset to PENDING`);
-            } catch (resetErr) {
-                console.warn("[TOKEN_API] Failed to reset interview status:", resetErr);
+
+            if (now > joinDeadline) {
+                return NextResponse.json({
+                    error: "Access Denied: Slot join window is closed. Please contact support to reschedule.",
+                }, { status: 403 });
+            }
+
+            if (!allowReopen && interview?.status === "IN_PROGRESS" && interview?.startedAt) {
+                try {
+                    await prisma.interview.update({
+                        where: { applicationId },
+                        data: { status: "PENDING", startedAt: null },
+                    });
+                    console.log(`[TOKEN] Rejoin allowed for ${applicationId} within join window, reset to PENDING`);
+                } catch (resetErr) {
+                    console.warn("[TOKEN_API] Failed to reset interview status:", resetErr);
+                }
             }
         }
 
         if (interview?.expiresAt && interview.expiresAt < new Date()) {
             return NextResponse.json({ error: "Access Denied: Interview session has expired" }, { status: 403 });
         }
-
-        /* 
-        // Enforce exact start time based on slot schedule (Temporarily disabled for testing)
-        if (interview?.scheduledAt) {
-            const now = Date.now();
-            const slotStart = interview.scheduledAt.getTime();
-            const slotEnd = slotStart + 20 * 60000;
-
-            if (now < slotStart) {
-                return NextResponse.json({ error: `Access Denied: Your interview slot opens at ${new Date(slotStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.` }, { status: 403 });
-            }
-            if (now > slotEnd && !interview.startedAt) {
-                return NextResponse.json({ error: "Access Denied: You missed your selected interview slot. Please contact HR to reschedule." }, { status: 403 });
-            }
-            if (now > slotEnd) {
-                return NextResponse.json({ error: "Access Denied: Your interview slot has ended." }, { status: 403 });
-            }
-        }
-        */
-        // -------------------------------------------------
 
         const application = await prisma.application.findUnique({
             where: { id: applicationId },
@@ -111,11 +103,11 @@ export async function POST(
                 const apiSecret = process.env.LIVEKIT_API_SECRET;
                 const rawUrl = process.env.LIVEKIT_URL;
                 if (!apiKey || !apiSecret || !rawUrl) {
-                    console.error("[TOKEN] Missing LiveKit env vars — dispatch skipped");
+                    console.error("[TOKEN] Missing LiveKit env vars - dispatch skipped");
                     return;
                 }
 
-                // Strip any WebSocket or HTTP prefix and force HTTPS for the server SDK
+                // Strip any WebSocket or HTTP prefix and force HTTPS for the server SDK.
                 const host = `https://${rawUrl.trim().replace(/^(wss?|https?):\/\//, "")}`;
                 console.log(`[TOKEN] Dispatching agent "${agentName}" to room "${roomName}" via ${host}`);
 
@@ -136,7 +128,7 @@ export async function POST(
                     }
                 }
 
-                // Cancel any existing pending dispatches for this room before creating a new one.
+                // Cancel stale dispatches for this room before creating a new one.
                 try {
                     const existing = await dispatchClient.listDispatch(roomName);
                     for (const d of existing) {
@@ -145,7 +137,9 @@ export async function POST(
                     if (existing.length > 0) {
                         console.log(`[TOKEN] Cleared ${existing.length} stale dispatch(es) for room "${roomName}"`);
                     }
-                } catch { /* ignore if room doesn't exist yet */ }
+                } catch {
+                    // Ignore if room does not exist yet.
+                }
 
                 try {
                     const dispatch = await dispatchClient.createDispatch(roomName, agentName, {
@@ -182,11 +176,11 @@ export async function POST(
             canSubscribe: true,
         });
 
-        // -- STATUS UPDATE: Interview is now in progress ----------
+        // Mark interview status as in progress.
         try {
             await prisma.application.update({
                 where: { id: applicationId },
-                data: { interviewStatus: "in progress" }
+                data: { interviewStatus: "in progress" },
             });
             await prisma.interview.upsert({
                 where: { applicationId },
@@ -202,7 +196,6 @@ export async function POST(
         } catch (statusErr) {
             console.warn("[TOKEN_API] Failed to update interview status to in progress:", statusErr);
         }
-        // ---------------------------------------------------------
 
         return NextResponse.json({
             token: await at.toJwt(),

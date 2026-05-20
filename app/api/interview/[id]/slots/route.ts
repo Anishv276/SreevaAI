@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { FIXED_INTERVIEW_DURATION_MINUTES, INTERVIEW_SLOT_INTERVAL_MINUTES } from "@/lib/drive-limits";
+import { roundToNextSlotBoundary } from "@/lib/interview-slot-policy";
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
     try {
@@ -43,10 +45,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
         const availableSlots = [];
 
-        let currentTime = new Date();
-        // Round up to next 20 minute boundary
-        const remainder = currentTime.getMinutes() % 20;
-        currentTime.setMinutes(currentTime.getMinutes() + (20 - remainder), 0, 0);
+        const currentTime = roundToNextSlotBoundary(new Date(), INTERVIEW_SLOT_INTERVAL_MINUTES);
 
         while (currentTime < end) {
             const timeMs = currentTime.getTime();
@@ -56,11 +55,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
                 availableSlots.push({
                     slotId: existing?.id || `slot_${orgId}_${timeMs}`,
                     startTime: new Date(timeMs),
-                    endTime: new Date(timeMs + 20 * 60000),
+                    endTime: new Date(timeMs + FIXED_INTERVIEW_DURATION_MINUTES * 60000),
                     available: existing ? existing.maxCapacity - existing.bookedCount : 5
                 });
             }
-            currentTime.setMinutes(currentTime.getMinutes() + 20);
+            currentTime.setMinutes(currentTime.getMinutes() + INTERVIEW_SLOT_INTERVAL_MINUTES);
         }
 
         console.log(`[SLOTS API] Found ${availableSlots.length} available slots`);

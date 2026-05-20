@@ -5,12 +5,20 @@ import { Camera, Mic, CheckCircle2, AlertCircle, Loader2, RefreshCw, Volume2, Ch
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 
+// Short, natural lines that feel less robotic while staying easy to verify.
 const VERIFICATION_SENTENCES = [
-    "I am ready for my interview today",
-    "Hello I am here and ready to begin",
-    "My microphone is working perfectly fine",
-    "I can speak clearly for this interview",
-    "Please verify my microphone is working",
+    "I am ready for a great interview today",
+    "Hello, I am here and ready to begin",
+    "My microphone sounds clear and crisp",
+    "I can speak clearly and confidently today",
+    "Please verify that my microphone is working",
+    "I build things that save people time",
+    "I like turning messy work into simple workflows",
+    "Today feels like a good day to get started",
+    "I bring calm energy and clear communication",
+    "This setup is looking smooth and ready",
+    "I enjoy solving problems one step at a time",
+    "Let us make this interview a good conversation",
 ];
 
 interface HardwareCheckProps {
@@ -622,6 +630,7 @@ export function HardwareCheck({
     // Send recorded audio to Deepgram and verify
     const sendToDeepgram = useCallback(async (chunks: Blob[], mimeType: string) => {
         setIsVerifying(true);
+        let timeoutId: number | null = null;
 
         // Read from refs — never stale inside useCallback
         const wsTranScript = liveTranscriptRef.current.trim() || sessionFinalTextRef.current.trim();
@@ -646,7 +655,13 @@ export function HardwareCheck({
             formData.append("audio", audioBlob, "mic-check.webm");
             formData.append("targetPhrase", verifiedPhraseRef.current);
 
-            const res = await fetch("/api/verify-speech", { method: "POST", body: formData });
+            const controller = new AbortController();
+            timeoutId = window.setTimeout(() => controller.abort(), 2000);
+            const res = await fetch("/api/verify-speech", {
+                method: "POST",
+                body: formData,
+                signal: controller.signal,
+            });
             const data = await res.json();
 
             const deepgramTranscript = data.transcript as string;
@@ -676,6 +691,7 @@ export function HardwareCheck({
                 setMicVerified(true);
             }
         } finally {
+            if (timeoutId !== null) window.clearTimeout(timeoutId);
             setIsVerifying(false);
             clearMicTimers();
             autoVerifyInProgressRef.current = false;
@@ -788,6 +804,8 @@ export function HardwareCheck({
 
             const prompt = `Let's do a quick audio check. When you hear the word ${word}, just click Yes.`;
             const utter = new SpeechSynthesisUtterance(prompt);
+            const promptWords = prompt.trim().split(/\s+/).filter(Boolean).length;
+            const fallbackMs = Math.max(4500, Math.min(6500, Math.round(promptWords * 280)));
 
             // Try to find a premium/natural sounding voice
             const voices = synth.getVoices();
@@ -815,11 +833,12 @@ export function HardwareCheck({
 
             synth.speak(utter);
 
-            // Safety fallback to show buttons if TTS fails to fire onend
+            // Safety fallback only if onend never fires. Keep it long enough to
+            // avoid flipping to "awaiting" while speech is still playing.
             speakerFallbackTimerRef.current = window.setTimeout(() => {
                 setSpeakerPlaying(false);
                 if (speakerStatusRef.current === "playing") setSpeakerStatus("awaiting");
-            }, 2000);
+            }, fallbackMs);
 
         } catch (err) {
             console.error("[Speaker] Error:", err);

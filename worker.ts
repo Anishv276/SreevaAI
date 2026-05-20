@@ -116,6 +116,13 @@ async function runPythonJson(args: string[], timeoutMs = 180000): Promise<any> {
   });
 }
 
+class FfmpegUnavailableError extends Error {
+  constructor() {
+    super("ffmpeg not found — ENOENT");
+    this.name = "FfmpegUnavailableError";
+  }
+}
+
 async function runFfmpeg(args: string[], context: string): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const ff = spawn("ffmpeg", args);
@@ -137,7 +144,13 @@ async function runFfmpeg(args: string[], context: string): Promise<void> {
     });
 
     ff.on("error", (err: Error) => {
-      reject(new Error(`ffmpeg spawn failed: ${err.message}`));
+      // ENOENT means ffmpeg binary is not installed — surface a typed error
+      // so callers can distinguish "not available" from "transcode failed"
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        reject(new FfmpegUnavailableError());
+      } else {
+        reject(new Error(`ffmpeg spawn failed: ${err.message}`));
+      }
     });
   });
 }
@@ -1639,13 +1652,35 @@ if (isQueueEnabled("interview-recording")) {
             if (code === 0) resolve();
             else reject(new Error(`ffmpeg exited with code ${code}. Last log: ${ffmpegLogs.slice(-3).join(" | ")}`));
           });
-          ff.on("error", (err: Error) => reject(new Error(`ffmpeg spawn failed: ${err.message}`)));
+          ff.on("error", (err: Error) => {
+            // ENOENT = ffmpeg binary not installed.
+            // Resolve (don't reject) so execution falls through to raw-concat fallback.
+            if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+              console.warn(`[RECORDING_WORKER] ffmpeg not found (ENOENT) — will use raw concat fallback`);
+              resolve();
+            } else {
+              reject(new Error(`ffmpeg spawn failed: ${err.message}`));
+            }
+          });
         });
-        ffmpegOk = true;
-        console.log(`[RECORDING_WORKER] ffmpeg merge succeeded for ${applicationId}`);
+        // Only mark ffmpegOk=true if the output file was actually written
+        try {
+          const { stat } = await import("fs/promises");
+          const info = await stat(outputPath);
+          if (info.size > 0) {
+            ffmpegOk = true;
+            console.log(`[RECORDING_WORKER] ffmpeg merge succeeded for ${applicationId} (${info.size} bytes)`);
+          } else {
+            console.warn(`[RECORDING_WORKER] ffmpeg produced empty output — using raw concat fallback`);
+          }
+        } catch {
+          // outputPath doesn't exist => ffmpeg didn't actually write anything (ENOENT path)
+          console.warn(`[RECORDING_WORKER] ffmpeg output not found — using raw concat fallback`);
+        }
       } catch (ffErr) {
         console.warn(`[RECORDING_WORKER] ffmpeg failed, falling back to raw concat: ${ffErr}`);
       }
+
 
       // ── 5. Build final artifact & validate ────────────────────────────────
       const { readFile } = await import("fs/promises");
@@ -1662,6 +1697,7 @@ if (isQueueEnabled("interview-recording")) {
         await writeFile(finalArtifactPath, rawBuffer);
       }
 
+      // ── 5b. Optional MP4 transcode (only if ffmpeg is available and concat worked) ─
       if (ffmpegOk) {
         try {
           const mp4Path = join(tmpDir, `merged-${applicationId}-${effectiveSession}.mp4`);
@@ -1681,7 +1717,11 @@ if (isQueueEnabled("interview-recording")) {
           finalMimeType = "video/mp4";
           console.log(`[RECORDING_WORKER] Transcoded merged recording to MP4 for ${applicationId}`);
         } catch (transcodeErr) {
-          console.warn(`[RECORDING_WORKER] MP4 transcode failed; keeping original container: ${transcodeErr}`);
+          if (transcodeErr instanceof FfmpegUnavailableError) {
+            console.warn(`[RECORDING_WORKER] ffmpeg not available for transcode — serving raw WebM`);
+          } else {
+            console.warn(`[RECORDING_WORKER] MP4 transcode failed; keeping original container: ${transcodeErr}`);
+          }
         }
       }
 
@@ -1709,11 +1749,16 @@ if (isQueueEnabled("interview-recording")) {
       ]).catch(() => {});
 
       // ── 7. Persist recording metadata to DB ──────────────────────────────
+      // Compute effective duration: use job data if available, else derive from timestamps
+      const effectiveDurationSec = durationSec
+        || (startedAt && completedAt ? Math.round((completedAt.getTime() - startedAt.getTime()) / 1000) : null);
+
       await prisma.$executeRawUnsafe(
         `UPDATE "Interview"
          SET "interviewRecordingUrl" = $1,
              "interviewRecordedAt"   = $2,
              "interviewDuration"     = COALESCE($3::integer, "Interview"."interviewDuration"),
+             "recordingDurationSec"  = COALESCE($3::integer, "Interview"."recordingDurationSec"),
              "recordingStatus"       = 'COMPLETED',
              "recordingMimeType"     = $4,
              "recordingCompletedAt"  = $2,
@@ -1721,11 +1766,12 @@ if (isQueueEnabled("interview-recording")) {
          WHERE "applicationId" = $5`,
         finalRecordingUrl,
         completedAt,
-        durationSec || null,
+        effectiveDurationSec || null,
         finalMimeType,
         applicationId
       );
-      console.log(`[RECORDING_WORKER] DB updated for ${applicationId}`);
+      console.log(`[RECORDING_WORKER] DB updated for ${applicationId} — duration=${effectiveDurationSec}s`);
+
 
       // ── 8. Cleanup R2 chunks ──────────────────────────────────────────────
       try {

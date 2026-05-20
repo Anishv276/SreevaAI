@@ -160,6 +160,28 @@ export default function CandidateProfilePage() {
         return [];
     })();
 
+    const turnTimes = (() => {
+        const times = new Map<number, number>();
+        if (!interviewTranscript) return times;
+        const lines = interviewTranscript.split("\n");
+        let currentTurn = 0;
+        for (const line of lines) {
+            const match = line.match(/^(Interviewer|Candidate)\[(\d+)\]:/);
+            if (match) {
+                const timeSec = parseInt(match[2], 10);
+                if (match[1] === "Interviewer") {
+                    currentTurn++;
+                    times.set(currentTurn, timeSec);
+                } else if (match[1] === "Candidate") {
+                    if (currentTurn > 0 && !times.has(currentTurn)) {
+                        times.set(currentTurn, timeSec);
+                    }
+                }
+            }
+        }
+        return times;
+    })();
+
     // ── Signal timeline from proctoringReport.checkpoint_events (AI signals) + events (proctoring) ──
     const signalTimeline = (() => {
         const raw = candidate?.interview?.proctoringReport;
@@ -169,16 +191,29 @@ export default function CandidateProfilePage() {
         const procEvents: any[] = Array.isArray(pr?.events) ? pr.events : [];
         const events: any[] = [...checkpointEvents, ...procEvents];
         return events
-            .filter((e: any) => e?.recruiter_visible !== false && e?.signal_name && typeof e?.elapsed_sec === "number")
-            .map((e: any) => ({
-                elapsed_sec: Number(e.elapsed_sec),
-                signal_name: String(e.signal_name),
-                signal_layer: String(e.signal_layer || ""),
-                evidence: String(e.evidence || ""),
-                score_delta: Number(e.score_delta || 0),
-                turn: Number(e.turn || 0),
-                recruiter_visible: true,
-            }));
+            .filter((e: any) => e?.recruiter_visible !== false && (e?.signal_name || e?.event))
+            .map((e: any) => {
+                let elapsed = e?.elapsed_sec ?? e?.elapsed_seconds ?? e?.elapsedSeconds;
+                if (typeof elapsed !== "number" || isNaN(elapsed)) {
+                    const parsedElapsed = parseFloat(String(elapsed));
+                    if (!isNaN(parsedElapsed)) {
+                        elapsed = parsedElapsed;
+                    } else if (typeof e?.turn === "number" && e?.turn > 0) {
+                        elapsed = turnTimes.get(e.turn) ?? (e.turn * 30); // fall back to turn * 30 if not found in transcript
+                    } else {
+                        elapsed = 0;
+                    }
+                }
+                return {
+                    elapsed_sec: Number(elapsed),
+                    signal_name: String(e.signal_name || e.event || "signal"),
+                    signal_layer: String(e.signal_layer || e.risk_bucket || ""),
+                    evidence: String(e.evidence || ""),
+                    score_delta: Number(e.score_delta ?? e.trust_delta ?? 0),
+                    turn: Number(e.turn || 0),
+                    recruiter_visible: true,
+                };
+            });
     })();
 
     // ── Is this a fallback/failed report? ──────────────────────────────────
@@ -195,16 +230,44 @@ export default function CandidateProfilePage() {
     const rawSkillsProof = Array.isArray(interviewReportData?.skills_proof)
         ? interviewReportData.skills_proof
         : [];
+    const skillRatings = interviewReportData?.skill_ratings || {};
     const interviewReportSkills = rawSkillsProof.map((item: any) => {
         if (typeof item === "string") {
             const trimmed = item.trim();
-            return { name: trimmed, skill: trimmed, score: "—", status: "NOT TESTED", what_they_showed: "", what_was_missing: "" };
+            let rating = skillRatings[trimmed] !== undefined ? Number(skillRatings[trimmed]) : null;
+            if (rating === null) {
+                const key = Object.keys(skillRatings).find(k => k.toLowerCase() === trimmed.toLowerCase());
+                if (key) rating = Number(skillRatings[key]);
+            }
+            let score = "—";
+            let status = "NOT TESTED";
+            if (rating !== null && !isNaN(rating)) {
+                score = `${rating}/10`;
+                status = rating >= 7 ? "PROVED" : rating >= 4 ? "PARTIAL" : "NOT PROVED";
+            }
+            return { name: trimmed, skill: trimmed, score, status, what_they_showed: "", what_was_missing: "" };
+        }
+        const name = String(item?.skill || item?.name || "").trim();
+        let score = String(item?.score || "—").trim();
+        let status = String(item?.status || "NOT TESTED").trim();
+        if (score === "—" || score === "--" || !score) {
+            let rating = skillRatings[name] !== undefined ? Number(skillRatings[name]) : null;
+            if (rating === null) {
+                const key = Object.keys(skillRatings).find(k => k.toLowerCase() === name.toLowerCase());
+                if (key) rating = Number(skillRatings[key]);
+            }
+            if (rating !== null && !isNaN(rating)) {
+                score = `${rating}/10`;
+                if (status === "NOT TESTED") {
+                    status = rating >= 7 ? "PROVED" : rating >= 4 ? "PARTIAL" : "NOT PROVED";
+                }
+            }
         }
         return {
-            name: String(item?.skill || item?.name || "").trim(),
-            skill: String(item?.skill || item?.name || "").trim(),
-            score: String(item?.score || "—").trim(),
-            status: String(item?.status || "NOT TESTED").trim(),
+            name,
+            skill: name,
+            score,
+            status,
             what_they_showed: String(item?.what_they_showed || item?.evidence || "").trim(),
             what_was_missing: String(item?.what_was_missing || "").trim(),
         };

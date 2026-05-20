@@ -2,6 +2,8 @@ import { formatOrgLimitValue, parseOrgLimitValue, type OrgLimitValue } from "./o
 
 export const UNLIMITED_ACTIVE_DRIVES = 0;
 export const FIXED_INTERVIEW_DURATION_MINUTES = 20;
+export const INTERVIEW_SLOT_INTERVAL_MINUTES = 30;
+export const INTERVIEW_JOIN_GRACE_MINUTES = 10;
 
 export type DriveLike = {
 };
