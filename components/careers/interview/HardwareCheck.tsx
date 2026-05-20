@@ -21,6 +21,17 @@ const VERIFICATION_SENTENCES = [
     "Let us make this interview a good conversation",
 ];
 
+const SPEAKER_PROMPTS = [
+    "Quick sound check for us today: when you hear {word}, click Yes.",
+    "Let's make sure the room sounds good. When you hear {word}, tap Yes.",
+    "One last audio check: I will say {word} in a moment. Hear it and click Yes.",
+    "Just a quick speaker test. When you catch the word {word}, press Yes.",
+    "We are almost there. When you hear {word}, go ahead and click Yes.",
+    "Tiny audio check before we begin: listen for {word}, then click Yes.",
+    "Let us confirm the speakers are lively. When you hear {word}, click Yes.",
+    "A quick volume check: once you hear {word}, just hit Yes.",
+];
+
 interface HardwareCheckProps {
     onComplete: (devices?: { cameraId?: string; micId?: string }) => void | Promise<void>;
     onRetry?: () => void;
@@ -802,7 +813,8 @@ export function HardwareCheck({
             // Cancel any ongoing speech
             synth.cancel();
 
-            const prompt = `Let's do a quick audio check. When you hear the word ${word}, just click Yes.`;
+            const promptTemplate = SPEAKER_PROMPTS[Math.floor(Math.random() * SPEAKER_PROMPTS.length)];
+            const prompt = promptTemplate.replace("{word}", word);
             const utter = new SpeechSynthesisUtterance(prompt);
             const promptWords = prompt.trim().split(/\s+/).filter(Boolean).length;
             const fallbackMs = Math.max(4500, Math.min(6500, Math.round(promptWords * 280)));
