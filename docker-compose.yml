@@ -56,7 +56,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: Backend - python agent
+    container_name: Backend-python-agent
     networks:
       - traefik-proxy
     env_file:
@@ -69,6 +69,47 @@ services:
       - 8.8.4.4
     depends_on:
       - redis
+
+  # Python Eval Worker — off-critical-path LLM evaluation (Redis BLPOP)
+  eval-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: Eval-worker
+    command: python -m interview.eval_worker
+    env_file:
+      - .env
+    environment:
+      LIVEKIT_URL: "wss://lk.sreevaai.com"
+    restart: always
+    depends_on:
+      - redis
+    networks:
+      - traefik-proxy
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+
+  # Backup Queue Worker — dedicated processor for backup-queue
+  backup-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: Backup-worker
+    command: npm run worker:backup
+    env_file:
+      - .env
+    environment:
+      LIVEKIT_URL: "wss://lk.sreevaai.com"
+      NEXT_PUBLIC_LIVEKIT_URL: "wss://lk.sreevaai.com"
+    restart: always
+    depends_on:
+      - redis
+    networks:
+      - traefik-proxy
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
 
   # LiveKit Server (Self-Hosted)
   livekit:
