@@ -109,6 +109,12 @@ _EXAMPLE_REQUEST_PHRASES = {
     "give me an example", "can you give", "tell me about a time",
     "walk me through", "specific example", "real example", "describe a time",
     "can you share", "tell me about", "recall a time",
+    # Ownership/role probes that expect concrete personal detail
+    "what was your role", "what did you personally", "what did you own",
+    "what was your contribution", "what did you build", "what did you decide",
+    "what exactly did you", "what specifically did you", "what was the actual",
+    "what was the process", "what was the logic", "how did you qualify",
+    "how did you build", "how did you trigger", "what were you responsible",
 }
 _RESUME_LIKE_PHRASES = {
     "i have worked with",
@@ -132,6 +138,15 @@ _COMPRESSION_REQUEST_PHRASES = {
     "how did you handle",
     "what exactly changed",
     "what did you do",
+    # Added: ownership/role follow-ups that expect detailed recall
+    "what was your role",
+    "what did you personally",
+    "what was the actual",
+    "what was the process",
+    "what was the logic",   
+    "what were you responsible",
+    "what exactly did you",
+    "what specifically did you",
 }
 
 _SHORT_UTTERANCE_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
@@ -189,18 +204,43 @@ class BaseDetector(ABC):
 
 
 class OwnershipAmbiguityDetector(BaseDetector):
+    # Minimum token count below which we treat the answer as an evasion even
+    # without explicit team-language ("so that was personal project" = 6 words).
+    _SHORT_EVASION_THRESHOLD = 12
+
     def detect(self, ctx: DetectionContext) -> Optional[SignalEvent]:
         tokens = ctx.answer.lower().split()
         clean = [t.strip(".,!?;:\"'()") for t in tokens]
         we_count = sum(1 for t in clean if t in _WE_TOKENS)
         i_count = sum(1 for t in clean if t in _I_TOKENS)
-        if we_count < 2 or i_count > 1:
+
+        # Classic ownership-ambiguity: heavy "we" language with no "I".
+        classic_hit = we_count >= 2 and i_count <= 1
+
+        # Short-answer evasion: answer is ≤ threshold words with no first-person token.
+        # Catches "so that is that was personal project" style non-answers.
+        short_evasion_hit = (
+            len(clean) <= self._SHORT_EVASION_THRESHOLD
+            and i_count == 0
+            and we_count < 2  # don't double-count classic hit
+            and any(w in clean for w in ("personal", "project", "team", "we", "our", "us", "they", "everyone"))
+        )
+
+        if not (classic_hit or short_evasion_hit):
             return None
+
+        if classic_hit:
+            confidence = min(1.0, 0.45 + 0.15 * max(0, we_count - 1))
+            evidence = f"team-language count={we_count}, first-person count={i_count}"
+        else:
+            confidence = 0.72
+            evidence = f"answer too short ({len(clean)} words) with no first-person ownership tokens"
+
         return _build_signal_event(
             signal_name="ownership_ambiguity",
             signal_layer="behavioral_confidence",
-            confidence=min(1.0, 0.45 + 0.15 * max(0, we_count - 1)),
-            evidence=f"team-language count={we_count}, first-person count={i_count}",
+            confidence=confidence,
+            evidence=evidence,
             trust_bucket_affected="behavioral_confidence",
             score_delta=-0.15,
             probe_mode="ownership",
@@ -217,13 +257,20 @@ class ExampleEvasionDetector(BaseDetector):
         a_lower = ctx.answer.lower()
         answer_is_theoretical = any(p in a_lower for p in _THEORY_PHRASES)
         has_specifics = bool(re.search(r"\b(at |in |during |when|year|ago|\d+)\b", a_lower))
-        if not (answer_is_theoretical or not has_specifics):
+        # Also catch extremely short non-answers (≤ 15 words) — "there are only three criteria"
+        word_count = len(ctx.answer.split())
+        is_too_short = word_count <= 15 and not has_specifics
+        if not (answer_is_theoretical or not has_specifics or is_too_short):
             return None
+        if is_too_short and not answer_is_theoretical:
+            confidence = 0.70
+        else:
+            confidence = 0.78 if answer_is_theoretical else 0.68
         return _build_signal_event(
             signal_name="example_evasion",
             signal_layer="behavioral_confidence",
-            confidence=0.78 if answer_is_theoretical else 0.68,
-            evidence="example requested but answer stayed theoretical or lacked specifics",
+            confidence=confidence,
+            evidence="example requested but answer stayed theoretical, too short, or lacked specifics",
             trust_bucket_affected="behavioral_confidence",
             score_delta=-0.15,
             probe_mode="evidence",
@@ -290,11 +337,11 @@ class FollowUpCollapseDetector(BaseDetector):
             confidence=confidence,
             evidence=(
                 f"{collapse_type} collapse: first={first_answer_depth:.1f} "
-                f"follow-up={ctx.current_depth:.1f} drop={drop:.1f} stage={ctx.collapse_stage}"
+                f"follow-up={ctx.current_depth:.1f} drop={drop:.1f} level={ctx.collapse_stage}"
             ),
             trust_bucket_affected="behavioral_confidence",
             score_delta=score_delta,
-            probe_mode="follow_up_collapse_staged",
+            probe_mode="follow_up_collapse_escalated",
             recoverable=is_recoverable,
             recruiter_visible=True,
         )

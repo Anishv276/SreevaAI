@@ -443,8 +443,10 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                     return { ok: true };
                 }
                 const apiError = String(data?.error || "Invalid token payload");
-                const isInProgress = String(data?.code || "").toUpperCase() === "IN_PROGRESS" || /in progress/i.test(apiError);
-                const isFinalized = /already finalized|already completed|completed interview|session has expired|expired|invalid token|invalid token payload|token expiry|token expired/i.test(apiError);
+                const errorCode = String(data?.code || "").toUpperCase();
+                const isInProgress = errorCode === "IN_PROGRESS" || /in progress/i.test(apiError);
+                const isCompleted = errorCode === "INTERVIEW_COMPLETED" || /interview has been completed|already completed|completed interview/i.test(apiError);
+                const isFinalized = /already finalized|session has expired|expired|invalid token|invalid token payload|token expiry|token expired/i.test(apiError);
                 if (isInProgress) {
                     return {
                         ok: false,
@@ -452,11 +454,19 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         message: "This interview is already in progress. Please wait for the current session to finish.",
                     };
                 }
-                if (isFinalized) {
-                    const blockedMessage = "You have already completed your interview. Please contact the support team at support@sreevaai.com.";
+                if (isCompleted) {
+                    const blockedMessage = "Interview has been completed. Please contact support to rejoin or reschedule.";
                     return {
                         ok: false,
-                        title: "You have already completed your interview",
+                        title: "Interview completed",
+                        message: blockedMessage,
+                    };
+                }
+                if (isFinalized) {
+                    const blockedMessage = "This interview session is no longer available. Please contact support for help.";
+                    return {
+                        ok: false,
+                        title: "Access restricted",
                         message: blockedMessage,
                     };
                 }

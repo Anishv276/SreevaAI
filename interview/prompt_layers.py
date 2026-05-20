@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-DEFAULT_FOLLOW_UP_DEPTH = 2
-
 
 def build_voice_layer_prompt(
     *,
@@ -13,7 +11,7 @@ def build_voice_layer_prompt(
     ai_name: str = "",
     org_name: str = "",
     org_location: str = "",
-    drive_location: str = "",
+    drive_location: str = "", 
 ) -> str:
     context_lines = []
     if ai_name:
@@ -108,37 +106,11 @@ Format: [brief human reaction to what they said] + [one question]
 Keep it short. Acknowledgment isn't a paragraph — it's a sentence or less.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-TOPIC SIGNAL — REQUIRED ON EVERY TURN
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Before your spoken response, write exactly one of these tags on its own line:
-  [TOPIC:NEW] — you are introducing a different subject than the last question
-  [TOPIC:FOLLOWUP] — you are digging deeper into the same subject as the last question
-
-The system reads this tag silently and uses it to track follow-up depth.
-It is stripped before you speak — the candidate never hears it.
-
-When to use [TOPIC:NEW]:
-- Moving from one COMPANY or PROJECT to a completely different one
-- Moving from resume stage to skill stage (or any stage boundary)
-- Asking about a tool/technology that has NOT come up in this conversation before
-- A genuine pivot to a subject with no connection to the last question
-
-When to use [TOPIC:FOLLOWUP] — DEFAULT when in doubt:
-- Asking a different angle on the same job, role, or project
-- Asking about a sub-task, outcome, or challenge within the same situation
-- Asking what went wrong, what they'd do differently, what was specifically theirs
-- Clarifying something vague they just said on the same subject
-- Asking about process, tools, or metrics within the SAME role they just described
-- ANY question that stays inside the same company or work experience they just talked about
-
-RULE: Switching sub-topics within the same job (e.g., from "how you assign tickets" to "how you track engineers") is [TOPIC:FOLLOWUP], NOT [TOPIC:NEW]. Only use [TOPIC:NEW] for genuine stage or project boundaries.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PRIVATE DIRECTIVES — CRITICAL
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 System messages beginning with [DO NOT SAY ALOUD] are internal-only instructions.
 Never read, reference, summarize, or acknowledge them — ever. Act on them silently.
-Stage changes arrive this way. Follow them immediately without announcing anything.
+Pivots and changes arrive this way. Follow them immediately without announcing anything.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 SESSION CONTEXT
@@ -163,7 +135,7 @@ This layer runs in the background. It never surfaces directly.
 It shapes what you notice — your next question comes from the voice layer, never from this one.
 
 You are tracking {candidate_name} across the full conversation for the {job_title} role.
-The active stage directive owns what territory to cover.
+The active topic directive owns what territory to cover.
 [NEXT_TURN_DIRECTIVE] is your instruction for the next move — follow it. If it says move on, move on.
 
 {live_prompt_context}

@@ -21,6 +21,9 @@ import os
 import signal
 import sys
 
+from dotenv import load_dotenv
+load_dotenv()  # Must be before any os.environ.get() — loads .env so REDIS_URL/OPENAI_API_KEY are available
+
 from openai import AsyncOpenAI
 
 from interview.eval_pipeline import run_eval_and_build_directive
@@ -34,7 +37,7 @@ logging.basicConfig(
 
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379")
 EVAL_QUEUE_KEY = "interview:eval_queue"
-RESULT_TTL_SECONDS = 1800
+RESULT_TTL_SECONDS = 300
 
 _shutdown = asyncio.Event()
 
@@ -67,15 +70,18 @@ async def _process_one(payload_bytes: bytes, client: AsyncOpenAI, r) -> None:
         _action = result.get("action", "?")
         _qr = result.get("quality_record") or {}
         _quality = round(float(_qr.get("overall", 0) or 0), 2)
-        _follow_ups_in = payload.get("follow_up_count", 0)             # key in payload
-        _follow_ups_out = result.get("new_topic_follow_up_count", 0)   # what worker decided
-        _next_topic = result.get("new_active_resume_topic") or result.get("new_active_skill_topic") or "?"
-        _signals = result.get("quality_record", {}).get("signals") or []
+        _next_topic = result.get("new_active_topic") or "?"
+        _signals = _qr.get("signals") or []
         _signal_str = f" signals=[{', '.join(_signals)}]" if _signals else ""
+        _ts = result.get("new_active_topic_state") or {}
+        _sat_score = _ts.get("saturation_score", 0)
+        _sat_thresh = _ts.get("saturation_threshold", 0)
+        _sat_pct = round(100 * min(1.0, _sat_score / _sat_thresh), 0) if _sat_thresh else 0
+        _importance = _ts.get("importance", "?")
         logger.info(
-            "[WORKER] ✓ turn=%d action=%s quality=%.2f | follow_ups: %d→%d | enforce_move_on=%s%s | next=%s",
-            turn, _action, _quality, _follow_ups_in, _follow_ups_out,
-            result.get("new_enforce_move_on_until_new", False),
+            "[WORKER] ✓ turn=%d action=%s quality=%.2f | saturation=%.1f/%.1f (%.0f%%) importance=%s%s | next=%s",
+            turn, _action, _quality,
+            _sat_score, _sat_thresh, _sat_pct, _importance,
             _signal_str,
             str(_next_topic)[:50],
         )
@@ -99,7 +105,7 @@ async def _run_worker() -> None:
     client = AsyncOpenAI(api_key=openai_api_key)
     r = aioredis.from_url(REDIS_URL, decode_responses=False)
 
-    logger.info("[WORKER] Started — listening on %s", EVAL_QUEUE_KEY)
+    logger.info("[WORKER] Started — redis=%s queue=%s", REDIS_URL, EVAL_QUEUE_KEY)
 
     while not _shutdown.is_set():
         try:

@@ -11,7 +11,6 @@ _CONTROL_PHRASES = (
     "SHORT_RESPONSE_DIRECTIVE",
     "INTERVIEW STATE UPDATE",
     "SYSTEM ALERT",
-    "BEGIN STAGE",
     "TOPIC:NEW",
     "TOPIC:FOLLOWUP",
 )
@@ -25,13 +24,12 @@ def sanitize_candidate_facing_text(text: str) -> str:
     result = (text or "").replace("<wait for response>", "").strip()
     if not result:
         return ""
-    # Remove legacy line-prefixed directive markers first, while tags are intact
+    # Remove line-prefixed control directive markers
     cleaned_lines = []
     for line in result.splitlines():
         stripped = line.strip()
         if (
             stripped.startswith("[DO NOT SAY ALOUD")
-            or stripped.startswith("[STAGE")
             or stripped.startswith("[WARMUP")
             or stripped.startswith("[NEXT_TURN_DIRECTIVE")
             or stripped.startswith("[SHORT_RESPONSE_DIRECTIVE")

@@ -123,7 +123,6 @@ class CandidateBandContext(BaseModel):
     depth_instruction: str = Field(default="")
     initial_context_injected: bool = Field(default=False)
     resume_context: Optional[ResumeContext] = Field(default=None)
-    stage_history: list[str] = Field(default_factory=list)
 
     @field_validator("candidate_band", mode="before")
     @classmethod
@@ -132,7 +131,7 @@ class CandidateBandContext(BaseModel):
         band = str(v).strip().lower() if v else "mid"
         return band if band in allowed else "mid"
 
-    @field_validator("coverage_items", "stage_history", mode="before")
+    @field_validator("coverage_items", mode="before")
     @classmethod
     def coerce_list(cls, v: Any) -> list[str]:
         if not v:
@@ -290,7 +289,7 @@ _BAND_STRATEGY_MAP: dict[str, BandStrategy] = {
 # DSA: O(1) Depth instruction lookup per band.
 _BAND_DEPTH_INSTRUCTIONS: dict[str, str] = {
     "fresher": "Focus on learning signals, project ownership, and problem-solving mindset. Keep it warm.",
-    "mid": "Balance breadth and depth. Two follow-ups per key topic. Probe for reasoning but stay warm.",
+    "mid": "Balance breadth and depth. Go as deep as needed per topic — move on when you have enough signal. Probe for reasoning but stay warm.",
     "experienced": "Push for architecture depth, scale trade-offs, and cross-team decisions.",
     "senior": "Probe strategic judgment, org-wide influence, and high-stakes decisions under uncertainty.",
 }
@@ -455,10 +454,11 @@ def _extract_jd_must_haves(jd_data: dict[str, Any]) -> list[str]:
     entries = _as_list(_deep_get(jd_data, "skills.must_have"))
     capabilities = _parse_entries(entries)
 
-    # Path 2: criteria (your actual JD schema from extractedDetails)
+    # Path 2: criteria (actual JD extraction schema) — filter critical/high priority only
     if not capabilities:
-        entries = _as_list(_deep_get(jd_data, "criteria"))
-        capabilities = _parse_entries(entries)
+        all_criteria = _as_list(_deep_get(jd_data, "criteria"))
+        must_criteria = [c for c in all_criteria if isinstance(c, dict) and c.get("priority") in ("critical", "high")]
+        capabilities = _parse_entries(must_criteria or all_criteria)  # fall back to all if none have priority set
 
     # Path 3: criteria.must_have
     if not capabilities:
@@ -491,30 +491,27 @@ def build_merged_interview_brief(
     custom_questions: Optional[list] = None,
 ) -> str:
     """
-    Assemble the INTERVIEW BRIEF block that is injected into the AI system prompt.
+    Assemble the detailed CANDIDATE BRIEF block injected into the AI system prompt.
 
-    Data sources: resumeData + extractedDetails only (no legacy DB fields).
+    Contains full resume depth: project descriptions, tech stacks, work history with
+    roles and durations, complete skills list, JD must-haves with context, first
+    anchor, and band-specific interview strategy.
 
-    Safe against:
-      - None candidate_name / job_title
-      - Missing JD data
-      - Partial resume_context
-      - Unknown candidate bands
+    The directive (interview_phases.py) owns the strategy rules (priority order, quotas,
+    how to move). This brief owns the candidate data.
     """
     jd_data = _coerce_jsonish(jd_details)
-    jd_must_haves = _extract_jd_must_haves(jd_data)
+    raw_resume = resume_context.resume_data or {}
 
-    # Anchor resolution: prefer brief data, then fall back to resume_context.
+    # ── Anchor resolution ─────────────────────────────────────────────────────
     anchor_item = ""
     anchor_type = ""
     if isinstance(resume_brief, ResumeBrief):
         anchor_item = resume_brief.anchor_item
         anchor_type = resume_brief.anchor_type
     elif isinstance(resume_brief, dict):
-        # Backward-compat: if a raw dict is still passed, coerce it safely.
         anchor_item = _first_text(resume_brief.get("anchor_item"))
         anchor_type = _first_text(resume_brief.get("anchor_type"))
-
     if not anchor_item:
         anchor_item = _first_text(
             resume_context.projects[0] if resume_context.projects else "",
@@ -524,89 +521,157 @@ def build_merged_interview_brief(
     if not anchor_type:
         anchor_type = "project" if resume_context.projects else "role"
 
-    # DSA: O(1) band strategy lookup.
+    safe_name = (candidate_name or "Candidate").strip()
+    safe_role = (job_title or "Interview Role").strip()
+    safe_anchor = (anchor_item or "candidate background").strip()
+    safe_anchor_type = (anchor_type or "topic").strip()
+
     band_strategy = _BAND_INTERVIEW_STRATEGY.get(
         candidate_band,
         "Prioritize concrete ownership and role-fit evidence.",
     )
 
-    # Safe string defaults — prevents "None" literals appearing in the AI prompt.
-    safe_name = (candidate_name or "Candidate").strip()
-    safe_role = (job_title or "Interview Role").strip()
-    safe_anchor_item = (anchor_item or "candidate background").strip()
-    safe_anchor_type = (anchor_type or "topic").strip()
+    out: list[str] = []
 
-    lines = [
-        f"Candidate: {safe_name}",
-        f"Role: {safe_role}",
-        f"Band: {candidate_band}",
-        f"Experience: {resume_context.years_label or 'Not specified'}",
-        f"Current role: {resume_context.current_role or 'Not specified'}",
-        f"Top skills: {_join_items(resume_context.skills, 6)}",
-        f"Key projects/work: {_join_items(resume_context.projects + resume_context.work_history, 4)}",
-        f"JD must-haves: {_join_items(jd_must_haves, 5)}",
-        f"First anchor: {safe_anchor_type} — {safe_anchor_item}",
-        f"Interview strategy: {band_strategy}",
-    ]
+    # ── Header ────────────────────────────────────────────────────────────────
+    out.append(f"╔══ CANDIDATE BRIEF ══════════════════════════════════════════╗")
+    out.append(f"  Candidate : {safe_name}")
+    out.append(f"  Role      : {safe_role}")
+    out.append(f"  Band      : {candidate_band.upper()}")
+    out.append(f"  Experience: {resume_context.years_label or 'Not stated'}")
+    out.append(f"  Current   : {resume_context.current_role or 'Not stated'}")
+    out.append(f"╚═════════════════════════════════════════════════════════════╝")
 
+    # ── 1. Skills ─────────────────────────────────────────────────────────────
+    all_skills = resume_context.skills or []
+    if all_skills:
+        out.append("\n── SKILLS ──────────────────────────────────────────────────────")
+        # Show all skills — no cap
+        out.append("  " + " | ".join(all_skills))
+
+    # ── 2. Projects (full detail) ─────────────────────────────────────────────
+    raw_projects = _as_list(_deep_get(raw_resume, "projects")) or []
+    if raw_projects:
+        out.append("\n── PROJECTS ────────────────────────────────────────────────────")
+        for i, proj in enumerate(raw_projects, 1):
+            if isinstance(proj, dict):
+                name = _first_text(proj.get("name"), proj.get("title")) or f"Project {i}"
+                desc = _first_text(proj.get("description"), proj.get("summary")) or ""
+                techs = _extract_text_items(
+                    proj.get("technologies"), ("skill", "tool", "name", "value")
+                )
+                role_in_proj = _first_text(
+                    proj.get("role"), proj.get("your_role"), proj.get("contribution")
+                ) or ""
+                outcome = _first_text(proj.get("outcome"), proj.get("impact"), proj.get("result")) or ""
+                duration = _first_text(proj.get("duration"), proj.get("period")) or ""
+                out.append(f"  [{i}] {name}" + (f" ({duration})" if duration else ""))
+                if desc:
+                    out.append(f"       What: {desc}")
+                if role_in_proj:
+                    out.append(f"       Role: {role_in_proj}")
+                if techs:
+                    out.append(f"       Tech: {' | '.join(techs)}")
+                if outcome:
+                    out.append(f"       Impact: {outcome}")
+            else:
+                text = _first_text(proj)
+                if text:
+                    out.append(f"  [{i}] {text}")
+
+    # ── 3. Work History (full detail) ─────────────────────────────────────────
+    raw_work = _as_list(_deep_get(raw_resume, "work_history")) or []
+    if raw_work:
+        out.append("\n── WORK HISTORY ─────────────────────────────────────────────────")
+        for i, role in enumerate(raw_work, 1):
+            if isinstance(role, dict):
+                company  = _first_text(role.get("company"), role.get("organization")) or ""
+                title    = _first_text(role.get("role"), role.get("title")) or ""
+                duration = _first_text(role.get("duration"), role.get("period")) or ""
+                resps    = _extract_text_items(
+                    role.get("responsibilities") or role.get("key_responsibilities")
+                    or role.get("achievements") or role.get("highlights")
+                )
+                label = " | ".join(p for p in [title, company] if p) or f"Role {i}"
+                if duration:
+                    label = f"{label} ({duration})"
+                out.append(f"  [{i}] {label}")
+                for r in resps[:5]:   # up to 5 responsibilities
+                    out.append(f"       • {r}")
+            else:
+                text = _first_text(role)
+                if text:
+                    out.append(f"  [{i}] {text}")
+
+    # ── 4. Internships ────────────────────────────────────────────────────────
+    raw_intern = _as_list(_deep_get(raw_resume, "internships") or _deep_get(raw_resume, "internship")) or []
+    if raw_intern:
+        out.append("\n── INTERNSHIPS ──────────────────────────────────────────────────")
+        for i, intern in enumerate(raw_intern, 1):
+            if isinstance(intern, dict):
+                company  = _first_text(intern.get("company"), intern.get("organization")) or ""
+                role_n   = _first_text(intern.get("role"), intern.get("title")) or ""
+                duration = _first_text(intern.get("duration"), intern.get("period")) or ""
+                desc     = _first_text(intern.get("description"), intern.get("summary")) or ""
+                label = " | ".join(p for p in [role_n, company] if p) or f"Internship {i}"
+                if duration:
+                    label = f"{label} ({duration})"
+                out.append(f"  [{i}] {label}")
+                if desc:
+                    out.append(f"       {desc}")
+            else:
+                text = _first_text(intern)
+                if text:
+                    out.append(f"  [{i}] {text}")
+
+    # ── 5. Education ──────────────────────────────────────────────────────────
+    if resume_context.education:
+        out.append("\n── EDUCATION ────────────────────────────────────────────────────")
+        for edu in resume_context.education:
+            out.append(f"  • {edu}")
+
+    # ── 6. JD — Must-Have Skills with context ────────────────────────────────
+    jd_must_haves = _extract_jd_must_haves(jd_data)
+    if jd_must_haves:
+        out.append("\n── JD MUST-HAVE SKILLS ──────────────────────────────────────────")
+        out.append("  (Probe each — where and how did they actually use it?)")
+        for skill in jd_must_haves:
+            out.append(f"  • {skill}")
+
+    # Nice-to-haves: medium-priority criteria, or legacy keys
+    _all_criteria_nice = _as_list(_deep_get(jd_data, "criteria"))
+    _medium_criteria = [c for c in _all_criteria_nice if isinstance(c, dict) and c.get("priority") == "medium"]
+    jd_nice = (
+        _extract_text_items([c.get("name", "") for c in _medium_criteria if c.get("name")])
+        or _extract_text_items(
+            _deep_get(jd_data, "skills.nice_to_have")
+            or _deep_get(jd_data, "nicetohave")
+            or _deep_get(jd_data, "nice_to_have")
+        )
+    )[:5]
+    if jd_nice:
+        out.append("\n── JD NICE-TO-HAVE ──────────────────────────────────────────────")
+        for s in jd_nice:
+            out.append(f"  • {s}")
+
+    # ── 7. Opening Anchor ─────────────────────────────────────────────────────
+    out.append("\n── OPENING ANCHOR ───────────────────────────────────────────────")
+    out.append(f"  Type   : {safe_anchor_type}")
+    out.append(f"  Subject: {safe_anchor}")
+    out.append(f"  Start  : Ask what they personally built/owned in this {safe_anchor_type}.")
+
+    # ── 8. Interview Strategy (band-specific) ─────────────────────────────────
+    out.append("\n── INTERVIEW STRATEGY ───────────────────────────────────────────")
+    out.append(f"  Band [{candidate_band.upper()}]: {band_strategy}")
+
+    # ── 9. Custom Questions ───────────────────────────────────────────────────
     _cqs = [str(q).strip() for q in (custom_questions or []) if str(q).strip()]
     if _cqs:
-        lines.append(
-            f"Custom questions ({len(_cqs)} — MUST cover all before interview ends): "
-            + " | ".join(f"{i+1}. {q}" for i, q in enumerate(_cqs))
-        )
+        out.append("\n── CUSTOM QUESTIONS (MANDATORY — cover ALL before wrap-up) ──────")
+        for i, q in enumerate(_cqs, 1):
+            out.append(f"  {i}. {q}")
     else:
-        lines.append("Custom questions: none")
+        out.append("\n── CUSTOM QUESTIONS: none configured ────────────────────────────")
 
-    return _format_compact_section("INTERVIEW BRIEF", lines).strip()
+    return "\n".join(out).strip()
 
-
-# ---------------------------------------------------------------------------
-# Public API: build_stage_seeds
-# Condensed scenario/behavioral seeds for Stage 3 & 4 — NOT the full brief.
-# Replaces injecting the raw merged_brief_block verbatim into later stages.
-# ---------------------------------------------------------------------------
-
-def build_stage_seeds(
-    *,
-    candidate_name: str,
-    job_title: str,
-    candidate_band: str,
-    resume_context: ResumeContext,
-    jd_details: Any,
-    covered_topics: Optional[list[str]] = None,
-) -> str:
-    """
-    Build a tight scenario-seed block for Stage 3 (situational) and Stage 4 (behavioral).
-    Contains only what those stages need: role, band, top projects NOT yet covered, JD must-haves.
-    Does NOT repeat the full brief — that's already in the evaluation layer.
-    """
-    jd_data = _coerce_jsonish(jd_details)
-    jd_must_haves = _extract_jd_must_haves(jd_data)
-    covered = set(str(t).lower().strip() for t in (covered_topics or []))
-
-    # Pick top projects/roles that haven't been covered in earlier stages
-    all_items = resume_context.projects + resume_context.work_history
-    fresh_items = [
-        item for item in all_items
-        if not any(c in str(item).lower() for c in covered if len(c) > 4)
-    ][:3]
-    # If everything was covered, fall back to all items (still useful as scenario seeds)
-    seed_items = fresh_items or all_items[:3]
-
-    safe_name = (candidate_name or "Candidate").strip()
-    safe_role = (job_title or "the role").strip()
-
-    lines = [
-        f"Candidate: {safe_name}  |  Role: {safe_role}  |  Band: {candidate_band}",
-        f"Current role: {resume_context.current_role or 'Not specified'}",
-    ]
-    if jd_must_haves:
-        lines.append(f"JD must-haves to probe: {_join_items(jd_must_haves, 5)}")
-    if seed_items:
-        lines.append("Scenario seeds (use these — do NOT re-ask what was already covered in Stage 1/2):")
-        for item in seed_items:
-            lines.append(f"  - {str(item).strip()}")
-    if covered_topics:
-        lines.append(f"Already covered in earlier stages: {', '.join(list(covered)[:5])}")
-    return "\n".join(lines).strip()

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { FIXED_INTERVIEW_DURATION_MINUTES, INTERVIEW_SLOT_INTERVAL_MINUTES } from "@/lib/drive-limits";
-import { roundToNextSlotBoundary } from "@/lib/interview-slot-policy";
+import { roundToCurrentSlotBoundary, roundToNextSlotBoundary } from "@/lib/interview-slot-policy";
+import { isInterviewTestMode } from "@/lib/interview-access";
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
     try {
@@ -45,7 +46,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
         const availableSlots = [];
 
-        const currentTime = roundToNextSlotBoundary(new Date(), INTERVIEW_SLOT_INTERVAL_MINUTES);
+        const currentTime = isInterviewTestMode()
+            ? roundToCurrentSlotBoundary(new Date(), INTERVIEW_SLOT_INTERVAL_MINUTES)
+            : roundToNextSlotBoundary(new Date(), INTERVIEW_SLOT_INTERVAL_MINUTES);
 
         while (currentTime < end) {
             const timeMs = currentTime.getTime();

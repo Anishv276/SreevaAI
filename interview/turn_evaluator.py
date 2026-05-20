@@ -17,8 +17,6 @@ from typing import Any, Optional
 
 from interview.turn_decision import (
     TurnDecision,
-    SignalFlags,
-    SignalEvent,
     detect_signal_events,
     build_signal_flags,
     compute_trust_delta,
@@ -30,11 +28,19 @@ logger = logging.getLogger("interview-agent")
 
 
 def _is_signal_enabled(signal_toggles: Optional[dict[str, Any]], signal_name: str) -> bool:
+    """Return True if the signal should be allowed through the filter.
+
+    Logic:
+      - No toggles dict at all → all signals enabled.
+      - Signal name NOT in the dict → default True (allow; unknown = not explicitly disabled).
+      - Signal name IS in the dict → honour the value.
+    """
     if not signal_toggles:
         return True
     raw_value = signal_toggles.get(signal_name)
     if raw_value is None:
-        return False
+        # Key absent → treat as enabled (do NOT silently suppress)
+        return True
     if isinstance(raw_value, bool):
         return raw_value
     if isinstance(raw_value, str):
@@ -52,9 +58,7 @@ async def run_turn_evaluation(
     *,
     candidate_answer: str,
     last_question: str,
-    topic_follow_up_count: int,
     transcript_lines: list,
-    depth_history: list[float],           # depth scores for current topic, oldest first
     contradiction_detected: bool,
     client,
     org_id: Optional[str],
@@ -62,16 +66,13 @@ async def run_turn_evaluation(
     score_answer_quality_fn,              # imported from agent.py at call site
     evaluate_answer_and_decide_fn,        # imported from agent.py at call site
     signal_toggles: Optional[dict[str, Any]] = None,
-    max_follow_ups: int = 2,
     uncovered_topics: Optional[list[str]] = None,
-    collapse_stage: int = 0,
     session_score_history: Optional[list[float]] = None,
     turns_since_last_decay: int = 999,
     response_latency_sec: Optional[float] = None,
-    current_stage: str = "",
 ) -> tuple[TurnDecision, str]:
     """
-    Run full per-turn evaluation pipeline.
+    Run per-turn evaluation pipeline.
 
     Returns:
         (TurnDecision, directive_string)
@@ -91,7 +92,6 @@ async def run_turn_evaluation(
         evaluate_answer_and_decide_fn(
             candidate_answer=candidate_answer,
             last_question=last_question,
-            topic_follow_up_count=topic_follow_up_count,
             transcript_lines=transcript_lines,
             client=client,
             org_id=org_id,
@@ -107,10 +107,10 @@ async def run_turn_evaluation(
         candidate_answer=candidate_answer,
         last_question=last_question,
         current_depth=current_depth,
-        prior_depth_scores=depth_history,
-        topic_follow_up_count=topic_follow_up_count,
+        prior_depth_scores=[],  # Not used with saturation system
+        topic_follow_up_count=0,  # Not used with saturation system
         contradiction_detected=contradiction_detected,
-        collapse_stage=collapse_stage,
+        collapse_stage=0,  # Not used with saturation system
         session_score_history=session_score_history,
         turns_since_last_decay=turns_since_last_decay,
         response_latency_sec=response_latency_sec,
@@ -123,11 +123,13 @@ async def run_turn_evaluation(
     signals = build_signal_flags(signal_events)
 
     # Route to action/mode/goal
+    # NOTE: With saturation system, topic_follow_up_count/max_follow_ups no longer used
+    # Saturation scoring in eval_pipeline.py will determine PROBE vs MOVE_ON
     action, mode, next_goal = route(
         signals=signals,
         depth_signal=llm_decision.get("depth_signal", "SURFACE"),
-        topic_follow_up_count=topic_follow_up_count,
-        max_follow_ups=max_follow_ups,
+        topic_follow_up_count=0,  # Not used with saturation system
+        max_follow_ups=999,  # Not used with saturation system
         llm_action=llm_decision.get("action", "MOVE_ON"),
         llm_probe_mode=llm_decision.get("probe_mode"),
     )
@@ -147,16 +149,8 @@ async def run_turn_evaluation(
     directive = build_directive(
         td=td,
         depth_signal=llm_decision.get("depth_signal", "SURFACE"),
-        topic_follow_up_count=topic_follow_up_count,
-        collapse_stage=collapse_stage,
+        collapse_stage=0,
         uncovered_topics=uncovered_topics,
-        current_stage=current_stage,
-        max_follow_ups=max_follow_ups,
-    )
-
-    logger.info(
-        f"[TURN_EVAL] action={action} mode={mode} signals={[k for k,v in signals.items() if v]} "
-        f"trust_delta={trust['delta']:+.2f} depth={current_depth:.1f}"
     )
 
     return td, directive

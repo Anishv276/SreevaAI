@@ -12,6 +12,13 @@ export function roundToNextSlotBoundary(now: Date, slotIntervalMinutes: number):
   return rounded;
 }
 
+export function roundToCurrentSlotBoundary(now: Date, slotIntervalMinutes: number): Date {
+  const rounded = new Date(now);
+  const remainder = rounded.getMinutes() % slotIntervalMinutes;
+  rounded.setMinutes(rounded.getMinutes() - remainder, 0, 0);
+  return rounded;
+}
+
 export function isValidSlotBoundary(date: Date, slotIntervalMinutes: number): boolean {
   return (
     date.getMinutes() % slotIntervalMinutes === 0 &&
@@ -30,4 +37,3 @@ export function getSlotJoinDeadline(
 ): number {
   return slotStartEpochMs + joinGraceMinutes * 60000;
 }
-

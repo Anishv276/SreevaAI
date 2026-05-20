@@ -1,7 +1,7 @@
 import { AccessToken, AgentDispatchClient, RoomServiceClient } from "livekit-server-sdk";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { isInterviewReopenAllowed, isInterviewTokenRequired } from "@/lib/interview-access";
+import { isInterviewReopenAllowed, isInterviewTestMode, isInterviewTokenRequired } from "@/lib/interview-access";
 import {
     FIXED_INTERVIEW_DURATION_MINUTES,
     INTERVIEW_JOIN_GRACE_MINUTES,
@@ -23,50 +23,58 @@ export async function POST(
             return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
         }
 
-        const interview = await prisma.interview.findFirst({
-            where: {
-                applicationId,
-                accessToken: interviewToken,
-            },
+        const testMode = isInterviewTestMode();
+
+        const interview = await prisma.interview.findUnique({
+            where: { applicationId },
         });
 
-        if (requireInterviewToken && !interview) {
+        if (!interview) {
+            return NextResponse.json({ error: "Interview session not found" }, { status: 404 });
+        }
+
+        if (requireInterviewToken && interview.accessToken !== interviewToken) {
             return NextResponse.json({ error: "Invalid interview token" }, { status: 401 });
         }
 
-        if (!allowReopen && (interview?.status === "COMPLETED" || interview?.status === "FAILED")) {
-            return NextResponse.json({ error: "Access Denied: Interview already finalized" }, { status: 403 });
+        if (interview.status === "COMPLETED") {
+            return NextResponse.json({
+                error: "Access Denied: Interview has been completed. Please contact support.",
+                code: "INTERVIEW_COMPLETED",
+            }, { status: 403 });
         }
 
-        if (interview?.status === "IN_PROGRESS") {
+        if (!allowReopen && interview.status === "FAILED") {
             return NextResponse.json({
-                error: "Access Denied: Interview is already in progress. Please wait for the active session to finish.",
-                code: "IN_PROGRESS",
-            }, { status: 409 });
+                error: "Access Denied: Interview already finalized",
+                code: "INTERVIEW_FINALIZED",
+            }, { status: 403 });
         }
 
         // Slot entry window:
         // Join/rejoin allowed from slot start until +10 minutes only.
-        if (interview?.scheduledAt) {
+        if (interview.scheduledAt) {
             const now = Date.now();
             const slotStart = interview.scheduledAt.getTime();
             const joinDeadline = getSlotJoinDeadline(slotStart, INTERVIEW_JOIN_GRACE_MINUTES);
 
-            if (now < slotStart) {
-                return NextResponse.json({
-                    error: `Access Denied: Your interview slot opens at ${new Date(slotStart).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.`,
-                }, { status: 403 });
-            }
+            if (!testMode) {
+                if (now < slotStart) {
+                    return NextResponse.json({
+                        error: `Access Denied: Your interview slot opens at ${new Date(slotStart).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.`,
+                    }, { status: 403 });
+                }
 
-            if (now > joinDeadline) {
-                return NextResponse.json({
-                    error: "Access Denied: Slot join window is closed. Please contact support to reschedule.",
-                }, { status: 403 });
+                if (now > joinDeadline) {
+                    return NextResponse.json({
+                        error: "Access Denied: Slot join window is closed. Please contact support to reschedule.",
+                    }, { status: 403 });
+                }
             }
 
         }
 
-        if (interview?.expiresAt && interview.expiresAt < new Date()) {
+        if (interview.expiresAt && interview.expiresAt < new Date()) {
             return NextResponse.json({ error: "Access Denied: Interview session has expired" }, { status: 403 });
         }
 

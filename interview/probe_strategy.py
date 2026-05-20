@@ -17,6 +17,18 @@ _PROBE_FAMILIES: dict[str, dict[str, str]] = {
         "goal": "Ask what THEY personally owned, built, or decided - not the team.",
         "style": "Push from team-language into individual responsibility.",
     },
+    "outcome": {
+        "goal": "What was the actual outcome or impact? Did it ship? How was it measured?",
+        "style": "Move from claim to measurable result. Test grounding in real business metrics.",
+    },
+    "tradeoff": {
+        "goal": "What choices did they make? Why that approach over the alternatives?",
+        "style": "Test decision-making judgment, not just execution. Probe architectural or design reasoning.",
+    },
+    "failure": {
+        "goal": "What went wrong or broke? What would they do differently?",
+        "style": "Test learning and resilience. Use for CRITICAL topics only (anchor/current role).",
+    },
     "evidence": {
         "goal": "Ask for a concrete example, named project, or real moment from work.",
         "style": "Move from claim to proof. Ask for the exact instance, not the summary.",
@@ -234,14 +246,56 @@ def _build_collapse_probe_lines(collapse_stage: int, signal_events: list) -> lis
     return header + [f"EVIDENCE: {evidence}"] + probe_lines if evidence else header + probe_lines
 
 
+def select_probe_family_from_rotation(
+    probe_rotation_index: int,
+    signal_names: list[str],
+    topic_importance: Optional[str] = "HIGH",
+) -> str:
+    """
+    Select probe family based on rotation index (PART 3 saturation system).
+
+    Probe rotation order:
+      0 = ownership ("Ask what THEY personally...")
+      1 = outcome ("What was the actual outcome?")
+      2 = tradeoff ("What choices did they make?")
+      3 = failure ("What went wrong?") - CRITICAL topics only
+
+    Signal override: If any signal fired, use signal-specific family instead.
+
+    Args:
+        probe_rotation_index: Current position in rotation cycle (0-3)
+        signal_names: List of signals that fired this turn
+        topic_importance: CRITICAL | HIGH | MEDIUM | LOW (for failure gate)
+
+    Returns:
+        Probe family name (e.g., "ownership", "outcome", "tradeoff", "failure")
+    """
+    # Check if a signal fired — if so, use signal-specific family (override rotation)
+    for signal_name, family in _SIGNAL_TO_FAMILY:
+        if signal_name in signal_names:
+            return family
+
+    # No signal override — use rotation
+    rotation_families = ["ownership", "outcome", "tradeoff", "failure"]
+
+    # Clamp index to valid range
+    safe_index = max(0, min(3, probe_rotation_index))
+    selected_family = rotation_families[safe_index]
+
+    # Gate: failure probe only for CRITICAL topics
+    if selected_family == "failure" and topic_importance != "CRITICAL":
+        # Skip failure probe for non-critical topics — use tradeoff instead
+        return "tradeoff"
+
+    return selected_family
+
+
 def build_directive(
     td: TurnDecision,
     depth_signal: str,
-    topic_follow_up_count: int,
     collapse_stage: int = 0,
     uncovered_topics: Optional[list[str]] = None,
     current_stage: str = "",
-    max_follow_ups: int = 2,
 ) -> str:
     """
     Build the NEXT_TURN_DIRECTIVE string injected into the agent's context.
@@ -302,21 +356,11 @@ def build_directive(
             "a project name, a number, a claim. Don't use a generic opener."
         )
 
-    if action != "MOVE_ON":
-        lines.append(
-            f"Follow-ups on this topic so far: {topic_follow_up_count}. "
-            f"If this reaches {max_follow_ups}, move on regardless."
-        )
-    elif action == "MOVE_ON" and uncovered_topics:
+    if action == "MOVE_ON" and uncovered_topics:
         next_topic = uncovered_topics[0] if uncovered_topics else "next area"
         lines.extend([
             f"BRIDGE NOW to: {next_topic}",
             "NEXT TOPIC LOCK: The current topic is closed. Your very next question must be about the bridge topic above.",
             "Do NOT ask another follow-up on the previous project, work item, skill thread, or example.",
         ])
-    if current_stage:
-        lines.append(
-            f"STAGE GUARD: Keep your next question strictly within {current_stage.upper()} stage intent."
-        )
-
     return "\n".join(lines)

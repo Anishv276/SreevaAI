@@ -13,3 +13,7 @@ export function isInterviewReopenAllowed() {
     if (process.env.INTERVIEW_ALLOW_REOPEN === "false") return false;
     return process.env.NODE_ENV !== "production";
 }
+
+export function isInterviewTestMode() {
+    return process.env.INTERVIEW_TEST_MODE === "true";
+}

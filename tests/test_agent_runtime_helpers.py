@@ -74,7 +74,7 @@ def test_build_stt_keywords(monkeypatch):
     from interview.agent_providers import build_stt
     
     # Run build_stt
-    build_stt(language_code="en", model="nova-3-general")
+    build_stt(language_code="en", model="nova-2-general")
     
     # Verify that mock_stt_class was called with keywords containing instantly, heyreach, and n8n
     assert mock_stt_class.call_count == 1

@@ -25,11 +25,9 @@ from interview.agent_profile_context import (
     refresh_candidate_band_context,
 )
 from interview.interview_phases import (
-    STAGE_CONFIGS,
     build_greeting_text,
     build_warmup_directive,
-    build_stage_1_resume_directive,
-    build_stage_2_skill_directive,
+    build_interview_directive,
 )
 from interview.agent_providers import (
     build_cartesia_tts,
@@ -75,6 +73,7 @@ from livekit.agents.metrics import AgentSessionUsage
 from livekit.agents.voice import room_io
 from livekit.agents.voice.turn import EndpointingOptions, InterruptionOptions
 from interview.turn_evaluator import run_turn_evaluation
+from interview.turn_decision import classify_short_utterance
 from interview.trust_engine import apply_turn_decision, apply_contradiction_resolved, finalize_trust_state
 from interview.contradiction_state import init_contradiction_state, advance_contradiction_state, summarize_contradiction_state
 from interview.session_state import init_trust_state
@@ -87,9 +86,7 @@ from interview.prompt_layers import (
 
 GREETING_FIXED_SECONDS = 60
 WARMUP_FIXED_SECONDS = 120
-NO_NEW_QUESTION_CUTOFF_SECONDS = 15
-# Stage 1 (RESUME) = 10 min. Stage 2 (SKILL) = remainder until final 15s.
-STAGE1_BUDGET_SECONDS = 600  # 10 min
+FINAL_WINDOW_SECONDS = 45
 
 # Custom-question normalisation constants — module-level so they are allocated once.
 _CUSTOM_Q_PREFIXES: tuple[str, ...] = (
@@ -190,7 +187,7 @@ _BEHAVIORAL_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Stage-1 priority guard: do not ask education/background/custom too early.
+# Early interview guard: do not ask education/background/custom too early.
 _BACKGROUND_EARLY_RE = re.compile(
     r"\b(educat|university|college|school|academic|background|"
     r"tell me about yourself|introduce yourself)\b",
@@ -564,8 +561,18 @@ async def entrypoint(ctx: JobContext):
     job_title = ctx_data.jobTitle
 
     # Consolidated startup fetch log
-    _jd_skills = (extracted_details.get("mustHaveSkills") or []) if extracted_details else []
-    _jd_nice = (extracted_details.get("niceToHaveSkills") or []) if extracted_details else []
+    # JD extraction produces criteria[].{name, priority} where priority=critical/high → must-have, medium → nice-to-have.
+    # Legacy format used mustHaveSkills/niceToHaveSkills flat arrays — fall back to those if criteria absent.
+    def _extract_jd_skill_lists(details: dict):
+        criteria = details.get("criteria") or []
+        if criteria:
+            must = [c.get("name", "") for c in criteria if c.get("priority") in ("critical", "high") and c.get("name")]
+            nice = [c.get("name", "") for c in criteria if c.get("priority") == "medium" and c.get("name")]
+            return must, nice
+        # Legacy fallback
+        return (details.get("mustHaveSkills") or []), (details.get("niceToHaveSkills") or [])
+
+    _jd_skills, _jd_nice = _extract_jd_skill_lists(extracted_details) if extracted_details else ([], [])
     logger.info(
         "[STARTUP] Fetched — resume=%s jd=%s custom_q=%d | candidate=%s | role=%s",
         "YES" if structured_resume else "NO",
@@ -592,7 +599,6 @@ async def entrypoint(ctx: JobContext):
         logger.info("[FLOW] Custom questions — none configured")
     interview_lang = ctx_data.language
     time_limit_mins = FIXED_INTERVIEW_DURATION_MINUTES
-    follow_up_depth = 2
     org_id = ctx_data.orgId
     session_log_context.update(
         {
@@ -653,16 +659,18 @@ async def entrypoint(ctx: JobContext):
     resume_brief = build_resume_brief(candidate_band, resume_context)
     base_coverage_items = [
         *[str(s).strip() for s in resume_context.skills[:6] if str(s).strip()],
-        *[str(p).strip() for p in resume_context.projects[:4] if str(p).strip()],
-        *[str(w).strip() for w in resume_context.work_history[:3] if str(w).strip()],
+        *[str(p).strip().split(" - ")[0].strip() for p in resume_context.projects[:4] if str(p).strip()],
+        *[str(w).strip().split(" - ")[0].strip() for w in resume_context.work_history[:3] if str(w).strip()],
     ]
     base_coverage_items = list(dict.fromkeys(base_coverage_items))
+    from interview.agent_profile_context import _BAND_DEPTH_INSTRUCTIONS
     session_context = CandidateBandContext(
         candidate_band=candidate_band,
         resume_brief=resume_brief,
         coverage_items=base_coverage_items,
-        depth_instruction=(
-            "Balance breadth and depth. Two follow-ups per key topic. Probe for reasoning but stay warm."
+        depth_instruction=_BAND_DEPTH_INSTRUCTIONS.get(
+            candidate_band,
+            "Go as deep as needed per topic — move on when you have enough signal.",
         ),
     )
     session_context.merged_brief_block = build_merged_interview_brief(
@@ -678,9 +686,10 @@ async def entrypoint(ctx: JobContext):
     # Inject dynamic skills/tools from resume and JD into the phonetic transformer
     tts_phonetic_processor.add_tools(session_context.coverage_items)
 
-    stage1_directive_cached = build_stage_1_resume_directive(
+    interview_directive_cached = build_interview_directive(
         band=session_context.candidate_band,
         resume_brief=session_context.resume_brief,
+        context_brief=session_context.merged_brief_block,
         custom_questions=_interview_questions or None,
     )
 
@@ -721,14 +730,10 @@ async def entrypoint(ctx: JobContext):
         f"  Internships: {_internships_str}\n"
         f"  Education: {_education_str}\n"
         f"\n"
-        f"STAGE 1 (RESUME - 10 min): Understand what they personally built and owned. "
+        f"INTERVIEW PLAN: 20 min covering resume ownership, JD skills, situational, behavioural. "
         f"Open with: '{_rb.anchor_item or 'their most recent work'}'. "
         f"Band={_band}: {_band_note}. "
-        f"Must cover: resume ownership topics, at least 1 situational, at least 1 behavioral.\n"
-        f"\n"
-        f"STAGE 2 (SKILL - 7 min): Probe depth on role-critical skills. "
-        f"Skills: {' | '.join([str(s).strip() for s in (_rb.skills or [])][:5]) or 'auto'}. "
-        f"Must ask situational + behavioral naturally. Already covered in Stage 1: go deeper."
+        f"Must cover: resume projects, work history, JD must-have skills, at least 1 situational, at least 1 behavioural."
     )
 
     logger.info("[INTERVIEW_CONTEXT]\n%s", _context_block)
@@ -756,7 +761,8 @@ async def entrypoint(ctx: JobContext):
     chat_ctx.add_message(role="system", content=system_prompt)
     warmup_directive = build_warmup_directive()
     chat_ctx.add_message(role="system", content=warmup_directive)
-    logger.info("[FLOW] System prompt ready — greeting → warmup → Stage 1")
+    chat_ctx.add_message(role="system", content=interview_directive_cached)
+    logger.info("[FLOW] System prompt ready — greeting → warmup → interview")
     ctx.proc.userdata["candidate_band_context"] = session_context
 
     vad_instance = ctx.proc.userdata.get("vad") or build_vad()
@@ -845,22 +851,10 @@ async def entrypoint(ctx: JobContext):
     interview_finished_event = asyncio.Event()
     interview_marked_finished = False
     turn_count = 0
-    warmup_responses_received = 0  # counts candidate responses during warmup window
-    warmup_required_responses = 2  # greeting reply + explicit warmup reply -> then Stage 1
-    warmup_complete = False  # True after required warmup responses are received
-    # Stage interview tracker
-    _current_stage_index: int = 0
-    _stage_start_time: float = 0.0
-    _stage_bridge_pending: bool = False
-    _stage_budgets_secs: dict[int, int] = {}
-    # Per-stage quota tracking: whether the mandatory situational + behavioral questions
-    # have been asked. Reset when stage advances.
-    _stage_situational_asked: bool = False
-    _stage_behavioral_asked: bool = False
-    _stage_quota_reminder_fired: bool = False  # True after mid-stage reminder injected
+    warmup_complete = False  # True when candidate gives substantive response (>8 words) past greeting
+    # Interview state
     _final_no_new_question_guard = False
     _candidate_turn_since_last_assistant = True
-    _stage_transition_events: list[dict[str, Any]] = []
     environment_risk = 0     # browser-side proctoring signals
     integrity_risk = 0       # integrity-related proctoring signals
     depth_risk = 0           # surface answers / compression failures
@@ -874,31 +868,21 @@ async def entrypoint(ctx: JobContext):
     launch_prereqs_signal_sent = False
     # Per-turn decision engine state
     _last_interviewer_question = ""   # most recent question Ishita asked
-    _topic_follow_up_count = 0        # consecutive follow-ups on same topic
     _oai_eval_client = analysis_client  # reused client for per-turn evaluations
     answer_scores: list[dict] = []    # log of all answer quality scores for final DB save
-    _topic_depth_history: list[float] = []  # depth scores per answer on current topic (reset on MOVE_ON)
-    _active_resume_topic: Optional[str] = None  # current resume anchor we should rotate away from on MOVE_ON
-    _active_skill_topic: Optional[str] = None  # current skill thread we should rotate away from on MOVE_ON
-    _last_action_was_move_on: bool = False  # True after AI pivoted to new topic; resets follow-up counter next turn
-    _collapse_stage: int = 0               # 0=none, 1=first probe issued, 2+=repeated collapse (hard flag)
-    _last_depth_decay_turn: int = -999     # turn number when depth_decay last fired; -999 = never
-    _question_asked_at: float = 0.0        # perf_counter() when Ishita finished speaking
-    _answer_received_at: float = 0.0       # perf_counter() when candidate answer arrived
-    _trust_state = init_trust_state()  # session-level trust engine state
-    _contradiction_state = init_contradiction_state()  # explicit contradiction lifecycle state
+    _active_topic: Optional[str] = None         # current topic anchor; rotate away on MOVE_ON
+    _topic_states: dict[str, dict] = {}        # PART 3: TopicState serialized per topic for saturation tracking
+    _last_depth_decay_turn: int = -999           # turn when depth_decay last fired; -999 = never
+    _question_asked_at: float = 0.0
+    _answer_received_at: float = 0.0
+    _trust_state = init_trust_state()
+    _contradiction_state = init_contradiction_state()
     _custom_q_reminder_fired: bool = False
     _custom_q_final_reminder_fired: bool = False
-    _resume_topic_questions_asked: int = 0  # stage-1 resume ownership questions asked so far
-    _covered_resume_topic_keys: set[str] = set()
-    _covered_skill_topic_keys: set[str] = set()
+    _covered_topic_keys: set[str] = set()        # all topics already covered across the interview
     _user_turn_chain: Optional[asyncio.Task[Any]] = None  # serialize user-turn processing
-    _expected_topic_kind: Optional[str] = None  # runtime source of truth: "NEW" | "FOLLOWUP"
-    _enforce_move_on_until_new: bool = False
-    _last_redis_push_turn: int = -1  # dedup guard: prevents pushing same turn twice to Redis
-    _forced_next_topic_hint: Optional[str] = None
     # Running log of topics already covered — injected into every directive so the AI
-    # never re-explores something already discussed, across all stages.
+    # never re-explores something already discussed.
     _discussed_log: list[str] = []
     # Cross-turn consistency engine state
     _claim_index: dict[str, list[dict]] = {}  # claims indexed by type for contradiction checks
@@ -928,7 +912,7 @@ async def entrypoint(ctx: JobContext):
             return
         prefetch_ready = bool(
             session_context.merged_brief_block
-            and stage1_directive_cached
+            and interview_directive_cached
             and session_context.resume_brief
         )
         greeting_ready = bool((welcome_text or "").strip())
@@ -979,137 +963,21 @@ async def entrypoint(ctx: JobContext):
             "exit_reason": exit_reason,
             "events": proctoring_events,
             "contradiction_state": summarize_contradiction_state(_contradiction_state),
-            "stage_history": session_context.stage_history,
-            "stage_transition_events": _stage_transition_events,
-            "total_stages_covered": _current_stage_index + 1,
         }
         if full:
             data["contradictions"] = _contradictions_found
             data["claim_index"] = _claim_index
         return data
-    def _remaining_total_seconds_now() -> float:
-        if session_start_time is None:
-            return float(time_limit_mins * 60)
-        elapsed = max(0.0, time.time() - session_start_time)
-        return max(0.0, float(time_limit_mins * 60) - elapsed)
-
-    def _initialize_stage_budgets() -> None:
-        nonlocal _stage_budgets_secs
-        _stage_budgets_secs = {
-            0: STAGE1_BUDGET_SECONDS,
-            1: max(0, int(time_limit_mins * 60) - GREETING_FIXED_SECONDS - WARMUP_FIXED_SECONDS - STAGE1_BUDGET_SECONDS - NO_NEW_QUESTION_CUTOFF_SECONDS),
-        }
-        logger.info(
-            "[TIMER] Stage budgets — Stage1=%ds Stage2=%ds total=%ds",
-            _stage_budgets_secs[0], _stage_budgets_secs[1], int(time_limit_mins * 60),
-        )
-
-    async def _advance_stage_if_due_async(now_mono: float) -> None:
-        """Async stage advancement with lock protection to prevent concurrent transitions."""
-        nonlocal _current_stage_index, _stage_start_time, _active_skill_topic, _stage_situational_asked, \
-            _stage_behavioral_asked, _stage_quota_reminder_fired, _stage_bridge_pending
-        async with _session_state_lock:
-            if _current_stage_index >= len(STAGE_CONFIGS) - 1:
-                return
-            if _stage_start_time <= 0:
-                return
-            if _stage_bridge_pending:
-                return
-            stage_cfg = STAGE_CONFIGS[_current_stage_index]
-            time_in_stage = max(0.0, now_mono - _stage_start_time)
-            stage_budget = max(0, int(_stage_budgets_secs.get(_current_stage_index, 0)))
-            if time_in_stage < stage_budget:
-                return
-            # Transition to next stage
-            _stage_bridge_pending = True
-            next_stage_index = _current_stage_index + 1
-            next_stage = STAGE_CONFIGS[next_stage_index]
-            logger.info(
-                "[STAGE] Transition %s -> %s | elapsed=%ds budget=%ds reason=timeout",
-                stage_cfg.label, next_stage.label, int(time_in_stage), stage_budget,
-            )
-            remove_system_messages(chat_ctx, f"[STAGE {_current_stage_index + 1}:")
-            stage_directive = _build_stage_2_directive()
-            session_context.stage_history.append({
-                "stage": _current_stage_index,
-                "name": stage_cfg.label,
-                "seconds": int(time_in_stage),
-                "budget_seconds": stage_budget,
-                "transition_reason": "timeout",
-            })
-            _stage_transition_events.append({
-                "from_stage": stage_cfg.label,
-                "to_stage": next_stage.label,
-                "from_index": _current_stage_index,
-                "to_index": next_stage_index,
-                "time_in_stage_seconds": int(time_in_stage),
-                "budget_seconds": stage_budget,
-                "transition_reason": "timeout",
-                "at_turn": turn_count,
-                "timestamp": int(time.time() * 1000),
-            })
-            _current_stage_index = next_stage_index
-            _stage_start_time = now_mono
-            _stage_bridge_pending = False
-            _stage_situational_asked = False
-            _stage_behavioral_asked = False
-            _stage_quota_reminder_fired = False
-            if _current_stage_index == 1:
-                _active_skill_topic = _next_uncovered_skill_topic()
-                _covered_s1 = ", ".join(list(_covered_resume_topic_keys)[:5]) if _covered_resume_topic_keys else "none yet"
-                rb = session_context.resume_brief
-                _all_skills = ", ".join([str(s).strip() for s in (rb.skills or [])][:8])
-                logger.info(
-                    "[INTERVIEW_CONTEXT] === STAGE 2 TRANSITION === Time: %dm budget remaining. "
-                    "Opening skill: %s. All skills to explore: %s. Topics covered in Stage 1: %s. "
-                    "Goal: probe depth on real usage, tradeoffs, ownership. "
-                    "Still need: at least 1 situational + 1 behavioral question.",
-                    _stage_budgets_secs.get(1, 0) // 60, _active_skill_topic or "auto-select",
-                    _all_skills, _covered_s1
-                )
-            if stage_directive:
-                chat_ctx.add_message(role="system", content=stage_directive)
-                logger.info("[STAGE] Stage %d directive injected (%d chars)", _current_stage_index + 1, len(stage_directive))
-
-    def _build_stage_2_directive() -> Optional[str]:
-        rb = session_context.resume_brief
-        transcript_text = " ".join(l.split(":", 1)[-1].strip().lower() for l in transcript_lines)
-        covered_in_s1 = _find_covered_keywords(rb.skills + rb.projects, transcript_text)
-        logger.info("[STAGE] Stage 2 build - covered in Stage 1: %s", covered_in_s1)
-        directive = build_stage_2_skill_directive(
-            band=session_context.candidate_band,
-            resume_brief=rb,
-            context_brief=session_context.merged_brief_block,
-            covered_in_stage1=covered_in_s1,
-            custom_questions=_pending_custom_questions() or None,
-        )
-        if directive:
-            # Log stage 2 context in simple paragraph format
-            rb = session_context.resume_brief
-            _s2_skills = " | ".join([str(s).strip() for s in (rb.skills or [])][:6])
-            logger.info(
-                "[INTERVIEW_CONTEXT] STAGE 2 (SKILL): Probe depth on skills for %s role. "
-                "Skills to explore: %s. For %s: ask real usage, tradeoffs, ownership. "
-                "Must ask situational + behavioral naturally. Already covered in Stage 1: go DEEPER.",
-                job_title, _s2_skills, session_context.candidate_band
-            )
-        return directive
-
     def _resume_topic_candidates() -> list[str]:
         rb = session_context.resume_brief
-        # rb is always a ResumeBrief (Pydantic) — list fields always present, never None
-        projects = list(rb.projects)
-        work = list(rb.work_history)
-        internships = list(rb.internships)
         topics: list[str] = []
-        for raw in (projects + work + internships):
+        for raw in (list(rb.projects) + list(rb.work_history) + list(rb.internships)):
             txt = str(raw).strip()
             if not txt:
                 continue
             topics.append(txt.split(" - ")[0].strip())
-        # Deduplicate while preserving order
         unique: list[str] = []
-        seen = set()
+        seen: set[str] = set()
         for t in topics:
             key = t.lower()
             if key and key not in seen:
@@ -1117,37 +985,15 @@ async def entrypoint(ctx: JobContext):
                 unique.append(t)
         return unique[:8]
 
-    def _normalize_topic_key(text: str) -> str:
-        return re.sub(r"[^a-z0-9]+", " ", str(text or "").lower()).strip()
-
-    def _next_uncovered_resume_topic(*, exclude_topic: str | None = None) -> Optional[str]:
-        topics = _resume_topic_candidates()
-        if not topics:
-            return None
-        covered_text = " ".join(_discussed_log).lower()
-        excluded_key = _normalize_topic_key(exclude_topic or "")
-        for t in topics:
-            topic_key = _normalize_topic_key(t)
-            if not topic_key:
-                continue
-            if excluded_key and topic_key == excluded_key:
-                continue
-            if topic_key in _covered_resume_topic_keys:
-                continue
-            if topic_key not in covered_text:
-                return t
-        return None
-
     def _skill_topic_candidates() -> list[str]:
         rb = session_context.resume_brief
         topics: list[str] = []
         for raw in list(rb.skills):
             txt = str(raw).strip()
-            if not txt:
-                continue
-            topics.append(txt)
+            if txt:
+                topics.append(txt)
         unique: list[str] = []
-        seen = set()
+        seen: set[str] = set()
         for t in topics:
             key = _normalize_topic_key(t)
             if key and key not in seen:
@@ -1155,55 +1001,36 @@ async def entrypoint(ctx: JobContext):
                 unique.append(t)
         return unique[:10]
 
-    def _next_uncovered_skill_topic(*, exclude_topic: str | None = None) -> Optional[str]:
-        topics = _skill_topic_candidates()
-        if not topics:
-            return None
+    def _normalize_topic_key(text: str) -> str:
+        return re.sub(r"[^a-z0-9]+", " ", str(text or "").lower()).strip()
+
+    def _next_uncovered_topic(*, exclude_topic: str | None = None) -> Optional[str]:
+        """Return the highest-priority uncovered topic: resume items first, then JD skills."""
         covered_text = " ".join(_discussed_log).lower()
         excluded_key = _normalize_topic_key(exclude_topic or "")
-        for t in topics:
+        for t in (_resume_topic_candidates() + _skill_topic_candidates()):
             topic_key = _normalize_topic_key(t)
             if not topic_key:
                 continue
             if excluded_key and topic_key == excluded_key:
                 continue
-            if topic_key in _covered_skill_topic_keys:
+            if topic_key in _covered_topic_keys:
                 continue
             if topic_key not in covered_text:
                 return t
         return None
 
-    def _fallback_next_topic(*, stage_index: int, exclude_topic: str | None = None) -> str:
-        """Pick a concrete next topic hint for MOVE_ON paths.
-
-        Prefer uncovered topics, then a different listed topic, and only then a
-        stage-appropriate generic bridge. This keeps the interviewer from
-        falling back to a vague repeat of the same thread.
-        """
+    def _fallback_next_topic(*, exclude_topic: str | None = None) -> str:
+        """Always returns a non-empty next topic string."""
         excluded_key = _normalize_topic_key(exclude_topic or "")
-        if stage_index == 0:
-            next_topic = _next_uncovered_resume_topic(exclude_topic=exclude_topic)
-            if next_topic:
-                return next_topic
-            for topic in _resume_topic_candidates():
-                topic_key = _normalize_topic_key(topic)
-                if topic_key and topic_key != excluded_key:
-                    return topic
-            if _resume_topic_questions_asked >= 2:
-                return "their education or training path"
-            return "another resume project"
-
-        if stage_index == 1:
-            next_topic = _next_uncovered_skill_topic(exclude_topic=exclude_topic)
-            if next_topic:
-                return next_topic
-            for topic in _skill_topic_candidates():
-                topic_key = _normalize_topic_key(topic)
-                if topic_key and topic_key != excluded_key:
-                    return topic
-            return f"a concrete example using one of the {job_title} role skills"
-
-        return "the next relevant topic"
+        nxt = _next_uncovered_topic(exclude_topic=exclude_topic)
+        if nxt:
+            return nxt
+        for topic in (_resume_topic_candidates() + _skill_topic_candidates()):
+            key = _normalize_topic_key(topic)
+            if key and key != excluded_key:
+                return topic
+        return f"a concrete example using one of the {job_title} role skills"
 
     def _pending_custom_questions() -> list[str]:
         return [cq.raw for cq in _custom_questions if not cq.asked]
@@ -1234,6 +1061,11 @@ async def entrypoint(ctx: JobContext):
         if not latest:
             return "earlier in our discussion"
         return f"during our discussion on {latest}"
+
+    def _remaining_total_seconds_now() -> float:
+        if not session_start_time:
+            return float(time_limit_mins * 60)
+        return max(0.0, float(time_limit_mins * 60) - (time.time() - session_start_time))
 
     @ctx.room.on("disconnected")
     def on_disconnected(reason):
@@ -1327,11 +1159,11 @@ async def entrypoint(ctx: JobContext):
         turn_snapshot: int,
     ) -> None:
         nonlocal suspicion_score, proctoring_events, _last_interviewer_question, \
-            _topic_follow_up_count, current_interview_mode, answer_scores, \
+            current_interview_mode, answer_scores, \
             _claim_index, _contradictions_found, \
-            _topic_depth_history, _trust_state, _contradiction_state, greeting_delivered_at, \
-            _ai_signal_flush_counter, _ai_signal_flushed_count, _enforce_move_on_until_new, _forced_next_topic_hint, \
-            _last_redis_push_turn
+            _trust_state, _contradiction_state, greeting_delivered_at, \
+            _ai_signal_flush_counter, _ai_signal_flushed_count, \
+            warmup_complete, _last_depth_decay_turn
         try:
             if not content or role != "user":
                 return
@@ -1425,6 +1257,11 @@ async def entrypoint(ctx: JobContext):
             # Fires on every candidate response. Evaluates answer quality in real-time
             # and injects a NEXT_TURN_DIRECTIVE before Ishita generates her next response.
             # Decision: PROBE (which mode) or MOVE_ON - fully signal-driven, no fixed depth.
+            # Greeting = turn 1, warmup = turns 2-3, interview starts at turn 4.
+            if not warmup_complete and turn_snapshot >= 3:
+                warmup_complete = True
+                logger.info("[WARMUP] warmup_complete=True at turn=%d", turn_snapshot)
+
             # Warmup turns (before warmup_complete) are recorded as zero-scored placeholders
             # so they never pollute the technical or communication score averages.
             if not warmup_complete and _last_interviewer_question and turn_snapshot > 1:
@@ -1439,10 +1276,7 @@ async def entrypoint(ctx: JobContext):
             if warmup_complete and _last_interviewer_question and turn_snapshot > 1:
                 answer_snap = content
                 question_snap = _last_interviewer_question
-                follow_up_snap = _topic_follow_up_count
                 lines_snap_eval = list(transcript_lines)
-                depth_snap = list(_topic_depth_history)
-                collapse_stage_snap = _collapse_stage
                 score_history_snap = list(_trust_state.get("score_history", []))
                 turns_since_decay_snap = (
                     (turn_snapshot - _last_depth_decay_turn)
@@ -1463,11 +1297,8 @@ async def entrypoint(ctx: JobContext):
                 def _build_eval_payload(
                     answer=answer_snap,
                     question=question_snap,
-                    follow_ups=follow_up_snap,
                     lines=lines_snap_eval,
                     turn=turn_snapshot,
-                    depth_hist=depth_snap,
-                    collapse_stage=collapse_stage_snap,
                     score_history=score_history_snap,
                     turns_since_decay=turns_since_decay_snap,
                     response_latency=response_latency_snap,
@@ -1494,41 +1325,35 @@ async def entrypoint(ctx: JobContext):
                         if key and key not in seen_st:
                             seen_st.add(key)
                             unique_skills.append(s)
+                    # PART 3: Include TopicState for saturation tracking
+                    active_topic_state = _topic_states.get(_active_topic) if _active_topic else None
+
                     return {
                         "app_id": app_id,
                         "turn": turn,
                         "answer": answer,
                         "question": question,
-                        "follow_up_count": follow_ups,
                         "transcript_lines": lines[-12:],
-                        "depth_history": depth_hist,
-                        "collapse_stage": collapse_stage,
                         "score_history": score_history,
                         "turns_since_decay": turns_since_decay,
                         "response_latency_sec": response_latency,
-                        "stage_index": _current_stage_index,
-                        "follow_up_depth": follow_up_depth,
                         "signal_toggles": dict(evaluation_signal_toggles),
                         "org_id": org_id,
                         "llm_model": analysis_model,
-                        "active_resume_topic": _active_resume_topic,
-                        "active_skill_topic": _active_skill_topic,
-                        "covered_resume_topic_keys": list(_covered_resume_topic_keys),
-                        "covered_skill_topic_keys": list(_covered_skill_topic_keys),
+                        "active_topic": _active_topic,
+                        "active_topic_state": active_topic_state,
+                        "covered_topic_keys": list(_covered_topic_keys),
                         "discussed_log": list(_discussed_log[-8:]),
-                        "enforce_move_on_until_new": _enforce_move_on_until_new,
-                        "forced_next_topic_hint": _forced_next_topic_hint,
-                        "last_action_was_move_on": _last_action_was_move_on,
                         "resume_topics": unique_resume[:8],
                         "skill_topics": unique_skills[:10],
+                        "anchor_item": str(getattr(rb, "anchor_item", "") or ""),
                         "job_title": job_title,
                         "remaining_seconds": float(_remaining_total_seconds_now()),
-                        "resume_topic_questions_asked": _resume_topic_questions_asked,
                         "claim_index": {k: list(v) for k, v in _claim_index.items()},
                         "contradiction_state": dict(_contradiction_state),
                         "trust_state": dict(_trust_state),
                         "current_interview_mode": current_interview_mode,
-                        "no_new_question_cutoff_seconds": NO_NEW_QUESTION_CUTOFF_SECONDS,
+                        "no_new_question_cutoff_seconds": FINAL_WINDOW_SECONDS,
                         # ── Candidate brief (for worker logging) ──────────────────────
                         "candidate_name": candidate_name,
                         "band": session_context.candidate_band or "unknown",
@@ -1556,19 +1381,25 @@ async def entrypoint(ctx: JobContext):
                     except Exception as _re:
                         logger.warning("[REDIS_EVAL] Failed to push payload: %s", _re)
 
+                # READ result from previous turn's eval (computed while Ishita was speaking)
+                applied = await _read_and_apply_eval_result(turn_snapshot)
+                if not applied:
+                    logger.info("[REDIS_EVAL] No pre-computed result for turn=%d — skipping inline eval", turn_snapshot)
+
+                # PUSH current turn's answer for the worker to evaluate during Ishita's response
+                await _push_payload_to_redis(_build_eval_payload())
+
                 async def _read_and_apply_eval_result(turn_for_log: int) -> bool:
                     """Read pre-computed result from Redis and apply all mutations + inject directive.
                     Returns True if result was found and applied, False if no result available."""
                     nonlocal \
-                        _active_resume_topic, _active_skill_topic, \
-                        _covered_resume_topic_keys, _covered_skill_topic_keys, \
-                        _topic_follow_up_count, _topic_depth_history, \
-                        _collapse_stage, _last_action_was_move_on, \
-                        _enforce_move_on_until_new, _forced_next_topic_hint, \
-                        _expected_topic_kind, _trust_state, _contradiction_state, \
+                        _active_topic, _topic_states, \
+                        _covered_topic_keys, \
+                        _trust_state, _contradiction_state, \
                         _claim_index, current_interview_mode, \
                         integrity_risk, depth_risk, suspicion_score, \
-                        _ai_signal_flush_counter, _ai_signal_flushed_count
+                        _ai_signal_flush_counter, _ai_signal_flushed_count, \
+                        _discussed_log
 
                     if _eval_redis_client is None:
                         return False
@@ -1599,17 +1430,19 @@ async def entrypoint(ctx: JobContext):
                     # Apply all mutations atomically under lock
                     # (variables already declared as nonlocal in _process_user_conversation_item scope)
                     async with _session_state_lock:
-                        _active_resume_topic = result.get("new_active_resume_topic", _active_resume_topic)
-                        _active_skill_topic = result.get("new_active_skill_topic", _active_skill_topic)
-                        _covered_resume_topic_keys = set(result.get("new_covered_resume_topic_keys") or [])
-                        _covered_skill_topic_keys = set(result.get("new_covered_skill_topic_keys") or [])
-                        _topic_follow_up_count = result.get("new_topic_follow_up_count", _topic_follow_up_count)
-                        _topic_depth_history = result.get("new_topic_depth_history", _topic_depth_history)
-                        _collapse_stage = result.get("new_collapse_stage", _collapse_stage)
-                        _last_action_was_move_on = result.get("new_last_action_was_move_on", _last_action_was_move_on)
-                        _enforce_move_on_until_new = result.get("new_enforce_move_on_until_new", _enforce_move_on_until_new)
-                        _forced_next_topic_hint = result.get("new_forced_next_topic_hint", _forced_next_topic_hint)
-                        _expected_topic_kind = result.get("new_expected_topic_kind", _expected_topic_kind)
+                        _active_topic = result.get("new_active_topic", _active_topic)
+                        _covered_topic_keys = set(result.get("new_covered_topic_keys") or [])
+                        # PART 3: Update TopicState from result
+                        new_topic_state = result.get("new_active_topic_state")
+                        if new_topic_state and _active_topic:
+                            _topic_states[_active_topic] = new_topic_state
+                            logger.info(
+                                "[SATURATION] Updated TopicState for '%s' | score=%s/%s | saturated=%s",
+                                _active_topic,
+                                new_topic_state.get("saturation_score", 0),
+                                new_topic_state.get("saturation_threshold", 0),
+                                new_topic_state.get("is_saturated", False),
+                            )
                         _trust_state = result.get("new_trust_state") or _trust_state
                         _contradiction_state = result.get("new_contradiction_state") or _contradiction_state
                         _claim_index = {k: list(v) for k, v in (result.get("new_claim_index") or {}).items()}
@@ -1627,6 +1460,9 @@ async def entrypoint(ctx: JobContext):
                         quality_record = result.get("quality_record")
                         if quality_record:
                             answer_scores.append(quality_record)
+                        # Update depth_decay turn tracker when it fires
+                        if any(ev.get("signal_name") == "depth_decay" for ev in (result.get("signal_events") or [])):
+                            _last_depth_decay_turn = result.get("turn", turn_for_log)
                         # Append signal events to proctoring_events
                         signal_events = result.get("signal_events") or []
                         _now_elapsed = round(time.time() - session_start_time, 1) if session_start_time else 0.0
@@ -1695,950 +1531,50 @@ async def entrypoint(ctx: JobContext):
                         action = result.get("action", "MOVE_ON")
                         quality_record = quality_record or {}
                         quality_avg = float(quality_record.get("overall", 5.0))
-                        _active_topic_now = (_active_resume_topic if _current_stage_index == 0 else _active_skill_topic) or "?"
-                        stage_label_now = STAGE_CONFIGS[_current_stage_index].label if _current_stage_index < len(STAGE_CONFIGS) else "?"
                         logger.info(
-                            "[EVAL] turn=%d stage=%s action=%s quality=%.1f followups=%d/%d topic='%s' covered=%d enforce_move_on=%s (worker)",
-                            res_turn, stage_label_now, action, quality_avg,
-                            _topic_follow_up_count, follow_up_depth,
-                            _active_topic_now[:40],
-                            len(_covered_resume_topic_keys) + len(_covered_skill_topic_keys),
-                            _enforce_move_on_until_new,
+                            "[EVAL] turn=%d action=%s quality=%.1f topic='%s' covered=%d (worker)",
+                            res_turn, action, quality_avg,
+                            (_active_topic or "?")[:40],
+                            len(_covered_topic_keys),
                         )
                         if action == "MOVE_ON":
-                            _old_active = (_active_resume_topic if _current_stage_index == 0 else _active_skill_topic) or "?"
                             logger.info(
-                                "[MOVE_ON] FROM='%s' → TO='%s' | covered_resume=%s",
-                                _old_active[:50],
-                                (_active_resume_topic if _current_stage_index == 0 else _active_skill_topic or "TBD")[:50],
-                                list(_covered_resume_topic_keys)[:5],
+                                "[MOVE_ON] TO='%s' | covered=%s",
+                                (_active_topic or "TBD")[:50],
+                                list(_covered_topic_keys)[:5],
                             )
                         # Inject directive
                         directive = result.get("directive", "")
                         logger.info("[DIRECTIVE] → %s", directive[:300].replace("\n", " | "))
                         remove_system_messages(chat_ctx, "[NEXT_TURN_DIRECTIVE")
+                        remove_system_messages(chat_ctx, "[TOPIC_LOCK")
                         if action == "MOVE_ON":
                             remove_system_messages(chat_ctx, "[RECENT_CONTEXT")
                         chat_ctx.add_message(role="system", content=directive)
+                        # TOPIC_LOCK: second hard-constraint message on MOVE_ON so the AI
+                        # cannot drift back to the previous topic — directive alone can be missed
+                        # when the conversation history is long and heavily weighted toward old topic.
+                        if action == "MOVE_ON" and _active_topic:
+                            chat_ctx.add_message(
+                                role="system",
+                                content=(
+                                    f"[TOPIC_LOCK - DO NOT SAY ALOUD]\n"
+                                    f"ACTIVE TOPIC IS NOW: {_active_topic}\n"
+                                    f"Your next question MUST be about '{_active_topic}'. "
+                                    f"The previous topic is closed. Do not ask about it, reference it, "
+                                    f"or follow up on it. One question only — about '{_active_topic}'."
+                                ),
+                            )
+                            logger.info("[TOPIC_LOCK] Injected for new topic: %s", _active_topic[:60])
                         logger.info(
-                            "[ROUTER] action=%s mode=%s turn=%d topic=%s follow_ups=%d (worker)",
+                            "[ROUTER] action=%s mode=%s turn=%d topic=%s (worker)",
                             td.get("decision", {}).get("action", action),
                             td.get("decision", {}).get("mode", "normal"),
                             res_turn,
-                            ((_active_resume_topic if _current_stage_index == 0 else _active_skill_topic) or "?")[:40],
-                            _topic_follow_up_count,
+                            (_active_topic or "?")[:40],
                         )
                     return True
 
-                async def _evaluate_and_inject(
-                    answer=answer_snap,
-                    question=question_snap,
-                    follow_ups=follow_up_snap,
-                    lines=lines_snap_eval,
-                    turn=turn_snapshot,
-                    depth_hist=depth_snap,
-                    collapse_stage=collapse_stage_snap,
-                    score_history=score_history_snap,
-                    turns_since_decay=turns_since_decay_snap,
-                    response_latency=response_latency_snap,
-                ):
-                    nonlocal _topic_follow_up_count, environment_risk, integrity_risk, depth_risk, suspicion_score, current_interview_mode, \
-                        answer_scores, _claim_index, _contradictions_found, \
-                        _topic_depth_history, _trust_state, _contradiction_state, _collapse_stage, \
-                        _last_depth_decay_turn, _last_action_was_move_on, \
-                        _active_resume_topic, _active_skill_topic, \
-                        _ai_signal_flush_counter, _ai_signal_flushed_count, _resume_topic_questions_asked, \
-                        _covered_resume_topic_keys, _covered_skill_topic_keys, _expected_topic_kind, \
-                        _enforce_move_on_until_new, _forced_next_topic_hint
-                    try:
-                        old_active_resume = _active_resume_topic
-                        old_active_skill = _active_skill_topic
-                        # Step 1: Extract claims and check consistency (before quality eval)
-                        # Only runs when contradiction signal is enabled  -  adds 1 LLM call/turn
-                        _contradiction_enabled = bool(evaluation_signal_toggles.get("contradiction", False))
-                        if _contradiction_enabled:
-                            new_claims = await extract_claims(
-                                candidate_answer=answer,
-                                turn=turn,
-                                client=_oai_eval_client,
-                                org_id=org_id,
-                                llm_model=analysis_model,
-                            )
-                        else:
-                            new_claims = []
-                        contradiction_alert: Optional[dict] = None
-                        for claim in new_claims:
-                            claim_type = str(claim.get("type", "") or "").strip()
-                            if not claim_type:
-                                continue
-                            contradiction = check_contradiction(claim, _claim_index)
-                            if contradiction and not contradiction_alert:
-                                contradiction_alert = contradiction
-                                _contradictions_found.append(contradiction)
-                                logger.warning(
-                                    f"[CONSISTENCY] Contradiction: {contradiction['type']} "
-                                    f"turn {contradiction['old_turn']} ({contradiction['old_value']!r}) "
-                                    f"vs turn {turn} ({contradiction['new_value']!r})"
-                                )
-                            _claim_index.setdefault(claim_type, []).append(claim)
-                        # Step 2: Run TurnDecision pipeline (quality + signals + routing)
-                        # Hard timeout: if evaluation LLM is slow the next candidate answer
-                        # arrives before directive is injected  -  Ishita answers with no context.
-                        try:
-                            uncovered_topics: list[str] = []
-                            if _current_stage_index == 0:
-                                nxt = _next_uncovered_resume_topic(exclude_topic=_active_resume_topic)
-                                if nxt:
-                                    uncovered_topics = [nxt]
-                            elif _current_stage_index == 1:
-                                nxt = _next_uncovered_skill_topic(exclude_topic=_active_skill_topic)
-                                if nxt:
-                                    uncovered_topics = [nxt]
-                            current_stage_name = (
-                                STAGE_CONFIGS[_current_stage_index].name
-                                if 0 <= _current_stage_index < len(STAGE_CONFIGS)
-                                else ""
-                            )
-                            td, directive = await asyncio.wait_for(
-                                run_turn_evaluation(
-                                    candidate_answer=answer,
-                                    last_question=question,
-                                    topic_follow_up_count=follow_ups,
-                                    transcript_lines=lines,
-                                    depth_history=depth_hist,
-                                    contradiction_detected=contradiction_alert is not None,
-                                    client=_oai_eval_client,
-                                    org_id=org_id,
-                                    llm_model=analysis_model,
-                                    score_answer_quality_fn=score_answer_quality,
-                                    evaluate_answer_and_decide_fn=evaluate_answer_and_decide,
-                                    signal_toggles=evaluation_signal_toggles,
-                                    max_follow_ups=follow_up_depth,
-                                    uncovered_topics=uncovered_topics,
-                                    collapse_stage=collapse_stage,
-                                    session_score_history=score_history,
-                                    turns_since_last_decay=turns_since_decay,
-                                    response_latency_sec=response_latency,
-                                    current_stage=current_stage_name,
-                                ),
-                                timeout=3.5,
-                            )
-                        except asyncio.TimeoutError:
-                            logger.warning(
-                                "[EVAL] run_turn_evaluation timed out (>3.5s) turn=%d — using smart fallback",
-                                turn,
-                            )
-                            # Smart fallback: respect the follow-up cap even when the LLM is slow.
-                            # If already at max follow-ups, force a MOVE_ON so Ishita pivots naturally.
-                            # Otherwise, issue a stage-aware PROBE so the conversation keeps flowing.
-                            _fallback_stage_label = (
-                                STAGE_CONFIGS[_current_stage_index].label
-                                if 0 <= _current_stage_index < len(STAGE_CONFIGS)
-                                else "CURRENT"
-                            )
-                            if follow_ups >= follow_up_depth:
-                                _fallback_action = "MOVE_ON"
-                                _exclude = _active_resume_topic if _current_stage_index == 0 else _active_skill_topic
-                                _fallback_next = _fallback_next_topic(
-                                    stage_index=_current_stage_index,
-                                    exclude_topic=_exclude,
-                                )
-                            else:
-                                _fallback_action = "PROBE"
-                                _fallback_next = (
-                                    f"Ask one specific follow-up question that stays strictly within "
-                                    f"the {_fallback_stage_label} stage intent. Make it personal and concrete."
-                                )
-                            td = {
-                                "decision": {
-                                    "action": _fallback_action,
-                                    "mode": "normal",
-                                    "next_goal": _fallback_next,
-                                },
-                                "quality": {"clarity": 5.0, "depth": 5.0, "specificity": 5.0, "grounding": 5.0},
-                                "signal_events": [],
-                            }
-                            # Build minimal fallback directive. The [TOPIC_TAG_RULE] and [STRICT_MOVE_ON_RULE]
-                            # are added later in the normal post-processing flow (lines 1875+) so we don't
-                            # duplicate them.
-                            directive = (
-                                f"[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
-                                f"DECISION: {_fallback_action}\n"
-                                f"NEXT MOVE: {_fallback_next}"
-                            )
-                        action = td["decision"]["action"]
-                        signal_events = td.get("signal_events", [])
-                        disturbance_signal_names = {
-                            "ownership_ambiguity",
-                            "example_evasion",
-                            "contradiction",
-                        }
-                        disturbance_hits = [
-                            ev.get("signal_name")
-                            for ev in signal_events
-                            if ev.get("signal_name") in disturbance_signal_names
-                        ]
-                        contradiction_hit = "contradiction" in disturbance_hits
-                        ownership_or_example_hit = any(
-                            sig in disturbance_hits for sig in ("ownership_ambiguity", "example_evasion")
-                        )
-                        freeze_followup_increment = False
-                        depth_signal = "SURFACE"
-                        quality_avg = (
-                            td["quality"]["clarity"] + td["quality"]["depth"] +
-                            td["quality"]["specificity"] + td["quality"]["grounding"]
-                        ) / 4.0
-                        # Follow-up policy (strict, both stages):
-                        # - default cap: 2 follow-ups
-                        # - ownership/example clarification gets +1 allowance
-                        # - contradiction clarification freezes follow-up increment
-                        topic_follow_up_cap = follow_up_depth
-                        if disturbance_hits:
-                            action = "VERIFY"
-                            td["decision"]["action"] = "VERIFY"
-                            td["decision"]["mode"] = "clarification"
-                            if contradiction_hit:
-                                # Only contradiction can freeze follow-up progression.
-                                td["decision"]["next_goal"] = (
-                                    "One clarification question only. Resolve the contradiction anchored to their "
-                                    "previous statement. Do not advance topic and do not consume a new follow-up slot."
-                                )
-                                directive = (
-                                    "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
-                                    "DECISION: VERIFY (CLARIFICATION)\n"
-                                    f"SIGNALS TRIGGERED: {', '.join(str(x) for x in disturbance_hits if x)}\n"
-                                    "NEXT MOVE: Ask one concise contradiction-clarification question. "
-                                    "Keep follow-up count unchanged this turn. After answer, continue from current follow-up stage.\n"
-                                    "QUESTION STYLE: Human, calm, curious, specific."
-                                )
-                                freeze_followup_increment = True
-                                logger.info(
-                                    "[DISTURBANCE] Signals triggered (%s) — freezing follow-up increment for contradiction turn",
-                                    ", ".join(str(x) for x in disturbance_hits if x),
-                                )
-                            elif ownership_or_example_hit:
-                                # Ownership/example issues should clarify, but still progress.
-                                # Deterministic rule: allow exactly one extra clarifier slot (cap=3)
-                                # for this thread, then force move-on by cap exhaustion.
-                                topic_follow_up_cap = follow_up_depth + 1
-                                td["decision"]["next_goal"] = (
-                                    "Ask one concise clarification question to make the answer concrete and personal. "
-                                    "If still vague after this clarification flow, move on to the next topic."
-                                )
-                                directive = (
-                                    "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
-                                    "DECISION: VERIFY (CLARIFICATION)\n"
-                                    f"SIGNALS TRIGGERED: {', '.join(str(x) for x in disturbance_hits if x)}\n"
-                                    "NEXT MOVE: Ask one concise clarification question focused on one concrete example "
-                                    "and what they personally owned. Continue follow-up progression (do not freeze). "
-                                    "If this is already follow-up 2+, this turn is the final clarifier before move-on.\n"
-                                    "QUESTION STYLE: Human, calm, curious, specific."
-                                )
-                                logger.info(
-                                    "[DISTURBANCE] Signals triggered (%s) — clarification without freeze (cap=%d)",
-                                    ", ".join(str(x) for x in disturbance_hits if x),
-                                    topic_follow_up_cap,
-                                )
-                        # Stage 1 resume flow: once we get one solid answer + one follow-up,
-                        # pivot to a fresh resume topic to keep breadth and avoid repetitive probing.
-                        if (
-                            _current_stage_index == 0
-                            and action in ("PROBE", "VERIFY")
-                            and quality_avg >= 6.0
-                            and follow_ups >= 1
-                            and not disturbance_hits
-                        ):
-                            # Mark current topic as covered BEFORE picking next so we never return to it.
-                            if old_active_resume:
-                                _covered_resume_topic_keys.add(_normalize_topic_key(old_active_resume))
-                            next_resume_topic = _fallback_next_topic(
-                                stage_index=0,
-                                exclude_topic=_active_resume_topic,
-                            )
-                            if next_resume_topic != "another resume project":
-                                _active_resume_topic = next_resume_topic
-                            action = "MOVE_ON"
-                            td["decision"]["action"] = "MOVE_ON"
-                            td["decision"]["next_goal"] = (
-                                f"Acknowledge briefly, close the current project thread, and pivot to this next resume topic: "
-                                f"{next_resume_topic}. Ask one fresh question about what they personally built, owned, or decided there. "
-                                "Do not ask another follow-up on the previous project."
-                            )
-                            directive = (
-                                "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
-                                "DECISION: MOVE_ON\n"
-                                f"NEXT MOVE: {td['decision']['next_goal']}"
-                            )
-                            logger.info(
-                                "[RESUME_FLOW] Stage 1 satisfied on current thread (quality=%.1f, follow_ups=%d). "
-                                "Pivoting to next resume topic: %s",
-                                quality_avg, follow_ups, next_resume_topic,
-                            )
-                        if (
-                            action in ("PROBE", "VERIFY")
-                            and _is_question_already_covered(question)
-                        ):
-                            if _current_stage_index == 0:
-                                next_topic_hint = _fallback_next_topic(
-                                    stage_index=0,
-                                    exclude_topic=_active_resume_topic,
-                                )
-                                if next_topic_hint:
-                                    _active_resume_topic = next_topic_hint
-                            else:
-                                next_topic_hint = _fallback_next_topic(
-                                    stage_index=1,
-                                    exclude_topic=_active_skill_topic,
-                                )
-                                if next_topic_hint:
-                                    _active_skill_topic = next_topic_hint
-                            anchor = _recent_discussion_anchor()
-                            action = "MOVE_ON"
-                            td["decision"]["action"] = "MOVE_ON"
-                            td["decision"]["next_goal"] = (
-                                f"This topic is already covered {anchor}. Acknowledge professionally, close that thread, then pivot to "
-                                f"{next_topic_hint}. Ask a new question on that next topic, not a follow-up on the old one."
-                            )
-                            directive = (
-                                "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
-                                "DECISION: MOVE_ON\n"
-                                f"NEXT MOVE: This was already covered {anchor}. Say a short acknowledgement like "
-                                f"'Thanks, I think we already covered this {anchor}' and ask one fresh question on {next_topic_hint}."
-                            )
-                            logger.info("[DEDUPE] Current question already covered — forcing MOVE_ON")
-                        if quality_avg >= 7.0:
-                            depth_signal = "DEEP"
-                        elif quality_avg >= 4.5:
-                            depth_signal = "SPECIFIC"
-                        # Stage transitions are strictly time-driven via _advance_stage_if_due_async().
-                        # Low-quality streaks can still trigger topic pivots via the evaluator, but must not advance stage.
-                        # All I/O is done. Acquire lock before mutating any shared session state.
-                        # This keeps background turn processing from interleaving shared counters.
-                        async with _session_state_lock:
-                            # Log quality score for DB persistence
-                            quality_record = {
-                                "question": question_snap,
-                                "answer": answer_snap,
-                                "clarity": td["quality"]["clarity"],
-                                "depth": td["quality"]["depth"],
-                                "fluency": td["quality"].get("fluency", 0),
-                                "confidence": td["quality"].get("confidence", 0),
-                                "overall": quality_avg,
-                                "signals": [event["signal_name"] for event in signal_events if event.get("signal_name")],
-                                "concerns": [event["signal_name"] for event in signal_events if event.get("score_delta", 0.0) < 0],
-                            }
-                            answer_scores.append(quality_record)
-                            # Update depth history and follow-up counter
-                            # If last turn was MOVE_ON (topic pivot), reset counter so the new
-                            # topic starts fresh regardless of what the evaluator returns.
-                            if _last_action_was_move_on:
-                                _topic_follow_up_count = 0
-                                _topic_depth_history = []
-                                _collapse_stage = 0
-                                _last_action_was_move_on = False
-                                logger.info("[FOLLOWUP] New topic - counter reset")
-                            # SAFEGUARD: If counter is already at cap before this evaluation, force MOVE_ON
-                            # This prevents infinite loops if counter doesn't increment properly
-                            if _topic_follow_up_count >= follow_up_depth:
-                                action = "MOVE_ON"
-                                logger.info("[FOLLOWUP] SAFEGUARD: Counter at cap (%d) before eval, forcing MOVE_ON", _topic_follow_up_count)
-                            _topic_depth_history.append(td["quality"]["depth"])
-                            collapse_fired = any(
-                                ev.get("signal_name") == "follow_up_collapse"
-                                for ev in signal_events
-                            )
-                            stage_label_now = STAGE_CONFIGS[_current_stage_index].label if _current_stage_index < len(STAGE_CONFIGS) else "?"
-                            _active_topic_now = (_active_resume_topic if _current_stage_index == 0 else _active_skill_topic) or "?"
-                            logger.info(
-                                "[EVAL] turn=%d stage=%s action=%s quality=%.1f followups=%d/%d topic='%s' covered=%d enforce_move_on=%s",
-                                turn, stage_label_now, action, quality_avg,
-                                _topic_follow_up_count, follow_up_depth,
-                                _active_topic_now[:40],
-                                len(_covered_resume_topic_keys) + len(_covered_skill_topic_keys),
-                                _enforce_move_on_until_new,
-                            )
-                            if action in ("PROBE", "VERIFY"):
-                                if freeze_followup_increment:
-                                    logger.info(
-                                        "[FOLLOWUP] Contradiction clarification - counter frozen at %d",
-                                        _topic_follow_up_count,
-                                    )
-                                else:
-                                    _topic_follow_up_count += 1
-                                    logger.info(
-                                        "[FOLLOWUP] Incrementing follow-up count → %d/%d (action=%s mode=%s)",
-                                        _topic_follow_up_count, follow_up_depth, action, td["decision"].get("mode", "?"),
-                                    )
-                                if not freeze_followup_increment:
-                                    # Cap-based exhaustion (strict) + optional early quality exhaustion.
-                                    last_two_low = (
-                                        len(_topic_depth_history) >= 2
-                                        and _topic_depth_history[-1] < 4.0
-                                        and _topic_depth_history[-2] < 4.0
-                                    )
-                                    # After incrementing, check if we're at or past cap
-                                    hard_cap_hit = _topic_follow_up_count >= topic_follow_up_cap
-                                    if hard_cap_hit or (last_two_low and _topic_follow_up_count >= 2):
-                                        reason_note = "cap" if hard_cap_hit else "quality exhausted"
-                                        action = "MOVE_ON"
-                                        # Stage transitions are strictly time-driven; MOVE_ON only pivots topic.
-                                        next_stage_idx = _current_stage_index + 1
-                                        if next_stage_idx < len(STAGE_CONFIGS):
-                                            next_stage_label = STAGE_CONFIGS[next_stage_idx].label
-                                            if _current_stage_index == 0:
-                                                next_topic_hint = _fallback_next_topic(
-                                                    stage_index=0,
-                                                    exclude_topic=_active_resume_topic,
-                                                )
-                                                if next_topic_hint:
-                                                    _active_resume_topic = next_topic_hint
-                                            else:
-                                                next_topic_hint = _fallback_next_topic(
-                                                    stage_index=1,
-                                                    exclude_topic=_active_skill_topic,
-                                                )
-                                                if next_topic_hint:
-                                                    _active_skill_topic = next_topic_hint
-                                            next_goal = (
-                                                f"This thread is exhausted. Acknowledge briefly, close the current thread, and move on. "
-                                                f"If enough time remains in this stage, ask about {next_topic_hint}. "
-                                                f"If this stage is nearly done, bridge naturally into the {next_stage_label} stage."
-                                            )
-                                        else:
-                                            next_goal = "This thread is exhausted. Acknowledge briefly and move to the next topic — no announcement."
-                                        td["decision"]["action"] = "MOVE_ON"
-                                        td["decision"]["next_goal"] = next_goal
-                                        directive = (
-                                            f"[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
-                                            f"DECISION: MOVE_ON\n"
-                                            f"NEXT MOVE: {next_goal}"
-                                        )
-                                        logger.info("[FOLLOWUP] Moving on - reason=%s follow_ups=%d/%d", reason_note, _topic_follow_up_count, topic_follow_up_cap)
-                                        logger.info("[TOPIC] Moving to next topic = %s", next_topic_hint or "TBD")
-                                        _topic_follow_up_count = 0
-                                        _topic_depth_history = []
-                                        _collapse_stage = 0
-                                        _last_action_was_move_on = True
-                                    else:
-                                        logger.info("[FOLLOWUP] Probing #%d quality=%.1f", _topic_follow_up_count, quality_avg)
-                                        if collapse_fired:
-                                            _collapse_stage += 1
-                                        elif _collapse_stage > 0 and not collapse_fired:
-                                            _collapse_stage = max(0, _collapse_stage - 1)
-                            else:
-                                # action=MOVE_ON from run_turn_evaluation directly — compute specific next topic.
-                                _topic_follow_up_count = 0
-                                _topic_depth_history = []
-                                _collapse_stage = 0
-                                _last_action_was_move_on = True
-                                if _current_stage_index == 0:
-                                    if old_active_resume:
-                                        _covered_resume_topic_keys.add(_normalize_topic_key(old_active_resume))
-                                    _inline_next = _fallback_next_topic(stage_index=0, exclude_topic=_active_resume_topic)
-                                    if _inline_next:
-                                        _active_resume_topic = _inline_next
-                                else:
-                                    if old_active_skill:
-                                        _covered_skill_topic_keys.add(_normalize_topic_key(old_active_skill))
-                                    _inline_next = _fallback_next_topic(stage_index=1, exclude_topic=_active_skill_topic)
-                                    if _inline_next:
-                                        _active_skill_topic = _inline_next
-                                _inline_goal = (
-                                    f"Acknowledge briefly and pivot to: {_inline_next}. "
-                                    "Ask one focused question about what they personally built or owned there. "
-                                    "Do NOT follow up on the previous topic."
-                                )
-                                td["decision"]["next_goal"] = _inline_goal
-                                directive = (
-                                    "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
-                                    "DECISION: MOVE_ON\n"
-                                    f"NEXT MOVE: {_inline_goal}"
-                                )
-                                logger.info("[MOVE_ON] Evaluator-driven → next_topic=%s turn=%d", _inline_next, turn)
-                            if _last_action_was_move_on:
-                                if _current_stage_index == 0 and old_active_resume:
-                                    _covered_resume_topic_keys.add(_normalize_topic_key(old_active_resume))
-                                if _current_stage_index == 1 and old_active_skill:
-                                    _covered_skill_topic_keys.add(_normalize_topic_key(old_active_skill))
-                            # Update depth_decay cooldown state
-                            if any(ev.get("signal_name") == "depth_decay" for ev in signal_events):
-                                _last_depth_decay_turn = turn
-                            # Update the canonical TrustState only. Trust deltas are folded into the
-                            # single structured engine so we do not maintain a second trust line.
-                            _trust_state = apply_turn_decision(
-                                _trust_state,
-                                td,
-                                behavioral_toggles=evaluation_signal_toggles,
-                            )
-                            # Record the signal contract in one place and keep the legacy risk meter aligned.
-                            _now_elapsed = round(time.time() - session_start_time, 1) if session_start_time else 0.0
-                            for event in signal_events:
-                                event_delta = float(event.get("score_delta", 0.0) or 0.0)
-                                legacy_delta = int(round(max(0.0, -event_delta) * 100))
-                                signal_layer = str(event.get("signal_layer", "") or "")
-                                if legacy_delta:
-                                    if signal_layer == "hard_integrity":
-                                        integrity_risk = min(100, integrity_risk + legacy_delta)
-                                    else:
-                                        depth_risk = min(100, depth_risk + legacy_delta)
-                                    refresh_composite_risk()
-                                proctoring_events.append({
-                                    "event": event["signal_name"],
-                                    "signal_name": event["signal_name"],
-                                    "signal_layer": event["signal_layer"],
-                                    "risk_bucket": "integrity" if signal_layer == "hard_integrity" else "depth",
-                                    "confidence": event["confidence"],
-                                    "evidence": event["evidence"],
-                                    "trust_bucket_affected": event["trust_bucket_affected"],
-                                    "score_delta": event_delta,
-                                    "probe_mode": event["probe_mode"],
-                                    "recoverable": event["recoverable"],
-                                    "recruiter_visible": event["recruiter_visible"],
-                                    "turn": turn,
-                                    "elapsed_sec": _now_elapsed,
-                                    "score_after": suspicion_score,
-                                })
-                                logger.info(
-                                    f"[SIGNAL] {event['signal_name']} layer={event['signal_layer']} "
-                                    f"confidence={event['confidence']:.2f} trust_delta={event_delta:+.2f} "
-                                    f"visible={event['recruiter_visible']} turn={turn}"
-                                )
-                            # Contradiction recovery: if last turn surfaced a contradiction and
-                            # this turn the candidate moved on cleanly with decent quality,
-                            # treat it as resolved and restore hard_integrity.
-                            contradiction_enabled = bool(evaluation_signal_toggles.get("contradiction", False))
-                            contradiction_resolved_enabled = bool(
-                                evaluation_signal_toggles.get("contradiction_resolved", False)
-                            )
-                            if contradiction_enabled:
-                                _contradiction_state, contradiction_state_event = advance_contradiction_state(
-                                    _contradiction_state,
-                                    contradiction_alert,
-                                    turn=turn,
-                                    action=action,
-                                    quality_avg=quality_avg,
-                                )
-                                if contradiction_state_event:
-                                    _c_status = contradiction_state_event["status"]
-                                    _c_signal_name = (
-                                        "contradiction_resolved"
-                                        if _c_status == "candidate_clarified"
-                                        else "contradiction"
-                                    )
-                                    _c_confidence = (
-                                        0.90 if _c_status == "repeated"
-                                        else 0.80 if _c_status == "candidate_clarified"
-                                        else 0.95
-                                    )
-                                    proctoring_events.append({
-                                        "event": contradiction_state_event["event"],
-                                        "signal_name": _c_signal_name,
-                                        "signal_layer": "hard_integrity",
-                                        "source": contradiction_state_event["source"],
-                                        "status": _c_status,
-                                        "turn": contradiction_state_event["turn"],
-                                        "surfaced_turn": contradiction_state_event["surfaced_turn"],
-                                        "repeat_count": contradiction_state_event["repeat_count"],
-                                        "probe_type": contradiction_state_event["probe_type"],
-                                        "recovery_path": contradiction_state_event["recovery_path"],
-                                        "recruiter_note": contradiction_state_event["recruiter_note"],
-                                        "trust_delta": contradiction_state_event["trust_delta"],
-                                        "score_delta": contradiction_state_event["trust_delta"],
-                                        "score_after": suspicion_score,
-                                        "confidence": _c_confidence,
-                                        "recruiter_visible": True,
-                                        "evidence": contradiction_state_event.get("evidence", ""),
-                                        "contradiction_type": contradiction_state_event.get("contradiction_type", ""),
-                                        "elapsed_sec": _now_elapsed,
-                                    })
-                                    logger.info(
-                                        f"[CONTRADICTION] status={contradiction_state_event['status']} "
-                                        f"source={contradiction_state_event['source']} turn={turn} "
-                                        f"trust_delta={contradiction_state_event['trust_delta']:+.2f}"
-                                    )
-                                    if contradiction_state_event["status"] == "candidate_clarified" and contradiction_resolved_enabled:
-                                        _trust_state = apply_contradiction_resolved(_trust_state)
-                                        logger.info("[TRUST] Contradiction resolved by candidate - hard_integrity restored")
-                            # Feed depth signal into suspicion scoring
-                            if depth_signal == "SURFACE":
-                                depth_risk = min(100, depth_risk + 3)
-                                refresh_composite_risk()
-                            elif depth_signal == "DEEP" and current_interview_mode == "normal":
-                                current_interview_mode = "deep"
-                            # Checkpoint: flush newly appended AI signals to DB every 5 events
-                            # so signals survive an agent crash between turns.
-                            new_total = len(proctoring_events)
-                            _ai_signal_flush_counter += new_total - _ai_signal_flushed_count
-                            if _ai_signal_flush_counter >= 5:
-                                flush_slice = proctoring_events[_ai_signal_flushed_count:]
-                                _ai_signal_flushed_count = new_total
-                                _ai_signal_flush_counter = 0
-                                spawn_background_task(
-                                    checkpoint_ai_signals(app_id, flush_slice),
-                                    f"ai_signal_checkpoint_turn_{turn_snapshot}",
-                                )
-                        # Append contradiction context to directive if needed
-                        contradiction_summary = summarize_contradiction_state(_contradiction_state)
-                        evidence = contradiction_summary["evidence"]
-                        old_t = evidence.get("oldTurn", 0)
-                        old_v = _sanitize_claim_value(evidence.get("oldValue", ""))
-                        new_v = _sanitize_claim_value(evidence.get("newValue", ""))
-                        claim_t = re.sub(r"[^\w\s]", "", contradiction_summary["contradictionType"].replace("_", " ")).strip() or "contradiction"
-                        if contradiction_summary["active"] and bool(evaluation_signal_toggles.get("contradiction", False)):
-                            directive = (
-                                f"[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
-                                f"DECISION: CONTRADICTION {contradiction_summary['status'].upper()}\n"
-                                f"INCONSISTENCY DETECTED: {claim_t}\n"
-                                f"  Earlier (turn {old_t}): '{old_v}'\n"
-                                f"  Just now (turn {turn}): '{new_v}'\n"
-                                f"ACTION: Surface this with genuine confusion - not accusation."
-                                f"Say something like: 'wait, I want to make sure I understood this right - "
-                                f"earlier it sounded like {old_v}, but just now it sounds more like {new_v}. "
-                                f"Help me connect those two.' "
-                                f"If they clarify convincingly, accept it and move on. "
-                                f"If they stall or contradict again, note it internally and continue."
-                            )
-                        # On MOVE_ON, log what was just discussed so all future turns remember it.
-                        if action == "MOVE_ON" and question and answer:
-                            topic_line = question.split("?")[0].strip()[:80]
-                            answer_gist = " ".join(answer.split()[:20])
-                            _discussed_log.append(f"- {topic_line}: {answer_gist}")
-                        # Build the "already covered" block — injected into every directive.
-                        if _discussed_log:
-                            covered_block = (
-                                "\n[INTERVIEW MEMORY — DO NOT RE-ASK THESE, reference naturally if relevant]\n"
-                                + "\n".join(_discussed_log[-8:])
-                                + "\n"
-                            )
-                            directive = directive + covered_block
-                        # If a previous MOVE_ON was not honoured (drift guard active),
-                        # override any PROBE/VERIFY to MOVE_ON so the directive is fully
-                        # a pivot, not a mixed "probe but also move on" message.
-                        if _enforce_move_on_until_new and action in ("PROBE", "VERIFY"):
-                            action = "MOVE_ON"
-                            td["decision"]["action"] = "MOVE_ON"
-                            forced_hint = (_forced_next_topic_hint or "").strip()
-                            td["decision"]["next_goal"] = (
-                                "Previous topic was exhausted. Move to a completely different topic now. "
-                                + (f"Ask about: {forced_hint}." if forced_hint else "Pick the next uncovered resume/skill topic.")
-                            )
-                            directive = (
-                                "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
-                                "DECISION: MOVE_ON (ENFORCED)\n"
-                                f"NEXT MOVE: {td['decision']['next_goal']}"
-                            )
-                            logger.info("[TOPIC] Drift override - enforcing MOVE_ON (was %s)", action)
-                        if action == "MOVE_ON":
-                            _old_active = (_active_resume_topic if _current_stage_index == 0 else _active_skill_topic) or "?"
-                            logger.info(
-                                "[MOVE_ON] FROM='%s' → TO='%s' | covered_resume=%s",
-                                _old_active[:50],
-                                (_active_resume_topic if _current_stage_index == 0 else _active_skill_topic or "TBD")[:50],
-                                list(_covered_resume_topic_keys)[:5],
-                            )
-                            _enforce_move_on_until_new = True
-                            # Extract just the topic name from next_goal, not the full instruction text.
-                            # next_goal is a long sentence; we want only the specific topic hint for STRICT_MOVE_ON_RULE.
-                            _next_goal_text = (td.get("decision", {}).get("next_goal") or "").strip()
-                            # Pull the short topic name: look for "pivot to: X" or "ask about: X" or first sentence fragment
-                            _topic_match = re.search(r"(?:pivot to|ask about|topic:|next topic:)\s*([^.!\n]{3,60})", _next_goal_text, re.IGNORECASE)
-                            if _topic_match:
-                                _forced_next_topic_hint = _topic_match.group(1).strip()
-                            elif _current_stage_index == 0:
-                                _forced_next_topic_hint = (_active_resume_topic or "").split(" - ")[0][:60].strip() or None
-                            else:
-                                _forced_next_topic_hint = (_active_skill_topic or "").split(" - ")[0][:60].strip() or None
-                        expected_topic_tag = "NEW" if (action == "MOVE_ON" or _enforce_move_on_until_new) else "FOLLOWUP"
-                        _expected_topic_kind = expected_topic_tag
-                        directive = (
-                            directive
-                            + "\n[TOPIC_TAG_RULE - DO NOT SAY ALOUD]\n"
-                            + f"Start your next response with exactly [TOPIC:{expected_topic_tag}] on its own line. "
-                            + "Then write your natural interviewer response."
-                        )
-                        if action == "MOVE_ON" or _enforce_move_on_until_new:
-                            forced_topic = (_forced_next_topic_hint or "").strip()
-                            directive = (
-                                directive
-                                + "\n[STRICT_MOVE_ON_RULE - DO NOT SAY ALOUD]\n"
-                                + "You MUST pivot to a different topic in your very next question. "
-                                + "Do NOT ask another follow-up on the same topic."
-                                + (f"\nTarget next topic: {forced_topic}" if forced_topic else "")
-                            )
-                        # Stage boundary guard — only inject when we're close to the end or
-                        # in final seconds so we don't bloat context every turn.
-                        if _remaining_total_seconds_now() <= NO_NEW_QUESTION_CUTOFF_SECONDS + 30:
-                            directive = (
-                                directive
-                                + "\n[NO_EARLY_CLOSING_GUARD — DO NOT SAY ALOUD]\n"
-                                + "Do NOT end the interview, do NOT say goodbye/thanks-for-your-time/next-steps yet. "
-                                + "Continue with the next interview question naturally."
-                            )
-                        # Stage 1 priority guard — only inject during the first 2 resume questions
-                        # to prevent the LLM from asking custom/background before resume topics.
-                        if _current_stage_index == 0 and _resume_topic_questions_asked < 2:
-                            directive = (
-                                directive
-                                + "\n[STAGE_1_PRIORITY_GUARD — DO NOT SAY ALOUD]\n"
-                                + "You are still in early Stage 1. Ask resume ownership/project questions only. "
-                                + "Do NOT ask educational background, generic introduction, or recruiter custom questions yet. "
-                                + "You may ask those only after at least 2 resume-topic questions have already been asked."
-                            )
-                        # Log the directive being injected (first 300 chars) for debugging
-                        logger.info("[DIRECTIVE] → %s", directive[:300].replace("\n", " | "))
-                        # Remove previous directive to keep context clean
-                        remove_system_messages(chat_ctx, "[NEXT_TURN_DIRECTIVE")
-                        # On MOVE_ON, also clear RECENT_CONTEXT so the LLM doesn't
-                        # keep referencing the old topic and re-probe it next turn.
-                        if action == "MOVE_ON":
-                            remove_system_messages(chat_ctx, "[RECENT_CONTEXT")
-                        logger.info(
-                            "[ROUTER] action=%s mode=%s turn=%d topic=%s follow_ups=%d",
-                            td["decision"]["action"], td["decision"].get("mode", "normal"),
-                            turn,
-                            ((_active_resume_topic if _current_stage_index == 0 else _active_skill_topic) or "?")[:40],
-                            _topic_follow_up_count,
-                        )
-                        chat_ctx.add_message(role="system", content=directive)
-                    except Exception as e:
-                        logger.warning(f"[EVAL] Evaluator injection failed turn={turn_snapshot}: {e}", exc_info=True)
-                # Redis eval worker flow:
-                # 1. DEDUP GUARD FIRST — Deepgram fires 2 transcripts per turn. The guard must
-                #    wrap the ENTIRE eval block, not just the push, otherwise the 2nd transcript
-                #    runs a 4s inline eval even when the turn was already processed.
-                # 2. Apply pre-computed result from worker (~10ms Redis GET) — or inline fallback.
-                # 3. Push payload to worker AFTER mutations applied so state is current.
-                if _last_redis_push_turn == turn_snapshot:
-                    logger.info("[REDIS_EVAL] Duplicate STT transcript for turn=%d — skipping eval", turn_snapshot)
-                else:
-                    _last_redis_push_turn = turn_snapshot
-                    result_applied = await _read_and_apply_eval_result(turn_snapshot)
-                    if not result_applied:
-                        logger.info("[REDIS_EVAL] No worker result — running inline eval turn=%d", turn_snapshot)
-                        await _evaluate_and_inject()
-                    # Build payload AFTER mutations so enforce_move_on, active_topic etc. are current.
-                    _payload = _build_eval_payload()
-                    spawn_background_task(
-                        _push_payload_to_redis(_payload),
-                        f"redis_eval_push_turn_{turn_snapshot}",
-                    )
-
-
-        except Exception as e:
-            logger.debug(f"[TRANSCRIPT] User item processing failed: {e}")
-    @session.on("conversation_item_added")
-    def on_conversation_item_added(event) -> None:
-        nonlocal session_start_time, turn_count, \
-            _last_interviewer_question, _topic_follow_up_count, _topic_depth_history, _last_action_was_move_on, \
-            _question_asked_at, _answer_received_at, warmup_responses_received, warmup_complete, llm_spoke_event, _stage_start_time, _candidate_turn_since_last_assistant, \
-            _stage_situational_asked, _stage_behavioral_asked, \
-            _custom_q_reminder_fired, _custom_q_final_reminder_fired, _resume_topic_questions_asked, _user_turn_chain, _expected_topic_kind, _enforce_move_on_until_new, _forced_next_topic_hint, \
-            _active_resume_topic
-        try:
-            item = event.item
-            role = getattr(item, "role", None)
-            content = item.text_content
-            if role == "assistant":
-                # Read model-emitted topic tag from raw output (telemetry only).
-                raw_content = content or ""
-                emitted_topic_tag = None
-                for _raw_line in raw_content.splitlines():
-                    _stripped = _raw_line.strip()
-                    tag_match = re.search(r"\[TOPIC\s*:\s*(NEW|FOLLOWUP)", _stripped, re.IGNORECASE)
-                    if tag_match:
-                        emitted_topic_tag = tag_match.group(1).upper()
-                        break
-                # Apply/consume topic expectation only on substantive assistant turns.
-                # LiveKit can emit assistant items with empty/control content before the
-                # real question text; consuming expectation there causes follow-up drift.
-                _assistant_text = (raw_content or "").strip()
-                _is_substantive_assistant_turn = bool(_assistant_text) and _assistant_text != "<wait for response>"
-                if _is_substantive_assistant_turn:
-                    # Check drift FIRST before resetting counters, so we know if the AI complied.
-                    _drift_detected = (
-                        _expected_topic_kind == "NEW"
-                        and emitted_topic_tag is not None
-                        and emitted_topic_tag != "NEW"
-                    )
-                    if _expected_topic_kind and emitted_topic_tag and emitted_topic_tag != _expected_topic_kind:
-                        logger.warning("[TOPIC_DRIFT] expected=%s emitted=%s", _expected_topic_kind, emitted_topic_tag)
-                        if _drift_detected:
-                            # AI ignored MOVE_ON — keep MOVE_ON state alive, inject hard directive.
-                            _enforce_move_on_until_new = True
-                            _topic_follow_up_count = 0
-                            _topic_depth_history = []
-                            _last_action_was_move_on = True
-                            remove_system_messages(chat_ctx, "[RECENT_CONTEXT")
-                            remove_system_messages(chat_ctx, "[NEXT_TURN_DIRECTIVE")
-                            _forced_hint = (_forced_next_topic_hint or "").strip()
-                            chat_ctx.add_message(role="system", content=(
-                                "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
-                                "DECISION: MOVE_ON (RUNTIME GUARD)\n"
-                                "NEXT MOVE: You must ask about a different topic in your very next question. "
-                                "Do not ask another follow-up on the previous thread."
-                                + (f"\nTarget next topic: {_forced_hint}" if _forced_hint else "")
-                                + "\n[TOPIC_TAG_RULE - DO NOT SAY ALOUD]\n"
-                                "Start your next response with exactly [TOPIC:NEW] on its own line."
-                            ))
-                            logger.warning("[TOPIC_DRIFT] Applied runtime guard to force next turn pivot")
-                    elif _expected_topic_kind and not emitted_topic_tag:
-                        logger.warning("[TOPIC_DRIFT] expected=%s emitted=NONE", _expected_topic_kind)
-                        if _expected_topic_kind == "NEW":
-                            _enforce_move_on_until_new = True
-                    elif emitted_topic_tag == "NEW":
-                        # AI complied — clear drift guard and reset counters for fresh topic.
-                        _enforce_move_on_until_new = False
-                        _enforce_hint_snapshot = _forced_next_topic_hint
-                        _forced_next_topic_hint = None
-                        _topic_follow_up_count = 0
-                        _topic_depth_history = []
-                        _last_action_was_move_on = False
-                        _active_now = (_active_resume_topic if _current_stage_index == 0 else _active_skill_topic) or "?"
-                        logger.info(
-                            "[TOPIC] NEW confirmed — active_topic='%s' | expected_next='%s' | content_preview='%s'",
-                            _active_now[:50],
-                            (_enforce_hint_snapshot or "none")[:50],
-                            _assistant_text[:80],
-                        )
-                    elif _expected_topic_kind == "NEW" and not _drift_detected:
-                        # Expected NEW, got NEW (covered above) or no tag — reset counters.
-                        _topic_follow_up_count = 0
-                        _topic_depth_history = []
-                        _last_action_was_move_on = False
-                        logger.info("[TOPIC] New topic confirmed — counter reset")
-                    elif _expected_topic_kind == "FOLLOWUP":
-                        logger.debug("[TOPIC] expected=FOLLOWUP -> counter stays at %d", _topic_follow_up_count)
-                    else:
-                        logger.debug("[TOPIC] no expected topic kind set -> state unchanged (%d)", _topic_follow_up_count)
-
-                    # Consume expectation after substantive assistant turn only.
-                    _expected_topic_kind = None
-                else:
-                    logger.debug(
-                        "[TOPIC] assistant control/empty turn -> deferring expectation consume (expected=%s)",
-                        _expected_topic_kind or "NONE",
-                    )
-                content = sanitize_candidate_facing_text(content)
-            if not role:
-                return
-            # For user turns: allow empty content — warmup check must fire regardless.
-            if role != "user" and not content:
-                return
-            if role == "assistant":
-                if not _candidate_turn_since_last_assistant:
-                    # Prevent interviewer chaining multiple questions before candidate speaks.
-                    logger.warning("[TURN_GUARD] Suppressing consecutive assistant turn without candidate reply")
-                    return
-                if not llm_spoke_event.is_set():
-                    llm_spoke_event.set()
-            if role == "user":
-                _answer_received_at = time.perf_counter()
-                _candidate_turn_since_last_assistant = True
-                # ── Phase 1 → Phase 2: keep warmup as an explicit exchange
-                # before Stage 1 begins.
-                # INTERVIEW PHASE GATE: candidate speech is fully blocked until greeting
-                # audio has finished playing. warmup_responses_received will never
-                # increment while greeting_delivered_at is None.
-                if not warmup_complete and greeting_delivered_at is None:
-                    logger.info("[GATE] Candidate spoke during greeting — BLOCKED (interview phase not open yet)")
-                    return
-                if not warmup_complete:
-                    warmup_responses_received += 1
-                    logger.info(
-                        "[FLOW] Warmup response %d/%d received",
-                        warmup_responses_received,
-                        warmup_required_responses,
-                    )
-                    if warmup_responses_received >= warmup_required_responses:
-                        logger.info("[FLOW] Warmup complete ✓ — ENTERING STAGE 1")
-                        warmup_complete = True
-                        remove_system_messages(chat_ctx, "[WARMUP PHASE]")
-                        stage1_directive = stage1_directive_cached or build_stage_1_resume_directive(
-                            band=session_context.candidate_band,
-                            resume_brief=session_context.resume_brief,
-                        )
-                        chat_ctx.add_message(role="system", content=stage1_directive)
-                        chat_ctx.add_message(
-                            role="system",
-                            content=(
-                                "[STAGE_1_PRIORITY_GUARD — DO NOT SAY ALOUD]\n"
-                                "Your FIRST question must be about the resume anchor project. "
-                                "Do NOT ask educational background, generic introduction, or recruiter custom questions first. "
-                                "Start by asking what they personally built or owned in the anchor project listed above."
-                            ),
-                        )
-                        _active_resume_topic = (
-                            str(getattr(session_context.resume_brief, "anchor_item", "") or "").split(" - ", 1)[0].strip()
-                            or (_resume_topic_candidates()[0] if _resume_topic_candidates() else None)
-                        )
-                        _stage_start_time = time.monotonic()
-                        stage1_budget = _stage_budgets_secs.get(0, 0)
-                        logger.info("[STAGE1] ========== STAGE 1 RESUME PHASE STARTED ==========")
-                        logger.info("[STAGE1] Budget: %d seconds (%.1f min)", stage1_budget, stage1_budget/60)
-                        logger.info("[STAGE1] Opening topic (anchor): %s", _active_resume_topic or "auto-select")
-                        logger.info("[STAGE1] Max follow-ups per topic: 2 (default)")
-                        logger.info("[STAGE1] Skills to explore: %s", session_context.resume_brief.skills[:3] if session_context.resume_brief.skills else "auto")
-                        logger.info("[STAGE1] Start interviewing now - ask about: '%s'", _active_resume_topic or "their background")
-                        logger.info("[STAGE1] All resume topic candidates: %s", _resume_topic_candidates())
-                        # Pre-seed Redis with a correct Stage 1 bootstrap directive.
-                        # At the first real answer (follow_up_count=0 on the anchor), PROBE is always
-                        # correct — we can't know quality yet, but we know we should probe the anchor
-                        # before moving on. Pure Redis SETEX (~50ms, no LLM call). By the time the
-                        # candidate finishes their first real answer, this is already in Redis and the
-                        # fast path fires instead of the 2s inline eval.
-                        _bootstrap_anchor = _active_resume_topic or "the anchor project"
-                        _bootstrap_directive = (
-                            f"[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
-                            f"DECISION: PROBE\n"
-                            f"NEXT MOVE: Dig deeper into {_bootstrap_anchor}. Ask one specific question about "
-                            f"what they personally built, decided, or owned. Focus on their role, the problem "
-                            f"they solved, and the outcome. Do NOT move on yet.\n"
-                            f"[TOPIC_TAG_RULE - DO NOT SAY ALOUD]\n"
-                            f"Start your next response with exactly [TOPIC:FOLLOWUP] on its own line."
-                        )
-                        _bootstrap_result = {
-                            "turn": turn_count + 1,
-                            "action": "PROBE",
-                            "directive": _bootstrap_directive,
-                            "new_active_resume_topic": _bootstrap_anchor,
-                            "new_active_skill_topic": None,
-                            "new_covered_resume_topic_keys": [],
-                            "new_covered_skill_topic_keys": [],
-                            "new_topic_follow_up_count": 1,
-                            "new_topic_depth_history": [],
-                            "new_collapse_stage": 0,
-                            "new_last_action_was_move_on": False,
-                            "new_enforce_move_on_until_new": False,
-                            "new_forced_next_topic_hint": None,
-                            "new_expected_topic_kind": "FOLLOWUP",
-                            "new_trust_state": None,
-                            "new_contradiction_state": None,
-                            "new_claim_index": None,
-                            "new_current_interview_mode": current_interview_mode,
-                            "risk_integrity_delta": 0,
-                            "risk_depth_delta": 0,
-                            "discussed_log_entry": None,
-                            "quality_record": None,
-                            "signal_events": [],
-                            "contradiction_state_event": None,
-                            "td": {"decision": {"action": "PROBE", "mode": "normal", "next_goal": f"Probe {_bootstrap_anchor}"}, "quality": {}},
-                        }
-                        async def _preseed_redis_bootstrap(result=_bootstrap_result, anchor=_bootstrap_anchor):
-                            if _eval_redis_client is None:
-                                return
-                            try:
-                                result_key = f"interview:{app_id}:eval_result"
-                                await _eval_redis_client.setex(result_key, 1800, json.dumps(result).encode())
-                                logger.info("[REDIS_EVAL] Bootstrap PROBE pre-seeded for first real answer — topic='%s'", anchor)
-                            except Exception as _be:
-                                logger.warning("[REDIS_EVAL] Bootstrap pre-seed failed: %s", _be)
-                        spawn_background_task(_preseed_redis_bootstrap(), "redis_bootstrap_stage1")
-                # Append candidate response to transcript before background processing
-                candidate_text = content.replace("<wait for response>", "").strip()
-                if candidate_text:
-                    append_transcript_line("Candidate", candidate_text)
-                    logger.info(f"[TRANSCRIPT] Candidate: {candidate_text[:60]}...")
-                turn_snapshot = turn_count
                 prev_chain = _user_turn_chain
                 async def _run_user_turn_serialized():
                     if prev_chain:
@@ -2667,33 +1603,6 @@ async def entrypoint(ctx: JobContext):
                 q_match = re.search(r'([^.!?]+\?)\s*$', clean_content.strip())
                 if q_match:
                     _last_interviewer_question = q_match.group(1).strip()
-                if _current_stage_index == 0 and _last_interviewer_question:
-                    _q_l = _last_interviewer_question.lower()
-                    _is_background = bool(_BACKGROUND_EARLY_RE.search(_q_l))
-                    _is_custom_like = False
-                    if _custom_questions:
-                        _asked_words_q = _expand_custom_q_tokens(re.sub(r"[^a-z0-9\\s]", " ", _q_l))
-                        for _cq_for_count in _custom_questions:
-                            _cq_words_for_count = _expand_custom_q_tokens(_cq_for_count.normalized)
-                            if _cq_words_for_count and len(_cq_words_for_count.intersection(_asked_words_q)) >= 2:
-                                _is_custom_like = True
-                                break
-                    if not _is_background and not _is_custom_like:
-                        _resume_topic_questions_asked += 1
-                        logger.info(
-                            "[STAGE1] Resume-topic question count: %d",
-                            _resume_topic_questions_asked,
-                        )
-                # Detect whether this assistant turn contained a situational or behavioral question
-                # so we know if the mandatory quota has been fulfilled for the current stage.
-                if _SITUATIONAL_RE.search(clean_content):
-                    if not _stage_situational_asked:
-                        logger.info("[QUOTA] Situational question detected in assistant turn — quota fulfilled for this stage")
-                    _stage_situational_asked = True
-                if _BEHAVIORAL_RE.search(clean_content):
-                    if not _stage_behavioral_asked:
-                        logger.info("[QUOTA] Behavioral question detected in assistant turn — quota fulfilled for this stage")
-                    _stage_behavioral_asked = True
                 # Detect which custom questions were asked in this assistant turn.
                 # Match by checking if the key words of each custom question appear in the output.
                 if _custom_questions:
@@ -2726,15 +1635,8 @@ async def entrypoint(ctx: JobContext):
                 _question_asked_at = time.perf_counter()
                 _candidate_turn_since_last_assistant = False
                 turn_count += 1
-            # ── Stage advance check on every turn (assistant or candidate) ──────
-            if warmup_complete:
-                _now_mono = time.monotonic()
-                spawn_background_task(
-                    _advance_stage_if_due_async(_now_mono),
-                    "advance_stage_check",
-                )
-            # --- Periodic auto-save every 5 turns to prevent data loss ---
-            if len(transcript_lines) > 0:
+            # --- Periodic auto-save every 5 assistant turns to prevent data loss ---
+            if role == "assistant" and turn_count % 5 == 0 and len(transcript_lines) > 0:
                 start_t = session_start_time
                 lines_snapshot = list(transcript_lines)
                 app_id_snap = app_id
@@ -2859,7 +1761,6 @@ async def entrypoint(ctx: JobContext):
         await _publish_launch_prereqs_ready()
         ready_event.set()
     if ready_event.is_set() and not disconnect_event.is_set():
-        _initialize_stage_budgets()
         logger.info(
             "[FLOW] Session started — candidate=%s role=%s band=%s tts=%s llm=%s boot=%dms",
             candidate_name, job_title, session_context.candidate_band,
@@ -2968,7 +1869,6 @@ async def entrypoint(ctx: JobContext):
     # Use the greeting-begin timestamp so `remaining` counts from when greeting started,
     # NOT from when the greeting audio finished. This makes the 20-min window exact.
     session_loop_start = _interview_timer_start
-    _last_periodic_stage_check = time.monotonic()
     _last_timer_log = time.monotonic()
     while True:
         elapsed = time.monotonic() - session_loop_start
@@ -2980,44 +1880,8 @@ async def entrypoint(ctx: JobContext):
         _now = time.monotonic()
         # Log remaining time every 60s so it's visible in terminal
         if _now - _last_timer_log >= 60.0:
-            stage_label = STAGE_CONFIGS[_current_stage_index].label if _current_stage_index < len(STAGE_CONFIGS) else "?"
-            logger.info("[TIMER] remaining=%.0fs stage=%s(%d) turn=%d", remaining, stage_label, _current_stage_index + 1, turn_count)
+            logger.info("[TIMER] remaining=%.0fs turn=%d", remaining, turn_count)
             _last_timer_log = _now
-        # Periodic stage advance every 10s
-        if warmup_complete and _now - _last_periodic_stage_check >= 10.0:
-            await _advance_stage_if_due_async(_now)
-            _last_periodic_stage_check = _now
-        # Mid-stage quota reminder: fires once at 50% of the current stage budget
-        # if the mandatory situational or behavioral question hasn't been asked yet.
-        if (
-            warmup_complete
-            and not _stage_quota_reminder_fired
-            and _stage_start_time > 0
-            and not is_agent_speaking
-        ):
-            _stage_budget = _stage_budgets_secs.get(_current_stage_index, 0)
-            _time_in_stage = _now - _stage_start_time
-            if _stage_budget > 0 and _time_in_stage >= _stage_budget * 0.5:
-                _missing = []
-                if not _stage_situational_asked:
-                    _missing.append("situational")
-                if not _stage_behavioral_asked:
-                    _missing.append("behavioral")
-                if _missing:
-                    _quota_msg = ", ".join(_missing)
-                    remove_system_messages(chat_ctx, "[QUOTA REMINDER]")
-                    chat_ctx.add_message(
-                        role="system",
-                        content=(
-                            f"[QUOTA REMINDER — DO NOT SAY ALOUD]\n"
-                            f"You are halfway through this stage and have not yet asked the mandatory "
-                            f"{_quota_msg} question(s). You MUST ask {'them' if len(_missing) > 1 else 'it'} "
-                            f"before this stage ends. Weave it in naturally on your next 1-2 turns — "
-                            f"do not announce it or break the conversational flow."
-                        ),
-                    )
-                    logger.info("[FLOW] Quota reminder — missing: %s", _quota_msg)
-                _stage_quota_reminder_fired = True
         # Custom question coverage reminder — fires at 75% of total interview time if any
         # custom questions are still unasked. This is a hard nudge: they MUST be asked.
         if (
@@ -3079,7 +1943,7 @@ async def entrypoint(ctx: JobContext):
                 logger.info("[FLOW] Custom Q final-window checkpoint — all custom questions covered")
             _custom_q_final_reminder_fired = True
         if (
-            remaining <= NO_NEW_QUESTION_CUTOFF_SECONDS
+            remaining <= FINAL_WINDOW_SECONDS
             and not _final_no_new_question_guard
             and not is_agent_speaking
         ):
@@ -3112,7 +1976,7 @@ async def entrypoint(ctx: JobContext):
             if awaiting_candidate_response and awaiting_candidate_since is not None
             else 0.0
         )
-        # -- Stage 1: Warning --
+        # -- Inactivity Warning --
         # Extra guard: don't fire if agent just finished speaking within last 5s
         # (covers the LLM "thinking/typing" window before TTS starts)
         agent_just_spoke = (
@@ -3137,7 +2001,7 @@ async def entrypoint(ctx: JobContext):
                 logger.info(f"[NUDGE] {INACTIVITY_WARNING_SECS:.0f}s termination warning delivered")
             except Exception as e:
                 logger.warning(f"[NUDGE] Failed to deliver warning: {e}")
-        # -- Stage 2: Final Termination --
+        # -- Inactivity Final Termination --
         if (
             not is_agent_speaking
             and not is_candidate_speaking
