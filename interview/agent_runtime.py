@@ -1883,8 +1883,9 @@ async def entrypoint(ctx: JobContext):
                 # Save Ishita's line to transcript
                 append_transcript_line("Interviewer", clean_content)
                 # Track last question for eval engine.
-                # Prefer ?-terminated sentence; fall back to last sentence of 20+ chars
-                # so declarative prompts like "Tell me what you built in X." are captured.
+                # Prefer ?-terminated sentence; fall back to last sentence of 20+ chars.
+                # Final fallback: use the entire clean_content (capped) so question_snap
+                # is NEVER empty after Turn 1 — empty question_snap would block eval.
                 _q_text = clean_content.strip()
                 q_match = re.search(r'([^.!?]+\?)\s*$', _q_text)
                 if q_match:
@@ -1893,6 +1894,10 @@ async def entrypoint(ctx: JobContext):
                     _fallback_q = re.search(r'(?:(?<=[.!?])\s+|^)([^.!?]{20,}[.!?]?)\s*$', _q_text)
                     if _fallback_q:
                         _last_interviewer_question = _fallback_q.group(1).strip()
+                    else:
+                        # Last resort: use truncated full content so eval is never blocked by empty question
+                        _last_interviewer_question = _q_text[:200]
+                logger.debug("[QUESTION_TRACK] turn=%d last_q=%r", turn_count, _last_interviewer_question[:60])
                 # Track custom question coverage
                 if _custom_questions:
                     _q_lower = clean_content.lower()
