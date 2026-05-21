@@ -1475,6 +1475,11 @@ async def entrypoint(ctx: JobContext):
 
             # Start eval only after warmup has fully finished.
             # Warmup = turns 1-2, interview starts at turn 3, so first worker job is turn 3.
+            _gate_reason = (
+                "PASS" if (warmup_complete and turn_snapshot > 2 and question_snap)
+                else f"BLOCK(warmup={warmup_complete},turn={turn_snapshot}>2={turn_snapshot>2},question={'Y' if question_snap else 'EMPTY'},redis={'Y' if _eval_redis_client else 'NONE'})"
+            )
+            logger.info("[EVAL_GATE] turn=%d → %s", turn_snapshot, _gate_reason)
             if warmup_complete and turn_snapshot > 2 and question_snap:
                 score_history_snap = list(_trust_state.get("score_history", []))
                 turns_since_decay_snap = (
@@ -1835,12 +1840,17 @@ async def entrypoint(ctx: JobContext):
                     logger.info("[REDIS_EVAL] No pre-computed result for turn=%d - skipping inline eval", turn_snapshot)
 
                 # PUSH current turn's answer for the worker to evaluate during Ishita's response
-                await _push_payload_to_redis(_build_eval_payload())
+                payload = _build_eval_payload()
+                logger.info(
+                    "[EVAL_DISPATCH] Pushing turn=%d to eval_worker | answer=%r | question=%r",
+                    turn_snapshot, payload.get("answer", "")[:60], payload.get("question", "")[:60],
+                )
+                await _push_payload_to_redis(payload)
 
         except Exception as e:
-            logger.warning(f"[TRANSCRIPT] User eval error: {e}")
+            logger.error("[EVAL] _process_user_conversation_item failed turn=%d: %s", turn_snapshot, e, exc_info=True)
 
-    #  TRANSCRIPT EVENT HANDLER 
+    #  TRANSCRIPT EVENT HANDLER
     # Registered on session "conversation_item_added"  fires for BOTH Ishita
     # (assistant) and Candidate (user) turns. Handles:
     #    Transcript persistence for both speakers
