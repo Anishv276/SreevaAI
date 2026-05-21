@@ -1966,8 +1966,11 @@ async def entrypoint(ctx: JobContext):
                     if len(_stt_fragment_buffer[turn_count]) == 1 or _stt_completion_timers[turn_count] is None:
                         async def _timeout_handler(_turn=turn_count, _event=event):
                             try:
-                                # Wait 150ms for more fragments (short window for true stream completion)
-                                await asyncio.sleep(0.15)
+                                # FIX: Wait 300ms for more fragments to prevent duplicate evaluations
+                                # Multi-fragment utterances (6+ fragments over 20+ seconds) were triggering
+                                # multiple evaluations when 150ms timeout fired too early. 300ms allows
+                                # ~6-8 fragments/sec (typical STT rate) while maintaining low latency.
+                                await asyncio.sleep(0.3)
                                 # If buffer still has content, process it
                                 if _turn in _stt_fragment_buffer and _stt_fragment_buffer[_turn]:
                                     await _trigger_processing(_turn=_turn, _event=_event, _reason="timeout")
@@ -1982,7 +1985,7 @@ async def entrypoint(ctx: JobContext):
 
                         # Schedule new timeout
                         _stt_completion_timers[turn_count] = asyncio.create_task(_timeout_handler(turn_count, event))
-                        logger.debug(f"[STT_BUFFER] turn={turn_count} - waiting for sentence completion or timeout (150ms)")
+                        logger.debug(f"[STT_BUFFER] turn={turn_count} - waiting for sentence completion or timeout (300ms)")
         except Exception as _e:
             logger.warning("[TRANSCRIPT] on_conversation_item_added error: %s", _e)
 
