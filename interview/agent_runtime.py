@@ -1244,6 +1244,19 @@ async def entrypoint(ctx: JobContext):
     # --- Real-time Transcript Streaming is handled by LiveKit automatically ---
     # STT Fragment buffer: collects partial results until final comes
     _stt_fragment_buffer: dict[int, list[str]] = {}  # turn → [fragment1, fragment2, ...]
+    _stt_completion_timers: dict[int, asyncio.Task | None] = {}  # turn → timeout task
+
+    def _is_sentence_complete(text: str) -> bool:
+        """Check if text is a complete sentence (ends with . ! ? and has enough content)."""
+        stripped = text.strip()
+        if not stripped:
+            return False
+        # Minimum 3 words to be meaningful
+        word_count = len([w for w in stripped.split() if w])
+        if word_count < 3:
+            return False
+        # Must end with sentence-ending punctuation
+        return stripped[-1] in '.!?'
 
     async def _process_user_conversation_item(
         event,
@@ -1853,38 +1866,78 @@ async def entrypoint(ctx: JobContext):
                 # Buffer the fragment
                 if turn_count not in _stt_fragment_buffer:
                     _stt_fragment_buffer[turn_count] = []
-                _stt_fragment_buffer[turn_count].append(content)
-                logger.debug(f"[STT_BUFFER] turn={turn_count} fragment #{len(_stt_fragment_buffer[turn_count])}: '{content[:50]}...'")
+                    _stt_completion_timers[turn_count] = None
 
-                # Dispatch to serialized user-turn processing chain with STT buffering delay
-                # Only dispatch if this is a new turn (not a continuation from previous event)
-                prev_chain = _user_turn_chain
-                async def _run_serialized(_prev=prev_chain, _turn=turn_count):
-                    if _prev:
+                _stt_fragment_buffer[turn_count].append(content)
+                consolidated_so_far = " ".join(f.strip() for f in _stt_fragment_buffer[turn_count] if f.strip())
+                logger.debug(
+                    f"[STT_BUFFER] turn={turn_count} fragment #{len(_stt_fragment_buffer[turn_count])}: '{content[:50]}...' "
+                    f"(consolidated: '{consolidated_so_far[:60]}...')"
+                )
+
+                # Check if sentence is complete (ends with . ! ? and has enough content)
+                is_complete = _is_sentence_complete(consolidated_so_far)
+
+                # Helper to trigger processing
+                async def _trigger_processing(_turn=turn_count, _event=event, _reason=""):
+                    # Cancel any pending timeout for this turn
+                    if _turn in _stt_completion_timers and _stt_completion_timers[_turn]:
+                        _stt_completion_timers[_turn].cancel()
+                        _stt_completion_timers[_turn] = None
+
+                    # Serialize after previous turn completes
+                    prev_chain = _user_turn_chain
+                    if prev_chain:
                         try:
-                            await _prev
+                            await prev_chain
                         except Exception:
                             pass
-                    # Wait 400ms to ensure all STT fragments for this turn have arrived
-                    await asyncio.sleep(0.4)
 
                     # Get consolidated content from buffer
                     all_fragments = _stt_fragment_buffer.pop(_turn, [])
+                    _stt_completion_timers.pop(_turn, None)
                     consolidated_content = " ".join(f.strip() for f in all_fragments if f.strip())
 
                     if consolidated_content:
                         logger.info(
-                            f"[STT_CONSOLIDATED] turn={_turn} - {len(all_fragments)} fragments → complete utterance: '{consolidated_content[:80]}...'"
+                            f"[STT_CONSOLIDATED] turn={_turn} - {len(all_fragments)} fragments → "
+                            f"complete utterance ({_reason}): '{consolidated_content[:80]}...'"
                         )
                         # Process with consolidated, complete content (not fragments)
-                        await _process_user_conversation_item(event, consolidated_content, "user", _turn)
+                        await _process_user_conversation_item(_event, consolidated_content, "user", _turn)
                     else:
                         logger.debug(f"[STT_BUFFER] turn={_turn} - no content after consolidation")
 
-                _user_turn_chain = spawn_background_task(
-                    _run_serialized(),
-                    f"user_turn_{turn_count}",
-                )
+                if is_complete:
+                    # Sentence complete: process immediately
+                    logger.debug(f"[STT_BUFFER] turn={turn_count} - sentence complete, triggering evaluation immediately")
+                    _user_turn_chain = spawn_background_task(
+                        _trigger_processing(_turn=turn_count, _event=event, _reason="sentence_complete"),
+                        f"user_turn_{turn_count}",
+                    )
+                else:
+                    # Sentence not complete yet: schedule timeout to catch end of speech
+                    # If this is the first fragment for this turn, set up timeout
+                    if len(_stt_fragment_buffer[turn_count]) == 1 or _stt_completion_timers[turn_count] is None:
+                        async def _timeout_handler(_turn=turn_count, _event=event):
+                            try:
+                                # Wait 150ms for more fragments (short window for true stream completion)
+                                await asyncio.sleep(0.15)
+                                # If buffer still has content, process it
+                                if _turn in _stt_fragment_buffer and _stt_fragment_buffer[_turn]:
+                                    await _trigger_processing(_turn=_turn, _event=_event, _reason="timeout")
+                            except asyncio.CancelledError:
+                                logger.debug(f"[STT_BUFFER] turn={_turn} - timeout cancelled (sentence completed)")
+                            except Exception as e:
+                                logger.warning(f"[STT_BUFFER] turn={_turn} - timeout error: {e}")
+
+                        # Cancel previous timeout if any
+                        if _stt_completion_timers[turn_count]:
+                            _stt_completion_timers[turn_count].cancel()
+
+                        # Schedule new timeout
+                        _stt_completion_timers[turn_count] = asyncio.create_task(_timeout_handler(turn_count, event))
+                        logger.debug(f"[STT_BUFFER] turn={turn_count} - waiting for sentence completion or timeout (150ms)")
         except Exception as _e:
             logger.warning("[TRANSCRIPT] on_conversation_item_added error: %s", _e)
 
