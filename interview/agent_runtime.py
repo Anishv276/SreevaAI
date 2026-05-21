@@ -1267,46 +1267,22 @@ async def entrypoint(ctx: JobContext):
             _claim_index, _contradictions_found, \
             _trust_state, _contradiction_state, greeting_delivered_at, \
             _ai_signal_flush_counter, _ai_signal_flushed_count, \
-            warmup_complete, _last_depth_decay_turn, _stt_fragment_buffer
+            warmup_complete, _last_depth_decay_turn
         try:
             if not content or role != "user":
                 return
             # Block all STT processing until greeting is fully delivered
             if greeting_delivered_at is None:
-                logger.debug("[GREETING_BLOCK] Candidate spoke before greeting finished - buffering")
+                logger.debug("[GREETING_BLOCK] Candidate spoke before greeting finished")
                 return
             # --- STT text cleanup / noise suppression ---
             content = _clean_stt_text(content)
             if not content:
                 return
 
-            # Check if this is a final STT result or partial fragment
-            is_final_result = getattr(event, "item", None) is None or \
-                            not getattr(getattr(event, "item", None), "partial", False)
-
-            # Buffer this fragment
-            if turn_snapshot not in _stt_fragment_buffer:
-                _stt_fragment_buffer[turn_snapshot] = []
-            _stt_fragment_buffer[turn_snapshot].append(content)
-
-            # If not final, wait for more fragments
-            if not is_final_result:
-                logger.debug(
-                    f"[STT_BUFFER] turn={turn_snapshot} fragment {len(_stt_fragment_buffer[turn_snapshot])}: '{content[:50]}...' (partial, waiting for final)"
-                )
-                return
-
-            # Final result received - consolidate all fragments
-            all_fragments = _stt_fragment_buffer.pop(turn_snapshot, [])
-            consolidated_content = " ".join(f.strip() for f in all_fragments if f.strip())
-
-            if len(all_fragments) > 1:
-                logger.info(
-                    f"[STT_BUFFER] ✅ turn={turn_snapshot} FINAL - consolidated {len(all_fragments)} fragments: '{consolidated_content[:80]}...'"
-                )
-                content = consolidated_content
-            elif all_fragments:
-                content = all_fragments[0]
+            # NOTE: content here is already consolidated (multiple fragments merged)
+            # This is done in on_conversation_item_added with 400ms buffering delay
+            # before this function is called
             # During the first few seconds after Ishita's opening greeting, short
             # echo-like fragments ("hi", "hello", "okay") are often the AI's own
             # voice leaking back into STT rather than a real candidate turn.
@@ -1883,15 +1859,39 @@ async def entrypoint(ctx: JobContext):
                     warmup_complete = True
                     remove_system_messages(chat_ctx, "[WARMUP PHASE]")
                     logger.info("[WARMUP] ✓ WARMUP COMPLETE at turn=%d — INTERVIEW PHASE ACTIVE", turn_count)
-                # Dispatch to serialized user-turn processing chain
+
+                # STT Fragment Buffering: accumulate all fragments for this turn, process only once
+                # Buffer the fragment
+                if turn_count not in _stt_fragment_buffer:
+                    _stt_fragment_buffer[turn_count] = []
+                _stt_fragment_buffer[turn_count].append(content)
+                logger.debug(f"[STT_BUFFER] turn={turn_count} fragment #{len(_stt_fragment_buffer[turn_count])}: '{content[:50]}...'")
+
+                # Dispatch to serialized user-turn processing chain with STT buffering delay
+                # Only dispatch if this is a new turn (not a continuation from previous event)
                 prev_chain = _user_turn_chain
-                async def _run_serialized(_prev=prev_chain, _content=content, _turn=turn_count):
+                async def _run_serialized(_prev=prev_chain, _turn=turn_count):
                     if _prev:
                         try:
                             await _prev
                         except Exception:
                             pass
-                    await _process_user_conversation_item(event, _content, role, _turn)
+                    # Wait 400ms to ensure all STT fragments for this turn have arrived
+                    await asyncio.sleep(0.4)
+
+                    # Get consolidated content from buffer
+                    all_fragments = _stt_fragment_buffer.pop(_turn, [])
+                    consolidated_content = " ".join(f.strip() for f in all_fragments if f.strip())
+
+                    if consolidated_content:
+                        logger.info(
+                            f"[STT_CONSOLIDATED] turn={_turn} - {len(all_fragments)} fragments → complete utterance: '{consolidated_content[:80]}...'"
+                        )
+                        # Process with consolidated, complete content (not fragments)
+                        await _process_user_conversation_item(event, consolidated_content, "user", _turn)
+                    else:
+                        logger.debug(f"[STT_BUFFER] turn={_turn} - no content after consolidation")
+
                 _user_turn_chain = spawn_background_task(
                     _run_serialized(),
                     f"user_turn_{turn_count}",
