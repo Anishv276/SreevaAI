@@ -1566,7 +1566,15 @@ async def entrypoint(ctx: JobContext):
                     # Apply all mutations atomically under lock
                     # (variables already declared as nonlocal in _process_user_conversation_item scope)
                     async with _session_state_lock:
+                        old_topic = _active_topic
                         _active_topic = result.get("new_active_topic", _active_topic)
+                        if old_topic != _active_topic:
+                            logger.info(
+                                "[TOPIC_CHANGE] %s → %s (turn=%d)",
+                                (old_topic or "?")[:50],
+                                (_active_topic or "?")[:50],
+                                result.get("turn", turn_for_log),
+                            )
                         _covered_topic_keys = set(result.get("new_covered_topic_keys") or [])
                         # PART 3: Update TopicState from result
                         new_topic_state = result.get("new_active_topic_state")
