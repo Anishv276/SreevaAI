@@ -812,20 +812,23 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
             directive = DirectiveCompiler.verify_contradiction(disturbance_hits)
             freeze_followup_increment = True
             logger.info(
-                "[EVAL_PIPELINE] ⚠ CONTRADICTION signal → clarification needed turn=%d",
-                p.turn,
+                "[SIGNAL→BEHAVIOR] turn=%d | signal=contradiction | action=VERIFY | "
+                "EXPECTED_BEHAVIOR: agent asks contradiction-clarification question | "
+                "directive_preview: %s",
+                p.turn, directive[:120].replace("\n", " | "),
             )
         elif ownership_or_example_hit:
-            # With saturation scoring, probe deeper until saturation or clear signal pattern
-            logger.info(
-                "[EVAL_PIPELINE] ⚠ OWNERSHIP/EXAMPLE signal → probe for clarity turn=%d",
-                p.turn,
-            )
             td["decision"]["next_goal"] = (
                 "Ask one concise clarification question to make the answer concrete and personal. "
                 "If still vague after this clarification flow, move on to the next topic."
             )
             directive = DirectiveCompiler.verify_ownership(disturbance_hits)
+            logger.info(
+                "[SIGNAL→BEHAVIOR] turn=%d | signal=%s | action=VERIFY | "
+                "EXPECTED_BEHAVIOR: agent asks 'what did YOU specifically do / give a concrete example' | "
+                "directive_preview: %s",
+                p.turn, disturbance_hits, directive[:120].replace("\n", " | "),
+            )
 
     # ── Step 5: Already-covered question dedupe ──────────────────────────────
     if action in ("PROBE", "VERIFY") and tracker.is_question_duplicate(p.question):
@@ -993,6 +996,13 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
                 "PROBE INTENT: Anchor your question to something specific they actually said — "
                 "a project name, a number, a claim. Don't use a generic opener."
             )
+            logger.info(
+                "[SIGNAL→BEHAVIOR] turn=%d | action=PROBE(%s) | signals=[%s] | "
+                "EXPECTED_BEHAVIOR: agent asks '%s' | saturation=%.0f%%",
+                p.turn, probe_family,
+                ", ".join(signal_fired_names) if signal_fired_names else "none",
+                probe_goal[:80], pct_saturated,
+            )
             if not any_signal_fired:
                 current_topic_state.advance_probe_rotation(signal_fired=False)
                 logger.info(
@@ -1090,6 +1100,30 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         _sat_detail,
         str(new_active_topic or "?")[:50],
         list(tracker.covered_keys) if tracker.covered_keys else "none",
+    )
+    # ── E2E PIPELINE VERIFICATION LOG ─────────────────────────────────────────
+    logger.info(
+        "[E2E_VERIFY] turn=%d | PIPELINE_OUTPUT:\n"
+        "  signals_fired    : %s\n"
+        "  action_decided   : %s\n"
+        "  EXPECTED_BEHAVIOR: %s\n"
+        "  directive_injected: %s\n"
+        "  topic_after      : %s (was: %s)\n"
+        "  covered_topics   : %d total",
+        p.turn,
+        _signal_names_final or ["none"],
+        action,
+        (
+            "ask clarification (contradiction)" if action == "VERIFY" and contradiction_hit else
+            "ask for concrete example / ownership" if action == "VERIFY" and ownership_or_example_hit else
+            f"probe deeper on '{new_active_topic}' ({td['decision'].get('mode','?')})" if action == "PROBE" else
+            f"move to next topic '{new_active_topic}'" if action == "MOVE_ON" else
+            "rephrase last question" if action == "REPHRASE" else action
+        ),
+        directive[:150].replace("\n", " ↵ "),
+        str(new_active_topic or "?")[:40],
+        str(old_active_topic or "?")[:40],
+        len(tracker.covered_keys),
     )
 
     # ── Quality record (includes topic for skill ratings aggregation) ────────────

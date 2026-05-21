@@ -1794,14 +1794,22 @@ async def entrypoint(ctx: JobContext):
                                 _nts_followups if new_topic_state else 0,
                                 td_next_goal[:60],
                             )
-                        # Inject directive
+                        # Inject directive (full handler — applies state mutations too)
                         directive = result.get("directive", "")
-                        logger.info("[DIRECTIVE]  %s", directive[:300].replace("\n", " | "))
+                        _sys_before = [m for m in getattr(chat_ctx, "items", []) if getattr(m, "role", "") == "system"]
+                        _has_old_directive = any("[NEXT_TURN_DIRECTIVE" in str(getattr(m, "content", "")) for m in _sys_before)
                         remove_system_messages(chat_ctx, "[NEXT_TURN_DIRECTIVE")
                         remove_system_messages(chat_ctx, "[TOPIC_LOCK")
                         if action == "MOVE_ON":
                             remove_system_messages(chat_ctx, "[RECENT_CONTEXT")
                         chat_ctx.add_message(role="system", content=directive)
+                        _sys_after = len([m for m in getattr(chat_ctx, "items", []) if getattr(m, "role", "") == "system"])
+                        logger.info(
+                            "[INJECT_FULL] turn=%d action=%s | old_directive_existed=%s | sys_msgs_after=%d | "
+                            "directive: %s",
+                            res_turn, action, _has_old_directive, _sys_after,
+                            directive[:200].replace("\n", " | "),
+                        )
                         # TOPIC_LOCK: second hard-constraint message on MOVE_ON so the AI
                         # cannot drift back to the previous topic  directive alone can be missed
                         # when the conversation history is long and heavily weighted toward old topic.
@@ -1984,7 +1992,7 @@ async def entrypoint(ctx: JobContext):
                                 logger.warning("[PERSIST] Score backup save failed: %s", _se2)
                     spawn_background_task(_periodic_save_handler(), f"periodic_save_backup_t{turn_count}")
 
-            #  USER TURN 
+            #  USER TURN
             elif role == "user":
                 _answer_received_at = time.perf_counter()
                 _candidate_turn_since_last_assistant = True
@@ -1998,6 +2006,42 @@ async def entrypoint(ctx: JobContext):
                     warmup_complete = True
                     remove_system_messages(chat_ctx, "[WARMUP PHASE]")
                     logger.info("[WARMUP]  WARMUP COMPLETE at turn=%d  INTERVIEW PHASE ACTIVE", turn_count)
+
+                # TIMING FIX: Inject the previous turn's eval directive IMMEDIATELY
+                # when the user starts speaking — BEFORE the 0.65s debounce fires.
+                # Without this, the LLM starts generating before the directive lands in chat_ctx.
+                # Uses GET (not GETDEL) so the full handler can still apply all state mutations later.
+                if warmup_complete and turn_count > 2 and _eval_redis_client:
+                    async def _inject_directive_before_llm(_tc=turn_count):
+                        try:
+                            _raw = await asyncio.wait_for(
+                                _eval_redis_client.get(f"interview:{app_id}:eval_result"),
+                                timeout=0.25,
+                            )
+                            if _raw:
+                                _r = json.loads(_raw)
+                                _d = _r.get("directive", "")
+                                _a = _r.get("action", "?")
+                                if _d:
+                                    _ctx_before = len([m for m in getattr(chat_ctx, "items", []) if getattr(m, "role", "") == "system"])
+                                    remove_system_messages(chat_ctx, "[NEXT_TURN_DIRECTIVE")
+                                    remove_system_messages(chat_ctx, "[TOPIC_LOCK")
+                                    chat_ctx.add_message(role="system", content=_d)
+                                    _ctx_after = len([m for m in getattr(chat_ctx, "items", []) if getattr(m, "role", "") == "system"])
+                                    logger.info(
+                                        "[INJECT_EARLY] turn=%d action=%s | system_msgs: %d→%d | directive: %s",
+                                        _tc, _a, _ctx_before, _ctx_after,
+                                        _d[:120].replace("\n", " | "),
+                                    )
+                                else:
+                                    logger.warning("[INJECT_EARLY] turn=%d action=%s — directive field empty in Redis result", _tc, _a)
+                            else:
+                                logger.info("[INJECT_EARLY] turn=%d — no Redis result yet (worker still processing?)", _tc)
+                        except asyncio.TimeoutError:
+                            logger.warning("[INJECT_EARLY] turn=%d — Redis GET timed out (0.25s)", _tc)
+                        except Exception as _ie:
+                            logger.warning("[INJECT_EARLY] turn=%d — failed: %s", _tc, _ie)
+                    asyncio.ensure_future(_inject_directive_before_llm())
 
                 # STT Fragment Buffering: accumulate all fragments for this turn, process only once
                 # Buffer the fragment
