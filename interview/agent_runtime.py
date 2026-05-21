@@ -1253,6 +1253,9 @@ async def entrypoint(ctx: JobContext):
         ),
     )
     # --- Real-time Transcript Streaming is handled by LiveKit automatically ---
+    # STT Fragment buffer: collects partial results until final comes
+    _stt_fragment_buffer: dict[int, list[str]] = {}  # turn → [fragment1, fragment2, ...]
+
     async def _process_user_conversation_item(
         event,
         content: str,
@@ -1264,18 +1267,46 @@ async def entrypoint(ctx: JobContext):
             _claim_index, _contradictions_found, \
             _trust_state, _contradiction_state, greeting_delivered_at, \
             _ai_signal_flush_counter, _ai_signal_flushed_count, \
-            warmup_complete, _last_depth_decay_turn
+            warmup_complete, _last_depth_decay_turn, _stt_fragment_buffer
         try:
             if not content or role != "user":
                 return
             # Block all STT processing until greeting is fully delivered
             if greeting_delivered_at is None:
-                logger.info("[GREETING_BLOCK] Candidate spoke before greeting finished  -  ignoring until greeting delivered")
+                logger.debug("[GREETING_BLOCK] Candidate spoke before greeting finished - buffering")
                 return
             # --- STT text cleanup / noise suppression ---
             content = _clean_stt_text(content)
             if not content:
                 return
+
+            # Check if this is a final STT result or partial fragment
+            is_final_result = getattr(event, "item", None) is None or \
+                            not getattr(getattr(event, "item", None), "partial", False)
+
+            # Buffer this fragment
+            if turn_snapshot not in _stt_fragment_buffer:
+                _stt_fragment_buffer[turn_snapshot] = []
+            _stt_fragment_buffer[turn_snapshot].append(content)
+
+            # If not final, wait for more fragments
+            if not is_final_result:
+                logger.debug(
+                    f"[STT_BUFFER] turn={turn_snapshot} fragment {len(_stt_fragment_buffer[turn_snapshot])}: '{content[:50]}...' (partial, waiting for final)"
+                )
+                return
+
+            # Final result received - consolidate all fragments
+            all_fragments = _stt_fragment_buffer.pop(turn_snapshot, [])
+            consolidated_content = " ".join(f.strip() for f in all_fragments if f.strip())
+
+            if len(all_fragments) > 1:
+                logger.info(
+                    f"[STT_BUFFER] ✅ turn={turn_snapshot} FINAL - consolidated {len(all_fragments)} fragments: '{consolidated_content[:80]}...'"
+                )
+                content = consolidated_content
+            elif all_fragments:
+                content = all_fragments[0]
             # During the first few seconds after Ishita's opening greeting, short
             # echo-like fragments ("hi", "hello", "okay") are often the AI's own
             # voice leaking back into STT rather than a real candidate turn.
@@ -1374,6 +1405,19 @@ async def entrypoint(ctx: JobContext):
                         "overall": 0.0, "signals": [], "concerns": [],
                         "is_warmup": True,
                     })
+                # Append warmup candidate response to transcript
+                _candidate_clean = content.replace("<wait for response>", "").strip()
+                if _candidate_clean:
+                    append_transcript_line("Candidate", _candidate_clean)
+                    logger.info("[TRANSCRIPT] Warmup candidate: %s...", _candidate_clean[:60])
+                    # Async transcript persist during warmup
+                    _lines_snap_t = list(transcript_lines)
+                    _start_t_snap = session_start_time
+                    _app_id_t = app_id
+                    spawn_background_task(
+                        persist_transcript(_app_id_t, _lines_snap_t, _start_t_snap, partial=True),
+                        f"transcript_save_warmup_{turn_snapshot}",
+                    )
             # Start eval only after warmup has fully finished.
             # Warmup = turns 1-2, interview starts at turn 3, so first worker job is turn 3.
             if warmup_complete and turn_snapshot > 2 and _last_interviewer_question:
