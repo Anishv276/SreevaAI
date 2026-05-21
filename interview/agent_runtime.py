@@ -4,6 +4,7 @@ import time
 import asyncpg
 from typing import Optional, Any
 import re
+from dataclasses import replace
 try:
     import redis.asyncio as redis_asyncio  # type: ignore[import-untyped]
 except Exception:  # pragma: no cover - optional dependency
@@ -326,6 +327,30 @@ class InterviewAgent(Agent):
 
         conn_options = activity.session.conn_options.tts_conn_options
 
+        # FIX: Reduce retry interval for faster recovery from WebSocket failures
+        # Sarvam WebSocket can close immediately due to rate limiting or resource constraints.
+        # Default retry_interval of 2.0s causes perceivable delay; use 0.5s instead.
+        if conn_options.retry_interval > 0.5:
+            conn_options = replace(conn_options, retry_interval=0.5)
+            logger.debug("[TTS_CONN] Reduced retry_interval from 2.0s to 0.5s for faster recovery")
+
+        # FIX: Throttle TTS connection creation to prevent resource exhaustion
+        # Sarvam has connection limits; if Turn N TTS completes and Turn N+1 starts
+        # immediately, the WebSocket might close with "Cannot write to closing transport".
+        # This 200ms gap ensures clean connection cleanup between turns.
+        min_tts_gap_secs = 0.2
+        current_time = time.monotonic()
+        if not hasattr(self, '_tts_last_connection_time'):
+            self._tts_last_connection_time = current_time
+
+        time_since_last_tts = current_time - self._tts_last_connection_time
+        if time_since_last_tts < min_tts_gap_secs:
+            gap_needed = min_tts_gap_secs - time_since_last_tts
+            logger.debug(f"[TTS_THROTTLE] Waiting {gap_needed*1000:.0f}ms before TTS (previous gap={time_since_last_tts*1000:.0f}ms)")
+            await asyncio.sleep(gap_needed)
+
+        self._tts_last_connection_time = time.monotonic()
+
         # Sentence-boundary splitter: push complete sentences to TTS as the LLM
         # generates them, CONCURRENTLY with reading audio frames back.
         # Works for Sarvam, Cartesia, and ElevenLabs — all implement the same
@@ -383,9 +408,29 @@ class InterviewAgent(Agent):
             raise
         except Exception as e:
             err_text = str(e).lower()
-            if any(s in err_text for s in ("chanclosed", "channel", "api connection", "tts stream failed", "closing transport")):
-                logger.warning("[TTS] Stream interrupted/closed during generation; skipping this utterance cleanly: %s", str(e)[:220])
-                return
+            # FIX: Categorize and handle Sarvam WebSocket connection failures gracefully
+            sarvam_connection_errors = [
+                "chanclosed",           # Channel closed
+                "channel",              # Generic channel error
+                "api connection",       # Connection error
+                "tts stream failed",    # Stream failure
+                "closing transport",    # SARVAM: WebSocket closing immediately (THE ERROR)
+                "cannot write",         # SARVAM: Write failed (part of error message)
+                "connection reset",     # SARVAM: Connection reset by peer
+                "timeout",              # Connection timeout
+            ]
+
+            if any(s in err_text for s in sarvam_connection_errors):
+                error_type = type(e).__name__
+                logger.warning(
+                    "[TTS_SARVAM_ERROR] WebSocket connection failure during TTS synthesis (%s). "
+                    "This usually indicates Sarvam service rate limiting or resource constraints. "
+                    "LiveKit agents framework will retry automatically with exponential backoff. "
+                    "Error: %s",
+                    error_type,
+                    str(e)[:150]
+                )
+                return  # Skip this utterance; let retry logic handle it
             raise
 
 

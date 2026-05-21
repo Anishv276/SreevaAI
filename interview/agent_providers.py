@@ -86,7 +86,24 @@ def build_sarvam_tts(
 ):
     api_key = os.getenv("SARVAM_API_KEY")
     if not api_key:
-        raise RuntimeError("SARVAM_API_KEY is not set")
+        raise RuntimeError(
+            "SARVAM_API_KEY is not set. "
+            "To fix: export SARVAM_API_KEY='your-api-key-here' "
+            "Get your API key from: https://console.sarvam.ai/settings/api-keys"
+        )
+
+    # FIX: Validate API key format to catch misconfigurations early
+    if not isinstance(api_key, str) or len(api_key.strip()) < 10:
+        raise RuntimeError(
+            f"SARVAM_API_KEY appears invalid (length={len(api_key)}). "
+            f"Expected at least 10 characters. "
+            f"Verify your key at: https://console.sarvam.ai/settings/api-keys"
+        )
+
+    logger.info(
+        f"[SARVAM_TTS] Initializing TTS: model={model} language={language} voice={voice_id} "
+        f"api_key_len={len(api_key)}"
+    )
     d = _PROVIDER_DEFAULTS
     is_v2 = "v2" in model
     tts_kwargs: dict[str, Any] = {
