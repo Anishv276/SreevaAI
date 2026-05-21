@@ -1296,16 +1296,19 @@ async def entrypoint(ctx: JobContext):
     _STT_INCOMPLETE_DEBOUNCE_SECONDS = 12.0  # Increased from 3s to allow full responses before evaluation
 
     def _is_sentence_complete(text: str) -> bool:
-        """Check if text is a complete sentence (ends with . ! ? and has enough content)."""
+        """
+        Check if text is a complete utterance.
+
+        Since interim_results=False (disabled), Deepgram only sends FINAL results.
+        Any result from Deepgram IS already complete, so we just check for minimum length.
+        Punctuation requirement removed since spoken responses rarely end with punctuation.
+        """
         stripped = text.strip()
         if not stripped:
             return False
-        # Minimum 3 words to be meaningful
+        # Minimum 2 words to be meaningful (lowered since these are final results)
         word_count = len([w for w in stripped.split() if w])
-        if word_count < 3:
-            return False
-        # Must end with sentence-ending punctuation
-        return stripped[-1] in '.!?'
+        return word_count >= 2
 
     async def _process_user_conversation_item(
         event,

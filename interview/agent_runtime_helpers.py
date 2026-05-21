@@ -88,7 +88,6 @@ async def _single_question_transform(text_stream):
     buffer = ""
     async for chunk in text_stream:
         buffer += chunk
-    logger.debug(f"[TTS_RAW] LLM output before sanitize: {buffer[:300]!r}")
     result = sanitize_candidate_facing_text(buffer)
     result = _apply_tts_phonetic_fixes(result)
     if result:
