@@ -1,11 +1,9 @@
-import sys
 import asyncio
 import json
 import time
 import asyncpg
 from typing import Optional, Any
 import re
-from openai import AsyncOpenAI
 try:
     import redis.asyncio as redis_asyncio  # type: ignore[import-untyped]
 except Exception:  # pragma: no cover - optional dependency
@@ -42,7 +40,6 @@ from interview.agent_persistence import (
 )
 from interview.agent_runtime_helpers import (
     _build_recent_context_block,
-    _sanitize_claim_value,
     _single_question_transform,
     _tts_acronym_transform,
     remove_system_messages,
@@ -77,10 +74,8 @@ from livekit.agents import (
 from livekit.agents.metrics import AgentSessionUsage
 from livekit.agents.voice import room_io
 from livekit.agents.voice.turn import EndpointingOptions, InterruptionOptions
-from interview.turn_evaluator import run_turn_evaluation
-from interview.turn_decision import classify_short_utterance
-from interview.trust_engine import apply_turn_decision, apply_contradiction_resolved, finalize_trust_state
-from interview.contradiction_state import init_contradiction_state, advance_contradiction_state, summarize_contradiction_state
+from interview.trust_engine import finalize_trust_state
+from interview.contradiction_state import init_contradiction_state, summarize_contradiction_state
 from interview.session_state import init_trust_state
 from interview.recruiter_summary import build_recruiter_summary
 from interview.prompt_layers import (
@@ -442,11 +437,7 @@ from interview.agent_persistence import (
     update_interview_status,
 )
 from interview.agent_scoring import (
-    check_contradiction,
-    evaluate_answer_and_decide,
-    extract_claims,
     notify_sync_engine,
-    score_answer_quality,
 )
 from pydantic import BaseModel, field_validator
 
@@ -729,7 +720,6 @@ async def entrypoint(ctx: JobContext):
     org_deepgram_model: str = str(ctx_data.deepgramModel or STT_MODEL)
     interview_llm_model: str = INTERVIEW_LLM_MODEL
     interview_llm_temperature: float = INTERVIEW_LLM_TEMPERATURE
-    analysis_client = AsyncOpenAI()
     analysis_model = EVAL_LLM_MODEL
 
     lang_codes = _LANGUAGE_CODES.get(interview_lang)
@@ -957,7 +947,6 @@ async def entrypoint(ctx: JobContext):
     launch_prereqs_signal_sent = False
     # Per-turn decision engine state
     _last_interviewer_question = ""   # most recent question Ishita asked
-    _oai_eval_client = analysis_client  # reused client for per-turn evaluations
     answer_scores: list[dict] = []    # log of all answer quality scores for final DB save
     _active_topic: Optional[str] = None         # current topic anchor; rotate away on MOVE_ON
     _topic_states: dict[str, dict] = {}        # PART 3: TopicState serialized per topic for saturation tracking
