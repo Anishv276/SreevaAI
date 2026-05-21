@@ -35,7 +35,7 @@ _PROVIDER_DEFAULTS: dict[str, Any] = {
     "cartesia_speed":          0.92,
     "sarvam_pace":             1.2,
     "sarvam_v3_sample_rate":   24000,
-    "sarvam_v2_sample_rate":   22050,
+    "sarvam_v2_sample_rate":   22050,   
     "sarvam_output_bitrate":   "128k",
     "sarvam_output_codec":     "mp3",
     "sarvam_min_buffer":       30,

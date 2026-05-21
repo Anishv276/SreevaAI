@@ -92,6 +92,7 @@ async def run_turn_evaluation(
         evaluate_answer_and_decide_fn(
             candidate_answer=candidate_answer,
             last_question=last_question,
+            topic_follow_up_count=0,
             transcript_lines=transcript_lines,
             client=client,
             org_id=org_id,

@@ -9,18 +9,18 @@ import {
     Users, 
     Settings, 
     LogOut, 
-    Sparkles, 
     X,
     ShieldAlert,
     Loader2,
     LifeBuoy,
     CreditCard,
-    AudioLines
+    AudioLines,
+    MessageSquare
 } from "lucide-react";
 import { Toaster } from "@/components/ui/toast-custom";
 
 export default function SuperAdminLayout({ children }: { children: React.ReactNode }) {
-    const { user, logout } = useAuth();
+    const { logout } = useAuth();
     const pathname = usePathname();
     const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
     const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -113,6 +113,7 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
                         { href: "/super-admin/voices", label: "Voice Engine", icon: AudioLines },
                         { href: "/super-admin/billing", label: "Billing", icon: CreditCard },
                         { href: "/super-admin/support", label: "Support Tickets", icon: LifeBuoy },
+                        { href: "/super-admin/feedback", label: "Candidate Feedback", icon: MessageSquare },
                         { href: "/super-admin/settings", label: "Settings", icon: Settings },
                     ].map((item) => {
                         const isActive = pathname === item.href;

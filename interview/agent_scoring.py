@@ -5,14 +5,21 @@ import time
 import urllib.request
 from typing import Optional
 from interview.agent_persistence import _extract_openai_completion_usage, persist_org_manual_billing_usage
-from interview.agent_runtime_support import APP_BASE_URL, LLM_MODEL, WORKER_SYNC_TOKEN, logger
+from interview.agent_runtime_support import (
+    EVAL_JSON_ACTION_TEMPERATURE,
+    APP_BASE_URL,
+    EVAL_LLM_MODEL,
+    EVAL_LLM_TEMPERATURE,
+    WORKER_SYNC_TOKEN,
+    logger,
+)
 async def score_answer_quality(
     candidate_answer: str,
     last_question: str,
     transcript_lines: list,
     client,
     org_id: Optional[str] = None,
-    llm_model: str = LLM_MODEL,
+    llm_model: str = EVAL_LLM_MODEL,
     is_warmup: bool = False,
 ) -> dict:
     """Structured answer quality scorer. Runs after every candidate response.
@@ -48,7 +55,7 @@ async def score_answer_quality(
         completion = await asyncio.wait_for(
             client.chat.completions.create(
                 model=llm_model,
-                temperature=0.0,
+                temperature=EVAL_LLM_TEMPERATURE,
                 max_tokens=160,  # JSON with 7 ints + 2 short arrays < 130 tokens
                 messages=[
                     {
@@ -159,7 +166,7 @@ async def evaluate_answer_and_decide(
     transcript_lines: list,
     client,
     org_id: Optional[str] = None,
-    llm_model: str = LLM_MODEL,
+    llm_model: str = EVAL_LLM_MODEL,
 ) -> dict:
     """Per-turn answer evaluator. Returns probe-vs-move-on guidance."""
     if not candidate_answer or not candidate_answer.strip():
@@ -169,7 +176,7 @@ async def evaluate_answer_and_decide(
         completion = await asyncio.wait_for(
             client.chat.completions.create(
                 model=llm_model,
-                temperature=0.0,
+                temperature=EVAL_JSON_ACTION_TEMPERATURE,
                 max_tokens=120,
                 messages=[
                     {
@@ -243,7 +250,7 @@ async def extract_claims(
     turn: int,
     client,
     org_id: Optional[str] = None,
-    llm_model: str = LLM_MODEL,
+    llm_model: str = EVAL_LLM_MODEL,
 ) -> list[dict]:
     """Extract verifiable factual claims from a single candidate answer."""
     if not candidate_answer or len(candidate_answer.strip()) < 20:
@@ -252,7 +259,7 @@ async def extract_claims(
         completion = await asyncio.wait_for(
             client.chat.completions.create(
                 model=llm_model,
-                temperature=0.0,
+                temperature=EVAL_JSON_ACTION_TEMPERATURE,
                 max_tokens=300,
                 messages=[
                     {

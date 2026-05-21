@@ -54,8 +54,6 @@ export async function GET(request: Request) {
                     voiceId: true,
                     allowedVoices: true,
                     deepgramModel: true,
-                    llmModel: true,
-                    llmTemperature: true,
                     maxActiveDrives: true,
                     proctoringSignals: true,
                     interviewQuotaTotal: true,

@@ -755,8 +755,13 @@ async def persist_transcript(
     start_time: Optional[float],
     proctoring_data: Optional[dict] = None,
     final_status: str = "COMPLETED",
+    partial: bool = False,
 ):
-    """Save transcript, duration, and proctoring report to Interview table via asyncpg."""
+    """Save transcript, duration, and proctoring report to Interview table via asyncpg.
+
+    If partial=True: only update transcript, duration, turns (never touch status/completedAt).
+    If partial=False: full update including status and completedAt.
+    """
     if not transcript_lines and final_status != "NO_SHOW":
         logger.info("[TRANSCRIPT] No lines captured - skipping save to avoid overwriting existing data")
         return
@@ -775,30 +780,53 @@ async def persist_transcript(
             }
         pool = await get_db_pool()
         async with pool.acquire() as conn:
-            await conn.execute(
-                """
-                UPDATE "Interview"
-                SET
-                    "interviewTranscript" = $1,
-                    "interviewDuration"   = $2,
-                    status                = $3,
-                    "proctoringReport"    = COALESCE("proctoringReport", '{}'::jsonb) || COALESCE($4::jsonb, '{}'::jsonb),
-                    "interviewTurns"      = $5,
-                    "completedAt"         = NOW(),
-                    "updatedAt"           = NOW()
-                WHERE "applicationId" = $6
-                """,
-                full_text,
-                duration,
-                final_status,
-                json.dumps(proctor_report) if proctor_report else None,
-                json.dumps(interview_turns),
-                app_id,
-            )
-            logger.info(
-                f"[TRANSCRIPT] Saved {len(transcript_lines)} lines, {duration}s duration, "
-                f"{len(interview_turns)} turn(s), status={final_status} for app {app_id}"
-            )
+            if partial:
+                # Partial save: only update transcript, duration, turns (skip status, completedAt)
+                await conn.execute(
+                    """
+                    UPDATE "Interview"
+                    SET
+                        "interviewTranscript" = $1,
+                        "interviewDuration"   = $2,
+                        "interviewTurns"      = $3,
+                        "updatedAt"           = NOW()
+                    WHERE "applicationId" = $4
+                    """,
+                    full_text,
+                    duration,
+                    json.dumps(interview_turns),
+                    app_id,
+                )
+                logger.info(
+                    f"[TRANSCRIPT] Partial save {len(transcript_lines)} lines, {duration}s duration, "
+                    f"{len(interview_turns)} turn(s) for app {app_id}"
+                )
+            else:
+                # Final save: update everything including status and completedAt
+                await conn.execute(
+                    """
+                    UPDATE "Interview"
+                    SET
+                        "interviewTranscript" = $1,
+                        "interviewDuration"   = $2,
+                        status                = $3,
+                        "proctoringReport"    = COALESCE("proctoringReport", '{}'::jsonb) || COALESCE($4::jsonb, '{}'::jsonb),
+                        "interviewTurns"      = $5,
+                        "completedAt"         = NOW(),
+                        "updatedAt"           = NOW()
+                    WHERE "applicationId" = $6
+                    """,
+                    full_text,
+                    duration,
+                    final_status,
+                    json.dumps(proctor_report) if proctor_report else None,
+                    json.dumps(interview_turns),
+                    app_id,
+                )
+                logger.info(
+                    f"[TRANSCRIPT] Final save {len(transcript_lines)} lines, {duration}s duration, "
+                    f"{len(interview_turns)} turn(s), status={final_status} for app {app_id}"
+                )
     except Exception as e:
         logger.error(f"[TRANSCRIPT] DB save failed: {e}")
 
@@ -1170,13 +1198,19 @@ async def generate_interview_report(
                         "If there are none, return an empty array — do not invent strengths.\n\n"
                         "concerns: List 2-4 honest concerns with evidence. "
                         "If the candidate refused to answer, say so explicitly.\n\n"
+                        "decision_note: A 3-5 sentence narrative summary. Start with the recommendation (STRONG HIRE | HIRE | MAYBE | REJECT). "
+                        "Then explain who this candidate is, what they can do, and why (or why not) to hire them. "
+                        "Use specific evidence from the interview—projects they built, decisions they explained, skills shown. "
+                        "Do NOT use metrics or percentages—write flowing sentences. Example: 'STRONG HIRE. They built production systems in React and explained their architectural choices. They showed problem-solving depth and owned their work end-to-end. Gap: missing DevOps but strong fundamentals to learn.' "
+                        "Be honest about gaps if they exist, but frame them as teachable vs. disqualifying.\n\n"
                         "OUTPUT FORMAT:\n"
                         "{\n"
                         '  "skills_covered": ["skill1", "skill2"],\n'
                         '  "skill_ratings": {"skill1": 4, "skill2": 2},\n'
                         '  "role_fit": 35,\n'
                         '  "top_strengths": ["strength with evidence"],\n'
-                        '  "concerns": ["concern with evidence"]\n'
+                        '  "concerns": ["concern with evidence"],\n'
+                        '  "decision_note": "RECOMMENDATION. Who they are and why (or why not) hire them."\n'
                         "}"
                     ),
                 },
@@ -1192,7 +1226,7 @@ async def generate_interview_report(
             report_data = json.loads(raw_report.strip())
         except json.JSONDecodeError:
             logger.warning(f"[REPORT] Failed to parse report JSON for {app_id}")
-            report_data = {"skills_covered": [], "skill_ratings": {}, "role_fit": 0, "top_strengths": [], "concerns": []}
+            report_data = {"skills_covered": [], "skill_ratings": {}, "role_fit": 0, "top_strengths": [], "concerns": [], "decision_note": "Unable to parse report."}
 
         # Build qa_blocks from interview-only scores
         qa_blocks = []
@@ -1218,6 +1252,7 @@ async def generate_interview_report(
         skills_covered = report_data.get("skills_covered", [])
         top_strengths = report_data.get("top_strengths", [])
         concerns = report_data.get("concerns", [])
+        decision_note = report_data.get("decision_note", "")
         role_fit = int(min(100, max(0, report_data.get("role_fit", 0))))
 
         # Convert skills_covered and skill_ratings into structured skills_proof objects expected by frontend
@@ -1249,6 +1284,7 @@ async def generate_interview_report(
         final_report = {
             "technical_score": technical_score,
             "role_fit": role_fit,
+            "decision_note": decision_note,
             "scores": {
                 "technical": technical_score,
                 "role_fit": role_fit,

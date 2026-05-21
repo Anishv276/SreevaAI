@@ -15,7 +15,15 @@
       "WebFetch(domain:pmc.ncbi.nlm.nih.gov)",
       "WebFetch(domain:voiceinfra.ai)",
       "WebFetch(domain:imentiv.ai)",
-      "WebFetch(domain:www.shrm.org)"
+      "WebFetch(domain:www.shrm.org)",
+      "Bash(python -c ' *)",
+      "Bash(git -C \"C:/Users/vamsi/OneDrive/Desktop/HR-updates\" log --oneline -5)",
+      "Bash(git -C \"C:/Users/vamsi/OneDrive/Desktop/HR-updates\" diff HEAD~1 -- interview/agent_runtime.py)",
+      "Bash(git -C \"C:/Users/vamsi/OneDrive/Desktop/HR-updates\" show HEAD~1:interview/agent_runtime.py)",
+      "Bash(python3)",
+      "Bash(python -m py_compile interview/agent_persistence.py interview/agent_runtime.py interview/eval_pipeline.py interview/turn_evaluator.py)",
+      "Bash(npx tsc *)",
+      "Bash(python -m py_compile interview/agent_persistence.py)"
     ]
   }
 }

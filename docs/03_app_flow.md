@@ -106,7 +106,7 @@ graph TD
               └── Inputs corporate email & password
                     └── Navigates to `/onboarding`
                           ├── Enters Org Name & Slug
-                          ├── Chooses Default Voice & LLM model parameters
+                          ├── Chooses default voice; LLM is fixed in code
                           └── Completes setup
                                 └── Redirected to `/dashboard` (Role: ADMIN)
 ```

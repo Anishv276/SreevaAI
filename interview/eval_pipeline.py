@@ -27,6 +27,7 @@ from interview.agent_scoring import (
     extract_claims,
     score_answer_quality,
 )
+from interview.agent_runtime_support import EVAL_LLM_MODEL
 
 logger = logging.getLogger("eval_worker")
 
@@ -223,7 +224,7 @@ class EvaluationPayload(BaseModel):
     response_latency_sec: Optional[float] = None
     signal_toggles: Dict[str, Any] = Field(default_factory=dict)
     org_id: str = ""
-    llm_model: str = "gpt-4o-mini"
+    llm_model: str = EVAL_LLM_MODEL
     # Current topic + covered topics
     active_topic: Optional[str] = None
     active_topic_state: Optional[Dict[str, Any]] = None  # Serialized TopicState
@@ -464,14 +465,42 @@ def evaluate_topic_saturation(
     signal_penalty = SignalPenaltyCalculator.calculate_penalties(signal_events)
     final_contribution = max(0.0, contribution + signal_penalty)
 
+    # Store state BEFORE increment for comparison logging
+    score_before = topic_state.saturation_score
+    follow_ups_before = topic_state.follow_up_turns
+
     # Add to saturation score
     topic_state.add_response_contribution(final_contribution, signal_penalty)
 
+    # DETAILED LOG: Show the saturation calculation
+    logger.info(
+        "[SAT_CALC] topic=%s | response_score=%.2f contribution=%.2f signal_penalty=%+.2f final_contribution=%.2f",
+        topic_state.topic_name, response_score, contribution, signal_penalty, final_contribution,
+    )
+    logger.info(
+        "[SAT_CALC] base_credit=%.1f | score: %.1f → %.1f (delta=+%.1f) | follow_ups: %d → %d",
+        topic_state.base_turn_credit,
+        score_before, topic_state.saturation_score, topic_state.saturation_score - score_before,
+        follow_ups_before, topic_state.follow_up_turns,
+    )
+
     # Check saturation
     if topic_state.is_saturated:
+        logger.info(
+            "[SAT_RESULT] ✅ SATURATED | score=%.1f >= threshold=%.1f (%.0f%%) | importance=%s",
+            topic_state.saturation_score, topic_state.saturation_threshold,
+            100 * min(1.0, topic_state.saturation_score / topic_state.saturation_threshold),
+            topic_state.importance,
+        )
         return True, f"saturated_at_{round(topic_state.saturation_score, 1)}"
     else:
         remaining = topic_state.saturation_threshold - topic_state.saturation_score
+        pct_done = 100 * min(1.0, topic_state.saturation_score / topic_state.saturation_threshold)
+        logger.info(
+            "[SAT_RESULT] 🔄 NOT SATURATED | score=%.1f < threshold=%.1f (%.0f%% done) | need %.1f more | importance=%s",
+            topic_state.saturation_score, topic_state.saturation_threshold, pct_done, remaining,
+            topic_state.importance,
+        )
         return False, f"score_{round(topic_state.saturation_score, 1)}_need_{round(remaining, 1)}"
 
 
@@ -570,6 +599,13 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         current_topic_state.follow_up_turns = state_dict.get("follow_up_turns", 0)
         current_topic_state.probe_rotation_index = state_dict.get("probe_rotation_index", 0)
         current_topic_state.is_saturated = state_dict.get("is_saturated", False)
+
+        logger.info(
+            "[TOPIC_STATE] RESTORED | topic=%s importance=%s | saturation_score=%.1f/%s follow_ups=%d base_credit=%.1f",
+            current_topic_state.topic_name, current_topic_state.importance,
+            current_topic_state.saturation_score, current_topic_state.saturation_threshold,
+            current_topic_state.follow_up_turns, current_topic_state.base_turn_credit,
+        )
     elif p.active_topic:
         # Create new TopicState for current topic
         # Determine source: anchor → CRITICAL, resume_topics → HIGH, skill_topics → MEDIUM
@@ -584,6 +620,39 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
             is_anchor=p.active_topic == p.anchor_item,
         )
         current_topic_state = TopicState(p.active_topic, importance)
+
+        logger.info(
+            "[TOPIC_STATE] CREATED NEW | topic=%s source=%s importance=%s | threshold=%.1f base_credit=%.1f",
+            p.active_topic, _topic_source, importance,
+            current_topic_state.saturation_threshold, current_topic_state.base_turn_credit,
+        )
+
+    # ── Bootstrap: no active_topic yet → pick first uncovered topic ──────────
+    # Without this, the agent never sends an active_topic on turn 3 (first eval turn)
+    # because _active_topic starts None and is only set after reading a result.
+    # The eval_pipeline would then always return new_active_topic=None, creating a
+    # permanent "no topic" loop where PROBE/VERIFY never initialize saturation state.
+    # Use `not p.active_topic` (not `is None`) to also handle empty-string edge case.
+    if not p.active_topic:
+        _first_topic = tracker.next_uncovered(exclude=None)
+        logger.info("[TOPIC_BOOT] active_topic empty — next_uncovered=%s (resume_topics=%d skill_topics=%d covered=%d)",
+                   _first_topic or "NONE", len(p.resume_topics), len(p.skill_topics), len(tracker.covered_keys))
+        if _first_topic:
+            new_active_topic = _first_topic
+            _tk = _normalize_topic_key(_first_topic)
+            _resume_keys_boot = {_normalize_topic_key(t) for t in p.resume_topics}
+            _boot_src = "resume" if _tk in _resume_keys_boot else "skill"
+            _boot_importance = TopicImportanceClassifier.classify(
+                topic_source=_boot_src,
+                is_anchor=_first_topic == p.anchor_item,
+            )
+            current_topic_state = TopicState(_first_topic, _boot_importance)
+            logger.info(
+                "[TOPIC_BOOT] ✅ BOOTSTRAPPED | topic='%s' source=%s importance=%s | threshold=%.1f base_credit=%.1f turn=%d",
+                _first_topic, _boot_src, _boot_importance,
+                current_topic_state.saturation_threshold, current_topic_state.base_turn_credit,
+                p.turn,
+            )
 
     # ── Context log box ──────────────────────────────────────────────────────
     _saturation_status = ""
@@ -703,22 +772,31 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
 
     # ── Log evaluator decision ────────────────────────────────────────────────
     _all_signal_names = [ev.get("signal_name", "?") for ev in signal_events if ev.get("signal_name")]
+
+    # DETAILED quality score log
     logger.info(
-        "[EVAL] turn=%d action=%s mode=%s quality=%.2f (c=%.1f d=%.1f s=%.1f g=%.1f) signals=[%s]",
-        p.turn, action, td["decision"].get("mode", "?"),
-        quality_avg,
+        "[QUALITY] turn=%d | clarity=%.1f depth=%.1f specificity=%.1f grounding=%.1f | avg=%.2f",
+        p.turn,
         td["quality"]["clarity"], td["quality"]["depth"],
         td["quality"]["specificity"], td["quality"]["grounding"],
+        quality_avg,
+    )
+
+    logger.info(
+        "[EVAL] turn=%d action=%s mode=%s quality_avg=%.2f signals=[%s]",
+        p.turn, action, td["decision"].get("mode", "?"),
+        quality_avg,
         ", ".join(_all_signal_names) if _all_signal_names else "none",
     )
     for _ev in signal_events:
         if _ev.get("signal_name"):
+            _sig_name = _ev.get("signal_name", "?")
+            _sig_layer = _ev.get("signal_layer", "?")
+            _sig_delta = float(_ev.get("score_delta", 0) or 0)
+            _sig_confidence = float(_ev.get("confidence", 0.5) or 0.5)
             logger.info(
-                "[SIGNAL] %-28s | layer=%-22s | delta=%+.2f | turn=%d",
-                _ev.get("signal_name", "?"),
-                _ev.get("signal_layer", "?"),
-                float(_ev.get("score_delta", 0) or 0),
-                p.turn,
+                "[SIGNAL] name=%-28s layer=%-20s confidence=%.2f delta=%+.2f turn=%d",
+                _sig_name, _sig_layer, _sig_confidence, _sig_delta, p.turn,
             )
 
     # ── Step 4: Disturbance signal overrides ─────────────────────────────────
@@ -839,15 +917,37 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         and current_topic_state.is_weak_candidate_exit()
         and action != "VERIFY"
     )
+
+    # DETAILED DECISION LOGGING
+    if current_topic_state:
+        logger.info(
+            "[DECISION] turn=%d | depth_decay=%s weak_exit=%s saturated=%s action=%s",
+            p.turn, depth_decay_fired, _weak_exit, is_saturated, action,
+        )
+
     if depth_decay_fired and action != "VERIFY":
+        logger.info("[DECISION] ✅ DEPTH_DECAY fired → forcing MOVE_ON turn=%d", p.turn)
         _do_move_on("depth_decay")
     elif _weak_exit:
+        logger.info(
+            "[DECISION] ✅ WEAK_CANDIDATE_EXIT → turns=%d score=%.1f < min=%.1f → forcing MOVE_ON turn=%d",
+            current_topic_state.follow_up_turns,
+            current_topic_state.saturation_score,
+            current_topic_state.saturation_threshold * current_topic_state.progress_check_pct,
+            p.turn,
+        )
         _do_move_on(
             f"weak_candidate_exit(turns={current_topic_state.follow_up_turns}"
             f" score={current_topic_state.saturation_score:.1f}"
             f" min={current_topic_state.saturation_threshold * current_topic_state.progress_check_pct:.1f})"
         )
     elif is_saturated and action != "VERIFY":
+        logger.info(
+            "[DECISION] ✅ SATURATED → score=%.1f >= threshold=%.1f → forcing MOVE_ON turn=%d",
+            current_topic_state.saturation_score if current_topic_state else 0,
+            current_topic_state.saturation_threshold if current_topic_state else 0,
+            p.turn,
+        )
         _do_move_on(f"saturated({saturation_status})")
     elif action not in ("MOVE_ON", "VERIFY"):
         # PROBE — continue on current topic, select probe family from rotation
@@ -862,13 +962,28 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
             probe_style = _PROBE_FAMILIES.get(probe_family, _PROBE_FAMILIES["ownership"])["style"]
             td["decision"]["mode"] = probe_family
             td["decision"]["next_goal"] = probe_goal
+
+            # DETAILED PROBE LOGGING
+            pct_saturated = 100 * min(1.0, current_topic_state.saturation_score / current_topic_state.saturation_threshold)
+            logger.info(
+                "[DECISION] 🔄 PROBE NOT SATURATED → continue on topic | score=%.1f/%s (%.0f%%) turn=%d",
+                current_topic_state.saturation_score, current_topic_state.saturation_threshold,
+                pct_saturated, p.turn,
+            )
+            logger.info(
+                "[PROBE] family=%s rotation_index=%d signals=[%s] | goal: %s",
+                probe_family, current_topic_state.probe_rotation_index,
+                ", ".join(signal_fired_names) if signal_fired_names else "none",
+                probe_goal[:80],
+            )
+
             directive = (
                 "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
                 f"DECISION: PROBE ({probe_family.upper()})\n"
                 f"QUALITY: clarity={td['quality']['clarity']:.0f} depth={td['quality']['depth']:.0f} "
                 f"specificity={td['quality']['specificity']:.0f} grounding={td['quality']['grounding']:.0f}\n"
                 f"SATURATION: {current_topic_state.saturation_score:.1f}/{current_topic_state.saturation_threshold} "
-                f"({100 * min(1.0, current_topic_state.saturation_score / current_topic_state.saturation_threshold):.0f}%)\n"
+                f"({pct_saturated:.0f}%)\n"
             )
             if signal_fired_names:
                 directive += f"SIGNALS: {', '.join(signal_fired_names)}\n"
@@ -881,13 +996,13 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
             if not any_signal_fired:
                 current_topic_state.advance_probe_rotation(signal_fired=False)
                 logger.info(
-                    "[SATURATION] PROBE(%s) | rotation advanced to index=%d turn=%d",
-                    probe_family, current_topic_state.probe_rotation_index, p.turn,
+                    "[PROBE] Rotation advanced: %d → %d (no signal) turn=%d",
+                    current_topic_state.probe_rotation_index - 1, current_topic_state.probe_rotation_index, p.turn,
                 )
             else:
                 logger.info(
-                    "[SATURATION] PROBE(%s) | signal fired — rotation held at index=%d turn=%d",
-                    probe_family, current_topic_state.probe_rotation_index, p.turn,
+                    "[PROBE] Rotation held at index=%d (signal fired) turn=%d",
+                    current_topic_state.probe_rotation_index, p.turn,
                 )
     elif action == "MOVE_ON":
         # MOVE_ON from evaluator (not from saturation)
@@ -977,8 +1092,9 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         list(tracker.covered_keys) if tracker.covered_keys else "none",
     )
 
-    # ── Quality record ────────────────────────────────────────────────────────
+    # ── Quality record (includes topic for skill ratings aggregation) ────────────
     quality_record = {
+        "turn": p.turn,
         "question": p.question,
         "answer": p.answer,
         "clarity": td["quality"]["clarity"],
@@ -988,6 +1104,10 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         "overall": quality_avg,
         "signals": [ev["signal_name"] for ev in signal_events if ev.get("signal_name")],
         "concerns": [ev["signal_name"] for ev in signal_events if ev.get("score_delta", 0.0) < 0],
+        # Include topic info for skill ratings aggregation
+        "topic": new_active_topic or p.active_topic or "general",
+        "topic_saturation_score": current_topic_state.saturation_score if current_topic_state else 0.0,
+        "topic_saturation_threshold": current_topic_state.saturation_threshold if current_topic_state else 0.0,
     }
 
     return {

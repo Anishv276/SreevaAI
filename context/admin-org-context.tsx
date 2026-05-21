@@ -13,8 +13,6 @@ export type OrgData = {
     voiceId?: string | null;
     allowedVoices?: string[];
     deepgramModel?: string | null;
-    llmModel?: string | null;
-    llmTemperature?: number | null;
     maxActiveDrives?: string | null;
     proctoringSignals?: string | null;
     interviewQuotaTotal?: number;

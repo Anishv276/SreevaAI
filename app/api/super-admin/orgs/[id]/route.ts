@@ -82,7 +82,6 @@ export async function PATCH(
             proctoringSignals,
             adminName, adminEmail,
             voiceId, allowedVoices,
-            llmModel, llmTemperature,
             usageMetrics,
             interviewQuotaTotal,
             interviewQuotaTopUp,
@@ -103,8 +102,6 @@ export async function PATCH(
                 plan: true,
                 voiceId: true,
                 allowedVoices: true,
-                llmModel: true,
-                llmTemperature: true,
             },
         });
 
@@ -161,8 +158,6 @@ export async function PATCH(
             adminEmail === undefined &&
             voiceId === undefined &&
             allowedVoices === undefined &&
-            llmModel === undefined &&
-            llmTemperature === undefined &&
             interviewQuotaTopUp === undefined;
         const shouldSyncQuotaStatus = shouldUpdateInterviewQuotaTotal || shouldApplyInterviewQuotaTopUp;
 
@@ -207,7 +202,7 @@ export async function PATCH(
             updateData,
             normalizeOrgAiConfig({
                 current: existingOrg,
-                next: { voiceId, allowedVoices, llmModel, llmTemperature },
+                next: { voiceId, allowedVoices },
             })
         );
 

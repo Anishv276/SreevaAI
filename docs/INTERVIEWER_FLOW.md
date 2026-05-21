@@ -43,7 +43,7 @@
 ├─ Organization Config
 │  ├─ ttsProvider (Cartesia, Sarvam, Google, etc.)
 │  ├─ sttProvider (Deepgram, Sarvam, etc.)
-│  ├─ llmProvider & llmModel (OpenAI gpt-4.1-mini, etc.)
+│  ├─ model fixed in code to OpenAI gpt-4.1-mini
 │  ├─ proctoringSignals (which proctoring checks enabled)
 │  └─ aiName (default "Ishitha")
 │
@@ -93,7 +93,14 @@ The agent builds a **detailed briefing** with:
 
 ### 2.1 Agent Initialization
 - **Model Stack**:
-  - **LLM**: OpenAI `gpt-4.1-mini` (temperature 0.6) for conversational turns
+  - **LLM**: OpenAI `gpt-4.1-mini` with role-based temperatures hardcoded in code:
+    - adaptive listener / core: `0.45`
+    - greeting / rapport / closing: `0.60`
+    - behavioral and situational questions: `0.50`
+    - technical follow-up probing: `0.40`
+    - eval worker scoring and JSON routing: `0.00`
+    - final summary / report: `0.10`
+    - offline calibration judge: `0.20`
   - **STT**: Deepgram Nova-3 or Sarvam (real-time speech-to-text)
   - **TTS**: Cartesia Sonic-3 (voice: "Jacqueline - Reassuring") or fallback Sarvam
   - **VAD**: Silero VAD (voice activity detection, prewarmed at startup)

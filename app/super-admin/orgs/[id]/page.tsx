@@ -2,14 +2,13 @@
 
 import { useEffect, useState, use, useRef, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Building2, User, Mail, ShieldCheck, Globe, RefreshCw, Play, Pause, MapPin as MapPinIcon, ChevronRight, BrainCircuit, Coins, ChevronDown, Loader2, Shield, Layers, AudioLines, Search, Thermometer, Lock } from "lucide-react";
+import { ArrowLeft, Building2, User, Mail, ShieldCheck, Globe, RefreshCw, Play, Pause, MapPin as MapPinIcon, ChevronRight, Coins, ChevronDown, Loader2, Shield, Layers, AudioLines, Search, Lock } from "lucide-react";
 import { LocationAutocomplete } from "@/components/ui/location-autocomplete";
 import { toast } from "@/components/ui/toast-custom";
 import { ProctoringSignalsSection } from "@/components/super-admin/proctoring-signals-section";
 import { ALL_VOICES, type Voice } from "@/lib/constants/voices";
 import { DEFAULT_ORG_PLAN, ORG_PLAN_OPTIONS, normalizeOrgPlan } from "@/lib/org-plans";
 import { getProctoringSignalsForPlan, normalizeProctoringSignals } from "@/lib/proctoring-signals";
-import { OPENAI_LLM_MODELS } from "@/lib/llm-models";
 import { cn } from "@/lib/utils";
 import { Steps } from "@/components/create-drive/steps";
 import { formatOrgLimitValue } from "@/lib/org-limits";
@@ -54,20 +53,6 @@ function LimitControl({ value, onChange, label }: { value: string, onChange: (va
     );
 }
 
-function CustomSelect({ value, onChange, options, label, icon: Icon }: any) {
-    return (
-        <div className="space-y-2">
-            <label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest">
-                <Icon className="h-3 w-3 text-[#F97316]" />
-                {label}
-            </label>
-            <select value={value} onChange={(e) => onChange(e.target.value)} className="h-10 w-full rounded-lg bg-white border border-gray-200 px-3 text-[14px] font-medium shadow-sm focus:border-[#F97316] focus:outline-none hover:border-orange-300 transition-all">
-                {options.map((opt: any) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-            </select>
-        </div>
-    );
-}
-
 export default function EditOrgPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params);
     const router = useRouter();
@@ -99,7 +84,6 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
         location: "", adminName: "", adminEmail: "", adminPassword: "",
         voiceId: "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
         allowedVoices: [] as string[],
-        llmModel: "gpt-4.1-mini", llmTemperature: 0.7,
     });
 
     const stopCurrentPreview = () => {
@@ -192,8 +176,6 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                     adminPassword: "",
                     voiceId: data.voiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
                     allowedVoices: Array.isArray(data.allowedVoices) ? data.allowedVoices : [],
-                    llmModel: data.llmModel || "gpt-4.1-mini",
-                    llmTemperature: data.llmTemperature != null ? data.llmTemperature : 0.7,
                 });
                 setBillingSnapshot({
                     interviewQuotaTotal: Number(data.interviewQuotaTotal || 0),
@@ -337,16 +319,8 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                                     <p className="text-[10px] text-gray-400">{form.allowedVoices.length} voice{form.allowedVoices.length !== 1 ? "s" : ""} selected</p>
                                 </div>
                             </div>
-                            {/* LLM + Temperature */}
+                            {/* STT */}
                             <div className="space-y-6">
-                                <CustomSelect label="Intelligence (LLM)" icon={BrainCircuit} value={form.llmModel} onChange={(v: string) => setForm(p => ({ ...p, llmModel: v }))} options={OPENAI_LLM_MODELS} />
-                                <div className="space-y-4">
-                                    <div className="flex items-center justify-between">
-                                        <label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest"><Thermometer className="h-3 w-3 text-[#F97316]" /> Temperature</label>
-                                        <span className="text-[12px] font-black text-gray-900">{form.llmTemperature.toFixed(1)}</span>
-                                    </div>
-                                    <input type="range" min="0" max="1" step="0.1" value={form.llmTemperature} onChange={e => setForm(p => ({ ...p, llmTemperature: parseFloat(e.target.value) }))} className="w-full h-1.5 bg-gray-100 rounded-lg appearance-none cursor-pointer accent-[#F97316] hover:accent-orange-600 transition-all" />
-                                </div>
                                 <div className="p-4 rounded-xl bg-gray-50 border border-gray-100 text-[11px] text-gray-500 space-y-1">
                                     <p className="font-bold text-gray-700 uppercase tracking-widest text-[10px]">STT</p>
                                     <p>Deepgram Nova-3 · hardcoded for all orgs</p>

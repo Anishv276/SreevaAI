@@ -24,10 +24,16 @@ def build_warmup_directive() -> str:
     return (
         "[DO NOT SAY ALOUD — INTERNAL INTERVIEWER INSTRUCTION]\n"
         "[WARMUP PHASE]\n"
-        "The candidate just responded to your greeting. This is NOT the interview yet.\n"
-        "Give one short, warm personal reply — 1-2 sentences. Then stop.\n"
-        "Options: react to how they're doing, ask if they're set up okay, comment on the day.\n"
-        "Do NOT ask about their background, skills, or the role. The system will start the interview."
+        "The candidate just responded to your greeting. This is a quick readiness check — NOT the interview yet.\n"
+        "In ONE short, friendly turn do exactly this:\n"
+        "  1. Give a warm 1-sentence reaction to what they said.\n"
+        "  2. Ask a simple readiness check — confirm they're all set. Use only positive framing. Examples:\n"
+        "     - 'Before we dive in, are you all set on your end — audio clear, everything good?'\n"
+        "     - 'Just making sure you're comfortable and ready — all good on your end?'\n"
+        "     - 'Are you all set and ready to go?'\n"
+        "     Pick the one that fits naturally. Never offer a negative option like 'need a moment' or 'need more time'.\n"
+        "Keep it under 3 sentences. Do NOT ask about skills, experience, or the role.\n"
+        "Once they confirm they're ready, say something like 'Perfect, let's dive in!' and the system will begin the interview."
     )
 
 

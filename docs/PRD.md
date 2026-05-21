@@ -7,7 +7,7 @@
 
 **Name:** Sreevaai
 
-**Tagline:** Conduct live AI interviews with deep proctoring — get a full hiring decision in 30 minutes.
+**Tagline:** Conduct live AI interviews with deep proctoring — get a full hiring decision in 20 minutes.
 
 ---
 
@@ -95,11 +95,11 @@ Wants technical feedback after the interview (nice-to-have, not current scope).
 - Fullscreen mode required to begin
 - AI (Ishitha / configurable name) conducts spoken interview via LiveKit audio/video
 - STT: Deepgram (nova-3-general), TTS: Cartesia (org-configurable voice)
-- LLM: GPT-4.1-mini (org-configurable model + temperature)
+- LLM: GPT-4.1-mini (hardcoded in code with role-based temperatures)
 - 4 interview stages: Resume → Skill → Situational → Behavioral
 - Adaptive questioning: agent probes, verifies claims, moves on — based on answer quality
 - Full transcript captured with timestamps and speaker labels
-- Interview terminates automatically at 30 minutes
+- Interview terminates automatically at 20 minutes
 
 ### E. Real-Time Proctoring (20 signals)
 

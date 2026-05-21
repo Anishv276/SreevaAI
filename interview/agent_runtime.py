@@ -50,8 +50,12 @@ from interview.agent_runtime_helpers import (
     tts_phonetic_processor,
 )
 from interview.agent_runtime_support import (
+    ADAPTIVE_LISTENER_TEMPERATURE,
     DEFAULT_VOICE_ID,
-    LLM_MODEL,
+    EVAL_LLM_MODEL,
+    GREETING_RAPPORT_CLOSING_TEMPERATURE,
+    INTERVIEW_LLM_MODEL,
+    INTERVIEW_LLM_TEMPERATURE,
     VOICE_REGISTRY,
     FIXED_INTERVIEW_DURATION_MINUTES,
     REDIS_URL,
@@ -66,6 +70,7 @@ from livekit.agents import (
     AgentSession,
     JobContext,
     JobProcess,
+    NOT_GIVEN,
     TurnHandlingOptions,
     llm,
 )
@@ -236,6 +241,88 @@ def _clean_stt_text(raw_text: str) -> str:
 
 
 class InterviewAgent(Agent):
+    @staticmethod
+    def _latest_system_message_with_marker(
+        chat_ctx: llm.ChatContext,
+        marker: str,
+    ) -> str:
+        for msg in reversed(chat_ctx.messages()):
+            if msg.role != "system":
+                continue
+            text = (msg.text_content or "").strip()
+            if marker in text:
+                return text
+        return ""
+
+    @staticmethod
+    def _latest_assistant_message(chat_ctx: llm.ChatContext) -> str:
+        for msg in reversed(chat_ctx.messages()):
+            if msg.role == "assistant":
+                return (msg.text_content or "").strip()
+        return ""
+
+    def _select_turn_temperature(self, chat_ctx: llm.ChatContext) -> tuple[float, str]:
+        """Pick LLM temperature by turn role using lightweight prompt-state heuristics."""
+        final_window_signal = self._latest_system_message_with_marker(
+            chat_ctx, "[SYSTEM ALERT: FINAL WINDOW]"
+        )
+        if final_window_signal:
+            return (
+                GREETING_RAPPORT_CLOSING_TEMPERATURE,
+                "greeting_rapport_closing",
+            )
+
+        short_directive = self._latest_system_message_with_marker(
+            chat_ctx, "[SHORT_RESPONSE_DIRECTIVE"
+        )
+        meta_directive = self._latest_system_message_with_marker(
+            chat_ctx, "[META_QUESTION_DIRECTIVE"
+        )
+        if short_directive or meta_directive:
+            return (
+                GREETING_RAPPORT_CLOSING_TEMPERATURE,
+                "greeting_rapport_closing",
+            )
+
+        next_turn_directive = self._latest_system_message_with_marker(
+            chat_ctx, "[NEXT_TURN_DIRECTIVE"
+        )
+        if next_turn_directive:
+            return (ADAPTIVE_LISTENER_TEMPERATURE, "interview_normal")
+
+        warmup_directive = self._latest_system_message_with_marker(
+            chat_ctx, "[WARMUP PHASE]"
+        )
+        if warmup_directive:
+            return (
+                GREETING_RAPPORT_CLOSING_TEMPERATURE,
+                "greeting_rapport_closing",
+            )
+
+        return (ADAPTIVE_LISTENER_TEMPERATURE, "adaptive_listener_core")
+
+    async def llm_node(self, chat_ctx, tools, model_settings):
+        activity = self._get_activity_or_raise()
+        assert activity.llm is not None, "llm_node called but no LLM node is available"
+        assert isinstance(activity.llm, llm.LLM), (
+            "llm_node should only be used with LLM (non-multimodal/realtime APIs) nodes"
+        )
+
+        tool_choice = model_settings.tool_choice if model_settings else NOT_GIVEN
+        turn_temp, temp_role = self._select_turn_temperature(chat_ctx)
+        logger.info("[TEMP] role=%s temperature=%.2f", temp_role, turn_temp)
+
+        conn_options = activity.session.conn_options.llm_conn_options
+        async with activity.llm.chat(
+            chat_ctx=chat_ctx,
+            tools=tools,
+            tool_choice=tool_choice,
+            conn_options=conn_options,
+            extra_kwargs={"temperature": turn_temp},
+        ) as stream:
+            async for chunk in stream:
+                yield chunk
+
     async def tts_node(self, text, model_settings):
         activity = self._get_activity_or_raise()
         tts_engine = activity.tts
@@ -350,6 +437,7 @@ from interview.agent_persistence import (
     persist_answer_scores,
     persist_interview_billing_snapshot,
     persist_org_usage_metrics,
+    persist_skill_ratings,
     persist_transcript,
     update_interview_status,
 )
@@ -417,8 +505,6 @@ class InterviewContext(BaseModel):
     voiceProvider: Optional[str] = None
     voiceModel: Optional[str] = None
     deepgramModel: Optional[str] = None
-    llmModel: Optional[str] = None
-    llmTemperature: Optional[float] = 0.7
     resumeData: Any = None
     extractedDetails: Any = None
     interviewQuestions: Any = None
@@ -641,10 +727,10 @@ async def entrypoint(ctx: JobContext):
             org_tts_provider = fallback_voice["provider"]
             org_tts_model = fallback_voice["model"]
     org_deepgram_model: str = str(ctx_data.deepgramModel or STT_MODEL)
-    org_llm_model: str = str(ctx_data.llmModel or LLM_MODEL)
-    org_llm_temperature: float = float(ctx_data.llmTemperature or 0.7)
+    interview_llm_model: str = INTERVIEW_LLM_MODEL
+    interview_llm_temperature: float = INTERVIEW_LLM_TEMPERATURE
     analysis_client = AsyncOpenAI()
-    analysis_model = org_llm_model
+    analysis_model = EVAL_LLM_MODEL
 
     lang_codes = _LANGUAGE_CODES.get(interview_lang)
     if not lang_codes:
@@ -789,7 +875,10 @@ async def entrypoint(ctx: JobContext):
             except Exception as e:
                 logger.warning(f"[FLOW] TTS warmup failed (non-fatal): {e}")
     warm_greeting_task = spawn_background_task(_warm_greeting_tts(tts_plugin), "warm_greeting_tts")
-    llm_plugin = build_llm(model=org_llm_model, temperature=org_llm_temperature)
+    llm_plugin = build_llm(
+        model=interview_llm_model,
+        temperature=interview_llm_temperature,
+    )
     turn_detector = ctx.proc.userdata.get("turn_detector")
     ai_name = ctx_data.aiName or "Ishita"
     welcome_text = build_greeting_text(
@@ -893,10 +982,22 @@ async def entrypoint(ctx: JobContext):
     _session_state_lock = asyncio.Lock()
     # Redis eval worker integration — pre-computed directive from previous turn
     _eval_redis_client = None
-    if redis_asyncio is not None and REDIS_URL:
+    if redis_asyncio is None:
+        logger.warning("[REDIS_EVAL] redis package not installed — eval worker disabled, inline eval will be used")
+    elif not REDIS_URL:
+        logger.warning("[REDIS_EVAL] REDIS_URL not set — eval worker disabled, inline eval will be used")
+    else:
         try:
             _eval_redis_client = redis_asyncio.from_url(REDIS_URL, decode_responses=False)
-            logger.info("[REDIS_EVAL] Redis eval client connected to %s", REDIS_URL)
+            # Verify connectivity with a quick ping
+            import asyncio as _asyncio_check
+            async def _ping_redis():
+                try:
+                    await _eval_redis_client.ping()
+                    logger.info("[REDIS_EVAL] Redis eval client connected and ping OK — %s", REDIS_URL)
+                except Exception as _ping_err:
+                    logger.warning("[REDIS_EVAL] Redis ping failed: %s — eval worker may not work", _ping_err)
+            _asyncio_check.ensure_future(_ping_redis())
         except Exception as _re:
             logger.warning("[REDIS_EVAL] Redis eval client init failed: %s — inline eval will be used", _re)
             _eval_redis_client = None
@@ -1257,10 +1358,10 @@ async def entrypoint(ctx: JobContext):
             # Fires on every candidate response. Evaluates answer quality in real-time
             # and injects a NEXT_TURN_DIRECTIVE before Ishita generates her next response.
             # Decision: PROBE (which mode) or MOVE_ON - fully signal-driven, no fixed depth.
-            # Greeting = turn 1, warmup = turns 2-3, interview starts at turn 4.
-            if not warmup_complete and turn_snapshot >= 3:
+            # Greeting = turn 1, warmup question = turn 2, interview starts at turn 3.
+            if not warmup_complete and turn_snapshot >= 2:
                 warmup_complete = True
-                logger.info("[WARMUP] warmup_complete=True at turn=%d", turn_snapshot)
+                logger.info("[WARMUP] ✓ warmup_complete=True at turn=%d (fallback setter)", turn_snapshot)
 
             # Warmup turns (before warmup_complete) are recorded as zero-scored placeholders
             # so they never pollute the technical or communication score averages.
@@ -1273,7 +1374,9 @@ async def entrypoint(ctx: JobContext):
                         "overall": 0.0, "signals": [], "concerns": [],
                         "is_warmup": True,
                     })
-            if warmup_complete and _last_interviewer_question and turn_snapshot > 1:
+            # Start eval only after warmup has fully finished.
+            # Warmup = turns 1-2, interview starts at turn 3, so first worker job is turn 3.
+            if warmup_complete and turn_snapshot > 2 and _last_interviewer_question:
                 answer_snap = content
                 question_snap = _last_interviewer_question
                 lines_snap_eval = list(transcript_lines)
@@ -1325,8 +1428,16 @@ async def entrypoint(ctx: JobContext):
                         if key and key not in seen_st:
                             seen_st.add(key)
                             unique_skills.append(s)
-                    # PART 3: Include TopicState for saturation tracking
-                    active_topic_state = _topic_states.get(_active_topic) if _active_topic else None
+                    # PART 3: Include TopicState for saturation tracking (serialize to dict)
+                    # _topic_states stores plain dicts (returned by eval worker via JSON).
+                    # Guard against calling .to_dict() on a dict that was already serialized.
+                    _ts_obj = _topic_states.get(_active_topic) if _active_topic else None
+                    if _ts_obj is None:
+                        active_topic_state = None
+                    elif isinstance(_ts_obj, dict):
+                        active_topic_state = _ts_obj  # already serialized
+                    else:
+                        active_topic_state = _ts_obj.to_dict()
 
                     return {
                         "app_id": app_id,
@@ -1366,29 +1477,6 @@ async def entrypoint(ctx: JobContext):
                     }
 
 
-                async def _push_payload_to_redis(payload: dict) -> None:
-                    if _eval_redis_client is None:
-                        return
-                    try:
-                        await _eval_redis_client.lpush(
-                            "interview:eval_queue",
-                            json.dumps(payload).encode(),
-                        )
-                        logger.info(
-                            "[REDIS_EVAL] Pushed payload turn=%d to worker queue",
-                            payload.get("turn", 0),
-                        )
-                    except Exception as _re:
-                        logger.warning("[REDIS_EVAL] Failed to push payload: %s", _re)
-
-                # READ result from previous turn's eval (computed while Ishita was speaking)
-                applied = await _read_and_apply_eval_result(turn_snapshot)
-                if not applied:
-                    logger.info("[REDIS_EVAL] No pre-computed result for turn=%d — skipping inline eval", turn_snapshot)
-
-                # PUSH current turn's answer for the worker to evaluate during Ishita's response
-                await _push_payload_to_redis(_build_eval_payload())
-
                 async def _read_and_apply_eval_result(turn_for_log: int) -> bool:
                     """Read pre-computed result from Redis and apply all mutations + inject directive.
                     Returns True if result was found and applied, False if no result available."""
@@ -1402,6 +1490,7 @@ async def entrypoint(ctx: JobContext):
                         _discussed_log
 
                     if _eval_redis_client is None:
+                        logger.debug("[REDIS_EVAL] _eval_redis_client is None — skipping result read for turn=%d", turn_for_log)
                         return False
                     result_key = f"interview:{app_id}:eval_result"
                     try:
@@ -1460,6 +1549,17 @@ async def entrypoint(ctx: JobContext):
                         quality_record = result.get("quality_record")
                         if quality_record:
                             answer_scores.append(quality_record)
+                            # ASYNC persist answer_scores after each eval turn (no latency)
+                            _scores_after_eval = list(answer_scores)
+                            _app_id_persist = app_id
+                            _turn_persist = result.get("turn", 0)
+                            async def _persist_scores_async():
+                                try:
+                                    await persist_answer_scores(_app_id_persist, _scores_after_eval)
+                                    logger.info("[PERSIST] Answer scores saved after turn=%d (%d records)", _turn_persist, len(_scores_after_eval))
+                                except Exception as _ps_err:
+                                    logger.warning("[PERSIST] Answer scores save failed turn=%d: %s", _turn_persist, _ps_err)
+                            spawn_background_task(_persist_scores_async(), f"answer_scores_turn_{_turn_persist}")
                         # Update depth_decay turn tracker when it fires
                         if any(ev.get("signal_name") == "depth_decay" for ev in (result.get("signal_events") or [])):
                             _last_depth_decay_turn = result.get("turn", turn_for_log)
@@ -1575,39 +1675,105 @@ async def entrypoint(ctx: JobContext):
                         )
                     return True
 
-                prev_chain = _user_turn_chain
-                async def _run_user_turn_serialized():
-                    if prev_chain:
-                        try:
-                            await prev_chain
-                        except Exception:
-                            # Previous turn failure should not block next turn processing
-                            pass
-                    await _process_user_conversation_item(event, content, role, turn_snapshot)
-                _user_turn_chain = spawn_background_task(
-                    _run_user_turn_serialized(),
-                    f"process_user_turn_serial_{turn_snapshot}",
-                )
+
+                _eval_worker_activated = False
+
+                async def _push_payload_to_redis(payload: dict) -> None:
+                    nonlocal _eval_worker_activated
+                    if _eval_redis_client is None:
+                        logger.warning("[REDIS_EVAL] _eval_redis_client is None — eval payload for turn=%d not pushed (eval worker disabled)", payload.get("turn", 0))
+                        return
+                    try:
+                        await _eval_redis_client.rpush(
+                            "interview:eval_queue",
+                            json.dumps(payload).encode(),
+                        )
+                        if not _eval_worker_activated:
+                            _eval_worker_activated = True
+                            logger.info(
+                                "[REDIS_EVAL] ✓ EVAL WORKER ACTIVATED — first payload pushed turn=%d app_id=%s",
+                                payload.get("turn", 0), payload.get("app_id", "?"),
+                            )
+                        else:
+                            logger.info(
+                                "[REDIS_EVAL] Pushed payload turn=%d to worker queue",
+                                payload.get("turn", 0),
+                            )
+                    except Exception as _re:
+                        logger.warning("[REDIS_EVAL] Failed to push payload: %s", _re)
+
+                # READ result from previous turn's eval (computed while Ishita was speaking)
+                applied = await _read_and_apply_eval_result(turn_snapshot)
+                if not applied:
+                    logger.info("[REDIS_EVAL] No pre-computed result for turn=%d — skipping inline eval", turn_snapshot)
+
+                # PUSH current turn's answer for the worker to evaluate during Ishita's response
+                await _push_payload_to_redis(_build_eval_payload())
+
+                # Append candidate transcript before returning
+                _candidate_clean = content.replace("<wait for response>", "").strip()
+                if _candidate_clean:
+                    append_transcript_line("Candidate", _candidate_clean)
+                    logger.info("[TRANSCRIPT] Candidate: %s...", _candidate_clean[:60])
+                    # Async transcript persist after every candidate turn
+                    _lines_snap_t = list(transcript_lines)
+                    _start_t_snap = session_start_time
+                    _app_id_t = app_id
+                    spawn_background_task(
+                        persist_transcript(_app_id_t, _lines_snap_t, _start_t_snap, partial=True),
+                        f"transcript_save_turn_{turn_snapshot}",
+                    )
+        except Exception as e:
+            logger.warning(f"[TRANSCRIPT] User eval error: {e}")
+
+    # ── TRANSCRIPT EVENT HANDLER ──────────────────────────────────────────────
+    # Registered on session "conversation_item_added" — fires for BOTH Ishita
+    # (assistant) and Candidate (user) turns. Handles:
+    #   • Transcript persistence for both speakers
+    #   • turn_count / question tracking for assistant turns
+    #   • Warmup gate management
+    #   • Dispatching user turns to the eval/decision engine
+    # ─────────────────────────────────────────────────────────────────────────
+    @session.on("conversation_item_added")
+    def on_conversation_item_added(event) -> None:
+        nonlocal turn_count, _last_interviewer_question, _question_asked_at, \
+            _candidate_turn_since_last_assistant, warmup_complete, \
+            _answer_received_at, _user_turn_chain
+        try:
+            item = event.item
+            role = getattr(item, "role", None)
+            content = (item.text_content or "").strip()
+            if not role:
                 return
-            speaker = "Interviewer" if role == "assistant" else "Candidate"
-            # Strip the <wait for response> marker from transcript (it's an internal signal, not dialogue)
+
+            # ── ASSISTANT TURN ───────────────────────────────────────────
             if role == "assistant":
+                if not _candidate_turn_since_last_assistant:
+                    logger.warning("[TURN_GUARD] Suppressing consecutive assistant turn without candidate reply")
+                    return
+                if not llm_spoke_event.is_set():
+                    llm_spoke_event.set()
                 clean_content = sanitize_candidate_facing_text(content)
-            else:
-                clean_content = content.replace("<wait for response>", "").strip()
-            append_transcript_line(speaker, clean_content)
-            logger.info(f"[TRANSCRIPT] {speaker}: {clean_content[:60]}...")
-            # --- Track last Ishita question (for per-turn evaluator) ---
-            if role == "assistant":
-                # Extract the last sentence ending in "?" as the question
-                q_match = re.search(r'([^.!?]+\?)\s*$', clean_content.strip())
+                if not clean_content or clean_content == "<wait for response>":
+                    return
+                # Save Ishita's line to transcript
+                append_transcript_line("Interviewer", clean_content)
+                logger.info("[TRANSCRIPT] Interviewer: %s...", clean_content[:60])
+                # Track last question for eval engine.
+                # Prefer ?-terminated sentence; fall back to last sentence of 20+ chars
+                # so declarative prompts like "Tell me what you built in X." are captured.
+                _q_text = clean_content.strip()
+                q_match = re.search(r'([^.!?]+\?)\s*$', _q_text)
                 if q_match:
                     _last_interviewer_question = q_match.group(1).strip()
-                # Detect which custom questions were asked in this assistant turn.
-                # Match by checking if the key words of each custom question appear in the output.
+                else:
+                    _fallback_q = re.search(r'(?:(?<=[.!?])\s+|^)([^.!?]{20,}[.!?]?)\s*$', _q_text)
+                    if _fallback_q:
+                        _last_interviewer_question = _fallback_q.group(1).strip()
+                # Track custom question coverage
                 if _custom_questions:
                     _q_lower = clean_content.lower()
-                    _asked_words = _expand_custom_q_tokens(re.sub(r"[^a-z0-9\\s]", " ", _q_lower))
+                    _asked_words = _expand_custom_q_tokens(re.sub(r"[^a-z0-9\s]", " ", _q_lower))
                     for _cqi, _cq in enumerate(_custom_questions):
                         if _cq.asked:
                             continue
@@ -1618,42 +1784,66 @@ async def entrypoint(ctx: JobContext):
                         if _cq.normalized in _q_lower or ratio >= 0.34:
                             _cq.asked = True
                             _discussed_log.append(f"- custom question covered: {_cq.raw[:80]}")
-                            logger.info(
-                                "[FLOW] Custom question %d/%d marked covered: '%s'",
-                                _cqi + 1, len(_custom_questions), _cq.raw[:100],
-                            )
-                    _unasked_count = sum(1 for cq in _custom_questions if not cq.asked)
-                    logger.debug(
-                        "[CUSTOM_Q] Coverage after this turn: %d/%d asked, %d remaining",
-                        len(_custom_questions) - _unasked_count, len(_custom_questions), _unasked_count,
-                    )
-            # --- Per-Turn Answer Evaluator (Decision Engine) ---
-            # Fires on every candidate response. Evaluates answer quality in real-time
-            # and injects a NEXT_TURN_DIRECTIVE before Ishita generates her next response.
-            # Decision: PROBE (which mode) or MOVE_ON - fully signal-driven, no fixed depth.
-            if role == "assistant":
+                            logger.info("[FLOW] Custom Q %d/%d covered: '%s'", _cqi + 1, len(_custom_questions), _cq.raw[:80])
+                # Increment turn count and track timing
                 _question_asked_at = time.perf_counter()
                 _candidate_turn_since_last_assistant = False
                 turn_count += 1
-            # --- Periodic auto-save every 5 assistant turns to prevent data loss ---
-            if role == "assistant" and turn_count % 5 == 0 and len(transcript_lines) > 0:
-                start_t = session_start_time
-                lines_snapshot = list(transcript_lines)
-                app_id_snap = app_id
-                async def _periodic_save():
-                    try:
-                        await persist_transcript(app_id_snap, lines_snapshot, start_t)
-                        logger.info(
-                            f"[PERSIST] Transcript auto-saved at {len(lines_snapshot)} lines"
-                        )
-                    except Exception as save_err:
-                        logger.warning(f"[TRANSCRIPT] Periodic save failed: {save_err}")
-                spawn_background_task(
-                    _periodic_save(),
-                    f"periodic_save_{len(lines_snapshot)}_lines",
+                logger.info("[TURN] turn=%d warmup=%s", turn_count, warmup_complete)
+                # Note: Transcript and answer_scores are now persisted after EVERY eval turn (async).
+                # See _process_user_conversation_item() for per-turn async persistence.
+                # This periodic save is kept as a safety net for orphaned records in edge cases.
+                # Normally turned off by default to avoid redundant DB writes.
+                _PERIODIC_SAVE_ENABLED = False
+                if _PERIODIC_SAVE_ENABLED and turn_count % 5 == 0 and len(transcript_lines) > 0:
+                    _start_t = session_start_time
+                    _lines_snap = list(transcript_lines)
+                    _scores_snap = list(answer_scores)
+                    _app_id_snap = app_id
+                    async def _periodic_save_handler():
+                        try:
+                            await persist_transcript(_app_id_snap, _lines_snap, _start_t, partial=True)
+                            logger.info("[PERSIST] Transcript periodic-backup-saved at %d lines", len(_lines_snap))
+                        except Exception as _se:
+                            logger.warning("[PERSIST] Transcript backup save failed: %s", _se)
+                        if _scores_snap:
+                            try:
+                                await persist_answer_scores(_app_id_snap, _scores_snap)
+                                logger.info("[PERSIST] Answer scores backup-saved (%d records)", len(_scores_snap))
+                            except Exception as _se2:
+                                logger.warning("[PERSIST] Score backup save failed: %s", _se2)
+                    spawn_background_task(_periodic_save_handler(), f"periodic_save_backup_t{turn_count}")
+
+            # ── USER TURN ─────────────────────────────────────────────────
+            elif role == "user":
+                _answer_received_at = time.perf_counter()
+                _candidate_turn_since_last_assistant = True
+                # Warmup gate: block STT until greeting delivered
+                if greeting_delivered_at is None:
+                    logger.info("[GATE] Candidate spoke before greeting — blocked")
+                    return
+                # Warmup completion: candidate answers warmup question (turn 2+).
+                # turn 1 = greeting, turn 2 = warmup question → candidate reply here = warmup done.
+                if not warmup_complete and turn_count >= 2:
+                    warmup_complete = True
+                    remove_system_messages(chat_ctx, "[WARMUP PHASE]")
+                    logger.info("[WARMUP] ✓ WARMUP COMPLETE at turn=%d — INTERVIEW PHASE ACTIVE", turn_count)
+                # Dispatch to serialized user-turn processing chain
+                prev_chain = _user_turn_chain
+                async def _run_serialized(_prev=prev_chain, _content=content, _turn=turn_count):
+                    if _prev:
+                        try:
+                            await _prev
+                        except Exception:
+                            pass
+                    await _process_user_conversation_item(event, _content, role, _turn)
+                _user_turn_chain = spawn_background_task(
+                    _run_serialized(),
+                    f"user_turn_{turn_count}",
                 )
-        except Exception as e:
-            logger.warning(f"[TRANSCRIPT] Event parse error: {e}")
+        except Exception as _e:
+            logger.warning("[TRANSCRIPT] on_conversation_item_added error: %s", _e)
+
     # --- Thinking Filler Logic ---
     # NOTE: session.say() fillers are intentionally disabled.
     # When filler audio and the LLM TTS reply fire at near-simultaneous times
@@ -1764,7 +1954,7 @@ async def entrypoint(ctx: JobContext):
         logger.info(
             "[FLOW] Session started — candidate=%s role=%s band=%s tts=%s llm=%s boot=%dms",
             candidate_name, job_title, session_context.candidate_band,
-            org_tts_provider, org_llm_model,
+            org_tts_provider, interview_llm_model,
             int((time.perf_counter() - entry_started_at) * 1000),
         )
         # Mark as started in DB while greeting starts immediately.
@@ -1795,8 +1985,11 @@ async def entrypoint(ctx: JobContext):
                         await session.say(welcome_text, allow_interruptions=False)
                         greeting_delivered = True
                         greeting_delivered_at = time.time()
-                        # session_start_time already set above at greeting-begin — do NOT overwrite here
-                        logger.info("[FLOW] Greeting completed — warmup phase begins")
+                        # session.say() bypasses the LLM pipeline and does NOT fire
+                        # conversation_item_added, so we must append the greeting manually.
+                        append_transcript_line("Interviewer", welcome_text)
+                        logger.info("[TRANSCRIPT] Greeting appended to transcript (session.say bypass)")
+                        logger.info("[FLOW] ✓ GREETING DONE — WARMUP ACTIVE (waiting for warmup Q&A before interview)")
                         break
                     except Exception as _tts_err:
                         err_str = str(_tts_err).lower()
@@ -2088,6 +2281,73 @@ async def entrypoint(ctx: JobContext):
         final_status="COMPLETED",
     )
     await persist_answer_scores(app_id, answer_scores)
+
+    # Calculate and persist skill ratings (async)
+    async def _persist_skill_ratings_async():
+        try:
+            # Build skill ratings from answer_scores grouped by topic
+            skill_ratings_by_topic = {}
+
+            for score_record in answer_scores:
+                topic = score_record.get("topic", "general")
+                if topic not in skill_ratings_by_topic:
+                    skill_ratings_by_topic[topic] = []
+                skill_ratings_by_topic[topic].append(score_record)
+
+            # Build final skill_ratings dict
+            skill_ratings = {}
+            for topic, scores in skill_ratings_by_topic.items():
+                avg_overall = sum(s.get("overall", 5) for s in scores) / len(scores)
+                avg_clarity = sum(s.get("clarity", 5) for s in scores) / len(scores)
+                avg_depth = sum(s.get("depth", 5) for s in scores) / len(scores)
+
+                # Calculate percentage (out of 10 max)
+                percentage = min(100, (avg_overall / 10.0) * 100)
+
+                # Get saturation info from first record (should be same for all records on same topic)
+                sat_score = scores[0].get("topic_saturation_score", 0.0)
+                sat_threshold = scores[0].get("topic_saturation_threshold", 0.0)
+                sat_pct = (sat_score / sat_threshold * 100) if sat_threshold > 0 else 0
+
+                skill_ratings[topic] = {
+                    "score": round(avg_overall, 2),
+                    "percentage": round(percentage, 0),
+                    "clarity": round(avg_clarity, 2),
+                    "depth": round(avg_depth, 2),
+                    "max_score": 10.0,
+                    "max_percentage": 100,
+                    "answered": True,
+                    "answer_count": len(scores),
+                    "saturation_score": round(sat_score, 1),
+                    "saturation_threshold": round(sat_threshold, 1),
+                    "saturation_percentage": round(sat_pct, 0),
+                    "quality_records": [
+                        {
+                            "turn": s.get("turn", 0),
+                            "question": s.get("question", "")[:100],
+                            "overall": s.get("overall", 5),
+                            "clarity": s.get("clarity", 5),
+                            "depth": s.get("depth", 5),
+                            "signals": s.get("signals", []),
+                        }
+                        for s in scores
+                    ],
+                }
+
+            if skill_ratings:
+                await persist_skill_ratings(app_id, skill_ratings)
+                logger.info(
+                    "[SKILL_RATINGS] Persisted ratings for %d skills (avg_score=%.1f, avg_pct=%.0f%%)",
+                    len(skill_ratings),
+                    sum(r["score"] for r in skill_ratings.values()) / len(skill_ratings),
+                    sum(r["percentage"] for r in skill_ratings.values()) / len(skill_ratings),
+                )
+            else:
+                logger.info("[SKILL_RATINGS] No skill ratings to persist")
+        except Exception as e:
+            logger.warning("[SKILL_RATINGS] Failed to persist skill ratings: %s", e)
+
+    spawn_background_task(_persist_skill_ratings_async(), "final_skill_ratings")
     logger.info("[PERSIST] Transcript and scores saved")
     await persist_org_usage_metrics(
         org_id,

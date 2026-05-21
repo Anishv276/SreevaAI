@@ -161,7 +161,7 @@ export async function POST(req: NextRequest) {
 
     const org = await prisma.organization.findUnique({
       where: { id: orgId },
-      select: { name: true, industry: true, size: true, plan: true, llmModel: true },
+      select: { name: true, industry: true, size: true, plan: true },
     });
     if (!canUseRecruiterAssistant(org?.plan)) {
       return NextResponse.json(
@@ -169,7 +169,7 @@ export async function POST(req: NextRequest) {
         { status: 403 }
       );
     }
-    const orgOpenAIModel = org?.llmModel || "gpt-4.1-mini";
+    const orgOpenAIModel = "gpt-4.1-mini";
 
     const { messages } = await req.json();
     const userMessage = messages[messages.length - 1]?.content ?? "";

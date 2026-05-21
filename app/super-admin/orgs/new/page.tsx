@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   AudioLines,
-  BrainCircuit,
   Building2,
   CheckCircle2,
   Coins,
@@ -21,7 +20,6 @@ import {
   RefreshCw,
   Search,
   Shield,
-  Thermometer,
   User,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -31,7 +29,6 @@ import { ProctoringSignalsSection } from "@/components/super-admin/proctoring-si
 import { ALL_VOICES, DEFAULT_VOICE_ID, getVoiceById, type Voice } from "@/lib/constants/voices";
 import { DEFAULT_ORG_PLAN, ORG_PLAN_OPTIONS, type OrgPlanId } from "@/lib/org-plans";
 import { getProctoringSignalsForPlan, type ProctoringSignalToggles } from "@/lib/proctoring-signals";
-import { OPENAI_LLM_MODELS } from "@/lib/llm-models";
 import { cn } from "@/lib/utils";
 
 type OrgFormState = {
@@ -48,8 +45,6 @@ type OrgFormState = {
   voiceId: string;
   allowedVoices: string[];
   deepgramModel: string;
-  llmModel: string;
-  llmTemperature: number;
 };
 
 function SectionHeader({ title, description }: { title: string; description?: string }) {
@@ -232,8 +227,6 @@ export default function NewOrgPage() {
     voiceId: DEFAULT_VOICE_ID,
     allowedVoices: [DEFAULT_VOICE_ID],
     deepgramModel: "nova-3-general",
-    llmModel: "gpt-4.1-mini",
-    llmTemperature: 0.7,
   }));
 
   const primaryVoiceId = form.voiceId || form.allowedVoices[0] || DEFAULT_VOICE_ID;
@@ -430,8 +423,6 @@ export default function NewOrgPage() {
           voiceId: form.voiceId || DEFAULT_VOICE_ID,
           allowedVoices: form.allowedVoices.length > 0 ? form.allowedVoices : [form.voiceId || DEFAULT_VOICE_ID],
           deepgramModel: form.deepgramModel,
-          llmModel: form.llmModel,
-          llmTemperature: form.llmTemperature,
         }),
       });
 
@@ -661,31 +652,6 @@ export default function NewOrgPage() {
                   { value: "nova-2-general", label: "Nova-2 (Legacy)" },
                 ]}
               />
-              <SelectInput
-                label="Intelligence (LLM)"
-                icon={BrainCircuit}
-                value={form.llmModel}
-                onChange={(value) => updateForm({ llmModel: value })}
-                options={OPENAI_LLM_MODELS}
-              />
-              <div className="space-y-2">
-                <label className="flex items-center justify-between text-[12px] font-bold uppercase tracking-widest text-slate-500">
-                  <span className="flex items-center gap-1.5">
-                    <Thermometer className="h-3.5 w-3.5 text-[#F97316]" />
-                    Temperature
-                  </span>
-                  <span className="text-slate-900">{form.llmTemperature.toFixed(1)}</span>
-                </label>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.1"
-                  value={form.llmTemperature}
-                  onChange={(e) => updateForm({ llmTemperature: parseFloat(e.target.value) })}
-                  className="h-2 w-full cursor-pointer appearance-none rounded-full bg-slate-100 accent-[#F97316]"
-                />
-              </div>
             </div>
           </div>
         </section>

@@ -530,8 +530,11 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         }
     }, []);
     const stopInterviewMedia = useCallback(() => {
+        setShouldConnect(false);
         const room = lkRoomRef.current;
         if (!room) return;
+        const cameraTrack = room.localParticipant.getTrackPublication(Track.Source.Camera)?.track ?? null;
+        const microphoneTrack = room.localParticipant.getTrackPublication(Track.Source.Microphone)?.track ?? null;
         try {
             void room.localParticipant.setCameraEnabled(false).catch(() => { });
         } catch { }
@@ -539,9 +542,25 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             void room.localParticipant.setMicrophoneEnabled(false).catch(() => { });
         } catch { }
         try {
+            cameraTrack?.stop();
+        } catch { }
+        try {
+            microphoneTrack?.stop();
+        } catch { }
+        try {
             room.disconnect();
         } catch { }
     }, []);
+    const beginFinalizingInterview = useCallback(() => {
+        stopInterviewMedia();
+        setPhase("finalizing");
+    }, [stopInterviewMedia]);
+    const completeInterviewFeedback = useCallback((reason: "normal" | "timeout" = "normal") => {
+        stopInterviewMedia();
+        setEndMode(reason);
+        setPhase("completed");
+        void exitFullscreenMode();
+    }, [exitFullscreenMode, stopInterviewMedia]);
     const resetToHardwareCheck = useCallback(async (message?: string) => {
         if (launchRecoveryTimerRef.current !== null) {
             window.clearTimeout(launchRecoveryTimerRef.current);
@@ -1061,13 +1080,8 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                             id={id}
                             interviewToken={interviewToken}
                             onAgentReady={handleAgentReady}
-                            onFinish={(reason = "normal") => {
-                                setShouldConnect(false);
-                                setEndMode(reason);
-                                setPhase("completed");
-                                void exitFullscreenMode();
-                            }}
-                            onFinalizing={() => setPhase("finalizing")}
+                            onFinish={completeInterviewFeedback}
+                            onFinalizing={beginFinalizingInterview}
                             isInterviewActive={phase === "interview"}
                             isLaunchingActive={phase === "launching"}
                             selectedMicId={selectedMicId}
@@ -1833,6 +1847,11 @@ function InterviewRoomContent({
                 recordingStopRejectRef.current = reject;
             });
             recorder.stop();
+            // Release the cloned capture tracks immediately so the browser
+            // camera/mic indicator turns off while finalization continues.
+            try {
+                recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
+            } catch { }
         }
         if (recordingStopPromiseRef.current) {
             try {

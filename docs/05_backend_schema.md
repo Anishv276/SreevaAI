@@ -32,8 +32,6 @@ Primary account entity. One org = one customer.
 | `voiceId` | String? | Default Cartesia voice UUID |
 | `allowedVoices` | String[] | Whitelisted voice UUIDs for this org |
 | `deepgramModel` | String? | STT model — default `nova-3-general` |
-| `llmModel` | String? | LLM — default `gpt-4.1-mini` |
-| `llmTemperature` | Float? | LLM temperature — default `0.7` |
 | `proctoringSignals` | Json? | Toggle map for all 18 signal types — default all `true` |
 | `usageMetrics` | Json? | Per-feature billing breakdown |
 | `onboardingComplete` | Boolean | Onboarding wizard done flag |

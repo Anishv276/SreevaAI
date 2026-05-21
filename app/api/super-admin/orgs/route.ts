@@ -266,7 +266,6 @@ export async function POST(request: Request) {
             proctoringSignals,
             voiceId, allowedVoices,
             deepgramModel,
-            llmModel, llmTemperature,
             location
         } = body;
 
@@ -330,7 +329,7 @@ export async function POST(request: Request) {
                 ? normalizeProctoringSignals(proctoringSignals)
                 : undefined;
 
-        console.log("[SuperAdmin] Provisioning Org with AI Config:", { voiceId, llmModel });
+        console.log("[SuperAdmin] Provisioning Org with AI Config:", { voiceId, deepgramModel });
 
         // Create org + admin in a transaction
         const result = await prisma.$transaction(async (tx) => {
@@ -357,7 +356,7 @@ export async function POST(request: Request) {
             Object.assign(
                 orgData,
                 normalizeOrgAiConfig({
-                    next: { voiceId, allowedVoices, deepgramModel, llmModel, llmTemperature },
+                    next: { voiceId, allowedVoices, deepgramModel },
                 })
             );
 

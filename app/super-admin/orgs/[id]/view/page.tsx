@@ -100,10 +100,6 @@ interface OrgDetail {
 
     deepgramModel?: string;
 
-    llmModel?: string;
-
-    llmTemperature?: number;
-
     users?: { name: string, email: string }[];
 
 }
@@ -980,7 +976,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
 
                                     : null;
 
-                                const llmModels = formatModelNames(billing?.byModel, org?.llmModel || "");
+                                const analysisModelNames = formatModelNames(billing?.byModel, "gpt-4.1-mini");
 
                                 const orgVoice = section.key === "interview" ? (() => {
                                     const ids = Array.isArray(org?.allowedVoices) && org!.allowedVoices!.length > 0
@@ -1039,7 +1035,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
 
                                         <div className="mt-1 text-xs font-bold text-gray-500 uppercase tracking-wider">
 
-                                            LLM model: <span className="text-gray-900">{llmModels}</span>
+                                            Analysis model: <span className="text-gray-900">{analysisModelNames}</span>
 
                                         </div>
 

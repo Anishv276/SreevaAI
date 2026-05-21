@@ -67,7 +67,6 @@ interface Org {
     // AI Config (Setup)
     voiceId?: string;
     allowedVoices?: string[];
-    llmModel?: string;
     deepgramModel?: string;
     creditsUsed?: number;
     interviewsCompleted?: number;
@@ -238,11 +237,11 @@ export default function OrgsPage() {
         { key: "interviewReport", label: "LLM - Interview Report" },
     ];
     // Authoritative model per feature — matches what each API route actually uses
-    const FEATURE_MODEL_MAP: Record<string, string | null> = {
+    const FEATURE_MODEL_MAP: Record<string, string> = {
         resumeExtraction: "gpt-5.4-mini",
         jdExtraction: "gpt-5.4-mini",
         chatbot: "gpt-4.1-mini",
-        interview: null, // read from org DB (llmModel)
+        interview: "gpt-4.1-mini",
         resumeReport: "gpt-4o",
         interviewReport: "gpt-4o",
     };
@@ -272,11 +271,7 @@ export default function OrgsPage() {
             : org.voiceId ? [org.voiceId] : [];
         return ids.map(id => ALL_VOICES.find(v => v.id === id)).filter(Boolean) as typeof ALL_VOICES;
     };
-    const getSetupModel = (org: Org, type: 'LLM' | 'STT') => {
-        if (type === 'LLM') return org.llmModel;
-        if (type === 'STT') return org.deepgramModel ?? 'nova-3-general';
-        return null;
-    };
+    const getSetupSttModel = (org: Org) => org.deepgramModel ?? 'nova-3-general';
     const getUsageSummary = (usageMetrics?: Record<string, unknown> | null) => {
         if (!usageMetrics || typeof usageMetrics !== "object") return fmt(0);
         const cost = getOrgTotalBillingCost({ usageMetrics } as any);
@@ -765,11 +760,8 @@ export default function OrgsPage() {
                                 const synthDash = getDash(synthCost);
                                 const sttDash = getDash(sttCost);
                                 const totalTokens = Number(feature.inputTokens || 0) + Number(feature.outputTokens || 0);
-                                const llmModels = Object.keys(feature.byModel || {});
-                                const ttsModels = Object.keys(feature.ttsByModel || {});
-                                const sttModels = Object.keys(feature.sttByModel || {});
-                                const setupLlm = getSetupModel(metricsOrg, 'LLM');
-                                const setupStt = getSetupModel(metricsOrg, 'STT');
+                                const setupLlm = FEATURE_MODEL_MAP.interview;
+                                const setupStt = getSetupSttModel(metricsOrg);
                                 return (
                                     <div className="flex flex-col gap-12">
                                         {/* LLM Section */}
@@ -782,8 +774,7 @@ export default function OrgsPage() {
                                                 {metricSections.map((section) => {
                                                     const feature = getBillingFeature(metricsOrg, section.key);
                                                     const totalTokens = Number(feature.inputTokens || 0) + Number(feature.outputTokens || 0);
-                                                    const models = Object.keys(feature.byModel || {});
-                                                    const setupModel = getSetupModel(metricsOrg, 'LLM');
+                                                    const setupModel = FEATURE_MODEL_MAP[section.key];
                                                     return (
                                                         <div key={section.key} className="bg-white border border-gray-200 rounded-[18px] p-6 hover:border-orange-200 hover:shadow-lg transition-all duration-300">
                                                         <div className="flex flex-col gap-4">
@@ -792,20 +783,9 @@ export default function OrgsPage() {
                                                                     <div className="h-2 w-2 rounded-full bg-emerald-500" />
                                                                 </div>
                                                                 <div className="flex flex-wrap gap-2 min-h-[28px]">
-                                                                    {(() => {
-                                                                        // Use hardcoded authoritative model map; interview reads from org DB
-                                                                        const hardcoded = FEATURE_MODEL_MAP[section.key];
-                                                                        const activeModel = hardcoded ?? setupModel;
-                                                                        return activeModel ? (
-                                                                            <div className="text-[10px] font-[700] text-emerald-700 bg-emerald-50 px-2 py-1 rounded-md border border-emerald-100 uppercase tracking-wide">
-                                                                                {cleanName(activeModel)}
-                                                                            </div>
-                                                                        ) : (
-                                                                            <div className="text-[10px] font-[700] text-gray-500 bg-gray-50 px-2 py-1 rounded-md border border-gray-200 border-dashed uppercase tracking-wide">
-                                                                                NO LLM
-                                                                            </div>
-                                                                        );
-                                                                    })()}
+                                                                    <div className="text-[10px] font-[700] text-emerald-700 bg-emerald-50 px-2 py-1 rounded-md border border-emerald-100 uppercase tracking-wide">
+                                                                        {cleanName(setupModel)}
+                                                                    </div>
                                                                 </div>
                                                             </div>
                                                                 <div className="mt-6 mb-5">
@@ -900,7 +880,7 @@ export default function OrgsPage() {
                                                     </div>
                                                     <div className="flex flex-wrap gap-2 pt-6 border-t border-gray-100">
                                                         {(() => {
-                                                            const sttModel = getSetupModel(metricsOrg, 'STT');
+                                                            const sttModel = getSetupSttModel(metricsOrg);
                                                             return sttModel ? (
                                                                 <>
                                                                     <span className="px-3 py-1.5 bg-orange-50 text-orange-700 text-[10px] font-[700] rounded-md border border-orange-100 uppercase tracking-wide">
@@ -1017,15 +997,9 @@ export default function OrgsPage() {
                                                     <div>
                                                         <div className="text-[10px] font-[800] uppercase tracking-[0.2em] text-gray-500 mb-3 hover:text-[#10B981] transition-colors">LLM</div>
                                                         <div className="flex flex-wrap gap-2">
-                                                            {(() => {
-                                                                return setupLlm ? (
-                                                                    <span className="px-3 py-1 bg-[#10B981]/10 text-[#10B981] text-[10px] font-[700] rounded-md border border-[#10B981]/20 uppercase tracking-wide">
-                                                                        {cleanName(setupLlm)}
-                                                                    </span>
-                                                                ) : (
-                                                                    <span className="text-[10px] font-[700] text-gray-500 italic">NO LLM</span>
-                                                                );
-                                                            })()}
+                                                            <span className="px-3 py-1 bg-[#10B981]/10 text-[#10B981] text-[10px] font-[700] rounded-md border border-[#10B981]/20 uppercase tracking-wide">
+                                                                {cleanName(setupLlm)}
+                                                            </span>
                                                         </div>
                                                     </div>
                                                     <div>

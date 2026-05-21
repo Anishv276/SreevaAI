@@ -27,8 +27,6 @@ model Organization {
   voiceId              String?     @default("9626c31c-bec5-4cca-baa8-f8ba9e84c8bc")
   allowedVoices        String[]    @default([])
   deepgramModel        String?     @default("nova-3-general")
-  llmModel             String?     @default("gpt-4.1-mini")
-  llmTemperature       Float?      @default(0.7)
   interviewQuotaTotal  Int         @default(0)
   interviewQuotaUsed   Int         @default(0)
   creditsUsed          Float       @default(0)
