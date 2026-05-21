@@ -1405,8 +1405,6 @@ async def entrypoint(ctx: JobContext):
                         answer_snap = latest_a
             except Exception as _turn_parse_err:
                 logger.debug("[TRANSCRIPT] build_interview_turns failed for turn=%d: %s", turn_snapshot, _turn_parse_err)
-
-            logger.info("[TRANSCRIPT] Candidate (turn=%d): %s...", turn_snapshot, answer_snap[:60])
             _start_t_snap = session_start_time
             _app_id_t = app_id
             spawn_background_task(
@@ -1874,7 +1872,6 @@ async def entrypoint(ctx: JobContext):
                     return
                 # Save Ishita's line to transcript
                 append_transcript_line("Interviewer", clean_content)
-                logger.info("[TRANSCRIPT] Interviewer: %s...", clean_content[:60])
                 # Track last question for eval engine.
                 # Prefer ?-terminated sentence; fall back to last sentence of 20+ chars
                 # so declarative prompts like "Tell me what you built in X." are captured.
