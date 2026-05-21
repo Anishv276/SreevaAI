@@ -1291,6 +1291,12 @@ async def entrypoint(ctx: JobContext):
     _stt_fragment_buffer: dict[int, list[str]] = {}  # turn → [fragment1, fragment2, ...]
     _stt_completion_timers: dict[int, asyncio.Task | None] = {}  # turn → timeout task
 
+    # FIX: Turn utterance accumulator - combines multiple utterances in same turn into single line
+    # When pause is detected after first utterance, STT creates new utterance for same turn.
+    # Instead of creating multiple transcript lines, we accumulate and combine them.
+    _turn_utterances: dict[int, list[str]] = {}  # turn → [utterance1, utterance2, ...]
+    _last_transcript_turn: int = 0  # Track which turn was last appended to prevent duplicates
+
     def _is_sentence_complete(text: str) -> bool:
         """Check if text is a complete sentence (ends with . ! ? and has enough content)."""
         stripped = text.strip()
@@ -1788,11 +1794,30 @@ async def entrypoint(ctx: JobContext):
                 # PUSH current turn's answer for the worker to evaluate during Ishita's response
                 await _push_payload_to_redis(_build_eval_payload())
 
-                # Append candidate transcript before returning
+                # FIX: Accumulate utterances for same turn instead of creating multiple lines
+                # When pause detected, STT creates new utterance for same turn.
+                # Accumulate all utterances, then combine into single line.
                 _candidate_clean = content.replace("<wait for response>", "").strip()
                 if _candidate_clean:
-                    append_transcript_line("Candidate", _candidate_clean)
-                    logger.info("[TRANSCRIPT] Candidate: %s...", _candidate_clean[:60])
+                    # Add to turn's utterance list
+                    if turn_snapshot not in _turn_utterances:
+                        _turn_utterances[turn_snapshot] = []
+                    _turn_utterances[turn_snapshot].append(_candidate_clean)
+
+                    # If this is a new turn (different from last appended), flush previous turn
+                    nonlocal _last_transcript_turn
+                    if _last_transcript_turn != 0 and _last_transcript_turn != turn_snapshot:
+                        # Flush previous turn: combine all utterances into single line
+                        if _last_transcript_turn in _turn_utterances:
+                            prev_utterances = _turn_utterances.pop(_last_transcript_turn, [])
+                            combined = " ".join(prev_utterances)
+                            append_transcript_line("Candidate", combined)
+                            logger.info("[TRANSCRIPT] Candidate (turn=%d, %d utterances): %s...",
+                                      _last_transcript_turn, len(prev_utterances), combined[:60])
+
+                    _last_transcript_turn = turn_snapshot
+                    logger.debug(f"[TRANSCRIPT_BUFFER] turn={turn_snapshot} accumulated {len(_turn_utterances[turn_snapshot])} utterance(s)")
+
                     # Async transcript persist after every candidate turn
                     _lines_snap_t = list(transcript_lines)
                     _start_t_snap = session_start_time
@@ -2417,6 +2442,24 @@ async def entrypoint(ctx: JobContext):
         f"trend={_trust_state['trend']} "
         f"recommendation={recruiter_summary['recommendation']}"
     )
+    # FIX: Flush any remaining accumulated utterances before final save
+    # If interview ended while utterances were still being accumulated, flush them now
+    if _last_transcript_turn > 0 and _last_transcript_turn in _turn_utterances:
+        final_utterances = _turn_utterances.pop(_last_transcript_turn, [])
+        combined_final = " ".join(final_utterances)
+        append_transcript_line("Candidate", combined_final)
+        logger.info("[TRANSCRIPT_FLUSH] Final utterances (turn=%d, count=%d): %s...",
+                   _last_transcript_turn, len(final_utterances), combined_final[:60])
+
+    # Flush any other turns that weren't appended yet (shouldn't happen, but be safe)
+    for remaining_turn in list(_turn_utterances.keys()):
+        remaining_utterances = _turn_utterances.pop(remaining_turn, [])
+        if remaining_utterances:
+            combined = " ".join(remaining_utterances)
+            append_transcript_line("Candidate", combined)
+            logger.info("[TRANSCRIPT_FLUSH] Leftover utterances (turn=%d, count=%d): %s...",
+                       remaining_turn, len(remaining_utterances), combined[:60])
+
     logger.info("[PERSIST] Saving final transcript (%d lines) and scores (%d turns)", len(transcript_lines), len(answer_scores))
     await persist_transcript(
         app_id,
