@@ -1341,7 +1341,9 @@ async def entrypoint(ctx: JobContext):
             # voice leaking back into STT rather than a real candidate turn.
             # Suppress only tiny, greeting-like fragments here so we keep the
             # first transcript anchored to the interviewer greeting.
-            if first_agent_turn_committed_at is not None:
+            # FIX: Don't suppress warmup responses (turn 2) - they're intentional candidate responses
+            is_warmup_response = not warmup_complete and turn_snapshot >= 2
+            if not is_warmup_response and first_agent_turn_committed_at is not None:
                 since_first_ai_turn = time.monotonic() - first_agent_turn_committed_at
                 if since_first_ai_turn <= greeting_echo_suppression_secs:
                     if _GREETING_ECHO_RE.match(content) or len(content.split()) <= 2:
@@ -1349,6 +1351,8 @@ async def entrypoint(ctx: JobContext):
                             f"[TRANSCRIPT] Suppressing early greeting echo fragment: '{content[:60]}'"
                         )
                         return
+            if is_warmup_response:
+                logger.debug(f"[WARMUP] Warmup response (turn={turn_snapshot}): '{content[:60]}' - NOT suppressed")
             # --- STT Spam / Hallucination Filter ---
             # Sarvam (and some Deepgram models) hallucinate the same word repeatedly
             # when they detect silence or background noise. Discard these before they
@@ -1422,7 +1426,8 @@ async def entrypoint(ctx: JobContext):
 
             # Warmup turns (before warmup_complete) are recorded as zero-scored placeholders
             # so they never pollute the technical or communication score averages.
-            if not warmup_complete and _last_interviewer_question and turn_snapshot > 1:
+            is_warmup_turn = not warmup_complete and _last_interviewer_question and turn_snapshot > 1
+            if is_warmup_turn:
                 async with _session_state_lock:
                     answer_scores.append({
                         "question": _last_interviewer_question,
@@ -1431,19 +1436,7 @@ async def entrypoint(ctx: JobContext):
                         "overall": 0.0, "signals": [], "concerns": [],
                         "is_warmup": True,
                     })
-                # Append warmup candidate response to transcript
-                _candidate_clean = content.replace("<wait for response>", "").strip()
-                if _candidate_clean:
-                    append_transcript_line("Candidate", _candidate_clean)
-                    logger.info("[TRANSCRIPT] Warmup candidate: %s...", _candidate_clean[:60])
-                    # Async transcript persist during warmup
-                    _lines_snap_t = list(transcript_lines)
-                    _start_t_snap = session_start_time
-                    _app_id_t = app_id
-                    spawn_background_task(
-                        persist_transcript(_app_id_t, _lines_snap_t, _start_t_snap, partial=True),
-                        f"transcript_save_warmup_{turn_snapshot}",
-                    )
+                logger.info("[WARMUP] Warmup turn detected - will be included in transcript (turn=%d)", turn_snapshot)
 
             # Mark warmup as complete after recording warmup response
             if not warmup_complete and turn_snapshot >= 2:
