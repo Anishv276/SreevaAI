@@ -192,7 +192,7 @@ def build_stt(language_code: str = "en", model: str = STT_MODEL):
         "model":           model,
         "smart_format":    True,
         "language":        language_code,
-        "interim_results": True,
+        "interim_results": False,  # Disabled to prevent debounce timer cancellation from multiple partial results
         "punctuate":       True,
     }
     if "nova" in model.lower() and "enable_diarization" in supported:
