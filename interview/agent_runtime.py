@@ -1390,9 +1390,6 @@ async def entrypoint(ctx: JobContext):
             # and injects a NEXT_TURN_DIRECTIVE before Ishita generates her next response.
             # Decision: PROBE (which mode) or MOVE_ON - fully signal-driven, no fixed depth.
             # Greeting = turn 1, warmup question = turn 2, interview starts at turn 3.
-            if not warmup_complete and turn_snapshot >= 2:
-                warmup_complete = True
-                logger.info("[WARMUP] ✓ warmup_complete=True at turn=%d (fallback setter)", turn_snapshot)
 
             # Warmup turns (before warmup_complete) are recorded as zero-scored placeholders
             # so they never pollute the technical or communication score averages.
@@ -1418,6 +1415,12 @@ async def entrypoint(ctx: JobContext):
                         persist_transcript(_app_id_t, _lines_snap_t, _start_t_snap, partial=True),
                         f"transcript_save_warmup_{turn_snapshot}",
                     )
+
+            # Mark warmup as complete after recording warmup response
+            if not warmup_complete and turn_snapshot >= 2:
+                warmup_complete = True
+                logger.info("[WARMUP] ✓ warmup_complete=True at turn=%d (fallback setter)", turn_snapshot)
+
             # Start eval only after warmup has fully finished.
             # Warmup = turns 1-2, interview starts at turn 3, so first worker job is turn 3.
             if warmup_complete and turn_snapshot > 2 and _last_interviewer_question:
