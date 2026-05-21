@@ -109,21 +109,33 @@ async def _process_one(payload_bytes: bytes, client: AsyncOpenAI, r) -> None:
         _overall = round(float(_qr.get("overall", 0) or 0), 2)
         _next_topic = result.get("new_active_topic") or "?"
         _signals = _qr.get("signals") or []
-        _signal_str = f" signals=[{', '.join(_signals)}]" if _signals else ""
+        _signal_str = f" | signals=[{', '.join(_signals)}]" if _signals else ""
         _ts = result.get("new_active_topic_state") or {}
         _sat_score = _ts.get("saturation_score", 0)
         _sat_thresh = _ts.get("saturation_threshold", 0)
+        _sat_remaining = max(0, _sat_thresh - _sat_score)
         _sat_pct = round(100 * min(1.0, _sat_score / _sat_thresh), 0) if _sat_thresh else 0
+        _is_saturated = _ts.get("is_saturated", False)
+        _importance = _ts.get("importance", "?")
+        _follow_up_turns = _ts.get("follow_up_turns", 0)
+        _opened_turn = _ts.get("opened_at_turn", 0)
+        _probe_idx = _ts.get("probe_rotation_index", 0)
         _risk_int_delta = result.get("risk_integrity_delta", 0)
         _risk_depth_delta = result.get("risk_depth_delta", 0)
         logger.info(
             "[WORKER] ✓ turn=%d action=%s | scores: clarity=%.1f depth=%.1f fluency=%.1f confidence=%.1f | overall=%.2f | "
-            "risk_deltas: integrity%+d depth%+d | saturation=%.1f/%.1f (%.0f%%) | topic='%s'%s",
+            "risk: integrity%+d depth%+d",
             turn, _action,
             _clarity, _depth, _fluency, _confidence, _overall,
             _risk_int_delta, _risk_depth_delta,
-            _sat_score, _sat_thresh, _sat_pct,
-            str(_next_topic)[:40], _signal_str,
+        )
+        logger.info(
+            "[TOPIC_STATE] turn=%d | topic='%s' | importance=%s | saturated=%s | "
+            "progress: %.1f/%.1f (%.0f%% done, %.1f remaining) | "
+            "follow_ups=%d (opened_turn=%d) | probe_mode=%d%s",
+            turn, str(_next_topic)[:40], _importance, _is_saturated,
+            _sat_score, _sat_thresh, _sat_pct, _sat_remaining,
+            _follow_up_turns, _opened_turn, _probe_idx, _signal_str,
         )
 
     except Exception as e:

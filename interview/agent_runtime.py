@@ -1634,12 +1634,23 @@ async def entrypoint(ctx: JobContext):
                         new_topic_state = result.get("new_active_topic_state")
                         if new_topic_state and _active_topic:
                             _topic_states[_active_topic] = new_topic_state
+                            _nts_sat = new_topic_state.get("saturation_score", 0)
+                            _nts_thresh = new_topic_state.get("saturation_threshold", 0)
+                            _nts_remaining = max(0, _nts_thresh - _nts_sat)
+                            _nts_pct = round(100 * min(1.0, _nts_sat / _nts_thresh), 0) if _nts_thresh else 0
+                            _nts_saturated = new_topic_state.get("is_saturated", False)
+                            _nts_importance = new_topic_state.get("importance", "?")
+                            _nts_followups = new_topic_state.get("follow_up_turns", 0)
+                            _nts_opened = new_topic_state.get("opened_at_turn", 0)
+                            _nts_probe = new_topic_state.get("probe_rotation_index", 0)
                             logger.info(
-                                "[SATURATION] Updated TopicState for '%s' | score=%s/%s | saturated=%s",
-                                _active_topic,
-                                new_topic_state.get("saturation_score", 0),
-                                new_topic_state.get("saturation_threshold", 0),
-                                new_topic_state.get("is_saturated", False),
+                                "[TOPIC_STATE_APPLY] turn=%d topic='%s' | importance=%s | saturated=%s | "
+                                "progress: %.1f/%.1f (%.0f%% done, %.1f more needed) | "
+                                "follow_ups=%d (opened_turn=%d) | probe_rotation=%d",
+                                result.get("turn", turn_for_log), _active_topic,
+                                _nts_importance, _nts_saturated,
+                                _nts_sat, _nts_thresh, _nts_pct, _nts_remaining,
+                                _nts_followups, _nts_opened, _nts_probe,
                             )
                         _trust_state = result.get("new_trust_state") or _trust_state
                         _contradiction_state = result.get("new_contradiction_state") or _contradiction_state
@@ -1758,17 +1769,30 @@ async def entrypoint(ctx: JobContext):
                         action = result.get("action", "MOVE_ON")
                         quality_record = quality_record or {}
                         quality_avg = float(quality_record.get("overall", 5.0))
+                        td_decision = td.get("decision", {})
+                        td_mode = td_decision.get("mode", "normal")
+                        td_next_goal = td_decision.get("next_goal", "")
+                        td_quality = td.get("quality", {})
                         logger.info(
-                            "[EVAL] turn=%d action=%s quality=%.1f topic='%s' covered=%d (worker)",
-                            res_turn, action, quality_avg,
-                            (_active_topic or "?")[:40],
-                            len(_covered_topic_keys),
+                            "[DECISION] turn=%d | action=%s | mode=%s | next_goal='%s' | "
+                            "quality: clarity=%.1f depth=%.1f | overall=%.1f",
+                            res_turn, action, td_mode, td_next_goal[:60],
+                            td_quality.get("clarity", 0), td_quality.get("depth", 0),
+                            quality_avg,
                         )
                         if action == "MOVE_ON":
                             logger.info(
-                                "[MOVE_ON] TO='%s' | covered=%s",
-                                (_active_topic or "TBD")[:50],
-                                list(_covered_topic_keys)[:5],
+                                "[MOVE_ON] SWITCHING TOPIC | from='%s' to='%s' | covered_so_far=%d topics | covered_keys=%s",
+                                (old_topic or "?")[:40], (_active_topic or "TBD")[:40],
+                                len(_covered_topic_keys),
+                                list(_covered_topic_keys)[:6],
+                            )
+                        elif action == "PROBE":
+                            logger.info(
+                                "[PROBE] DEEPER ON '%s' | mode=%s | follow_ups=%d | goal=%s",
+                                (_active_topic or "?")[:40], td_mode,
+                                _nts_followups if new_topic_state else 0,
+                                td_next_goal[:60],
                             )
                         # Inject directive
                         directive = result.get("directive", "")
