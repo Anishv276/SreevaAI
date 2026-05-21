@@ -49,10 +49,43 @@ def _handle_signal(sig, frame):
 
 async def _process_one(payload_bytes: bytes, client: AsyncOpenAI, r) -> None:
     try:
-        payload = json.loads(payload_bytes)
+        queued = json.loads(payload_bytes)
     except Exception as e:
         logger.error("[WORKER] Failed to decode payload: %s", e)
         return
+
+    payload = queued
+    if isinstance(queued, dict) and "answer" not in queued:
+        queued_app_id = str(queued.get("app_id") or "unknown")
+        queued_turn = int(queued.get("turn", 0) or 0)
+        payload_key = f"interview:{queued_app_id}:eval_payload:{queued_turn}"
+        try:
+            raw_payload = await r.getdel(payload_key)
+        except Exception as e:
+            logger.warning(
+                "[WORKER] Failed to read pending payload app_id=%s turn=%d: %s",
+                queued_app_id,
+                queued_turn,
+                e,
+            )
+            return
+        if raw_payload is None:
+            logger.warning(
+                "[WORKER] Pending payload missing app_id=%s turn=%d (skipping)",
+                queued_app_id,
+                queued_turn,
+            )
+            return
+        try:
+            payload = json.loads(raw_payload)
+        except Exception as e:
+            logger.error(
+                "[WORKER] Failed to decode pending payload app_id=%s turn=%d: %s",
+                queued_app_id,
+                queued_turn,
+                e,
+            )
+            return
 
     app_id = payload.get("app_id", "unknown")
     turn = payload.get("turn", 0)
@@ -69,7 +102,11 @@ async def _process_one(payload_bytes: bytes, client: AsyncOpenAI, r) -> None:
         await r.setex(result_key, RESULT_TTL_SECONDS, json.dumps(result).encode())
         _action = result.get("action", "?")
         _qr = result.get("quality_record") or {}
-        _quality = round(float(_qr.get("overall", 0) or 0), 2)
+        _clarity = round(float(_qr.get("clarity", 0) or 0), 1)
+        _depth = round(float(_qr.get("depth", 0) or 0), 1)
+        _fluency = round(float(_qr.get("fluency", 0) or 0), 1)
+        _confidence = round(float(_qr.get("confidence", 0) or 0), 1)
+        _overall = round(float(_qr.get("overall", 0) or 0), 2)
         _next_topic = result.get("new_active_topic") or "?"
         _signals = _qr.get("signals") or []
         _signal_str = f" signals=[{', '.join(_signals)}]" if _signals else ""
@@ -77,17 +114,26 @@ async def _process_one(payload_bytes: bytes, client: AsyncOpenAI, r) -> None:
         _sat_score = _ts.get("saturation_score", 0)
         _sat_thresh = _ts.get("saturation_threshold", 0)
         _sat_pct = round(100 * min(1.0, _sat_score / _sat_thresh), 0) if _sat_thresh else 0
-        _importance = _ts.get("importance", "?")
+        _risk_int_delta = result.get("risk_integrity_delta", 0)
+        _risk_depth_delta = result.get("risk_depth_delta", 0)
         logger.info(
-            "[WORKER] ✓ turn=%d action=%s quality=%.2f | saturation=%.1f/%.1f (%.0f%%) importance=%s%s | next=%s",
-            turn, _action, _quality,
-            _sat_score, _sat_thresh, _sat_pct, _importance,
-            _signal_str,
-            str(_next_topic)[:50],
+            "[WORKER] ✓ turn=%d action=%s | scores: clarity=%.1f depth=%.1f fluency=%.1f confidence=%.1f | overall=%.2f | "
+            "risk_deltas: integrity%+d depth%+d | saturation=%.1f/%.1f (%.0f%%) | topic='%s'%s",
+            turn, _action,
+            _clarity, _depth, _fluency, _confidence, _overall,
+            _risk_int_delta, _risk_depth_delta,
+            _sat_score, _sat_thresh, _sat_pct,
+            str(_next_topic)[:40], _signal_str,
         )
 
     except Exception as e:
         logger.error("[WORKER] Failed to store result key=%s: %s", result_key, e)
+    finally:
+        # Allow any late same-turn retry update to enqueue again if needed.
+        try:
+            await r.delete(f"interview:{app_id}:eval_enqueued:{turn}")
+        except Exception:
+            pass
 
 
 async def _run_worker() -> None:

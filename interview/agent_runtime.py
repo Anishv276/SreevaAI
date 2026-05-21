@@ -1646,9 +1646,13 @@ async def entrypoint(ctx: JobContext):
                         _claim_index = {k: list(v) for k, v in (result.get("new_claim_index") or {}).items()}
                         current_interview_mode = result.get("new_current_interview_mode", current_interview_mode)
                         # Apply risk deltas
-                        integrity_risk = min(100, integrity_risk + int(result.get("risk_integrity_delta", 0)))
-                        depth_risk = min(100, depth_risk + int(result.get("risk_depth_delta", 0)))
-                        if result.get("risk_integrity_delta", 0) or result.get("risk_depth_delta", 0):
+                        _old_integrity = integrity_risk
+                        _old_depth = depth_risk
+                        _risk_int_delta = int(result.get("risk_integrity_delta", 0))
+                        _risk_depth_delta = int(result.get("risk_depth_delta", 0))
+                        integrity_risk = min(100, integrity_risk + _risk_int_delta)
+                        depth_risk = min(100, depth_risk + _risk_depth_delta)
+                        if _risk_int_delta or _risk_depth_delta:
                             refresh_composite_risk()
                         # Append discussed log entry
                         discussed_log_entry = result.get("discussed_log_entry")
@@ -1658,6 +1662,20 @@ async def entrypoint(ctx: JobContext):
                         quality_record = result.get("quality_record")
                         if quality_record:
                             answer_scores.append(quality_record)
+                            _clarity = quality_record.get("clarity", 0)
+                            _depth = quality_record.get("depth", 0)
+                            _fluency = quality_record.get("fluency", 0)
+                            _confidence = quality_record.get("confidence", 0)
+                            _overall = quality_record.get("overall", 0)
+                            logger.info(
+                                "[SCORES] turn=%d | clarity=%.1f depth=%.1f fluency=%.1f confidence=%.1f | overall=%.1f | "
+                                "integrity: %d→%d (Δ%+d) | depth: %d→%d (Δ%+d) | composite=%d",
+                                res_turn,
+                                _clarity, _depth, _fluency, _confidence, _overall,
+                                _old_integrity, integrity_risk, _risk_int_delta,
+                                _old_depth, depth_risk, _risk_depth_delta,
+                                suspicion_score,
+                            )
                             # ASYNC persist answer_scores after each eval turn (no latency)
                             _scores_after_eval = list(answer_scores)
                             _app_id_persist = app_id
