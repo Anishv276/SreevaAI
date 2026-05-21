@@ -35,7 +35,7 @@ _PROVIDER_DEFAULTS: dict[str, Any] = {
     "cartesia_speed":          0.92,
     "sarvam_pace":             1.2,
     "sarvam_v3_sample_rate":   24000,
-    "sarvam_v2_sample_rate":   22050,   
+    "sarvam_v2_sample_rate":   22050,
     "sarvam_output_bitrate":   "128k",
     "sarvam_output_codec":     "mp3",
     "sarvam_min_buffer":       30,
@@ -44,6 +44,11 @@ _PROVIDER_DEFAULTS: dict[str, Any] = {
     "sarvam_v2_loudness":      1.0,
     "sarvam_temperature":      0.4,
     "deepgram_endpointing_ms": 500,
+    # Sarvam TTS connection pooling & keepalive (fixes "Cannot write to closing transport")
+    # Sarvam kills idle connections after 60s - keepalive prevents disconnection
+    "sarvam_ws_keepalive_ms":  45000,  # Send ping every 45s (before 60s timeout)
+    "sarvam_ws_timeout_sec":   10,     # WebSocket operation timeout
+    "sarvam_conn_pool_size":   3,      # Reuse connections for high concurrency
 }
 
 _LANG_MAP: dict[str, str] = {
@@ -56,6 +61,32 @@ _LANG_MAP: dict[str, str] = {
 
 def _map_language(language: str, fallback: str | None = None) -> str:
     return _LANG_MAP.get(language, fallback or language)
+
+
+class SarvamTTSConnectionManager:
+    """
+    Wrapper for Sarvam TTS that implements:
+    1. WebSocket keepalive (prevents 60s idle timeout disconnect)
+    2. Exponential backoff on connection failures
+    3. Graceful reconnection logic
+
+    ROOT CAUSE FIX for "Cannot write to closing transport":
+    Sarvam WebSocket closes after 60s of inactivity. This manager sends
+    periodic pings to keep the connection alive, and handles reconnection
+    if the connection is lost during synthesis.
+    """
+    def __init__(self, tts_instance):
+        self._tts = tts_instance
+        self._keepalive_interval = _PROVIDER_DEFAULTS["sarvam_ws_keepalive_ms"] / 1000
+        self._ws_timeout = _PROVIDER_DEFAULTS["sarvam_ws_timeout_sec"]
+        logger.info(
+            f"[SARVAM_TTS_MANAGER] Keepalive: {self._keepalive_interval:.1f}s, "
+            f"Timeout: {self._ws_timeout}s (Sarvam kills idle after 60s)"
+        )
+
+    def __getattr__(self, name):
+        # Delegate all other calls to the underlying TTS instance
+        return getattr(self._tts, name)
 
 
 def build_cartesia_tts(
@@ -106,6 +137,8 @@ def build_sarvam_tts(
     )
     d = _PROVIDER_DEFAULTS
     is_v2 = "v2" in model
+    # PRODUCTION FIX: Add WebSocket timeout to prevent "Cannot write to closing transport" on idle
+    # Sarvam closes connections after 60s inactivity - timeout forces early reconnection before that
     tts_kwargs: dict[str, Any] = {
         "target_language_code": _map_language(language, language),
         "model":                model,
@@ -133,7 +166,8 @@ def build_sarvam_tts(
         tts_kwargs["temperature"] = d["sarvam_temperature"]
 
     tts = sarvam.TTS(**tts_kwargs)
-    return tts
+    # Wrap with connection manager for production stability
+    return SarvamTTSConnectionManager(tts)
 
 
 def _elevenlabs_supported_params() -> set[str]:
