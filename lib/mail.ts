@@ -27,7 +27,8 @@ export async function sendApplicationStatusEmail({
     scheduledTimeZone?: string;
     schedulingDeadline?: Date;
 }): Promise<MailResult> {
-    const orgName = orgNameProp || "Our Team";
+    const orgName = orgNameProp || "Sreeva AI";
+    const teamLabel = `${orgName} Team`;
     console.log(`[MAIL DEBUG] Incoming status: "${status}"`);
     const s = (status || "").toUpperCase();
     const isHired = s === 'HIRED';
@@ -68,7 +69,7 @@ export async function sendApplicationStatusEmail({
 
     const footer = `
         <div style="padding:24px 32px;border-top:1px solid #f4f4f5;">
-            <p style="margin:0;font-size:13px;color:#a1a1aa;">${orgName} Recruitment Team</p>
+            <p style="margin:0;font-size:13px;color:#a1a1aa;">${teamLabel}</p>
         </div>
     `;
 
@@ -83,7 +84,7 @@ export async function sendApplicationStatusEmail({
                 <p style="margin:0 0 32px;font-size:15px;color:#52525b;line-height:1.6;">Congratulations — you've been selected for <strong style="color:#18181b;">${jobTitle}</strong>. We're excited to have you on board.</p>
                 <div style="background:#fafafa;border:1px solid #e4e4e7;border-radius:8px;padding:20px 24px;margin-bottom:32px;">
                     <p style="margin:0 0 4px;font-size:12px;font-weight:600;color:#a1a1aa;text-transform:uppercase;letter-spacing:0.06em;">What's next</p>
-                    <p style="margin:0;font-size:14px;color:#3f3f46;line-height:1.6;">Our team will reach out shortly with your offer letter and onboarding details.</p>
+                    <p style="margin:0;font-size:14px;color:#3f3f46;line-height:1.6;">${teamLabel} will reach out shortly with your offer letter and onboarding details.</p>
                 </div>
             </div>
             ${footer}
@@ -133,7 +134,7 @@ export async function sendApplicationStatusEmail({
                     <p style="margin:0;font-size:13px;color:#71717a;">Make sure you're in a quiet space with a working camera, microphone, and a dependable computer.</p>
                 </div>
                 `}
-                <p style="margin:0;font-size:13px;color:#a1a1aa;line-height:1.6;">Our team will review your interview and follow up within 24-48 hours.</p>
+                <p style="margin:0;font-size:13px;color:#a1a1aa;line-height:1.6;">${teamLabel} will review your interview and follow up within 24-48 hours.</p>
             </div>
             ${footer}
         </div>

@@ -11,7 +11,18 @@ async function main() {
   // 1. Verify application exists
   const application = await prisma.application.findUnique({
     where: { id: applicationId },
-    include: { interview: true }
+    include: {
+      interview: true,
+      drive: {
+        include: {
+          organization: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      },
+    }
   });
 
   if (!application) {
@@ -35,7 +46,11 @@ async function main() {
   }
 
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-  const interviewLink = `${baseUrl}/interview/${applicationId}?token=${interview.accessToken}`;
+  const url = new URL(`/interview/${applicationId}`, baseUrl);
+  if (interview.accessToken) url.searchParams.set("token", interview.accessToken);
+  const orgName = application.drive?.organization?.name || "Sreeva AI";
+  if (orgName) url.searchParams.set("orgName", orgName);
+  const interviewLink = url.toString();
 
   console.log("\n✅ INTERVIEW LINK READY");
   console.log("-----------------------------");

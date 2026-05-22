@@ -12,6 +12,18 @@ async function main() {
   const testEmail = `vadla_vamsi_krishna_gtm_${timestamp}@example.com`;
 
   const drive = await prisma.drive.findUnique({ where: { id: driveId } });
+  const driveWithOrg = drive
+    ? await prisma.drive.findUnique({
+        where: { id: driveId },
+        include: {
+          organization: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      })
+    : null;
   if (!drive) {
     console.error("Drive not found:", driveId);
     return;
@@ -41,7 +53,11 @@ async function main() {
   });
 
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-  const interviewLink = `${baseUrl}/interview/${application.id}?token=${interview.accessToken}`;
+  const url = new URL(`/interview/${application.id}`, baseUrl);
+  if (interview.accessToken) url.searchParams.set("token", interview.accessToken);
+  const orgName = driveWithOrg?.organization?.name || "Sreeva AI";
+  if (orgName) url.searchParams.set("orgName", orgName);
+  const interviewLink = url.toString();
 
   console.log("\n✅ GTM INTERVIEW LINK GENERATED");
   console.log("-----------------------------");

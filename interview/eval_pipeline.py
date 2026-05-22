@@ -461,9 +461,10 @@ def evaluate_topic_saturation(
     response_score = ResponseScoreCalculator.calculate_response_score(quality_scores)
     contribution = ResponseScoreCalculator.calculate_contribution(response_score)
 
-    # Apply signal penalties
+    # Apply signal penalties — floor at 30% of original so strong answers still
+    # contribute even when behavioral signals (ownership_ambiguity etc.) fire.
     signal_penalty = SignalPenaltyCalculator.calculate_penalties(signal_events)
-    final_contribution = max(0.0, contribution + signal_penalty)
+    final_contribution = max(contribution * 0.3, contribution + signal_penalty)
 
     # Store state BEFORE increment for comparison logging
     score_before = topic_state.saturation_score

@@ -98,8 +98,14 @@ async def _process_one(payload_bytes: bytes, client: AsyncOpenAI, r) -> None:
         return
 
     result_key = f"interview:{app_id}:eval_result"
+    result_turn_key = f"interview:{app_id}:eval_result:{turn}"
     try:
-        await r.setex(result_key, RESULT_TTL_SECONDS, json.dumps(result).encode())
+        encoded = json.dumps(result).encode()
+        # Store at turn-specific key so agent can poll exactly for this turn's result.
+        # Agent polls interview:{app_id}:eval_result:{turn} and applies before LLM generates.
+        await r.setex(result_turn_key, RESULT_TTL_SECONDS, encoded)
+        # Also store at generic key for backward compatibility.
+        await r.setex(result_key, RESULT_TTL_SECONDS, encoded)
         _action = result.get("action", "?")
         _qr = result.get("quality_record") or {}
         _clarity = round(float(_qr.get("clarity", 0) or 0), 1)

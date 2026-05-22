@@ -240,11 +240,14 @@ async def evaluate_answer_and_decide(
             parsed["depth_signal"] = "SURFACE"
         return parsed
     except asyncio.TimeoutError:
-        logger.warning("[EVAL] Per-turn evaluator timed out - defaulting to MOVE_ON")
-        return {"action": "MOVE_ON", "probe_mode": None, "reason": "timeout", "depth_signal": "SURFACE"}
+        # Timeout → default to PROBE, NOT MOVE_ON.
+        # MOVE_ON on timeout skips topics prematurely when the LLM is slow.
+        # PROBE is safe: saturation system will naturally move on after enough turns.
+        logger.warning("[EVAL] Per-turn evaluator timed out - defaulting to PROBE (not MOVE_ON)")
+        return {"action": "PROBE", "probe_mode": "ownership", "reason": "timeout", "depth_signal": "SURFACE"}
     except Exception as e:
         logger.warning(f"[EVAL] Per-turn evaluator failed: {e}", exc_info=True)
-        return {"action": "MOVE_ON", "probe_mode": None, "reason": str(e), "depth_signal": "SURFACE"}
+        return {"action": "PROBE", "probe_mode": "ownership", "reason": str(e), "depth_signal": "SURFACE"}
 async def extract_claims(
     candidate_answer: str,
     turn: int,

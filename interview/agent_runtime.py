@@ -36,6 +36,7 @@ from interview.agent_providers import (
     build_sarvam_tts,
     build_stt,
     build_vad,
+    SarvamTTSConnectionManager,
 )
 from interview.agent_persistence import (
     _create_db_pool,
@@ -238,6 +239,11 @@ def _clean_stt_text(raw_text: str) -> str:
 
 
 class InterviewAgent(Agent):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Set by on_conversation_item_added (user turn) so llm_node can await it.
+        self._pending_eval_task: Optional[asyncio.Task] = None
+
     @staticmethod
     def _latest_system_message_with_marker(
         chat_ctx: llm.ChatContext,
@@ -305,6 +311,17 @@ class InterviewAgent(Agent):
             "llm_node should only be used with LLM (non-multimodal/realtime APIs) nodes"
         )
 
+        # Block LLM generation until the eval worker injects the directive (PROBE/MOVE_ON).
+        # Without this gate, llm_node fires concurrently with _process_user_conversation_item
+        # and the LLM generates before the MOVE_ON directive is in chat_ctx.
+        _pending = self._pending_eval_task
+        if _pending is not None and not _pending.done():
+            try:
+                await asyncio.wait_for(asyncio.shield(_pending), timeout=7.0)
+                logger.info("[LLM_GATE] ✅ eval task completed before LLM generation")
+            except (asyncio.TimeoutError, asyncio.CancelledError, Exception) as _gate_err:
+                logger.warning("[LLM_GATE] ⏰ gate timeout/error before LLM generation: %s", _gate_err)
+
         tool_choice = model_settings.tool_choice if model_settings else NOT_GIVEN
         turn_temp, temp_role = self._select_turn_temperature(chat_ctx)
         logger.info("[TEMP] role=%s temperature=%.2f", temp_role, turn_temp)
@@ -328,39 +345,47 @@ class InterviewAgent(Agent):
 
         conn_options = activity.session.conn_options.tts_conn_options
 
-        # FIX: Reduce retry interval for faster recovery from WebSocket failures
-        # Sarvam WebSocket can close immediately due to rate limiting or resource constraints.
-        # Default retry_interval of 2.0s causes perceivable delay; use 0.5s instead.
+        _SENT_END = re.compile(r'(?<=[.?!])\s+')
+
+        # Sarvam: use per-sentence REST (HTTP POST) instead of WebSocket.
+        # Sarvam's server closes the WS connection after every request, making
+        # connection-pool reuse impossible — the pooled connection is always in a
+        # closing state when the next TTS call arrives.
+        # Per-sentence REST: same first-audio latency (~LLM sentence time + ~500ms REST),
+        # zero connection-pool issues, and no "Cannot write to closing transport" errors.
+        if isinstance(tts_engine, SarvamTTSConnectionManager):
+            try:
+                buf = ""
+                sentence_count = 0
+                async for chunk in text:
+                    buf += chunk
+                    while True:
+                        m = _SENT_END.search(buf)
+                        if not m:
+                            break
+                        sentence = buf[:m.start() + 1].strip()
+                        buf = buf[m.end():]
+                        if sentence:
+                            sentence_count += 1
+                            async with tts_engine.synthesize(sentence, conn_options=conn_options) as rest_stream:
+                                async for ev in rest_stream:
+                                    yield ev.frame
+                if buf.strip():
+                    sentence_count += 1
+                    async with tts_engine.synthesize(buf.strip(), conn_options=conn_options) as rest_stream:
+                        async for ev in rest_stream:
+                            yield ev.frame
+                logger.info("[TTS] Synthesized %d sentence(s) via REST", sentence_count)
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.warning("[TTS_SARVAM_REST_ERROR] REST synthesis failed: %s", str(e)[:200])
+                raise
+            return
+
+        # Non-Sarvam providers (Cartesia, ElevenLabs): use WebSocket streaming.
         if conn_options.retry_interval > 0.5:
             conn_options = replace(conn_options, retry_interval=0.5)
-            logger.debug("[TTS_CONN] Reduced retry_interval from 2.0s to 0.5s for faster recovery")
-
-        # FIX: Throttle TTS connection creation to prevent resource exhaustion
-        # Sarvam has connection limits; if Turn N TTS completes and Turn N+1 starts
-        # immediately, the WebSocket might close with "Cannot write to closing transport".
-        # Reduced to 50ms now that Sarvam plugin properly evicts stale connections.
-        min_tts_gap_secs = 0.05
-        current_time = time.monotonic()
-        if not hasattr(self, '_tts_last_connection_time'):
-            self._tts_last_connection_time = current_time
-
-        time_since_last_tts = current_time - self._tts_last_connection_time
-        if time_since_last_tts < min_tts_gap_secs:
-            gap_needed = min_tts_gap_secs - time_since_last_tts
-            logger.debug(f"[TTS_THROTTLE] Waiting {gap_needed*1000:.0f}ms before TTS (previous gap={time_since_last_tts*1000:.0f}ms)")
-            await asyncio.sleep(gap_needed)
-
-        self._tts_last_connection_time = time.monotonic()
-
-        # Sentence-boundary splitter: push complete sentences to TTS as the LLM
-        # generates them, CONCURRENTLY with reading audio frames back.
-        # Works for Sarvam, Cartesia, and ElevenLabs  all implement the same
-        # SynthesizeStream base with push_text() / end_input().
-        # Benefit: candidate hears first audio after ~1 sentence (~400ms LLM time)
-        # instead of waiting for the full response (~1.5s). ~1s latency reduction.
-        # Sending complete sentences (not word-by-word) preserves phoneme context
-        # so TTS won't mispronounce consonant clusters.
-        _SENT_END = re.compile(r'(?<=[.?!])\s+')
 
         async def _push_sentences(tts_stream) -> None:
             buf = ""
@@ -385,9 +410,6 @@ class InterviewAgent(Agent):
         try:
             if tts_engine.capabilities.streaming:
                 async with tts_engine.stream(conn_options=conn_options) as stream:
-                    # Push text and read audio frames concurrently.
-                    # push_task sends sentences as the LLM generates them;
-                    # the stream yields audio frames as each sentence is synthesized.
                     push_task = asyncio.create_task(_push_sentences(stream))
                     try:
                         async for ev in stream:
@@ -395,7 +417,6 @@ class InterviewAgent(Agent):
                     finally:
                         await push_task
             else:
-                # Non-streaming provider: buffer full text, then synthesize once.
                 full_text = ""
                 async for chunk in text:
                     full_text += chunk
@@ -404,44 +425,9 @@ class InterviewAgent(Agent):
                 async with tts_engine.synthesize(full_text, conn_options=conn_options) as stream:
                     async for ev in stream:
                         yield ev.frame
-
         except asyncio.CancelledError:
             raise
         except Exception as e:
-            err_text = str(e).lower()
-            # FIX: Categorize and handle Sarvam WebSocket connection failures gracefully
-            sarvam_connection_errors = [
-                "chanclosed",           # Channel closed
-                "channel",              # Generic channel error
-                "api connection",       # Connection error
-                "tts stream failed",    # Stream failure
-                "closing transport",    # SARVAM: WebSocket closing immediately (THE ERROR)
-                "cannot write",         # SARVAM: Write failed (part of error message)
-                "connection reset",     # SARVAM: Connection reset by peer
-                "timeout",              # Connection timeout
-            ]
-
-            if any(s in err_text for s in sarvam_connection_errors):
-                error_type = type(e).__name__
-                _is_closing_transport = "closing transport" in err_text or "cannot write" in err_text
-                if _is_closing_transport:
-                    # Sarvam server closed the transport immediately after accepting the connection
-                    # (rate limiting or connection capacity). LiveKit will retry, but retries at
-                    # 0.1s/0.5s are too fast — Sarvam needs ~1-2s to reset its window.
-                    # Sleep here so the next retry attempt lands AFTER the rate limit window clears.
-                    logger.warning(
-                        "[TTS_SARVAM_ERROR] Transport closing on connect (%s): %s. "
-                        "Waiting 1.5s so Sarvam rate-limit window clears before retry.",
-                        error_type, str(e)[:150]
-                    )
-                    await asyncio.sleep(1.5)
-                else:
-                    logger.warning(
-                        "[TTS_SARVAM_ERROR] WebSocket connection failure during TTS synthesis (%s). "
-                        "LiveKit agents framework will retry automatically. Error: %s",
-                        error_type, str(e)[:150]
-                    )
-                return  # Let LiveKit retry
             raise
 
 
@@ -1589,9 +1575,12 @@ async def entrypoint(ctx: JobContext):
                     }
 
 
-                async def _read_and_apply_eval_result(turn_for_log: int) -> bool:
-                    """Read pre-computed result from Redis and apply all mutations + inject directive.
-                    Returns True if result was found and applied, False if no result available."""
+                async def _read_and_apply_eval_result(turn_for_log: int, preloaded_result: dict = None) -> bool:
+                    """Read pre-computed result from Redis (or use preloaded dict) and apply all mutations.
+
+                    preloaded_result: if provided, skip Redis read and apply this directly.
+                    Returns True if result was found and applied, False if no result available.
+                    """
                     nonlocal \
                         _active_topic, _topic_states, \
                         _covered_topic_keys, \
@@ -1601,29 +1590,32 @@ async def entrypoint(ctx: JobContext):
                         _ai_signal_flush_counter, _ai_signal_flushed_count, \
                         _discussed_log
 
-                    if _eval_redis_client is None:
-                        logger.debug("[REDIS_EVAL] _eval_redis_client is None  skipping result read for turn=%d", turn_for_log)
-                        return False
-                    result_key = f"interview:{app_id}:eval_result"
-                    try:
-                        raw = await asyncio.wait_for(
-                            _eval_redis_client.getdel(result_key),
-                            timeout=0.5,
-                        )
-                    except asyncio.TimeoutError:
-                        logger.warning("[REDIS_EVAL] getdel timed out for turn=%d", turn_for_log)
-                        return False
-                    except Exception as _re:
-                        logger.warning("[REDIS_EVAL] getdel failed turn=%d: %s", turn_for_log, _re)
-                        return False
-                    if raw is None:
-                        logger.info("[REDIS_EVAL] No pre-computed result for turn=%d  will run inline", turn_for_log)
-                        return False
-                    try:
-                        result = json.loads(raw)
-                    except Exception as _re:
-                        logger.warning("[REDIS_EVAL] Failed to decode result turn=%d: %s", turn_for_log, _re)
-                        return False
+                    if preloaded_result is not None:
+                        result = preloaded_result
+                    else:
+                        if _eval_redis_client is None:
+                            logger.debug("[REDIS_EVAL] _eval_redis_client is None  skipping result read for turn=%d", turn_for_log)
+                            return False
+                        result_key = f"interview:{app_id}:eval_result"
+                        try:
+                            raw = await asyncio.wait_for(
+                                _eval_redis_client.getdel(result_key),
+                                timeout=0.5,
+                            )
+                        except asyncio.TimeoutError:
+                            logger.warning("[REDIS_EVAL] getdel timed out for turn=%d", turn_for_log)
+                            return False
+                        except Exception as _re:
+                            logger.warning("[REDIS_EVAL] getdel failed turn=%d: %s", turn_for_log, _re)
+                            return False
+                        if raw is None:
+                            logger.info("[REDIS_EVAL] No pre-computed result for turn=%d  will run inline", turn_for_log)
+                            return False
+                        try:
+                            result = json.loads(raw)
+                        except Exception as _re:
+                            logger.warning("[REDIS_EVAL] Failed to decode result turn=%d: %s", turn_for_log, _re)
+                            return False
                     logger.info(
                         "[REDIS_EVAL] Applying pre-computed result turn=%d action=%s",
                         result.get("turn", 0), result.get("action", "?"),
@@ -1811,8 +1803,29 @@ async def entrypoint(ctx: JobContext):
                         _has_old_directive = any("[NEXT_TURN_DIRECTIVE" in str(getattr(m, "content", "")) for m in _sys_before)
                         remove_system_messages(chat_ctx, "[NEXT_TURN_DIRECTIVE")
                         remove_system_messages(chat_ctx, "[TOPIC_LOCK")
+                        remove_system_messages(chat_ctx, "[RECENT_CONTEXT")
+
+                        # On MOVE_ON: drop old topic user+assistant exchanges from chat history.
+                        # Without this, the LLM context is saturated with the old topic and ignores
+                        # the MOVE_ON directive — this is confirmed root cause of topic drift.
+                        # Keep only the last 2 non-system messages so the agent has minimal context.
                         if action == "MOVE_ON":
-                            remove_system_messages(chat_ctx, "[RECENT_CONTEXT")
+                            _ctx_items = getattr(chat_ctx, "items", None)
+                            if _ctx_items is not None:
+                                _non_sys = [m for m in list(_ctx_items) if getattr(m, "role", "") in ("user", "assistant")]
+                                _keep_ids = {id(m) for m in _non_sys[-2:]}  # keep last exchange only
+                                _before_count = len(_ctx_items)
+                                _ctx_items[:] = [
+                                    m for m in list(_ctx_items)
+                                    if getattr(m, "role", "") == "system" or id(m) in _keep_ids
+                                ]
+                                _dropped = _before_count - len(_ctx_items)
+                                logger.info(
+                                    "[MOVE_ON_HISTORY_TRIM] Dropped %d old-topic msg(s) from chat_ctx | "
+                                    "kept last %d non-sys | new_topic=%s",
+                                    _dropped, len(_keep_ids), _active_topic,
+                                )
+
                         chat_ctx.add_message(role="system", content=directive)
                         _sys_after = len([m for m in getattr(chat_ctx, "items", []) if getattr(m, "role", "") == "system"])
                         logger.info(
@@ -1821,18 +1834,19 @@ async def entrypoint(ctx: JobContext):
                             res_turn, action, _has_old_directive, _sys_after,
                             directive[:200].replace("\n", " | "),
                         )
-                        # TOPIC_LOCK: second hard-constraint message on MOVE_ON so the AI
-                        # cannot drift back to the previous topic  directive alone can be missed
-                        # when the conversation history is long and heavily weighted toward old topic.
+                        # TOPIC_LOCK: placed LAST in context (highest LLM attention).
+                        # Two hard constraints ensure the LLM cannot drift to the old topic.
                         if action == "MOVE_ON" and _active_topic:
                             chat_ctx.add_message(
                                 role="system",
                                 content=(
-                                    f"[TOPIC_LOCK - DO NOT SAY ALOUD]\n"
-                                    f"ACTIVE TOPIC IS NOW: {_active_topic}\n"
-                                    f"Your next question MUST be about '{_active_topic}'. "
-                                    f"The previous topic is closed. Do not ask about it, reference it, "
-                                    f"or follow up on it. One question only  about '{_active_topic}'."
+                                    f"[TOPIC_LOCK - CRITICAL INSTRUCTION]\n"
+                                    f"PREVIOUS TOPIC IS CLOSED. DO NOT REFERENCE IT.\n"
+                                    f"NEW ACTIVE TOPIC: {_active_topic}\n"
+                                    f"YOUR ONLY JOB: Ask ONE question about '{_active_topic}'. "
+                                    f"Start with a brief acknowledgement ('Got it!', 'Sure!'), "
+                                    f"then ask what they personally built or owned in '{_active_topic}'. "
+                                    f"Do NOT follow up on anything from the previous topic."
                                 ),
                             )
                             logger.info("[TOPIC_LOCK] Injected for new topic: %s", _active_topic[:60])
@@ -1895,22 +1909,56 @@ async def entrypoint(ctx: JobContext):
                     except Exception as _re:
                         logger.warning("[REDIS_EVAL] Failed to push payload: %s", _re)
 
-                # READ result from previous turn's eval (computed while Ishita was speaking)
-                try:
-                    applied = await _read_and_apply_eval_result(turn_snapshot)
-                    if not applied:
-                        logger.info("[REDIS_EVAL] No pre-computed result for turn=%d - skipping inline eval", turn_snapshot)
-                except Exception as _rae:
-                    logger.error("[REDIS_EVAL] _read_and_apply_eval_result failed turn=%d: %s", turn_snapshot, _rae, exc_info=True)
-
-                # PUSH current turn's answer for the worker to evaluate during Ishita's response
-                # Always runs even if reading previous result failed, so no turn is ever skipped.
+                # PUSH current turn's answer for the worker to evaluate.
+                # We push FIRST so the worker can start computing immediately.
+                # Then we WAIT for the result before returning so LLM sees the correct directive.
                 payload = _build_eval_payload()
                 logger.info(
                     "[EVAL_DISPATCH] Pushing turn=%d to eval_worker | answer=%r | question=%r",
                     turn_snapshot, payload.get("answer", "")[:60], payload.get("question", "")[:60],
                 )
                 await _push_payload_to_redis(payload)
+
+                # SYNC GATE: Block until current turn's eval result is ready.
+                # Polls the turn-specific key: interview:{app_id}:eval_result:{turn}
+                # eval_worker (gpt-4o-mini) completes in ~1.5s; timeout is 6s safety net.
+                # Returns only after directive is injected into chat_ctx — so LLM generates
+                # with the correct PROBE/MOVE_ON directive already in context.
+                _sync_applied = False
+                if _eval_redis_client is not None:
+                    _result_turn_key = f"interview:{app_id}:eval_result:{turn_snapshot}"
+                    _SYNC_WAIT = 6.0
+                    _POLL_INTERVAL = 0.15
+                    _deadline = asyncio.get_event_loop().time() + _SYNC_WAIT
+                    logger.info("[SYNC_GATE] turn=%d | Waiting for eval result (max %.1fs)...", turn_snapshot, _SYNC_WAIT)
+                    while asyncio.get_event_loop().time() < _deadline:
+                        try:
+                            _raw_turn = await asyncio.wait_for(
+                                _eval_redis_client.getdel(_result_turn_key),
+                                timeout=0.3,
+                            )
+                        except (asyncio.TimeoutError, Exception):
+                            await asyncio.sleep(_POLL_INTERVAL)
+                            continue
+                        if _raw_turn:
+                            try:
+                                _preloaded = json.loads(_raw_turn)
+                                _elapsed = round(_SYNC_WAIT - max(0.0, _deadline - asyncio.get_event_loop().time()), 2)
+                                logger.info(
+                                    "[SYNC_GATE] ✅ turn=%d | result arrived in ~%.2fs | action=%s",
+                                    turn_snapshot, _elapsed, _preloaded.get("action", "?"),
+                                )
+                                await _read_and_apply_eval_result(turn_snapshot, preloaded_result=_preloaded)
+                                _sync_applied = True
+                            except Exception as _sge:
+                                logger.warning("[SYNC_GATE] turn=%d | apply failed: %s", turn_snapshot, _sge)
+                            break
+                        await asyncio.sleep(_POLL_INTERVAL)
+                    if not _sync_applied:
+                        logger.warning(
+                            "[SYNC_GATE] ⏰ turn=%d | Timeout %.1fs — LLM generates without updated directive",
+                            turn_snapshot, _SYNC_WAIT,
+                        )
 
         except Exception as e:
             logger.error("[EVAL] _process_user_conversation_item failed turn=%d: %s", turn_snapshot, e, exc_info=True)
@@ -2022,41 +2070,9 @@ async def entrypoint(ctx: JobContext):
                     remove_system_messages(chat_ctx, "[WARMUP PHASE]")
                     logger.info("[WARMUP]  WARMUP COMPLETE at turn=%d  INTERVIEW PHASE ACTIVE", turn_count)
 
-                # TIMING FIX: Inject the previous turn's eval directive IMMEDIATELY
-                # when the user starts speaking — BEFORE the 0.65s debounce fires.
-                # Without this, the LLM starts generating before the directive lands in chat_ctx.
-                # Uses GET (not GETDEL) so the full handler can still apply all state mutations later.
-                if warmup_complete and turn_count > 2 and _eval_redis_client:
-                    async def _inject_directive_before_llm(_tc=turn_count):
-                        try:
-                            _raw = await asyncio.wait_for(
-                                _eval_redis_client.get(f"interview:{app_id}:eval_result"),
-                                timeout=0.25,
-                            )
-                            if _raw:
-                                _r = json.loads(_raw)
-                                _d = _r.get("directive", "")
-                                _a = _r.get("action", "?")
-                                if _d:
-                                    _ctx_before = len([m for m in getattr(chat_ctx, "items", []) if getattr(m, "role", "") == "system"])
-                                    remove_system_messages(chat_ctx, "[NEXT_TURN_DIRECTIVE")
-                                    remove_system_messages(chat_ctx, "[TOPIC_LOCK")
-                                    chat_ctx.add_message(role="system", content=_d)
-                                    _ctx_after = len([m for m in getattr(chat_ctx, "items", []) if getattr(m, "role", "") == "system"])
-                                    logger.info(
-                                        "[INJECT_EARLY] turn=%d action=%s | system_msgs: %d→%d | directive: %s",
-                                        _tc, _a, _ctx_before, _ctx_after,
-                                        _d[:120].replace("\n", " | "),
-                                    )
-                                else:
-                                    logger.warning("[INJECT_EARLY] turn=%d action=%s — directive field empty in Redis result", _tc, _a)
-                            else:
-                                logger.info("[INJECT_EARLY] turn=%d — no Redis result yet (worker still processing?)", _tc)
-                        except asyncio.TimeoutError:
-                            logger.warning("[INJECT_EARLY] turn=%d — Redis GET timed out (0.25s)", _tc)
-                        except Exception as _ie:
-                            logger.warning("[INJECT_EARLY] turn=%d — failed: %s", _tc, _ie)
-                    asyncio.ensure_future(_inject_directive_before_llm())
+                # Directive injection is now handled by the SYNC GATE below:
+                # after pushing the current turn, we WAIT for the eval result and inject
+                # the directive atomically before returning. Fire-and-forget is gone.
 
                 # STT Fragment Buffering: accumulate all fragments for this turn, process only once
                 # Buffer the fragment
@@ -2131,6 +2147,7 @@ async def entrypoint(ctx: JobContext):
                                 _trigger_processing(_turn=_turn, _event=_event, _reason=_reason),
                                 f"user_turn_{_turn}",
                             )
+                            agent._pending_eval_task = _user_turn_chain
                             await _user_turn_chain
                     except asyncio.CancelledError:
                         logger.debug(f"[STT_BUFFER] turn={_turn} - debounce cancelled")
@@ -2149,6 +2166,7 @@ async def entrypoint(ctx: JobContext):
                         _trigger_processing(turn_count, event, reason),
                         f"sttt_immediate_{turn_count}",
                     )
+                    agent._pending_eval_task = _user_turn_chain
                     logger.info(
                         "[STT_BUFFER] turn=%d - triggered immediately (complete sentence) | reason=%s",
                         turn_count, reason,

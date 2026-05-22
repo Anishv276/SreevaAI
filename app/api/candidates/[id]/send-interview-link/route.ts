@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendApplicationStatusEmail } from "@/lib/mail";
+import { buildInterviewScheduleLink } from "@/lib/interview-links";
 import { getSession, isAdminRole } from "@/lib/auth";
 import { getOrgBillingStatus } from "@/lib/credits";
 import { getInterviewQuotaSupportMessage } from "@/lib/interview-quota";
@@ -24,7 +25,15 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         const application = await prisma.application.findUnique({
             where: { id: applicationId },
             include: {
-                drive: true,
+                drive: {
+                    include: {
+                        organization: {
+                            select: {
+                                name: true,
+                            },
+                        },
+                    },
+                },
                 interview: true
             }
         });
@@ -85,12 +94,17 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         });
 
         const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-        const interviewLink = `${baseUrl}/interview/${applicationId}/schedule`;
+        const interviewLink = buildInterviewScheduleLink(
+            baseUrl,
+            applicationId,
+            application.drive?.organization?.name || "Sreeva AI"
+        );
 
         const mailResult = await sendApplicationStatusEmail({
             email: application.email,
             fullName: application.fullName,
             jobTitle: application.drive?.title || "Unknown Role",
+            orgName: application.drive?.organization?.name || "Sreeva AI",
             status: "SHORTLISTED",
             interviewLink,
             schedulingDeadline: (application.drive as any)?.deadline || undefined,

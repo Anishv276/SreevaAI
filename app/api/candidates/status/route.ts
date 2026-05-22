@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
 import { normalizeEmail } from "@/lib/email";
+import { buildInterviewLink } from "@/lib/interview-links";
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
 export async function GET(request: Request) {
@@ -29,6 +30,11 @@ export async function GET(request: Request) {
                     select: {
                         id: true,
                         title: true,
+                        organization: {
+                            select: {
+                                name: true,
+                            },
+                        },
                     }
                 },
                 interview: {
@@ -57,9 +63,10 @@ export async function GET(request: Request) {
                         app.interview.status === "PENDING" &&
                         !!app.interview.expiresAt &&
                         new Date() < new Date(app.interview.expiresAt),
-                    interviewLink: isInterviewTokenRequired()
-                        ? `${appUrl}/interview/${app.id}?token=${encodeURIComponent(app.interview.accessToken)}`
-                        : `${appUrl}/interview/${app.id}`,
+                    interviewLink: buildInterviewLink(appUrl, app.id, {
+                        token: isInterviewTokenRequired() ? app.interview.accessToken : null,
+                        orgName: app.drive?.organization?.name || "Sreeva AI",
+                    }),
                 }
                 : null;
 

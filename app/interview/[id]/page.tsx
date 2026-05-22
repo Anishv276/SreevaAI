@@ -160,6 +160,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const SHOW_TAB_FULLSCREEN_ALERTS = true;
     const searchParams = useSearchParams();
     const interviewToken = searchParams.get("token") || "";
+    const organizationName = searchParams.get("orgName")?.trim() || "";
     const requireInterviewToken = isInterviewTokenRequired();
     const isTabSwitchEnabled = Boolean(proctoringSignals.tab_switch);
     const isCameraDisabledEnabled = Boolean(proctoringSignals.camera_disabled);
@@ -929,7 +930,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                             errorMessage={joinError}
                             applicationId={id}
                             interviewToken={interviewToken}
-                            title={`${interviewRoleLabel} Interview Check`}
+                            title={`${organizationName ? `${organizationName} - ` : ""}${interviewRoleLabel} Interview Check`}
                             bookedSlot={bookedSlot}
                         />
                     </motion.div>

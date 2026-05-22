@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { generateId } from "@/lib/ids";
 import { v4 as uuidv4 } from "uuid";
 import { sendApplicationStatusEmail } from "@/lib/mail";
+import { buildInterviewLink } from "@/lib/interview-links";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
 import { FIXED_INTERVIEW_DURATION_MINUTES, INTERVIEW_SLOT_INTERVAL_MINUTES } from "@/lib/drive-limits";
 import { isEmailMatchCaseInsensitive, isValidSlotBoundary } from "@/lib/interview-slot-policy";
@@ -30,7 +31,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
         const app = await prismaAny.application.findUnique({
             where: { id },
-            include: { drive: true, interview: true }
+            include: {
+                drive: {
+                    include: {
+                        organization: {
+                            select: {
+                                name: true,
+                            },
+                        },
+                    },
+                },
+                interview: true
+            }
         });
 
         if (!app) {
@@ -142,14 +154,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
         // Send confirmation directly from API to avoid queue action/template mismatch.
         const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-        const interviewBase = `${baseUrl}/interview/${app.id}`;
-        const interviewLink = isInterviewTokenRequired() && bookingResult.interviewToken
-            ? `${interviewBase}?token=${bookingResult.interviewToken}`
-            : interviewBase;
+        const interviewLink = buildInterviewLink(baseUrl, app.id, {
+            token: isInterviewTokenRequired() ? bookingResult.interviewToken : null,
+            orgName: app.drive?.organization?.name || "Sreeva AI",
+        });
         const mailResult = await sendApplicationStatusEmail({
             email: app.email,
             fullName: app.fullName,
             jobTitle: app.drive?.title || "Unknown Role",
+            orgName: app.drive?.organization?.name || "Sreeva AI",
             status: "CONFIRMED",
             interviewLink,
             scheduledAt: startTime,

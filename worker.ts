@@ -17,6 +17,7 @@ import { parseDriveScreeningSettings } from "./lib/screening-criteria";
 import { recordOrgBillingUsage } from "./lib/usage-metrics";
 import { generateInterviewReport, computeEnrichedInterviewScore } from "./lib/interview-analysis";
 import { syncCandidateCorpusToPinecone } from "./lib/pinecone";
+import { buildInterviewLink, buildInterviewScheduleLink } from "./lib/interview-links";
 // Load environment variables
 dotenv.config();
 console.log('DEBUG: REDIS_URL length:', process.env.REDIS_URL?.length || 0);
@@ -40,6 +41,7 @@ if (!process.env.REDIS_URL) {
 }
 void redisConnection.connect().catch(() => {}); // force-connect before BullMQ workers start
 const pythonCmd = getPythonExecutable();
+const ffmpegCommand = process.env.FFMPEG_PATH?.trim() || process.env.FFMPEG_BIN?.trim() || "ffmpeg";
 
 const DRIVE_BATCH_SIZE = 5;
 
@@ -123,9 +125,13 @@ class FfmpegUnavailableError extends Error {
   }
 }
 
+function escapeFfmpegConcatPath(filePath: string): string {
+  return filePath.replace(/\\/g, "/").replace(/'/g, "\\'");
+}
+
 async function runFfmpeg(args: string[], context: string): Promise<void> {
   await new Promise<void>((resolve, reject) => {
-    const ff = spawn("ffmpeg", args);
+    const ff = spawn(ffmpegCommand, args);
     const logs: string[] = [];
 
     ff.stderr.on("data", (d: Buffer) => {
@@ -892,6 +898,11 @@ if (isQueueEnabled("resume-processing")) {
           screeningThreshold: true,
           screeningCriteria: true,
           orgId: true,
+          organization: {
+            select: {
+              name: true,
+            },
+          },
         },
       });
       const THRESHOLD = Number(latestDrive?.screeningThreshold ?? 60) || 60;
@@ -1018,11 +1029,16 @@ if (isQueueEnabled("resume-processing")) {
         // New flow: shortlist only sends scheduling URL.
         // Interview row/token are created later during slot booking.
         const baseUrl = appUrl;
-        const interviewLink = `${baseUrl}/interview/${applicationId}/schedule`;
+        const interviewLink = buildInterviewScheduleLink(
+          baseUrl,
+          applicationId,
+          latestDrive?.organization?.name || drive?.organization?.name || "Sreeva AI"
+        );
         const emailResult = await sendApplicationStatusEmail({
           email: applicantEmail,
           fullName: applicantName,
           jobTitle: latestDrive?.title || drive.title,
+          orgName: latestDrive?.organization?.name || drive?.organization?.name || "Sreeva AI",
           status: resumeStatus,
           interviewLink
         });
@@ -1037,6 +1053,7 @@ if (isQueueEnabled("resume-processing")) {
           email: applicantEmail,
           fullName: applicantName,
           jobTitle: latestDrive?.title || drive.title,
+          orgName: latestDrive?.organization?.name || drive?.organization?.name || "Sreeva AI",
           status: 'REJECTED',
         });
         console.log(`[EMAIL] Status-only email sent to ${applicantEmail}  status: ${resumeStatus}`);
@@ -1093,6 +1110,11 @@ if (isQueueEnabled("invitation-delivery-queue")) {
               id: true,
               title: true,
               orgId: true,
+              organization: {
+                select: {
+                  name: true,
+                },
+              },
             },
           },
           interview: {
@@ -1135,13 +1157,17 @@ if (isQueueEnabled("invitation-delivery-queue")) {
         });
         // Create interview row first, generate token only at slot booking.
         const baseUrl = appUrl;
-        interviewLink = `${baseUrl}/interview/${applicationId}/schedule`;
+        interviewLink = buildInterviewScheduleLink(
+          baseUrl,
+          applicationId,
+          application.drive?.organization?.name || "Sreeva AI"
+        );
       } else if (action === "confirm") {
         const baseUrl = appUrl;
-        const interviewBase = `${baseUrl}/interview/${applicationId}`;
-        interviewLink = isInterviewTokenRequired() && application.interview?.accessToken
-          ? `${interviewBase}?token=${application.interview.accessToken}`
-          : interviewBase;
+        interviewLink = buildInterviewLink(baseUrl, applicationId, {
+          token: isInterviewTokenRequired() ? application.interview?.accessToken : null,
+          orgName: application.drive?.organization?.name || "Sreeva AI",
+        });
         console.log(`[Invitation Worker] Generated confirmation link: ${interviewLink}`);
       }
       const { sendApplicationStatusEmail } = await import('./lib/mail');
@@ -1163,7 +1189,7 @@ if (isQueueEnabled("invitation-delivery-queue")) {
         email: application.email,
         fullName: application.fullName || "Candidate",
         jobTitle: application.drive?.title || "Unknown Role",
-        orgName: undefined,
+        orgName: application.drive?.organization?.name || "Sreeva AI",
         status: emailStatus,
         interviewLink,
         scheduledAt: scheduledAt ? new Date(scheduledAt) : undefined,
@@ -1752,13 +1778,13 @@ if (isQueueEnabled("interview-recording")) {
       const effectiveSession = sessionId || "merged";
       const outputPath = join(tmpDir, `merged-${applicationId}-${effectiveSession}.webm`);
       const concatListPath = join(tmpDir, `concat-${applicationId}.txt`);
-      const concatContent = chunkPaths.map(p => `file '${p}'`).join("\n");
+      const concatContent = chunkPaths.map(p => `file '${escapeFfmpegConcatPath(p)}'`).join("\n");
       await writeFile(concatListPath, concatContent);
 
       let ffmpegOk = false;
       try {
         await new Promise<void>((resolve, reject) => {
-          const ff = spawn("ffmpeg", [
+          const ff = spawn(ffmpegCommand, [
             "-y",
             "-f", "concat",
             "-safe", "0",
@@ -1780,7 +1806,9 @@ if (isQueueEnabled("interview-recording")) {
             // ENOENT = ffmpeg binary not installed.
             // Resolve (don't reject) so execution falls through to raw-concat fallback.
             if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-              console.warn(`[RECORDING_WORKER] ffmpeg not found (ENOENT) — will use raw concat fallback`);
+              console.warn(
+                `[RECORDING_WORKER] ffmpeg not found at "${ffmpegCommand}" (ENOENT) — will use raw concat fallback. Set FFMPEG_PATH if ffmpeg is installed elsewhere.`
+              );
               resolve();
             } else {
               reject(new Error(`ffmpeg spawn failed: ${err.message}`));

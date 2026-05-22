@@ -15,6 +15,18 @@ async function main() {
                     mode: 'insensitive'
                 }
             },
+            include: {
+                drive: {
+                    include: {
+                        organization: {
+                            select: {
+                                name: true
+                            }
+                        }
+                    }
+                },
+                interview: true
+            },
             orderBy: { createdAt: 'desc' }
         });
     }
@@ -22,6 +34,18 @@ async function main() {
     if (!app && !targetName) {
         app = await prisma.application.findFirst({
             where: { hiringStatus: 'SHORTLISTED' },
+            include: {
+                drive: {
+                    include: {
+                        organization: {
+                            select: {
+                                name: true
+                            }
+                        }
+                    }
+                },
+                interview: true
+            },
             orderBy: { createdAt: 'desc' }
         });
 
@@ -34,6 +58,18 @@ async function main() {
 
         if (!app) {
             app = await prisma.application.findFirst({
+                include: {
+                    drive: {
+                        include: {
+                            organization: {
+                                select: {
+                                    name: true
+                                }
+                            }
+                        }
+                    },
+                    interview: true
+                },
                 orderBy: { createdAt: 'desc' }
             });
         }
@@ -108,7 +144,10 @@ async function main() {
 
         console.log(`\nInterview Link for ${app.fullName}:`);
         const baseUrl = process.env.APP_URL || 'https://sreevaai.com';
-        console.log(`${baseUrl}/interview/${app.id}`);
+        const url = new URL(`/interview/${app.id}`, baseUrl);
+        const orgName = app.drive?.organization?.name || 'Sreeva AI';
+        if (orgName) url.searchParams.set('orgName', orgName);
+        console.log(url.toString());
     } else {
         console.log("No candidates found or could be created.");
     }

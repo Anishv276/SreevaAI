@@ -19,6 +19,9 @@ type BulkEmailTarget = {
         id: string;
         title: string;
         orgId: string | null;
+        organization?: {
+            name: string | null;
+        } | null;
     } | null;
 };
 
@@ -129,6 +132,11 @@ export async function POST(request: Request) {
                         id: true,
                         title: true,
                         orgId: true,
+                        organization: {
+                            select: {
+                                name: true,
+                            },
+                        },
                     },
                 },
             },
@@ -193,6 +201,11 @@ export async function POST(request: Request) {
                                 id: true,
                                 title: true,
                                 orgId: true,
+                                organization: {
+                                    select: {
+                                        name: true,
+                                    },
+                                },
                             },
                         },
                     },
@@ -319,6 +332,7 @@ export async function POST(request: Request) {
                     email: app.email,
                     fullName: app.fullName || "Candidate",
                     jobTitle: app.drive?.title || "Unknown Role",
+                    orgName: app.drive?.organization?.name || "Sreeva AI",
                     status,
                 });
 

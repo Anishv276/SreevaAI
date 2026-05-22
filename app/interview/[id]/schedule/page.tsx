@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
     AlertCircle,
@@ -41,12 +42,14 @@ const formatFullDate = (value: string | null) =>
 
 export default function SchedulePage({ params }: { params: Promise<{ id: string }> }) {
     const [id, setId] = useState<string | null>(null);
+    const searchParams = useSearchParams();
+    const orgNameFromLink = searchParams.get("orgName")?.trim() || "";
     const [phase, setPhase] = useState<"loading" | "booking" | "details" | "booking_confirmed" | "already_booked">("loading");
     const [slots, setSlots] = useState<Slot[]>([]);
     const [bookedSlot, setBookedSlot] = useState<number | null>(null);
     const [selectedDate, setSelectedDate] = useState<string | null>(null);
     const [currentMonthDate, setCurrentMonthDate] = useState<Date>(new Date());
-    const [bookingCompany, setBookingCompany] = useState<string>("Company");
+    const [bookingCompany, setBookingCompany] = useState<string>(orgNameFromLink || "Company");
     const [interviewRoleLabel, setInterviewRoleLabel] = useState<string>("Interview");
     const [candidateName, setCandidateName] = useState<string>("");
     const [candidateEmail, setCandidateEmail] = useState<string>("");
