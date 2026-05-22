@@ -730,11 +730,12 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
                 turns_since_last_decay=p.turns_since_decay,
                 response_latency_sec=p.response_latency_sec,
             ),
-            timeout=3.5,
+            timeout=5.0,
         )
     except asyncio.TimeoutError:
-        logger.warning("[EVAL_PIPELINE] run_turn_evaluation timed out (>3.5s) turn=%d", p.turn)
-        # Fallback: use PROBE by default (let saturation decide on next turn)
+        logger.warning("[EVAL_PIPELINE] run_turn_evaluation timed out (>5s) turn=%d — using low-score fallback", p.turn)
+        # Fallback: use PROBE with LOW scores — timeout means we couldn't evaluate,
+        # not that the answer was average. Low scores prevent unearned saturation credit.
         _fallback_action = "PROBE"
         _fallback_next = (
             "Ask one specific follow-up question about what they personally built or decided. "
@@ -742,7 +743,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         )
         td = {
             "decision": {"action": _fallback_action, "mode": "normal", "next_goal": _fallback_next},
-            "quality": {"clarity": 5.0, "depth": 5.0, "specificity": 5.0, "grounding": 5.0},
+            "quality": {"clarity": 1.0, "depth": 1.0, "specificity": 1.0, "grounding": 1.0},
             "signal_events": [],
         }
         directive = (

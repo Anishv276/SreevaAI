@@ -8,10 +8,10 @@ import sys
 
 
 def generate_report_inline(
-    _jd_data, resume_data, jd_raw_text, resume_raw_text, score_result, client, report_model="gpt-4o-mini", screening_criteria=None
+    _jd_data, resume_data, jd_raw_text, resume_raw_text, score_result, client, report_model="gpt-5.4-mini", screening_criteria=None
 ):
     """
-    Full-fidelity AI report generation using gpt-4o-mini.
+    Full-fidelity AI report generation using gpt-5.4-mini.
     Score and status are LOCKED by the deterministic engine — LLM only writes human-readable analysis.
     Every field the UI renders is produced here directly. No math fallbacks.
     """

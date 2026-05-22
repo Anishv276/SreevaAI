@@ -239,11 +239,11 @@ export default function OrgsPage() {
     // Authoritative model per feature — matches what each API route actually uses
     const FEATURE_MODEL_MAP: Record<string, string> = {
         resumeExtraction: "gpt-5.4-mini",
-        jdExtraction: "gpt-5.4-mini",
-        chatbot: "gpt-4.1-mini",
+        jdExtraction: "gpt-4.1-mini",
+        chatbot: "gpt-4o-mini",
         interview: "gpt-4.1-mini",
-        resumeReport: "gpt-4o",
-        interviewReport: "gpt-4o",
+        resumeReport: "gpt-5.4-mini",
+        interviewReport: "gpt-5.4-mini",
     };
     const getBillingFeature = (org: Org, key: BillingFeatureKey): BillingFeatureMetrics => {
         const usage = (org.usageMetrics ?? {}) as Record<string, any>;

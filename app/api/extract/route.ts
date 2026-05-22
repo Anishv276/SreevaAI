@@ -1,14 +1,8 @@
 import { NextResponse } from "next/server";
-import { writeFile, unlink } from "fs/promises";
-import { join } from "path";
-import { spawn } from "child_process";
-import { v4 as uuidv4 } from "uuid";
-import os from "os";
 import { extractionLimiter } from "@/lib/rate-limit";
 import { getSession } from "@/lib/auth";
-import { recordOrgBillingUsage } from "@/lib/usage-metrics";
-import { getPythonExecutable } from "@/lib/python-exec";
 import { enqueueJdExtraction } from "@/lib/jd-extraction";
+import { resumeQueue } from "@/lib/queue";
 
 export async function POST(request: Request) {
     try {
@@ -67,7 +61,6 @@ export async function POST(request: Request) {
             sessionOrgId = null;
         }
         const orgId = explicitOrgId || sessionOrgId;
-        const orgOpenAIModel = "gpt-5.4-mini"; // Strictly using gpt-5.4-mini, ignoring DB settings
 
 
         if (!file && !url) {
@@ -80,6 +73,8 @@ export async function POST(request: Request) {
 
         const type = typeRaw as "JD" | "RESUME";
         const isJd = typeRaw === "JD";
+        // Fixed model policy per document type.
+        const orgOpenAIModel = isJd ? "gpt-4.1-mini" : "gpt-5.4-mini";
 
         if (isJd) {
             if (url) {
@@ -160,7 +155,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ jobId, url: fileUrl }, { status: 202 });
         }
 
-        // -- RESUME path (unchanged: direct Python spawn) --
+        // -- RESUME path: upload to R2, then hand off extraction to the worker --
 
         if (!file) {
             return NextResponse.json({ error: "File required" }, { status: 400 });
@@ -183,134 +178,51 @@ export async function POST(request: Request) {
         const isMimeAllowed = currentAllowed.some(t => file.type.includes(t) || (t.endsWith("/*") && file.type.startsWith(t.split("/")[0])));
 
         if (!isMimeAllowed) {
-             const validExts = /\.(pdf|docx|txt)$/i;
-             if (!file.name.match(validExts)) {
+            const validExts = /\.(pdf|docx|txt)$/i;
+            if (!file.name.match(validExts)) {
                 return NextResponse.json({
                     error: `Invalid file type for ${type}.`,
                     code: "INVALID_FILE_TYPE"
                 }, { status: 415 });
-             }
+            }
         }
 
         const bytes = await file.arrayBuffer();
         const buffer = Buffer.from(bytes);
         const byteLength = buffer.length;
-        const tempDir = os.tmpdir();
-        const tempFilePath = join(tempDir, `${uuidv4()}-${file.name}`);
-        await writeFile(tempFilePath, buffer);
 
         console.log("[FILE_EXTRACT_START]:", { name: file.name, size: byteLength, type });
-
-        let outputData = "";
-        let errorData = "";
 
         const bucket = process.env.R2_RESUMES_BUCKET || "resumes";
         const fileName = `resumes/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
 
-        let fileUrl: string | null = null;
+        console.log("[STORAGE_PUSH]: Uploading to R2", fileName);
+        const { putObject } = await import("@/lib/s3");
+        const fileUrl = await putObject(bucket, fileName, buffer, file.type);
+        console.log("[STORAGE_SUCCESS]:", { type, fileName, url: fileUrl });
 
-        console.log("[PYTHON_EXEC]: Starting scripts/extract_pdf.py for", file.name);
-        const pythonProcess = spawn(getPythonExecutable(), ["scripts/extract_pdf.py", tempFilePath, type, orgOpenAIModel]);
-
-        pythonProcess.stdout.on("data", (data) => { outputData += data.toString(); });
-        pythonProcess.stderr.on("data", (data) => { errorData += data.toString(); });
-
-        const [exitCode] = await Promise.all([
-            new Promise<number>((resolve) => {
-                let settled = false;
-
-                const timeout = setTimeout(() => {
-                    if (settled) return;
-                    settled = true;
-                    console.error("[PYTHON_TIMEOUT]: Process exceeded 120s, killing.");
-                    pythonProcess.kill();
-                    resolve(-1);
-                }, 120000);
-
-                pythonProcess.on("close", (code) => {
-                    if (settled) return;
-                    settled = true;
-                    clearTimeout(timeout);
-                    console.log("[PYTHON_EXTRACT_END]: Exit code", code);
-                    resolve(code ?? 1);
-                });
-            }),
-            (async () => {
-                try {
-                    console.log("[STORAGE_PUSH]: Uploading to R2", fileName);
-                    const { putObject } = await import("@/lib/s3");
-                    fileUrl = await putObject(bucket, fileName, buffer, file.type);
-                    console.log("[STORAGE_SUCCESS]:", { type, fileName, url: fileUrl });
-                } catch (storageErr: any) {
-                    console.error("[STORAGE_FATAL_ERROR]:", { type, fileName, error: storageErr.message });
-                }
-            })(),
-        ]);
-
-        await unlink(tempFilePath).catch(() => { });
-
-        if (exitCode !== 0) {
-            console.error("[EXTRACTION_FAILED]: Python script returned non-zero exit code", { exitCode, stderr: errorData, stdout: outputData });
-            let pythonError = "Document processing failed.";
-            for (const raw of [outputData, errorData]) {
-                if (!raw?.trim()) continue;
-                try {
-                    const parsed = JSON.parse(raw.trim());
-                    if (parsed?.error) { pythonError = parsed.error; break; }
-                } catch {
-                    const last = raw.trim().split("\n").pop()?.trim();
-                    if (last) pythonError = last;
-                }
+        const jobId = await resumeQueue.add(
+            "resume-file-extract",
+            {
+                bucket,
+                key: fileName,
+                fileUrl,
+                fileName: file.name,
+                orgId,
+                orgOpenAIModel,
+            },
+            {
+                attempts: 2,
+                backoff: { type: "exponential", delay: 1500 },
             }
-            return NextResponse.json({
-                error: pythonError,
-                code: "EXTRACTION_PROCESS_ERROR",
-            }, { status: 502 });
-        }
+        );
 
-        try {
-            const result = JSON.parse(outputData);
-
-            if (result.error) {
-                console.error("[EXTRACTION_PYTHON_ERROR]:", result);
-                return NextResponse.json({
-                    error: result.error,
-                    code: result.code || "EXTRACTION_ERROR"
-                }, { status: 422 });
-            }
-
-            if (result.text && typeof result.text === 'string' && result.text.length < 100) {
-                return NextResponse.json({
-                    error: "Could not extract sufficient text from this document. Please ensure the file is not empty or a scanned image.",
-                    code: "EXTRACTION_INSUFFICIENT_DATA"
-                }, { status: 422 });
-            }
-
-            if (orgId && result.usage) {
-                await recordOrgBillingUsage({
-                    orgId,
-                    feature: "resumeExtraction",
-                    usage: {
-                        model: result.usage.model || "gpt-5.4-mini",
-                        inputTokens: result.usage.inputTokens || 0,
-                        outputTokens: result.usage.outputTokens || 0,
-                        cachedInputTokens: result.usage.cachedInputTokens || 0,
-                    },
-                });
-            }
-
-            return NextResponse.json({
-                ...result,
-                url: fileUrl || null
-            });
-        } catch (e: any) {
-            const preview = outputData.length > 200 ? outputData.slice(0, 200) + "..." : outputData;
-            console.error("[EXTRACTION_PARSE_FATAL]: Received invalid JSON from Python", { preview, error: e.message });
-            return NextResponse.json({
-                error: "Received invalid data format from processing engine.",
-                code: "MALFORMED_RESPONSE_ERROR"
-            }, { status: 502 });
-        }
+        console.log(`[RESUME-EXTRACT] Enqueued resume extraction job ${jobId.id}`);
+        return NextResponse.json({
+            jobId: jobId.id,
+            url: fileUrl,
+            status: "queued",
+        }, { status: 202 });
 
     } catch (error: any) {
         console.error("General Extraction Error:", error);

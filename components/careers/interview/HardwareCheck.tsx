@@ -754,6 +754,10 @@ export function HardwareCheck({
             utter.pitch = 1.0;
             utter.volume = 1.0; // Max browser-supported volume for speech synthesis
 
+            utter.onstart = () => {
+                setSpeakerPlaying(true);
+            };
+
             utter.onend = () => {
                 clearSpeakerFallbackTimer();
                 setSpeakerPlaying(false);
@@ -769,12 +773,19 @@ export function HardwareCheck({
 
             synth.speak(utter);
 
-            // Safety fallback only if onend never fires. Keep it long enough to
-            // avoid flipping to "awaiting" while speech is still playing.
-            speakerFallbackTimerRef.current = window.setTimeout(() => {
+            // Safety fallback only if onend never fires.
+            // We keep polling until the browser reports speech is no longer active,
+            // which avoids showing Yes/No while audio is still being spoken.
+            const tryUnlockAfterSpeech = () => {
+                if (speakerStatusRef.current !== "playing") return;
+                if (window.speechSynthesis?.speaking || window.speechSynthesis?.pending) {
+                    speakerFallbackTimerRef.current = window.setTimeout(tryUnlockAfterSpeech, 350);
+                    return;
+                }
                 setSpeakerPlaying(false);
-                if (speakerStatusRef.current === "playing") setSpeakerStatus("awaiting");
-            }, fallbackMs);
+                setSpeakerStatus("awaiting");
+            };
+            speakerFallbackTimerRef.current = window.setTimeout(tryUnlockAfterSpeech, fallbackMs);
 
         } catch (err) {
             console.error("[Speaker] Error:", err);

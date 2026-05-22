@@ -169,7 +169,7 @@ export async function POST(req: NextRequest) {
         { status: 403 }
       );
     }
-    const orgOpenAIModel = "gpt-4.1-mini";
+    const orgOpenAIModel = "gpt-4o-mini";
 
     const { messages } = await req.json();
     const userMessage = messages[messages.length - 1]?.content ?? "";

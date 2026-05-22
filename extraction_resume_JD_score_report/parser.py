@@ -132,8 +132,9 @@ class DocumentParser:
     SCORE mode still delegates to the original scoring + report pipeline.
     """
 
-    DEFAULT_MODEL = "gpt-5.4-mini"
-    REPORT_MODEL = "gpt-4o-mini"
+    RESUME_MODEL = "gpt-5.4-mini"
+    JD_MODEL = "gpt-4.1-mini"
+    REPORT_MODEL = "gpt-5.4-mini"
 
     def parse(self, text: str, doc_type: str, model_override: str | None = None) -> dict:
         """
@@ -141,12 +142,12 @@ class DocumentParser:
         Returns {"data": {...}, "usage": {...}}
         """
         client = _get_client()
-        model = model_override or self.DEFAULT_MODEL
-
         if doc_type == "JD":
+            model = model_override or self.JD_MODEL
             return self._parse_jd(client, text, model)
 
         if doc_type == "RESUME":
+            model = model_override or self.RESUME_MODEL
             return self._parse_resume(client, text, model)
 
         if doc_type == "SCORE":

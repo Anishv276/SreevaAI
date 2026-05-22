@@ -923,6 +923,38 @@ async def persist_answer_scores(app_id: str, answer_scores: list[dict]) -> None:
             )
     except Exception as e:
         logger.error(f"[SCORE] Failed to persist answer scores for {app_id}: {e}")
+
+
+async def persist_skill_ratings(app_id: str, skill_ratings: dict[str, dict]) -> None:
+    """Compatibility shim for the runtime's final skill ratings write.
+
+    The interview report generator already stores a richer final report, but the
+    runtime still calls this function at shutdown. We keep it as a small merge
+    update so older and newer code paths both work.
+    """
+    if not app_id or not DATABASE_URL or not skill_ratings:
+        return
+
+    try:
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE "Interview"
+                SET "interviewReport" =
+                    COALESCE("interviewReport", '{}'::jsonb)
+                    || jsonb_build_object('skill_ratings', $1::jsonb),
+                    "updatedAt" = NOW()
+                WHERE "applicationId" = $2
+                """,
+                json.dumps(skill_ratings),
+                app_id,
+            )
+            logger.info(f"[SKILL_RATINGS] Saved {len(skill_ratings)} skill rating(s) for {app_id}")
+    except Exception as e:
+        logger.error(f"[SKILL_RATINGS] Failed to persist skill ratings for {app_id}: {e}")
+
+
 async def deduct_interview_billing(app_id: str, duration_seconds: Optional[float] = None) -> None:
     """
     Atomically deduct one interview quota slot and record minute-based credit usage.

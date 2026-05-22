@@ -195,11 +195,19 @@ export function mergeBillingFeature(
     outputTokens?: number;
     cachedInputTokens?: number;
     sessionDuration?: number;
+    costUsd?: number;
+    ttsRuns?: number;
+    ttsCharacters?: number;
+    ttsCostUsd?: number;
+    sttRuns?: number;
+    sttAudioSeconds?: number;
+    sttCostUsd?: number;
   },
 ) {
   const bucket = billing[feature];
   const modelKey = normalizeModelName(usage.model) || "unknown";
-  const costUsd = estimateOpenAICost(usage);
+  const hasProvidedCost = typeof usage.costUsd === "number" && Number.isFinite(usage.costUsd);
+  const costUsd = hasProvidedCost ? Number(usage.costUsd) : estimateOpenAICost(usage);
 
   bucket.runs += 1;
   bucket.inputTokens += usage.inputTokens ?? 0;
@@ -207,6 +215,12 @@ export function mergeBillingFeature(
   bucket.outputTokens += usage.outputTokens ?? 0;
   bucket.sessionDuration += usage.sessionDuration ?? 0;
   bucket.costUsd += costUsd;
+  bucket.ttsRuns += usage.ttsRuns ?? 0;
+  bucket.ttsCharacters += usage.ttsCharacters ?? 0;
+  bucket.ttsCostUsd += usage.ttsCostUsd ?? 0;
+  bucket.sttRuns += usage.sttRuns ?? 0;
+  bucket.sttAudioSeconds += usage.sttAudioSeconds ?? 0;
+  bucket.sttCostUsd += usage.sttCostUsd ?? 0;
 
   if (!bucket.byModel[modelKey]) {
     bucket.byModel[modelKey] = {
@@ -273,6 +287,13 @@ export async function recordOrgBillingUsage(opts: {
     outputTokens?: number;
     cachedInputTokens?: number;
     sessionDuration?: number;
+    costUsd?: number;
+    ttsRuns?: number;
+    ttsCharacters?: number;
+    ttsCostUsd?: number;
+    sttRuns?: number;
+    sttAudioSeconds?: number;
+    sttCostUsd?: number;
   };
 }) {
   const { orgId, feature, usage } = opts;

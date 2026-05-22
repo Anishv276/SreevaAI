@@ -57,7 +57,12 @@ export async function GET(request: Request) {
         const ttsCostUsd = Number(snapshot.ttsCostUsd ?? 0);
         const sttCostUsd = Number(snapshot.sttCostUsd ?? 0);
         const totalCostUsd = Number(snapshot.totalCostUsd ?? (llmCostUsd + ttsCostUsd + sttCostUsd));
-        const hasBillingSnapshot = Object.keys(snapshot).length > 0;
+        const hasExactBreakdown =
+          String(snapshot.costSource || "").toLowerCase() === "exact" ||
+          snapshot.llmCostUsd !== undefined ||
+          snapshot.ttsCostUsd !== undefined ||
+          snapshot.sttCostUsd !== undefined;
+        const hasBillingSnapshot = hasExactBreakdown;
 
         return {
           id: row.id,

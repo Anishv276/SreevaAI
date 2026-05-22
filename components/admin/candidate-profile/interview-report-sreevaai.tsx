@@ -32,7 +32,11 @@ const Plyr = dynamic(
   () => import("plyr-react").then((m) => {
     const Wrapper = forwardRef<any, any>((props, ref) => {
       const PlyrComponent = m.Plyr as any;
-      return <PlyrComponent ref={ref} {...props} />;
+      return (
+        <div suppressHydrationWarning>
+          <PlyrComponent ref={ref} {...props} />
+        </div>
+      );
     });
     Wrapper.displayName = "DynamicPlyrWrapper";
     return Wrapper;
@@ -655,39 +659,79 @@ export function buildSreevaAIInterviewViewModel(i: {
     skills.push({ name: "Role fit (JD)", stars: Math.max(1, Math.min(5, Math.round((technicalPct / 100) * 5))), status: "NOT TESTED", scoreLabel: "—" });
   }
 
-  // ── Transcript ──
+  // ── Transcript ── Parse turns from DB transcript with timestamps
   const secToLabel = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-  const transcript: SreevaAIInterviewViewModel["transcript"] = [];
-  if (i.interviewTranscript) {
-    i.interviewTranscript.split(/\n+/).forEach((line) => {
+  const transcript: SreevaAIInterviewViewModel["transcript"] = (() => {
+    if (!i.interviewTranscript) return [{ from: "ai" as const, text: "No transcript available for this session.", time: "—" }];
+
+    const rawTurns: SreevaAIInterviewViewModel["transcript"] = [];
+    const lines = i.interviewTranscript.split(/\n/);
+    let currentTurn: SreevaAIInterviewViewModel["transcript"][number] | null = null;
+
+    for (const line of lines) {
       const t = line.trim();
-      if (!t) return;
+      if (!t) continue;
+
+      // Match speaker with timestamp: Interviewer[123]: or Candidate[123]:
       const m = t.match(/^(interviewer|candidate)\[(\d+)\]:\s*/i);
       if (m) {
+        // Save previous turn if exists
+        if (currentTurn && currentTurn.text.trim()) {
+          rawTurns.push(currentTurn);
+        }
+        // Start new turn
         const elapsedSec = parseInt(m[2], 10);
         const label = secToLabel(elapsedSec);
-        transcript.push({ from: m[1].toLowerCase() === "interviewer" ? "ai" : "user", text: t.replace(m[0], ""), time: label, seekSeconds: elapsedSec, seekLabel: label });
-      } else if (/^interviewer:/i.test(t)) {
-        transcript.push({ from: "ai", text: t.replace(/^interviewer:\s*/i, ""), time: "—" });
-      } else if (/^candidate:/i.test(t)) {
-        transcript.push({ from: "user", text: t.replace(/^candidate:\s*/i, ""), time: "—" });
+        const from = m[1].toLowerCase() === "interviewer" ? "ai" : "user";
+        const text = t.replace(m[0], "").trim();
+        currentTurn = { from, text, time: label, seekSeconds: elapsedSec, seekLabel: label };
+      } else if (/^interviewer:\s*/i.test(t)) {
+        // Save previous turn if exists
+        if (currentTurn && currentTurn.text.trim()) {
+          rawTurns.push(currentTurn);
+        }
+        // Start new turn without timestamp
+        const text = t.replace(/^interviewer:\s*/i, "").trim();
+        currentTurn = { from: "ai", text, time: "—" };
+      } else if (/^candidate:\s*/i.test(t)) {
+        // Save previous turn if exists
+        if (currentTurn && currentTurn.text.trim()) {
+          rawTurns.push(currentTurn);
+        }
+        // Start new turn without timestamp
+        const text = t.replace(/^candidate:\s*/i, "").trim();
+        currentTurn = { from: "user", text, time: "—" };
+      } else if (currentTurn) {
+        // Continuation line - append to current turn
+        currentTurn.text = `${currentTurn.text} ${t}`.trim();
       }
-    });
-  }
-  if (transcript.length === 0) {
-    transcript.push({ from: "ai", text: "No transcript available for this session.", time: "—" });
-  }
+    }
 
-  // Interpolate timestamps for legacy transcripts
-  if (i.recordingDurationSec && transcript.length > 0 && !transcript.some(l => typeof l.seekSeconds === "number")) {
-    const lastIndex = Math.max(1, transcript.length - 1);
-    transcript.forEach((line, idx) => {
-      const seekSeconds = Math.max(0, Math.min(i.recordingDurationSec!, Math.round((idx / lastIndex) * i.recordingDurationSec!)));
-      line.seekSeconds = seekSeconds;
-      line.seekLabel = `${Math.floor(seekSeconds / 60)}:${String(seekSeconds % 60).padStart(2, "0")}`;
-      line.time = line.seekLabel;
-    });
-  }
+    // Don't forget the last turn
+    if (currentTurn && currentTurn.text.trim()) {
+      rawTurns.push(currentTurn);
+    }
+
+    // Merge consecutive turns from same speaker within 10 seconds
+    const turns: SreevaAIInterviewViewModel["transcript"] = [];
+    for (const turn of rawTurns) {
+      const last = turns[turns.length - 1];
+      if (
+        last &&
+        last.from === turn.from &&
+        typeof last.seekSeconds === "number" &&
+        typeof turn.seekSeconds === "number" &&
+        turn.seekSeconds - last.seekSeconds <= 10
+      ) {
+        // Merge with previous turn
+        last.text = `${last.text} ${turn.text}`.replace(/\s+/g, " ").trim();
+      } else {
+        turns.push(turn);
+      }
+    }
+
+    return turns.length > 0 ? turns : [{ from: "ai" as const, text: "No transcript available for this session.", time: "—" }];
+  })();
 
   // ── Question Analysis ──
   const questionAnalysis: SreevaAIInterviewViewModel["questionAnalysis"] = [];
@@ -2289,23 +2333,22 @@ function QuestionAnalysisCard({ transcript, questions, answerScores, onTranscrip
             {transcript.map((line, i) => {
               const isUser = line.from === "user";
               return (
-                <div key={i} className={cn("flex gap-2 rounded-lg border p-2.5 cursor-pointer hover:shadow-sm transition-all", isUser ? "border-[#C9E2FF] bg-[#F4F8FF] hover:border-[#0B5FFF]/50" : "border-[#E8EAED] bg-white hover:border-[#0B5FFF]/30")} role="presentation" onClick={() => line.seekSeconds !== undefined && onTranscriptSeek?.(line.seekSeconds)}>
+                <div
+                  key={i}
+                  className={cn(
+                    "flex gap-2 rounded-lg border p-3 cursor-pointer hover:shadow-sm transition-all",
+                    isUser ? "border-[#C9E2FF] bg-[#F4F8FF] hover:border-[#0B5FFF]/50" : "border-[#E8EAED] bg-white hover:border-[#0B5FFF]/30"
+                  )}
+                  role="presentation"
+                  onClick={() => line.seekSeconds !== undefined && onTranscriptSeek?.(line.seekSeconds)}
+                >
                   {isUser ? <User className="mt-0.5 h-4 w-4 shrink-0 text-[#0B5FFF]" /> : <Bot className="mt-0.5 h-4 w-4 shrink-0 text-[#0D4D2E]" />}
                   <div className="min-w-0 flex-1">
-                    <div className="mb-0.5 flex flex-wrap items-center gap-1.5">
+                    <div className="mb-1 flex flex-wrap items-center gap-1.5">
                       <span className="text-[10px] font-bold text-[#6B7079]">{isUser ? "Candidate" : "AI"}</span>
-                      {line.qBadge && (
-                        <span className={cn("rounded border px-1.5 py-0.5 text-[8px] font-extrabold uppercase",
-                          line.qBadge === "AVERAGE" && "border-amber-200 bg-amber-50 text-amber-800",
-                          line.qBadge === "STRONG" && "border-emerald-200 bg-emerald-50 text-emerald-800",
-                          (line.qBadge === "FAIR" || line.qBadge === "PENDING") && "border-blue-200 bg-blue-50 text-blue-800"
-                        )}>{line.qBadge}</span>
-                      )}
-                      {line.bad && <span className="text-rose-500 text-[10px]">⚑</span>}
                       <span className="text-[9px] font-semibold text-[#6B7079]">{line.seekLabel || line.time}</span>
                     </div>
-                    <p className="whitespace-pre-wrap text-[12px] leading-relaxed text-[#1A1D22]">{line.text}</p>
-                    {isUser && <Play className="mt-1 h-3.5 w-3.5 text-[#0B5FFF] opacity-60" />}
+                    <p className="text-[12px] leading-relaxed text-[#1A1D22]">{line.text}</p>
                   </div>
                 </div>
               );
@@ -2363,33 +2406,41 @@ export function InterviewReportSreevaAI({
   const plyrRef = useRef<any>(null);
 
   const handleSeek = (seconds: number) => {
-    const setCurrentTime = (el: any) => {
-      try {
-        el.currentTime = seconds;
-      } catch {
-        // Ignore errors
-      }
-    };
+    if (typeof seconds !== "number" || !Number.isFinite(seconds)) return;
 
     try {
+      const setCurrentTime = (el: any) => {
+        try {
+          if (el && typeof el.currentTime !== "undefined") {
+            el.currentTime = Math.max(0, seconds);
+          }
+        } catch (e) {
+          console.debug("Failed to set currentTime:", e);
+        }
+      };
+
       // Try Plyr API first
-      if (plyrRef.current?.plyr) {
+      if (plyrRef.current?.plyr?.currentTime !== undefined) {
         setCurrentTime(plyrRef.current.plyr);
         return;
       }
 
-      // Try direct video element
-      const videoEl = plyrRef.current?.querySelector?.('video') ||
-                     document.querySelector('video');
+      // Try direct video element within the ref
+      if (plyrRef.current) {
+        const videoEl = plyrRef.current.querySelector?.("video");
+        if (videoEl) {
+          setCurrentTime(videoEl);
+          return;
+        }
+      }
+
+      // Try finding video in document as fallback
+      const videoEl = document.querySelector("video");
       if (videoEl) {
         setCurrentTime(videoEl);
-        // Force UI update by dispatching a timeupdate event
-        setTimeout(() => {
-          videoEl.dispatchEvent(new Event('timeupdate'));
-        }, 10);
       }
     } catch (err) {
-      console.error('Seek error:', err);
+      console.debug("Seek operation failed silently:", err);
     }
   };
 

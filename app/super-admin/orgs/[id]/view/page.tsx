@@ -160,6 +160,15 @@ type BillingFeatureMetrics = {
 
 };
 
+const FEATURE_MODEL_FALLBACK: Record<string, string> = {
+    interview: "gpt-4.1-mini",
+    resumeExtraction: "gpt-5.4-mini",
+    jdExtraction: "gpt-4.1-mini",
+    chatbot: "gpt-4o-mini",
+    resumeReport: "gpt-5.4-mini",
+    interviewReport: "gpt-5.4-mini",
+};
+
 
 
 export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: string }> }) {
@@ -976,7 +985,10 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
 
                                     : null;
 
-                                const analysisModelNames = formatModelNames(billing?.byModel, "gpt-4.1-mini");
+                                const analysisModelNames = formatModelNames(
+                                    billing?.byModel,
+                                    FEATURE_MODEL_FALLBACK[section.key] || "gpt-4o-mini"
+                                );
 
                                 const orgVoice = section.key === "interview" ? (() => {
                                     const ids = Array.isArray(org?.allowedVoices) && org!.allowedVoices!.length > 0

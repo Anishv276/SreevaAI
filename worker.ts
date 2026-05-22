@@ -198,15 +198,20 @@ async function processDriveResumeBatchJob(job: any) {
   if (!batchId || !driveId || !orgId) {
     throw new Error("Invalid drive batch job payload");
   }
+  const batchExtractModel = "gpt-5.4-mini";
+  const batchReportModel = "gpt-5.4-mini";
 
   console.log(`[RESUME-WORKER] Batch queued -> starting batchId=${batchId} driveId=${driveId}`);
 
   const batch = await prisma.resumeBatch.findUnique({ where: { id: batchId } });
   if (!batch) throw new Error(`Batch ${batchId} not found`);
 
-  // Idempotency guard: if this batch already finished, don't process it again.
-  if (String(batch.status || "").toUpperCase() === "COMPLETED") {
-    console.log(`[RESUME-WORKER] Batch ${batchId} is already COMPLETED. Skipping duplicate job run.`);
+  // Idempotency guard: if this batch already reached a terminal state, don't process it again.
+  const normalizedBatchStatus = String(batch.status || "").toUpperCase();
+  if (normalizedBatchStatus === "COMPLETED" || normalizedBatchStatus === "FAILED") {
+    console.log(
+      `[RESUME-WORKER] Batch ${batchId} is already ${normalizedBatchStatus}. Skipping duplicate job run.`
+    );
     return;
   }
 
@@ -237,7 +242,7 @@ async function processDriveResumeBatchJob(job: any) {
   let structuredJd = parseJsonSafe<Record<string, any>>(drive.extractedDetails, {});
   const jdRawText = buildJdRawText(drive);
   if (!hasJdMustHaves(structuredJd) && jdRawText.length >= 80) {
-    const extracted = await extractJDFromText(jdRawText, "gpt-5.4-mini");
+    const extracted = await extractJDFromText(jdRawText, "gpt-4.1-mini");
     if (hasJdMustHaves(extracted.data || {})) {
       structuredJd = extracted.data || {};
       await prisma.drive.update({
@@ -247,7 +252,7 @@ async function processDriveResumeBatchJob(job: any) {
       if ((extracted.usage?.inputTokens || extracted.usage?.outputTokens)) {
         await recordOrgBillingUsage({
           orgId,
-          feature: "resumeExtraction",
+          feature: "jdExtraction",
           usage: extracted.usage,
         }).catch(() => {});
       }
@@ -278,12 +283,15 @@ async function processDriveResumeBatchJob(job: any) {
         try {
           const existingStatus = String(candidate.resumeStatus || "").toLowerCase();
           const existingReport = String(candidate.aiReport || "");
+          const existingReportJson = parseJsonSafe<any>(candidate.aiReport, {});
+          const existingStage = String(existingReportJson?.processing?.stage || "").toLowerCase();
           const alreadyCompleted =
             (existingStatus === "shortlisted" || existingStatus === "rejected") &&
             existingReport.includes("\"stage\":\"completed\"");
-          if (alreadyCompleted) {
+          const alreadyFailed = existingStatus === "failed" && existingStage === "failed";
+          if (alreadyCompleted || alreadyFailed) {
             console.log(
-              `[RESUME-WORKER] Candidate ${candidate.id}: already completed in a prior run, skipping.`
+              `[RESUME-WORKER] Candidate ${candidate.id}: already in terminal state (${existingStatus || "unknown"}), skipping.`
             );
             return;
           }
@@ -325,7 +333,7 @@ async function processDriveResumeBatchJob(job: any) {
             resumeRawText = cachedText;
             structuredResume = cachedStructured;
           } else {
-            const extracted = await runPythonJson(["scripts/extract_pdf.py", tmpPdfPath, "RESUME", "gpt-5.4-mini"]);
+            const extracted = await runPythonJson(["scripts/extract_pdf.py", tmpPdfPath, "RESUME", batchExtractModel]);
             if (extracted?.error) throw new Error(extracted.error);
             resumeRawText = String(extracted?.text || "");
             structuredResume = extracted?.data || {};
@@ -334,7 +342,7 @@ async function processDriveResumeBatchJob(job: any) {
                 orgId,
                 feature: "resumeExtraction",
                 usage: {
-                  model: extracted.usage.model || "gpt-5.4-mini",
+                model: extracted.usage.model || batchExtractModel,
                   inputTokens: extracted.usage.inputTokens || 0,
                   outputTokens: extracted.usage.outputTokens || 0,
                   cachedInputTokens: extracted.usage.cachedInputTokens || 0,
@@ -355,7 +363,7 @@ async function processDriveResumeBatchJob(job: any) {
             threshold,
             screening_criteria: screeningCriteria,
           }));
-          const scoreResult = await runPythonJson(["scripts/extract_pdf.py", tmpScorePath, "SCORE", "gpt-4o"]);
+          const scoreResult = await runPythonJson(["scripts/extract_pdf.py", tmpScorePath, "SCORE", batchReportModel]);
           await unlink(tmpScorePath).catch(() => {});
           if (scoreResult?.error) throw new Error(scoreResult.error);
 
@@ -440,7 +448,7 @@ async function processDriveResumeBatchJob(job: any) {
               orgId,
               feature: "resumeReport",
               usage: {
-                model: scoreResult.usage.model || "gpt-4o",
+                  model: scoreResult.usage.model || batchReportModel,
                 inputTokens: scoreResult.usage.inputTokens || 0,
                 outputTokens: scoreResult.usage.outputTokens || 0,
                 cachedInputTokens: scoreResult.usage.cachedInputTokens || 0,
@@ -457,7 +465,12 @@ async function processDriveResumeBatchJob(job: any) {
           });
           console.error(`[RESUME-WORKER] Candidate ${candidate.id}: failed -> ${error?.message || error}`);
           const app = await prisma.application.findFirst({
-            where: { resumeUrl: { contains: `candidateId=${candidate.id}` } },
+            where: {
+              OR: [
+                { resumeUrl: { contains: candidate.id } },
+                { resumeData: { contains: candidate.id } },
+              ],
+            },
             select: { id: true },
           });
           await prisma.resumeCandidate.update({
@@ -526,6 +539,15 @@ async function persistInterviewUpdateRaw(params: {
   const { applicationId, recordingUrl, transcript, interviewStatus } = params;
   const now = new Date();
   const fallbackId = generateId("int", "fallback");
+  const existingInterview = await prisma.interview.findUnique({
+    where: { applicationId },
+    select: { interviewTranscript: true },
+  });
+  const existingTranscript = String(existingInterview?.interviewTranscript || "").trim();
+  const incomingTranscript = String(transcript || "").trim();
+  const transcriptToPersist = incomingTranscript && incomingTranscript.length >= existingTranscript.length
+    ? incomingTranscript
+    : existingTranscript;
   await prisma.$executeRawUnsafe(
     `
     INSERT INTO "Interview" ("id", "applicationId", status, "interviewRecordingUrl", "interviewRecordedAt", "interviewTranscript", "completedAt", "createdAt", "updatedAt")
@@ -542,7 +564,7 @@ async function persistInterviewUpdateRaw(params: {
     applicationId,
     interviewStatus || null,
     recordingUrl || null,
-    transcript || null,
+    transcriptToPersist || null,
     now,
     fallbackId
   );
@@ -671,14 +693,100 @@ async function shouldSkipCronRegistration() {
   }
   return false;
 }
+
+async function processResumeFileExtractJob(job: any) {
+  const {
+    bucket = process.env.R2_RESUMES_BUCKET || "resumes",
+    key,
+    fileUrl = null,
+    fileName = "resume.pdf",
+    orgId = null,
+    orgOpenAIModel = "gpt-5.4-mini",
+  } = job.data || {};
+
+  if (!key) {
+    throw new Error("Invalid resume extraction job payload");
+  }
+
+  console.log(`[RESUME-WORKER] File extraction job ${job.id} started`, {
+    fileName,
+    bucket,
+    key,
+  });
+
+  const tempExt = (() => {
+    const match = String(fileName).match(/\.[a-z0-9]+$/i);
+    return match?.[0] || ".pdf";
+  })();
+
+  const sourceBuffer = await getObjectBuffer(bucket, key);
+  const tempFilePath = join(
+    tmpdir(),
+    `resume_extract_${String(job.id)}_${Date.now()}${tempExt}`
+  );
+  await writeFile(tempFilePath, sourceBuffer);
+
+  try {
+    const extracted = await runPythonJson([
+      "scripts/extract_pdf.py",
+      tempFilePath,
+      "RESUME",
+      orgOpenAIModel,
+    ]);
+
+    if (extracted?.error) {
+      throw new Error(extracted.error);
+    }
+
+    if (orgId && extracted?.usage) {
+      await recordOrgBillingUsage({
+        orgId,
+        feature: "resumeExtraction",
+        usage: {
+          model: extracted.usage.model || orgOpenAIModel,
+          inputTokens: extracted.usage.inputTokens || 0,
+          outputTokens: extracted.usage.outputTokens || 0,
+          cachedInputTokens: extracted.usage.cachedInputTokens || 0,
+        },
+      }).catch(() => {});
+    }
+
+    console.log(`[RESUME-WORKER] File extraction job ${job.id} completed`);
+    return {
+      text: extracted?.text || "",
+      data: extracted?.data || {},
+      usage: extracted?.usage || {},
+      url: fileUrl,
+      bucket,
+      key,
+      fileName,
+    };
+  } finally {
+    await unlink(tempFilePath).catch(() => {});
+  }
+}
 if (isQueueEnabled("resume-processing")) {
   const worker = trackWorker('resume-processing', new Worker('resume-processing', async (job) => {
     if (job.name === "drive-resume-batch") {
       await processDriveResumeBatchJob(job);
       return;
     }
+    if (job.name === "resume-file-extract") {
+      return await processResumeFileExtractJob(job);
+    }
 
-    const { applicationId, resumeText: initialResumeText, resumeUrl, jdText, drive, applicantEmail, applicantName, structuredResume: initialStructuredResume } = job.data;
+    const {
+      applicationId,
+      resumeText: initialResumeText,
+      resumeUrl,
+      jdText,
+      drive,
+      applicantEmail,
+      applicantName,
+      structuredResume: initialStructuredResume,
+      extractModel = "gpt-5.4-mini",
+      reportModel = "gpt-5.4-mini",
+    } = job.data;
     console.log(`[JOB] Processing application ${applicationId} for ${applicantEmail}`);
     // Guard: skip if the application record was deleted
     const appExists = await prisma.application.findUnique({
@@ -690,6 +798,8 @@ if (isQueueEnabled("resume-processing")) {
         resumeStatus: true,
         aiScore: true,
         aiReport: true,
+        resumeText: true,
+        resumeData: true,
       },
     });
     if (!appExists) {
@@ -710,13 +820,16 @@ if (isQueueEnabled("resume-processing")) {
       );
       return;
     }
-    let resumeText = initialResumeText || "";
-    let structuredResume = initialStructuredResume || {};
+    const cachedResumeData = parseJsonSafe<any>(appExists.resumeData, {});
+    let resumeText = initialResumeText || String(appExists.resumeText || "");
+    let structuredResume = initialStructuredResume || cachedResumeData?.structured || cachedResumeData || {};
     let tempResumePath: string | null = null;
     let tempInputPath: string | null = null;
     try {
-      // 1. ENSURE TEXT & STRUCTURE (Always re-extract if text is empty)
-      const needsExtraction = !resumeText || resumeText.length < 10 || Object.keys(structuredResume).length === 0;
+      // 1. ENSURE TEXT & STRUCTURE (Only re-extract when both text and structured cache are missing)
+      const needsExtraction =
+        (!resumeText || resumeText.length < 10) &&
+        Object.keys(structuredResume).length === 0;
       if (needsExtraction) {
         console.log(`[JOB] Resume text or structure missing. Initiating extraction...`);
         // Check if resumeUrl is a valid HTTP(S) URL
@@ -735,7 +848,7 @@ if (isQueueEnabled("resume-processing")) {
           }
         }
         if (tempResumePath) {
-          const extractProcess = spawn(pythonCmd, ["scripts/extract_pdf.py", tempResumePath, "RESUME"]);
+          const extractProcess = spawn(pythonCmd, ["scripts/extract_pdf.py", tempResumePath, "RESUME", extractModel]);
           let extractionOutput = "";
           await new Promise((resolve, reject) => {
             extractProcess.stdout.on("data", (data) => { extractionOutput += data.toString(); });
@@ -811,7 +924,7 @@ if (isQueueEnabled("resume-processing")) {
       };
       tempInputPath = join(tmpdir(), `scoring_${Date.now()}_${Math.random().toString(36).substring(7)}.json`);
       await writeFile(tempInputPath, JSON.stringify(scoringInput));
-      const pythonProcess = spawn(pythonCmd, ["scripts/extract_pdf.py", tempInputPath, "SCORE"]);
+      const pythonProcess = spawn(pythonCmd, ["scripts/extract_pdf.py", tempInputPath, "SCORE", reportModel]);
       let outputData = "";
       let errorData = "";
       await new Promise((resolve, reject) => {
@@ -1208,12 +1321,23 @@ if (isQueueEnabled("interview-finalization")) {
       try {
         // ── 1. Persist transcript / recording / status ────────────────────
         const updateData: any = { updatedAt: new Date() };
+        const existingInterview = await prisma.interview.findUnique({
+          where: { applicationId },
+          select: { interviewTranscript: true },
+        });
+        const existingTranscript = String(existingInterview?.interviewTranscript || "").trim();
+        const incomingTranscript = String(transcript || "").trim();
         if (recordingUrl) {
           updateData.interviewRecordingUrl = recordingUrl;
           updateData.interviewRecordedAt = new Date();
         }
-        if (transcript) {
-          updateData.interviewTranscript = transcript;
+        if (incomingTranscript && incomingTranscript.length >= existingTranscript.length) {
+          updateData.interviewTranscript = incomingTranscript;
+        } else if (incomingTranscript) {
+          console.log(
+            `[FINALIZE] Skipping shorter transcript overwrite for ${applicationId} ` +
+            `(incoming=${incomingTranscript.length}, existing=${existingTranscript.length})`
+          );
         }
         if (interviewStatus) {
           updateData.status = interviewStatus;
@@ -1944,7 +2068,7 @@ if (isQueueEnabled("jd-extraction")) {
   const jdExtractionWorker = trackWorker("jd-extraction", new Worker(
     "jd-extraction",
     async (job) => {
-      const { kind, orgOpenAIModel = "gpt-5.4-mini" } = job.data || {};
+      const { kind, orgOpenAIModel = "gpt-4.1-mini" } = job.data || {};
       console.log(`[JD-EXTRACTION] Job ${job.id} started`, { kind, model: orgOpenAIModel });
 
       if (kind === "text") {

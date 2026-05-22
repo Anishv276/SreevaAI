@@ -10,8 +10,14 @@ import {
   deductInterviewQuota,
   incrementOrgCreditsUsed,
 } from "@/lib/credits";
+import { recordOrgBillingUsage } from "@/lib/usage-metrics";
 
 export const runtime = "nodejs";
+
+function roundCredits(value: number) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.round(value * 100) / 100;
+}
 
 function buildInterviewTurns(transcript: string): Array<{
   turn: number;
@@ -170,6 +176,7 @@ export async function POST(req: Request) {
       appStatus,
       duration,
       snapshots,
+      billing,
       recordingCompletedAt,
       recordingDurationSec
     } = result.data;
@@ -184,8 +191,6 @@ export async function POST(req: Request) {
     if (requireInterviewToken && (!interview || interview.accessToken !== interviewToken)) {
       return NextResponse.json({ error: "Unauthorized: Invalid finalization token" }, { status: 401 });
     }
-    const isNewCompletion = finalInterviewStatus === "COMPLETED" && !interview?.completedAt;
-
     const transcriptRaw = transcript;
     const finalTranscript = transcriptRaw?.trim();
     const interviewTurns = finalTranscript ? buildInterviewTurns(finalTranscript) : [];
@@ -238,19 +243,76 @@ export async function POST(req: Request) {
       try {
         const appForOrg = await prisma.application.findUnique({
           where: { id: applicationId },
-          select: { drive: { select: { orgId: true } } }
+          select: {
+            fullName: true,
+            drive: { select: { orgId: true, role: true, title: true } }
+          }
         });
         const orgId = appForOrg?.drive?.orgId;
         if (orgId) {
+          const interviewForBilling = await prisma.interview.findUnique({
+            where: { applicationId },
+            select: { billingSnapshot: true },
+          });
+          const existingSnapshot =
+            interviewForBilling?.billingSnapshot && typeof interviewForBilling.billingSnapshot === "object"
+              ? (interviewForBilling.billingSnapshot as Record<string, unknown>)
+              : {};
+          const durationSec = Math.max(0, Number(resolvedDuration ?? 0));
+          const creditsUsed = roundCredits(durationSec / 60);
+          const llmModel = String(billing?.llmModel ?? existingSnapshot.llmModel ?? "unknown").trim();
+          const ttsModel = String(billing?.ttsModel ?? existingSnapshot.ttsModel ?? "unknown").trim();
+          const sttModel = String(billing?.sttModel ?? existingSnapshot.sttModel ?? "unknown").trim();
+          const inputTokens = Math.max(0, Number(billing?.inputTokens ?? existingSnapshot.inputTokens ?? 0));
+          const outputTokens = Math.max(0, Number(billing?.outputTokens ?? existingSnapshot.outputTokens ?? 0));
+          const cachedInputTokens = Math.max(0, Number(billing?.cachedInputTokens ?? existingSnapshot.cachedInputTokens ?? 0));
+          const llmCostUsd = Math.max(0, Number(billing?.llmCostUsd ?? existingSnapshot.llmCostUsd ?? 0));
+          const ttsCharacters = Math.max(0, Number(billing?.ttsCharacters ?? existingSnapshot.ttsCharacters ?? 0));
+          const ttsCostUsd = Math.max(0, Number(billing?.ttsCostUsd ?? existingSnapshot.ttsCostUsd ?? 0));
+          const sttAudioSeconds = Math.max(0, Number(billing?.sttAudioSeconds ?? existingSnapshot.sttAudioSeconds ?? 0));
+          const sttCostUsd = Math.max(0, Number(billing?.sttCostUsd ?? existingSnapshot.sttCostUsd ?? 0));
+          const hasExactCostBreakdown =
+            existingSnapshot.llmCostUsd !== undefined ||
+            existingSnapshot.ttsCostUsd !== undefined ||
+            existingSnapshot.sttCostUsd !== undefined ||
+            billing?.llmCostUsd !== undefined ||
+            billing?.ttsCostUsd !== undefined ||
+            billing?.sttCostUsd !== undefined;
+          const totalCostUsd = Math.max(
+            0,
+            Number(
+              billing?.totalCostUsd
+                ?? existingSnapshot.totalCostUsd
+                ?? (llmCostUsd + ttsCostUsd + sttCostUsd)
+            )
+          );
+          const billingSnapshotPayload = {
+            ...existingSnapshot,
+            durationSec,
+            creditsUsed,
+            interviewName: `${appForOrg?.fullName || "Unknown Candidate"} - ${appForOrg?.drive?.title || appForOrg?.drive?.role || "Interview"}`,
+            candidateName: appForOrg?.fullName || "Unknown Candidate",
+            jobTitle: appForOrg?.drive?.role || appForOrg?.drive?.title || "Unknown Role",
+            llmModel,
+            ttsModel,
+            sttModel,
+            inputTokens,
+            outputTokens,
+            cachedInputTokens,
+            ttsCharacters,
+            sttAudioSeconds,
+            llmCostUsd,
+            ttsCostUsd,
+            sttCostUsd,
+            totalCostUsd,
+            costSource: hasExactCostBreakdown ? "exact" : "missing",
+            billedAt: Math.floor(Date.now() / 1000),
+          };
           // Atomically mark the interview as billed — returns the row only if not already billed.
           const marked = await prisma.$queryRaw<Array<{ id: string }>>(
             Prisma.sql`
               UPDATE "Interview"
-              SET "billingSnapshot" = jsonb_set(
-                COALESCE("billingSnapshot", '{}'::jsonb),
-                '{billedAt}',
-                to_jsonb(extract(epoch from now())::bigint)
-              ),
+              SET "billingSnapshot" = ${JSON.stringify(billingSnapshotPayload)}::jsonb,
               "updatedAt" = NOW()
               WHERE "applicationId" = ${applicationId}
                 AND ("billingSnapshot" IS NULL OR "billingSnapshot"->'billedAt' IS NULL)
@@ -260,13 +322,34 @@ export async function POST(req: Request) {
           if (marked.length > 0) {
             // This is the first and only time we bill for this interview.
             await deductInterviewQuota(orgId, 1);
-            const dur = resolvedDuration ?? 0;
+            const dur = durationSec;
             if (Number.isFinite(dur) && dur > 0) {
-              const creditsDelta = Math.round((dur / 60) * 100) / 100;
+              const creditsDelta = roundCredits(dur / 60);
               if (creditsDelta > 0) {
                 await incrementOrgCreditsUsed(orgId, creditsDelta);
               }
             }
+            // Record interview runtime usage once per completed interview.
+            await recordOrgBillingUsage({
+              orgId,
+              feature: "interview",
+              usage: {
+                model: llmModel,
+                inputTokens,
+                outputTokens,
+                cachedInputTokens,
+                sessionDuration: Number.isFinite(dur) ? dur : 0,
+                costUsd: llmCostUsd,
+                ttsRuns: ttsCharacters > 0 ? 1 : 0,
+                ttsCharacters,
+                ttsCostUsd,
+                sttRuns: sttAudioSeconds > 0 ? 1 : 0,
+                sttAudioSeconds,
+                sttCostUsd,
+              },
+            }).catch((usageError) => {
+              console.error("[FINALIZE] Interview usage recording failed:", usageError);
+            });
             console.log(`[FINALIZE] Billing deducted for ${applicationId} org=${orgId} dur=${resolvedDuration}s`);
           } else {
             console.log(`[FINALIZE] Billing already deducted for ${applicationId} — skipping`);

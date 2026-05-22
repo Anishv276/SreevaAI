@@ -273,7 +273,7 @@ RULES:
 
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: "gpt-5.4-mini",
       messages: [
         {
           role: "system",
@@ -301,7 +301,7 @@ RULES:
     return {
       data,
       usage: {
-        model: response.model || "gpt-4o",
+        model: response.model || "gpt-5.4-mini",
         inputTokens: response.usage?.prompt_tokens || 0,
         outputTokens: response.usage?.completion_tokens || 0,
         cachedInputTokens: (response.usage as any)?.prompt_tokens_details?.cached_tokens || 0,

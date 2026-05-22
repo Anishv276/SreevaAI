@@ -23,7 +23,12 @@
       "Bash(python3)",
       "Bash(python -m py_compile interview/agent_persistence.py interview/agent_runtime.py interview/eval_pipeline.py interview/turn_evaluator.py)",
       "Bash(npx tsc *)",
-      "Bash(python -m py_compile interview/agent_persistence.py)"
+      "Bash(python -m py_compile interview/agent_persistence.py)",
+      "Bash(python -m py_compile interview/agent_runtime.py)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(python -m pytest interview/test_agent_runtime.py -xvs)",
+      "Bash(python -c \"import livekit.plugins.sarvam.tts as t; print\\(t.__file__\\)\")"
     ]
   }
 }

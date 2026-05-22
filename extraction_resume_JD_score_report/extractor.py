@@ -11,7 +11,7 @@ WHY THIS CLASS EXISTS:
         1. Try pymupdf4llm (Markdown-preserving, best quality)
         2. Combine with pdfplumber table extraction
         3. If empty → pdfplumber plain text
-        4. If still empty → OCR (pytesseract via PyMuPDF or pdf2image)
+        4. If still empty → fail fast
 """
 
 from __future__ import annotations
@@ -50,11 +50,6 @@ def _try_import(module_name: str):
 pdfplumber   = _try_import("pdfplumber")
 pymupdf4llm  = _try_import("pymupdf4llm")
 fitz         = _try_import("fitz")
-pdf2image    = _try_import("pdf2image")
-PILImage     = _try_import("PIL.Image")
-pytesseract  = _try_import("pytesseract")
-
-
 # ---------------------------------------------------------------------------
 # DocumentExtractor
 # ---------------------------------------------------------------------------
@@ -134,16 +129,6 @@ class DocumentExtractor:
         if not parts and plumber_text:
             parts.append(plumber_text)
 
-        # Step 4 — OCR fallback (scanned / image-only PDFs)
-        if not parts:
-            max_pages = 5 if doc_type == "JD" else 10
-            try:
-                ocr_text = self._extract_ocr(file_path, max_pages=max_pages)
-                if ocr_text:
-                    parts.append(ocr_text)
-            except Exception as exc:
-                extraction_errors.append(f"OCR failed: {exc}")
-
         combined = "\n\n".join(parts).strip()
         if combined:
             return combined
@@ -172,50 +157,6 @@ class DocumentExtractor:
                     if md:
                         results.append(f"### Table {tbl_idx} (Page {page_idx})\n{md}")
         return results
-
-    def _extract_ocr(self, file_path: str, max_pages: int = 10) -> str:
-        """
-        OCR fallback — uses PyMuPDF (fitz) → pdf2image → pytesseract.
-        Identical logic to the original extract_text_via_ocr().
-        """
-        if pytesseract is None:
-            return ""
-
-        chunks: list[str] = []
-
-        # Preferred path: render pages with PyMuPDF for speed
-        if fitz is not None:
-            try:
-                doc = fitz.open(file_path)  # type: ignore[union-attr]
-                for i in range(min(len(doc), max_pages)):
-                    page = doc[i]
-                    pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)  # type: ignore[union-attr]
-                    mode = "RGB" if pix.n < 4 else "RGBA"
-                    image = PILImage.frombytes(mode, [pix.width, pix.height], pix.samples)  # type: ignore[union-attr]
-                    text = pytesseract.image_to_string(image)  # type: ignore[union-attr]
-                    if text and text.strip():
-                        chunks.append(text.strip())
-                doc.close()
-            except Exception:
-                pass
-
-        if chunks:
-            combined = "\n\n".join(c for c in chunks if c.strip()).strip()
-            if combined:
-                return combined
-
-        # Fallback: pdf2image
-        if pdf2image is not None and PILImage is not None:
-            try:
-                images = pdf2image.convert_from_path(file_path, first_page=1, last_page=max_pages)  # type: ignore[union-attr]
-                for image in images:
-                    text = pytesseract.image_to_string(image)  # type: ignore[union-attr]
-                    if text and text.strip():
-                        chunks.append(text.strip())
-            except Exception:
-                pass
-
-        return "\n\n".join(c for c in chunks if c.strip()).strip()
 
     # ------------------------------------------------------------------ #
     # Private: Plain text file                                             #

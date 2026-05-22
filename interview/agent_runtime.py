@@ -338,8 +338,8 @@ class InterviewAgent(Agent):
         # FIX: Throttle TTS connection creation to prevent resource exhaustion
         # Sarvam has connection limits; if Turn N TTS completes and Turn N+1 starts
         # immediately, the WebSocket might close with "Cannot write to closing transport".
-        # This 200ms gap ensures clean connection cleanup between turns.
-        min_tts_gap_secs = 0.2
+        # Reduced to 50ms now that Sarvam plugin properly evicts stale connections.
+        min_tts_gap_secs = 0.05
         current_time = time.monotonic()
         if not hasattr(self, '_tts_last_connection_time'):
             self._tts_last_connection_time = current_time
@@ -423,15 +423,25 @@ class InterviewAgent(Agent):
 
             if any(s in err_text for s in sarvam_connection_errors):
                 error_type = type(e).__name__
-                logger.warning(
-                    "[TTS_SARVAM_ERROR] WebSocket connection failure during TTS synthesis (%s). "
-                    "This usually indicates Sarvam service rate limiting or resource constraints. "
-                    "LiveKit agents framework will retry automatically with exponential backoff. "
-                    "Error: %s",
-                    error_type,
-                    str(e)[:150]
-                )
-                return  # Skip this utterance; let retry logic handle it
+                _is_closing_transport = "closing transport" in err_text or "cannot write" in err_text
+                if _is_closing_transport:
+                    # Sarvam server closed the transport immediately after accepting the connection
+                    # (rate limiting or connection capacity). LiveKit will retry, but retries at
+                    # 0.1s/0.5s are too fast — Sarvam needs ~1-2s to reset its window.
+                    # Sleep here so the next retry attempt lands AFTER the rate limit window clears.
+                    logger.warning(
+                        "[TTS_SARVAM_ERROR] Transport closing on connect (%s): %s. "
+                        "Waiting 1.5s so Sarvam rate-limit window clears before retry.",
+                        error_type, str(e)[:150]
+                    )
+                    await asyncio.sleep(1.5)
+                else:
+                    logger.warning(
+                        "[TTS_SARVAM_ERROR] WebSocket connection failure during TTS synthesis (%s). "
+                        "LiveKit agents framework will retry automatically. Error: %s",
+                        error_type, str(e)[:150]
+                    )
+                return  # Let LiveKit retry
             raise
 
 
@@ -489,15 +499,16 @@ from pydantic import BaseModel, field_validator
 
 
 class _EvalSignalToggles(BaseModel):
-    """Validated signal enable/disable flags. All default OFF. Coerces any truthy DB value."""
-    ownership_ambiguity: bool = False
-    example_evasion: bool = False
-    latency_mismatch: bool = False
-    resume_claim_mismatch: bool = False
-    follow_up_collapse: bool = False
-    contradiction: bool = False
-    complexity_latency_mismatch: bool = False
-    depth_decay: bool = False
+    """Validated signal enable/disable flags. All default ON. Coerces any truthy DB value.
+    Orgs can explicitly set a signal to false to disable it; absent = enabled."""
+    ownership_ambiguity: bool = True
+    example_evasion: bool = True
+    latency_mismatch: bool = True
+    resume_claim_mismatch: bool = True
+    follow_up_collapse: bool = True
+    contradiction: bool = True
+    complexity_latency_mismatch: bool = True
+    depth_decay: bool = True
 
     @field_validator("*", mode="before")
     @classmethod
@@ -1681,7 +1692,7 @@ async def entrypoint(ctx: JobContext):
                             logger.info(
                                 "[SCORES] turn=%d | clarity=%.1f depth=%.1f fluency=%.1f confidence=%.1f | overall=%.1f | "
                                 "integrity: %d→%d (Δ%+d) | depth: %d→%d (Δ%+d) | composite=%d",
-                                res_turn,
+                                result.get("turn", turn_for_log),
                                 _clarity, _depth, _fluency, _confidence, _overall,
                                 _old_integrity, integrity_risk, _risk_int_delta,
                                 _old_depth, depth_risk, _risk_depth_delta,
@@ -1885,11 +1896,15 @@ async def entrypoint(ctx: JobContext):
                         logger.warning("[REDIS_EVAL] Failed to push payload: %s", _re)
 
                 # READ result from previous turn's eval (computed while Ishita was speaking)
-                applied = await _read_and_apply_eval_result(turn_snapshot)
-                if not applied:
-                    logger.info("[REDIS_EVAL] No pre-computed result for turn=%d - skipping inline eval", turn_snapshot)
+                try:
+                    applied = await _read_and_apply_eval_result(turn_snapshot)
+                    if not applied:
+                        logger.info("[REDIS_EVAL] No pre-computed result for turn=%d - skipping inline eval", turn_snapshot)
+                except Exception as _rae:
+                    logger.error("[REDIS_EVAL] _read_and_apply_eval_result failed turn=%d: %s", turn_snapshot, _rae, exc_info=True)
 
                 # PUSH current turn's answer for the worker to evaluate during Ishita's response
+                # Always runs even if reading previous result failed, so no turn is ever skipped.
                 payload = _build_eval_payload()
                 logger.info(
                     "[EVAL_DISPATCH] Pushing turn=%d to eval_worker | answer=%r | question=%r",
@@ -2092,6 +2107,7 @@ async def entrypoint(ctx: JobContext):
                         logger.debug(f"[STT_BUFFER] turn={_turn} - no content after consolidation")
 
                 # For turns 1-2 (greeting/warmup), use shorter debounce to ensure quick processing
+                # For turns 3+, trigger IMMEDIATELY if complete (no debounce) to minimize latency
                 if turn_count <= 2:
                     debounce_seconds = (
                         _STT_COMPLETE_DEBOUNCE_SECONDS
@@ -2100,9 +2116,9 @@ async def entrypoint(ctx: JobContext):
                     )
                 else:
                     debounce_seconds = (
-                        _STT_COMPLETE_DEBOUNCE_SECONDS
+                        0.0  # Zero debounce for turn 3+ complete sentences (latency optimization)
                         if is_complete
-                        else _STT_INCOMPLETE_DEBOUNCE_SECONDS
+                        else _STT_INCOMPLETE_DEBOUNCE_SECONDS  # 12s for incomplete on turn 3+
                     )
 
                 async def _timeout_handler(_turn=turn_count, _event=event, _delay=debounce_seconds):
@@ -2123,17 +2139,19 @@ async def entrypoint(ctx: JobContext):
 
                 # For turns 1-2 (greeting/warmup), trigger immediately if sentence is complete.
                 # This ensures greeting/warmup responses are persisted quickly without waiting.
-                if turn_count <= 2 and is_complete:
+                # For turns 3+ (interview), also trigger immediately if complete to minimize latency (2s goal).
+                if is_complete:
                     if _stt_completion_timers.get(turn_count):
                         _stt_completion_timers[turn_count].cancel()
                     _stt_completion_timers[turn_count] = None
+                    reason = "immediate_greeting_warmup" if turn_count <= 2 else "immediate_interview_fast_path"
                     _user_turn_chain = spawn_background_task(
-                        _trigger_processing(turn_count, event, "immediate_greeting_warmup"),
-                        f"greeting_warmup_{turn_count}",
+                        _trigger_processing(turn_count, event, reason),
+                        f"sttt_immediate_{turn_count}",
                     )
                     logger.info(
-                        "[STT_BUFFER] turn=%d (greeting/warmup) - triggered immediately (complete sentence)",
-                        turn_count,
+                        "[STT_BUFFER] turn=%d - triggered immediately (complete sentence) | reason=%s",
+                        turn_count, reason,
                     )
                 else:
                     # Debounce on every fragment so the timer extends while speech continues.
