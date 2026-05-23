@@ -28,6 +28,7 @@ import { useAdminOrg } from "@/context/admin-org-context";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PremiumDatePicker } from "@/components/ui/premium-date-picker";
+import { INTERVIEW_MODE_DEADLINE, INTERVIEW_MODE_SLOT, normalizeInterviewMode, type InterviewMode } from "@/lib/interview-mode";
 
 export default function CreateDrivePage() {
   return (
@@ -50,6 +51,8 @@ function CreateDriveForm() {
     title: "",
     role: "",
     deadline: "",
+    interviewMode: null as InterviewMode | null,
+    orgInterviewMode: INTERVIEW_MODE_DEADLINE as InterviewMode,
     interviewLanguage: "English",
     interviewQuestions: [],
     voiceId: null,
@@ -117,6 +120,7 @@ function CreateDriveForm() {
             ...prev,
             voiceId: data.voiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
             allowedVoices: Array.isArray(data.allowedVoices) ? data.allowedVoices : [],
+            orgInterviewMode: normalizeInterviewMode(data.interviewMode),
           }));
         })
         .catch(() => {});
@@ -146,6 +150,8 @@ function CreateDriveForm() {
             title: drive.title,
             role: (drive as any).role || drive.title,
             deadline: formatDateForInput((drive as any).deadline || null),
+            interviewMode: (drive as any).interviewMode || null,
+            orgInterviewMode: normalizeInterviewMode(orgData?.interviewMode),
             interviewLanguage: (drive as any).interviewLanguage || "English",
             interviewQuestions: typeof (drive as any).interviewQuestions === "string"
               ? JSON.parse((drive as any).interviewQuestions)
@@ -192,6 +198,8 @@ function CreateDriveForm() {
       if (method !== "ai-chat") {
         setFormData({
           title: "", role: "", deadline: "",
+          interviewMode: null,
+          orgInterviewMode: formDataRef.current?.orgInterviewMode || INTERVIEW_MODE_DEADLINE,
           interviewLanguage: "English", interviewQuestions: [],
           voiceId: null, aiName: "Ishitha", extractedDetails: null,
         });
@@ -297,6 +305,7 @@ function CreateDriveForm() {
       description: currentFormData.description || "",
       role: currentFormData.role || "",
       deadline: currentFormData.deadline || null,
+      interviewMode: currentFormData.interviewMode || null,
       jdFileName: currentFormData.jdFileName || null,
       jdPreviewUrl: getPersistedJdUrl(currentFormData),
       extractedDetails: currentFormData.extractedDetails ? typeof currentFormData.extractedDetails === "string" ? currentFormData.extractedDetails : JSON.stringify(currentFormData.extractedDetails) : null,
@@ -484,8 +493,56 @@ function CreateDriveForm() {
                 className={cn(isAnalyzing && !formData.deadline && "opacity-95")}
               />
               <p className="text-[11px] text-gray-400 font-medium">
-                Candidates can book interview slots only up to this date.
+                In deadline mode, candidates can join anytime before this deadline. In slot mode, candidates can book slots up to this deadline.
               </p>
+            </div>
+            <div className="mt-4 space-y-2 max-w-2xl">
+              <Label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest">
+                Interview Mode Override
+              </Label>
+              <div className="grid gap-2 md:grid-cols-3">
+                <button
+                  type="button"
+                  onClick={() => setFormData((prev: any) => ({ ...prev, interviewMode: null }))}
+                  className={cn(
+                    "rounded-xl border p-3 text-left transition",
+                    !formData.interviewMode
+                      ? "border-[#F97316] bg-orange-50 shadow-sm"
+                      : "border-gray-200 bg-white hover:border-gray-300"
+                  )}
+                >
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-900">Use Org Default</p>
+                  <p className="mt-1 text-[11px] text-gray-500">
+                    Current org default: {normalizeInterviewMode(formData.orgInterviewMode) === INTERVIEW_MODE_SLOT ? "Slot Scheduling" : "Deadline Based Link"}
+                  </p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormData((prev: any) => ({ ...prev, interviewMode: INTERVIEW_MODE_DEADLINE }))}
+                  className={cn(
+                    "rounded-xl border p-3 text-left transition",
+                    formData.interviewMode === INTERVIEW_MODE_DEADLINE
+                      ? "border-[#F97316] bg-orange-50 shadow-sm"
+                      : "border-gray-200 bg-white hover:border-gray-300"
+                  )}
+                >
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-900">Deadline Mode</p>
+                  <p className="mt-1 text-[11px] text-gray-500">Candidate uses direct interview link before deadline.</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormData((prev: any) => ({ ...prev, interviewMode: INTERVIEW_MODE_SLOT }))}
+                  className={cn(
+                    "rounded-xl border p-3 text-left transition",
+                    formData.interviewMode === INTERVIEW_MODE_SLOT
+                      ? "border-[#F97316] bg-orange-50 shadow-sm"
+                      : "border-gray-200 bg-white hover:border-gray-300"
+                  )}
+                >
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-900">Slot Mode</p>
+                  <p className="mt-1 text-[11px] text-gray-500">Candidate must pick a slot and join in slot window.</p>
+                </button>
+              </div>
             </div>
             {isAnalyzing && (
               <p className="mt-2 text-[11px] text-orange-500 font-medium flex items-center gap-1.5">

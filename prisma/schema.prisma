@@ -32,6 +32,7 @@ model Organization {
   creditsUsed          Float       @default(0)
   statusControl        String      @default("QUOTA")
   usageMetrics         Json?       @default("{}")
+  interviewMode        String      @default("DEADLINE")
   drives               Drive[]
   users                User[]
   interviewSlots       InterviewSlot[]
@@ -98,6 +99,7 @@ model Drive {
   jdFileName         String?
   jdPreviewUrl       String?
   orgId              String?
+  interviewMode      String?
   location           String?
   deadline           DateTime?
   aiName             String?       @default("Ishitha")
@@ -169,6 +171,7 @@ model Interview {
   recordingDurationSec  Int?
   recordingManifest     Json?       @default("{}")
   billingSnapshot       Json?       @default("{}")
+  linkStatus            String      @default("ACTIVE")
   application           Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   supportTickets        SupportTicket[]
   slotId                String?

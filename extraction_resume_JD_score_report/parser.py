@@ -133,6 +133,7 @@ class DocumentParser:
     """
 
     RESUME_MODEL = "gpt-5.4-mini"
+    RESUME_FALLBACK_MODEL = "gpt-4.1-mini"
     JD_MODEL = "gpt-4.1-mini"
     REPORT_MODEL = "gpt-5.4-mini"
 
@@ -165,8 +166,32 @@ class DocumentParser:
 
     def _parse_resume(self, client: OpenAI, text: str, model: str) -> dict:
         print("--- [AI] Extracting structured RESUME data... ---", file=sys.stderr, flush=True)
-        data, usage = _call_llm(client, RESUME_SYSTEM_PROMPT, build_resume_prompt(text), model)
-        return {"data": data, "usage": usage}
+        primary_error: Exception | None = None
+        try:
+            data, usage = _call_llm(client, RESUME_SYSTEM_PROMPT, build_resume_prompt(text), model)
+            return {"data": data, "usage": usage}
+        except Exception as exc:
+            primary_error = exc
+            print(
+                f"--- [AI] Primary RESUME model failed ({model}): {exc}. Trying fallback {self.RESUME_FALLBACK_MODEL} ---",
+                file=sys.stderr,
+                flush=True,
+            )
+
+        try:
+            data, usage = _call_llm(
+                client,
+                RESUME_SYSTEM_PROMPT,
+                build_resume_prompt(text),
+                self.RESUME_FALLBACK_MODEL,
+            )
+            usage["fallbackFromModel"] = model
+            return {"data": data, "usage": usage}
+        except Exception as fallback_exc:
+            raise RuntimeError(
+                f"Resume parsing failed on primary ({model}) and fallback ({self.RESUME_FALLBACK_MODEL}). "
+                f"Primary: {primary_error}; Fallback: {fallback_exc}"
+            ) from fallback_exc
 
     def _run_score(self, client: OpenAI, json_text: str, model_override: str | None) -> dict:
         """SCORE mode: deterministic scoring + AI report (mirrors extract_pdf.py SCORE branch)."""

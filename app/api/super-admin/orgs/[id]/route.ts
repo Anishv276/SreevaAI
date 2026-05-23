@@ -10,6 +10,7 @@ import { normalizeOrgAiConfig } from "@/lib/ai-provider-config";
 import { ORG_STATUS_CONTROL_MANUAL, ORG_STATUS_CONTROL_QUOTA, getEffectiveOrgStatus, normalizeOrgStatusControl, syncOrgStatusWithInterviewQuota } from "@/lib/credits";
 import { normalizeOrgLimitInput } from "@/lib/org-limits";
 import { normalizeEmail } from "@/lib/email";
+import { normalizeInterviewMode } from "@/lib/interview-mode";
 
 // GET /api/super-admin/orgs/[id] - fetch org for editing
 export async function GET(
@@ -85,6 +86,7 @@ export async function PATCH(
             usageMetrics,
             interviewQuotaTotal,
             interviewQuotaTopUp,
+            interviewMode,
         } = body;
         const parsedInterviewQuotaTopUp =
             interviewQuotaTopUp !== undefined ? Math.max(0, Math.round(Number(interviewQuotaTopUp) || 0)) : undefined;
@@ -184,6 +186,9 @@ export async function PATCH(
         if (plan !== undefined) updateData.plan = normalizedPlan || plan;
         if (maxActiveDrives !== undefined && String(maxActiveDrives).trim() !== "") {
             updateData.maxActiveDrives = normalizeOrgLimitInput(maxActiveDrives);
+        }
+        if (interviewMode !== undefined) {
+            updateData.interviewMode = normalizeInterviewMode(interviewMode);
         }
         if (proctoringSignals !== undefined) {
             updateData.proctoringSignals = normalizeProctoringSignals(proctoringSignals);

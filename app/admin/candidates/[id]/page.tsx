@@ -738,7 +738,7 @@ export default function CandidateProfilePage() {
                                     onClick={() => setConfirmDialog({
                                         action: "resend_link",
                                         title: "Resend Interview Link?",
-                                        description: "Send a new interview scheduling link to the candidate so they can reschedule if needed."
+                                        description: "Send a new interview link to the candidate."
                                     })}
                                     disabled={isUpdating}
                                     className="h-8 rounded-lg border-blue-200 bg-blue-50 px-3 text-[11px] font-bold text-blue-700 hover:bg-blue-100"

@@ -178,11 +178,17 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             .then(data => {
                 if (!isMounted) return;
                 if (data.role) setInterviewRoleLabel(data.role);
-                // Force "check" phase even if no slot is booked for testing purposes
-                setPhase("check");
+                const schedulingEnabled = data.slotSchedulingEnabled !== false;
                 if (data.bookedSlot) {
                     setBookedSlot(data.bookedSlot);
                 }
+
+                if (schedulingEnabled && !data.bookedSlot) {
+                    const currentSearchParams = window.location.search;
+                    window.location.href = `/interview/${id}/schedule${currentSearchParams}`;
+                    return;
+                }
+                setPhase("check");
             })
             .catch(() => {
                 if (isMounted) {

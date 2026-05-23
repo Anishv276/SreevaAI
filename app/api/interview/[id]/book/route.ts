@@ -7,6 +7,7 @@ import { buildInterviewLink } from "@/lib/interview-links";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
 import { FIXED_INTERVIEW_DURATION_MINUTES, INTERVIEW_SLOT_INTERVAL_MINUTES } from "@/lib/drive-limits";
 import { isEmailMatchCaseInsensitive, isValidSlotBoundary } from "@/lib/interview-slot-policy";
+import { isSlotMode, resolveInterviewMode } from "@/lib/interview-mode";
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
     console.error("[BOOKING API] POST request received");
@@ -37,6 +38,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                         organization: {
                             select: {
                                 name: true,
+                                interviewMode: true,
                             },
                         },
                     },
@@ -47,6 +49,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
         if (!app) {
             return NextResponse.json({ error: "Application not found" }, { status: 404 });
+        }
+        const effectiveInterviewMode = resolveInterviewMode(
+            app.drive?.interviewMode,
+            app.drive?.organization?.interviewMode
+        );
+        if (!isSlotMode(effectiveInterviewMode)) {
+            return NextResponse.json({ error: "Slot scheduling is disabled for this organization." }, { status: 403 });
         }
 
         if (app.interview?.slotId) {
@@ -118,6 +127,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                     data: {
                         accessToken: interviewToken,
                         expiresAt,
+                        linkStatus: "ACTIVE",
                         slotId: slot.id,
                         scheduledAt: startTime,
                         status: "PENDING",
@@ -132,6 +142,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
                         applicationId: app.id,
                         accessToken: interviewToken,
                         expiresAt,
+                        linkStatus: "ACTIVE",
                         status: "PENDING",
                         slotId: slot.id,
                         scheduledAt: startTime,

@@ -85,6 +85,8 @@ class DocumentExtractor:
         Full fallback chain for PDFs.
         Order: pymupdf4llm → pdfplumber tables → pdfplumber text → OCR
         """
+        if doc_type == "RESUME":
+            return self._extract_pdf_resume_fast(file_path)
         extraction_errors: list[str] = []
         markdown_text = ""
         plumber_text = ""
@@ -132,6 +134,38 @@ class DocumentExtractor:
         combined = "\n\n".join(parts).strip()
         if combined:
             return combined
+
+        detail = " | ".join(extraction_errors) if extraction_errors else "No content detected"
+        raise RuntimeError(f"PDF Extraction Error: {detail}")
+
+    def _extract_pdf_resume_fast(self, file_path: str) -> str:
+        """
+        Fast resume extraction path:
+        1) Primary: markdown extraction (best structure fidelity)
+        2) Fallback: plain text via pdfplumber
+
+        This skips table-merging work for speed while preserving robust fallback.
+        """
+        extraction_errors: list[str] = []
+        if pymupdf4llm is not None:
+            try:
+                markdown_text = self._extract_markdown(file_path)
+                if markdown_text:
+                    return markdown_text.strip()
+            except Exception as exc:
+                extraction_errors.append(f"PyMuPDF4LLM failed: {exc}")
+        else:
+            extraction_errors.append("PyMuPDF4LLM not installed")
+
+        if pdfplumber is not None:
+            try:
+                plumber_text = self._extract_plumber_text(file_path)
+                if plumber_text:
+                    return plumber_text.strip()
+            except Exception as exc:
+                extraction_errors.append(f"pdfplumber text failed: {exc}")
+        else:
+            extraction_errors.append("pdfplumber not installed")
 
         detail = " | ".join(extraction_errors) if extraction_errors else "No content detected"
         raise RuntimeError(f"PDF Extraction Error: {detail}")

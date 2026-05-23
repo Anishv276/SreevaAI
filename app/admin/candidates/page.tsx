@@ -131,7 +131,7 @@ function EmailComposer({
 }
 
 // ---------------------------------------------------------------------------
-// Email confirm modal (schedule link / rejection — same as drive page)
+// Email confirm modal (interview link / rejection — same as drive page)
 // ---------------------------------------------------------------------------
 function normalizeStatusKey(value?: string) {
     return String(value || "").trim().toLowerCase().replace(/[_-]+/g, " ");
@@ -189,13 +189,13 @@ function EmailConfirmModal({
                     <h2 className="text-lg font-black text-gray-900 tracking-tight">Confirm Send Email</h2>
                     {isBulk ? (
                         <div className="mt-2 space-y-1 text-sm text-gray-600">
-                            {shortlistedCount > 0 && <p>• <span className="font-bold text-emerald-700">{shortlistedCount} shortlisted</span> → schedule link will be sent</p>}
+                            {shortlistedCount > 0 && <p>• <span className="font-bold text-emerald-700">{shortlistedCount} shortlisted</span> → interview link will be sent</p>}
                             {rejectedCount > 0 && <p>• <span className="font-bold text-rose-700">{rejectedCount} rejected</span> → rejection email will be sent</p>}
                         </div>
                     ) : (
                         <p className="mt-2 text-sm text-gray-600">
                             {singleStatus === "shortlisted"
-                                ? <>Send a <span className="font-bold text-emerald-700">schedule link</span> to <span className="font-bold">{confirm.candidateName}</span>.</>
+                                ? <>Send a <span className="font-bold text-emerald-700">interview link</span> to <span className="font-bold">{confirm.candidateName}</span>.</>
                                 : <>Send a <span className="font-bold text-rose-700">rejection email</span> to <span className="font-bold">{confirm.candidateName}</span>.</>}
                         </p>
                     )}
@@ -514,7 +514,7 @@ export default function CandidatesPage() {
                 const status = normalizeStatusKey(emailConfirm.resumeStatus);
                 if (status === "shortlisted") {
                     await fetch(`/api/candidates/${emailConfirm.candidateId}/send-interview-link`, { method: "POST" });
-                    toast.success(`Schedule link sent to ${emailConfirm.candidateName}`);
+                    toast.success(`Interview link sent to ${emailConfirm.candidateName}`);
                 } else if (status === "rejected") {
                     await fetch(`/api/candidates/${emailConfirm.candidateId}/send-email`, {
                         method: "POST", headers: { "Content-Type": "application/json" },

@@ -8,12 +8,14 @@ import {
 } from "@/lib/drive-limits";
 import { getSlotJoinDeadline } from "@/lib/interview-slot-policy";
 import crypto from "crypto";
+import { isSlotMode, resolveInterviewMode } from "@/lib/interview-mode";
 
 export async function POST(
     request: Request,
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
+        const prismaAny = prisma as any;
         const { id: applicationId } = await params;
         const { token: interviewToken } = await request.json();
         const requireInterviewToken = isInterviewTokenRequired();
@@ -25,7 +27,7 @@ export async function POST(
 
         const testMode = isInterviewTestMode();
 
-        const interview = await prisma.interview.findUnique({
+        const interview = await prismaAny.interview.findUnique({
             where: { applicationId },
         });
 
@@ -36,6 +38,29 @@ export async function POST(
         if (requireInterviewToken && interview.accessToken !== interviewToken) {
             return NextResponse.json({ error: "Invalid interview token" }, { status: 401 });
         }
+
+        const application = await prismaAny.application.findUnique({
+            where: { id: applicationId },
+            include: {
+                drive: {
+                    include: {
+                        organization: {
+                            select: { interviewMode: true },
+                        },
+                    },
+                },
+            },
+        });
+
+        if (!application) {
+            return NextResponse.json({ error: "Application not found" }, { status: 404 });
+        }
+
+        const effectiveInterviewMode = resolveInterviewMode(
+            application.drive?.interviewMode,
+            application.drive?.organization?.interviewMode
+        );
+        const slotModeEnabled = isSlotMode(effectiveInterviewMode);
 
         if (interview.status === "COMPLETED") {
             return NextResponse.json({
@@ -53,7 +78,7 @@ export async function POST(
 
         // Slot entry window:
         // Join/rejoin allowed from slot start until +10 minutes only.
-        if (interview.scheduledAt) {
+        if (slotModeEnabled && interview.scheduledAt) {
             const now = Date.now();
             const slotStart = interview.scheduledAt.getTime();
             const joinDeadline = getSlotJoinDeadline(slotStart, INTERVIEW_JOIN_GRACE_MINUTES);
@@ -73,25 +98,33 @@ export async function POST(
             }
 
         }
+        if (!slotModeEnabled) {
+            const now = Date.now();
+            const expiresAtMs = interview.expiresAt ? interview.expiresAt.getTime() : null;
+            const startedAtMs = interview.startedAt ? interview.startedAt.getTime() : null;
 
-        if (interview.expiresAt && interview.expiresAt < new Date()) {
-            return NextResponse.json({ error: "Access Denied: Interview session has expired" }, { status: 403 });
-        }
+            if (expiresAtMs !== null && now > expiresAtMs) {
+                await prismaAny.interview.update({
+                    where: { applicationId },
+                    data: { linkStatus: "EXPIRED" },
+                }).catch(() => { });
+                return NextResponse.json({ error: "Access Denied: Interview session has expired" }, { status: 403 });
+            }
 
-        const application = await prisma.application.findUnique({
-            where: { id: applicationId },
-            include: {
-                drive: {
-                    select: {
-                        role: true,
-                        title: true,
-                    },
-                },
-            },
-        });
+            if (startedAtMs !== null && now > startedAtMs + 5 * 60 * 1000) {
+                await prismaAny.interview.update({
+                    where: { applicationId },
+                    data: { linkStatus: "EXPIRED" },
+                }).catch(() => { });
+                return NextResponse.json({ error: "Access Denied: Interview link has expired after join window." }, { status: 403 });
+            }
 
-        if (!application) {
-            return NextResponse.json({ error: "Application not found" }, { status: 404 });
+            if (interview.linkStatus !== "ACTIVE") {
+                await prismaAny.interview.update({
+                    where: { applicationId },
+                    data: { linkStatus: "ACTIVE" },
+                }).catch(() => { });
+            }
         }
 
         const roomName = `interview_${applicationId}`;
@@ -182,19 +215,24 @@ export async function POST(
 
         // Mark interview status as in progress.
         try {
-            await prisma.application.update({
+            await prismaAny.application.update({
                 where: { id: applicationId },
                 data: { interviewStatus: "in progress" },
             });
-            await prisma.interview.upsert({
+            await prismaAny.interview.upsert({
                 where: { applicationId },
-                update: { status: "IN_PROGRESS", startedAt: new Date() },
+                update: {
+                    status: "IN_PROGRESS",
+                    startedAt: interview.startedAt || new Date(),
+                    linkStatus: "ACTIVE",
+                },
                 create: {
                     id: crypto.randomUUID(),
                     applicationId,
                     accessToken: interviewToken || crypto.randomUUID(),
                     status: "IN_PROGRESS",
                     startedAt: new Date(),
+                    linkStatus: "ACTIVE",
                 },
             });
         } catch (statusErr) {

@@ -24,6 +24,7 @@ function getRequestedOrgId(request: Request) {
 
 export async function GET(request: Request) {
     try {
+        const prismaAny = prisma as any;
         const session = await getSession();
         if (!session?.orgId && !getRequestedOrgId(request)) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -38,7 +39,7 @@ export async function GET(request: Request) {
         }
 
         const [org, activeDriveCount] = await Promise.all([
-            prisma.organization.findUnique({
+            prismaAny.organization.findUnique({
                 where: { id: orgId },
                 select: {
                     name: true,
@@ -56,6 +57,7 @@ export async function GET(request: Request) {
                     deepgramModel: true,
                     maxActiveDrives: true,
                     proctoringSignals: true,
+                    interviewMode: true,
                     interviewQuotaTotal: true,
                     interviewQuotaUsed: true,
                 }

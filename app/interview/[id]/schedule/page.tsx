@@ -67,6 +67,11 @@ export default function SchedulePage({ params }: { params: Promise<{ id: string 
             .then((res) => res.json())
             .then((data) => {
                 if (!isMounted) return;
+                if (data.slotSchedulingEnabled === false) {
+                    const currentSearchParams = window.location.search;
+                    window.location.href = `/interview/${id}${currentSearchParams}`;
+                    return;
+                }
                 if (data.role) setInterviewRoleLabel(data.role);
                 if (data.company) setBookingCompany(data.company);
                 const incomingSlots = ((data.slots || []) as Slot[]).slice().sort(

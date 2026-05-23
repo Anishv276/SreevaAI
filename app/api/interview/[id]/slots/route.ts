@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { FIXED_INTERVIEW_DURATION_MINUTES, INTERVIEW_SLOT_INTERVAL_MINUTES } from "@/lib/drive-limits";
 import { roundToCurrentSlotBoundary, roundToNextSlotBoundary } from "@/lib/interview-slot-policy";
 import { isInterviewTestMode } from "@/lib/interview-access";
+import { isSlotMode, resolveInterviewMode } from "@/lib/interview-mode";
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
     try {
@@ -23,8 +24,23 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
         const roleLabel = app.drive.role || app.drive.title;
         const companyName = app.drive.organization?.name || "Company";
-
         const bookedSlot = app.interview?.scheduledAt ? app.interview.scheduledAt.getTime() : null;
+        const effectiveInterviewMode = resolveInterviewMode(
+            app.drive?.interviewMode,
+            app.drive?.organization?.interviewMode
+        );
+        const slotSchedulingEnabled = isSlotMode(effectiveInterviewMode);
+
+        if (!slotSchedulingEnabled) {
+            return NextResponse.json({
+                slotSchedulingEnabled: false,
+                slots: [],
+                bookedSlot,
+                role: roleLabel,
+                company: companyName,
+                deadline: app.drive?.deadline || null,
+            });
+        }
 
         const now = new Date();
         const driveDeadline = app.drive?.deadline ? new Date(app.drive.deadline) : null;
@@ -67,6 +83,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
         console.log(`[SLOTS API] Found ${availableSlots.length} available slots`);
         return NextResponse.json({
+            slotSchedulingEnabled: true,
             slots: availableSlots,
             bookedSlot,
             role: roleLabel,

@@ -8,6 +8,7 @@ import { safeJsonParse } from "@/lib/utils";
 import { getSession } from "@/lib/auth";
 import { parseDriveScreeningSettings, sanitizeScreeningCriteria } from "@/lib/screening-criteria";
 import { isOrgRestrictedStatus } from "@/lib/interview-quota";
+import { normalizeInterviewMode } from "@/lib/interview-mode";
 
 function normalizeDeadlineDate(deadline?: string | null) {
     if (!deadline) return null;
@@ -50,6 +51,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
                 jdFileName: true,
                 jdPreviewUrl: true,
                 orgId: true,
+                interviewMode: true,
                 aiName: true,
                 voiceId: true,
                 organization: {
@@ -101,6 +103,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             screeningThreshold,
             screeningCriteria,
             interviewQuestions,
+            interviewMode: (drive as any).interviewMode || null,
             applicants: (drive as any)._count?.applications || 0,
             aiScreening: {
                 enabled: true,
@@ -187,6 +190,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         if (data.title !== undefined) updateData.title = data.title;
         if (data.role !== undefined) updateData.role = data.role;
         if (data.deadline !== undefined) updateData.deadline = normalizeDeadlineDate(data.deadline as string | null | undefined);
+        if (data.interviewMode !== undefined) {
+            updateData.interviewMode = data.interviewMode ? normalizeInterviewMode(data.interviewMode) : null;
+        }
 
         if (data.jdFileName !== undefined) updateData.jdFileName = data.jdFileName;
         if (data.jdPreviewUrl !== undefined) {

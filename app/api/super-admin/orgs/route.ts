@@ -12,6 +12,7 @@ import { normalizeOrgAiConfig } from "@/lib/ai-provider-config";
 import { normalizeOrgLimitInput } from "@/lib/org-limits";
 import { normalizeOrgStatusControl, ORG_STATUS_CONTROL_MANUAL } from "@/lib/credits";
 import { normalizeEmail } from "@/lib/email";
+import { normalizeInterviewMode } from "@/lib/interview-mode";
 
 // GET /api/super-admin/orgs - list organizations with stats, pagination, and search
 export async function GET(request: Request) {
@@ -266,6 +267,7 @@ export async function POST(request: Request) {
             proctoringSignals,
             voiceId, allowedVoices,
             deepgramModel,
+            interviewMode,
             location
         } = body;
 
@@ -347,6 +349,7 @@ export async function POST(request: Request) {
                 logoUrl: logoUrl || null,
                 usageMetrics: {},
                 location: location || null,
+                interviewMode: normalizeInterviewMode(interviewMode),
             };
 
             if (resolvedSignals !== undefined) {

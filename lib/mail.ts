@@ -14,6 +14,7 @@ export async function sendApplicationStatusEmail({
     scheduledAt,
     scheduledTimeZone,
     schedulingDeadline,
+    interviewMode,
 }: {
     email: string;
     fullName: string;
@@ -26,6 +27,7 @@ export async function sendApplicationStatusEmail({
     scheduledAt?: Date;
     scheduledTimeZone?: string;
     schedulingDeadline?: Date;
+    interviewMode?: "SLOT" | "DEADLINE";
 }): Promise<MailResult> {
     const orgName = orgNameProp || "Sreeva AI";
     const teamLabel = `${orgName} Team`;
@@ -43,12 +45,16 @@ export async function sendApplicationStatusEmail({
         })
         : null;
 
+    const slotMode = (interviewMode || "DEADLINE") === "SLOT";
+
     const subject = isHired
         ? `Offer Letter: You've been selected for ${jobTitle}!`
         : isConfirmed
             ? `Interview Booked: Your AI Video Interview for ${jobTitle}`
             : isAccepted
-            ? `Action Required: Schedule your AI Video Interview for ${jobTitle}`
+            ? (slotMode
+                ? `Action Required: Schedule your AI Video Interview for ${jobTitle}`
+                : `Action Required: Complete your AI Video Interview for ${jobTitle}`)
             : `Update regarding your application for ${jobTitle}`;
 
     const base = `
@@ -123,9 +129,9 @@ export async function sendApplicationStatusEmail({
                 <h1 style="margin:16px 0 10px;font-size:24px;font-weight:700;color:#18181b;letter-spacing:-0.02em;">You've been shortlisted.</h1>
                 <p style="margin:0 0 32px;font-size:15px;color:#52525b;line-height:1.6;">Hi ${fullName}, your profile stood out for <strong style="color:#18181b;">${jobTitle}</strong>. The next step is a 20-minute AI video interview - please use a reliable laptop or desktop with a working camera, microphone, and stable internet.</p>
                 <div style="margin-bottom:28px;">
-                    ${primaryBtn(interviewLink || '#', 'Schedule AI Video Interview')}
+                    ${primaryBtn(interviewLink || '#', slotMode ? 'Schedule AI Video Interview' : 'Start AI Video Interview')}
                 </div>
-                ${schedulingDeadlineLabel ? `
+                ${slotMode ? (schedulingDeadlineLabel ? `
                 <div style="border-left:3px solid #e4e4e7;padding:12px 16px;margin-bottom:28px;">
                     <p style="margin:0;font-size:13px;color:#71717a;">Schedule on or before <strong style="color:#3f3f46;">${schedulingDeadlineLabel}</strong>. Make sure you're in a quiet space with a working camera, microphone, and a dependable computer.</p>
                 </div>
@@ -133,7 +139,15 @@ export async function sendApplicationStatusEmail({
                 <div style="border-left:3px solid #e4e4e7;padding:12px 16px;margin-bottom:28px;">
                     <p style="margin:0;font-size:13px;color:#71717a;">Make sure you're in a quiet space with a working camera, microphone, and a dependable computer.</p>
                 </div>
-                `}
+                `) : (schedulingDeadlineLabel ? `
+                <div style="border-left:3px solid #e4e4e7;padding:12px 16px;margin-bottom:28px;">
+                    <p style="margin:0;font-size:13px;color:#71717a;">Complete the interview on or before <strong style="color:#3f3f46;">${schedulingDeadlineLabel}</strong>. You can join anytime before the deadline.</p>
+                </div>
+                ` : `
+                <div style="border-left:3px solid #e4e4e7;padding:12px 16px;margin-bottom:28px;">
+                    <p style="margin:0;font-size:13px;color:#71717a;">Complete the interview using the link above. You can join anytime before your deadline.</p>
+                </div>
+                `)}
                 <p style="margin:0;font-size:13px;color:#a1a1aa;line-height:1.6;">${teamLabel} will review your interview and follow up within 24-48 hours.</p>
             </div>
             ${footer}

@@ -17,6 +17,7 @@ import { recordOrgBillingUsage } from "./lib/usage-metrics";
 import { generateInterviewReport, computeEnrichedInterviewScore } from "./lib/interview-analysis";
 import { syncCandidateCorpusToPinecone } from "./lib/pinecone";
 import { buildInterviewLink, buildInterviewScheduleLink } from "./lib/interview-links";
+import { INTERVIEW_MODE_DEADLINE, INTERVIEW_MODE_SLOT, isSlotMode, resolveInterviewMode } from "./lib/interview-mode";
 // Load environment variables
 dotenv.config();
 console.log('DEBUG: REDIS_URL length:', process.env.REDIS_URL?.length || 0);
@@ -977,42 +978,10 @@ if (isQueueEnabled("resume-processing")) {
       } catch (err: any) {
         console.error(`[SYNC ERROR] Failed to sync Pinecone corpus for ${applicationId}:`, err);
       }
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://sreevaai.com';
-      // 4. Interview invite / status email flow
-      const { sendApplicationStatusEmail } = await import('./lib/mail');
-      if (resumeStatus === 'SHORTLISTED') {
-        // New flow: shortlist only sends scheduling URL.
-        // Interview row/token are created later during slot booking.
-        const baseUrl = appUrl;
-        const interviewLink = buildInterviewScheduleLink(
-          baseUrl,
-          applicationId,
-          latestDrive?.organization?.name || drive?.organization?.name || "Sreeva AI"
-        );
-        const emailResult = await sendApplicationStatusEmail({
-          email: applicantEmail,
-          fullName: applicantName,
-          jobTitle: latestDrive?.title || drive.title,
-          orgName: latestDrive?.organization?.name || drive?.organization?.name || "Sreeva AI",
-          status: resumeStatus,
-          interviewLink
-        });
-        if (emailResult?.success === false) {
-          console.warn(`[EMAIL WARN] Interview invite not sent to ${applicantEmail}:`, emailResult.error);
-        } else {
-          console.log(`[EMAIL] Interview scheduling invite sent to ${applicantEmail}`);
-        }
-      } else {
-        // Voice interview DISABLED or candidate REJECTED -> plain status email only, no interview link
-        await sendApplicationStatusEmail({
-          email: applicantEmail,
-          fullName: applicantName,
-          jobTitle: latestDrive?.title || drive.title,
-          orgName: latestDrive?.organization?.name || drive?.organization?.name || "Sreeva AI",
-          status: 'REJECTED',
-        });
-        console.log(`[EMAIL] Status-only email sent to ${applicantEmail}  status: ${resumeStatus}`);
-      }
+      console.log(
+        `[EMAIL] Auto status email disabled for application ${applicationId}. ` +
+        "Manual send/resend actions now control interview and rejection emails."
+      );
     } catch (error) {
       console.error(`[ERROR] Job ${job.id} failed:`, error);
       if (tempResumePath) await unlink(tempResumePath).catch(() => { });
@@ -1053,7 +1022,8 @@ if (isQueueEnabled("invitation-delivery-queue")) {
       if (!applicationId || !action) {
         throw new Error("Missing applicationId or action in invitation-delivery-queue job");
       }
-      const application = await (prisma.application as any).findUnique({
+      const prismaAny = prisma as any;
+      const application = await prismaAny.application.findUnique({
         where: { id: applicationId },
         select: {
           id: true,
@@ -1065,11 +1035,14 @@ if (isQueueEnabled("invitation-delivery-queue")) {
               id: true,
               title: true,
               orgId: true,
+              interviewMode: true,
               organization: {
                 select: {
                   name: true,
+                  interviewMode: true,
                 },
               },
+              deadline: true,
             },
           },
           interview: {
@@ -1090,10 +1063,15 @@ if (isQueueEnabled("invitation-delivery-queue")) {
       }
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://sreevaai.com';
       const now = new Date();
-      const scheduledDate = scheduledAt ? new Date(scheduledAt) : now;
+      const effectiveInterviewMode = resolveInterviewMode(
+        application.drive?.interviewMode,
+        application.drive?.organization?.interviewMode
+      );
+      const slotModeEnabled = isSlotMode(effectiveInterviewMode);
       let interviewLink: string | undefined;
       if (action === "shortlist") {
-        await prisma.interview.upsert({
+        const driveDeadline = application.drive?.deadline ? new Date(application.drive.deadline) : null;
+        const interviewRecord = await prismaAny.interview.upsert({
           where: { applicationId },
           update: {
             inviteSentAt: now,
@@ -1102,21 +1080,29 @@ if (isQueueEnabled("invitation-delivery-queue")) {
             completedAt: null,
             scheduledAt: null,
             slotId: null,
+            expiresAt: slotModeEnabled ? null : driveDeadline,
+            linkStatus: "ACTIVE",
           },
           create: {
             id: generateId("int", application.fullName || applicationId),
             applicationId,
             inviteSentAt: now,
             status: "PENDING",
+            expiresAt: slotModeEnabled ? null : driveDeadline,
+            linkStatus: "ACTIVE",
           },
         });
-        // Create interview row first, generate token only at slot booking.
         const baseUrl = appUrl;
-        interviewLink = buildInterviewScheduleLink(
-          baseUrl,
-          applicationId,
-          application.drive?.organization?.name || "Sreeva AI"
-        );
+        interviewLink = slotModeEnabled
+          ? buildInterviewScheduleLink(
+            baseUrl,
+            applicationId,
+            application.drive?.organization?.name || "Sreeva AI"
+          )
+          : buildInterviewLink(baseUrl, applicationId, {
+            token: isInterviewTokenRequired() ? interviewRecord.accessToken : null,
+            orgName: application.drive?.organization?.name || "Sreeva AI",
+          });
       } else if (action === "confirm") {
         const baseUrl = appUrl;
         interviewLink = buildInterviewLink(baseUrl, applicationId, {
@@ -1148,6 +1134,8 @@ if (isQueueEnabled("invitation-delivery-queue")) {
         status: emailStatus,
         interviewLink,
         scheduledAt: scheduledAt ? new Date(scheduledAt) : undefined,
+        schedulingDeadline: application.drive?.deadline || undefined,
+        interviewMode: slotModeEnabled ? INTERVIEW_MODE_SLOT : INTERVIEW_MODE_DEADLINE,
       });
       if (!mailResult.success) {
         const reason = "error" in mailResult && mailResult.error

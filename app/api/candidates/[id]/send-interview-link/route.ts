@@ -1,15 +1,18 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendApplicationStatusEmail } from "@/lib/mail";
-import { buildInterviewScheduleLink } from "@/lib/interview-links";
+import { buildInterviewLink, buildInterviewScheduleLink } from "@/lib/interview-links";
 import { getSession, isAdminRole } from "@/lib/auth";
 import { getOrgBillingStatus } from "@/lib/credits";
 import { getInterviewQuotaSupportMessage } from "@/lib/interview-quota";
 import { appendCandidateActivity } from "@/lib/candidate-activity";
 import { generateId } from "@/lib/ids";
+import { isInterviewTokenRequired } from "@/lib/interview-access";
+import { INTERVIEW_MODE_DEADLINE, INTERVIEW_MODE_SLOT, isSlotMode, resolveInterviewMode } from "@/lib/interview-mode";
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
     try {
+        const prismaAny = prisma as any;
         const session = await getSession();
         if (!session || !isAdminRole(session.role)) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -22,7 +25,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
             return NextResponse.json({ error: "Application ID required" }, { status: 400 });
         }
 
-        const application = await prisma.application.findUnique({
+        const application = await prismaAny.application.findUnique({
             where: { id: applicationId },
             include: {
                 drive: {
@@ -30,6 +33,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
                         organization: {
                             select: {
                                 name: true,
+                                interviewMode: true,
                             },
                         },
                     },
@@ -75,7 +79,14 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
             return NextResponse.json({ error: "Candidate email is missing" }, { status: 400 });
         }
 
-        await prisma.interview.upsert({
+        const driveDeadline = application.drive?.deadline ? new Date(application.drive.deadline) : null;
+        const effectiveInterviewMode = resolveInterviewMode(
+            application.drive?.interviewMode,
+            application.drive?.organization?.interviewMode
+        );
+        const slotModeEnabled = isSlotMode(effectiveInterviewMode);
+
+        const interviewRecord = await prismaAny.interview.upsert({
             where: { applicationId },
             update: {
                 inviteSentAt: new Date(),
@@ -84,21 +95,30 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
                 completedAt: null,
                 scheduledAt: null,
                 slotId: null,
+                expiresAt: slotModeEnabled ? null : driveDeadline,
+                linkStatus: "ACTIVE",
             },
             create: {
                 id: generateId("int", application.fullName || applicationId),
                 applicationId,
                 inviteSentAt: new Date(),
                 status: "PENDING",
+                expiresAt: slotModeEnabled ? null : driveDeadline,
+                linkStatus: "ACTIVE",
             },
         });
 
         const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-        const interviewLink = buildInterviewScheduleLink(
-            baseUrl,
-            applicationId,
-            application.drive?.organization?.name || "Sreeva AI"
-        );
+        const interviewLink = slotModeEnabled
+            ? buildInterviewScheduleLink(
+                baseUrl,
+                applicationId,
+                application.drive?.organization?.name || "Sreeva AI"
+            )
+            : buildInterviewLink(baseUrl, applicationId, {
+                token: isInterviewTokenRequired() ? interviewRecord.accessToken : null,
+                orgName: application.drive?.organization?.name || "Sreeva AI",
+            });
 
         const mailResult = await sendApplicationStatusEmail({
             email: application.email,
@@ -108,17 +128,18 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
             status: "SHORTLISTED",
             interviewLink,
             schedulingDeadline: (application.drive as any)?.deadline || undefined,
+            interviewMode: slotModeEnabled ? INTERVIEW_MODE_SLOT : INTERVIEW_MODE_DEADLINE,
         });
 
         if (!mailResult.success) {
             return NextResponse.json({
-                error: `Interview schedule link email could not be sent: ${mailResult.error}`,
+                error: `Interview link email could not be sent: ${mailResult.error}`,
             }, { status: 500 });
         }
 
         await appendCandidateActivity(applicationId, {
             type: "interview_invite_sent",
-            label: "Interview scheduling link sent",
+            label: "Interview link sent",
             details: `Sent at ${new Date().toISOString()}`,
             timestamp: new Date().toISOString(),
             source: "system",
@@ -126,7 +147,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
         return NextResponse.json({
             success: true,
-            message: "Scheduling link sent successfully"
+            message: "Interview link sent successfully"
         });
     } catch (error) {
         console.error("[INTERVIEW LINK ERROR]:", error);
