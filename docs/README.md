@@ -5,7 +5,7 @@
 ### 1. Navigate to the project directory
 
 ```bash
-cd /home/anirudh/hr_automation_platform
+cd HR
 ```
 
 ### 2. Install dependencies
