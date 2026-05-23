@@ -36,7 +36,6 @@ from interview.agent_providers import (
     build_sarvam_tts,
     build_stt,
     build_vad,
-    SarvamTTSConnectionManager,
 )
 from interview.agent_persistence import (
     _create_db_pool,
@@ -344,48 +343,10 @@ class InterviewAgent(Agent):
             return
 
         conn_options = activity.session.conn_options.tts_conn_options
-
-        _SENT_END = re.compile(r'(?<=[.?!])\s+')
-
-        # Sarvam: use per-sentence REST (HTTP POST) instead of WebSocket.
-        # Sarvam's server closes the WS connection after every request, making
-        # connection-pool reuse impossible — the pooled connection is always in a
-        # closing state when the next TTS call arrives.
-        # Per-sentence REST: same first-audio latency (~LLM sentence time + ~500ms REST),
-        # zero connection-pool issues, and no "Cannot write to closing transport" errors.
-        if isinstance(tts_engine, SarvamTTSConnectionManager):
-            try:
-                buf = ""
-                sentence_count = 0
-                async for chunk in text:
-                    buf += chunk
-                    while True:
-                        m = _SENT_END.search(buf)
-                        if not m:
-                            break
-                        sentence = buf[:m.start() + 1].strip()
-                        buf = buf[m.end():]
-                        if sentence:
-                            sentence_count += 1
-                            async with tts_engine.synthesize(sentence, conn_options=conn_options) as rest_stream:
-                                async for ev in rest_stream:
-                                    yield ev.frame
-                if buf.strip():
-                    sentence_count += 1
-                    async with tts_engine.synthesize(buf.strip(), conn_options=conn_options) as rest_stream:
-                        async for ev in rest_stream:
-                            yield ev.frame
-                logger.info("[TTS] Synthesized %d sentence(s) via REST", sentence_count)
-            except asyncio.CancelledError:
-                raise
-            except Exception as e:
-                logger.warning("[TTS_SARVAM_REST_ERROR] REST synthesis failed: %s", str(e)[:200])
-                raise
-            return
-
-        # Non-Sarvam providers (Cartesia, ElevenLabs): use WebSocket streaming.
         if conn_options.retry_interval > 0.5:
             conn_options = replace(conn_options, retry_interval=0.5)
+
+        _SENT_END = re.compile(r'(?<=[.?!])\s+')
 
         async def _push_sentences(tts_stream) -> None:
             buf = ""
@@ -428,6 +389,13 @@ class InterviewAgent(Agent):
         except asyncio.CancelledError:
             raise
         except Exception as e:
+            logger.error(
+                "[TTS] tts_node failed provider=%s model=%s error=%s",
+                getattr(tts_engine, "provider", "unknown"),
+                getattr(tts_engine, "model", "unknown"),
+                e,
+                exc_info=True,
+            )
             raise
 
 

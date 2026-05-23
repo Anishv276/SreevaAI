@@ -55,7 +55,7 @@ export const jdUploadQueue = new Queue('jd-upload', {
   defaultJobOptions
 });
 
-// 6. Handles background recording chunk merge + R2 upload (CPU/memory heavy, no HTTP timeout)
+// 6. Handles server-side interview recording finalization (LiveKit egress completion)
 export const interviewRecordingQueue = new Queue('interview-recording', {
   connection: redisConnection,
   defaultJobOptions: {

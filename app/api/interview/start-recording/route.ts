@@ -6,9 +6,9 @@ export async function POST(req: NextRequest) {
         const body = await req.json().catch(() => ({}));
         applicationId = String(body?.applicationId || "").trim();
     } catch { }
-    console.warn(`[start-recording] Disabled endpoint hit for ${applicationId || "unknown_application"}; browser MediaRecorder flow is active.`);
+    console.warn(`[start-recording] Deprecated endpoint hit for ${applicationId || "unknown_application"}.`);
     return NextResponse.json(
-        { error: "LiveKit egress recording is disabled. Use /api/interview/recording browser upload flow." },
+        { error: "Endpoint deprecated. Use /api/interview/egress with action=start." },
         { status: 410 }
     );
 }

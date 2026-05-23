@@ -50,18 +50,6 @@ type AttachableTrack = {
     attach: (element: HTMLMediaElement) => void;
     detach: (element: HTMLMediaElement) => void;
 };
-function getRecordingMimeType(): string {
-    if (typeof MediaRecorder === "undefined") return "video/webm";
-    const candidates = [
-        "video/webm;codecs=vp9,opus",
-        "video/webm;codecs=vp8,opus",
-        "video/webm",
-    ];
-    for (const mime of candidates) {
-        if (MediaRecorder.isTypeSupported(mime)) return mime;
-    }
-    return "video/webm";
-}
 // LiveKit TextStreamData type from @livekit/components-core
 // { text: string, participantInfo: { identity: string }, streamInfo: TextStreamInfo }
 /** Typewriter component: streams text word-by-word whenever text changes. */
@@ -1504,382 +1492,95 @@ function InterviewRoomContent({
     const launchReadySignalSentRef = useRef(false);
     const [launchPrereqsReady, setLaunchPrereqsReady] = useState(false);
     const finishStartedRef = useRef(false);
-    const recordingStartedRef = useRef(false);
-    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-    const recordingStreamRef = useRef<MediaStream | null>(null);
-    const recordingAudioContextRef = useRef<AudioContext | null>(null);
-    const recordingSessionIdRef = useRef<string | null>(null);
-    const recordingMimeTypeRef = useRef<string>("video/webm");
-    const recordingStartedAtRef = useRef<number | null>(null);
-    const recordingChunkIndexRef = useRef(0);
-    const recordingChunkUrlsRef = useRef<string[]>([]);
-    const recordingChunkKeysRef = useRef<string[]>([]);
-    const recordingChunkUploadChainRef = useRef<Promise<void>>(Promise.resolve());
-    const recordingFinalizePromiseRef = useRef<Promise<void> | null>(null);
-    const recordingStopPromiseRef = useRef<Promise<void> | null>(null);
-    const recordingStopResolveRef = useRef<(() => void) | null>(null);
-    const recordingStopRejectRef = useRef<((reason?: unknown) => void) | null>(null);
-    const recordingLastChunkEndedAtRef = useRef<number | null>(null);
-    const recordingStartTimerRef = useRef<number | null>(null);
-    const recordingAbandonedSentRef = useRef(false);
+    const egressStartedRef = useRef(false);
+    const egressStartingRef = useRef<Promise<void> | null>(null);
+    const egressStoppingRef = useRef<Promise<void> | null>(null);
+    const egressStopRequestedRef = useRef(false);
     const transcriptPanelRef = useRef<HTMLDivElement>(null);
-    const buildFinalizeRecordingPayload = useCallback(() => {
-        if (!recordingSessionIdRef.current) return null;
-        const startedAt = recordingStartedAtRef.current ?? Date.now();
-        const durationSec = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
-        return {
-            uploadType: "finalize_chunks",
-            applicationId: id,
-            interviewToken: interviewToken || "",
-            sessionId: recordingSessionIdRef.current,
-            chunkUrls: [...recordingChunkUrlsRef.current],
-            chunkKeys: [...recordingChunkKeysRef.current],
-            chunkCount: recordingChunkIndexRef.current,
-            duration: durationSec,
-            mimeType: recordingMimeTypeRef.current,
-            startedAt: new Date(startedAt).toISOString(),
-        };
-    }, [id, interviewToken]);
-    const sendRecordingFinalizePayload = useCallback((useBeacon: boolean) => {
-        const payload = buildFinalizeRecordingPayload();
-        if (!payload) return false;
-        const body = JSON.stringify(payload);
-        if (useBeacon && typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
-            try {
-                const beaconAccepted = navigator.sendBeacon(
-                    "/api/interview/recording",
-                    new Blob([body], { type: "application/json" })
-                );
-                if (beaconAccepted) {
-                    return true;
-                }
-            } catch {
-                // Fall through to fetch below.
-            }
-        }
-        void fetch("/api/interview/recording", {
+    const postEgressAction = useCallback(async (action: "start" | "stop" | "status", keepalive = false) => {
+        const response = await fetch("/api/interview/egress", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body,
-            keepalive: useBeacon,
-        }).catch(() => { });
-        return true;
-    }, [buildFinalizeRecordingPayload, id, interviewToken]);
-    const markRecordingAbandoned = useCallback((reason: string) => {
-        if (
-            recordingAbandonedSentRef.current ||
-            !recordingSessionIdRef.current ||
-            !recordingStartedRef.current ||
-            recordingFinalizePromiseRef.current ||
-            recordingStopPromiseRef.current
-        ) {
+            body: JSON.stringify({
+                action,
+                applicationId: id,
+                interviewToken: interviewToken || "",
+            }),
+            keepalive,
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(String(payload?.error || `Egress ${action} failed with status ${response.status}`));
+        }
+        return payload;
+    }, [id, interviewToken]);
+    const startServerRecording = useCallback(async () => {
+        if (egressStartedRef.current) return;
+        if (egressStartingRef.current) {
+            await egressStartingRef.current;
             return;
         }
-        recordingAbandonedSentRef.current = true;
+        const promise = postEgressAction("start")
+            .then(() => {
+                egressStartedRef.current = true;
+                egressStopRequestedRef.current = false;
+            })
+            .finally(() => {
+                egressStartingRef.current = null;
+            });
+        egressStartingRef.current = promise;
+        await promise;
+    }, [postEgressAction]);
+    const stopServerRecording = useCallback(async () => {
+        if ((!egressStartedRef.current && !egressStartingRef.current) || egressStopRequestedRef.current) return;
+        if (egressStoppingRef.current) {
+            await egressStoppingRef.current;
+            return;
+        }
+        egressStopRequestedRef.current = true;
+        const promise = (async () => {
+            if (egressStartingRef.current) {
+                await egressStartingRef.current.catch(() => { });
+            }
+            if (!egressStartedRef.current) return;
+            await postEgressAction("stop");
+            egressStartedRef.current = false;
+        })().catch((error) => {
+            egressStopRequestedRef.current = false;
+            throw error;
+        }).finally(() => {
+            egressStoppingRef.current = null;
+        });
+        egressStoppingRef.current = promise;
+        await promise;
+    }, [postEgressAction]);
+    const stopServerRecordingKeepalive = useCallback(() => {
+        if ((!egressStartedRef.current && !egressStartingRef.current) || egressStopRequestedRef.current) return;
+        egressStopRequestedRef.current = true;
+        egressStartedRef.current = false;
         const payload = JSON.stringify({
-            uploadType: "abandon",
+            action: "stop",
             applicationId: id,
             interviewToken: interviewToken || "",
-            sessionId: recordingSessionIdRef.current,
-            reason,
         });
         if (typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
             try {
-                const blob = new Blob([payload], { type: "application/json" });
-                navigator.sendBeacon("/api/interview/recording", blob);
-                return;
-            } catch { }
+                const accepted = navigator.sendBeacon(
+                    "/api/interview/egress",
+                    new Blob([payload], { type: "application/json" })
+                );
+                if (accepted) return;
+            } catch {
+                // Fall through to keepalive fetch.
+            }
         }
-        fetch("/api/interview/recording", {
+        void fetch("/api/interview/egress", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: payload,
             keepalive: true,
         }).catch(() => { });
-    }, [buildFinalizeRecordingPayload]);
-    const markRecordingFailed = useCallback(async (reason: string) => {
-        if (!recordingSessionIdRef.current || !recordingStartedAtRef.current) return;
-        const durationSec = Math.max(1, Math.round((Date.now() - recordingStartedAtRef.current) / 1000));
-        await fetch("/api/interview/recording", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                uploadType: "mark_failed",
-                applicationId: id,
-                interviewToken: interviewToken || "",
-                sessionId: recordingSessionIdRef.current,
-                duration: durationSec,
-                startedAt: new Date(recordingStartedAtRef.current).toISOString(),
-                reason,
-            }),
-        }).catch(() => { });
     }, [id, interviewToken]);
-    const uploadRecordingChunk = useCallback(async (blob: Blob, chunkIndex: number, chunkStartedAtMs: number, chunkEndedAtMs: number) => {
-        if (!blob.size || !recordingSessionIdRef.current) return;
-        console.debug(
-            `[Recording] chunk ${chunkIndex} queued (${blob.size} bytes, ${new Date(chunkStartedAtMs).toISOString()} -> ${new Date(chunkEndedAtMs).toISOString()})`
-        );
-        const formData = new FormData();
-        formData.append("uploadType", "chunk");
-        formData.append("applicationId", id);
-        formData.append("interviewToken", interviewToken || "");
-        formData.append("sessionId", recordingSessionIdRef.current);
-        formData.append("chunkIndex", String(chunkIndex));
-        formData.append("mimeType", recordingMimeTypeRef.current);
-        formData.append("startedAt", new Date(recordingStartedAtRef.current || Date.now()).toISOString());
-        formData.append("chunkStartedAt", new Date(chunkStartedAtMs).toISOString());
-        formData.append("chunkEndedAt", new Date(chunkEndedAtMs).toISOString());
-        formData.append("byteSize", String(blob.size));
-        formData.append("recording", new File([blob], `chunk-${chunkIndex}.webm`, { type: blob.type || "video/webm" }));
-        // Retry up to 3 times with exponential backoff to guard against transient network errors.
-        const MAX_CHUNK_RETRIES = 3;
-        let lastError: unknown;
-        for (let attempt = 1; attempt <= MAX_CHUNK_RETRIES; attempt++) {
-            try {
-                const res = await fetch("/api/interview/recording", {
-                    method: "POST",
-                    body: formData,
-                });
-                if (!res.ok) {
-                    const errPayload = await res.json().catch(() => ({}));
-                    throw new Error(errPayload?.error || `Chunk upload HTTP ${res.status}`);
-                }
-                const payload = await res.json().catch(() => ({}));
-                if (payload?.chunkUrl) {
-                    recordingChunkUrlsRef.current.push(String(payload.chunkUrl));
-                }
-                if (payload?.chunkKey) {
-                    recordingChunkKeysRef.current.push(String(payload.chunkKey));
-                }
-                console.debug(
-                    `[Recording] chunk ${chunkIndex} uploaded ${payload?.chunkKey ? `-> ${String(payload.chunkKey)}` : ""}`.trim()
-                );
-                return; // success
-            } catch (err) {
-                lastError = err;
-                if (attempt < MAX_CHUNK_RETRIES) {
-                    await new Promise((resolve) => setTimeout(resolve, 600 * attempt));
-                }
-            }
-        }
-        throw lastError;
-    }, [id, interviewToken]);
-    const finalizeRecordingChunks = useCallback(async () => {
-        if (recordingFinalizePromiseRef.current) {
-            await recordingFinalizePromiseRef.current;
-            return;
-        }
-        if (!recordingSessionIdRef.current) return;
-        if (!recordingChunkUrlsRef.current.length) {
-            console.warn("[Recording] No uploaded chunks found for finalization.");
-            return;
-        }
-        const payload = buildFinalizeRecordingPayload();
-        if (!payload) return;
-        console.debug(
-            `[Recording] finalizing ${payload.chunkUrls.length} chunk(s), ${payload.chunkCount} chunk event(s)`
-        );
-        const controller = new AbortController();
-        const timeout = window.setTimeout(() => controller.abort(), 60_000);
-        const promise = fetch("/api/interview/recording", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-            signal: controller.signal,
-        }).then(async (res) => {
-            if (!res.ok) {
-                const body = await res.json().catch(() => ({}));
-                throw new Error(body?.error || "Chunk finalize failed");
-            }
-            console.debug(`[Recording] finalize request accepted for ${payload.sessionId}`);
-        }).finally(() => {
-            window.clearTimeout(timeout);
-            recordingFinalizePromiseRef.current = null;
-        });
-        recordingFinalizePromiseRef.current = promise;
-        await promise;
-    }, [buildFinalizeRecordingPayload, id, interviewToken]);
-    const cleanupRecordingResources = useCallback(() => {
-        if (recordingAudioContextRef.current) {
-            recordingAudioContextRef.current.close().catch(() => { });
-            recordingAudioContextRef.current = null;
-        }
-        if (recordingStreamRef.current) {
-            recordingStreamRef.current.getTracks().forEach((track) => track.stop());
-            recordingStreamRef.current = null;
-        }
-        mediaRecorderRef.current = null;
-        recordingSessionIdRef.current = null;
-        recordingChunkIndexRef.current = 0;
-        recordingChunkUrlsRef.current = [];
-        recordingChunkKeysRef.current = [];
-        recordingChunkUploadChainRef.current = Promise.resolve();
-        recordingFinalizePromiseRef.current = null;
-        recordingStopPromiseRef.current = null;
-        recordingStopResolveRef.current = null;
-        recordingStopRejectRef.current = null;
-        recordingLastChunkEndedAtRef.current = null;
-        if (recordingStartTimerRef.current !== null) {
-            window.clearTimeout(recordingStartTimerRef.current);
-            recordingStartTimerRef.current = null;
-        }
-        recordingStartedRef.current = false;
-        recordingStartedAtRef.current = null;
-    }, []);
-    const startBrowserRecording = useCallback(async () => {
-        if (recordingStartedRef.current) return;
-        if (typeof window === "undefined" || typeof MediaRecorder === "undefined") {
-            console.warn("[Recording] MediaRecorder not supported.");
-            return;
-        }
-        const cameraTrack = getMediaStreamTrack(localCameraTrack ?? null);
-        const micTrack = localParticipant?.getTrackPublication(Track.Source.Microphone)?.track?.mediaStreamTrack ?? null;
-        const remoteTrack = agentAudioTrack && agentAudioTrack.kind === "audio" ? agentAudioTrack : null;
-        if (!cameraTrack) {
-            console.warn("[Recording] Camera track not available; skipping start.");
-            return;
-        }
-        if (cameraTrack.readyState !== "live" || cameraTrack.muted) {
-            console.warn("[Recording] Camera track is not live yet; waiting.");
-            return;
-        }
-        if (localParticipant && !localParticipant.isCameraEnabled) {
-            console.warn("[Recording] Camera is disabled; waiting.");
-            return;
-        }
-        if (!micTrack || !remoteTrack) {
-            console.warn("[Recording] Waiting for both local and remote audio tracks.");
-            return;
-        }
-        const audioContext = new AudioContext();
-        await audioContext.resume().catch(() => { });
-        const destination = audioContext.createMediaStreamDestination();
-        // Clone tracks to isolate recording from live playback.
-        // This prevents AEC from 'ducking' the volume of the live AI speaker.
-        const micClone = micTrack.clone();
-        const remoteClone = remoteTrack.clone();
-        const micSource = audioContext.createMediaStreamSource(new MediaStream([micClone]));
-        const remoteSource = audioContext.createMediaStreamSource(new MediaStream([remoteClone]));
-        // --- Quality Improvement: Dynamics Compressor ---
-        const compressor = audioContext.createDynamicsCompressor();
-        compressor.threshold.setValueAtTime(-20, audioContext.currentTime); // Relaxed threshold
-        compressor.knee.setValueAtTime(40, audioContext.currentTime);
-        compressor.ratio.setValueAtTime(8, audioContext.currentTime); // Lower ratio for less 'low' volume effect
-        compressor.attack.setValueAtTime(0.003, audioContext.currentTime);
-        compressor.release.setValueAtTime(0.25, audioContext.currentTime);
-        micSource.connect(compressor);
-        remoteSource.connect(compressor);
-        compressor.connect(destination);
-        const mixedStream = new MediaStream();
-        mixedStream.addTrack(cameraTrack.clone());
-        destination.stream.getAudioTracks().forEach((track) => mixedStream.addTrack(track));
-        const mimeType = getRecordingMimeType();
-        const sessionId = crypto.randomUUID();
-        recordingSessionIdRef.current = sessionId;
-        recordingMimeTypeRef.current = mimeType;
-        recordingStartedAtRef.current = Date.now();
-        recordingLastChunkEndedAtRef.current = recordingStartedAtRef.current;
-        recordingAbandonedSentRef.current = false;
-        fetch("/api/interview/recording", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                uploadType: "started",
-                applicationId: id,
-                interviewToken: interviewToken || "",
-                sessionId,
-                startedAt: new Date(recordingStartedAtRef.current).toISOString(),
-                mimeType,
-            }),
-        }).catch(() => { });
-        const recorder = new MediaRecorder(mixedStream, {
-            mimeType,
-            videoBitsPerSecond: 1_200_000,
-            audioBitsPerSecond: 128_000,
-        });
-        recorder.ondataavailable = (event) => {
-            if (event.data && event.data.size > 0) {
-                recordingChunkIndexRef.current += 1;
-                const chunkIndex = recordingChunkIndexRef.current;
-                const chunkStartedAt = recordingLastChunkEndedAtRef.current || recordingStartedAtRef.current || Date.now();
-                const chunkEndedAt = Date.now();
-                recordingLastChunkEndedAtRef.current = chunkEndedAt;
-                recordingChunkUploadChainRef.current = recordingChunkUploadChainRef.current
-                    .then(() => uploadRecordingChunk(event.data, chunkIndex, chunkStartedAt, chunkEndedAt))
-                    .catch((err) => {
-                        console.error(`[Recording] chunk ${chunkIndex} upload failed:`, err);
-                    });
-            }
-        };
-        recorder.onstop = async () => {
-            try {
-                await recordingChunkUploadChainRef.current;
-            } catch { }
-            recordingStopResolveRef.current?.();
-            recordingStopResolveRef.current = null;
-            recordingStopRejectRef.current = null;
-            recordingStopPromiseRef.current = null;
-        };
-        recorder.onerror = (event) => {
-            recordingStopRejectRef.current?.((event as unknown as { error?: unknown })?.error || new Error("MediaRecorder failed"));
-            recordingStopResolveRef.current = null;
-            recordingStopRejectRef.current = null;
-            recordingStopPromiseRef.current = null;
-        };
-        recordingAudioContextRef.current = audioContext;
-        recordingStreamRef.current = mixedStream;
-        mediaRecorderRef.current = recorder;
-        recordingStartedRef.current = true;
-        // Use a tiny delay to ensure audio graph is stable before starting
-        recordingStartTimerRef.current = window.setTimeout(() => {
-            if (recorder.state === "inactive") {
-                recorder.start(5000);
-                console.log("[Recording] Browser recorder started with isolated tracks.");
-            }
-            recordingStartTimerRef.current = null;
-        }, 500);
-    }, [agentAudioTrack, localCameraTrack, localParticipant, uploadRecordingChunk]);
-    const stopBrowserRecording = useCallback(async () => {
-        const recorder = mediaRecorderRef.current;
-        if (!recorder) return;
-        if (recorder.state !== "inactive" && !recordingStopPromiseRef.current) {
-            recordingStopPromiseRef.current = new Promise<void>((resolve, reject) => {
-                recordingStopResolveRef.current = resolve;
-                recordingStopRejectRef.current = reject;
-            });
-            recorder.stop();
-            // Release the cloned capture tracks immediately so the browser
-            // camera/mic indicator turns off while finalization continues.
-            try {
-                recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
-            } catch { }
-        }
-        if (recordingStopPromiseRef.current) {
-            try {
-                // Wait for up to 5 seconds for uploads to finish.
-                // If they take longer, we proceed anyway so the user isn't stuck.
-                await Promise.race([
-                    recordingStopPromiseRef.current,
-                    new Promise((_, reject) => setTimeout(() => reject(new Error("Stop timeout")), 5000))
-                ]);
-            } catch (err) {
-                console.warn("[Recording] stop wait timed out or failed:", err);
-            }
-        }
-        try {
-            await recordingChunkUploadChainRef.current;
-            if (!recordingChunkUrlsRef.current.length) {
-                markRecordingAbandoned("no_chunks_uploaded");
-            } else {
-                await finalizeRecordingChunks();
-            }
-        } catch (err) {
-            await markRecordingFailed((err as Error)?.message || "finalize_failed");
-            throw err;
-        } finally {
-            cleanupRecordingResources();
-        }
-    }, [cleanupRecordingResources, finalizeRecordingChunks, markRecordingAbandoned, markRecordingFailed]);
     // Agent readiness in launch phase is gated by:
     // 1) room connection + agent presence
     // 2) explicit backend signal that prefetch + greeting prerequisites are ready
@@ -1911,18 +1612,30 @@ function InterviewRoomContent({
             onAgentReady?.(true);
         }
     }, [isLaunchingActive, connectionState, hasAgentPresence, launchPrereqsReady, assistantState, onAgentReady]);
-    // Start recording as soon as interview is active AND the agent audio track is available.
-    // Waiting for agentAudioTrack ensures the AI interviewer voice is mixed into the recording.
+    // Start server-side LiveKit egress recording when interview becomes active.
     useEffect(() => {
-        if (!isInterviewActive || recordingStartedRef.current) return;
-        if (!agentAudioTrack) return; // wait until agent audio is published
-        const intervalId = window.setInterval(() => {
-            if (recordingStartedRef.current) return;
-            void startBrowserRecording();
-        }, 700);
-        void startBrowserRecording();
-        return () => window.clearInterval(intervalId);
-    }, [isInterviewActive, startBrowserRecording, agentAudioTrack]);
+        if (!isInterviewActive || egressStartedRef.current) return;
+        let cancelled = false;
+        let retryTimer: number | null = null;
+        const attemptStart = async () => {
+            if (cancelled || egressStartedRef.current) return;
+            try {
+                await startServerRecording();
+            } catch (error) {
+                console.warn("[Egress] Start failed. Retrying...", error);
+                retryTimer = window.setTimeout(() => {
+                    void attemptStart();
+                }, 1200);
+            }
+        };
+        void attemptStart();
+        return () => {
+            cancelled = true;
+            if (retryTimer !== null) {
+                window.clearTimeout(retryTimer);
+            }
+        };
+    }, [isInterviewActive, startServerRecording]);
     const groupedTranscriptions = useMemo(() => {
         const groups: {
             id: string;
@@ -2057,12 +1770,10 @@ function InterviewRoomContent({
         if (document.fullscreenElement) {
             document.exitFullscreen().catch(() => { });
         }
-        // Keep the room alive while the final chunk upload / merge completes.
-        // If we disconnect too early, the finalize request can get cut off and
-        // the merged recording never reaches the DB.
-        const stopTimeoutMs = 15000;
-        const stopPromise = stopBrowserRecording().catch((err) => {
-            console.warn("[Recording] background stop failed:", err);
+        // Keep the room alive briefly while egress stop is requested server-side.
+        const stopTimeoutMs = 10000;
+        const stopPromise = stopServerRecording().catch((err) => {
+            console.warn("[Egress] Background stop failed:", err);
         });
         onFinalizing();
         await Promise.race([
@@ -2075,24 +1786,19 @@ function InterviewRoomContent({
             try { lkRoom?.disconnect(); } catch (_) { }
             onFinish(reason);
         }, 1200);
-    }, [lkRoom, onFinalizing, onFinish, stopBrowserRecording]);
+    }, [lkRoom, onFinalizing, onFinish, stopServerRecording]);
     useEffect(() => {
         if (isInterviewActive) return;
-        void stopBrowserRecording();
-    }, [isInterviewActive, stopBrowserRecording]);
+        void stopServerRecording().catch(() => { });
+    }, [isInterviewActive, stopServerRecording]);
     useEffect(() => {
         const handlePageHide = () => {
             if (!isInterviewActive) return;
-            if (!recordingStartedRef.current) return;
-            if (recordingChunkUrlsRef.current.length > 0) {
-                sendRecordingFinalizePayload(true);
-            } else {
-                markRecordingAbandoned("pagehide_before_finalize");
-            }
+            stopServerRecordingKeepalive();
         };
         window.addEventListener("pagehide", handlePageHide);
         return () => window.removeEventListener("pagehide", handlePageHide);
-    }, [isInterviewActive, markRecordingAbandoned, sendRecordingFinalizePayload]);
+    }, [isInterviewActive, stopServerRecordingKeepalive]);
     useEffect(() => {
         if (!timerExpired || !isInterviewActive) return;
         void handleFinish("normal");

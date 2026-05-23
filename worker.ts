@@ -6,8 +6,7 @@ import { writeFile, unlink } from 'fs/promises';
 import { prisma } from './lib/prisma';
 import redisConnection from './lib/redis';
 import * as dotenv from 'dotenv';
-import { putObject } from "./lib/s3";
-import { getObjectBuffer } from "./lib/s3";
+import { putObject, getObjectBuffer, listObjects } from "./lib/s3";
 import { generateId } from "./lib/ids";
 import { isInterviewTokenRequired } from "./lib/interview-access";
 import { appendCandidateActivity } from "./lib/candidate-activity";
@@ -41,7 +40,6 @@ if (!process.env.REDIS_URL) {
 }
 void redisConnection.connect().catch(() => {}); // force-connect before BullMQ workers start
 const pythonCmd = getPythonExecutable();
-const ffmpegCommand = process.env.FFMPEG_PATH?.trim() || process.env.FFMPEG_BIN?.trim() || "ffmpeg";
 
 const DRIVE_BATCH_SIZE = 5;
 
@@ -114,49 +112,6 @@ async function runPythonJson(args: string[], timeoutMs = 180000): Promise<any> {
     p.on("error", (error) => {
       clearTimeout(timer);
       reject(error);
-    });
-  });
-}
-
-class FfmpegUnavailableError extends Error {
-  constructor() {
-    super("ffmpeg not found — ENOENT");
-    this.name = "FfmpegUnavailableError";
-  }
-}
-
-function escapeFfmpegConcatPath(filePath: string): string {
-  return filePath.replace(/\\/g, "/").replace(/'/g, "\\'");
-}
-
-async function runFfmpeg(args: string[], context: string): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    const ff = spawn(ffmpegCommand, args);
-    const logs: string[] = [];
-
-    ff.stderr.on("data", (d: Buffer) => {
-      const line = d.toString().trim();
-      if (!line) return;
-      logs.push(line);
-      console.log(`[FFMPEG:${context}] ${line}`);
-    });
-
-    ff.on("close", (code: number) => {
-      if (code === 0) {
-        resolve();
-        return;
-      }
-      reject(new Error(`ffmpeg exited with code ${code}. Last log: ${logs.slice(-3).join(" | ")}`));
-    });
-
-    ff.on("error", (err: Error) => {
-      // ENOENT means ffmpeg binary is not installed — surface a typed error
-      // so callers can distinguish "not available" from "transcode failed"
-      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-        reject(new FfmpegUnavailableError());
-      } else {
-        reject(new Error(`ffmpeg spawn failed: ${err.message}`));
-      }
     });
   });
 }
@@ -1653,292 +1608,119 @@ if (isQueueEnabled("interview-finalization")) {
 }
 
 /**
- * 🎥 INTERVIEW RECORDING WORKER
- * Downloads all chunks from R2, merges them into a single video,
- * uploads the final file, and then triggers the finalization job.
- * Moved out of the HTTP route so there's no timeout constraint.
+ * INTERVIEW RECORDING WORKER
+ * Finalizes server-side LiveKit egress recordings after stop is requested.
+ * Verifies recording availability in R2, persists final metadata, and
+ * enqueues interview finalization/report generation.
  */
 if (isQueueEnabled("interview-recording")) {
   const interviewRecordingWorker = trackWorker("interview-recording", new Worker(
     "interview-recording",
     async (job) => {
+      if (job.name !== "finalize-egress-recording") {
+        console.warn(`[RECORDING_WORKER] Skipping unsupported job name: ${job.name}`);
+        return { skipped: true, reason: "unsupported_job_name" };
+      }
+
       const {
         applicationId,
-        sessionId,
-        chunkUrls = [],
-        chunkKeys = [],
-        chunkCount,
-        durationSec,
-        mimeType = "video/webm",
+        egressId,
+        recordingKey,
+        recordingUrl,
         startedAt: startedAtRaw,
-        completedAt: completedAtRaw,
+        mimeType = "video/mp4",
       } = job.data || {};
 
-      if (!applicationId) throw new Error("Missing applicationId in interview-recording job");
+      if (!applicationId) {
+        throw new Error("Missing applicationId in finalize-egress-recording job");
+      }
 
       const bucket = process.env.R2_INTERVIEW_BUCKET || "interview";
-      const CANDIDATES_PREFIX = "candidates";
-      const startedAt = startedAtRaw ? new Date(startedAtRaw) : null;
-      const completedAt = completedAtRaw ? new Date(completedAtRaw) : new Date();
+      const publicBase = String(process.env.NEXT_PUBLIC_R2_INTERVIEW_URL || "").trim().replace(/\/$/, "");
 
-      console.log(`[RECORDING_WORKER] Starting merge for ${applicationId} | session=${sessionId}`);
-
-      // ── 1. Build candidate folder name ────────────────────────────────────
-      const candidate = await prisma.application.findUnique({
-        where: { id: applicationId },
+      const interviewRow = await prisma.interview.findUnique({
+        where: { applicationId },
         select: {
-          fullName: true,
-          drive: { select: { title: true } },
+          recordingManifest: true,
+          recordingStartedAt: true,
+          interviewRecordingUrl: true,
         },
       });
 
-      const safeCandidate = [candidate?.fullName, candidate?.drive?.title]
-        .filter(Boolean)
-        .join(" - ")
-        .replace(/[^a-zA-Z0-9_\- ]/g, "")
-        .trim()
-        .replace(/\s+/g, "_")
-        .toLowerCase() || applicationId;
+      const manifest = parseJsonSafe<Record<string, any>>(interviewRow?.recordingManifest, {});
+      const resolvedKey = String(recordingKey || manifest.recordingKey || "").trim();
+      const resolvedUrl = String(
+        recordingUrl
+          || manifest.recordingUrl
+          || interviewRow?.interviewRecordingUrl
+          || (resolvedKey && publicBase ? `${publicBase}/${resolvedKey}` : "")
+      ).trim();
 
-      // ── 2. Resolve chunk keys from S3 ─────────────────────────────────────
-      type ChunkEntry = { key: string; chunkUrl?: string; lastModified?: number };
-      const resolvedKeys: string[] = [];
-
-      // Priority 1: explicit keys from job data
-      if (chunkKeys.length) {
-        resolvedKeys.push(...chunkKeys.filter(Boolean));
+      if (!resolvedKey && !resolvedUrl) {
+        throw new Error(`[RECORDING_WORKER] Missing recording key/url for ${applicationId}`);
       }
 
-      // Priority 2: derive keys from chunk URLs
-      if (!resolvedKeys.length && chunkUrls.length) {
-        for (const url of chunkUrls) {
-          try {
-            const parsed = new URL(String(url));
-            const key = parsed.pathname.replace(/^\//, "");
-            if (key) resolvedKeys.push(key);
-          } catch { /* skip invalid URLs */ }
-        }
-      }
-
-      // Priority 3: list from R2 under the session prefix
-      if (!resolvedKeys.length && sessionId) {
-        const prefix = `${CANDIDATES_PREFIX}/${safeCandidate}/recordings/.chunks/${sessionId}/`;
-        const { listObjects: listObjs } = await import("./lib/s3");
-        const objects = await listObjs(bucket, prefix);
-        const sorted = objects
-          .map((o: any) => o.key)
-          .sort((a: string, b: string) => {
-            const aNum = Number(a.match(/part-(\d+)\.webm$/i)?.[1] ?? 99999);
-            const bNum = Number(b.match(/part-(\d+)\.webm$/i)?.[1] ?? 99999);
-            return aNum - bNum;
-          });
-        resolvedKeys.push(...sorted);
-      }
-
-      // Priority 4: fallback — construct keys from chunkCount
-      if (!resolvedKeys.length && chunkCount && sessionId) {
-        for (let i = 1; i <= chunkCount; i++) {
-          resolvedKeys.push(
-            `${CANDIDATES_PREFIX}/${safeCandidate}/recordings/.chunks/${sessionId}/part-${String(i).padStart(6, "0")}.webm`
+      if (resolvedKey) {
+        const objects = await listObjects(bucket, resolvedKey);
+        const objectExists = objects.some((item) => item.key === resolvedKey);
+        if (!objectExists) {
+          throw new Error(
+            `[RECORDING_WORKER] Egress output not available yet for ${applicationId}: ${resolvedKey}`
           );
         }
       }
 
-      if (!resolvedKeys.length) {
-        throw new Error(`[RECORDING_WORKER] No chunks found for ${applicationId}`);
-      }
+      const completedAt = new Date();
+      const startedFromPayload = startedAtRaw ? new Date(String(startedAtRaw)) : null;
+      const startedFromManifest = manifest.startedAt ? new Date(String(manifest.startedAt)) : null;
+      const startedAt =
+        (startedFromPayload && Number.isFinite(startedFromPayload.getTime()) ? startedFromPayload : null)
+        || (startedFromManifest && Number.isFinite(startedFromManifest.getTime()) ? startedFromManifest : null)
+        || interviewRow?.recordingStartedAt
+        || null;
+      const durationSec =
+        startedAt && Number.isFinite(startedAt.getTime())
+          ? Math.max(1, Math.round((completedAt.getTime() - startedAt.getTime()) / 1000))
+          : null;
 
-      console.log(`[RECORDING_WORKER] Merging ${resolvedKeys.length} chunks for ${applicationId}`);
-
-      // ── 3. Download chunks to tmp files ──────────────────────────────────
-      const tmpDir = tmpdir();
-      const chunkPaths: string[] = [];
-      for (let ci = 0; ci < resolvedKeys.length; ci++) {
-        try {
-          const buf = await getObjectBuffer(bucket, resolvedKeys[ci]);
-          if (!buf || buf.length === 0) {
-            console.warn(`[RECORDING_WORKER] Skipping empty chunk ${resolvedKeys[ci]}`);
-            continue;
-          }
-          const chunkPath = join(tmpDir, `chunk-${applicationId}-${ci}.webm`);
-          await writeFile(chunkPath, buf);
-          chunkPaths.push(chunkPath);
-        } catch (e) {
-          console.warn(`[RECORDING_WORKER] Failed to fetch chunk ${resolvedKeys[ci]}:`, e);
-        }
-      }
-
-      if (!chunkPaths.length) {
-        throw new Error(`[RECORDING_WORKER] All chunk downloads failed for ${applicationId}`);
-      }
-
-      console.log(`[RECORDING_WORKER] Downloaded ${chunkPaths.length}/${resolvedKeys.length} chunks for ${applicationId}`);
-
-      // ── 4. Merge with ffmpeg (concat demuxer) ─────────────────────────────
-      const effectiveSession = sessionId || "merged";
-      const outputPath = join(tmpDir, `merged-${applicationId}-${effectiveSession}.webm`);
-      const concatListPath = join(tmpDir, `concat-${applicationId}.txt`);
-      const concatContent = chunkPaths.map(p => `file '${escapeFfmpegConcatPath(p)}'`).join("\n");
-      await writeFile(concatListPath, concatContent);
-
-      let ffmpegOk = false;
-      try {
-        await new Promise<void>((resolve, reject) => {
-          const ff = spawn(ffmpegCommand, [
-            "-y",
-            "-f", "concat",
-            "-safe", "0",
-            "-i", concatListPath,
-            "-c", "copy",
-            outputPath,
-          ]);
-          const ffmpegLogs: string[] = [];
-          ff.stderr.on("data", (d: Buffer) => {
-            const line = d.toString().trim();
-            ffmpegLogs.push(line);
-            console.log(`[FFMPEG] ${line}`);
-          });
-          ff.on("close", (code: number) => {
-            if (code === 0) resolve();
-            else reject(new Error(`ffmpeg exited with code ${code}. Last log: ${ffmpegLogs.slice(-3).join(" | ")}`));
-          });
-          ff.on("error", (err: Error) => {
-            // ENOENT = ffmpeg binary not installed.
-            // Resolve (don't reject) so execution falls through to raw-concat fallback.
-            if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-              console.warn(
-                `[RECORDING_WORKER] ffmpeg not found at "${ffmpegCommand}" (ENOENT) — will use raw concat fallback. Set FFMPEG_PATH if ffmpeg is installed elsewhere.`
-              );
-              resolve();
-            } else {
-              reject(new Error(`ffmpeg spawn failed: ${err.message}`));
-            }
-          });
-        });
-        // Only mark ffmpegOk=true if the output file was actually written
-        try {
-          const { stat } = await import("fs/promises");
-          const info = await stat(outputPath);
-          if (info.size > 0) {
-            ffmpegOk = true;
-            console.log(`[RECORDING_WORKER] ffmpeg merge succeeded for ${applicationId} (${info.size} bytes)`);
-          } else {
-            console.warn(`[RECORDING_WORKER] ffmpeg produced empty output — using raw concat fallback`);
-          }
-        } catch {
-          // outputPath doesn't exist => ffmpeg didn't actually write anything (ENOENT path)
-          console.warn(`[RECORDING_WORKER] ffmpeg output not found — using raw concat fallback`);
-        }
-      } catch (ffErr) {
-        console.warn(`[RECORDING_WORKER] ffmpeg failed, falling back to raw concat: ${ffErr}`);
-      }
-
-
-      // ── 5. Build final artifact & validate ────────────────────────────────
-      const { readFile } = await import("fs/promises");
-      let finalArtifactPath = "";
-      let finalMimeType = mimeType;
-
-      if (ffmpegOk) {
-        finalArtifactPath = outputPath;
-      } else {
-        // Raw concat fallback — works for single chunk or pre-valid webm segments
-        const rawBufs = await Promise.all(chunkPaths.map(p => readFile(p).catch(() => Buffer.alloc(0))));
-        const rawBuffer = Buffer.concat(rawBufs.filter(b => b.length > 0));
-        finalArtifactPath = join(tmpDir, `raw-merged-${applicationId}-${effectiveSession}.webm`);
-        await writeFile(finalArtifactPath, rawBuffer);
-      }
-
-      // ── 5b. Optional MP4 transcode (only if ffmpeg is available and concat worked) ─
-      if (ffmpegOk) {
-        try {
-          const mp4Path = join(tmpDir, `merged-${applicationId}-${effectiveSession}.mp4`);
-          await runFfmpeg([
-            "-y",
-            "-i", finalArtifactPath,
-            "-c:v", "libx264",
-            "-preset", "veryfast",
-            "-crf", "23",
-            "-pix_fmt", "yuv420p",
-            "-c:a", "aac",
-            "-b:a", "128k",
-            "-movflags", "+faststart",
-            mp4Path,
-          ], `${applicationId}:transcode`);
-          finalArtifactPath = mp4Path;
-          finalMimeType = "video/mp4";
-          console.log(`[RECORDING_WORKER] Transcoded merged recording to MP4 for ${applicationId}`);
-        } catch (transcodeErr) {
-          if (transcodeErr instanceof FfmpegUnavailableError) {
-            console.warn(`[RECORDING_WORKER] ffmpeg not available for transcode — serving raw WebM`);
-          } else {
-            console.warn(`[RECORDING_WORKER] MP4 transcode failed; keeping original container: ${transcodeErr}`);
-          }
-        }
-      }
-
-      const finalBuffer = await readFile(finalArtifactPath);
-
-      // BUG FIX #2: Validate buffer before uploading
-      if (!finalBuffer || finalBuffer.length === 0) {
-        throw new Error(`[RECORDING_WORKER] Final buffer is empty after merge for ${applicationId} — aborting upload`);
-      }
-      console.log(`[RECORDING_WORKER] Final buffer size: ${(finalBuffer.length / 1024 / 1024).toFixed(2)} MB`);
-
-      // ── 6. Upload merged file ─────────────────────────────────────────────
-      const finalExtension = finalMimeType === "video/mp4" ? "mp4" : "webm";
-      const finalKey = `${CANDIDATES_PREFIX}/${safeCandidate}/recordings/${Date.now()}-interview-${effectiveSession}.${finalExtension}`;
-      const recordingUrl = await putObject(bucket, finalKey, finalBuffer, finalMimeType);
-      const finalRecordingUrl = typeof recordingUrl === "string" ? recordingUrl : String(recordingUrl);
-      console.log(`[RECORDING_WORKER] Uploaded merged video for ${applicationId} → ${finalKey}`);
-
-      // Cleanup tmp files (non-fatal, fire-and-forget)
-      Promise.all([
-        ...chunkPaths.map(p => unlink(p).catch(() => {})),
-        unlink(concatListPath).catch(() => {}),
-        unlink(outputPath).catch(() => {}),
-        finalArtifactPath !== outputPath ? unlink(finalArtifactPath).catch(() => {}) : Promise.resolve(),
-      ]).catch(() => {});
-
-      // ── 7. Persist recording metadata to DB ──────────────────────────────
-      // Compute effective duration: use job data if available, else derive from timestamps
-      const effectiveDurationSec = durationSec
-        || (startedAt && completedAt ? Math.round((completedAt.getTime() - startedAt.getTime()) / 1000) : null);
+      const nextManifest = {
+        ...manifest,
+        mode: "livekit_egress",
+        egressId: String(egressId || manifest.egressId || "").trim() || null,
+        recordingKey: resolvedKey || null,
+        recordingUrl: resolvedUrl || null,
+        stoppedAt: manifest.stoppedAt || completedAt.toISOString(),
+        finalizedAt: completedAt.toISOString(),
+        lastStatus: "COMPLETED",
+        lastError: null,
+      };
 
       await prisma.$executeRawUnsafe(
         `UPDATE "Interview"
-         SET "interviewRecordingUrl" = $1,
-             "interviewRecordedAt"   = $2,
-             "interviewDuration"     = COALESCE($3::integer, "Interview"."interviewDuration"),
-             "recordingDurationSec"  = COALESCE($3::integer, "Interview"."recordingDurationSec"),
-             "recordingStatus"       = 'COMPLETED',
-             "recordingMimeType"     = $4,
-             "recordingCompletedAt"  = $2,
-             "updatedAt"             = NOW()
-         WHERE "applicationId" = $5`,
-        finalRecordingUrl,
+         SET "recordingStatus" = 'COMPLETED',
+             "recordingMimeType" = COALESCE($1::text, "recordingMimeType"),
+             "recordingCompletedAt" = $2::timestamp,
+             "recordingDurationSec" = CASE WHEN $3::integer IS NOT NULL THEN $3::integer ELSE "recordingDurationSec" END,
+             "interviewDuration" = CASE WHEN $3::integer IS NOT NULL THEN $3::integer ELSE "interviewDuration" END,
+             "interviewRecordingUrl" = COALESCE($4::text, "interviewRecordingUrl"),
+             "interviewRecordedAt" = $2::timestamp,
+             "recordingManifest" = $5::jsonb,
+             "updatedAt" = NOW()
+         WHERE "applicationId" = $6::text`,
+        mimeType,
         completedAt,
-        effectiveDurationSec || null,
-        finalMimeType,
+        durationSec,
+        resolvedUrl || null,
+        JSON.stringify(nextManifest),
         applicationId
       );
-      console.log(`[RECORDING_WORKER] DB updated for ${applicationId} — duration=${effectiveDurationSec}s`);
 
-
-      // ── 8. Cleanup R2 chunks ──────────────────────────────────────────────
-      try {
-        const { deleteObject: del } = await import("./lib/s3");
-        await Promise.all(resolvedKeys.map(key => del(bucket, key).catch(() => {})));
-        console.log(`[RECORDING_WORKER] Cleaned up ${resolvedKeys.length} R2 chunks for ${applicationId}`);
-      } catch { /* non-fatal */ }
-
-      // ── 9. Enqueue finalization (report generation) ───────────────────────
       const finalizationQueue = new Queue("interview-finalization", { connection: redisConnection });
       await finalizationQueue.add(
         "finalize-interview",
         {
           applicationId,
-          recordingUrl: finalRecordingUrl,
+          recordingUrl: resolvedUrl || null,
           interviewStatus: "COMPLETED",
         },
         {
@@ -1950,25 +1732,33 @@ if (isQueueEnabled("interview-recording")) {
       );
       await finalizationQueue.close();
 
-      console.log(`[RECORDING_WORKER] Finalization job queued for ${applicationId}`);
-      // BUG FIX #1: was referencing undefined `buffers` — use chunkPaths.length
-      return { success: true, finalKey, chunksProcessed: chunkPaths.length };
+      console.log(`[RECORDING_WORKER] Egress finalized for ${applicationId} (egress=${egressId || "unknown"})`);
+      return {
+        success: true,
+        applicationId,
+        egressId: egressId || null,
+        recordingKey: resolvedKey || null,
+        recordingUrl: resolvedUrl || null,
+        durationSec,
+      };
     },
     {
       connection: redisConnection,
       concurrency: 2,
-      lockDuration: 15 * 60 * 1000,  // 15 min — large videos can take time
-      stalledInterval: 5 * 60 * 1000,
+      lockDuration: 5 * 60 * 1000,
+      stalledInterval: 2 * 60 * 1000,
       maxStalledCount: 1,
       removeOnComplete: { count: 0 },
-      removeOnFail: { count: 10 },
+      removeOnFail: { count: 20 },
     }
   ));
+
   interviewRecordingWorker.on("failed", (job, err) => {
-    console.error(`[FATAL] Recording Merge Job ${job?.id} failed permanently for ${job?.data?.applicationId}: ${err.message}`);
+    console.error(
+      `[FATAL] Egress Finalize Job ${job?.id} failed permanently for ${job?.data?.applicationId}: ${err.message}`
+    );
   });
 }
-
 /**
 
  * ðŸ“¸ INTERVIEW SNAPSHOT WORKER
