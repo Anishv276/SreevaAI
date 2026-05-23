@@ -23,7 +23,6 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from interview.resume_context_parser import (
     ResumeContext,
     ensure_resume_context as _ensure_resume_context,
-    parse_resume_context,
 )
 from interview.agent_utils import (
     _as_list,
@@ -31,9 +30,6 @@ from interview.agent_utils import (
     _deep_get,
     _extract_text_items,
     _first_text,
-    _format_compact_section,
-    _join_items,
-    first_name_from_full_name,
 )
 
 
@@ -390,7 +386,6 @@ def _cross_reference_skills(
 # ---------------------------------------------------------------------------
 
 def _render_project(i: int, proj: Any) -> list[str]:
-    """Render one project entry into brief lines. Focus: what was claimed, what needs verification."""
     lines: list[str] = []
     if not isinstance(proj, dict):
         text = _first_text(proj)
@@ -398,36 +393,29 @@ def _render_project(i: int, proj: Any) -> list[str]:
             lines.append(f"  [{i}] {text}")
         return lines
 
-    name = _first_text(proj.get("name"), proj.get("title")) or f"Project {i}"
-    duration = _first_text(proj.get("duration"), proj.get("period")) or ""
-    desc = _first_text(proj.get("description"), proj.get("summary")) or ""
-    techs = _extract_text_items(proj.get("technologies"), ("skill", "tool", "name", "value"))
-    outcome = _first_text(proj.get("outcome"), proj.get("impact"), proj.get("result")) or ""
+    name      = _first_text(proj.get("name"), proj.get("title")) or f"Project {i}"
+    duration  = _first_text(proj.get("duration"), proj.get("period")) or ""
+    desc      = _first_text(proj.get("description"), proj.get("summary")) or ""
+    techs     = _extract_text_items(proj.get("technologies"), ("skill", "tool", "name", "value"))
+    outcome   = _first_text(proj.get("outcome"), proj.get("impact"), proj.get("result")) or ""
     role_claim = _first_text(proj.get("role"), proj.get("your_role"), proj.get("contribution")) or ""
     team_size = _first_text(proj.get("team_size"), proj.get("team")) or ""
 
-    header = f"  [{i}] {name}" + (f"  ({duration})" if duration else "")
-    lines.append(header)
+    lines.append(f"  [{i}] {name}" + (f"  ({duration})" if duration else ""))
     if desc:
-        lines.append(f"       What    : {desc}")
+        lines.append(f"       What   : {desc}")
     if techs:
-        lines.append(f"       Tech    : {' | '.join(techs)}")
+        lines.append(f"       Tech   : {' | '.join(techs)}")
     if role_claim:
-        lines.append(f"       Claimed : {role_claim}")
-    elif not role_claim:
-        # No ownership claim at all — flag it so AI knows to probe
-        lines.append(f"       Claimed : [not stated — ask what they personally built]")
+        lines.append(f"       Role   : {role_claim}")
     if team_size:
-        lines.append(f"       Team    : {team_size}")
+        lines.append(f"       Team   : {team_size}")
     if outcome:
-        lines.append(f"       Impact  : {outcome}")
-    else:
-        lines.append(f"       Impact  : [not stated — ask for a real number or outcome]")
+        lines.append(f"       Impact : {outcome}")
     return lines
 
 
 def _render_work_role(i: int, role: Any) -> list[str]:
-    """Render one work history entry. Focus: scope signals the AI should probe."""
     lines: list[str] = []
     if not isinstance(role, dict):
         text = _first_text(role)
@@ -435,11 +423,11 @@ def _render_work_role(i: int, role: Any) -> list[str]:
             lines.append(f"  [{i}] {text}")
         return lines
 
-    company  = _first_text(role.get("company"), role.get("organization")) or ""
-    title    = _first_text(role.get("role"), role.get("title")) or ""
-    duration = _first_text(role.get("duration"), role.get("period")) or ""
+    company   = _first_text(role.get("company"), role.get("organization")) or ""
+    title     = _first_text(role.get("role"), role.get("title")) or ""
+    duration  = _first_text(role.get("duration"), role.get("period")) or ""
     team_size = _first_text(role.get("team_size"), role.get("team")) or ""
-    resps = _extract_text_items(
+    resps     = _extract_text_items(
         role.get("responsibilities") or role.get("key_responsibilities")
         or role.get("achievements") or role.get("highlights")
     )
@@ -449,7 +437,7 @@ def _render_work_role(i: int, role: Any) -> list[str]:
         label = f"{label}  ({duration})"
     lines.append(f"  [{i}] {label}")
     if team_size:
-        lines.append(f"       Team: {team_size}")
+        lines.append(f"       Team : {team_size}")
     for r in resps[:4]:
         lines.append(f"       • {r}")
     return lines
@@ -544,30 +532,21 @@ def build_merged_interview_brief(
     out.append(f"  Current   : {resume_context.current_role or 'Not stated'}")
     out.append("╚════════════════════════════════════════════════════════════╝")
 
-    # ── Opening Anchor (first — AI reads this before anything else) ───────────
-    anchor_short = anchor_item.split(" - ")[0].strip()
-    if anchor_type == "project":
-        anchor_ask = f"What did you personally build or own in {anchor_short}?"
-    elif anchor_type in ("role", "internship"):
-        anchor_ask = f"What were you personally responsible for day-to-day at {anchor_short}?"
-    else:
-        anchor_ask = f"What have you been working on most recently in {anchor_short}?"
-
+    # ── Opening Anchor ────────────────────────────────────────────────────────
     out.append("\n── OPENING ANCHOR ───────────────────────────────────────────")
     out.append(f"  [{anchor_type.upper()}] {anchor_item}")
-    out.append(f"  → Open with: \"{anchor_ask}\"")
 
-    # ── Projects ──────────────────────────────────────────────────────────────
+    # ── Projects ─────────────────────────────────────────────────────────────
     raw_projects = _as_list(_deep_get(raw_resume, "projects")) or []
     if raw_projects:
-        out.append("\n── PROJECTS (verify ownership and impact for each) ───────────")
+        out.append("\n── PROJECTS ─────────────────────────────────────────────────")
         for i, proj in enumerate(raw_projects, 1):
             out.extend(_render_project(i, proj))
 
     # ── Work History ──────────────────────────────────────────────────────────
     raw_work = _as_list(_deep_get(raw_resume, "work_history")) or []
     if raw_work:
-        out.append("\n── WORK HISTORY (probe scope: what they decided, what broke) ─")
+        out.append("\n── WORK HISTORY ─────────────────────────────────────────────")
         for i, role in enumerate(raw_work, 1):
             out.extend(_render_work_role(i, role))
 
@@ -582,44 +561,25 @@ def build_merged_interview_brief(
 
     # ── Education ─────────────────────────────────────────────────────────────
     if resume_context.education:
-        out.append("\n── EDUCATION ─────────────────────────────────────────────────")
+        out.append("\n── EDUCATION ────────────────────────────────────────────────")
         for edu in resume_context.education:
             out.append(f"  • {edu}")
 
-    # ── Skills → JD Cross-Reference ───────────────────────────────────────────
-    # This is the most actionable section: tells AI exactly what to verify vs explore.
-    out.append("\n── JD SKILLS CROSS-REFERENCE ─────────────────────────────────")
-
+    # ── Skills ────────────────────────────────────────────────────────────────
+    out.append("\n── SKILLS ───────────────────────────────────────────────────")
     if claimed_skills:
-        out.append("  CLAIMED (candidate listed these — verify real depth, not just name-dropping):")
-        for item in claimed_skills:
-            line = f"    ✓ {item['name']}"
-            if item.get("why"):
-                line += f"  [{item['why']}]"
-            line += "  → Ask: where used, scale, tradeoffs made"
-            out.append(line)
-
+        out.append("  Claimed  : " + " | ".join(item["name"] for item in claimed_skills))
     if missing_skills:
-        out.append("  GAPS (JD requires, candidate did NOT list):")
-        for item in missing_skills:
-            line = f"    ✗ {item['name']}"
-            if item.get("why"):
-                line += f"  [{item['why']}]"
-            line += "  → Ask: have they used it? any adjacent experience?"
-            out.append(line)
-
+        out.append("  Missing  : " + " | ".join(item["name"] for item in missing_skills))
     if not claimed_skills and not missing_skills and resume_context.skills:
-        out.append("  Resume skills (no JD to cross-reference):")
-        out.append("  " + " | ".join(resume_context.skills))
-
+        out.append("  Skills   : " + " | ".join(resume_context.skills))
     if jd_nice:
-        nice_names = [item["name"] for item in jd_nice]
-        out.append(f"  Nice-to-have: {' | '.join(nice_names)}")
+        out.append("  Nice-to-have: " + " | ".join(item["name"] for item in jd_nice))
 
     # ── Custom Questions ───────────────────────────────────────────────────────
     cqs = [str(q).strip() for q in (custom_questions or []) if str(q).strip()]
     if cqs:
-        out.append("\n── CUSTOM QUESTIONS (MANDATORY — ask ALL before wrap-up) ────")
+        out.append("\n── CUSTOM QUESTIONS (ask ALL before wrap-up) ────────────────")
         for i, q in enumerate(cqs, 1):
             out.append(f"  {i}. {q}")
 

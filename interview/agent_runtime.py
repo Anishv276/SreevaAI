@@ -39,7 +39,23 @@ from interview.agent_providers import (
 )
 from interview.agent_persistence import (
     _create_db_pool,
+    checkpoint_ai_signals,
+    flush_pending_manual_billing,
+    generate_interview_report,
+    generate_interview_summary,
+    get_interview_context,
+    mark_interview_started,
+    persist_answer_scores,
+    persist_interview_billing_snapshot,
+    persist_org_usage_metrics,
+    persist_skill_ratings,
+    persist_transcript,
+    update_interview_status,
 )
+from interview.agent_scoring import (
+    notify_sync_engine,
+)
+from pydantic import BaseModel, field_validator
 from interview.agent_runtime_helpers import (
     _build_recent_context_block,
     _single_question_transform,
@@ -84,8 +100,6 @@ from interview.prompt_layers import (
     build_system_prompt,
 )
 
-GREETING_FIXED_SECONDS = 60
-WARMUP_FIXED_SECONDS = 120
 FINAL_WINDOW_SECONDS = 45
 
 # Custom-question normalisation constants  module-level so they are allocated once.
@@ -126,73 +140,9 @@ _STT_WHITESPACE_RE = re.compile(r"\s+")
 _STT_NON_ALPHA_RE = re.compile(r"[^a-zA-Z]")
 _STT_VOWEL_RE = re.compile(r"[aeiou]")
 
+# TTS sentence boundary  compiled once at module level (not per tts_node call).
+_TTS_SENT_END_RE = re.compile(r'(?<=[.?!])\s+')
 
-def _find_covered_keywords(sources: list[str], transcript_text: str) -> list[str]:
-    """Return items from *sources* whose first segment appears in *transcript_text* (word-boundary match)."""
-    found: list[str] = []
-    for item in sources:
-        short = str(item).split(" - ")[0].strip()
-        kw = short.lower()
-        if not kw:
-            continue
-        if re.search(r'\b' + re.escape(kw) + r'\b', transcript_text):
-            found.append(short)
-    return found
-
-
-# Inactivity nudge strategy map  (compiled pattern, message list with {name} placeholder).
-# Evaluated top-to-bottom; first match wins. Generic fallback is the last entry (pattern=None).
-_NUDGE_STRATEGIES: list[tuple[Optional[re.Pattern], list[str]]] = [
-    (
-        re.compile(r"\b(how|why|explain|walk me through|describe|what happened|tell me about)\b", re.I),
-        [
-            "Take your time, {name}  I want to hear the full picture.",
-            "No rush  think it through and share whenever you're ready.",
-            "If it helps, start with a specific example and work from there.",
-        ],
-    ),
-    (
-        re.compile(r"\b(feel|think|would you|looking back|what would you|in hindsight)\b", re.I),
-        [
-            "No rush  happy to wait while you think that through.",
-            "Take a moment, {name}. There is no right answer here.",
-        ],
-    ),
-    (
-        re.compile(r"\b(example|specific|moment|situation|time when|instance)\b", re.I),
-        [
-            "Pick whichever example comes to mind first  the specifics matter more than finding the perfect one.",
-            "You can also answer with just one concrete example if that is easier, {name}.",
-        ],
-    ),
-    (
-        None,  # generic fallback
-        [
-            "If you're thinking aloud, feel free to keep going  that helps me follow your reasoning.",
-            "Just checking in, {name}  whenever you're ready.",
-            "If you went quiet mid-thought, you can continue right from there.",
-        ],
-    ),
-]
-
-
-# Compiled once  quota detection for situational and behavioral questions.
-_SITUATIONAL_RE = re.compile(
-    r"what would you do|what if|how would you handle|if it suddenly|if that|imagine|suppose|what breaks",
-    re.IGNORECASE,
-)
-_BEHAVIORAL_RE = re.compile(
-    r"tell me about a time|tell me about a moment|walk me through a time|"
-    r"when something went wrong|a time when|give me an example of when|describe a time",
-    re.IGNORECASE,
-)
-
-# Early interview guard: do not ask education/background/custom too early.
-_BACKGROUND_EARLY_RE = re.compile(
-    r"\b(educat|university|college|school|academic|background|"
-    r"tell me about yourself|introduce yourself)\b",
-    re.IGNORECASE,
-)
 
 
 def _normalize_custom_question_text(raw: str) -> str:
@@ -252,13 +202,6 @@ class InterviewAgent(Agent):
             text = (msg.text_content or "").strip()
             if marker in text:
                 return text
-        return ""
-
-    @staticmethod
-    def _latest_assistant_message(chat_ctx: llm.ChatContext) -> str:
-        for msg in reversed(chat_ctx.messages()):
-            if msg.role == "assistant":
-                return (msg.text_content or "").strip()
         return ""
 
     def _select_turn_temperature(self, chat_ctx: llm.ChatContext) -> tuple[float, str]:
@@ -335,15 +278,13 @@ class InterviewAgent(Agent):
         if conn_options.retry_interval > 0.5:
             conn_options = replace(conn_options, retry_interval=0.5)
 
-        _SENT_END = re.compile(r'(?<=[.?!])\s+')
-
         async def _push_sentences(tts_stream) -> None:
             buf = ""
             n = 0
             async for chunk in text:
                 buf += chunk
                 while True:
-                    m = _SENT_END.search(buf)
+                    m = _TTS_SENT_END_RE.search(buf)
                     if not m:
                         break
                     sentence = buf[:m.start() + 1].strip()
@@ -421,24 +362,6 @@ def prewarm(proc: JobProcess):
         logger.info("Database pool warmup scheduled.")
     except RuntimeError:
         logger.info("No running event loop in prewarm; DB pool will initialize lazily.")
-from interview.agent_persistence import (
-    checkpoint_ai_signals,
-    flush_pending_manual_billing,
-    generate_interview_report,
-    generate_interview_summary,
-    get_interview_context,
-    mark_interview_started,
-    persist_answer_scores,
-    persist_interview_billing_snapshot,
-    persist_org_usage_metrics,
-    persist_skill_ratings,
-    persist_transcript,
-    update_interview_status,
-)
-from interview.agent_scoring import (
-    notify_sync_engine,
-)
-from pydantic import BaseModel, field_validator
 
 
 class _EvalSignalToggles(BaseModel):
@@ -614,9 +537,8 @@ async def entrypoint(ctx: JobContext):
     if not isinstance(context_result, dict):
         logger.error(f"Invalid DB context payload type: {type(context_result)}")
         return
-    context: dict[str, Any] = context_result
     try:
-        ctx_data = InterviewContext(**context)
+        ctx_data = InterviewContext(**context_result)
     except Exception as _ctx_err:
         logger.error("Invalid interview context from DB: %s", _ctx_err)
         return
@@ -985,7 +907,7 @@ async def entrypoint(ctx: JobContext):
                     logger.info("[REDIS_EVAL] Redis eval client connected and ping OK  %s", REDIS_URL)
                 except Exception as _ping_err:
                     logger.warning("[REDIS_EVAL] Redis ping failed: %s  eval worker may not work", _ping_err)
-            asyncio.ensure_future(_ping_redis())
+            asyncio.create_task(_ping_redis())
         except Exception as _re:
             logger.warning("[REDIS_EVAL] Redis eval client init failed: %s  inline eval will be used", _re)
             _eval_redis_client = None
@@ -1093,25 +1015,6 @@ async def entrypoint(ctx: JobContext):
     def _normalize_topic_key(text: str) -> str:
         return re.sub(r"[^a-z0-9]+", " ", str(text or "").lower()).strip()
 
-    def _next_uncovered_topic(*, exclude_topic: str | None = None) -> Optional[str]:
-        """Return the highest-priority uncovered topic: resume items first, then JD skills."""
-        covered_text = " ".join(_discussed_log).lower()
-        excluded_key = _normalize_topic_key(exclude_topic or "")
-        for t in (_resume_topic_candidates() + _skill_topic_candidates()):
-            topic_key = _normalize_topic_key(t)
-            if not topic_key:
-                continue
-            if excluded_key and topic_key == excluded_key:
-                continue
-            if topic_key in _covered_topic_keys:
-                continue
-            if topic_key not in covered_text:
-                return t
-        return None
-
-    def _pending_custom_questions() -> list[str]:
-        return [cq.raw for cq in _custom_questions if not cq.asked]
-
     def _remaining_total_seconds_now() -> float:
         if not session_start_time:
             return float(time_limit_mins * 60)
@@ -1206,7 +1109,8 @@ async def entrypoint(ctx: JobContext):
     _stt_fragment_buffer: dict[int, list[str]] = {}  # turn -> [fragment1, fragment2, ...]
     _stt_completion_timers: dict[int, asyncio.Task | None] = {}  # turn -> debounce task
     _STT_COMPLETE_DEBOUNCE_SECONDS = 0.65
-    _STT_INCOMPLETE_DEBOUNCE_SECONDS = 12.0  # Increased from 3s to allow full responses before evaluation
+    _STT_INCOMPLETE_DEBOUNCE_SECONDS = 12.0
+    _STT_WARMUP_INCOMPLETE_DEBOUNCE_SECONDS = 1.5
 
     def _is_sentence_complete(text: str) -> bool:
         """
@@ -1318,10 +1222,8 @@ async def entrypoint(ctx: JobContext):
                         answer_snap = latest_a
             except Exception as _turn_parse_err:
                 logger.debug("[TRANSCRIPT] build_interview_turns failed for turn=%d: %s", turn_snapshot, _turn_parse_err)
-            _start_t_snap = session_start_time
-            _app_id_t = app_id
             spawn_background_task(
-                persist_transcript(_app_id_t, lines_snap_eval, _start_t_snap, partial=True),
+                persist_transcript(app_id, lines_snap_eval, session_start_time, partial=True),
                 f"transcript_save_turn_{turn_snapshot}",
             )
             # Candidate meta-question handling:
@@ -1581,6 +1483,7 @@ async def entrypoint(ctx: JobContext):
                         _covered_topic_keys = set(result.get("new_covered_topic_keys") or [])
                         # PART 3: Update TopicState from result
                         new_topic_state = result.get("new_active_topic_state")
+                        _nts_followups = 0  # safe default; overwritten inside block if new_topic_state applies
                         if new_topic_state and _active_topic:
                             _existing_state = _topic_states.get(_active_topic)
                             _existing_turn = 0
@@ -1600,7 +1503,7 @@ async def entrypoint(ctx: JobContext):
                             _nts_pct = round(100 * min(1.0, _nts_sat / _nts_thresh), 0) if _nts_thresh else 0
                             _nts_saturated = new_topic_state.get("is_saturated", False)
                             _nts_importance = new_topic_state.get("importance", "?")
-                            _nts_followups = new_topic_state.get("follow_up_turns", 0)
+                            _nts_followups = int(new_topic_state.get("follow_up_turns", 0))
                             _nts_opened = new_topic_state.get("opened_at_turn", 0)
                             _nts_probe = new_topic_state.get("probe_rotation_index", 0)
                             logger.info(
@@ -1666,9 +1569,12 @@ async def entrypoint(ctx: JobContext):
                         _now_elapsed = round(time.time() - session_start_time, 1) if session_start_time else 0.0
                         res_turn = result.get("turn", turn_for_log)
                         for event in signal_events:
+                            _sig_name = event.get("signal_name", "")
+                            if not _sig_name:
+                                continue
                             proctoring_events.append({
-                                "event": event["signal_name"],
-                                "signal_name": event["signal_name"],
+                                "event": _sig_name,
+                                "signal_name": _sig_name,
                                 "signal_layer": event.get("signal_layer", ""),
                                 "risk_bucket": "integrity" if event.get("signal_layer") == "hard_integrity" else "depth",
                                 "confidence": event.get("confidence", 0.5),
@@ -1684,7 +1590,7 @@ async def entrypoint(ctx: JobContext):
                             })
                             logger.info(
                                 "[SIGNAL] %s layer=%s confidence=%.2f trust_delta=%+.2f visible=%s turn=%d",
-                                event["signal_name"], event.get("signal_layer", "?"),
+                                _sig_name, event.get("signal_layer", "?"),
                                 event.get("confidence", 0.5), float(event.get("score_delta", 0.0) or 0.0),
                                 event.get("recruiter_visible", False), res_turn,
                             )
@@ -1727,8 +1633,7 @@ async def entrypoint(ctx: JobContext):
                             )
                         td = result.get("td") or {}
                         action = result.get("action", "MOVE_ON")
-                        quality_record = quality_record or {}
-                        quality_avg = float(quality_record.get("overall", 5.0))
+                        quality_avg = float((quality_record or {}).get("overall", 5.0))
                         td_decision = td.get("decision", {})
                         td_mode = td_decision.get("mode", "normal")
                         td_next_goal = td_decision.get("next_goal", "")
@@ -1887,9 +1792,10 @@ async def entrypoint(ctx: JobContext):
                     _result_turn_key = f"interview:{app_id}:eval_result:{turn_snapshot}"
                     _SYNC_WAIT = 6.0
                     _POLL_INTERVAL = 0.15
-                    _deadline = asyncio.get_event_loop().time() + _SYNC_WAIT
+                    _loop = asyncio.get_running_loop()
+                    _deadline = _loop.time() + _SYNC_WAIT
                     logger.info("[SYNC_GATE] turn=%d | Waiting for eval result (max %.1fs)...", turn_snapshot, _SYNC_WAIT)
-                    while asyncio.get_event_loop().time() < _deadline:
+                    while _loop.time() < _deadline:
                         try:
                             _raw_turn = await asyncio.wait_for(
                                 _eval_redis_client.getdel(_result_turn_key),
@@ -1901,7 +1807,7 @@ async def entrypoint(ctx: JobContext):
                         if _raw_turn:
                             try:
                                 _preloaded = json.loads(_raw_turn)
-                                _elapsed = round(_SYNC_WAIT - max(0.0, _deadline - asyncio.get_event_loop().time()), 2)
+                                _elapsed = round(_SYNC_WAIT - max(0.0, _deadline - _loop.time()), 2)
                                 logger.info(
                                     "[SYNC_GATE] ✅ turn=%d | result arrived in ~%.2fs | action=%s",
                                     turn_snapshot, _elapsed, _preloaded.get("action", "?"),
@@ -2066,7 +1972,7 @@ async def entrypoint(ctx: JobContext):
                     debounce_seconds = (
                         _STT_COMPLETE_DEBOUNCE_SECONDS
                         if is_complete
-                        else 1.5  # Short debounce for incomplete greeting/warmup responses
+                        else _STT_WARMUP_INCOMPLETE_DEBOUNCE_SECONDS
                     )
                 else:
                     debounce_seconds = (
@@ -2141,11 +2047,13 @@ async def entrypoint(ctx: JobContext):
     greeting_delivered_at: float | None = None  # Track when greeting finishes
     def reset_inactivity_clock(start_waiting: bool, preserve_nudge_flags: bool = False) -> None:
         nonlocal awaiting_candidate_response, awaiting_candidate_since, \
-            inactivity_nudge_sent_for_current_prompt
+            inactivity_nudge_sent_for_current_prompt, _nudge_count, _last_nudge_at
         awaiting_candidate_response = start_waiting
         awaiting_candidate_since = time.monotonic() if start_waiting else None
         if not preserve_nudge_flags:
             inactivity_nudge_sent_for_current_prompt = False
+            _nudge_count = 0
+            _last_nudge_at = 0.0
         if start_waiting:
             logger.debug("[NUDGE] Inactivity clock started (awaiting candidate response)")
         else:
@@ -2308,17 +2216,30 @@ async def entrypoint(ctx: JobContext):
     finished_task = asyncio.create_task(interview_finished_event.wait())
     disconnected_task = asyncio.create_task(disconnect_event.wait())
     total_seconds = time_limit_mins * 60
-    # Fixed inactivity timing so the candidate always gets the same experience.
-    # 50s silence -> warning, 60s silence -> end call.
-    INACTIVITY_WARNING_SECS = 50
-    INACTIVITY_END_SECS = 60
+    # Inactivity timing:
+    #   10s silence  -> soft nudge (up to 3, rotating, 10s apart)
+    #   40s silence  -> termination warning
+    #   50s silence  -> end call
+    INACTIVITY_NUDGE_SECS = 10       # first nudge after 10s of silence
+    INACTIVITY_NUDGE_INTERVAL = 10   # repeat every 10s until warning fires
+    INACTIVITY_NUDGE_MAX = 3         # max soft nudges before warning
+    INACTIVITY_WARNING_SECS = 40     # termination warning at 40s
+    INACTIVITY_END_SECS = 50         # end call at 50s
     FINAL_THANKS_TRIGGER_SECS = 15
     final_timeout_announced = False
-    inactivity_nudge_count = 0
+    _nudge_count = 0                 # how many soft nudges already sent this turn
+    _last_nudge_at: float = 0.0      # monotonic time of last nudge sent
+
+    _name = candidate_first_name or candidate_name
+    _SOFT_NUDGES = [
+        f"Still with me, {_name}? No rush at all.",
+        f"Take your time — just go whenever you're ready.",
+        f"Hey {_name}, feel free to think out loud if that helps.",
+    ]
+
     async def _deliver_nudge(text: str) -> None:
         await session.say(text, allow_interruptions=True)
         # Scripted speech doesn't fire agent_speech_committed, manually restart clock.
-        # Preserve the warning flag so it doesn't fire again for this prompt.
         nonlocal awaiting_candidate_response, awaiting_candidate_since
         awaiting_candidate_response = True
         awaiting_candidate_since = time.monotonic()
@@ -2330,14 +2251,6 @@ async def entrypoint(ctx: JobContext):
             logger.info(f"[NUDGE] Sent termination signal to frontend (reason={reason})")
         except Exception as e:
             logger.warning(f"Failed to send termination signal: {e}")
-    def _pick_nudge() -> str:
-        """Return a context-aware inactivity nudge using the module-level strategy map."""
-        name = candidate_first_name or candidate_name
-        q = _last_interviewer_question or ""
-        for pattern, messages in _NUDGE_STRATEGIES:
-            if pattern is None or pattern.search(q):
-                return messages[inactivity_nudge_count % len(messages)].format(name=name)
-        return ""  # unreachable  last strategy always has pattern=None
     # Use the greeting-begin timestamp so `remaining` counts from when greeting started,
     # NOT from when the greeting audio finished. This makes the 20-min window exact.
     session_loop_start = _interview_timer_start
@@ -2423,7 +2336,7 @@ async def entrypoint(ctx: JobContext):
             chat_ctx.add_message(
                 role="system",
                 content=(
-                    "[SYSTEM ALERT: FINAL WINDOW] Less than 25 seconds remain. "
+                    f"[SYSTEM ALERT: FINAL WINDOW] Less than {FINAL_WINDOW_SECONDS} seconds remain. "
                     "Do not ask any new questions. Briefly wrap up and close naturally."
                 ),
             )
@@ -2448,42 +2361,50 @@ async def entrypoint(ctx: JobContext):
             if awaiting_candidate_response and awaiting_candidate_since is not None
             else 0.0
         )
-        # -- Inactivity Warning --
-        # Extra guard: don't fire if agent just finished speaking within last 5s
-        # (covers the LLM "thinking/typing" window before TTS starts)
-        agent_just_spoke = (
-            awaiting_candidate_since is not None
-            and (time.monotonic() - awaiting_candidate_since) < 5.0
-        )
-        if (
+        _silence_active = (
             not is_agent_speaking
             and not is_candidate_speaking
             and awaiting_candidate_response
+            and inactivity_elapsed >= INACTIVITY_NUDGE_SECS
+        )
+        # -- Soft nudges: fire every INACTIVITY_NUDGE_INTERVAL seconds, up to INACTIVITY_NUDGE_MAX times --
+        if (
+            _silence_active
+            and _nudge_count < INACTIVITY_NUDGE_MAX
+            and inactivity_elapsed < INACTIVITY_WARNING_SECS
+            and (time.monotonic() - _last_nudge_at) >= INACTIVITY_NUDGE_INTERVAL
+        ):
+            try:
+                nudge_text = _SOFT_NUDGES[_nudge_count % len(_SOFT_NUDGES)]
+                spawn_background_task(_deliver_nudge(nudge_text), f"inactivity_nudge_{_nudge_count}")
+                _nudge_count += 1
+                _last_nudge_at = time.monotonic()
+                logger.info("[NUDGE] Soft nudge #%d sent at %.0fs silence", _nudge_count, inactivity_elapsed)
+            except Exception as e:
+                logger.warning(f"[NUDGE] Failed to deliver soft nudge: {e}")
+        # -- Termination warning after INACTIVITY_WARNING_SECS --
+        if (
+            _silence_active
             and not inactivity_nudge_sent_for_current_prompt
-            and not agent_just_spoke
             and inactivity_elapsed >= INACTIVITY_WARNING_SECS
         ):
             try:
                 warning_text = (
-                    f"I haven't heard from you in a while, {candidate_first_name or candidate_name}. "
-                    f"If you're still there, please say something, otherwise I will have to end the call in {INACTIVITY_END_SECS - INACTIVITY_WARNING_SECS} seconds."
+                    f"Hey {_name}, I haven't heard from you in a bit. "
+                    f"I'll have to wrap up the call in {INACTIVITY_END_SECS - INACTIVITY_WARNING_SECS} seconds if I don't hear back."
                 )
                 spawn_background_task(_deliver_nudge(warning_text), "inactivity_warning")
                 inactivity_nudge_sent_for_current_prompt = True
-                logger.info(f"[NUDGE] {INACTIVITY_WARNING_SECS:.0f}s termination warning delivered")
+                logger.info("[NUDGE] Termination warning sent at %.0fs silence", inactivity_elapsed)
             except Exception as e:
                 logger.warning(f"[NUDGE] Failed to deliver warning: {e}")
-        # -- Inactivity Final Termination --
+        # -- End call after INACTIVITY_END_SECS --
         if (
-            not is_agent_speaking
-            and not is_candidate_speaking
-            and awaiting_candidate_response
+            _silence_active
             and inactivity_nudge_sent_for_current_prompt
             and inactivity_elapsed >= INACTIVITY_END_SECS
         ):
-            logger.info(
-                f"[NUDGE] Ending interview due to final inactivity timeout ({int(inactivity_elapsed)}s)"
-            )
+            logger.info("[NUDGE] Ending interview due to inactivity (%ds)", int(inactivity_elapsed))
             await _send_termination_signal("inactivity_timeout")
             interview_marked_finished = True
             interview_finished_event.set()
@@ -2576,6 +2497,8 @@ async def entrypoint(ctx: JobContext):
             # Build final skill_ratings dict
             skill_ratings = {}
             for topic, scores in skill_ratings_by_topic.items():
+                if not scores:
+                    continue
                 avg_overall = sum(s.get("overall", 5) for s in scores) / len(scores)
                 avg_clarity = sum(s.get("clarity", 5) for s in scores) / len(scores)
                 avg_depth = sum(s.get("depth", 5) for s in scores) / len(scores)
