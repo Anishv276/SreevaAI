@@ -1,8 +1,4 @@
-import json
 import re
-import time
-from typing import Any
-from interview.agent_persistence import get_db_pool
 from interview.agent_runtime_support import logger
 _CONTROL_PHRASES = (
     "DO NOT SAY ALOUD",
@@ -101,13 +97,6 @@ async def _single_question_transform(text_stream):
         logger.warning(
             "[SINGLE_Q] Transform yielded empty after directive sanitization; suppressing output."
         )
-def _sanitize_claim_value(value: str, max_len: int = 80) -> str:
-    """Strip characters that could break prompt structure when injected into system messages."""
-    if not value:
-        return ""
-    cleaned = re.sub(r"[\n\r\[\]\\]", " ", str(value)).strip()
-    cleaned = re.sub(r"\s+", " ", cleaned)
-    return cleaned[:max_len]
 def _build_recent_context_block(
     transcript_lines: list[str],
     last_question: str,
@@ -189,81 +178,3 @@ def append_transcript_line(transcript_lines: list[str], speaker: str, text: str)
             return
     transcript_lines.append(line)
     logger.debug(f"Transcript: {line}")
-async def report_proctoring_realtime(app_id: str, evt_type: str, reason: str, score_delta: int, sev: str = "medium"):
-    if not app_id:
-        return
-    try:
-        pool = await get_db_pool()
-        async with pool.acquire() as conn:
-            await conn.execute(
-                """
-                UPDATE "Interview"
-                SET "behaviorSignals" = jsonb_set(
-                    COALESCE("behaviorSignals", '{"events": []}'::jsonb),
-                    '{events}',
-                    COALESCE("behaviorSignals"->'events', '[]'::jsonb) || $1::jsonb
-                ),
-                "updatedAt" = NOW()
-                WHERE "applicationId" = $2
-                """,
-                json.dumps({
-                    "eventType": evt_type,
-                    "reason": reason,
-                    "timestamp": int(time.time() * 1000),
-                    "severity": sev,
-                    "score_delta": score_delta,
-                }),
-                app_id,
-            )
-    except Exception as e:
-        logger.warning(f"[PROCTOR] Real-time persistence failed: {e}")
-async def signal_client_proctoring_violation(ctx: Any, evt_type: str, reason: str, sev: str = "medium"):
-    if not ctx.room.local_participant:
-        return
-    try:
-        payload = json.dumps({
-            "type": "proctoring_violation",
-            "eventType": evt_type,
-            "reason": reason,
-            "severity": sev,
-            "timestamp": int(time.time() * 1000),
-        }).encode("utf-8")
-        await ctx.room.local_participant.publish_data(payload, reliable=True)
-    except Exception as e:
-        logger.warning(f"[PROCTOR] Client signaling failed: {e}")
-async def signal_client_interview_terminated(ctx: Any, reason: str) -> None:
-    if not ctx.room.local_participant:
-        return
-    try:
-        payload = json.dumps({
-            "type": "interview_terminated",
-            "reason": reason,
-            "timestamp": int(time.time() * 1000),
-        }).encode("utf-8")
-        await ctx.room.local_participant.publish_data(payload, reliable=True)
-        logger.info(f"[INTERVIEW_END] termination signal sent: {reason}")
-    except Exception as e:
-        logger.warning(f"[INTERVIEW_END] Client termination signal failed: {e}")
-def refresh_composite_risk(integrity_risk: int, depth_risk: int) -> int:
-    from interview.agent_runtime_support import compose_risk_score
-    return compose_risk_score(integrity_risk, depth_risk)
-def require_db_value(context: dict[str, Any], key: str, default: Any = None, required: bool = True):
-    value = context.get(key)
-    if value is None:
-        if not required:
-            return default
-        raise RuntimeError(f"Missing required DB field: {key}")
-    if isinstance(value, str) and not value.strip():
-        if not required:
-            return default
-        raise RuntimeError(f"Missing required DB field: {key}")
-    return value
-def build_language_codes(interview_lang: str) -> dict[str, str]:
-    mapping = {
-        "English": {"stt": "en-US", "tts": "en"},
-        "Hindi": {"stt": "hi", "tts": "hi"},
-    }
-    lang_codes = mapping.get(interview_lang)
-    if not lang_codes:
-        raise RuntimeError(f"Unsupported interview language in DB: {interview_lang}")
-    return lang_codes

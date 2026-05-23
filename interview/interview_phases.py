@@ -57,7 +57,6 @@ def build_interview_directive(
     *,
     band: str,
     resume_brief: _BriefType,
-    context_brief: str = "",
     custom_questions: list[str] | None = None,
 ) -> str:
     """

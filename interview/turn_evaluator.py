@@ -124,13 +124,9 @@ async def run_turn_evaluation(
     signals = build_signal_flags(signal_events)
 
     # Route to action/mode/goal
-    # NOTE: With saturation system, topic_follow_up_count/max_follow_ups no longer used
-    # Saturation scoring in eval_pipeline.py will determine PROBE vs MOVE_ON
     action, mode, next_goal = route(
         signals=signals,
         depth_signal=llm_decision.get("depth_signal", "SURFACE"),
-        topic_follow_up_count=0,  # Not used with saturation system
-        max_follow_ups=999,  # Not used with saturation system
         llm_action=llm_decision.get("action", "MOVE_ON"),
         llm_probe_mode=llm_decision.get("probe_mode"),
     )

@@ -49,12 +49,10 @@ from interview.agent_runtime_helpers import (
     tts_phonetic_processor,
 )
 from interview.agent_runtime_support import (
-    ADAPTIVE_LISTENER_TEMPERATURE,
+    INTERVIEW_TEMPERATURE,
     DEFAULT_VOICE_ID,
     EVAL_LLM_MODEL,
-    GREETING_RAPPORT_CLOSING_TEMPERATURE,
     INTERVIEW_LLM_MODEL,
-    INTERVIEW_LLM_TEMPERATURE,
     VOICE_REGISTRY,
     FIXED_INTERVIEW_DURATION_MINUTES,
     REDIS_URL,
@@ -269,10 +267,7 @@ class InterviewAgent(Agent):
             chat_ctx, "[SYSTEM ALERT: FINAL WINDOW]"
         )
         if final_window_signal:
-            return (
-                GREETING_RAPPORT_CLOSING_TEMPERATURE,
-                "greeting_rapport_closing",
-            )
+            return (INTERVIEW_TEMPERATURE, "greeting_rapport_closing")
 
         short_directive = self._latest_system_message_with_marker(
             chat_ctx, "[SHORT_RESPONSE_DIRECTIVE"
@@ -281,27 +276,21 @@ class InterviewAgent(Agent):
             chat_ctx, "[META_QUESTION_DIRECTIVE"
         )
         if short_directive or meta_directive:
-            return (
-                GREETING_RAPPORT_CLOSING_TEMPERATURE,
-                "greeting_rapport_closing",
-            )
+            return (INTERVIEW_TEMPERATURE, "greeting_rapport_closing")
 
         next_turn_directive = self._latest_system_message_with_marker(
             chat_ctx, "[NEXT_TURN_DIRECTIVE"
         )
         if next_turn_directive:
-            return (ADAPTIVE_LISTENER_TEMPERATURE, "interview_normal")
+            return (INTERVIEW_TEMPERATURE, "interview_normal")
 
         warmup_directive = self._latest_system_message_with_marker(
             chat_ctx, "[WARMUP PHASE]"
         )
         if warmup_directive:
-            return (
-                GREETING_RAPPORT_CLOSING_TEMPERATURE,
-                "greeting_rapport_closing",
-            )
+            return (INTERVIEW_TEMPERATURE, "greeting_rapport_closing")
 
-        return (ADAPTIVE_LISTENER_TEMPERATURE, "adaptive_listener_core")
+        return (INTERVIEW_TEMPERATURE, "adaptive_listener_core")
 
     async def llm_node(self, chat_ctx, tools, model_settings):
         activity = self._get_activity_or_raise()
@@ -730,7 +719,7 @@ async def entrypoint(ctx: JobContext):
             org_tts_model = fallback_voice["model"]
     org_deepgram_model: str = str(ctx_data.deepgramModel or STT_MODEL)
     interview_llm_model: str = INTERVIEW_LLM_MODEL
-    interview_llm_temperature: float = INTERVIEW_LLM_TEMPERATURE
+    interview_llm_temperature: float = INTERVIEW_TEMPERATURE
     analysis_model = EVAL_LLM_MODEL
 
     lang_codes = _LANGUAGE_CODES.get(interview_lang)
@@ -776,7 +765,6 @@ async def entrypoint(ctx: JobContext):
     interview_directive_cached = build_interview_directive(
         band=session_context.candidate_band,
         resume_brief=session_context.resume_brief,
-        context_brief=session_context.merged_brief_block,
         custom_questions=_interview_questions or None,
     )
 
@@ -991,15 +979,13 @@ async def entrypoint(ctx: JobContext):
     else:
         try:
             _eval_redis_client = redis_asyncio.from_url(REDIS_URL, decode_responses=False)
-            # Verify connectivity with a quick ping
-            import asyncio as _asyncio_check
             async def _ping_redis():
                 try:
                     await _eval_redis_client.ping()
                     logger.info("[REDIS_EVAL] Redis eval client connected and ping OK  %s", REDIS_URL)
                 except Exception as _ping_err:
                     logger.warning("[REDIS_EVAL] Redis ping failed: %s  eval worker may not work", _ping_err)
-            _asyncio_check.ensure_future(_ping_redis())
+            asyncio.ensure_future(_ping_redis())
         except Exception as _re:
             logger.warning("[REDIS_EVAL] Redis eval client init failed: %s  inline eval will be used", _re)
             _eval_redis_client = None
@@ -1123,47 +1109,8 @@ async def entrypoint(ctx: JobContext):
                 return t
         return None
 
-    def _fallback_next_topic(*, exclude_topic: str | None = None) -> str:
-        """Always returns a non-empty next topic string."""
-        excluded_key = _normalize_topic_key(exclude_topic or "")
-        nxt = _next_uncovered_topic(exclude_topic=exclude_topic)
-        if nxt:
-            return nxt
-        for topic in (_resume_topic_candidates() + _skill_topic_candidates()):
-            key = _normalize_topic_key(topic)
-            if key and key != excluded_key:
-                return topic
-        return f"a concrete example using one of the {job_title} role skills"
-
     def _pending_custom_questions() -> list[str]:
         return [cq.raw for cq in _custom_questions if not cq.asked]
-
-    def _is_question_already_covered(question_text: str) -> bool:
-        q = (question_text or "").strip().lower()
-        if not q or not _discussed_log:
-            return False
-        q_words = _expand_custom_q_tokens(re.sub(r"[^a-z0-9\\s]", " ", q))
-        if not q_words:
-            return False
-        for line in _discussed_log[-12:]:
-            line_words = _expand_custom_q_tokens(re.sub(r"[^a-z0-9\\s]", " ", line.lower()))
-            if not line_words:
-                continue
-            overlap = len(q_words & line_words) / max(1, len(q_words))
-            if overlap >= 0.55:
-                return True
-        return False
-
-    def _recent_discussion_anchor() -> str:
-        if not _discussed_log:
-            return "earlier in our discussion"
-        latest = str(_discussed_log[-1]).lstrip("- ").strip()
-        if ":" in latest:
-            latest = latest.split(":", 1)[0].strip()
-        latest = latest[:80].strip()
-        if not latest:
-            return "earlier in our discussion"
-        return f"during our discussion on {latest}"
 
     def _remaining_total_seconds_now() -> float:
         if not session_start_time:
@@ -2046,26 +1993,6 @@ async def entrypoint(ctx: JobContext):
                 # See _process_user_conversation_item() for per-turn async persistence.
                 # This periodic save is kept as a safety net for orphaned records in edge cases.
                 # Normally turned off by default to avoid redundant DB writes.
-                _PERIODIC_SAVE_ENABLED = False
-                if _PERIODIC_SAVE_ENABLED and turn_count % 5 == 0 and len(transcript_lines) > 0:
-                    _start_t = session_start_time
-                    _lines_snap = list(transcript_lines)
-                    _scores_snap = list(answer_scores)
-                    _app_id_snap = app_id
-                    async def _periodic_save_handler():
-                        try:
-                            await persist_transcript(_app_id_snap, _lines_snap, _start_t, partial=True)
-                            logger.info("[PERSIST] Transcript periodic-backup-saved at %d lines", len(_lines_snap))
-                        except Exception as _se:
-                            logger.warning("[PERSIST] Transcript backup save failed: %s", _se)
-                        if _scores_snap:
-                            try:
-                                await persist_answer_scores(_app_id_snap, _scores_snap)
-                                logger.info("[PERSIST] Answer scores backup-saved (%d records)", len(_scores_snap))
-                            except Exception as _se2:
-                                logger.warning("[PERSIST] Score backup save failed: %s", _se2)
-                    spawn_background_task(_periodic_save_handler(), f"periodic_save_backup_t{turn_count}")
-
             #  USER TURN
             elif role == "user":
                 _answer_received_at = time.perf_counter()

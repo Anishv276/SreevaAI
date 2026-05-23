@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Optional
 
 from interview.agent_utils import (
@@ -12,7 +12,16 @@ from interview.agent_utils import (
     _first_text,
     _join_items,
     _safe_float,
+    build_interview_turns,  # re-exported for backward compat
 )
+
+# Re-export so existing call sites (agent_profile_context, recruiter_summary, etc.) don't break
+__all__ = [
+    "ResumeContext",
+    "parse_resume_context",
+    "ensure_resume_context",
+    "build_interview_turns",
+]
 
 
 @dataclass(slots=True)
@@ -27,12 +36,11 @@ class ResumeContext:
     skills: list[str]
     projects: list[str]
     work_history: list[str]
+    internships: list[str]       # actual internship entries (separate from work_history)
     experiences: list[str]
     education: list[str]
     hobbies: list[str]
     ownership_risks: list[str]
-    fresher_signals: bool
-    experienced_signals: bool
 
 
 @dataclass(slots=True)
@@ -51,9 +59,9 @@ class _ResumeContextParser:
         education = self._extract_education()
         hobbies = self._extract_hobbies()
         work_history = self._extract_work_history()
-        experiences = _extract_text_items(projects + work_history)
-        ownership_risks = self._build_ownership_risks(experiences)
-        fresher_signals, experienced_signals = self._detect_band_signals()
+        internships = self._extract_internships()
+        experiences = _extract_text_items(projects + work_history + internships)
+        ownership_risks = self._build_ownership_risks()
 
         return ResumeContext(
             resume_data=self.parsed_resume,
@@ -64,12 +72,11 @@ class _ResumeContextParser:
             skills=skills,
             projects=projects,
             work_history=work_history,
+            internships=internships,
             experiences=experiences,
             education=education,
             hobbies=hobbies,
             ownership_risks=ownership_risks,
-            fresher_signals=fresher_signals,
-            experienced_signals=experienced_signals,
         )
 
     def _extract_years_of_experience(self) -> Optional[float]:
@@ -200,30 +207,42 @@ class _ResumeContextParser:
                 work_history.append(text)
         return _extract_text_items(work_history)
 
-    def _build_ownership_risks(self, experiences: list[str]) -> list[str]:
-        ownership_risks = _extract_text_items(
+    def _extract_internships(self) -> list[str]:
+        internships: list[str] = []
+        source = (
+            _deep_get(self.parsed_resume, "internships")
+            or _deep_get(self.parsed_resume, "internship")
+        )
+        for item in _as_list(source):
+            if isinstance(item, dict):
+                company  = _first_text(item.get("company"), item.get("organization")) or ""
+                role_n   = _first_text(item.get("role"), item.get("title")) or ""
+                duration = _first_text(item.get("duration"), item.get("period")) or ""
+                desc     = _first_text(item.get("description"), item.get("summary")) or ""
+                label = " - ".join(p for p in [role_n, company] if p)
+                if duration:
+                    label = f"{label} ({duration})" if label else duration
+                if desc and label:
+                    label = f"{label}: {desc}"
+                elif desc:
+                    label = desc
+                if label:
+                    internships.append(label)
+            else:
+                text = _first_text(item)
+                if text:
+                    internships.append(text)
+        return _extract_text_items(internships)
+
+    def _build_ownership_risks(self) -> list[str]:
+        # Only return explicit red flags from the parser — never auto-generate generic ones.
+        # Ownership is probed for every item anyway via the probe strategy.
+        return _extract_text_items(
             _deep_get(self.parsed_resume, "red_flags")
             or _deep_get(self.parsed_resume, "ownership_risks")
             or _deep_get(self.parsed_resume, "scoring_hints.red_flags_to_watch")
-        )
-        if len(ownership_risks) < 2:
-            for item in experiences:
-                ownership_risks.append(f"Verify personal ownership in {item}")
-                if len(ownership_risks) >= 2:
-                    break
-        return _extract_text_items(ownership_risks)[:2]
+        )[:3]
 
-    def _detect_band_signals(self) -> tuple[bool, bool]:
-        lower_text = self.resume_text.lower()
-        fresher_signals = any(
-            sig in lower_text
-            for sig in ("fresher", "entry level", "student", "final year", "internship", "intern", "graduate")
-        )
-        experienced_signals = any(
-            sig in lower_text
-            for sig in ("senior", "lead", "manager", "head of", "director", "staff engineer", "principal")
-        )
-        return fresher_signals, experienced_signals
 
 
 def parse_resume_context(resume_data: Any, resume_text: str) -> ResumeContext:
@@ -241,73 +260,4 @@ def ensure_resume_context(resume_data: Any, resume_text: str = "") -> ResumeCont
         return resume_data
     return parse_resume_context(resume_data, resume_text)
 
-
-@dataclass(slots=True)
-class _TranscriptTurnBuilder:
-    """Collect transcript lines, then fold them into Q/A turns."""
-
-    blocks: list[dict[str, str]] = field(default_factory=list)
-    turns: list[dict[str, Any]] = field(default_factory=list)
-    current_question: Optional[str] = None
-    current_answer_parts: list[str] = field(default_factory=list)
-
-    def add_block(self, speaker: str, text: str) -> None:
-        text = (text or "").strip()
-        if not text:
-            return
-        if self.blocks and self.blocks[-1]["speaker"] == speaker:
-            self.blocks[-1]["text"] = f'{self.blocks[-1]["text"]} {text}'.strip()
-            return
-        self.blocks.append({"speaker": speaker, "text": text})
-
-    def add_line(self, raw_line: Any) -> None:
-        if not isinstance(raw_line, str):
-            return
-        line = raw_line.strip()
-        if not line:
-            return
-        m = re.match(r"^(Interviewer|Candidate)(\[\d+\])?:\s*", line)
-        if m:
-            self.add_block(m.group(1), line[m.end():].strip())
-        else:
-            self.add_block("Interviewer", line)
-
-    def flush_turn(self) -> None:
-        question = (self.current_question or "").strip()
-        answer = " ".join(part.strip() for part in self.current_answer_parts if part.strip()).strip()
-        if question or answer:
-            self.turns.append(
-                {
-                    "turn": len(self.turns) + 1,
-                    "question": question,
-                    "answer": answer,
-                    "questionSpeaker": "Interviewer",
-                    "answerSpeaker": "Candidate" if answer else None,
-                }
-            )
-        self.current_question = None
-        self.current_answer_parts = []
-
-    def build(self, transcript_lines: list[Any]) -> list[dict[str, Any]]:
-        for raw_line in transcript_lines or []:
-            self.add_line(raw_line)
-        for block in self.blocks:
-            speaker = block["speaker"]
-            text = block["text"]
-            if speaker == "Interviewer":
-                if self.current_question is not None or self.current_answer_parts:
-                    self.flush_turn()
-                self.current_question = text
-            else:
-                if self.current_question is None:
-                    self.current_question = ""
-                self.current_answer_parts.append(text)
-        if self.current_question is not None or self.current_answer_parts:
-            self.flush_turn()
-        return self.turns
-
-
-def build_interview_turns(transcript_lines: list[Any]) -> list[dict[str, Any]]:
-    """Group raw transcript lines into deterministic interviewer/candidate turns."""
-    return _TranscriptTurnBuilder().build(transcript_lines)
 

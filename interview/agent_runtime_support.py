@@ -156,17 +156,9 @@ for logger_name in ("livekit.plugins.cartesia", "livekit.plugins.silero", "livek
 STT_MODEL = "nova-3"
 LLM_MODEL = "gpt-4.1-mini"
 INTERVIEW_LLM_MODEL = LLM_MODEL
-ADAPTIVE_LISTENER_TEMPERATURE = 0.45
-GREETING_RAPPORT_CLOSING_TEMPERATURE = 0.60
-BEHAVIORAL_QUESTION_TEMPERATURE = 0.50
-SITUATIONAL_QUESTION_TEMPERATURE = 0.50
-TECHNICAL_PROBING_TEMPERATURE = 0.40
-INTERVIEW_LLM_TEMPERATURE = ADAPTIVE_LISTENER_TEMPERATURE
+INTERVIEW_TEMPERATURE = 0.45
 EVAL_LLM_MODEL = "gpt-4o-mini"
-EVAL_LLM_TEMPERATURE = 0.0
-EVAL_JSON_ACTION_TEMPERATURE = 0.0
-FINAL_INTERVIEW_REPORT_TEMPERATURE = 0.10
-OFFLINE_CALIBRATION_JUDGE_TEMPERATURE = 0.20
+EVAL_TEMPERATURE = 0.0
 DEFAULT_VOICE_ID = "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"
 
 # Voice registry — single source of truth for voice→provider+model mapping.
@@ -238,9 +230,4 @@ def compose_risk_score(
     return max(0, min(100, int(round(weighted))))
 
 
-def compose_mode_risk_score(
-    integrity_risk: int,
-    depth_risk: int,
-) -> int:
-    return compose_risk_score(integrity_risk, depth_risk)
 

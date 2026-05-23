@@ -193,20 +193,30 @@ class ResponseScoreCalculator:
 
 
 class SignalPenaltyCalculator:
-    """Calculate penalties for trust signals."""
+    """Calculate saturation score penalties when behavioral signals fire.
+
+    Penalties reduce the saturation contribution for a turn so a weak or
+    evasive answer doesn't accidentally saturate a topic and move on too fast.
+    Integrity signals (contradiction, follow_up_collapse) get the largest
+    penalties since they indicate the answer cannot be trusted at face value.
+    """
 
     PENALTIES = {
-        "example_evasion": -2.0,
+        # Integrity — answer cannot be trusted
         "contradiction": -2.5,
+        "follow_up_collapse": -1.5,      # was -1.0; collapse is a stronger signal than simple evasion
+        # Behavioral — candidate is hiding or evading
+        "example_evasion": -1.5,         # was -2.0; brought in line with ownership_ambiguity
         "ownership_ambiguity": -1.5,
-        "resume_claim_mismatch": -1.5,
-        "follow_up_collapse": -1.0,
-        "latency_mismatch": -0.5,
+        "resume_claim_mismatch": -1.2,   # was -1.5; mismatch is softer signal, now maps to clarification not evidence
+        # Anti-cheat timing
+        "latency_mismatch": -1.0,        # was -0.5; too low, this is a real red flag
+        "complexity_latency_mismatch": -1.2,  # was missing entirely
     }
 
     @staticmethod
     def calculate_penalties(signal_events: list[dict]) -> float:
-        """Sum penalties from all signals that fired."""
+        """Sum penalties from all signals that fired this turn."""
         total = 0.0
         for event in signal_events:
             signal_name = event.get("signal_name", "")
@@ -379,29 +389,6 @@ class DirectiveCompiler:
             f"YOUR ONLY JOB THIS TURN: {next_goal}\n"
             "HARD RULE: Do NOT ask any follow-up about the previous topic. "
             "Do NOT reference it. Acknowledge in one sentence max, then pivot immediately."
-        )
-
-    @staticmethod
-    def verify_contradiction(disturbance_hits: List[Any]) -> str:
-        return (
-            "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
-            "DECISION: VERIFY (CLARIFICATION)\n"
-            f"SIGNALS TRIGGERED: {', '.join(str(x) for x in disturbance_hits if x)}\n"
-            "NEXT MOVE: Ask one concise contradiction-clarification question. "
-            "Keep follow-up count unchanged this turn. After answer, continue from current follow-up position.\n"
-            "QUESTION STYLE: Human, calm, curious, specific."
-        )
-
-    @staticmethod
-    def verify_ownership(disturbance_hits: List[Any]) -> str:
-        return (
-            "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
-            "DECISION: VERIFY (CLARIFICATION)\n"
-            f"SIGNALS TRIGGERED: {', '.join(str(x) for x in disturbance_hits if x)}\n"
-            "NEXT MOVE: Ask one concise clarification question focused on one concrete example "
-            "and what they personally owned. Continue follow-up progression (do not freeze). "
-            "If this is already follow-up 2+, this turn is the final clarifier before move-on.\n"
-            "QUESTION STYLE: Human, calm, curious, specific."
         )
 
     @staticmethod
@@ -769,17 +756,9 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
 
     action: str = td["decision"]["action"]
     signal_events = td.get("signal_events", [])
-    disturbance_signal_names = {"ownership_ambiguity", "example_evasion", "contradiction"}
-    disturbance_hits = [
-        ev.get("signal_name")
-        for ev in signal_events
-        if ev.get("signal_name") in disturbance_signal_names
-    ]
-    contradiction_hit = "contradiction" in disturbance_hits
-    ownership_or_example_hit = any(
-        s in disturbance_hits for s in ("ownership_ambiguity", "example_evasion")
-    )
-    freeze_followup_increment = False
+    # Contradiction gets a freeze on follow-up increment — it's a clarification turn, not a new probe
+    contradiction_hit = any(ev.get("signal_name") == "contradiction" for ev in signal_events)
+    freeze_followup_increment = contradiction_hit
     depth_signal = "SURFACE"
     quality_avg = (
         td["quality"]["clarity"] + td["quality"]["depth"]
@@ -789,7 +768,6 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     # ── Log evaluator decision ────────────────────────────────────────────────
     _all_signal_names = [ev.get("signal_name", "?") for ev in signal_events if ev.get("signal_name")]
 
-    # DETAILED quality score log
     logger.info(
         "[QUALITY] turn=%d | clarity=%.1f depth=%.1f specificity=%.1f grounding=%.1f | avg=%.2f",
         p.turn,
@@ -797,7 +775,6 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         td["quality"]["specificity"], td["quality"]["grounding"],
         quality_avg,
     )
-
     logger.info(
         "[EVAL] turn=%d action=%s mode=%s quality_avg=%.2f signals=[%s]",
         p.turn, action, td["decision"].get("mode", "?"),
@@ -806,44 +783,11 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     )
     for _ev in signal_events:
         if _ev.get("signal_name"):
-            _sig_name = _ev.get("signal_name", "?")
-            _sig_layer = _ev.get("signal_layer", "?")
-            _sig_delta = float(_ev.get("score_delta", 0) or 0)
-            _sig_confidence = float(_ev.get("confidence", 0.5) or 0.5)
             logger.info(
                 "[SIGNAL] name=%-28s layer=%-20s confidence=%.2f delta=%+.2f turn=%d",
-                _sig_name, _sig_layer, _sig_confidence, _sig_delta, p.turn,
-            )
-
-    # ── Step 4: Disturbance signal overrides ─────────────────────────────────
-    if disturbance_hits:
-        action = "VERIFY"
-        td["decision"]["action"] = "VERIFY"
-        td["decision"]["mode"] = "clarification"
-        if contradiction_hit:
-            td["decision"]["next_goal"] = (
-                "One clarification question only. Resolve the contradiction anchored to their "
-                "previous statement. Do not advance topic and do not consume a new follow-up slot."
-            )
-            directive = DirectiveCompiler.verify_contradiction(disturbance_hits)
-            freeze_followup_increment = True
-            logger.info(
-                "[SIGNAL→BEHAVIOR] turn=%d | signal=contradiction | action=VERIFY | "
-                "EXPECTED_BEHAVIOR: agent asks contradiction-clarification question | "
-                "directive_preview: %s",
-                p.turn, directive[:120].replace("\n", " | "),
-            )
-        elif ownership_or_example_hit:
-            td["decision"]["next_goal"] = (
-                "Ask one concise clarification question to make the answer concrete and personal. "
-                "If still vague after this clarification flow, move on to the next topic."
-            )
-            directive = DirectiveCompiler.verify_ownership(disturbance_hits)
-            logger.info(
-                "[SIGNAL→BEHAVIOR] turn=%d | signal=%s | action=VERIFY | "
-                "EXPECTED_BEHAVIOR: agent asks 'what did YOU specifically do / give a concrete example' | "
-                "directive_preview: %s",
-                p.turn, disturbance_hits, directive[:120].replace("\n", " | "),
+                _ev.get("signal_name", "?"), _ev.get("signal_layer", "?"),
+                float(_ev.get("confidence", 0.5) or 0.5),
+                float(_ev.get("score_delta", 0) or 0), p.turn,
             )
 
     # ── Step 5: Already-covered question dedupe ──────────────────────────────
@@ -876,7 +820,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
 
     next_topic_hint: Optional[str] = None
     signal_fired_names = [ev.get("signal_name", "") for ev in signal_events]
-    any_signal_fired = len(disturbance_hits) > 0
+    any_signal_fired = len(signal_fired_names) > 0
 
     # depth_decay: candidate is fatiguing — force MOVE_ON regardless of saturation
     depth_decay_fired = any(ev.get("signal_name") == "depth_decay" for ev in signal_events)
@@ -978,6 +922,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
                 probe_rotation_index=current_topic_state.probe_rotation_index,
                 signal_names=signal_fired_names,
                 topic_importance=current_topic_state.importance,
+                llm_probe_mode=td["decision"].get("mode"),
             )
             probe_goal = _PROBE_FAMILIES.get(probe_family, _PROBE_FAMILIES["ownership"])["goal"]
             probe_style = _PROBE_FAMILIES.get(probe_family, _PROBE_FAMILIES["ownership"])["style"]
@@ -1133,7 +1078,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         action,
         (
             "ask clarification (contradiction)" if action == "VERIFY" and contradiction_hit else
-            "ask for concrete example / ownership" if action == "VERIFY" and ownership_or_example_hit else
+            f"probe signal ({td['decision'].get('mode','?')})" if action == "VERIFY" else
             f"probe deeper on '{new_active_topic}' ({td['decision'].get('mode','?')})" if action == "PROBE" else
             f"move to next topic '{new_active_topic}'" if action == "MOVE_ON" else
             "rephrase last question" if action == "REPHRASE" else action

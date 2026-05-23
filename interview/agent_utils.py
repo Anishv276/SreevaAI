@@ -274,3 +274,98 @@ def truncate_to_tokens(text: str, max_tokens: int) -> str:
 
 def _coerce_jsonish(value: Any) -> dict[str, Any]:
     return SafeCoercer.to_dict(value)
+
+
+# ===========================================================================
+# 5. Transcript Turn Builder (moved from resume_context_parser.py)
+# ===========================================================================
+
+class _TranscriptTurnBuilder:
+    """Collect transcript lines, then fold them into Q/A turns."""
+
+    def __init__(self) -> None:
+        self.blocks: list[dict[str, str]] = []
+        self.turns: list[dict[str, Any]] = []
+        self.current_question: Optional[str] = None
+        self.current_answer_parts: list[str] = []
+        self._speaker_re = re.compile(r"^(Interviewer|Candidate)(\[\d+\])?:\s*")
+
+    def add_block(self, speaker: str, text: str) -> None:
+        text = (text or "").strip()
+        if not text:
+            return
+        if self.blocks and self.blocks[-1]["speaker"] == speaker:
+            self.blocks[-1]["text"] = f'{self.blocks[-1]["text"]} {text}'.strip()
+            return
+        self.blocks.append({"speaker": speaker, "text": text})
+
+    def add_line(self, raw_line: Any) -> None:
+        if not isinstance(raw_line, str):
+            return
+        line = raw_line.strip()
+        if not line:
+            return
+        m = self._speaker_re.match(line)
+        if m:
+            self.add_block(m.group(1), line[m.end():].strip())
+        else:
+            self.add_block("Interviewer", line)
+
+    def flush_turn(self) -> None:
+        question = (self.current_question or "").strip()
+        answer = " ".join(p.strip() for p in self.current_answer_parts if p.strip()).strip()
+        if question or answer:
+            self.turns.append({
+                "turn": len(self.turns) + 1,
+                "question": question,
+                "answer": answer,
+                "questionSpeaker": "Interviewer",
+                "answerSpeaker": "Candidate" if answer else None,
+            })
+        self.current_question = None
+        self.current_answer_parts = []
+
+    def build(self, transcript_lines: list[Any]) -> list[dict[str, Any]]:
+        for raw_line in transcript_lines or []:
+            self.add_line(raw_line)
+        for block in self.blocks:
+            speaker = block["speaker"]
+            text = block["text"]
+            if speaker == "Interviewer":
+                if self.current_question is not None or self.current_answer_parts:
+                    self.flush_turn()
+                self.current_question = text
+            else:
+                if self.current_question is None:
+                    self.current_question = ""
+                self.current_answer_parts.append(text)
+        if self.current_question is not None or self.current_answer_parts:
+            self.flush_turn()
+        return self.turns
+
+
+def build_interview_turns(transcript_lines: list[Any]) -> list[dict[str, Any]]:
+    """Group raw transcript lines into deterministic interviewer/candidate turns."""
+    return _TranscriptTurnBuilder().build(transcript_lines)
+
+
+def first_name_from_full_name(full_name: str) -> str:
+    """
+    Extract a usable first name from an Indian full name.
+    Skips single-letter initials at the start. For 3+ token names with no leading
+    initial, uses the second token (given name in South/North Indian conventions).
+    Examples: "S Meenakshi" → "Meenakshi", "Vadla Vamsi Krishna" → "Vamsi",
+              "Ravi Kumar" → "Ravi", "John" → "John".
+    """
+    if not full_name:
+        return ""
+    tokens = " ".join(str(full_name).strip().split()).split()
+    if not tokens:
+        return ""
+    if len(tokens) == 1:
+        return tokens[0]
+    if len(tokens[0]) == 1:
+        return tokens[1]
+    if len(tokens) >= 3:
+        return tokens[1]
+    return tokens[0]

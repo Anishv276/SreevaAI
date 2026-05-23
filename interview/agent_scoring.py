@@ -6,10 +6,9 @@ import urllib.request
 from typing import Optional
 from interview.agent_persistence import _extract_openai_completion_usage, persist_org_manual_billing_usage
 from interview.agent_runtime_support import (
-    EVAL_JSON_ACTION_TEMPERATURE,
+    EVAL_TEMPERATURE,
     APP_BASE_URL,
     EVAL_LLM_MODEL,
-    EVAL_LLM_TEMPERATURE,
     WORKER_SYNC_TOKEN,
     logger,
 )
@@ -55,7 +54,7 @@ async def score_answer_quality(
         completion = await asyncio.wait_for(
             client.chat.completions.create(
                 model=llm_model,
-                temperature=EVAL_LLM_TEMPERATURE,
+                temperature=EVAL_TEMPERATURE,
                 max_tokens=160,  # JSON with 7 ints + 2 short arrays < 130 tokens
                 messages=[
                     {
@@ -176,44 +175,86 @@ async def evaluate_answer_and_decide(
         completion = await asyncio.wait_for(
             client.chat.completions.create(
                 model=llm_model,
-                temperature=EVAL_JSON_ACTION_TEMPERATURE,
-                max_tokens=120,
+                temperature=EVAL_TEMPERATURE,
+                max_tokens=160,
                 messages=[
                     {
                         "role": "system",
                         "content": (
-                            "You are an interview quality evaluator. Analyze a candidate's answer and decide "
-                            "whether the interviewer should probe deeper or move to the next topic.\n\n"
-                            "Output ONLY valid JSON with these exact fields:\n"
+                            "You are a sharp senior interviewer deciding what to ask next.\n\n"
+                            "Your job: read the question asked AND what the candidate actually said. "
+                            "Find the single most valuable gap their answer creates. Pick exactly one probe mode.\n\n"
+                            "Output ONLY valid JSON:\n"
                             '{"action": "PROBE" or "MOVE_ON", '
-                            '"probe_mode": "ownership" | "evidence" | "compression" | "depth" | "verification" | '
-                            '"clarification" | "specificity" | "contradiction" | null, '
-                            '"reason": "one short sentence", '
+                            '"probe_mode": one of the modes below or null, '
+                            '"reason": "one sentence — quote the specific thing they said that creates this gap", '
                             '"depth_signal": "SURFACE" | "SPECIFIC" | "DEEP"}\n\n'
-                            "CRITICAL RULE — DID THE ANSWER ACTUALLY ADDRESS THE QUESTION ASKED?\n"
-                            "Numbers and process words (24 hours, 100 calls, 25 centers) are NOT real specifics "
-                            "if they don't answer what was asked. Ask: 'Did the candidate answer the specific question, "
-                            "or just describe their general process again?'\n\n"
-                            "MOVE_ON when:\n"
-                            "  - Answer directly addressed what was asked with named specifics (person, tool, project, outcome)\n"
-                            "  - Topic already had 2+ follow-ups AND candidate has nothing new to add\n"
-                            "  - Candidate clearly said 'I don't know' or admitted they can't answer\n\n"
-                            "PROBE when:\n"
-                            "  - Answer described a general process instead of answering the specific question\n"
-                            "  - Answer is vague, circular, or just restated what they said before\n"
-                            "  - Answer uses only 'we' with no personal ownership\n"
-                            "  - Answer has no named person, vendor, tool, system, decision, or concrete outcome\n"
-                            "  - BUT: do not probe the same angle more than twice — if it hasn't worked twice, MOVE_ON\n\n"
-                            "probe_mode:\n"
-                            "  ownership = 'we did' but unclear what they personally did\n"
-                            "  evidence = missing concrete example, named project, or proof\n"
-                            "  compression = answer collapses on a follow-up or loses sequence\n"
-                            "  depth = has facts but no reasoning/tradeoff\n"
-                            "  clarification = conflicts with something said earlier\n"
-                            "  verification = polished answer, probe memory of the exact moment\n"
-                            "  specificity = generic answer missing names/numbers/dates\n"
-                            "  contradiction = alias for clarification when a mismatch is explicit\n"
-                            "depth_signal: SURFACE=generic/vague or answered different question, SPECIFIC=named real thing, DEEP=specifics+reasoning"
+
+                            "HOW TO PICK — go through these in order, stop at the first that fits:\n\n"
+
+                            "  1. INTEGRITY FIRST — always check this before anything else:\n"
+                            "     → Does this answer conflict with something they said earlier in the conversation?\n"
+                            "       YES → clarification (surface the conflict, don't accuse)\n"
+                            "     → Did their follow-up answer lose the specifics they had in their first answer?\n"
+                            "       YES → compression (slow them down, walk back to the start)\n"
+                            "     → Does the answer sound rehearsed with zero real memory or texture?\n"
+                            "       YES → verification (probe the exact moment, not the summary)\n\n"
+
+                            "  2. OWNERSHIP — most common gap:\n"
+                            "     → Did they say 'we built', 'the team did', 'we decided'?\n"
+                            "       AND you still don't know what was specifically theirs?\n"
+                            "       YES → ownership\n\n"
+
+                            "  3. PROOF — second most common gap:\n"
+                            "     → Did they claim a result (shipped, improved, scaled, saved time)?\n"
+                            "       AND gave no real number, metric, or before/after?\n"
+                            "       YES → outcome\n"
+                            "     → Did they name a tool, framework, or technology?\n"
+                            "       AND gave no reason why they picked it over alternatives?\n"
+                            "       YES → alternatives (ask why this choice, what else they considered)\n\n"
+
+                            "  4. DEPTH — only if ownership and proof are already clear:\n"
+                            "     → Did they describe a smooth success with no friction, no mistake, nothing that broke?\n"
+                            "       YES → failure (real projects always have something)\n"
+                            "     → Did they describe what they built but not how decisions got made day-to-day?\n"
+                            "       YES → process\n\n"
+
+                            "  5. HUMAN MOMENT — only pick one of these, only if depth is already DEEP:\n"
+                            "     → Did they describe pressure, a deadline, an incident, an outage, a conflict, or a crisis?\n"
+                            "       AND depth_signal is DEEP AND you haven't asked a situational question yet?\n"
+                            "       YES → situational ('what would you do if this happened again / at 10x scale?')\n"
+                            "     → Did they describe a hard call, a disagreement, a mistake, working solo under pressure,\n"
+                            "       convincing someone, or something they're proud of or regret?\n"
+                            "       AND depth_signal is DEEP AND you haven't asked a behavioral question yet?\n"
+                            "       YES → behavioral ('tell me about a time when...' anchored to what they just said)\n\n"
+
+                            "  6. MOVE_ON — pick this when:\n"
+                            "     → They gave real specifics AND reasoning — nothing meaningful left to pull\n"
+                            "     → They clearly can't go deeper (said 'I don't know', admitted they weren't involved)\n"
+                            "     → depth_signal is DEEP and all gaps above are already filled\n\n"
+
+                            "STRICT RULES:\n"
+                            "  - Pick exactly ONE probe mode. Never combine.\n"
+                            "  - situational and behavioral only when depth_signal = DEEP. Never on shallow answers.\n"
+                            "  - The reason field must quote something specific from their answer. Never say 'answer lacks depth'.\n"
+                            "  - If nothing is missing and the answer is genuinely complete → MOVE_ON, probe_mode null.\n\n"
+
+                            "probe_mode options:\n"
+                            "  ownership     = team language, personal contribution unclear\n"
+                            "  outcome       = claimed result with no number, metric, or proof\n"
+                            "  alternatives  = named a tool or made a choice but never said why or what else they considered\n"
+                            "  failure       = story too clean, no friction, mistake, or learning mentioned\n"
+                            "  process       = described what was built but not how decisions or work actually happened\n"
+                            "  clarification = conflicts with something said earlier in this conversation\n"
+                            "  verification  = sounds rehearsed, no real memory or texture\n"
+                            "  compression   = follow-up answer is shorter and vaguer than the first (anti-cheat)\n"
+                            "  situational   = deep answer with a pressure/incident/crisis hook — test judgment in a scenario\n"
+                            "  behavioral    = deep answer with a hard call/mistake/team moment hook — surface a real lived story\n\n"
+
+                            "depth_signal:\n"
+                            "  SURFACE = generic, vague, or answered a different question entirely\n"
+                            "  SPECIFIC = named a real tool, project, person, number, or decision\n"
+                            "  DEEP = real specifics AND showed reasoning, tradeoffs, or consequences"
                         ),
                     },
                     {
@@ -238,11 +279,16 @@ async def evaluate_answer_and_decide(
             parsed["action"] = "MOVE_ON"
         if parsed.get("depth_signal") not in ("SURFACE", "SPECIFIC", "DEEP"):
             parsed["depth_signal"] = "SURFACE"
+        _valid_probe_modes = {
+            "ownership", "outcome", "alternatives",
+            "failure", "process", "clarification",
+            "verification", "compression",
+            "situational", "behavioral",
+        }
+        if parsed.get("probe_mode") not in _valid_probe_modes:
+            parsed["probe_mode"] = None
         return parsed
     except asyncio.TimeoutError:
-        # Timeout → default to PROBE, NOT MOVE_ON.
-        # MOVE_ON on timeout skips topics prematurely when the LLM is slow.
-        # PROBE is safe: saturation system will naturally move on after enough turns.
         logger.warning("[EVAL] Per-turn evaluator timed out - defaulting to PROBE (not MOVE_ON)")
         return {"action": "PROBE", "probe_mode": "ownership", "reason": "timeout", "depth_signal": "SURFACE"}
     except Exception as e:
@@ -262,7 +308,7 @@ async def extract_claims(
         completion = await asyncio.wait_for(
             client.chat.completions.create(
                 model=llm_model,
-                temperature=EVAL_JSON_ACTION_TEMPERATURE,
+                temperature=EVAL_TEMPERATURE,
                 max_tokens=300,
                 messages=[
                     {

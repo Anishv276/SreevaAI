@@ -28,7 +28,10 @@
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
       "Bash(python -m pytest interview/test_agent_runtime.py -xvs)",
-      "Bash(python -c \"import livekit.plugins.sarvam.tts as t; print\\(t.__file__\\)\")"
+      "Bash(python -c \"import livekit.plugins.sarvam.tts as t; print\\(t.__file__\\)\")",
+      "Bash(python -c \"import py_compile; py_compile.compile\\(r'c:\\\\Users\\\\vamsi\\\\OneDrive\\\\Desktop\\\\HR-updates\\\\interview\\\\agent_profile_context.py', doraise=True\\); print\\('ok'\\)\")",
+      "Bash(awk '/^[^#]*\\(_is_question_already_covered|_recent_discussion_anchor|_fallback_next_topic\\)\\\\\\(/ && !/def / {print NR\": \"$0}' agent_runtime.py)",
+      "Bash(awk '/_fallback_next_topic|_is_question_already_covered|_recent_discussion_anchor/ {print NR\": \"$0}' agent_runtime.py)"
     ]
   }
 }

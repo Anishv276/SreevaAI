@@ -9,50 +9,178 @@ from interview.turn_decision import SignalFlags, TurnDecision
 
 
 _PROBE_FAMILIES: dict[str, dict[str, str]] = {
+    # ── Integrity / contradiction ─────────────────────────────────────────────
     "clarification": {
-        "goal": "Surface the inconsistency naturally. Ask them to reconcile the two statements.",
-        "style": "Use genuine confusion, not accusation. Anchor on the two conflicting claims.",
+        "goal": "Surface the inconsistency naturally. Ask them to connect what they said just now with what they said earlier.",
+        "style": (
+            "Genuine confusion, not accusation. Name both things specifically. "
+            "Examples: 'Wait — earlier you said X, but just now it sounds like Y. Help me connect those two.' "
+            "/ 'I want to make sure I got this right — you mentioned X before, but now it sounds more like Y. Which is it?' "
+            "Never say 'you contradicted yourself'. Just be confused and ask them to clarify."
+        ),
     },
+
+    # ── Ownership ────────────────────────────────────────────────────────────
     "ownership": {
-        "goal": "Ask what THEY personally owned, built, or decided - not the team.",
-        "style": "Push from team-language into individual responsibility.",
+        "goal": "Find out what was specifically theirs — what they personally decided, built, or owned — not the team's.",
+        "style": (
+            "Anchor to the exact thing they just described, not ownership in general. "
+            "Examples: 'You mentioned the team built the pipeline — what was specifically your part in that?' "
+            "/ 'When you say we deployed it, what did you personally own in that process?' "
+            "/ 'Walk me through one day of your work on that — what were you actually doing?' "
+            "Never ask a generic 'what did YOU do' — always tie it to something they just named."
+        ),
     },
+
+    # ── Outcome / impact ─────────────────────────────────────────────────────
     "outcome": {
-        "goal": "What was the actual outcome or impact? Did it ship? How was it measured?",
-        "style": "Move from claim to measurable result. Test grounding in real business metrics.",
+        "goal": "Get a real number, metric, or before/after that proves the outcome they claimed.",
+        "style": (
+            "Move from the claim to the evidence. Ask for the specific measure, not a summary. "
+            "Examples: 'You said it improved performance — what did that look like in numbers?' "
+            "/ 'Did it actually ship? How did you know it was working?' "
+            "/ 'What changed for the user or the business after this went live?' "
+            "If they give a vague number, ask what it was before."
+        ),
     },
-    "tradeoff": {
-        "goal": "What choices did they make? Why that approach over the alternatives?",
-        "style": "Test decision-making judgment, not just execution. Probe architectural or design reasoning.",
+
+    # ── Tech choice / stack ──────────────────────────────────────────────────
+    "tech_stack": {
+        "goal": "Ask WHY they chose the specific tool, language, or framework they named — not just what it was.",
+        "style": (
+            "Peer-level curiosity. Anchor directly to what they named. "
+            "Examples: 'Why Django specifically — had you considered FastAPI or Flask?' "
+            "/ 'What made you go with Postgres over something like MongoDB for this?' "
+            "/ 'You picked React — was that a conscious choice or just what the team used?' "
+            "Never ask about something they already explained. Never ask 'what tech did you use' if they listed it."
+        ),
     },
+
+    # ── Alternatives / why not X ─────────────────────────────────────────────
+    "alternatives": {
+        "goal": "Make them defend their choice by asking what else they considered and why they didn't go that way.",
+        "style": (
+            "Curious, not challenging. Anchor to the specific choice they described. "
+            "Examples: 'Could you have just done X instead — what would have broken?' "
+            "/ 'Did anyone push back on this approach? What was the alternative they were suggesting?' "
+            "/ 'Looking back, was there a simpler way to solve this you considered and rejected?' "
+            "The goal is to hear real tradeoff reasoning, not defend the answer."
+        ),
+    },
+
+    # ── Scale / constraints ──────────────────────────────────────────────────
+    "scale": {
+        "goal": "Get the real numbers or constraints they were working under — volume, load, users, budget, team size, deadline.",
+        "style": (
+            "Concrete and specific. Works for both technical and non-technical contexts. "
+            "Technical examples: 'How much data were you actually dealing with?' / 'What kind of traffic was this handling?' "
+            "Non-technical examples: 'How many people were involved in this process?' / 'What was the volume you were managing?' "
+            "/ 'Were there hard constraints — budget, timeline, headcount — that shaped what you could do?' "
+            "If they give a range, ask which end it was closer to."
+        ),
+    },
+
+    # ── Process / how work got done ──────────────────────────────────────────
+    "process": {
+        "goal": "Understand HOW decisions were made and how the work actually got done day-to-day.",
+        "style": (
+            "Ground it in the real workflow, not the theory. "
+            "Examples: 'How did you decide what to build first — who made that call?' "
+            "/ 'How did you validate it was working before shipping?' "
+            "/ 'What did a typical day look like when you were in the middle of this?' "
+            "/ 'How did you get alignment with the rest of the team on that decision?' "
+            "This reveals actual experience vs rehearsed answers."
+        ),
+    },
+
+    # ── Failure / what broke ─────────────────────────────────────────────────
     "failure": {
-        "goal": "What went wrong or broke? What would they do differently?",
-        "style": "Test learning and resilience. Use for CRITICAL topics only (anchor/current role).",
+        "goal": "Find out what actually went wrong, what got cut, or what they'd do differently — the story is too clean.",
+        "style": (
+            "Warm curiosity, not gotcha. Every real project has something. "
+            "Examples: 'What broke along the way — or what almost did?' "
+            "/ 'If you were doing this again from scratch, what would you change?' "
+            "/ 'What got cut or deprioritized that you wish you'd had time for?' "
+            "/ 'Was there a point where you thought this wasn't going to work?' "
+            "Real candidates answer this easily. Coached ones give perfect stories."
+        ),
     },
-    "evidence": {
-        "goal": "Ask for a concrete example, named project, or real moment from work.",
-        "style": "Move from claim to proof. Ask for the exact instance, not the summary.",
-    },
-    "compression": {
-        "goal": "Ask for the sequence step by step and compress the story into the real turning point.",
-        "style": "Use when the answer gets too short or too collapsed on a follow-up.",
-    },
+
+    # ── Anti-cheat: answer collapse on follow-up ─────────────────────────────
     "follow_up_collapse_staged": {
-        "goal": "Recover depth lost after a strong first answer. Use a staged memory probe, not a concept probe.",
-        "style": "Escalate naturally: L1 ask for more detail, L2 ask what they personally owned, L3 reconstruct the exact moment.",
+        "goal": "Recover depth lost after a strong first answer — probe memory, not concept.",
+        "style": (
+            "Escalate naturally across turns. "
+            "L1 — anchor to something specific from their first answer: 'You mentioned X — tell me more about that part specifically.' "
+            "L2 — ownership focus: 'In that specific thing you mentioned, what was your personal role?' "
+            "L3 — memory reconstruction: 'Take me back to the moment that decision was made — what was the state of things right before?' "
+            "Real candidates recover with imperfect detail. Coached ones cannot reconstruct the moment."
+        ),
     },
-    "depth": {
-        "goal": "Go one level deeper on the real decision, tradeoff, or failure story.",
-        "style": "Use when the answer is already substantive but not yet fully tested.",
+
+    # ── Anti-cheat: answer compressed on follow-up ───────────────────────────
+    "compression": {
+        "goal": "Slow them down — ask them to walk back to the beginning of the story and go step by step.",
+        "style": (
+            "Use when the follow-up answer got shorter, not longer. They're collapsing. "
+            "Examples: 'Let's go back to the start of this — walk me through what happened first.' "
+            "/ 'I lost the thread a bit — take me from the beginning, what was the situation before you got involved?' "
+            "/ 'Slow down a second — what was the very first thing you did when this landed on your plate?' "
+            "A real candidate will expand. A scripted one will loop."
+        ),
     },
+
+    # ── Claim without proof ──────────────────────────────────────────────────
+    "evidence": {
+        "goal": "They claimed a skill or capability but gave zero real instance of actually using it — get a specific moment.",
+        "style": (
+            "Move from the claim to the proof. Ask for one real instance, not a summary. "
+            "Examples: 'Give me one specific time you actually used that — what was the project?' "
+            "/ 'You mentioned you know X well — walk me through the last time you actually worked with it.' "
+            "/ 'What's the most complex thing you've built with that?' "
+            "Don't accept 'I've used it in multiple projects' — ask which one."
+        ),
+    },
+
+    # ── Polished but shallow ─────────────────────────────────────────────────
     "verification": {
-        "goal": "Test recall on the specific moment before or after the claim.",
-        "style": "Use when the answer sounds polished but lightly grounded.",
+        "goal": "The answer sounds rehearsed — probe real memory of the exact moment, not the summary of it.",
+        "style": (
+            "Ask for something a coached answer can't provide: sensory memory or imperfect recall. "
+            "Examples: 'Take me back to the exact moment that decision was made — who was in the room?' "
+            "/ 'What was the state of things right before you started that?' "
+            "/ 'What was the first thing you said when this problem landed on you?' "
+            "/ 'What's one thing about that project that surprised you — something you didn't expect?' "
+            "Real experiences have texture and imperfection. Rehearsed ones are too clean."
+        ),
     },
-    "rapport": {
-        "goal": "Respond like a real person first, show you know the candidate's context, then bridge back naturally.",
-        "style": "Start with a human acknowledgment. Do not pivot immediately into a new interview question.",
+
+    # ── Situational ──────────────────────────────────────────────────────────
+    "situational": {
+        "goal": "Test judgment by putting them in a realistic scenario anchored to what they just described — pressure, incident, scale, or constraint.",
+        "style": (
+            "Frame it from their actual context — never a generic 'what would you do if'. "
+            "Use something they just mentioned as the setup. "
+            "Examples: 'You mentioned the replication lag almost broke SLA — if that happened on a system 10x bigger, what would you do differently?' "
+            "/ 'Say that same deadline hit but you had half the team — how do you approach it?' "
+            "/ 'What if the stakeholder had rejected that approach entirely — what was your plan B?' "
+            "One scenario. Make it feel like a natural extension of what they just said."
+        ),
     },
+
+    # ── Behavioral ───────────────────────────────────────────────────────────
+    "behavioral": {
+        "goal": "Surface a real lived moment — a hard call, a mistake, a conflict, a win under pressure — anchored to what they just mentioned.",
+        "style": (
+            "Anchor it to the theme they just raised, not a generic behavioral prompt. "
+            "Examples: 'You mentioned convincing your lead — tell me about a time that kind of pushback didn't go your way. What happened?' "
+            "/ 'You said the team was under a lot of pressure — tell me about a specific moment where something felt like it was going wrong.' "
+            "/ 'You touched on making that call alone — tell me about a time a solo decision you made turned out to be wrong.' "
+            "Real candidates answer this with imperfect detail. Coached ones give a polished STAR story."
+        ),
+    },
+
+    # ── Sentinel: move on ────────────────────────────────────────────────────
     "normal": {
         "goal": "Topic sufficiently covered. Move to the next uncovered area from your interview plan.",
         "style": "No special probe needed.",
@@ -61,35 +189,31 @@ _PROBE_FAMILIES: dict[str, dict[str, str]] = {
 
 
 _SIGNAL_TO_FAMILY = [
-    # 1. CONTRADICTION: Candidate said two things that logically conflict (e.g. "I know Python" vs "I never used Python").
-    ("contradiction", "clarification"),
+    # Integrity signals — highest priority, always surface these
+    ("contradiction", "clarification"),           # Said two conflicting things → reconcile them
+    ("follow_up_collapse", "follow_up_collapse_staged"),  # Perfect 1st answer, falls apart on follow-up → staged memory probe
 
-    # 2. FOLLOW_UP_COLLAPSE: (Anti-Cheat) Candidate gave a perfect 1st answer but can't handle follow-ups.
-    ("follow_up_collapse", "follow_up_collapse_staged"),
+    # Behavioral signals — candidate is hiding or evading
+    ("ownership_ambiguity", "ownership"),         # Heavy "we" language, no personal ownership → anchor to what they named
+    ("example_evasion", "evidence"),              # Claimed a skill but gave no real instance → get a specific moment
+    ("resume_claim_mismatch", "clarification"),   # Resume says X, answer says Y → surface the conflict, not ask for more evidence
 
-    # 3. RESUME_CLAIM_MISMATCH: The answer conflicts with facts found in their uploaded resume.
-    ("resume_claim_mismatch", "evidence"),
+    # Anti-cheat timing signals
+    ("latency_mismatch", "compression"),          # Follow-up answer compressed sharply → slow them down, walk back to the start
+    ("complexity_latency_mismatch", "verification"),  # Hard question answered instantly → probe real memory, not rehearsed answer
 
-    # 4. EXAMPLE_EVASION: Candidate is talking in theories and avoiding giving a real-life example.
-    ("example_evasion", "evidence"),
-
-    # 5. LATENCY_MISMATCH: (Anti-Cheat) Candidate answered way too fast for a complex question (suggests reading from a script).
-    ("latency_mismatch", "compression"),
-
-    # 6. OWNERSHIP_AMBIGUITY: Candidate keeps saying "We" or "The Team" to hide their lack of personal contribution.
-    ("ownership_ambiguity", "ownership"),
-
-    # 7. DEPTH_DECAY: Candidate is getting tired or "running out of juice" on this topic.
-    ("depth_decay", "normal"),
-
-    # 8. COMPLEXITY_LATENCY_MISMATCH: Candidate struggled with a simple question but answered a hard one instantly.
-    ("complexity_latency_mismatch", "evidence"),
+    # Fatigue signal — candidate is running out of depth across topics
+    ("depth_decay", "normal"),                    # Quality declining cross-topic → move on, don't push deeper
 ]
 
 
 _MODE_ALIASES = {
-    "specificity": "evidence",
     "contradiction": "clarification",
+    "tradeoff": "alternatives",
+    "depth": "verification",
+    "tech_stack": "alternatives",
+    "scale": "outcome",
+    "specificity": "ownership",
 }
 
 _SHORT_UTTERANCE_FAMILIES = {
@@ -128,11 +252,15 @@ def _normalize_family(mode: str | None, depth_signal: str) -> str:
         if key in _PROBE_FAMILIES:
             return key
 
+    # Fallback by depth signal when no mode given
     normalized_depth = str(depth_signal or "").strip().upper()
     if normalized_depth == "SPECIFIC":
-        return "compression"
+        # They named a real thing but no reasoning yet — ask why they chose it
+        return "alternatives"
     if normalized_depth == "DEEP":
-        return "depth"
+        # Already has specifics and reasoning — probe memory for authenticity
+        return "verification"
+    # SURFACE — no real instance yet
     return "evidence"
 
 
@@ -159,8 +287,6 @@ def build_short_utterance_directive(short_class: str, evidence: str) -> str:
 def route(
     signals: SignalFlags,
     depth_signal: str,
-    topic_follow_up_count: int,
-    max_follow_ups: int = 2,
     llm_action: str = "MOVE_ON",
     llm_probe_mode: str | None = None,
 ) -> tuple[str, str, str]:
@@ -168,29 +294,28 @@ def route(
     Returns (action, mode, next_goal).
 
     Priority:
-      1. Hard cap on follow-ups -> MOVE_ON
-      2. Contradiction -> VERIFY + clarification
-      3. Signal flags -> PROBE with a concrete probe family
-      4. LLM decision passthrough
-      5. Default MOVE_ON
+      1. Behavioral/integrity signal flags → signal-driven probe family
+      2. LLM suggestion (probe_mode from evaluate_answer_and_decide) → adaptive probe
+      3. Default MOVE_ON (saturation system handles topic transitions)
+
+    Note: Hard follow-up cap removed. Topic transitions are owned entirely by the
+    saturation system in eval_pipeline.py. route() only decides PROBE vs MOVE_ON
+    within a turn — not when to switch topics.
     """
-    if topic_follow_up_count >= max_follow_ups:
-        return ("MOVE_ON", "normal", _family_goal("normal"))
-
-
+    # Priority 1: signal flags — always override LLM when a real behavioral signal fires
     for flag, family in _SIGNAL_TO_FAMILY:
         if signals.get(flag):
             if flag == "depth_decay":
-                # Candidate is fatiguing — move to next topic, not deeper probe
                 return ("MOVE_ON", "normal", _family_goal("normal"))
+            # clarification family = VERIFY (contradiction surface); all others = PROBE
             action = "VERIFY" if family == "clarification" else "PROBE"
             return (action, family, _family_goal(family))
 
+    # Priority 2: LLM suggestion — use what evaluate_answer_and_decide picked
     if llm_action in ("PROBE", "VERIFY"):
         family = _normalize_family(llm_probe_mode, depth_signal)
+        # Only contradiction/clarification warrants VERIFY; everything else is PROBE
         action = "VERIFY" if family == "clarification" else "PROBE"
-        if llm_action == "VERIFY" and family != "clarification":
-            action = "VERIFY"
         return (action, family, _family_goal(family))
 
     return ("MOVE_ON", "normal", _family_goal("normal"))
@@ -250,42 +375,42 @@ def select_probe_family_from_rotation(
     probe_rotation_index: int,
     signal_names: list[str],
     topic_importance: Optional[str] = "HIGH",
+    llm_probe_mode: Optional[str] = None,
 ) -> str:
     """
-    Select probe family based on rotation index (PART 3 saturation system).
+    Select the best probe family for the current turn.
 
-    Probe rotation order:
-      0 = ownership ("Ask what THEY personally...")
-      1 = outcome ("What was the actual outcome?")
-      2 = tradeoff ("What choices did they make?")
-      3 = failure ("What went wrong?") - CRITICAL topics only
+    Priority:
+      1. Behavioral/integrity signal fired → signal-driven family (always wins)
+      2. LLM suggested a specific probe_mode → use it (adaptive, answer-aware)
+      3. Fallback rotation → ensures variety when LLM returns nothing useful
 
-    Signal override: If any signal fired, use signal-specific family instead.
-
-    Args:
-        probe_rotation_index: Current position in rotation cycle (0-3)
-        signal_names: List of signals that fired this turn
-        topic_importance: CRITICAL | HIGH | MEDIUM | LOW (for failure gate)
-
-    Returns:
-        Probe family name (e.g., "ownership", "outcome", "tradeoff", "failure")
+    Fallback rotation order (covers distinct angles across 5 turns):
+      0 = ownership   — what was specifically theirs
+      1 = tech_stack  — why that tool/approach
+      2 = outcome     — real number or proof of impact
+      3 = alternatives — what else they considered
+      4 = failure     — what broke or what they'd change (CRITICAL topics only)
     """
-    # Check if a signal fired — if so, use signal-specific family (override rotation)
+    # Priority 1: signal override
     for signal_name, family in _SIGNAL_TO_FAMILY:
         if signal_name in signal_names:
             return family
 
-    # No signal override — use rotation
-    rotation_families = ["ownership", "outcome", "tradeoff", "failure"]
+    # Priority 2: LLM probe_mode — adaptive, based on what candidate actually said
+    if llm_probe_mode and llm_probe_mode in _PROBE_FAMILIES:
+        return llm_probe_mode
+    if llm_probe_mode and llm_probe_mode in _MODE_ALIASES:
+        return _MODE_ALIASES[llm_probe_mode]
 
-    # Clamp index to valid range
-    safe_index = max(0, min(3, probe_rotation_index))
+    # Priority 3: rotation fallback — variety across turns on the same topic
+    rotation_families = ["ownership", "outcome", "alternatives", "failure", "process"]
+    safe_index = max(0, min(len(rotation_families) - 1, probe_rotation_index))
     selected_family = rotation_families[safe_index]
 
-    # Gate: failure probe only for CRITICAL topics
-    if selected_family == "failure" and topic_importance != "CRITICAL":
-        # Skip failure probe for non-critical topics — use tradeoff instead
-        return "tradeoff"
+    # Gate: failure probe only on HIGH/CRITICAL topics
+    if selected_family == "failure" and topic_importance not in ("CRITICAL", "HIGH"):
+        return "alternatives"
 
     return selected_family
 
@@ -295,19 +420,19 @@ def build_directive(
     depth_signal: str,
     collapse_stage: int = 0,
     uncovered_topics: Optional[list[str]] = None,
-    current_stage: str = "",
 ) -> str:
     """
-    Build the NEXT_TURN_DIRECTIVE string injected into the agent's context.
+    Build the NEXT_TURN_DIRECTIVE injected into the agent's context each turn.
 
-    Owns: per-turn signal reactions, follow-up cap enforcement, stage guard.
-    Does NOT repeat: persona rules, aloud suppression, or stage-level question style
-    (those live in prompt_layers.py and the active stage directive respectively).
+    Single injection point — probe family goal+style is the only instruction.
+    No duplicate signal blocks (those caused repeated same-angle questions).
+    follow_up_collapse gets its own staged lines since it has L1/L2/L3 logic.
+    depth_decay gets a plain MOVE_ON with a human-readable note.
+    Everything else: one goal, one style, one probe intent line.
     """
     action = td["decision"]["action"]
     mode = td["decision"]["mode"]
     next_goal = td["decision"]["next_goal"]
-    trust = td["trust"]
     quality = td["quality"]
     signals = td["signals"]
 
@@ -317,7 +442,6 @@ def build_directive(
     lines = [
         "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]",
         f"DECISION: {action}" + (f" ({mode.upper()})" if action != "MOVE_ON" else ""),
-        f"CURRENT STAGE: {current_stage or 'unknown'}",
         f"ANSWER DEPTH: {depth_signal}",
         f"QUALITY: clarity={quality['clarity']:.0f} depth={quality['depth']:.0f} "
         f"specificity={quality['specificity']:.0f} grounding={quality['grounding']:.0f}",
@@ -326,41 +450,34 @@ def build_directive(
     if active_signals:
         lines.append(f"SIGNALS: {', '.join(active_signals)}")
 
+    # depth_decay: candidate is fatiguing — plain note, action already set to MOVE_ON
     if "depth_decay" in active_signals:
-        lines.extend([
-            "DEPTH DECAY DETECTED — candidate answer quality is declining across topics.",
-            "Do NOT ask a harder or deeper question. The candidate is fatiguing.",
-            "ACTION: Move to the next topic at normal pace. Keep the next question light and broad.",
-            "If uncovered topics remain, bridge to the most important one now.",
-            "Do not reference the quality decline to the candidate.",
-        ])
+        lines.append(
+            "Candidate answer quality is declining. Move to the next topic naturally — "
+            "keep the next question light and broad. Do not reference the decline."
+        )
 
-    if "ownership_ambiguity" in active_signals:
-        lines.extend([
-            "OWNERSHIP PROBE: They used team language. Pick one specific thing they claimed "
-            "the team did and ask what their personal role in that exact thing was.",
-            "Do not use a generic ownership question — anchor it to their words.",
-            "Wait for clear personal ownership language before moving on.",
-        ])
-
+    # follow_up_collapse: staged L1/L2/L3 memory probe — needs its own multi-line logic
     if "follow_up_collapse" in active_signals:
         lines.extend(_build_collapse_probe_lines(collapse_stage, td.get("signal_events", [])))
 
-    lines.append(f"TRUST DELTA: {trust['delta']:+.2f} - {trust['reason']}")
     lines.append(f"NEXT MOVE: {next_goal}")
+
     if style and style != "No special probe needed.":
         lines.append(f"QUESTION STYLE: {style}")
+
     if action != "MOVE_ON":
         lines.append(
             "PROBE INTENT: Anchor your question to something specific they actually said — "
-            "a project name, a number, a claim. Don't use a generic opener."
+            "a project name, a tool, a number, a claim. Never open with a generic question."
         )
 
     if action == "MOVE_ON" and uncovered_topics:
-        next_topic = uncovered_topics[0] if uncovered_topics else "next area"
+        next_topic = uncovered_topics[0]
         lines.extend([
             f"BRIDGE NOW to: {next_topic}",
-            "NEXT TOPIC LOCK: The current topic is closed. Your very next question must be about the bridge topic above.",
-            "Do NOT ask another follow-up on the previous project, work item, skill thread, or example.",
+            "NEXT TOPIC LOCK: Current topic is closed. Your very next question must be about the bridge topic above.",
+            "Do NOT ask another follow-up on the previous topic.",
         ])
+
     return "\n".join(lines)
