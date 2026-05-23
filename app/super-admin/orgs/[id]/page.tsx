@@ -110,11 +110,12 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
         setPreviewLoading(true);
         try {
             stopCurrentPreview();
+            const transcript = "Hello buddy, how are you doing? I'm ready to interview candidates.";
             const res = await fetch("/api/admin/voice/preview", {
                 method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ voiceId, transcript: "Hello buddy, how are you doing? I'm ready to interview candidates." }),
+                body: JSON.stringify({ voiceId, transcript }),
             });
-            if (!res.ok) throw new Error("Preview failed");
+            if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || "Preview failed");
             const blob = await res.blob();
             const audioUrl = URL.createObjectURL(blob);
             previewUrlRef.current = audioUrl;

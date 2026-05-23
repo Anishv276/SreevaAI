@@ -36,6 +36,10 @@ function toAudioResponse(audioBuffer: ArrayBuffer, contentType: string) {
   });
 }
 
+function logCreditRechargeNeeded(provider: string) {
+  console.error(`[VoicePreview] ${provider} 402 - pls recharge credits`);
+}
+
 export async function createVoicePreviewResponse(input: VoicePreviewInput) {
   const { voiceId, transcript } = input;
 
@@ -89,6 +93,9 @@ export async function createVoicePreviewResponse(input: VoicePreviewInput) {
           }
         }
       } catch { /* keep statusText */ }
+      if (response.status === 402) {
+        logCreditRechargeNeeded("Sarvam");
+      }
       return NextResponse.json({ error: `Sarvam AI: ${errorMsg}` }, { status: response.status });
     }
 
@@ -139,6 +146,9 @@ export async function createVoicePreviewResponse(input: VoicePreviewInput) {
       } catch {
         // keep status text
       }
+      if (response.status === 402) {
+        logCreditRechargeNeeded("ElevenLabs");
+      }
       return NextResponse.json({ error: `ElevenLabs: ${errorMsg}` }, { status: response.status });
     }
 
@@ -184,6 +194,9 @@ export async function createVoicePreviewResponse(input: VoicePreviewInput) {
         }
       }
     } catch { /* keep statusText */ }
+    if (response.status === 402) {
+      logCreditRechargeNeeded("Cartesia");
+    }
     return NextResponse.json({ error: `Cartesia: ${errorMsg}` }, { status: response.status });
   }
 

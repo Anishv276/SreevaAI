@@ -26,7 +26,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         const companyName = app.drive.organization?.name || "Company";
         const bookedSlot = app.interview?.scheduledAt ? app.interview.scheduledAt.getTime() : null;
         const effectiveInterviewMode = resolveInterviewMode(
-            app.drive?.interviewMode,
+            null,
             app.drive?.organization?.interviewMode
         );
         const slotSchedulingEnabled = isSlotMode(effectiveInterviewMode);

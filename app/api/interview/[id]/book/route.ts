@@ -51,7 +51,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
             return NextResponse.json({ error: "Application not found" }, { status: 404 });
         }
         const effectiveInterviewMode = resolveInterviewMode(
-            app.drive?.interviewMode,
+            null,
             app.drive?.organization?.interviewMode
         );
         if (!isSlotMode(effectiveInterviewMode)) {

@@ -81,7 +81,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
         const driveDeadline = application.drive?.deadline ? new Date(application.drive.deadline) : null;
         const effectiveInterviewMode = resolveInterviewMode(
-            application.drive?.interviewMode,
+            null,
             application.drive?.organization?.interviewMode
         );
         const slotModeEnabled = isSlotMode(effectiveInterviewMode);

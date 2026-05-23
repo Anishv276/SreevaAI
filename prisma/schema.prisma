@@ -3,9 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider = "postgresql"
 }
 
 model Organization {
@@ -99,7 +97,6 @@ model Drive {
   jdFileName         String?
   jdPreviewUrl       String?
   orgId              String?
-  interviewMode      String?
   location           String?
   deadline           DateTime?
   aiName             String?       @default("Ishitha")

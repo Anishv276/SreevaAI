@@ -57,7 +57,7 @@ export async function POST(
         }
 
         const effectiveInterviewMode = resolveInterviewMode(
-            application.drive?.interviewMode,
+            null,
             application.drive?.organization?.interviewMode
         );
         const slotModeEnabled = isSlotMode(effectiveInterviewMode);

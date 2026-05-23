@@ -34,7 +34,6 @@ export async function GET(request: Request) {
                     select: {
                         id: true,
                         title: true,
-                        interviewMode: true,
                         deadline: true,
                         organization: {
                             select: {
@@ -63,7 +62,7 @@ export async function GET(request: Request) {
 
         const formattedApplications = applications.map((app: any) => {
             const effectiveInterviewMode = resolveInterviewMode(
-                app.drive?.interviewMode,
+                null,
                 app.drive?.organization?.interviewMode
             );
             const slotModeEnabled = isSlotMode(effectiveInterviewMode);

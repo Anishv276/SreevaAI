@@ -3,15 +3,10 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Briefcase, Edit3, Loader2, Upload, Lock, Users, Settings } from "lucide-react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Button } from "@/components/ui/button";
+import { ArrowLeft, Briefcase, Edit3, Loader2, Upload, Lock } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
 import { DriveCandidatesTable } from "@/components/admin/drive-candidates-table";
 import { DriveResumeUploadModal } from "@/components/admin/drive-resume-upload-modal";
-import { ScreeningSettings } from "@/components/create-drive/screening-settings";
-import { parseDriveScreeningSettings, sanitizeScreeningCriteria } from "@/lib/screening-criteria";
 import { toast } from "@/components/ui/toast-custom";
 import { getInterviewQuotaSupportMessage, isInterviewQuotaLocked } from "@/lib/interview-quota";
 import { useAdminOrg } from "@/context/admin-org-context";
@@ -39,11 +34,8 @@ export default function DriveCandidatesPage() {
     const driveId = typeof params?.driveId === "string" ? params.driveId : Array.isArray(params?.driveId) ? params.driveId[0] : "";
     const [drive, setDrive] = useState<DriveDetails | null>(null);
     const [loading, setLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState("candidates");
     const [uploadOpen, setUploadOpen] = useState(false);
     const [refreshKey, setRefreshKey] = useState(0);
-    const [screeningThreshold, setScreeningThreshold] = useState(60);
-    const [screeningCriteria, setScreeningCriteria] = useState<Record<string, any>>({});
 
     // ⚡ Read from shared context — no fetch needed (was 1 API call per load)
     const adminOrg = useAdminOrg();
@@ -79,14 +71,6 @@ export default function DriveCandidatesPage() {
                     jdPreviewUrl: data.jdPreviewUrl || null,
                     screeningCriteria: data.screeningCriteria || null,
                 });
-
-                const parsed = parseDriveScreeningSettings(
-                    data.screeningCriteria,
-                    Number(data.screeningThreshold ?? 60),
-                );
-
-                setScreeningThreshold(parsed.threshold);
-                setScreeningCriteria(parsed.criteria as Record<string, any>);
             } catch (error) {
                 console.error("Failed to fetch drive:", error);
             } finally {
@@ -121,28 +105,6 @@ export default function DriveCandidatesPage() {
             </div>
         );
     }
-
-    const handleSaveScreeningCriteria = async () => {
-        try {
-            const res = await fetch(`/api/drives/${driveId}`, {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    screeningThreshold,
-                    screeningCriteria: sanitizeScreeningCriteria(screeningCriteria),
-                }),
-            });
-
-            if (!res.ok) {
-                throw new Error("Failed to save screening criteria");
-            }
-
-            toast.success("Screening criteria saved");
-            setRefreshKey((v) => v + 1);
-        } catch (error) {
-            toast.error((error as Error).message);
-        }
-    };
 
     return (
         <div className="space-y-3 pb-6 animate-in fade-in duration-700" style={{ zoom: 0.7, transformOrigin: "top center" }}>
@@ -207,109 +169,7 @@ export default function DriveCandidatesPage() {
                 </div>
             </section>
 
-            {activeTab !== "screening" && (
-                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-sm">
-                    <span className="font-semibold">Before starting screening, adjust screening settings first.</span>{" "}
-                    <button
-                        type="button"
-                        onClick={() => setActiveTab("screening")}
-                        className="ml-1 inline-flex items-center rounded-full border border-amber-200 bg-white px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em] text-amber-700 transition-colors hover:bg-amber-50"
-                    >
-                        Click here
-                    </button>{" "}
-                    to open the screening settings.
-                </div>
-            )}
-
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-                <TabsList className="inline-flex h-auto rounded-2xl border border-slate-200 bg-white p-1 shadow-sm">
-                    <TabsTrigger
-                        value="candidates"
-                        className="inline-flex h-10 items-center gap-2 rounded-xl px-4 text-sm font-semibold text-slate-800 transition-colors hover:text-slate-950 data-[state=active]:bg-[#F97316] data-[state=active]:text-white data-[state=active]:shadow-sm"
-                    >
-                        <Users className="h-4 w-4" />
-                        Candidates
-                    </TabsTrigger>
-                    <TabsTrigger
-                        value="screening"
-                        className="inline-flex h-10 items-center gap-2 rounded-xl px-4 text-sm font-semibold text-slate-800 transition-colors hover:text-slate-950 data-[state=active]:bg-[#F97316] data-[state=active]:text-white data-[state=active]:shadow-sm"
-                    >
-                        <Settings className="h-4 w-4" />
-                        Screening Settings
-                    </TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="candidates" className="mt-0">
-                    <DriveCandidatesTable driveId={driveId} refreshKey={refreshKey} />
-                </TabsContent>
-
-                <TabsContent value="screening" className="mt-0">
-                    <div className="space-y-8">
-                        <div className="rounded-[2rem] border border-white/40 bg-white/60 p-5 shadow-[0_8px_24px_rgba(15,23,42,0.03)] backdrop-blur-xl">
-                            <div className="mb-4 flex items-start justify-between gap-4">
-                                <div>
-                                    <p className="text-[10px] font-black uppercase tracking-[0.28em] text-gray-400">Screening settings</p>
-                                    <h2 className="mt-1 text-xl font-black tracking-tight text-gray-900">Configure AI screening criteria</h2>
-                                    <p className="mt-2 text-sm text-gray-500 font-medium">
-                                        These values are stored in the Job screening criteria JSON and used for resume scoring.
-                                    </p>
-                                </div>
-                            </div>
-
-                            <ScreeningSettings
-                                config={{ threshold: screeningThreshold, criteria: screeningCriteria }}
-                                setConfig={(cfg) => {
-                                    if (typeof cfg === "function") {
-                                        const next = cfg({ threshold: screeningThreshold, criteria: screeningCriteria });
-                                        setScreeningThreshold(next.threshold ?? 60);
-                                        setScreeningCriteria(next.criteria || {});
-                                    } else {
-                                        setScreeningThreshold(cfg.threshold ?? 60);
-                                        setScreeningCriteria(cfg.criteria || {});
-                                    }
-                                }}
-                            />
-
-                            <div className="flex items-center justify-end gap-3 pt-6 mt-6 border-t border-gray-100">
-                                <Button
-                                    variant="outline"
-                                    onClick={() => {
-                                        const current = drive as any;
-                                        const rawCriteria = current?.screeningCriteria;
-                                        let parsed: Record<string, any> = {};
-                                        if (rawCriteria) {
-                                            if (typeof rawCriteria === "string") {
-                                                try {
-                                                    parsed = JSON.parse(rawCriteria);
-                                                } catch {
-                                                    parsed = {};
-                                                }
-                                            } else {
-                                                parsed = rawCriteria;
-                                            }
-                                        }
-                                        const next = parseDriveScreeningSettings(
-                                            parsed,
-                                            Number(current?.screeningThreshold ?? 60),
-                                        );
-                                        setScreeningThreshold(next.threshold);
-                                        setScreeningCriteria(next.criteria as Record<string, any>);
-                                    }}
-                                    className="h-10 rounded-xl border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 shadow-sm hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
-                                >
-                                    Reset
-                                </Button>
-                                <Button
-                                    onClick={handleSaveScreeningCriteria}
-                                    className="h-10 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
-                                >
-                                    Save Screening Criteria
-                                </Button>
-                            </div>
-                        </div>
-                    </div>
-                </TabsContent>
-            </Tabs>
+            <DriveCandidatesTable driveId={driveId} refreshKey={refreshKey} />
 
             <DriveResumeUploadModal
                 open={uploadOpen}

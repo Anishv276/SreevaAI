@@ -11,12 +11,6 @@ async function main() {
     console.log('Ensured Organization.interviewMode');
 
     await prisma.$executeRawUnsafe(`
-      ALTER TABLE "Drive"
-      ADD COLUMN IF NOT EXISTS "interviewMode" TEXT;
-    `);
-    console.log('Ensured Drive.interviewMode');
-
-    await prisma.$executeRawUnsafe(`
       ALTER TABLE "Interview"
       ADD COLUMN IF NOT EXISTS "linkStatus" TEXT NOT NULL DEFAULT 'ACTIVE';
     `);

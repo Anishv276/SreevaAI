@@ -12,7 +12,6 @@ import { normalizeDriveAiConfig } from "@/lib/ai-provider-config";
 import { getInterviewQuotaSupportMessage, isOrgRestrictedStatus } from "@/lib/interview-quota";
 import { parseOrgLimitValue } from "@/lib/org-limits";
 import { parseDriveScreeningSettings, sanitizeScreeningCriteria } from "@/lib/screening-criteria";
-import { normalizeInterviewMode } from "@/lib/interview-mode";
 
 function normalizeDeadlineDate(deadline?: string | null) {
     if (!deadline) return null;
@@ -86,7 +85,6 @@ export async function GET(request: Request) {
                     jdFileName: true,
                     jdPreviewUrl: true,
                     orgId: true,
-                    interviewMode: true,
                     deadline: true,
                     aiName: true,
                     voiceId: true,
@@ -233,7 +231,6 @@ export async function POST(request: Request) {
                 screeningCriteria: JSON.stringify(mergedScreeningCriteria),
                 screeningThreshold: data.screeningThreshold ?? 60,
                 deadline: normalizeDeadlineDate(data.deadline as string | null | undefined),
-                interviewMode: data.interviewMode ? normalizeInterviewMode(data.interviewMode) : null,
 
                 // Interview configuration
                 interviewLanguage: data.interviewLanguage || "English",

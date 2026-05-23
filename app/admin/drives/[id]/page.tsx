@@ -3,16 +3,12 @@
 import { useState, useEffect, use } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "@/components/ui/toast-custom";
-import { Button } from "@/components/ui/button";
-import { ScreeningSettings } from "@/components/create-drive/screening-settings";
-import { parseDriveScreeningSettings, sanitizeScreeningCriteria } from "@/lib/screening-criteria";
 import { getInterviewQuotaSupportMessage, getSupportComposeUrl, isInterviewQuotaLocked } from "@/lib/interview-quota";
 import {
     ArrowLeft,
     Briefcase,
     Loader2,
     Upload,
-    Settings,
     Pencil,
     Lock,
 } from "lucide-react";
@@ -26,9 +22,6 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
     const { id: driveId } = use(params);
 
     const { jobs } = useJobs();
-    const [activeTab, setActiveTab] = useState<"upload" | "settings">("upload");
-    const [screeningThreshold, setScreeningThreshold] = useState(60);
-    const [screeningCriteria, setScreeningCriteria] = useState<Record<string, any>>({});
     
     // ⚡ Read from shared context — no fetch needed
     const adminOrg = useAdminOrg();
@@ -49,13 +42,6 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
                 const data = await res.json();
                 setDrive(data);
                 
-                const parsed = parseDriveScreeningSettings(
-                    data.screeningCriteria,
-                    Number(data.screeningThreshold ?? 60),
-                );
-
-                setScreeningThreshold(parsed.threshold);
-                setScreeningCriteria(parsed.criteria as Record<string, any>);
             } catch (err) {
                 console.error("Load drive error:", err);
                 toast.error("An error occurred");
@@ -65,43 +51,6 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
         };
         loadDrive();
     }, [driveId]);
-
-    useEffect(() => {
-        const currentDrive = drive as any;
-        if (!currentDrive) return;
-
-        const parsed = parseDriveScreeningSettings(
-            currentDrive.screeningCriteria,
-            Number(currentDrive.screeningThreshold ?? 60),
-        );
-
-        setScreeningThreshold(parsed.threshold);
-        setScreeningCriteria(parsed.criteria as Record<string, any>);
-    }, [drive]);
-
-
-
-
-    const handleSaveScreeningCriteria = async () => {
-        try {
-            const res = await fetch(`/api/drives/${driveId}`, {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    screeningThreshold,
-                    screeningCriteria: sanitizeScreeningCriteria(screeningCriteria),
-                }),
-            });
-
-            if (!res.ok) {
-                throw new Error("Failed to save screening criteria");
-            }
-
-            toast.success("Screening criteria saved");
-        } catch (error) {
-            toast.error((error as Error).message);
-        }
-    };
 
     if (loading || !drive) {
         return (
@@ -147,34 +96,19 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
                                 Back
                             </button>
                             <button
-                                onClick={() => setActiveTab("upload")}
                                 disabled={quotaLocked}
                                 className={cn(
                                     "inline-flex h-10 items-center gap-2 rounded-xl px-4 text-sm font-semibold transition-colors",
                                     quotaLocked
                                         ? "cursor-not-allowed border border-amber-200 bg-amber-50 text-amber-700"
-                                        : activeTab === "upload"
-                                        ? "bg-slate-950 text-white shadow-sm"
-                                        : "border border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
+                                        : "bg-slate-950 text-white shadow-sm"
                                 )}
                             >
                                 {quotaLocked ? <Lock className="h-4 w-4" /> : <Upload className="h-4 w-4" />}
                                 {quotaLocked ? "Upload Locked" : "Upload Resumes"}
                             </button>
                             <button
-                                onClick={() => setActiveTab("settings")}
-                                className={cn(
-                                    "inline-flex h-10 items-center gap-2 rounded-xl px-4 text-sm font-semibold transition-colors",
-                                    activeTab === "settings"
-                                        ? "bg-slate-950 text-white shadow-sm"
-                                        : "border border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
-                                )}
-                            >
-                                <Settings className="h-4 w-4" />
-                                Screening Settings
-                            </button>
-                            <button
-                                onClick={() => router.push("/admin/drives")}
+                                onClick={() => router.push(`/admin/create-drive?id=${driveId}&mode=edit`)}
                                 className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
                             >
                                 <Pencil className="h-4 w-4" />
@@ -189,8 +123,7 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
             <div className="max-w-7xl mx-auto px-6 py-8">
                 {/* Tab Content */}
                 <div className="rounded-3xl border border-slate-200 bg-white shadow-sm">
-                    {activeTab === "upload" ? (
-                        <div className="space-y-4 p-6">
+                    <div className="space-y-4 p-6">
                             {quotaLocked ? (
                                 <div className="rounded-3xl border border-amber-200 bg-amber-50 px-6 py-5 text-amber-950 shadow-sm">
                                     <div className="flex items-start gap-4">
@@ -227,69 +160,12 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
                                     </div>
                                 </div>
                             ) : (
-                                <>
-                                    <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-sm">
-                                        <span className="font-semibold">Before starting screening, adjust screening settings first.</span>{" "}
-                                        <button
-                                            type="button"
-                                            onClick={() => setActiveTab("settings")}
-                                            className="font-bold underline underline-offset-2"
-                                        >
-                                            Click here
-                                        </button>{" "}
-                                        to open the screening settings.
-                                    </div>
-                                    <ResumeScreening
-                                        driveId={driveId}
-                                        driveName={drive?.title || ""}
-                                    />
-                                </>
+                                <ResumeScreening
+                                    driveId={driveId}
+                                    driveName={drive?.title || ""}
+                                />
                             )}
-                        </div>
-                    ) : (
-                        <div className="space-y-6 p-6 md:p-8">
-                            <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-5">
-                                <h2 className="text-xl font-bold text-slate-950">Screening Criteria</h2>
-                                <p className="mt-1 text-sm text-slate-500">Configure AI screening criteria. The system will automatically score and rank candidates based on these settings.</p>
-                            </div>
-                            <ScreeningSettings
-                                config={{ threshold: screeningThreshold, criteria: screeningCriteria }}
-                                setConfig={(cfg) => {
-                                    if (typeof cfg === "function") {
-                                        const next = cfg({ threshold: screeningThreshold, criteria: screeningCriteria });
-                                        setScreeningThreshold(next.threshold ?? 60);
-                                        setScreeningCriteria(next.criteria || {});
-                                    } else {
-                                        setScreeningThreshold(cfg.threshold ?? 60);
-                                        setScreeningCriteria(cfg.criteria || {});
-                                    }
-                                }}
-                            />
-
-                            <div className="flex items-center justify-end gap-3 border-t border-slate-200 pt-4">
-                                <Button
-                                    variant="outline"
-                                    onClick={() => {
-                                        const currentDrive = drive as any;
-                                        const next = parseDriveScreeningSettings(
-                                            currentDrive?.screeningCriteria,
-                                            Number(currentDrive?.screeningThreshold ?? 60),
-                                        );
-                                        setScreeningThreshold(next.threshold);
-                                        setScreeningCriteria(next.criteria as Record<string, any>);
-                                    }}
-                                >
-                                    Reset
-                                </Button>
-                                <Button
-                                    onClick={handleSaveScreeningCriteria}
-                                    className="bg-slate-950 text-white hover:bg-slate-800"
-                                >
-                                    Save Screening Criteria
-                                </Button>
-                            </div>
-                        </div>
-                    )}
+                    </div>
                 </div>
             </div>
 
