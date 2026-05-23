@@ -155,12 +155,14 @@ model Interview {
   snapshots             String[]    @default([])
   candidateFeedback     String?
   candidateRating       Json?
-  proctoringEvents      Json?       @default("[]")
-  interviewReport       Json?       @default("{}")
-  proctoringReport      Json?       @default("{}")
-  strategicVerdict      Json?       @default("{}")
+  integritySignals      Json?       @default("[]")
+  skillRatings          Json?       @default("{}")
+  communicationScore    Int?
+  cognitiveInsights     Json?       @default("{}")
+  behaviorSignals       Json?       @default("{}")
+  behavioralSignalsAnalysis Json?    @default("{}")
   interviewTurns        Json?       @default("[]")
-  answerScores          Json?       @default("{}")
+  questionByQuestionAnalysis Json?  @default("[]")
   recordingStatus       String?     @default("NOT_STARTED")
   recordingMimeType     String?
   recordingStartedAt    DateTime?

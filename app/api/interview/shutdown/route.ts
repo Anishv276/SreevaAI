@@ -15,7 +15,24 @@ function toHttpUrl(rawUrl: string) {
 
 export async function POST(req: NextRequest) {
     try {
-        const body = await req.json();
+        const contentType = req.headers.get("content-type") || "";
+        if (!contentType.includes("application/json")) {
+            return NextResponse.json(
+                { error: "Validation failed", details: { _form: ["JSON body required"] } },
+                { status: 400 }
+            );
+        }
+
+        let body: unknown;
+        try {
+            body = await req.json();
+        } catch {
+            return NextResponse.json(
+                { error: "Validation failed", details: { _form: ["Invalid or empty JSON body"] } },
+                { status: 400 }
+            );
+        }
+
         const result = interviewShutdownSchema.safeParse(body);
         
         if (!result.success) {
@@ -81,7 +98,7 @@ export async function POST(req: NextRequest) {
                     await roomClient.removeParticipant(roomName, agent.identity);
                 }
             }
-        } catch (err) {
+        } catch {
             // Room might not exist yet or already be gone, which is fine
             console.log(`[SHUTDOWN] Room ${roomName} check finished (might not exist).`);
         }

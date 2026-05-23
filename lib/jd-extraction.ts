@@ -9,16 +9,19 @@ export type JdExtractionJobData =
       fileName: string;
       buffer: Buffer | { type?: string; data?: number[] };
       orgOpenAIModel: string;
+      orgId?: string;
     }
   | {
       kind: "url";
       url: string;
       orgOpenAIModel: string;
+      orgId?: string;
     }
   | {
       kind: "text";
       text: string;
       orgOpenAIModel: string;
+      orgId?: string;
     };
 
 export type JdExtractionJobResult = {

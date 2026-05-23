@@ -14,7 +14,7 @@ export async function GET(
         if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
 
         const { id } = await params;
-        const candidate = await prisma.application.findUnique({
+        const candidate: any = await prisma.application.findUnique({
             where: { id },
             select: {
                 id: true,
@@ -56,12 +56,14 @@ export async function GET(
                         createdAt: true,
                         updatedAt: true,
                         inviteSentAt: true,
-                        interviewReport: true,
-                        proctoringReport: true,
-                        strategicVerdict: true,
+                        skillRatings: true,
+                        communicationScore: true,
+                        cognitiveInsights: true,
+                        behaviorSignals: true,
+                        behavioralSignalsAnalysis: true,
                         interviewTurns: true,
-                        answerScores: true,
-                        proctoringEvents: true,
+                        questionByQuestionAnalysis: true,
+                        integritySignals: true,
                         recordingStatus: true,
                         recordingMimeType: true,
                         recordingStartedAt: true,
@@ -69,9 +71,9 @@ export async function GET(
                         recordingDurationSec: true,
                         snapshots: true,
                     }
-                }
+                } as any
             }
-        });
+        } as any);
 
         if (!candidate) {
             return NextResponse.json({ error: "Candidate not found" }, { status: 404 });
@@ -82,8 +84,37 @@ export async function GET(
             return NextResponse.json({ error: "Candidate belongs to a different organization" }, { status: 403 });
         }
 
+        const interviewReport = (() => {
+            const interview = candidate.interview as any;
+            const raw = interview?.skillRatings;
+            const parsed = raw
+                ? (typeof raw === "string" ? JSON.parse(raw) : raw)
+                : {};
+            const communicationScore = interview?.communicationScore ?? parsed?.communication_score ?? parsed?.scores?.communication ?? null;
+            return {
+                ...parsed,
+                communication_score: communicationScore,
+                scores: {
+                    ...(parsed?.scores || {}),
+                    communication_score: communicationScore,
+                },
+                cognitive_insights: interview?.cognitiveInsights ?? parsed?.cognitive_insights ?? parsed?.cognitive ?? {},
+                integrity_signals: interview?.integritySignals ?? [],
+                behavior_signals: interview?.behaviorSignals ?? {},
+                behavioral_signals_analysis: interview?.behavioralSignalsAnalysis ?? {},
+                question_by_question_analysis: interview?.questionByQuestionAnalysis ?? [],
+            };
+        })();
+
         return NextResponse.json({
             ...candidate,
+            interview: candidate.interview ? {
+                ...candidate.interview,
+                proctoringEvents: candidate.interview.integritySignals ?? [],
+                proctoringReport: candidate.interview.behaviorSignals ?? {},
+                answerScores: candidate.interview.questionByQuestionAnalysis ?? [],
+                interviewReport,
+            } : candidate.interview,
             formattedDate: new Date(candidate.createdAt).toLocaleDateString(),
             driveTitle: candidate.drive?.title || "Role N/A"
         }, {

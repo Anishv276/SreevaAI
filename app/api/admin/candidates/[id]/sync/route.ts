@@ -26,7 +26,7 @@ export async function POST(
 
         const { id } = await context.params;
 
-        const app = await prisma.application.findUnique({
+        const app: any = await prisma.application.findUnique({
             where: { id },
             include: {
                 interview: true,
@@ -45,6 +45,23 @@ export async function POST(
         // --------------------------------------------------
 
         console.log(`[SYNC_ENGINE]: Syncing ${app.fullName} to Pinecone...`);
+
+        const interviewReport = (() => {
+            const interview = app.interview as any;
+            const raw = interview?.skillRatings;
+            const parsed = raw
+                ? (typeof raw === "string" ? JSON.parse(raw) : raw)
+                : {};
+            return {
+                ...parsed,
+                communication_score: interview?.communicationScore ?? parsed?.communication_score ?? parsed?.scores?.communication ?? null,
+                cognitive_insights: interview?.cognitiveInsights ?? parsed?.cognitive_insights ?? parsed?.cognitive ?? {},
+                integrity_signals: interview?.integritySignals ?? [],
+                behavior_signals: interview?.behaviorSignals ?? {},
+                behavioral_signals_analysis: interview?.behavioralSignalsAnalysis ?? {},
+                question_by_question_analysis: interview?.questionByQuestionAnalysis ?? [],
+            };
+        })();
 
         const syncResult = await syncCandidateCorpusToPinecone({
             applicationId: app.id,
@@ -75,7 +92,7 @@ export async function POST(
                 },
                 {
                     type: "interview_report",
-                    text: app.interview?.interviewReport,
+                    text: interviewReport,
                     createdAt: app.interview?.createdAt?.toISOString() || app.createdAt.toISOString(),
                 },
             ],

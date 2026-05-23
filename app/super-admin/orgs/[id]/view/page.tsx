@@ -952,6 +952,10 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                                 const billingAll = (usage.billing ?? {}) as Record<string, BillingFeatureMetrics>;
 
                                 const billing = (billingAll[section.key] ?? {}) as BillingFeatureMetrics;
+                                const llmCost = Number(billing?.costUsd || 0);
+                                const ttsCost = Number(billing?.ttsCostUsd || 0);
+                                const sttCost = Number(billing?.sttCostUsd || 0);
+                                const sectionTotalCost = llmCost + ttsCost + sttCost;
 
                                 const totalTokens = Number(billing?.inputTokens || 0) + Number(billing?.outputTokens || 0);
 
@@ -1011,7 +1015,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
 
                                         <div className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">{section.label}</div>
 
-                                        <div className="mt-2 text-3xl font-black text-gray-900">{fmt(Number(billing?.costUsd || 0))}</div>
+                                        <div className="mt-2 text-3xl font-black text-gray-900">{fmt(sectionTotalCost)}</div>
 
                                         <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
 
@@ -1050,6 +1054,12 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                                             Analysis model: <span className="text-gray-900">{analysisModelNames}</span>
 
                                         </div>
+
+                                        {section.key === "interview" && (
+                                            <div className="mt-1 text-xs font-bold text-gray-500 uppercase tracking-wider">
+                                                LLM cost: <span className="text-gray-900">{fmt(llmCost)}</span>
+                                            </div>
+                                        )}
 
                                         {interviewTtsCost !== null && (
 

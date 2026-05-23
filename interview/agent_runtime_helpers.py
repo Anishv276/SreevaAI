@@ -198,10 +198,10 @@ async def report_proctoring_realtime(app_id: str, evt_type: str, reason: str, sc
             await conn.execute(
                 """
                 UPDATE "Interview"
-                SET "proctoringReport" = jsonb_set(
-                    COALESCE("proctoringReport", '{"events": []}'::jsonb),
+                SET "behaviorSignals" = jsonb_set(
+                    COALESCE("behaviorSignals", '{"events": []}'::jsonb),
                     '{events}',
-                    COALESCE("proctoringReport"->'events', '[]'::jsonb) || $1::jsonb
+                    COALESCE("behaviorSignals"->'events', '[]'::jsonb) || $1::jsonb
                 ),
                 "updatedAt" = NOW()
                 WHERE "applicationId" = $2

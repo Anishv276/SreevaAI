@@ -810,7 +810,7 @@ async def persist_transcript(
                         "interviewTranscript" = $1,
                         "interviewDuration"   = $2,
                         status                = $3,
-                        "proctoringReport"    = COALESCE("proctoringReport", '{}'::jsonb) || COALESCE($4::jsonb, '{}'::jsonb),
+                        "behaviorSignals"    = COALESCE("behaviorSignals", '{}'::jsonb) || COALESCE($4::jsonb, '{}'::jsonb),
                         "interviewTurns"      = $5,
                         "completedAt"         = NOW(),
                         "updatedAt"           = NOW()
@@ -837,7 +837,7 @@ async def checkpoint_ai_signals(app_id: str, events: list[dict]) -> None:
     appends only the new events passed in; deduplication is handled by the
     caller (agent_runtime) which passes only the newly-appended slice.
 
-    Uses a jsonb merge so concurrent frontend signal writes to proctoringEvents
+    Uses a jsonb merge so concurrent frontend signal writes to integritySignals
     are never touched.
     """
     if not events or not DATABASE_URL:
@@ -849,11 +849,11 @@ async def checkpoint_ai_signals(app_id: str, events: list[dict]) -> None:
                 """
                 UPDATE "Interview"
                 SET
-                    "proctoringReport" = COALESCE("proctoringReport", '{}'::jsonb)
+                    "behaviorSignals" = COALESCE("behaviorSignals", '{}'::jsonb)
                         || jsonb_build_object(
                             'checkpoint_events',
                             COALESCE(
-                                ("proctoringReport"->'checkpoint_events'),
+                                ("behaviorSignals"->'checkpoint_events'),
                                 '[]'::jsonb
                             ) || $1::jsonb
                         ),
@@ -888,41 +888,53 @@ async def mark_interview_started(app_id: str):
             logger.info(f"[INTERVIEW] App {app_id} marked as IN_PROGRESS.")
     except Exception as e:
         logger.error(f"[INTERVIEW] Failed to update application status to started: {e}")
-async def persist_answer_scores(app_id: str, answer_scores: list[dict]) -> None:
-    """Save structured answer quality scores to Interview.answerScores JSONB."""
+async def persist_question_by_question_analysis(app_id: str, answer_scores: list[dict]) -> None:
+    """Save full turn-by-turn interview analysis to Interview.questionByQuestionAnalysis JSONB."""
     if not app_id or not DATABASE_URL or not answer_scores:
         return
     try:
         pool = await get_db_pool()
         async with pool.acquire() as conn:
-            total_answers = len(answer_scores)
-            avg_clarity = sum(s.get("clarity", 5) for s in answer_scores) / max(total_answers, 1)
-            avg_depth = sum(s.get("depth", 5) for s in answer_scores) / max(total_answers, 1)
-            avg_overall = sum(s.get("overall", 5) for s in answer_scores) / max(total_answers, 1)
-            answer_scores_payload = {
-                "averages": {
-                    "clarity": round(avg_clarity, 2),
-                    "depth": round(avg_depth, 2),
-                    "overall": round(avg_overall, 2),
-                },
-                "allAnswers": answer_scores,
-            }
+            normalized_turns = []
+            for idx, score in enumerate(answer_scores, 1):
+                normalized_turns.append({
+                    "turn": int(score.get("turn", idx) or idx),
+                    "ai_question": str(score.get("question", "") or "").strip(),
+                    "candidate_answer": str(score.get("answer", "") or "").strip(),
+                    "score_breakdown": {
+                        "clarity": int(score.get("clarity", 0) or 0),
+                        "depth": int(score.get("depth", 0) or 0),
+                        "fluency": int(score.get("fluency", 0) or 0),
+                        "confidence": int(score.get("confidence", 0) or 0),
+                    },
+                    "overall": float(score.get("overall", 0) or 0),
+                    "signals": list(score.get("signals", []) or []),
+                    "concerns": list(score.get("concerns", []) or []),
+                    "topic": str(score.get("topic", "") or ""),
+                    "topic_saturation_score": float(score.get("topic_saturation_score", 0) or 0),
+                    "topic_saturation_threshold": float(score.get("topic_saturation_threshold", 0) or 0),
+                    "is_warmup": bool(score.get("is_warmup", False)),
+                })
             await conn.execute(
                 """
                 UPDATE "Interview"
-                SET "answerScores" = $1::jsonb,
+                SET "questionByQuestionAnalysis" = $1::jsonb,
                     "updatedAt" = NOW()
                 WHERE "applicationId" = $2
                 """,
-                json.dumps(answer_scores_payload),
+                json.dumps(normalized_turns),
                 app_id,
             )
             logger.info(
-                f"[SCORE] Saved {total_answers} answer scores for {app_id}: "
-                f"clarity={avg_clarity:.1f}, depth={avg_depth:.1f}, overall={avg_overall:.1f}"
+                f"[SCORE] Saved {len(normalized_turns)} question-by-question analysis rows for {app_id}"
             )
     except Exception as e:
-        logger.error(f"[SCORE] Failed to persist answer scores for {app_id}: {e}")
+        logger.error(f"[SCORE] Failed to persist question-by-question analysis for {app_id}: {e}")
+
+
+async def persist_answer_scores(app_id: str, answer_scores: list[dict]) -> None:
+    """Backward-compatible wrapper for existing runtime imports."""
+    await persist_question_by_question_analysis(app_id, answer_scores)
 
 
 async def persist_skill_ratings(app_id: str, skill_ratings: dict[str, dict]) -> None:
@@ -941,8 +953,8 @@ async def persist_skill_ratings(app_id: str, skill_ratings: dict[str, dict]) -> 
             await conn.execute(
                 """
                 UPDATE "Interview"
-                SET "interviewReport" =
-                    COALESCE("interviewReport", '{}'::jsonb)
+                SET "skillRatings" =
+                    COALESCE("skillRatings", '{}'::jsonb)
                     || jsonb_build_object('skill_ratings', $1::jsonb),
                     "updatedAt" = NOW()
                 WHERE "applicationId" = $2
@@ -1123,7 +1135,7 @@ async def generate_interview_summary(
                 {"role": "user", "content": f"Interview Transcript:\n{summary_transcript}"},
             ],
         )
-        await persist_org_manual_billing_usage(org_id, "interview", _extract_openai_completion_usage(completion))
+        await persist_org_manual_billing_usage(org_id, "interviewReport", _extract_openai_completion_usage(completion))
         raw_summary = completion.choices[0].message.content
         summary_text = raw_summary.strip() if isinstance(raw_summary, str) else ""
         if not summary_text:
@@ -1235,6 +1247,8 @@ async def generate_interview_report(
                         "Use specific evidence from the interview—projects they built, decisions they explained, skills shown. "
                         "Do NOT use metrics or percentages—write flowing sentences. Example: 'STRONG HIRE. They built production systems in React and explained their architectural choices. They showed problem-solving depth and owned their work end-to-end. Gap: missing DevOps but strong fundamentals to learn.' "
                         "Be honest about gaps if they exist, but frame them as teachable vs. disqualifying.\n\n"
+                        "cognitive_insights: Score the candidate's thinking using these exact fields: clarity, clarity_earned, clarity_missed, depth_of_knowledge, depth_earned, depth_missed, problem_solving, problem_solving_earned, problem_solving_missed, logical_thinking, logical_thinking_earned, logical_thinking_missed, adaptability, adaptability_earned, adaptability_missed, confidence, confidence_earned, confidence_missed, summary. "
+                        "Use 0-100 integers for every score field. The *_earned and *_missed fields must be 1-2 sentences and must cite a specific transcript moment. If a dimension cannot be assessed, set the score to 0 and use 'Unable to evaluate.' for the evidence text.\n\n"
                         "OUTPUT FORMAT:\n"
                         "{\n"
                         '  "skills_covered": ["skill1", "skill2"],\n'
@@ -1242,6 +1256,7 @@ async def generate_interview_report(
                         '  "role_fit": 35,\n'
                         '  "top_strengths": ["strength with evidence"],\n'
                         '  "concerns": ["concern with evidence"],\n'
+                        '  "cognitive_insights": {"clarity": 0, "clarity_earned": "", "clarity_missed": "", "depth_of_knowledge": 0, "depth_earned": "", "depth_missed": "", "problem_solving": 0, "problem_solving_earned": "", "problem_solving_missed": "", "logical_thinking": 0, "logical_thinking_earned": "", "logical_thinking_missed": "", "adaptability": 0, "adaptability_earned": "", "adaptability_missed": "", "confidence": 0, "confidence_earned": "", "confidence_missed": "", "summary": ""},\n'
                         '  "decision_note": "RECOMMENDATION. Who they are and why (or why not) hire them."\n'
                         "}"
                     ),
@@ -1252,13 +1267,61 @@ async def generate_interview_report(
                 },
             ],
         )
-        await persist_org_manual_billing_usage(org_id, "interview", _extract_openai_completion_usage(completion))
+        await persist_org_manual_billing_usage(org_id, "interviewReport", _extract_openai_completion_usage(completion))
         raw_report = completion.choices[0].message.content or "{}"
         try:
             report_data = json.loads(raw_report.strip())
         except json.JSONDecodeError:
             logger.warning(f"[REPORT] Failed to parse report JSON for {app_id}")
-            report_data = {"skills_covered": [], "skill_ratings": {}, "role_fit": 0, "top_strengths": [], "concerns": [], "decision_note": "Unable to parse report."}
+            report_data = {
+                "skills_covered": [],
+                "skill_ratings": {},
+                "role_fit": 0,
+                "top_strengths": [],
+                "concerns": [],
+                "cognitive_insights": {},
+                "decision_note": "Unable to parse report.",
+            }
+
+        def _normalize_cognitive_insights(raw: Any) -> dict[str, Any]:
+            fallback = {
+                "clarity": 0,
+                "clarity_earned": "Unable to evaluate.",
+                "clarity_missed": "Unable to evaluate.",
+                "depth_of_knowledge": 0,
+                "depth_earned": "Unable to evaluate.",
+                "depth_missed": "Unable to evaluate.",
+                "problem_solving": 0,
+                "problem_solving_earned": "Unable to evaluate.",
+                "problem_solving_missed": "Unable to evaluate.",
+                "logical_thinking": 0,
+                "logical_thinking_earned": "Unable to evaluate.",
+                "logical_thinking_missed": "Unable to evaluate.",
+                "adaptability": 0,
+                "adaptability_earned": "Unable to evaluate.",
+                "adaptability_missed": "Unable to evaluate.",
+                "confidence": 0,
+                "confidence_earned": "Unable to evaluate.",
+                "confidence_missed": "Unable to evaluate.",
+                "summary": "Cognitive evaluation requires manual review.",
+            }
+            if not isinstance(raw, dict):
+                return fallback
+
+            normalized = dict(fallback)
+            for key in normalized.keys():
+                value = raw.get(key)
+                if key in {"clarity", "depth_of_knowledge", "problem_solving", "logical_thinking", "adaptability", "confidence"}:
+                    try:
+                        normalized[key] = int(max(0, min(100, float(value))))
+                    except (TypeError, ValueError):
+                        normalized[key] = fallback[key]
+                else:
+                    text = str(value or "").strip()
+                    normalized[key] = text if text else fallback[key]
+            return normalized
+
+        cognitive_insights = _normalize_cognitive_insights(report_data.get("cognitive_insights"))
 
         # Build qa_blocks from interview-only scores
         qa_blocks = []
@@ -1281,16 +1344,85 @@ async def generate_interview_report(
                 "concerns": score.get("concerns", []),
             })
 
+        # Keep the full turn-by-turn record, including warmup turns, so the UI
+        # can show all interview turns instead of stopping at interview-only rows.
+        qa_blocks_all = []
+        for idx, score in enumerate(answer_scores, 1):
+            q_text = score.get("question", "").strip()
+            overall_score = round(float(score.get("overall", 0) or 0), 1)
+            qa_blocks_all.append({
+                "q": idx,
+                "question": q_text or f"Question {idx}",
+                "title": q_text or f"Question {idx}",
+                "answer": score.get("answer", ""),
+                "score": f"{overall_score}/10",
+                "score_breakdown": {
+                    "clarity":    score.get("clarity",    0),
+                    "depth":      score.get("depth",      0),
+                    "fluency":    score.get("fluency",    0),
+                    "confidence": score.get("confidence", 0),
+                },
+                "signals":  score.get("signals", []),
+                "concerns": score.get("concerns", []),
+                "is_warmup": bool(score.get("is_warmup", False)),
+            })
+
+        def _normalize_ai_text(value: Any) -> str:
+            text = str(value or "")
+            return (
+                text.replace("Ã¢â‚¬â€", "—")
+                .replace("â€”", "—")
+                .replace("Ã¢â‚¬â€œ", "–")
+                .replace("â€“", "–")
+                .replace("Ã¢â‚¬Å“", "“")
+                .replace("â€œ", "“")
+                .replace("Ã¢â‚¬Â", "”")
+                .replace("â€", "”")
+                .replace("Ã¢â‚¬â„¢", "’")
+                .replace("â€™", "’")
+                .replace("Ã¢â‚¬Â¢", "•")
+                .replace("â€¢", "•")
+                .replace("Ã—", "×")
+                .replace("ï¼š", ":")
+                .replace("Â·", "·")
+                .strip()
+            )
+
         skills_covered = report_data.get("skills_covered", [])
         top_strengths = report_data.get("top_strengths", [])
         concerns = report_data.get("concerns", [])
-        decision_note = report_data.get("decision_note", "")
+        decision_note = _normalize_ai_text(report_data.get("decision_note", ""))
         role_fit = int(min(100, max(0, report_data.get("role_fit", 0))))
 
         # Convert skills_covered and skill_ratings into structured skills_proof objects expected by frontend
         skill_ratings = report_data.get("skill_ratings", {})
+        noise_signal_names = {
+            "ownership_ambiguity",
+            "example_evasion",
+            "resume_claim_mismatch",
+            "follow_up_collapse",
+            "latency_mismatch",
+            "complexity_latency_mismatch",
+            "ownership_clarified",
+            "example_given",
+            "contradiction",
+            "contradiction_resolved",
+            "depth_decay",
+            "strong_under_pressure",
+        }
+
+        def _is_noise_signal_skill(value: str) -> bool:
+            normalized = str(value or "").strip().lower().replace(" ", "_").replace("-", "_")
+            return normalized in noise_signal_names
+
+        skills_index: list[str] = []
+        for skill_name in list(skills_covered or []) + list(skill_ratings.keys()):
+            clean = str(skill_name or "").strip()
+            if clean and not _is_noise_signal_skill(clean) and clean not in skills_index:
+                skills_index.append(clean)
+        skills_covered = skills_index
         skills_proof = []
-        for s in skills_covered:
+        for s in skills_index:
             rating_val = skill_ratings.get(s)
             rating = None
             if rating_val is not None:
@@ -1313,29 +1445,35 @@ async def generate_interview_report(
                 "what_was_missing": ""
             })
 
-        final_report = {
+        skill_ratings_report = {
             "technical_score": technical_score,
             "role_fit": role_fit,
             "decision_note": decision_note,
             "scores": {
                 "technical": technical_score,
                 "role_fit": role_fit,
-                "communication": communication_score,
+                "combined_score": int(round((technical_score + communication_score + role_fit) / 3)),
                 "communication_breakdown": comm_scores,
             },
             "skills_proof": skills_proof,
-            "skill_ratings": skill_ratings,
-            "top_strengths": top_strengths if isinstance(top_strengths, list) else [],
-            "concerns": concerns if isinstance(concerns, list) else [],
-            "qa_blocks": qa_blocks,
-            "behavioral_analysis": behavioral_report,
+            "skill_ratings": {k: v for k, v in skill_ratings.items() if not _is_noise_signal_skill(k)},
+            "top_strengths": [
+                _normalize_ai_text(item)
+                for item in top_strengths
+                if isinstance(item, str) and item.strip()
+            ] if isinstance(top_strengths, list) else [],
+            "concerns": [
+                _normalize_ai_text(item)
+                for item in concerns
+                if isinstance(item, str) and item.strip()
+            ] if isinstance(concerns, list) else [],
             "verdict": {
                 "summary": (
                     f"Technical score: {technical_score}%. "
                     f"Role fit (JD): {role_fit}%. "
                     f"Communication: {communication_score}/100. "
                     f"{len(skills_covered)} skill(s) assessed. "
-                    f"{behavioral_report.get('summary', '')}"
+                    f"{_normalize_ai_text(behavioral_report.get('summary', ''))}"
                 )
             },
         }
@@ -1345,13 +1483,19 @@ async def generate_interview_report(
             await conn.execute(
                 """
                 UPDATE "Interview"
-                SET "interviewReport" = $1
-                WHERE "applicationId" = $2
+                SET "skillRatings" = $1,
+                    "communicationScore" = $2,
+                    "cognitiveInsights" = $3,
+                    "behavioralSignalsAnalysis" = $4
+                WHERE "applicationId" = $5
                 """,
-                json.dumps(final_report),
+                json.dumps(skill_ratings_report),
+                communication_score,
+                json.dumps(cognitive_insights),
+                json.dumps(behavioral_report),
                 app_id,
             )
-        logger.info(f"[REPORT] Generated report for {app_id}: score={technical_score}, skills={len(report_data.get('skills_covered', []))}")
+        logger.info(f"[REPORT] Generated skill report for {app_id}: score={technical_score}, skills={len(report_data.get('skills_covered', []))}")
     except Exception as e:
         logger.error(f"[REPORT] Generation failed for {app_id}: {e}", exc_info=True)
 

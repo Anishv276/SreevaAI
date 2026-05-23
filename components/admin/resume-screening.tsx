@@ -263,70 +263,110 @@ function UploadModal({
     const pct = progress.total > 0 ? Math.round((progress.processed / progress.total) * 100) : 0;
     return (
         <Dialog open={open} onOpenChange={handleClose}>
-            <DialogContent className="max-w-lg">
-                <DialogHeader>
-                    <DialogTitle className="text-xl font-black text-gray-900">
+            <DialogContent className="flex max-h-[90vh] max-w-2xl flex-col overflow-hidden rounded-[2rem] border border-white/40 bg-white/95 backdrop-blur-2xl shadow-[0_30px_100px_rgba(0,0,0,0.18)]">
+                <DialogHeader className="shrink-0 space-y-3 border-b border-gray-100 pb-4">
+                    <div className="inline-flex w-fit items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-[10px] font-black uppercase tracking-[0.24em] text-orange-700">
+                        Resume batch upload
+                    </div>
+                    <DialogTitle className="text-2xl font-black tracking-tight text-gray-900">
                         {phase === "processing" ? "Screening in Progress" :
                             phase === "summary" ? "Screening Complete" :
                             "Upload Resumes"}
                     </DialogTitle>
-                    <p className="text-sm text-gray-400">{driveName}</p>
+                    <p className="text-sm text-gray-500">{driveName}</p>
                 </DialogHeader>
                 {/* IDLE / UPLOADING */}
                 {(phase === "idle" || phase === "uploading") && (
-                    <div className="space-y-5 py-3">
+                    <div className="flex-1 space-y-5 overflow-y-auto py-4 pr-1">
                         <div
                             onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
                             onDragLeave={() => setIsDragging(false)}
                             onDrop={onDrop}
                             onClick={() => files.length === 0 && inputRef.current?.click()}
                             className={cn(
-                                "border-2 border-dashed rounded-2xl transition-all duration-200 cursor-pointer",
+                                "rounded-3xl border-2 border-dashed transition-all duration-200 cursor-pointer",
                                 isDragging ? "border-orange-400 bg-orange-50/60" :
                                     files.length > 0 ? "border-orange-200 bg-orange-50/20" :
                                         "border-gray-200 hover:border-orange-300",
                                 files.length > 0 ? "p-5" : "p-12"
                             )}
                         >
-                            <input ref={inputRef} type="file" multiple accept=".pdf" onChange={e => { setFiles(prev => [...prev, ...Array.from(e.target.files || [])]); e.target.value = ""; }} className="hidden" />
+                            <input
+                                ref={inputRef}
+                                type="file"
+                                multiple
+                                accept=".pdf"
+                                onChange={e => { setFiles(prev => [...prev, ...Array.from(e.target.files || [])]); e.target.value = ""; }}
+                                className="hidden"
+                            />
                             {files.length === 0 ? (
                                 <div className="text-center">
-                                    <div className="w-12 h-12 rounded-2xl bg-orange-100 flex items-center justify-center mx-auto mb-3">
-                                        <Upload className="h-6 w-6 text-orange-500" />
+                                    <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-[1.5rem] bg-gradient-to-br from-orange-100 to-amber-100 text-orange-600 shadow-sm">
+                                        <Upload className="h-7 w-7" />
                                     </div>
-                                    <p className="font-bold text-gray-800">Drop PDF resumes here</p>
-                                    <p className="text-sm text-gray-400 mt-1">or click to browse</p>
+                                    <p className="text-base font-bold text-gray-800">Drop PDF resumes here</p>
+                                    <p className="mt-1 text-sm text-gray-400">or click to browse files</p>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        onClick={(e) => { e.stopPropagation(); inputRef.current?.click(); }}
+                                        className="mt-5 h-11 rounded-2xl border-orange-200 bg-white px-5 text-sm font-bold text-orange-600 hover:border-orange-300 hover:bg-orange-50"
+                                    >
+                                        Browse files
+                                    </Button>
                                 </div>
                             ) : (
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-12 h-12 rounded-2xl bg-orange-100 flex items-center justify-center shrink-0">
-                                            <FileText className="h-6 w-6 text-orange-500" />
-                                        </div>
+                                <div className="space-y-3">
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
                                         <div>
                                             <p className="text-3xl font-black text-gray-900 tabular-nums leading-none">{files.length}</p>
-                                            <p className="text-sm text-gray-400 mt-0.5">resume{files.length !== 1 ? "s" : ""} selected</p>
+                                            <p className="text-xs font-bold uppercase tracking-widest text-gray-400">PDF files selected</p>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={e => { e.stopPropagation(); inputRef.current?.click(); }}
+                                                className="inline-flex h-11 items-center gap-2 rounded-2xl border border-orange-200 bg-orange-50 px-4 text-xs font-bold text-orange-600 transition-colors hover:border-orange-300 hover:bg-orange-100"
+                                            >
+                                                + Add More
+                                            </button>
+                                            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-orange-100 text-orange-500 shadow-sm">
+                                                <FileText className="h-5 w-5" />
+                                            </div>
                                         </div>
                                     </div>
-                                    <div className="flex gap-2">
-                                        <button onClick={e => { e.stopPropagation(); inputRef.current?.click(); }} className="text-xs font-bold text-orange-600 px-3 py-1.5 rounded-lg bg-orange-50 hover:bg-orange-100 transition-colors">+ Add</button>
-                                        <button onClick={e => { e.stopPropagation(); setFiles([]); }} className="text-xs font-bold text-gray-400 px-3 py-1.5 rounded-lg hover:bg-red-50 hover:text-red-500 transition-colors">Clear</button>
+                                    <div className="max-h-56 overflow-y-auto space-y-2 rounded-[1.5rem] border border-orange-100 bg-white/80 p-3 pr-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
+                                        {files.map((file) => (
+                                            <div key={`${file.name}-${file.size}`} className="flex items-center justify-between gap-3 rounded-[1.25rem] border border-gray-100 bg-white px-4 py-3 shadow-[0_6px_20px_rgba(15,23,42,0.04)] transition-transform hover:-translate-y-[1px]">
+                                                <div className="min-w-0">
+                                                    <span className="block truncate text-sm font-bold text-gray-800">{file.name}</span>
+                                                    <span className="text-[11px] font-medium text-gray-400">{Math.max(1, Math.round(file.size / 1024))} KB</span>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={e => { e.stopPropagation(); setFiles(prev => prev.filter(item => item !== file)); }}
+                                                    className="shrink-0 rounded-xl p-2 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-500"
+                                                >
+                                                    <X className="h-4 w-4" />
+                                                </button>
+                                            </div>
+                                        ))}
                                     </div>
                                 </div>
                             )}
                         </div>
                         {error && (
-                            <div className="flex gap-2 p-3 bg-red-50 border border-red-200 rounded-xl">
-                                <AlertCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
-                                <p className="text-sm text-red-700">{error}</p>
-                            </div>
-                        )}
-                        <div className="flex items-center justify-end gap-3 pt-1 border-t border-gray-100">
+                        <div className="flex gap-2 rounded-2xl border border-red-100 bg-red-50 px-4 py-3">
+                            <AlertCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
+                            <p className="text-sm text-red-700">{error}</p>
+                        </div>
+                    )}
+                        <div className="flex items-center justify-end gap-3 border-t border-gray-100 pt-4">
                             <Button variant="ghost" onClick={handleClose} className="rounded-xl font-bold text-gray-500">Cancel</Button>
                             <Button
                                 onClick={startScreening}
                                 disabled={files.length === 0 || phase === "uploading"}
-                                className="rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold px-6 flex items-center gap-2"
+                                className="rounded-2xl bg-orange-600 px-6 font-bold text-white shadow-[0_10px_24px_rgba(249,115,22,0.28)] hover:bg-orange-700 hover:shadow-[0_12px_28px_rgba(249,115,22,0.34)] flex items-center gap-2"
                             >
                                 <Zap className="h-4 w-4" />
                                 {phase === "uploading" ? "Uploading..." : `Start Screening (${files.length})`}
@@ -417,13 +457,13 @@ function UploadModal({
                         </div>
 
                         <div className="flex items-center justify-end gap-3 pt-1">
-                            <Button variant="ghost" onClick={() => { reset(); onComplete(); }} className="rounded-xl font-bold text-gray-500">
+                            <Button variant="ghost" onClick={() => { reset(); onComplete(); }} className="h-11 rounded-2xl border border-gray-200 bg-white px-5 font-bold text-gray-600 hover:bg-gray-50">
                                 Skip
                             </Button>
                             <Button
                                 onClick={handleSendFollowUpEmails}
                                 disabled={sendingFollowUp}
-                                className="rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold px-6 flex items-center gap-2"
+                                className="h-11 rounded-2xl bg-orange-600 px-6 font-bold text-white shadow-[0_10px_24px_rgba(249,115,22,0.28)] hover:bg-orange-700 hover:shadow-[0_12px_28px_rgba(249,115,22,0.34)] flex items-center gap-2"
                             >
                                 <Mail className="h-4 w-4" />
                                 {sendingFollowUp ? "Sending..." : "Send Emails"}
@@ -440,8 +480,8 @@ function UploadModal({
                         <p className="text-base font-black text-gray-900">Screening failed</p>
                         <p className="text-sm text-gray-400">{error}</p>
                         <div className="flex items-center justify-center gap-3">
-                            <Button variant="ghost" onClick={handleClose} className="rounded-xl font-bold">Close</Button>
-                            <Button onClick={reset} className="rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold">Try Again</Button>
+                            <Button variant="ghost" onClick={handleClose} className="h-11 rounded-2xl border border-gray-200 bg-white px-5 font-bold text-gray-600 hover:bg-gray-50">Close</Button>
+                            <Button onClick={reset} className="h-11 rounded-2xl bg-orange-600 px-5 font-bold text-white shadow-[0_10px_24px_rgba(249,115,22,0.28)] hover:bg-orange-700 hover:shadow-[0_12px_28px_rgba(249,115,22,0.34)]">Try Again</Button>
                         </div>
                     </div>
                 )}

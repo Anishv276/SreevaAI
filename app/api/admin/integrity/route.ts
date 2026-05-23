@@ -76,8 +76,8 @@ export async function GET(req: NextRequest) {
         const to = searchParams.get("to") ?? undefined;
         const start = getRangeStart(range, from, to);
 
-        // Fetch completed interviews in range, with proctoringEvents
-        let interviews: { id: string; proctoringEvents: unknown; applicationId: string }[] = [];
+        // Fetch completed interviews in range, with integritySignals
+        let interviews: { id: string; integritySignals: unknown; applicationId: string }[] = [];
         try {
             interviews = await (prisma.interview as any).findMany({
                 where: {
@@ -88,11 +88,11 @@ export async function GET(req: NextRequest) {
                 select: {
                     id: true,
                     applicationId: true,
-                    proctoringEvents: true,
+                    integritySignals: true,
                 },
             });
         } catch {
-            // proctoringEvents column may not exist yet - return zeros
+            // integritySignals column may not exist yet - return zeros
             const total = await prisma.interview.count({
                 where: { status: "COMPLETED", completedAt: { gte: start }, application: { drive: { orgId } } },
             });
@@ -117,7 +117,7 @@ export async function GET(req: NextRequest) {
         const lowRiskSet = new Set<string>();   // interview IDs with LOW/MEDIUM severity
 
         for (const iv of interviews) {
-            const raw = iv.proctoringEvents;
+            const raw = iv.integritySignals;
             if (!raw) continue;
 
             let events: ProctoringEvent[] = [];

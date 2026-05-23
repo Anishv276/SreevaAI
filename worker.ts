@@ -1,4 +1,5 @@
 import { Worker, Queue } from 'bullmq';
+import crypto from 'crypto';
 import { join } from 'path';
 import { spawn } from 'child_process';
 import { tmpdir } from 'os';
@@ -166,7 +167,10 @@ async function processDriveResumeBatchJob(job: any) {
   console.log(`[RESUME-WORKER] Batch queued -> starting batchId=${batchId} driveId=${driveId}`);
 
   const batch = await prisma.resumeBatch.findUnique({ where: { id: batchId } });
-  if (!batch) throw new Error(`Batch ${batchId} not found`);
+  if (!batch) {
+    console.warn(`[RESUME-WORKER] Batch ${batchId} not found. It may have been cleaned up already; skipping stale job.`);
+    return;
+  }
 
   // Idempotency guard: if this batch already reached a terminal state, don't process it again.
   const normalizedBatchStatus = String(batch.status || "").toUpperCase();
@@ -512,11 +516,12 @@ async function persistInterviewUpdateRaw(params: {
     : existingTranscript;
   await prisma.$executeRawUnsafe(
     `
-    INSERT INTO "Interview" ("id", "applicationId", status, "interviewRecordingUrl", "interviewRecordedAt", "interviewTranscript", "completedAt", "createdAt", "updatedAt")
-    VALUES ($6::text, $1::text, COALESCE($2::text, 'IN_PROGRESS'), $3::text, CASE WHEN $3::text IS NOT NULL THEN $5::timestamp ELSE NULL END, $4::text, CASE WHEN $2::text = 'COMPLETED' THEN $5::timestamp ELSE NULL END, $5::timestamp, $5::timestamp)
+    INSERT INTO "Interview" ("id", "applicationId", "accessToken", status, "interviewRecordingUrl", "interviewRecordedAt", "interviewTranscript", "completedAt", "createdAt", "updatedAt")
+    VALUES ($6::text, $1::text, $7::text, COALESCE($2::text, 'IN_PROGRESS'), $3::text, CASE WHEN $3::text IS NOT NULL THEN $5::timestamp ELSE NULL END, $4::text, CASE WHEN $2::text = 'COMPLETED' THEN $5::timestamp ELSE NULL END, $5::timestamp, $5::timestamp)
     ON CONFLICT ("applicationId")
     DO UPDATE SET
       status = COALESCE($2::text, "Interview".status),
+      "accessToken" = COALESCE("Interview"."accessToken", EXCLUDED."accessToken"),
       "interviewRecordingUrl" = COALESCE($3::text, "Interview"."interviewRecordingUrl"),
       "interviewRecordedAt" = CASE WHEN $3::text IS NOT NULL THEN $5::timestamp ELSE "Interview"."interviewRecordedAt" END,
       "interviewTranscript" = COALESCE($4::text, "Interview"."interviewTranscript"),
@@ -528,7 +533,8 @@ async function persistInterviewUpdateRaw(params: {
     recordingUrl || null,
     transcriptToPersist || null,
     now,
-    fallbackId
+    fallbackId,
+    crypto.randomUUID()
   );
 }
 
@@ -565,6 +571,7 @@ const requestedQueues = new Set(
     .map((name) => name.trim())
     .filter(Boolean)
 );
+console.log("[Worker] Enabled queues:", Array.from(requestedQueues).join(", "));
 
 function isQueueEnabled(queueName: string) {
   return requestedQueues.has("all") || requestedQueues.has(queueName);
@@ -729,6 +736,7 @@ async function processResumeFileExtractJob(job: any) {
 }
 if (isQueueEnabled("resume-processing")) {
   const worker = trackWorker('resume-processing', new Worker('resume-processing', async (job) => {
+    console.log(`[RESUME-WORKER] Received job id=${job.id} name=${job.name}`);
     if (job.name === "drive-resume-batch") {
       await processDriveResumeBatchJob(job);
       return;
@@ -998,6 +1006,9 @@ if (isQueueEnabled("resume-processing")) {
     removeOnComplete: { count: 0 }, // Delete immediately — keeps 0 completed jobs
     removeOnFail: { count: 10 } // KEEP ONLY 10 FAILURES FOR DEBUGGING
   }));
+  void worker.waitUntilReady()
+    .then(() => console.log("[resume-processing] Worker ready and waiting for jobs"))
+    .catch((error) => console.error("[resume-processing] Worker failed to become ready:", error));
   worker.on('failed', (job, err) => {
     console.log(`[FATAL] Job ${job?.id} failed permanently: ${err.message}`);
   });
@@ -1086,6 +1097,7 @@ if (isQueueEnabled("invitation-delivery-queue")) {
           create: {
             id: generateId("int", application.fullName || applicationId),
             applicationId,
+            accessToken: crypto.randomUUID(),
             inviteSentAt: now,
             status: "PENDING",
             expiresAt: slotModeEnabled ? null : driveDeadline,
@@ -1322,6 +1334,7 @@ if (isQueueEnabled("interview-finalization")) {
             create: {
               id: generateId("int", appForId?.fullName || applicationId),
               applicationId,
+              accessToken: crypto.randomUUID(),
               status: interviewStatus || "IN_PROGRESS",
               ...updateData,
             },
@@ -1806,6 +1819,7 @@ if (isQueueEnabled("interview-snapshots")) {
           create: {
             id: generateId("int", appForSnapshot?.fullName || String(applicationId)),
             applicationId: String(applicationId),
+            accessToken: crypto.randomUUID(),
             snapshots: [url],
             status: "PENDING"
           }

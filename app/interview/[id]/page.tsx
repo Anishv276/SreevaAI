@@ -1469,10 +1469,23 @@ function InterviewRoomContent({
     }, []);
     // Media Control Logic
     const isMicEnabled = localParticipant?.isMicrophoneEnabled ?? false;
+    const [micTogglePending, setMicTogglePending] = useState(false);
     const didAutoEnableMicRef = useRef(false);
-    const toggleMic = useCallback(() => {
-        localParticipant?.setMicrophoneEnabled(!isMicEnabled);
-    }, [localParticipant, isMicEnabled]);
+    const toggleMic = useCallback(async () => {
+        if (!localParticipant || micTogglePending) return;
+        const nextEnabled = !localParticipant.isMicrophoneEnabled;
+        setMicTogglePending(true);
+        try {
+            await localParticipant.setMicrophoneEnabled(
+                nextEnabled,
+                nextEnabled && selectedMicId ? { deviceId: selectedMicId } : undefined
+            );
+        } catch (err) {
+            console.warn("[Mic] Failed to toggle microphone:", err);
+        } finally {
+            setMicTogglePending(false);
+        }
+    }, [localParticipant, micTogglePending, selectedMicId]);
     useEffect(() => {
         if (!isInterviewActive || connectionState !== "connected" || !localParticipant) {
             didAutoEnableMicRef.current = false;
@@ -2053,8 +2066,9 @@ function InterviewRoomContent({
                     {/* Microphone Toggle */}
                     <button
                         onClick={toggleMic}
+                        disabled={micTogglePending || !localParticipant}
                         className={cn(
-                            "group flex items-center gap-3 px-5 py-3 rounded-2xl border transition-all active:scale-95",
+                            "group flex items-center gap-3 px-5 py-3 rounded-2xl border transition-all active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed",
                             isMicEnabled
                                 ? "bg-zinc-800/40 border-white/5 hover:bg-zinc-800/60"
                                 : "bg-red-500/10 border-red-500/20 hover:bg-red-500/20"
@@ -2075,7 +2089,7 @@ function InterviewRoomContent({
                                 "text-[10px] font-bold uppercase tracking-widest",
                                 isMicEnabled ? "text-white" : "text-red-500"
                             )}>
-                                {isMicEnabled ? "Active" : "Muted"}
+                                {micTogglePending ? "Toggling..." : (isMicEnabled ? "Active" : "Muted")}
                             </p>
                         </div>
                     </button>

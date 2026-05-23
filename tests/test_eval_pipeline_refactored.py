@@ -141,21 +141,24 @@ class TestTopicStateAndSaturation:
         assert ts.saturation_score == 0.0
         assert ts.follow_up_turns == 0
         assert ts.is_saturated is False
+        assert ts.updated_turn == 0
 
     def test_add_response_contribution(self):
         ts = TopicState("Test Topic", "MEDIUM")
         assert ts.saturation_threshold == 5.0
         # Add contribution
-        ts.add_response_contribution(2.5, 0.0)
-        assert ts.saturation_score == 2.5
+        ts.add_response_contribution(2.5, 0.0, turn=4)
+        assert ts.saturation_score == 3.5
         assert ts.follow_up_turns == 1
         assert ts.is_saturated is False
+        assert ts.updated_turn == 4
 
         # Add more to trigger saturation
-        ts.add_response_contribution(2.5, 0.0)
-        assert ts.saturation_score == 5.0
+        ts.add_response_contribution(2.5, 0.0, turn=5)
+        assert ts.saturation_score == 7.0
         assert ts.follow_up_turns == 2
         assert ts.is_saturated is True
+        assert ts.updated_turn == 5
 
     def test_advance_probe_rotation(self):
         ts = TopicState("Test Topic", "MEDIUM")
@@ -272,6 +275,7 @@ class TestPipelineEndToEnd:
         ]
         for key in required_keys:
             assert key in result, f"Missing key: {key}"
+        assert result["input_active_topic"] == "Lead Qualification System"
 
     def test_probe_updates_topic_state(self):
         payload = _base_payload()
@@ -280,6 +284,7 @@ class TestPipelineEndToEnd:
         assert new_state is not None
         assert new_state["follow_up_turns"] == 1
         assert new_state["saturation_score"] > 0.0
+        assert new_state["updated_turn"] == 3
 
     def test_saturation_reaches_threshold_forces_move_on(self):
         # We pass an active topic state that is already close to saturation (e.g. score=7.0, threshold=8.0)

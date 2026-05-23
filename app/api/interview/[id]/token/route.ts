@@ -101,7 +101,6 @@ export async function POST(
         if (!slotModeEnabled) {
             const now = Date.now();
             const expiresAtMs = interview.expiresAt ? interview.expiresAt.getTime() : null;
-            const startedAtMs = interview.startedAt ? interview.startedAt.getTime() : null;
 
             if (expiresAtMs !== null && now > expiresAtMs) {
                 await prismaAny.interview.update({
@@ -109,14 +108,6 @@ export async function POST(
                     data: { linkStatus: "EXPIRED" },
                 }).catch(() => { });
                 return NextResponse.json({ error: "Access Denied: Interview session has expired" }, { status: 403 });
-            }
-
-            if (startedAtMs !== null && now > startedAtMs + 5 * 60 * 1000) {
-                await prismaAny.interview.update({
-                    where: { applicationId },
-                    data: { linkStatus: "EXPIRED" },
-                }).catch(() => { });
-                return NextResponse.json({ error: "Access Denied: Interview link has expired after join window." }, { status: 403 });
             }
 
             if (interview.linkStatus !== "ACTIVE") {

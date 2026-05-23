@@ -146,6 +146,7 @@ def build_interview_directive(
         f"  → When a skill comes up naturally in a project story, drill into it right there — no need to wait.\n"
         f"  → Drop in situational or behavioral when it fits — never announce the type.\n"
         f"  → Don't revisit the same area twice. Accept a weak answer and move on.\n"
-        f"  → One question per turn. Short, warm, direct.\n"
+        f"  → ONE question per turn ONLY — never bundle two questions together with 'and' or commas.\n"
+        f"  → Short, warm, direct.\n"
         f"  → Do NOT wrap up or say goodbye until the system signals you to."
     )

@@ -43,6 +43,12 @@ export async function GET(
                         const session = await getSession();
                         orgId = session?.orgId || null;
                     } catch { /* no session */ }
+                    if (!orgId) {
+                        const jobOrgId = (job.data as Record<string, unknown> | undefined)?.orgId;
+                        if (typeof jobOrgId === "string" && jobOrgId.trim()) {
+                            orgId = jobOrgId.trim();
+                        }
+                    }
 
                     const alreadyBilled = Boolean((job.data as Record<string, unknown> | undefined)?.usageBilled);
                     if (orgId && result?.usage && !alreadyBilled) {

@@ -91,10 +91,27 @@ function serializeInterviewReport(r: Record<string, unknown>): string {
     const lines: string[] = [];
 
     const n = (v: unknown) => (v != null ? String(v) : "");
+    const scoreBlock = (r.scores && typeof r.scores === "object") ? (r.scores as Record<string, unknown>) : undefined;
+    const communicationScore = r.communicationScore ?? r.communication_score ?? scoreBlock?.communication ?? null;
+    const cognitiveInsights = (r.cognitiveInsights ?? r.cognitive_insights ?? r.cognitive) as Record<string, unknown> | undefined;
+    const behavioralSignals = (r.behaviorSignals ?? r.behavior_signals ?? r.proctoringReport) as Record<string, unknown> | undefined;
+    const behavioralSignalsAnalysis = (r.behavioralSignalsAnalysis ?? r.behavioral_signals_analysis ?? r.behavioral_analysis) as Record<string, unknown> | undefined;
+    const questionByQuestionAnalysis = Array.isArray(r.questionByQuestionAnalysis)
+        ? r.questionByQuestionAnalysis as any[]
+        : Array.isArray(r.question_by_question_analysis)
+            ? r.question_by_question_analysis as any[]
+            : Array.isArray(r.qa_blocks_all)
+                ? r.qa_blocks_all as any[]
+                : Array.isArray(r.qa_blocks)
+                    ? r.qa_blocks as any[]
+                    : [];
 
     // Scores
-    if (r.combined_score != null) {
-        lines.push(`SCORES: combined=${r.combined_score}/100, technical=${r.technical_score ?? "?"}/100, communication=${r.communication_score ?? "?"}/100, behavioral=${r.behavioral_score ?? "?"}/100`);
+    const combinedScore = r.combined_score ?? scoreBlock?.combined_score ?? null;
+    const technicalScore = r.technical_score ?? scoreBlock?.technical ?? null;
+    const behavioralScore = r.behavioral_score ?? scoreBlock?.behavioral ?? null;
+    if (combinedScore != null || technicalScore != null || communicationScore != null || behavioralScore != null) {
+        lines.push(`SCORES: combined=${combinedScore ?? "?"}/100, technical=${technicalScore ?? "?"}/100, communication=${communicationScore ?? "?"}/100, behavioral=${behavioralScore ?? "?"}/100`);
     }
 
     // Integrity
@@ -111,14 +128,6 @@ function serializeInterviewReport(r: Record<string, unknown>): string {
         if (verdict.ai_summary_concise) lines.push(`CONCISE SUMMARY: ${n(verdict.ai_summary_concise)}`);
     }
 
-    // Strategic verdict
-    const sv = r.strategic_verdict as Record<string, unknown> | undefined;
-    if (sv) {
-        lines.push(`STRATEGIC DECISION: ${n(sv.decision)}. ${n(sv.summary)}`);
-        if (Array.isArray(sv.rationale)) lines.push(`RATIONALE: ${sv.rationale.join("; ")}`);
-        if (Array.isArray(sv.next_actions)) lines.push(`NEXT ACTIONS: ${sv.next_actions.join("; ")}`);
-    }
-
     // Communication
     const comm = r.communication_analysis as Record<string, unknown> | undefined;
     if (comm) {
@@ -126,20 +135,35 @@ function serializeInterviewReport(r: Record<string, unknown>): string {
     }
 
     // Cognitive insights
-    const cog = r.cognitive_insights as Record<string, unknown> | undefined;
+    const cog = cognitiveInsights;
     if (cog) {
-        if (cog.clarity != null) lines.push(`COGNITIVE clarity=${n(cog.clarity)}/100, depth_of_knowledge=${n((cog.depth_of_knowledge as any)?.score ?? "?")}/100, problem_solving=${n((cog.problem_solving as any)?.score ?? "?")}/100`);
+        if (cog.clarity != null || cog.depth_of_knowledge != null || cog.problem_solving != null || cog.logical_thinking != null || cog.adaptability != null || cog.confidence != null) {
+            lines.push(
+                `COGNITIVE: clarity=${n(cog.clarity)}/100, depth_of_knowledge=${n(cog.depth_of_knowledge)}/100, problem_solving=${n(cog.problem_solving)}/100, logical_thinking=${n(cog.logical_thinking)}/100, adaptability=${n(cog.adaptability)}/100, confidence=${n(cog.confidence)}/100`
+            );
+        }
         if (cog.summary) lines.push(`COGNITIVE SUMMARY: ${n(cog.summary)}`);
     }
 
     // Behavioral analysis
-    const beh = r.behavioral_analysis as Record<string, unknown> | undefined;
+    const beh = behavioralSignalsAnalysis;
     if (beh) {
-        if (beh.overview) lines.push(`BEHAVIORAL OVERVIEW: ${n(beh.overview)}`);
-        if (Array.isArray(beh.strengths_observed)) lines.push(`STRENGTHS: ${beh.strengths_observed.join("; ")}`);
-        if (Array.isArray(beh.concerns_noted)) lines.push(`CONCERNS: ${beh.concerns_noted.join("; ")}`);
-        if (Array.isArray(beh.integrity_flags)) lines.push(`INTEGRITY FLAGS: ${beh.integrity_flags.join("; ")}`);
-        if (beh.summary) lines.push(`BEHAVIORAL SUMMARY: ${n(beh.summary)}`);
+        if ((beh as any).overview) lines.push(`BEHAVIORAL OVERVIEW: ${n((beh as any).overview)}`);
+        if ((beh as any).summary) lines.push(`BEHAVIORAL SUMMARY: ${n((beh as any).summary)}`);
+        if (Array.isArray((beh as any).strengths_observed)) lines.push(`STRENGTHS: ${((beh as any).strengths_observed as any[]).join("; ")}`);
+        if (Array.isArray((beh as any).concerns_noted)) lines.push(`CONCERNS: ${((beh as any).concerns_noted as any[]).join("; ")}`);
+        if (Array.isArray((beh as any).integrity_flags)) lines.push(`INTEGRITY FLAGS: ${((beh as any).integrity_flags as any[]).join("; ")}`);
+        if (Array.isArray((beh as any).proctoring_signals_detected)) {
+            lines.push(`PROCTORING SIGNALS: ${((beh as any).proctoring_signals_detected as any[]).map((s) => s.signal ?? s).join("; ")}`);
+        }
+    }
+
+    // Raw behavior / integrity signals
+    if (behavioralSignals) {
+        const events = Array.isArray((behavioralSignals as any).events) ? (behavioralSignals as any).events as any[] : [];
+        if (events.length) {
+            lines.push(`BEHAVIOR SIGNALS: ${events.slice(0, 10).map((e) => e.eventType ?? e.signal_name ?? e.event ?? "signal").join("; ")}`);
+        }
     }
 
     // Skills proof
@@ -148,10 +172,13 @@ function serializeInterviewReport(r: Record<string, unknown>): string {
         lines.push(`SKILLS PROOF: ${skills}`);
     }
 
-    // Q&A blocks (abbreviated)
-    if (Array.isArray(r.qa_blocks)) {
-        (r.qa_blocks as any[]).slice(0, 8).forEach((q, i) => {
-            lines.push(`Q${i + 1}: "${q.question}" — Score: ${q.score}, Verdict: ${q.verdict}`);
+    // Question-by-question analysis (abbreviated)
+    if (questionByQuestionAnalysis.length) {
+        questionByQuestionAnalysis.slice(0, 8).forEach((q, i) => {
+            const question = q.ai_question ?? q.question ?? "";
+            const answer = q.candidate_answer ?? q.answer ?? "";
+            const score = q.overall != null ? `${q.overall}/10` : q.score ?? "";
+            lines.push(`Q${i + 1}: "${question}" | A: ${answer} | Score: ${score}`);
         });
     }
 

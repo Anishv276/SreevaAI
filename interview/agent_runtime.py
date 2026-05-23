@@ -962,6 +962,7 @@ async def entrypoint(ctx: JobContext):
     _active_topic: Optional[str] = None         # current topic anchor; rotate away on MOVE_ON
     _topic_states: dict[str, dict] = {}        # PART 3: TopicState serialized per topic for saturation tracking
     _last_depth_decay_turn: int = -999           # turn when depth_decay last fired; -999 = never
+    _last_applied_eval_turn: int = 0             # monotonic guard against stale eval results
     _question_asked_at: float = 0.0
     _answer_received_at: float = 0.0
     _trust_state = init_trust_state()
@@ -1472,6 +1473,20 @@ async def entrypoint(ctx: JobContext):
                     turns_since_decay=turns_since_decay_snap,
                     response_latency=response_latency_snap,
                 ) -> dict:
+                    # Guard against partial assistant fragments ("Got", "Okay so...") being
+                    # captured as the "question". Those fragments can cause noisy eval routing.
+                    resolved_question = (question or "").strip()
+                    if len(resolved_question) < 16:
+                        for _line in reversed(lines):
+                            _txt = str(_line or "").strip()
+                            if not _txt:
+                                continue
+                            if _txt.lower().startswith("interviewer:"):
+                                _txt = _txt.split(":", 1)[1].strip()
+                            if len(_txt) >= 24:
+                                resolved_question = _txt
+                                break
+
                     rb = session_context.resume_brief
                     resume_topics = [
                         str(raw).strip().split(" - ")[0].strip()
@@ -1509,7 +1524,7 @@ async def entrypoint(ctx: JobContext):
                         "app_id": app_id,
                         "turn": turn,
                         "answer": answer,
-                        "question": question,
+                        "question": resolved_question,
                         "transcript_lines": lines[-12:],
                         "score_history": score_history,
                         "turns_since_decay": turns_since_decay,
@@ -1555,6 +1570,7 @@ async def entrypoint(ctx: JobContext):
                         _trust_state, _contradiction_state, \
                         _claim_index, current_interview_mode, \
                         integrity_risk, depth_risk, suspicion_score, \
+                        _last_applied_eval_turn, \
                         _ai_signal_flush_counter, _ai_signal_flushed_count, \
                         _discussed_log
 
@@ -1588,9 +1604,24 @@ async def entrypoint(ctx: JobContext):
                         "[REDIS_EVAL] Applying pre-computed result turn=%d action=%s",
                         result.get("turn", 0), result.get("action", "?"),
                     )
+                    result_turn = int(result.get("turn", turn_for_log) or turn_for_log)
+                    expected_input_topic = result.get("input_active_topic", None)
                     # Apply all mutations atomically under lock
                     # (variables already declared as nonlocal in _process_user_conversation_item scope)
                     async with _session_state_lock:
+                        if result_turn < _last_applied_eval_turn:
+                            logger.warning(
+                                "[REDIS_EVAL] Ignoring stale result turn=%d < last_applied=%d",
+                                result_turn, _last_applied_eval_turn,
+                            )
+                            return False
+                        if expected_input_topic is not None and expected_input_topic != _active_topic:
+                            logger.warning(
+                                "[REDIS_EVAL] Ignoring stale topic result turn=%d expected_topic=%r current_topic=%r",
+                                result_turn, expected_input_topic, _active_topic,
+                            )
+                            return False
+
                         old_topic = _active_topic
                         _active_topic = result.get("new_active_topic", _active_topic)
                         if old_topic != _active_topic:
@@ -1604,6 +1635,17 @@ async def entrypoint(ctx: JobContext):
                         # PART 3: Update TopicState from result
                         new_topic_state = result.get("new_active_topic_state")
                         if new_topic_state and _active_topic:
+                            _existing_state = _topic_states.get(_active_topic)
+                            _existing_turn = 0
+                            if isinstance(_existing_state, dict):
+                                _existing_turn = int(_existing_state.get("updated_turn", 0) or 0)
+                            _incoming_turn = int(new_topic_state.get("updated_turn", result_turn) or result_turn)
+                            if _incoming_turn < _existing_turn:
+                                logger.warning(
+                                    "[REDIS_EVAL] Ignoring stale topic-state update turn=%d for topic=%r (incoming=%d < existing=%d)",
+                                    result_turn, _active_topic, _incoming_turn, _existing_turn,
+                                )
+                                return False
                             _topic_states[_active_topic] = new_topic_state
                             _nts_sat = new_topic_state.get("saturation_score", 0)
                             _nts_thresh = new_topic_state.get("saturation_threshold", 0)
@@ -1825,6 +1867,7 @@ async def entrypoint(ctx: JobContext):
                             res_turn,
                             (_active_topic or "?")[:40],
                         )
+                        _last_applied_eval_turn = max(_last_applied_eval_turn, result_turn)
                     return True
 
 

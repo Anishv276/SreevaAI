@@ -100,15 +100,24 @@ function parseInterviewReport(raw: string | object | null | undefined) {
   try {
     const r = typeof raw === "string" ? JSON.parse(raw) : raw;
 
-    const qa = Array.isArray(r.qa_blocks) ? r.qa_blocks.map((q: any) => ({
-      question:      q.question,
-      answerSummary: q.answer_summary,
-      score:         q.score,
-      verdict:       q.verdict,
-      confidence:    q.confidence,
-      tags:          q.tags,
-      scoreBreakdown: q.score_breakdown,
-    })) : [];
+    const qaSource = Array.isArray(r.question_by_question_analysis)
+      ? r.question_by_question_analysis
+      : Array.isArray(r.qa_blocks_all)
+        ? r.qa_blocks_all
+        : Array.isArray(r.qa_blocks)
+          ? r.qa_blocks
+          : [];
+
+    const qa = qaSource.map((q: any) => ({
+      question:      q.ai_question ?? q.question,
+      answerSummary: q.candidate_answer ?? q.answer ?? q.answer_summary,
+      score:         q.overall != null ? `${q.overall}/10` : q.score,
+      verdict:       q.verdict ?? q.status ?? null,
+      confidence:    q.confidence ?? null,
+      tags:          q.tags ?? q.signals ?? [],
+      scoreBreakdown: q.score_breakdown ?? null,
+      isWarmup:      q.is_warmup ?? q.isWarmup ?? false,
+    }));
 
     const skillsProof = Array.isArray(r.skills_proof) ? r.skills_proof.map((s: any) => ({
       skill:    s.skill,
@@ -121,27 +130,21 @@ function parseInterviewReport(raw: string | object | null | undefined) {
       scores: {
         combined:      r.combined_score ?? null,
         technical:     r.technical_score ?? null,
-        communication: r.communication_score ?? null,
+        communication: r.communicationScore ?? r.communication_score ?? r.scores?.communication ?? null,
         behavioral:    r.behavioral_score ?? null,
       },
       integrity: {
         score:   r.integrity?.score ?? null,
         summary: r.integrity?.summary ?? null,
       },
-      communication: r.communication_analysis ?? null,
-      cognitive:     r.cognitive_insights ?? null,
-      behavioral:    r.behavioral_analysis ?? null,
+      communication: r.communication_analysis ?? r.communication ?? null,
+      cognitive:     r.cognitiveInsights ?? r.cognitive_insights ?? r.cognitive ?? null,
+      behavioral:    r.behavioralSignalsAnalysis ?? r.behavioral_analysis ?? r.behavior_signals ?? null,
       verdict: {
         summary:           r.verdict?.summary ?? null,
         recommendation:    r.verdict?.recommendation ?? null,
         recommendationReason: r.verdict?.recommendation_reason ?? null,
         concise:           r.verdict?.ai_summary_concise ?? null,
-      },
-      strategicVerdict: {
-        decision: r.strategic_verdict?.decision ?? null,
-        summary:  r.strategic_verdict?.summary ?? null,
-        rationale: r.strategic_verdict?.rationale ?? null,
-        nextActions: r.strategic_verdict?.next_actions ?? null,
       },
       qa,
       skillsProof,
@@ -669,7 +672,7 @@ ${semanticContext || "No semantic matches found — rely on tools for accurate d
           if (!appId) {
             result = JSON.stringify({ error: "Candidate not found. Try providing the application ID or a more specific name." });
           } else {
-            const candidate = await prisma.application.findUnique({
+            const candidate: any = await prisma.application.findUnique({
               where: { id: appId },
               select: {
                 id: true, fullName: true, email: true,
@@ -678,17 +681,21 @@ ${semanticContext || "No semantic matches found — rely on tools for accurate d
                 interview: {
                   select: {
                     id: true, status: true,
-                    interviewReport: true,
+                    skillRatings: true,
+                    communicationScore: true,
+                    cognitiveInsights: true,
+                    behaviorSignals: true,
+                    behavioralSignalsAnalysis: true,
                     interviewTranscript: true,
                     aiSummary: true,
                     completedAt: true,
                     interviewDuration: true,
-                    proctoringReport: true,
-                    strategicVerdict: true,
+                    questionByQuestionAnalysis: true,
+                    integritySignals: true,
                   },
-                },
+                } as any,
               },
-            });
+            } as any);
 
             if (!candidate || candidate.drive.orgId !== orgId) {
               result = JSON.stringify({ error: "Candidate not found in this organization." });
@@ -700,7 +707,16 @@ ${semanticContext || "No semantic matches found — rely on tools for accurate d
                 message: "Interview not yet completed — no report available.",
               });
             } else {
-              const report = parseInterviewReport(candidate.interview.interviewReport as any);
+              const mergedReport = {
+                ...(candidate.interview.skillRatings as any),
+                communication_score: candidate.interview.communicationScore ?? null,
+                cognitive_insights: candidate.interview.cognitiveInsights ?? null,
+                integrity_signals: candidate.interview.integritySignals ?? null,
+                behavior_signals: candidate.interview.behaviorSignals ?? null,
+                behavioral_signals_analysis: candidate.interview.behavioralSignalsAnalysis ?? null,
+                question_by_question_analysis: candidate.interview.questionByQuestionAnalysis ?? null,
+              };
+              const report = parseInterviewReport(mergedReport as any);
               result = JSON.stringify({
                 candidateName:    candidate.fullName,
                 applicationId:    candidate.id,

@@ -97,7 +97,7 @@ export async function POST(request: Request) {
                     return NextResponse.json({ error: "Failed to scrape JD from URL" }, { status: 500 });
                 }
 
-                const jobId = await enqueueJdExtraction({ kind: "text", text, orgOpenAIModel });
+                const jobId = await enqueueJdExtraction({ kind: "text", text, orgOpenAIModel, orgId: orgId || undefined });
                 console.log(`[JD-EXTRACT] Enqueued URL extraction job ${jobId}`);
                 return NextResponse.json({ jobId }, { status: 202 });
             }
@@ -136,7 +136,7 @@ export async function POST(request: Request) {
 
             // Upload to R2 and enqueue extraction concurrently
             const [jobId, fileUrl] = await Promise.all([
-                enqueueJdExtraction({ kind: "file", fileName: file.name, buffer, orgOpenAIModel }),
+                enqueueJdExtraction({ kind: "file", fileName: file.name, buffer, orgOpenAIModel, orgId: orgId || undefined }),
                 (async () => {
                     try {
                         const bucket = process.env.R2_JDS_BUCKET || "jds";

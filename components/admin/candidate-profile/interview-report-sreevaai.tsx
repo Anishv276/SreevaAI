@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, forwardRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, forwardRef, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -127,33 +127,48 @@ function inferVideoMimeType(url: string, mimeType?: string | null): string {
   return "video/webm";
 }
 
-// Strip em dashes and normalize punctuation from AI-generated text
-// Only strip em/en dashes — replaces them with a comma+space to preserve flow
+function normalizeAiPunctuation(s: string): string {
+  return String(s || "")
+    .replace(/\u00e2\u20ac\u201d|\u2014|\u00e2\u20ac\u201c|\u2013/g, ", ")
+    .replace(/\u00e2\u20ac\u0153|\u201c/g, '"')
+    .replace(/\u00e2\u20ac\u009d|\u201d/g, '"')
+    .replace(/\u00e2\u20ac\u2122|\u2019/g, "'")
+    .replace(/\u00e2\u20ac\u00a2|\u2022/g, "- ")
+    .replace(/\u00c3\u00d7|\u00d7/g, "x")
+    .replace(/\u00ef\u00bc\u009a|\u00ef\u00bc\u009a/g, ":")
+    .replace(/\u00c2\u00b7|\u00b7/g, "-")
+    .replace(/\u00e2\u2020\u2019/g, "'")
+    .replace(/\u00e2\u20ac\u201a/g, ",")
+    .replace(/\u00e2\u20ac\u00a6/g, "...")
+    .replace(/\u00c2/g, "");
+}
+
 function cleanAiText(s: string): string {
-  return s
-    .replace(/\s*[—–]\s*/g, ", ")
-    .replace(/,\s*,/g, ",")
+  return normalizeAiPunctuation(s)
+    .replace(/\*{1,2}/g, "")
+    .replace(/^[\s\u2022\-\+]+/g, "")
+    .replace(/\s*,\s*,\s*/g, ", ")
     .replace(/\s{2,}/g, " ")
     .trim();
 }
 
-// Parse an AI bullet like "[Title] — [Evidence] — [Why it matters for role]"
+// Parse an AI bullet like "[Title] - [Evidence] - [Why it matters for role]"
 // into { title, description } for the two-line card format
 function parseBulletCard(raw: string): { title: string; description: string } {
   if (!raw) return { title: "", description: "" };
   // Strip leading bullet markers
-  const clean = raw.replace(/^[•\-\*]\s*/, "").trim();
+  const clean = normalizeAiPunctuation(raw).replace(/^[\u2022\-\*]\s*/, "").trim();
   // Split on em/en dash separators
-  const parts = clean.split(/\s*[—–]\s*/);
+  const parts = clean.split(/\s*[\u2014\u2013]\s*/);
   if (parts.length >= 2) {
     const title = parts[0].trim();
     // Join remaining parts as the description, strip leading risk level label
-    const desc = parts.slice(1).join(" — ")
+    const desc = parts.slice(1).join(" \u2014 ")
       .replace(/^\s*(Low|Medium|High)\s+risk[^.]*\.\s*/i, "")
       .trim();
     return { title, description: desc };
   }
-  // No dash separator — treat whole thing as description, derive short title
+  // No dash separator - treat whole thing as description, derive short title
   const sentences = clean.split(/\.\s+/);
   return { title: sentences[0]?.trim() || clean, description: sentences.slice(1).join(". ").trim() };
 }
@@ -225,12 +240,12 @@ function buildCognitiveFromInsights(
   };
   const toS = (v: unknown): string => String(v || "").trim();
 
-  const clarityN = toN(cogInsights.clarity,            derivedComm?.clarityScore ?? 60);
+  const clarityN = toN(cogInsights.clarity, 60);
   const depthN   = toN(cogInsights.depth_of_knowledge, 62);
   const probN    = toN(cogInsights.problem_solving,     technicalPct);
   const logN     = toN(cogInsights.logical_thinking,    65);
   const adaptN   = toN(cogInsights.adaptability,        60);
-  const confidN  = toN(cogInsights.confidence,          derivedComm?.confidenceScore ?? 60);
+  const confidN  = toN(cogInsights.confidence, 60);
   const cogSummary = toS(cogInsights.summary);
 
   const lines = (
@@ -244,7 +259,7 @@ function buildCognitiveFromInsights(
   ): string[] => {
     const earned = toS(cogInsights[earnedKey]) || toS(cogInsights[evidenceKey]) || earnedFallback;
     const missed = toS(cogInsights[missedKey]) || missedFallback;
-    const out: string[] = [`Score: ${score}/100`, `✓ ${earned}`, `✗ ${missed}`];
+    const out: string[] = [`Score: ${score}/100`, `- ${earned}`, `- ${missed}`];
     if (includeOverall && cogSummary) out.push(cogSummary);
     return out;
   };
@@ -297,16 +312,16 @@ function buildCognitiveFromInsights(
 }
 
 const PROCTORING_DISPLAY: Record<string, { title: string; why: string; risk: string }> = {
-  face_absence:              { title: "Face not visible",                  why: "Camera detected no face during the interview — candidate may have looked away, turned off camera, or left the frame.",              risk: "High — indicates the candidate was not actively present in front of the camera." },
-  multiple_faces:            { title: "Multiple faces detected",           why: "More than one person was detected in the camera frame, suggesting someone else may have been present or assisting.",                risk: "High — potential coaching or collaboration violation." },
-  identity_mismatch:         { title: "Identity mismatch",                 why: "The face detected during the interview did not consistently match the registered identity of the candidate.",                         risk: "High — possible impersonation attempt. Verify with candidate photo ID." },
-  camera_disabled:           { title: "Camera disabled mid-session",       why: "Candidate turned off the camera during a live interview segment, breaking proctoring visibility.",                                    risk: "High — prevents visual monitoring of the candidate." },
-  microphone_disabled:       { title: "Microphone disabled mid-session",   why: "Microphone was turned off during the interview, disrupting audio capture and transcription quality.",                                 risk: "Medium — may affect transcript accuracy; review recording for gaps." },
-  tab_switch:                { title: "Tab / app switch",                   why: "Candidate switched away from the interview tab to another browser tab or application. This is commonly associated with looking up answers.",  risk: "Medium — cross-check with answer quality; sudden improvement after a tab switch is a red flag." },
-  duplicate_ip_simultaneous: { title: "Simultaneous device match",         why: "Two interviews were detected from the same device at overlapping times, strongly suggesting the same person or device was used.",    risk: "High — strong indicator of proxy use or organised sharing." },
-  duplicate_ip_sequential:   { title: "Sequential device reuse",           why: "The same device IP was used by another candidate in a separate session, suggesting the device was shared or resold.",                  risk: "Medium — lower risk but worth flagging if candidate profiles are similar." },
-  duplicate_ip_network:      { title: "Shared network only",               why: "Candidate shares a network with another interviewee (e.g. campus, office). This alone is not a violation.",                            risk: "Low — context dependent; common in campus or agency settings." },
-  connection_lost:           { title: "Connection dropped",                why: "The candidate's internet connection was interrupted during the session. This may be genuine or deliberate.",                            risk: "Low-Medium — check whether audio/video resumed cleanly and if answers were affected." },
+  face_absence: { title: "Face not visible", why: "Camera detected no face during the interview. The candidate may have looked away, turned off the camera, or left the frame.", risk: "High - indicates the candidate was not actively present in front of the camera." },
+  multiple_faces: { title: "Multiple faces detected", why: "More than one person was detected in the camera frame, suggesting someone else may have been present or assisting.", risk: "High - potential coaching or collaboration violation." },
+  identity_mismatch: { title: "Identity mismatch", why: "The face detected during the interview did not consistently match the registered identity of the candidate.", risk: "High - possible impersonation attempt. Verify with candidate photo ID." },
+  camera_disabled: { title: "Camera disabled mid-session", why: "The candidate turned off the camera during a live interview segment, breaking proctoring visibility.", risk: "High - prevents visual monitoring of the candidate." },
+  microphone_disabled: { title: "Microphone disabled mid-session", why: "The microphone was turned off during the interview, disrupting audio capture and transcription quality.", risk: "Medium - may affect transcript accuracy; review recording for gaps." },
+  tab_switch: { title: "Tab / app switch", why: "The candidate switched away from the interview tab to another browser tab or application. This is commonly associated with looking up answers.", risk: "Medium - cross-check with answer quality; sudden improvement after a tab switch is a red flag." },
+  duplicate_ip_simultaneous: { title: "Simultaneous device match", why: "Two interviews were detected from the same device at overlapping times, strongly suggesting the same person or device was used.", risk: "High - strong indicator of proxy use or organised sharing." },
+  duplicate_ip_sequential: { title: "Sequential device reuse", why: "The same device IP was used by another candidate in a separate session, suggesting the device was shared or resold.", risk: "Medium - lower risk but worth flagging if candidate profiles are similar." },
+  duplicate_ip_network: { title: "Shared network only", why: "The candidate shares a network with another interviewee, such as a campus or office network. This alone is not a violation.", risk: "Low - context dependent; common in campus or agency settings." },
+  connection_lost: { title: "Connection dropped", why: "The candidate's internet connection was interrupted during the session. This may be genuine or deliberate.", risk: "Low-Medium - check whether audio and video resumed cleanly and whether answers were affected." },
 };
 
 function buildIntegritySignals(
@@ -323,13 +338,13 @@ function buildIntegritySignals(
     const title = display?.title || r.label.replace(/\b\w/g, c => c.toUpperCase());
     const details: string[] = [];
     if (display) {
-      details.push(`✗ ${display.why}`);
+      details.push(`- ${display.why}`);
       details.push(`Risk: ${display.risk}`);
     }
     if (count > 0) {
-      if (count >= 3) details.push(`✗ Occurred ${count} times — high frequency. Strongly recommend reviewing recording timestamps.`);
-      else if (count === 2) details.push(`✗ Occurred twice — review both incidents in the recording before deciding.`);
-      else details.push(`✓ Occurred once — isolated event, review the recording at this point to confirm context.`);
+      if (count >= 3) details.push(`- Occurred ${count} times - high frequency. Strongly recommend reviewing recording timestamps.`);
+      else if (count === 2) details.push(`- Occurred twice - review both incidents in the recording before deciding.`);
+      else details.push(`- Occurred once - isolated event, review the recording at this point to confirm context.`);
     }
     return {
       id: r.key,
@@ -349,10 +364,10 @@ function buildIntegritySignals(
     tone: integrityScore >= 80 ? "emerald" : integrityScore >= 60 ? "amber" : "rose",
     icon: "shield",
     details: integrityScore >= 80
-      ? ["✓ Session shows no significant integrity concerns.", "✓ All proctoring signals are within acceptable range."]
+      ? ["Session shows no significant integrity concerns.", "All proctoring signals are within acceptable range."]
       : integrityScore >= 60
-        ? ["✗ Some proctoring events were detected.", "✓ No high-severity flags raised — review flagged signals and cross-reference with the recording before deciding."]
-        : ["✗ Multiple integrity flags raised in this session.", "✗ Manual review of the recording is strongly recommended before relying on this interview alone."],
+        ? ["Some proctoring events were detected.", "No high-severity flags raised - review flagged signals and cross-reference with the recording before deciding."]
+        : ["Multiple integrity flags raised in this session.", "Manual review of the recording is strongly recommended before relying on this interview alone."],
   });
 
   // If no real events, add a clean signal
@@ -363,21 +378,21 @@ function buildIntegritySignals(
       badge: "Clean",
       tone: "emerald",
       icon: "shield",
-      details: ["✓ No proctoring events raised during this session.", "✓ Candidate completed the interview without any integrity flags."],
+      details: ["No proctoring events raised during this session.", "Candidate completed the interview without any integrity flags."],
     });
   }
 
   return signals;
 }
 
-// Extract the core observation from an AI bullet formatted as "[Signal] — [Evidence] — [Risk level]"
+// Extract the core observation from an AI bullet formatted as "[Signal] a" [Evidence] a" [Risk level]"
 // Returns just the first meaningful clause, cleaned of em dashes
 function extractBulletCore(raw: string): string {
   if (!raw) return "";
-  // Remove risk level suffix patterns like "— Medium risk", "— High risk", "— Low risk"
-  const withoutRisk = raw.replace(/[—–]\s*(Low|Medium|High)\s+risk[^—–]*/gi, "").trim();
+  // Remove risk level suffix patterns like "a" Medium risk", "a" High risk", "a" Low risk"
+  const withoutRisk = raw.replace(/[\-\u2014\u2013]\s*(Low|Medium|High)\s+risk[^\n]*/gi, "").trim();
   // Take just the first em-dash-separated segment (the actual observation)
-  const firstClause = withoutRisk.split(/\s*[—–]\s*/)[0].trim();
+  const firstClause = withoutRisk.split(/\s*[\-\u2014\u2013]\s*/)[0].trim();
   // Clean remaining dashes and normalize
   return cleanAiText(firstClause || raw);
 }
@@ -395,13 +410,13 @@ function buildTopStrengthsRisks(args: {
   const aiStrengths: string[] = Array.isArray(args.behavioralAnalysis?.strengths_observed)
     ? args.behavioralAnalysis.strengths_observed
         .filter((s: unknown) => typeof s === "string" && s.trim())
-        .map((s: string) => s.trim())
+        .map((s: string) => cleanAiText(s.trim()))
         .slice(0, 3)
     : [];
   const aiConcerns: string[] = Array.isArray(args.behavioralAnalysis?.concerns_noted)
     ? args.behavioralAnalysis.concerns_noted
         .filter((s: unknown) => typeof s === "string" && s.trim())
-        .map((s: string) => s.trim())
+        .map((s: string) => cleanAiText(s.trim()))
         .slice(0, 3)
     : [];
 
@@ -410,33 +425,33 @@ function buildTopStrengthsRisks(args: {
 
   if (topStrengths.length < 3) {
     if (args.fitPct >= 80 && topStrengths.length < 3)
-      topStrengths.push("Strong overall candidate fit — demonstrated consistent alignment with role expectations across technical, behavioral, and communication dimensions — signals readiness to contribute from day one");
+      topStrengths.push("Strong overall candidate fit - demonstrated consistent alignment with role expectations across technical, behavioral, and communication dimensions - signals readiness to contribute from day one");
     else if (args.fitPct >= 60 && topStrengths.length < 3)
-      topStrengths.push("Solid overall fit — candidate showed meaningful alignment with the role requirements across most evaluated areas — worth advancing to the next stage for a more in-depth assessment");
+      topStrengths.push("Solid overall fit - candidate showed meaningful alignment with the role requirements across most evaluated areas - worth advancing to the next stage for a more in-depth assessment");
     if (args.technicalPct >= 70 && topStrengths.length < 3)
-      topStrengths.push(`Demonstrated technical competency — gave specific, evidence-backed answers across ${args.qaRows.length} evaluated questions showing practical implementation knowledge — indicates real hands-on experience rather than surface familiarity`);
+      topStrengths.push(`Demonstrated technical competency - gave specific, evidence-backed answers across ${args.qaRows.length} evaluated questions showing practical implementation knowledge - indicates real hands-on experience rather than surface familiarity`);
     if (args.commAvg >= 70 && topStrengths.length < 3)
-      topStrengths.push("Clear and structured communication — consistently expressed ideas with logical flow, appropriate vocabulary, and minimal hedging throughout the session — would perform well in collaborative or client-facing environments");
+      topStrengths.push("Clear and structured communication - consistently expressed ideas with logical flow, appropriate vocabulary, and minimal hedging throughout the session - would perform well in collaborative or client-facing environments");
     const topSkill = [...args.skills].sort((a, b) => b.stars - a.stars)[0];
     if (topSkill && topSkill.stars >= 4 && topStrengths.length < 3)
-      topStrengths.push(`Strong ${topSkill.name} signal — the strongest demonstrated skill in the session, backed by specific examples and confident articulation — this area can be relied upon without further validation`);
+      topStrengths.push(`Strong ${topSkill.name} signal - the strongest demonstrated skill in the session, backed by specific examples and confident articulation - this area can be relied upon without further validation`);
     if (topStrengths.length < 2)
-      topStrengths.push("Factual consistency across the session — no contradictions detected between resume claims and interview answers — suggests honest, well-grounded self-presentation that can be trusted at face value");
+      topStrengths.push("Factual consistency across the session - no contradictions detected between resume claims and interview answers - suggests honest, well-grounded self-presentation that can be trusted at face value");
   }
 
   if (topRisks.length < 3) {
     if (args.technicalPct < 35 && topRisks.length < 3)
-      topRisks.push("Technical depth significantly below role threshold — answers lacked specificity and relied on high-level descriptions rather than concrete implementation experience — requires a dedicated technical screen before advancing");
+      topRisks.push("Technical depth significantly below role threshold - answers lacked specificity and relied on high-level descriptions rather than concrete implementation experience - requires a dedicated technical screen before advancing");
     else if (args.technicalPct < 50 && topRisks.length < 3)
-      topRisks.push("Insufficient technical depth — several answers were vague or generic without evidence of hands-on experience — needs stronger proof points before this candidate can be trusted for technical delivery");
+      topRisks.push("Insufficient technical depth - several answers were vague or generic without evidence of hands-on experience - needs stronger proof points before this candidate can be trusted for technical delivery");
     if (args.proctoringRows.some((r) => r.bad) && topRisks.length < 3)
-      topRisks.push("Proctoring anomalies flagged — one or more integrity signals were triggered during the session — a human reviewer must assess these events before this report's scores can be relied upon");
+      topRisks.push("Proctoring anomalies flagged - one or more integrity signals were triggered during the session - a human reviewer must assess these events before this report's scores can be relied upon");
     if (args.commAvg < 50 && topRisks.length < 3)
-      topRisks.push("Communication is below average — candidate struggled with clarity, fluency, or confidence during several responses — may affect performance in team collaboration, stakeholder communication, or client-facing scenarios");
+      topRisks.push("Communication is below average - candidate struggled with clarity, fluency, or confidence during several responses - may affect performance in team collaboration, stakeholder communication, or client-facing scenarios");
     if (args.fitPct < 40 && topRisks.length < 3)
-      topRisks.push("Low overall fit signal — the candidate's profile and responses do not align well with the evaluated role criteria — a follow-up structured interview is recommended before making any hiring decision");
+      topRisks.push("Low overall fit signal - the candidate's profile and responses do not align well with the evaluated role criteria - a follow-up structured interview is recommended before making any hiring decision");
     if (topRisks.length < 2)
-      topRisks.push("Limited evidence of depth — answers across multiple topics stayed at the surface level without exploring implementation trade-offs, edge cases, or real-world constraints — depth of experience remains unvalidated");
+      topRisks.push("Limited evidence of depth - answers across multiple topics stayed at the surface level without exploring implementation trade-offs, edge cases, or real-world constraints - depth of experience remains unvalidated");
   }
 
   return { topStrengths: topStrengths.slice(0, 3), topRisks: topRisks.slice(0, 3) };
@@ -484,14 +499,14 @@ export function buildSreevaAIInterviewViewModel(i: {
     const n = Number(v);
     return Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : fallback;
   };
-  // ── Demonstrated competency (replaces narrow technical_score) ──
-  // Prefer demonstrated_competency (new schema) → technical_score (old) → qa_blocks average
+  // a"a" Demonstrated competency (replaces narrow technical_score) a"a"
+  // Prefer demonstrated_competency (new schema) a' technical_score (old) a' qa_blocks average
   const technicalPct = (() => {
     const dc = Number(scores.demonstrated_competency);
     if (Number.isFinite(dc) && dc > 0) return Math.min(100, Math.max(0, Math.round(dc)));
     const aiTech = Number(scores.technical_score);
     if (Number.isFinite(aiTech) && aiTech > 0) return Math.min(100, Math.max(0, Math.round(aiTech)));
-    // Derive from qa_blocks: average of all 4 score_breakdown dimensions × 10
+    // Derive from qa_blocks: average of all 4 score_breakdown dimensions A- 10
     const qaRows = i.interviewQaRows || [];
     const blockAvgs = qaRows.map((r: any) => {
       const sb = r?.score_breakdown || {};
@@ -510,7 +525,7 @@ export function buildSreevaAIInterviewViewModel(i: {
   const questionsAsked = Math.max(1, (i.interviewQaRows?.length || i.interviewSessionRows.length) || 1);
   const techTag: "GOOD" | "AVERAGE" | "WEAK" = technicalPct >= 70 ? "GOOD" : technicalPct >= 45 ? "AVERAGE" : "WEAK";
 
-  // ── Derive comm scores from transcript when AI report values are missing ──
+  // a"a" Derive comm scores from transcript when AI report values are missing a"a"
   const derivedComm = (() => {
     const answers = i.interviewSessionRows.map((r) => r.answer).filter(Boolean);
     if (answers.length === 0) return null;
@@ -547,8 +562,8 @@ export function buildSreevaAIInterviewViewModel(i: {
     fluency:       toPct(com.fluency,       derivedComm?.fluencyScore ?? commFallback),
     confidence:    toPct(com.confidence,    derivedComm?.confidenceScore ?? commFallback),
     // kept for legacy UI compatibility
-    vocabulary:    toPct(com.confidence ?? com.vocabulary, derivedComm?.confidenceScore ?? commFallback),
-    minimalFiller: toPct(com.fluency, derivedComm?.fluencyScore ?? commFallback),
+    vocabulary:    toPct(com.vocabulary,    derivedComm?.confidenceScore ?? commFallback),
+    minimalFiller: toPct(com.fluency,       derivedComm?.fluencyScore ?? commFallback),
     tag: String(i.communicationStatus).toUpperCase() || "AVERAGE",
     commSummary: cleanAiText(String(com.summary || "").trim()),
     hasNewSchema: false,
@@ -557,7 +572,7 @@ export function buildSreevaAIInterviewViewModel(i: {
   const commDimVals = [comm.pronunciation, comm.grammar, comm.fluency, comm.confidence].filter(v => v > 0);
   const commAvg = commDimVals.length > 0 ? Math.round(commDimVals.reduce((a, b) => a + b, 0) / commDimVals.length) : commFallback;
 
-  // ── Proctoring rows ──
+  // a"a" Proctoring rows a"a"
   const proctoringRows: { key: string; label: string; value: string; bad: boolean }[] =
     (i.groupedProctoringSignals || []).slice(0, 8).map((g) => ({
       key: g.key,
@@ -585,7 +600,7 @@ export function buildSreevaAIInterviewViewModel(i: {
   const cognitiveInsights = buildCognitiveFromInsights(cogInsights, derivedComm, technicalPct);
   const integritySignals = buildIntegritySignals(proctoringRows, rawIntegrityScore);
 
-  // ── Skills ──
+  // a"a" Skills a"a"
   const normalizeSkillName = (value: string) =>
     value.replace(/\b(question|q\d+|round|interview|asked|asked about)\b/gi, "")
       .replace(/[\-  :]+/g, " ").replace(/\s+/g, " ").trim();
@@ -593,10 +608,31 @@ export function buildSreevaAIInterviewViewModel(i: {
     const v = value.toLowerCase();
     return !v || /^question\s*\d+$/i.test(value) || v.length < 3 || v.includes("interview") || v === "skill" || v === "[object object]";
   };
+  const noiseSignalNames = new Set([
+    "ownership_ambiguity",
+    "example_evasion",
+    "resume_claim_mismatch",
+    "follow_up_collapse",
+    "latency_mismatch",
+    "complexity_latency_mismatch",
+    "ownership_clarified",
+    "example_given",
+    "contradiction",
+    "contradiction_resolved",
+    "depth_decay",
+    "strong_under_pressure",
+  ]);
+  const isNoiseSignalSkill = (value: string) => {
+    const normalized = String(value || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[\s\-]+/g, "_");
+    return noiseSignalNames.has(normalized);
+  };
   const skillMap = new Map<string, { name: string; stars: number; status: string; scoreLabel: string; whatShowed?: string; whatMissing?: string }>();
   const addSkill = (name: string, stars: number, status: string, scoreLabel: string, whatShowed?: string, whatMissing?: string) => {
     const clean = normalizeSkillName(name);
-    if (isGenericSkillName(clean)) return;
+    if (isGenericSkillName(clean) || isNoiseSignalSkill(clean)) return;
     const existing = skillMap.get(clean.toLowerCase());
     if (!existing) {
       skillMap.set(clean.toLowerCase(), { name: clean, stars, status, scoreLabel, whatShowed, whatMissing });
@@ -604,7 +640,7 @@ export function buildSreevaAIInterviewViewModel(i: {
     }
     existing.stars = Math.max(existing.stars, stars);
     existing.status = existing.status || status;
-    existing.scoreLabel = existing.scoreLabel !== "—" ? existing.scoreLabel : scoreLabel;
+    existing.scoreLabel = existing.scoreLabel || scoreLabel;
     existing.whatShowed = existing.whatShowed || whatShowed;
     existing.whatMissing = existing.whatMissing || whatMissing;
   };
@@ -612,7 +648,8 @@ export function buildSreevaAIInterviewViewModel(i: {
   // Parse "X/10" or "X/5" or plain number scores into 0-5 stars
   const parseScoreToStars = (raw: string): number => {
     const s = String(raw || "").trim();
-    // "7/10" → numerator=7, denominator=10
+    if (!s || s === "-" || s === "No clear score" || s.toLowerCase() === "no clear score") return 0;
+    // "7/10" a' numerator=7, denominator=10
     const fracMatch = s.match(/^(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)$/);
     if (fracMatch) {
       const num = parseFloat(fracMatch[1]);
@@ -621,7 +658,7 @@ export function buildSreevaAIInterviewViewModel(i: {
         return Math.max(0, Math.min(5, Math.round((num / den) * 5)));
       }
     }
-    // Plain number: treat ≤5 as direct stars, ≤10 as /10, ≤100 as /100
+    // Plain number: treat a5 as direct stars, a10 as /10, a100 as /100
     const n = parseFloat(s.replace(/[^\d.]/g, ""));
     if (!Number.isFinite(n)) return 3;
     if (n <= 5) return Math.max(0, Math.round(n));
@@ -632,7 +669,8 @@ export function buildSreevaAIInterviewViewModel(i: {
   // Primary source: AI skills_proof objects (new schema)
   (i.interviewReportSkills || []).forEach((s: any) => {
     const name = String(s?.skill || s?.title || s?.name || "").trim();
-    const scoreLabel = String(s?.score || "").trim() || "—";
+    if (!name || isNoiseSignalSkill(name)) return;
+    const scoreLabel = String(s?.score || "").trim() || "N/A";
     const stars = parseScoreToStars(scoreLabel);
     const status = String(s?.status || "NOT TESTED").trim();
     const whatShowed = cleanAiText(String(s?.what_they_showed || s?.evidence || "").trim()) || undefined;
@@ -640,15 +678,15 @@ export function buildSreevaAIInterviewViewModel(i: {
     if (name) addSkill(name, stars, status, scoreLabel, whatShowed, whatMissing);
   });
 
-  // Supplement from qa_blocks tags — derive score from actual qa_block score
+  // Supplement from qa_blocks tags a" derive score from actual qa_block score
   (i.interviewQaRows || []).forEach((row: any) => {
     if (Array.isArray(row?.tags)) {
       const rawScore = String(row?.score || "");
       const stars = parseScoreToStars(rawScore);
       const status = stars >= 4 ? "PROVED" : stars >= 2 ? "PARTIAL" : "NOT PROVED";
       row.tags.forEach((tag: string) => {
-        if (tag && !isGenericSkillName(tag)) {
-          addSkill(tag, stars || 1, status, rawScore || "—");
+        if (tag && !isGenericSkillName(tag) && !isNoiseSignalSkill(tag)) {
+          addSkill(tag, stars, status, rawScore || "-");
         }
       });
     }
@@ -656,13 +694,13 @@ export function buildSreevaAIInterviewViewModel(i: {
 
   const skills = Array.from(skillMap.values()).sort((a, b) => b.stars - a.stars);
   if (skills.length === 0 && !i.isFallbackReport) {
-    skills.push({ name: "Role fit (JD)", stars: Math.max(1, Math.min(5, Math.round((technicalPct / 100) * 5))), status: "NOT TESTED", scoreLabel: "—" });
+    skills.push({ name: "Role fit (JD)", stars: Math.max(1, Math.min(5, Math.round((technicalPct / 100) * 5))), status: "NOT TESTED", scoreLabel: "N/A" });
   }
 
-  // ── Transcript ── Parse turns from DB transcript with timestamps
+  // a"a" Transcript a"a" Parse turns from DB transcript with timestamps
   const secToLabel = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   const transcript: SreevaAIInterviewViewModel["transcript"] = (() => {
-    if (!i.interviewTranscript) return [{ from: "ai" as const, text: "No transcript available for this session.", time: "—" }];
+    if (!i.interviewTranscript) return [{ from: "ai" as const, text: "No transcript available for this session.", time: "--" }];
 
     const rawTurns: SreevaAIInterviewViewModel["transcript"] = [];
     const lines = i.interviewTranscript.split(/\n/);
@@ -692,7 +730,7 @@ export function buildSreevaAIInterviewViewModel(i: {
         }
         // Start new turn without timestamp
         const text = t.replace(/^interviewer:\s*/i, "").trim();
-        currentTurn = { from: "ai", text, time: "—" };
+        currentTurn = { from: "ai", text, time: undefined };
       } else if (/^candidate:\s*/i.test(t)) {
         // Save previous turn if exists
         if (currentTurn && currentTurn.text.trim()) {
@@ -700,7 +738,7 @@ export function buildSreevaAIInterviewViewModel(i: {
         }
         // Start new turn without timestamp
         const text = t.replace(/^candidate:\s*/i, "").trim();
-        currentTurn = { from: "user", text, time: "—" };
+        currentTurn = { from: "user", text, time: undefined };
       } else if (currentTurn) {
         // Continuation line - append to current turn
         currentTurn.text = `${currentTurn.text} ${t}`.trim();
@@ -730,33 +768,44 @@ export function buildSreevaAIInterviewViewModel(i: {
       }
     }
 
-    return turns.length > 0 ? turns : [{ from: "ai" as const, text: "No transcript available for this session.", time: "—" }];
+    if (turns.length > 0) {
+      return turns;
+    }
+
+    const fallbackText = String(i.interviewTranscript || "").trim();
+    if (!fallbackText) {
+      return [{ from: "ai" as const, text: "No transcript available for this session.", time: "--" }];
+    }
+
+    return [{
+      from: "ai" as const,
+      text: fallbackText,
+      time: "--",
+    }];
   })();
 
-  // ── Question Analysis ──
+  // a"a" Question Analysis a"a"
+  // ? Question Analysis ?
   const questionAnalysis: SreevaAIInterviewViewModel["questionAnalysis"] = [];
-  const rows = i.interviewQaRows?.length ? i.interviewQaRows : i.interviewSessionRows;
-  (rows as any[]).forEach((row, idx) => {
-    const q = String(row?.question || row?.title || "").trim() || `Question ${idx + 1}`;
-    const a = String(row?.answer || "").trim();
-    const score = String(row?.score || "--").trim();
+  const qaRows = Array.isArray(i.interviewQaRows) ? i.interviewQaRows : [];
+  const sessionRows = Array.isArray(i.interviewSessionRows) ? i.interviewSessionRows : [];
+  const liveScores = Array.isArray(i.answerScoresParsed) ? i.answerScoresParsed : [];
+  const maxRows = Math.max(qaRows.length, sessionRows.length, liveScores.length);
+  const findByTurn = (rows: any[], turnNumber: number) => rows.find((row: any) => Number(row?.q ?? row?.turn) === turnNumber) || null;
+  for (let idx = 0; idx < maxRows; idx += 1) {
+    const turnNumber = idx + 1;
+    const row = qaRows[idx] || findByTurn(qaRows, turnNumber) || {};
+    const sessionRow = sessionRows[idx] || findByTurn(sessionRows, turnNumber) || {};
+    const liveScore = liveScores[idx] || findByTurn(liveScores, turnNumber) || null;
+    const q = String(row?.question || row?.title || sessionRow?.question || liveScore?.question || "").trim() || `Question ${turnNumber}`;
+    const a = String(row?.answer || sessionRow?.answer || liveScore?.answer || "").trim();
+    const score = String(row?.score || (liveScore ? `${Math.round(Number(liveScore.overall || 0))}/10` : "--")).trim();
     const { q: b, bad } = scoreToBadge(score);
     const sb = row?.score_breakdown ?? null;
-    // Parse numeric score for fallback breakdown derivation
-    const numScore = (() => {
-      const raw = String(score).replace(/[^\d.\/]/g, "");
-      const frac = raw.match(/^(\d+(?:\.\d+)?)\/(\d+(?:\.\d+)?)$/);
-      if (frac) return (parseFloat(frac[1]) / parseFloat(frac[2])) * 10;
-      const n = parseFloat(raw);
-      return Number.isFinite(n) ? (n > 10 ? n / 10 : n) : 5;
-    })();
-    // Prefer: AI report score_breakdown → live answerScoresParsed → null
-    // Handles both new schema (technical_accuracy, practical_application) and old (fluency, confidence)
-    const liveScore = (i.answerScoresParsed || [])[idx];
     const scoreBreakdown = sb && typeof sb === "object" && Object.keys(sb).length > 0 ? {
-      clarity:              Math.max(0, Math.min(10, Number(sb.clarity    ?? 0))),
-      depth:                Math.max(0, Math.min(10, Number(sb.depth      ?? 0))),
-      technical_accuracy:   Math.max(0, Math.min(10, Number(sb.technical_accuracy ?? sb.fluency    ?? 0))),
+      clarity:              Math.max(0, Math.min(10, Number(sb.clarity ?? 0))),
+      depth:                Math.max(0, Math.min(10, Number(sb.depth ?? 0))),
+      technical_accuracy:   Math.max(0, Math.min(10, Number(sb.technical_accuracy ?? sb.fluency ?? 0))),
       practical_application:Math.max(0, Math.min(10, Number(sb.practical_application ?? sb.confidence ?? 0))),
     } : liveScore && (liveScore.clarity || liveScore.depth || liveScore.fluency || liveScore.confidence) ? {
       clarity:              Math.max(0, Math.min(10, liveScore.clarity)),
@@ -765,15 +814,14 @@ export function buildSreevaAIInterviewViewModel(i: {
       practical_application:Math.max(0, Math.min(10, liveScore.confidence)),
     } : null;
     questionAnalysis.push({
-      id: idx, question: q, answer: a || "—", score, qBadge: b, bad,
-      reasoning: cleanAiText(String(row?.reasoning || "").trim()),
-      tags: Array.isArray(row?.tags) ? row.tags : [],
+      id: idx, question: q, answer: a || "?", score, qBadge: b, bad,
+      reasoning: cleanAiText(String(row?.reasoning || sessionRow?.reasoning || "").trim()),
+      tags: Array.isArray(row?.tags) ? row.tags : Array.isArray(liveScore?.signals) ? liveScore.signals : [],
       confidence: String(row?.confidence || ""),
       scoreBreakdown,
     });
-  });
+  }
 
-  // ── Fit percent — combined_score is 0-100 (enriched server-side) ──
   const fitPct = (() => {
     const rawComb = Number(scores.combined_score);
     if (Number.isFinite(rawComb) && rawComb > 0) return Math.min(100, Math.max(0, Math.round(rawComb)));
@@ -781,9 +829,9 @@ export function buildSreevaAIInterviewViewModel(i: {
     return Math.min(100, Math.max(0, i.combinedScore));
   })();
 
-  // ── Recommendation from AI verdict (not from fitPct) ──
+  // a"a" Recommendation from AI verdict (not from fitPct) a"a"
   const { label: recommendation, color: recommendationColor } = recommendationFromAI(verdict.recommendation, fitPct);
-  // ── AI Summary bullets — use concise 4-line summary from AI ──
+  // a"a" AI Summary bullets a" use concise 4-line summary from AI a"a"
   const verdictSummaryText = cleanAiText(String(verdict.summary || i.interviewReportSummary || i.interviewAiSummary || "").trim());
   const verdictRecommendationReason = cleanAiText(String(verdict.recommendation_reason || "").trim());
   const aiSummaryConcise = String((verdict as any).ai_summary_concise || "").trim();
@@ -791,7 +839,7 @@ export function buildSreevaAIInterviewViewModel(i: {
   // Proctoring signal (needed before aiBullets to reference flagCount)
   const flagCount = proctoringRows.filter((row) => row.bad).length;
 
-  // ── Strengths / Risks — needed before aiBullets fallback ──
+  // a"a" Strengths / Risks a" needed before aiBullets fallback a"a"
   const { topStrengths, topRisks } = buildTopStrengthsRisks({
     technicalPct, techTag, commAvg, fitPct, proctoringRows,
     behavioralAnalysis: behavAnalysis, skills,
@@ -810,8 +858,8 @@ export function buildSreevaAIInterviewViewModel(i: {
         .filter((line: string) => line.length > 5)
         .slice(0, 4);
       lines.forEach((line: string) => {
-        // Strip leading bullet marker (•, -, *, +) but preserve ** inside
-        const cleaned = cleanAiText(line.replace(/^[\s•\-+]\s*/, "").replace(/^\*(?!\*)/, "").trim());
+        // Strip leading bullet marker (a, -, *, +) but preserve ** inside
+        const cleaned = cleanAiText(line.replace(/^[\sa\-+]\s*/, "").replace(/^\*(?!\*)/, "").trim());
         if (cleaned.length > 5) bullets.push(cleaned);
       });
     }
@@ -820,41 +868,41 @@ export function buildSreevaAIInterviewViewModel(i: {
     if (bullets.length === 0 && !i.isFallbackReport) {
       const provedSkills = skills.filter(s => s.status === "PROVED" || s.status === "PARTIAL").slice(0, 2);
       const topSkillNames = provedSkills.map(s => `**${s.name}**`).join(" and ") || "**their primary domain**";
-      bullets.push(`Candidate demonstrated practical hands-on exposure to ${topSkillNames} through specific project descriptions and implementation context.`);
+      bullets.push(cleanAiText(`Candidate demonstrated practical hands-on exposure to ${topSkillNames} through specific project descriptions and implementation context.`));
 
       const gapSkills = skills.filter(s => s.status === "NOT PROVED" || s.status === "NOT TESTED").slice(0, 2);
       const gapNames = gapSkills.map(s => `**${s.name}**`).join(" and ") || "**advanced technical depth**";
-      bullets.push(`Depth was ${technicalPct >= 60 ? "solid in core areas but surface-level" : "limited"} on ${gapNames} — answers stayed at concept level without implementation detail when probed.`);
+      bullets.push(cleanAiText(`Depth was ${technicalPct >= 60 ? "solid in core areas but surface-level" : "limited"} on ${gapNames} - answers stayed at concept level without implementation detail when probed.`));
 
       const behavioralSummary = String(behavAnalysis?.summary || "").trim();
       const engagementLine = behavioralSummary
         ? behavioralSummary.split(".")[0].trim() + "."
         : flagCount === 0
           ? "Candidate maintained consistent engagement with no behavioral anomalies across the session."
-          : `**${flagCount} behavioral signal${flagCount !== 1 ? "s" : ""}** triggered during the session — review proctoring timeline for context.`;
-      bullets.push(engagementLine);
+          : `${flagCount} behavioral signal${flagCount !== 1 ? "s" : ""} triggered during the session - review proctoring timeline for context.`;
+      bullets.push(cleanAiText(engagementLine));
 
       const topStrength = topStrengths[0]?.replace(/\*\*/g, "") || "";
       const topRisk = topRisks[0]?.replace(/\*\*/g, "") || "";
-      if (topStrength) bullets.push(`Strongest observed signal: **${topStrength.toLowerCase()}**${topRisk ? ` — primary area to validate further: ${topRisk.toLowerCase()}` : ""}.`);
+      if (topStrength) bullets.push(cleanAiText(`Strongest observed signal: ${topStrength.toLowerCase()}${topRisk ? ` - primary area to validate further: ${topRisk.toLowerCase()}` : ""}.`));
     }
 
     return bullets.slice(0, 4);
   })();
 
 
-  // ── Timestamps ──
+  // a"a" Timestamps a"a"
   const rec = i.interviewReportRecording || {};
   const doneAt = c.interview?.completedAt || c.interview?.endedAt;
   const interviewedOn = doneAt
     ? new Date(doneAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
     : c.createdAt && i.mounted
       ? new Date(c.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
-      : "—";
+      : "--";
 
   const totalTime = rec.duration_label
     || (i.recordingDurationSec ? (i.formatDuration || formatDurationM)(i.recordingDurationSec) : i.interviewTranscript
-      ? `${Math.max(1, Math.round((i.wordCount / 150) * 5))} mins (est.)` : "—");
+      ? `${Math.max(1, Math.round((i.wordCount / 150) * 5))} mins (est.)` : "--");
 
   return {
     backHref: i.backHref || "/admin/candidates",
@@ -876,7 +924,7 @@ export function buildSreevaAIInterviewViewModel(i: {
       questions: questionsAsked,
       tag: techTag,
       scores: {
-        technical: toPct(scores.demonstrated_competency ?? scores.technical_score, technicalPct),
+        technical: toPct(scores.technical_score, technicalPct),
         communication: toPct(scores.communication_score, commAvg),
         behavioral: toPct(scores.behavioral_score, Math.round(commAvg * 0.8)),
         cognitive: toPct(scores.cognitive_score, 50),
@@ -908,9 +956,9 @@ export function buildSreevaAIInterviewViewModel(i: {
   };
 }
 
-/* ═══════════════════════════════════════════════════════════
+/* a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-
    SUB-COMPONENTS
-═══════════════════════════════════════════════════════════ */
+a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a- */
 
 const SIGNAL_META: Record<string, { label: string; tone: "rose" | "amber" | "emerald" | "sky" | "slate" }> = {
   contradiction:           { label: "Contradiction",         tone: "rose" },
@@ -925,6 +973,44 @@ const SIGNAL_META: Record<string, { label: string; tone: "rose" | "amber" | "eme
   resume_claim_mismatch:   { label: "Resume mismatch",       tone: "rose" },
   ownership_clarified:     { label: "Ownership clarified",   tone: "emerald" },
 };
+
+const SIGNAL_TONE_DEFAULT: "rose" | "amber" | "emerald" | "sky" | "slate" = "slate";
+
+function toneForSignal(signalName: string): "rose" | "amber" | "emerald" | "sky" | "slate" {
+  const normalized = String(signalName || "").trim().toLowerCase();
+  const meta = SIGNAL_META[normalized];
+  if (meta) return meta.tone;
+  if (
+    normalized.includes("contradiction") ||
+    normalized.includes("mismatch") ||
+    normalized.includes("evasion") ||
+    normalized.includes("collapse") ||
+    normalized.includes("resume_claim")
+  ) return "rose";
+  if (
+    normalized.includes("ambiguity") ||
+    normalized.includes("decay") ||
+    normalized.includes("blur") ||
+    normalized.includes("focus") ||
+    normalized.includes("latency")
+  ) return "amber";
+  if (
+    normalized.includes("resolved") ||
+    normalized.includes("clarified") ||
+    normalized.includes("given") ||
+    normalized.includes("strong")
+  ) return "emerald";
+  if (normalized.includes("tab") || normalized.includes("copy") || normalized.includes("screenshot")) return "rose";
+  return SIGNAL_TONE_DEFAULT;
+}
+
+function toneForSeverity(severity: string): "rose" | "amber" | "emerald" | "sky" | "slate" {
+  const sev = String(severity || "").toLowerCase();
+  if (sev === "high" || sev === "critical") return "rose";
+  if (sev === "medium") return "amber";
+  if (sev === "low") return "sky";
+  return "slate";
+}
 
 function fmtTime(sec: number) {
   const m = Math.floor(sec / 60);
@@ -996,15 +1082,19 @@ function IntegrityTimeline({
           let category: string;
 
           if (ev.kind === "signal") {
-            const meta = SIGNAL_META[ev.signal_name] ?? { label: ev.signal_name.replace(/_/g, " "), tone: "slate" as const };
-            tone = meta.tone;
+            const meta = SIGNAL_META[ev.signal_name]
+              ? SIGNAL_META[ev.signal_name]
+              : { label: ev.signal_name.replace(/_/g, " "), tone: toneForSignal(ev.signal_name) };
+            tone = meta.tone ?? toneForSignal(ev.signal_name);
             label = meta.label;
             subLabel = `Turn ${ev.turn}`;
             evidence = ev.evidence || null;
             category = "behavioral";
           } else {
-            const meta = PROCTORING_META[ev.eventType] ?? { label: ev.eventType.replace(/_/g, " "), tone: "amber" as const };
-            tone = ev.severity === "high" || ev.severity === "critical" ? "rose" : meta.tone;
+            const meta = PROCTORING_META[ev.eventType]
+              ? PROCTORING_META[ev.eventType]
+              : { label: ev.eventType.replace(/_/g, " "), tone: toneForSeverity(ev.severity) };
+            tone = toneForSeverity(ev.severity) !== "slate" ? toneForSeverity(ev.severity) : meta.tone;
             label = meta.label;
             subLabel = ev.severity ? ev.severity.toUpperCase() : null;
             evidence = ev.reason || null;
@@ -1024,8 +1114,16 @@ function IntegrityTimeline({
             : tone === "sky"     ? "bg-sky-50 text-sky-700 border-sky-200"
             :                      "bg-slate-50 text-slate-600 border-slate-200";
           const catCls = category === "proctoring"
-            ? "bg-violet-50 text-violet-600 border-violet-200"
-            : "bg-slate-50 text-slate-500 border-slate-200";
+            ? tone === "rose" ? "bg-rose-50 text-rose-700 border-rose-200"
+              : tone === "emerald" ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+              : tone === "amber" ? "bg-amber-50 text-amber-700 border-amber-200"
+              : tone === "sky" ? "bg-sky-50 text-sky-700 border-sky-200"
+              : "bg-slate-50 text-slate-500 border-slate-200"
+            : tone === "rose" ? "bg-rose-50 text-rose-700 border-rose-200"
+              : tone === "emerald" ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+              : tone === "amber" ? "bg-amber-50 text-amber-700 border-amber-200"
+              : tone === "sky" ? "bg-sky-50 text-sky-700 border-sky-200"
+              : "bg-slate-50 text-slate-500 border-slate-200";
 
           return (
             <li
@@ -1059,9 +1157,9 @@ export function IntelMetricCard({ row }: { row: IntelSignalRow; isCognitive?: bo
   const cardRef = useRef<HTMLDivElement>(null);
   const [tipPos, setTipPos] = useState<{ top: number; left: number; width: number } | null>(null);
 
-  const earned = row.details?.find(d => d.startsWith("✓")) || "";
-  const missed = row.details?.find(d => d.startsWith("✗")) || "";
-  const plainLines = row.details?.filter(d => !d.startsWith("✓") && !d.startsWith("✗")) ?? [];
+  const earned = row.details?.find(d => d.startsWith("-")) || row.details?.find(d => d.startsWith('a"')) || "";
+  const missed = row.details?.find(d => d.startsWith("Risk:")) || "";
+  const plainLines = row.details?.filter(d => !d.startsWith("-") && !d.startsWith("Risk:")) || [];
 
   const handleMouseEnter = () => {
     if (cardRef.current) {
@@ -1097,14 +1195,14 @@ export function IntelMetricCard({ row }: { row: IntelSignalRow; isCognitive?: bo
         >
           {earned && (
             <div className="flex gap-2.5 items-start px-3 py-2.5 bg-emerald-50 border-b border-emerald-100">
-              <span className="mt-[3px] shrink-0 text-emerald-600 text-[13px] font-black">✓</span>
-              <p className="text-[12px] leading-relaxed text-emerald-900">{earned.replace(/^✓\s*/, "")}</p>
+              <span className="mt-[3px] shrink-0 text-emerald-600 text-[13px] font-black">-</span>
+              <p className="text-[12px] leading-relaxed text-emerald-900">{earned.replace(/^[-]\s*/, "")}</p>
             </div>
           )}
           {missed && (
             <div className="flex gap-2.5 items-start px-3 py-2.5 bg-rose-50 border-b border-rose-100">
-              <span className="mt-[3px] shrink-0 text-rose-600 text-[13px] font-black">✗</span>
-              <p className="text-[12px] leading-relaxed text-rose-900">{missed.replace(/^✗\s*/, "")}</p>
+              <span className="mt-[3px] shrink-0 text-rose-600 text-[13px] font-black">a-</span>
+              <p className="text-[12px] leading-relaxed text-rose-900">{missed.replace(/^a-\s*/, "")}</p>
             </div>
           )}
           {plainLines.map((line, idx) => {
@@ -1114,7 +1212,7 @@ export function IntelMetricCard({ row }: { row: IntelSignalRow; isCognitive?: bo
               return (
                 <div key={idx} className="px-3 py-2.5 border-b border-neutral-100 bg-neutral-50">
                   <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-[10px] font-black uppercase tracking-[0.14em] text-neutral-500">Score</span>
+                    <span className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-neutral-500">Score</span>
                     <span className="text-[12px] font-black text-neutral-800">{score}/100</span>
                   </div>
                   <div className="h-1.5 w-full rounded-full bg-neutral-200 overflow-hidden">
@@ -1175,34 +1273,54 @@ function ScrollFade({ children, className, style }: { children: React.ReactNode;
   );
 }
 
-function SkillCircle({ stars, status }: { stars: number; status: string }) {
+function SkillCircle({ stars, status, scoreLabel }: { stars: number; status: string; scoreLabel?: string }) {
   const R = 18, CIRC = 2 * Math.PI * R;
-  const pct = Math.round((stars / 5) * 100);
+  const rawLabel = String(scoreLabel || "").trim();
+  const parsedPct = (() => {
+    if (!rawLabel || rawLabel === "-" || rawLabel === "No clear score") return null;
+    const pctMatch = rawLabel.match(/^(\d+(?:\.\d+)?)\s*%$/);
+    if (pctMatch) return Math.max(0, Math.min(100, Number(pctMatch[1])));
+    const fracMatch = rawLabel.match(/^(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)$/);
+    if (fracMatch) {
+      const num = Number(fracMatch[1]);
+      const den = Number(fracMatch[2]);
+      if (Number.isFinite(num) && Number.isFinite(den) && den > 0) {
+        return Math.max(0, Math.min(100, Math.round((num / den) * 100)));
+      }
+    }
+    const num = Number(rawLabel.replace(/[^\d.]/g, ""));
+    if (Number.isFinite(num)) {
+      if (num <= 10) return Math.max(0, Math.min(100, Math.round(num * 10)));
+      if (num <= 100) return Math.max(0, Math.min(100, Math.round(num)));
+    }
+    return null;
+  })();
+  const pct = parsedPct !== null ? parsedPct : Math.round((stars / 5) * 100);
   const fill = CIRC * (pct / 100);
   const color =
-    status === "PROVED"     ? "#10B981" :
-    status === "PARTIAL"    ? "#F59E0B" :
-    status === "NOT PROVED" ? "#F43F5E" : "#6366F1";
+    status === "PROVED"     ? "#0F9D58" :
+    status === "PARTIAL"    ? "#D97706" :
+    status === "NOT PROVED" ? "#E11D48" : "#64748B";
+  const label = parsedPct !== null ? `${pct}%` : "N/A";
   return (
     <svg width="44" height="44" viewBox="0 0 44 44" className="shrink-0" style={{ transform: "rotate(-90deg)" }}>
       <circle cx="22" cy="22" r={R} fill="none" stroke="#E8EAED" strokeWidth="3.5" />
       <circle
         cx="22" cy="22" r={R} fill="none"
-        stroke={color} strokeWidth="3.5"
+        stroke={pct > 0 ? color : "#CBD5E1"} strokeWidth="3.5"
         strokeDasharray={`${fill} ${CIRC}`}
         strokeLinecap="round"
       />
       <text
         x="22" y="22"
         textAnchor="middle" dominantBaseline="middle"
-        style={{ transform: "rotate(90deg)", transformOrigin: "22px 22px", fontSize: "9.5px", fontWeight: 800, fill: color }}
+        style={{ transform: "rotate(90deg)", transformOrigin: "22px 22px", fontSize: "9.5px", fontWeight: 800, fill: pct > 0 ? color : "#64748B" }}
       >
-        {pct}%
+        {label}
       </text>
     </svg>
   );
 }
-
 function SkillRatingsContainer({ skills }: { skills: SreevaAIInterviewViewModel["skills"] }) {
   const [expanded, setExpanded] = useState<string | null>(null);
 
@@ -1215,10 +1333,10 @@ function SkillRatingsContainer({ skills }: { skills: SreevaAIInterviewViewModel[
   }
 
   const statusCfg: Record<string, { badge: string; badgeText: string }> = {
-    PROVED:       { badge: "bg-emerald-50 border-emerald-200 text-emerald-700", badgeText: "Proved" },
+    PROVED:       { badge: "bg-emerald-50 border-emerald-200 text-emerald-700", badgeText: "Strong" },
     PARTIAL:      { badge: "bg-amber-50 border-amber-200 text-amber-700",       badgeText: "Partial" },
-    "NOT PROVED": { badge: "bg-rose-50 border-rose-200 text-rose-700",           badgeText: "Not Proved" },
-    "NOT TESTED": { badge: "bg-slate-50 border-slate-200 text-slate-500",        badgeText: "Not Tested" },
+    "NOT PROVED": { badge: "bg-rose-50 border-rose-200 text-rose-700",           badgeText: "Weak" },
+    "NOT TESTED": { badge: "bg-slate-50 border-slate-200 text-slate-500",        badgeText: "N/A" },
   };
 
   return (
@@ -1234,23 +1352,23 @@ function SkillRatingsContainer({ skills }: { skills: SreevaAIInterviewViewModel[
               <button
                 type="button"
                 onClick={() => hasDetail && setExpanded(isOpen ? null : s.name)}
-                className={cn("w-full flex items-center gap-3 px-4 py-3 text-left transition-colors", hasDetail ? "hover:bg-[#FAFBFC] cursor-pointer" : "cursor-default")}
+                className={cn("w-full flex items-center gap-3 px-4 py-4 text-left transition-all", hasDetail ? "hover:bg-slate-50/70 cursor-pointer" : "cursor-default")}
               >
                 {/* Name + badge */}
                 <div className="flex-1 min-w-0">
-                  <p className="text-[13px] font-bold text-[#1A1D22] leading-snug truncate">{s.name}</p>
+                  <p className="text-[13px] font-semibold text-[#111827] leading-snug truncate">{s.name}</p>
                   <div className="flex items-center gap-1.5 mt-0.5">
-                    <span className={cn("rounded border px-1.5 py-0.5 text-[10px] font-black leading-none", cfg.badge)}>
+                    <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-bold leading-none", cfg.badge)}>
                       {cfg.badgeText}
                     </span>
-                    {s.scoreLabel !== "—" && (
-                      <span className="text-[10px] font-semibold text-[#6B7079]">{s.scoreLabel}</span>
+                    {s.scoreLabel && /[0-9]/.test(String(s.scoreLabel)) && (
+                      <span className="text-[10px] font-medium text-[#6B7280]">{s.scoreLabel}</span>
                     )}
                   </div>
                 </div>
 
                 {/* Circle ring on right */}
-                <SkillCircle stars={s.stars} status={s.status} />
+                <SkillCircle stars={s.stars} status={s.status} scoreLabel={s.scoreLabel} />
 
                 {hasDetail && (
                   <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 text-[#98A2B3] transition-transform", isOpen ? "rotate-180" : "")} />
@@ -1260,14 +1378,14 @@ function SkillRatingsContainer({ skills }: { skills: SreevaAIInterviewViewModel[
               {isOpen && hasDetail && (
                 <div className="px-4 pb-4 space-y-2.5">
                   {s.whatShowed && (
-                    <div className="rounded-xl border-l-[3px] border-l-emerald-400 border border-[#EBEBEB] bg-emerald-50/30 px-3.5 py-3">
-                      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-emerald-700 mb-1">What they showed</p>
+                    <div className="rounded-2xl border border-emerald-100 bg-emerald-50/40 px-3.5 py-3">
+                      <p className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-emerald-700 mb-1">What they showed</p>
                       <p className="text-[12.5px] leading-relaxed text-[#1A1D22]">{s.whatShowed}</p>
                     </div>
                   )}
                   {s.whatMissing && (
-                    <div className="rounded-xl border-l-[3px] border-l-rose-400 border border-[#EBEBEB] bg-rose-50/30 px-3.5 py-3">
-                      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-rose-700 mb-1">What was missing</p>
+                    <div className="rounded-2xl border border-rose-100 bg-rose-50/40 px-3.5 py-3">
+                      <p className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-rose-700 mb-1">What was missing</p>
                       <p className="text-[12.5px] leading-relaxed text-[#1A1D22]">{s.whatMissing}</p>
                     </div>
                   )}
@@ -1332,7 +1450,7 @@ function HiringStamp({ recommendation, color }: { recommendation: string; color:
       <circle cx={cx} cy={cy} r={r - 7} fill="none" stroke={cfg.stroke} strokeWidth="1.5" />
       {/* Stars around outer ring */}
       {stars.map((s, i) => (
-        <text key={i} x={s.x} y={s.y} textAnchor="middle" dominantBaseline="middle" fontSize="5" fill={cfg.fill}>★</text>
+        <text key={i} x={s.x} y={s.y} textAnchor="middle" dominantBaseline="middle" fontSize="5" fill={cfg.fill}>a ...</text>
       ))}
       {/* Label box */}
       <rect x="14" y="46" width="92" height="28" rx="4" ry="4" fill="none" stroke={cfg.stroke} strokeWidth="2" />
@@ -1368,7 +1486,7 @@ function BehavioralBullet({ text, tone }: { text: string | Record<string, string
     const handledColor = isHandled ? "text-emerald-700 bg-emerald-50 border-emerald-200"
       : isPartial ? "text-amber-700 bg-amber-50 border-amber-200"
       : "text-rose-700 bg-rose-50 border-rose-200";
-    const handledIcon = isHandled ? "✓" : isPartial ? "◑" : "✗";
+    const handledIcon = isHandled ? "YES" : isPartial ? "PARTIAL" : "NO";
 
     return (
       <li className={`rounded-xl border-l-[3px] border border-[#EBEBEB] ${accentCls} overflow-hidden`}>
@@ -1385,19 +1503,19 @@ function BehavioralBullet({ text, tone }: { text: string | Record<string, string
           <div className="border-t border-black/[0.05] px-4 py-3.5 space-y-3">
             {what_happened && (
               <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#6B7079] mb-1">What happened</p>
+                <p className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-[#6B7079] mb-1">What happened</p>
                 <p className="text-[12.5px] leading-relaxed text-[#1A1D22]">{what_happened}</p>
               </div>
             )}
             {what_was_wrong && (
               <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#6B7079] mb-1">What it signals</p>
+                <p className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-[#6B7079] mb-1">What it signals</p>
                 <p className="text-[12.5px] leading-relaxed text-[#344054]">{what_was_wrong}</p>
               </div>
             )}
             {handled && (
               <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#6B7079] mb-1">Did they handle it?</p>
+                <p className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-[#6B7079] mb-1">Did they handle it?</p>
                 <p className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[12px] font-semibold leading-snug ${handledColor}`}>
                   <span className="font-black">{handledIcon}</span>
                   {handled}
@@ -1411,7 +1529,7 @@ function BehavioralBullet({ text, tone }: { text: string | Record<string, string
   }
 
   // Legacy string format fallback
-  const sepMatch = (text as string).match(/^([\s\S]+?)\s*[→—–]\s*([\s\S]+)$/);
+  const sepMatch = (text as string).match(/^([\s\S]+?)\s*[a'a"a"]\s*([\s\S]+)$/);
   const [claim, detail] = sepMatch ? [sepMatch[1].trim(), sepMatch[2].trim()] : [text as string, ""];
   const detailColor = { risk: "text-rose-700", flag: "text-amber-700", positive: "text-emerald-700", neutral: "text-[#475467]" }[tone];
 
@@ -1432,12 +1550,12 @@ function ProctoringSignalCard({ signal }: { signal: any }) {
   const [expanded, setExpanded] = useState(false);
   const isRecovery = RECOVERY_SIGNALS.has(signal.signal);
   const label = SIGNAL_LABEL_MAP[signal.signal] || signal.signal.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase());
-  const confidencePct = Math.round((signal.confidence ?? 0) * 100);
+  const confidencePct = Math.round(Number(signal.confidence || 0) * 100);
   return (
     <div className={`rounded-2xl border ${isRecovery ? "border-emerald-200 bg-emerald-50/60" : "border-amber-200 bg-amber-50/50"} overflow-hidden`}>
       <button type="button" onClick={() => setExpanded(e => !e)} className="w-full flex items-start justify-between gap-3 px-4 py-3 text-left hover:bg-black/[0.02] transition-colors">
         <div className="flex items-start gap-2.5 min-w-0">
-          <span className={`mt-[3px] shrink-0 text-[15px] ${isRecovery ? "text-emerald-600" : "text-amber-600"}`}>{isRecovery ? "✓" : "●"}</span>
+          <span className={`mt-[3px] shrink-0 text-[15px] ${isRecovery ? "text-emerald-600" : "text-amber-600"}`}>{isRecovery ? "OK" : "WARN"}</span>
           <div className="min-w-0">
             <p className={`text-[13px] font-bold leading-snug ${isRecovery ? "text-emerald-900" : "text-amber-900"}`}>{label}</p>
             <p className="text-[12px] leading-snug text-[#475467] mt-0.5">{signal.interpretation}</p>
@@ -1445,7 +1563,7 @@ function ProctoringSignalCard({ signal }: { signal: any }) {
         </div>
         <div className="flex shrink-0 items-center gap-2 pt-0.5">
           {signal.count > 1 && (
-            <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${isRecovery ? "bg-emerald-100 border-emerald-200 text-emerald-700" : "bg-amber-100 border-amber-200 text-amber-700"}`}>×{signal.count}</span>
+            <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${isRecovery ? "bg-emerald-100 border-emerald-200 text-emerald-700" : "bg-amber-100 border-amber-200 text-amber-700"}`}>A-{signal.count}</span>
           )}
           <span className="text-[10px] font-bold text-[#6B7079]">{confidencePct}%</span>
           <ChevronDown className={`h-3.5 w-3.5 text-[#6B7079] transition-transform ${expanded ? "rotate-180" : ""}`} />
@@ -1490,10 +1608,14 @@ const BEHAVIORAL_SECTION_META: Record<string, {
 };
 
 function BehavioralSignalsPanel({ analysis }: { analysis: Record<string, any> }) {
-  const hasContent = analysis && Object.keys(analysis).some(key => {
-    const v = analysis[key];
-    return Array.isArray(v) && v.length > 0;
-  });
+  const summary = typeof analysis?.summary === "string" ? analysis.summary.trim() : "";
+  const SECTION_ORDER = [
+    "engagement_signals", "consistency_signals", "communication_patterns",
+    "confidence_indicators", "strengths_observed",
+    "concerns_noted", "proctoring_signals_detected",
+  ];
+  const structuredSections = SECTION_ORDER.filter((key) => Array.isArray(analysis?.[key]) && analysis[key].length > 0);
+  const hasContent = Boolean(summary) || structuredSections.length > 0;
 
   if (!hasContent) {
     return (
@@ -1503,12 +1625,11 @@ function BehavioralSignalsPanel({ analysis }: { analysis: Record<string, any> })
     );
   }
 
-  const summary = analysis.summary;
-  const SECTION_ORDER = [
-    "engagement_signals", "consistency_signals", "communication_patterns",
-    "confidence_indicators", "strengths_observed",
-    "concerns_noted", "proctoring_signals_detected",
-  ];
+  const fallbackBullets = [
+    ...(Array.isArray(analysis?.strengths_observed) ? analysis.strengths_observed : []),
+    ...(Array.isArray(analysis?.concerns_noted) ? analysis.concerns_noted : []),
+    ...(Array.isArray(analysis?.engagement_signals) ? analysis.engagement_signals : []),
+  ].filter((item) => typeof item === "string" && String(item).trim());
 
   return (
     <div className="space-y-4">
@@ -1520,53 +1641,76 @@ function BehavioralSignalsPanel({ analysis }: { analysis: Record<string, any> })
         </div>
       )}
 
-      {SECTION_ORDER.map(key => {
-        const value = analysis[key];
-        if (!Array.isArray(value) || value.length === 0) return null;
-        const config = BEHAVIORAL_SECTION_CONFIG[key];
-        const meta   = BEHAVIORAL_SECTION_META[key];
-        if (!config || !meta) return null;
-        const isSignalObjects = typeof value[0] === "object" && value[0] !== null && "signal" in value[0];
-
-        return (
-          <div key={key} className="overflow-hidden rounded-2xl border border-[#E8EAED] bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
-            {/* Section header */}
-            <div className={`flex items-center justify-between gap-3 px-4 py-3 ${meta.headerBg} border-b ${meta.divider}`}>
-              <div>
-                <p className={`text-[12px] font-bold leading-none ${meta.headerText}`}>{config.label}</p>
-                <p className="text-[11px] text-[#6B7079] mt-0.5">{config.description}</p>
-              </div>
-              <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-black ${meta.pillBg} ${meta.pillText}`}>
-                {value.length} signal{value.length !== 1 ? "s" : ""}
-              </span>
-            </div>
-
-            {/* Signal list */}
-            <div className="px-3.5 py-3">
-              {isSignalObjects ? (
-                <div className="space-y-2">
-                  {value.map((signal: any, idx: number) => <ProctoringSignalCard key={idx} signal={signal} />)}
-                </div>
-              ) : (
-                <ul className="space-y-2">
-                  {value.map((bullet: string | Record<string, string>, idx: number) => (
-                    <BehavioralBullet key={idx} text={bullet} tone={config.tone} />
-                  ))}
-                </ul>
-              )}
-            </div>
+      {structuredSections.length === 0 ? (
+        <div className="overflow-hidden rounded-2xl border border-[#E8EAED] bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+          <div className="border-b border-[#E8EAED] bg-[#FAFBFC] px-4 py-3">
+            <p className="text-[12px] font-bold leading-none text-[#1A1D22]">Behavioral details</p>
+            <p className="text-[11px] text-[#6B7079] mt-0.5">No structured arrays were returned, so only the narrative summary is available.</p>
           </div>
-        );
-      })}
+          <div className="px-4 py-4 space-y-3">
+            {fallbackBullets.length > 0 ? (
+              <ul className="space-y-2">
+                {fallbackBullets.slice(0, 4).map((bullet, idx) => (
+                  <BehavioralBullet key={idx} text={bullet} tone={idx === 0 ? "neutral" : idx === 1 ? "positive" : "risk"} />
+                ))}
+              </ul>
+            ) : (
+              <p className="text-[12px] leading-relaxed text-[#6B7079]">
+                The stored report includes a behavioral summary, but no detailed signal arrays. Check the raw JSON for the report payload if you expect granular items here.
+              </p>
+            )}
+          </div>
+        </div>
+      ) : (
+        SECTION_ORDER.map((key) => {
+          const value = analysis[key];
+          if (!Array.isArray(value) || value.length === 0) return null;
+          const config = BEHAVIORAL_SECTION_CONFIG[key];
+          const meta   = BEHAVIORAL_SECTION_META[key];
+          if (!config || !meta) return null;
+          const isSignalObjects = typeof value[0] === "object" && value[0] !== null && "signal" in value[0];
+
+          return (
+            <div key={key} className="overflow-hidden rounded-2xl border border-[#E8EAED] bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+              {/* Section header */}
+              <div className={`flex items-center justify-between gap-3 px-4 py-3 ${meta.headerBg} border-b ${meta.divider}`}>
+                <div>
+                  <p className={`text-[12px] font-bold leading-none ${meta.headerText}`}>{config.label}</p>
+                  <p className="text-[11px] text-[#6B7079] mt-0.5">{config.description}</p>
+                </div>
+                <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-black ${meta.pillBg} ${meta.pillText}`}>
+                  {value.length} signal{value.length !== 1 ? "s" : ""}
+                </span>
+              </div>
+
+              {/* Signal list */}
+              <div className="px-3.5 py-3">
+                {isSignalObjects ? (
+                  <div className="space-y-2">
+                    {value.map((signal: any, idx: number) => <ProctoringSignalCard key={idx} signal={signal} />)}
+                  </div>
+                ) : (
+                  <ul className="space-y-2">
+                    {value.map((bullet: string | Record<string, string>, idx: number) => (
+                      <BehavioralBullet key={idx} text={bullet} tone={config.tone} />
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          );
+        })
+      )}
     </div>
   );
 }
 
+
 const EVENT_TYPE_LABELS: Record<string, { label: string; what: string; clarified?: string }> = {
-  tab_switch:      { label: "Tab / App switch",    what: "Candidate switched away from the interview window — could indicate looking up answers or distraction." },
+  tab_switch:      { label: "Tab / App switch",    what: "Candidate switched away from the interview window. This could indicate looking up answers or distraction." },
   connection_lost: { label: "Connection dropped",  what: "Candidate's session disconnected. May be a genuine network issue or a deliberate reset." },
-  face_absence:    { label: "Face not visible",    what: "Camera detected no face in the frame — candidate may have moved away, turned off camera, or left the desk." },
-  multiple_faces:  { label: "Multiple faces",      what: "More than one person visible in the camera — possible coaching or external assistance." },
+  face_absence:    { label: "Face not visible",    what: "Camera detected no face in the frame. The candidate may have moved away, turned off camera, or left the desk." },
+  multiple_faces:  { label: "Multiple faces",      what: "More than one person visible in the camera frame. Possible coaching or external assistance." },
   camera_disabled: { label: "Camera off",          what: "Candidate disabled their camera mid-session, removing visual proctoring coverage." },
   identity_mismatch: { label: "Identity mismatch", what: "Face did not consistently match the registered candidate identity. Verify with photo ID." },
 };
@@ -1611,9 +1755,9 @@ function ProctoringEventsPanel({ events }: { events: { time: string; eventType: 
   );
 }
 
-/* ═══════════════════════════════════════════════════════════
+/* a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-
    CHART COMPONENTS
-═══════════════════════════════════════════════════════════ */
+a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a- */
 
 const ARC_LEN = Math.PI * 80;
 export function SemicircleGauge({ value, fitLabel }: { value: number; fitLabel: string }) {
@@ -1703,7 +1847,7 @@ export function CommunicationScoreCardDonutLive({ comm }: { comm: SreevaAIInterv
 
     // Calculate tooltip position based on segment angle (in viewport/fixed coordinates)
     const segmentMidAngle = ((found?.start || 0) + (found?.end || 0)) / 2;
-    const radians = ((segmentMidAngle - 90) * Math.PI) / 180; // Adjust for 0° = top
+    const radians = ((segmentMidAngle - 90) * Math.PI) / 180; // Adjust for 0A = top
     const tooltipRadius = outerRadius * 2.2; // Increased distance to avoid hover interference
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;
@@ -1738,36 +1882,36 @@ export function CommunicationScoreCardDonutLive({ comm }: { comm: SreevaAIInterv
           const activeSegment = segments.find((s) => s.key === activeMetric);
           const WHY: Record<string, { what: string; scored: string }> = {
             clarity: {
-              what: "Did the candidate's answers have a logical structure — opening point, supporting reasoning, conclusion? Were ideas immediately understandable or did they require re-reading?",
+              what: "Did the candidate's answers have a logical structure - opening point, supporting reasoning, conclusion? Were ideas immediately understandable or did they require re-reading?",
               scored: activeSegment!.value >= 75
-                ? `${activeSegment!.value}/100 — Candidate structured answers with a clear point first, supported by reasoning. Ideas were easy to follow on first listen.`
+                ? `${activeSegment!.value}/100 - Candidate structured answers with a clear point first, supported by reasoning. Ideas were easy to follow on first listen.`
                 : activeSegment!.value >= 50
-                ? `${activeSegment!.value}/100 — Answers were generally understandable but occasionally drifted before landing on the key point. Some re-listening needed.`
-                : `${activeSegment!.value}/100 — Answers frequently lacked structure. Key points were buried or unclear, requiring significant effort to follow.`,
+                ? `${activeSegment!.value}/100 - Answers were generally understandable but occasionally drifted before landing on the key point. Some re-listening needed.`
+                : `${activeSegment!.value}/100 - Answers frequently lacked structure. Key points were buried or unclear, requiring significant effort to follow.`,
             },
             fluency: {
-              what: "How smooth was the delivery? Counted against: filler words (um, uh, like, you know), long unnatural pauses, repeated restarts, and incomplete sentences.",
+              what: "How smooth was the delivery? Counted against filler words, long unnatural pauses, repeated restarts, and incomplete sentences.",
               scored: activeSegment!.value >= 75
-                ? `${activeSegment!.value}/100 — Delivery was smooth with minimal filler. Thoughts connected naturally with consistent pacing throughout.`
+                ? `${activeSegment!.value}/100 - Delivery was smooth with minimal filler. Thoughts connected naturally with consistent pacing throughout.`
                 : activeSegment!.value >= 50
-                ? `${activeSegment!.value}/100 — Noticeable filler words or pauses in several answers, but speech remained followable. Moderate disruption to delivery.`
-                : `${activeSegment!.value}/100 — Frequent filler words, restarts, or long pauses significantly disrupted speech flow. Listener effort was high.`,
+                ? `${activeSegment!.value}/100 - Noticeable filler words or pauses in several answers, but speech remained followable. Moderate disruption to delivery.`
+                : `${activeSegment!.value}/100 - Frequent filler words, restarts, or long pauses significantly disrupted speech flow. Listener effort was high.`,
             },
             grammar: {
-              what: "Sentence-level correctness — complete sentences, correct subject-verb agreement, and no structural fragments. Assessed from transcribed speech patterns.",
+              what: "Sentence-level correctness - complete sentences, correct subject-verb agreement, and no structural fragments. Assessed from transcribed speech patterns.",
               scored: activeSegment!.value >= 75
-                ? `${activeSegment!.value}/100 — Consistently used complete, well-formed sentences. Very few grammatical fragments or structural errors detected in the transcript.`
+                ? `${activeSegment!.value}/100 - Consistently used complete, well-formed sentences. Very few grammatical fragments or structural errors detected in the transcript.`
                 : activeSegment!.value >= 50
-                ? `${activeSegment!.value}/100 — Mostly correct grammar with some sentence fragments or tense inconsistencies, typical of spoken language under pressure.`
-                : `${activeSegment!.value}/100 — Frequent grammatical errors or fragmented sentences throughout. May affect professional credibility in client-facing or written communication roles.`,
+                ? `${activeSegment!.value}/100 - Mostly correct grammar with some sentence fragments or tense inconsistencies, typical of spoken language under pressure.`
+                : `${activeSegment!.value}/100 - Frequent grammatical errors or fragmented sentences throughout. May affect professional credibility in client-facing or written communication roles.`,
             },
             confidence: {
-              what: "Assertiveness of delivery — did the candidate state positions clearly, or hedge with 'I think maybe', 'not sure', 'kind of'? Did they maintain tone under follow-up questions?",
+              what: "Assertiveness of delivery - did the candidate state positions clearly, or hedge with 'I think maybe', 'not sure', 'kind of'? Did they maintain tone under follow-up questions?",
               scored: activeSegment!.value >= 75
-                ? `${activeSegment!.value}/100 — Candidate stated answers decisively. Minimal hedging language. Tone remained steady even when challenged or probed.`
+                ? `${activeSegment!.value}/100 - Candidate stated answers decisively. Minimal hedging language. Tone remained steady even when challenged or probed.`
                 : activeSegment!.value >= 50
-                ? `${activeSegment!.value}/100 — Generally confident with occasional hedging. Some answers became tentative under follow-up but recovered.`
-                : `${activeSegment!.value}/100 — Frequent use of hedging language ('I think', 'maybe', 'not entirely sure'). Tone dropped under follow-up questions, signalling low assertiveness.`,
+                ? `${activeSegment!.value}/100 - Generally confident with occasional hedging. Some answers became tentative under follow-up but recovered.`
+                : `${activeSegment!.value}/100 - Frequent use of hedging language ('I think', 'maybe', 'not entirely sure'). Tone dropped under follow-up questions, signalling low assertiveness.`,
             },
           };
           return (
@@ -1779,7 +1923,7 @@ export function CommunicationScoreCardDonutLive({ comm }: { comm: SreevaAIInterv
                 </div>
                 <div className="px-3 py-2.5">
                   <p className="text-[11px] leading-relaxed text-[#1A1D22]">
-                    <span className="mr-1 font-black" style={{ color: activeSegment?.color || "#000" }}>▸</span>{WHY[activeSegment?.key as keyof typeof WHY]?.scored}
+                    <span className="mr-1 font-black" style={{ color: activeSegment?.color || "#000" }}>a- </span>{WHY[activeSegment?.key as keyof typeof WHY]?.scored}
                   </p>
                 </div>
               </div>
@@ -1792,39 +1936,38 @@ export function CommunicationScoreCardDonutLive({ comm }: { comm: SreevaAIInterv
             const isActive = activeMetric === m.key;
             const WHY: Record<string, { what: string; scored: string }> = {
               clarity: {
-                what: "Did the candidate's answers have a logical structure — opening point, supporting reasoning, conclusion? Were ideas immediately understandable or did they require re-reading?",
+                what: "Did the candidate's answers have a logical structure - opening point, supporting reasoning, conclusion? Were ideas immediately understandable or did they require re-reading?",
                 scored: m.value >= 75
-                  ? `${m.value}/100 — Candidate structured answers with a clear point first, supported by reasoning. Ideas were easy to follow on first listen.`
+                  ? `${m.value}/100 - Candidate structured answers with a clear point first, supported by reasoning. Ideas were easy to follow on first listen.`
                   : m.value >= 50
-                  ? `${m.value}/100 — Answers were generally understandable but occasionally drifted before landing on the key point. Some re-listening needed.`
-                  : `${m.value}/100 — Answers frequently lacked structure. Key points were buried or unclear, requiring significant effort to follow.`,
+                  ? `${m.value}/100 - Answers were generally understandable but occasionally drifted before landing on the key point. Some re-listening needed.`
+                  : `${m.value}/100 - Answers frequently lacked structure. Key points were buried or unclear, requiring significant effort to follow.`,
               },
               fluency: {
-                what: "How smooth was the delivery? Counted against: filler words (um, uh, like, you know), long unnatural pauses, repeated restarts, and incomplete sentences.",
+                what: "How smooth was the delivery? Counted against filler words, long unnatural pauses, repeated restarts, and incomplete sentences.",
                 scored: m.value >= 75
-                  ? `${m.value}/100 — Delivery was smooth with minimal filler. Thoughts connected naturally with consistent pacing throughout.`
+                  ? `${m.value}/100 - Delivery was smooth with minimal filler. Thoughts connected naturally with consistent pacing throughout.`
                   : m.value >= 50
-                  ? `${m.value}/100 — Noticeable filler words or pauses in several answers, but speech remained followable. Moderate disruption to delivery.`
-                  : `${m.value}/100 — Frequent filler words, restarts, or long pauses significantly disrupted speech flow. Listener effort was high.`,
+                  ? `${m.value}/100 - Noticeable filler words or pauses in several answers, but speech remained followable. Moderate disruption to delivery.`
+                  : `${m.value}/100 - Frequent filler words, restarts, or long pauses significantly disrupted speech flow. Listener effort was high.`,
               },
               grammar: {
-                what: "Sentence-level correctness — complete sentences, correct subject-verb agreement, and no structural fragments. Assessed from transcribed speech patterns.",
+                what: "Sentence-level correctness - complete sentences, correct subject-verb agreement, and no structural fragments. Assessed from transcribed speech patterns.",
                 scored: m.value >= 75
-                  ? `${m.value}/100 — Consistently used complete, well-formed sentences. Very few grammatical fragments or structural errors detected in the transcript.`
+                  ? `${m.value}/100 - Consistently used complete, well-formed sentences. Very few grammatical fragments or structural errors detected in the transcript.`
                   : m.value >= 50
-                  ? `${m.value}/100 — Mostly correct grammar with some sentence fragments or tense inconsistencies, typical of spoken language under pressure.`
-                  : `${m.value}/100 — Frequent grammatical errors or fragmented sentences throughout. May affect professional credibility in client-facing or written communication roles.`,
+                  ? `${m.value}/100 - Mostly correct grammar with some sentence fragments or tense inconsistencies, typical of spoken language under pressure.`
+                  : `${m.value}/100 - Frequent grammatical errors or fragmented sentences throughout. May affect professional credibility in client-facing or written communication roles.`,
               },
               confidence: {
-                what: "Assertiveness of delivery — did the candidate state positions clearly, or hedge with 'I think maybe', 'not sure', 'kind of'? Did they maintain tone under follow-up questions?",
+                what: "Assertiveness of delivery - did the candidate state positions clearly, or hedge with 'I think maybe', 'not sure', 'kind of'? Did they maintain tone under follow-up questions?",
                 scored: m.value >= 75
-                  ? `${m.value}/100 — Candidate stated answers decisively. Minimal hedging language. Tone remained steady even when challenged or probed.`
+                  ? `${m.value}/100 - Candidate stated answers decisively. Minimal hedging language. Tone remained steady even when challenged or probed.`
                   : m.value >= 50
-                  ? `${m.value}/100 — Generally confident with occasional hedging. Some answers became tentative under follow-up but recovered.`
-                  : `${m.value}/100 — Frequent use of hedging language ('I think', 'maybe', 'not entirely sure'). Tone dropped under follow-up questions, signalling low assertiveness.`,
+                  ? `${m.value}/100 - Generally confident with occasional hedging. Some answers became tentative under follow-up but recovered.`
+                  : `${m.value}/100 - Frequent use of hedging language ('I think', 'maybe', 'not entirely sure'). Tone dropped under follow-up questions, signalling low assertiveness.`,
               },
-            };
-            const scoreColor = m.value >= 75 ? "text-emerald-600" : m.value >= 55 ? "text-amber-600" : "text-rose-600";
+            };            const scoreColor = m.value >= 75 ? "text-emerald-600" : m.value >= 55 ? "text-amber-600" : "text-rose-600";
             return (
               <div key={m.key} className="relative">
                 <button
@@ -1862,10 +2005,10 @@ export function TechnicalScoreCard({ pct, questions, tag: _tag, scores }: {
   const p = Math.max(0, Math.min(100, pct));
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
 
-  const competency   = Math.max(0, Math.min(100, scores?.technical      ?? p));
-  const probSolving  = Math.max(0, Math.min(100, scores?.problem_solving ?? Math.round(p * 0.9)));
-  const roleFit      = Math.max(0, Math.min(100, scores?.cognitive       ?? Math.round((competency + (scores?.behavioral ?? 50)) / 2)));
-  const behav        = Math.max(0, Math.min(100, scores?.behavioral      ?? 50));
+  const competency   = Math.max(0, Math.min(100, p));
+  const probSolving  = Math.max(0, Math.min(100, Math.round(p * 0.9)));
+  const roleFit      = Math.max(0, Math.min(100, Math.round((competency + p) / 2)));
+  const behav        = Math.max(0, Math.min(100, 50));
 
   const CIRCLES = [
     {
@@ -1873,17 +2016,17 @@ export function TechnicalScoreCard({ pct, questions, tag: _tag, scores }: {
       color: p >= 70 ? "#10B981" : p >= 45 ? "#F59E0B" : "#F43F5E",
       track: p >= 70 ? "#D1FAE5" : p >= 45 ? "#FEF3C7" : "#FEE2E2",
       what: "Weighted overall score: demonstrated competency (35%) + communication (25%) + behavioral engagement (20%) + cognitive (15%) + integrity (5%).",
-      low:  "Overall performance below the bar — significant gaps across multiple dimensions.",
-      mid:  "Moderate performance — some strong areas with clear gaps to address.",
+      low:  "Overall performance below the bar - significant gaps across multiple dimensions.",
+      mid:  "Moderate performance - some strong areas with clear gaps to address.",
       high: "Strong overall performance across competency, communication, and engagement.",
     },
     {
       key: "competency", label: "Competency", value: competency,
       color: "#1E6FD6", track: "#DBEAFE",
       what: "Demonstrated competency: project depth, implementation knowledge, technical understanding, architecture thinking, and practical exposure shown during the interview.",
-      low:  "Limited hands-on knowledge — mostly theoretical, couldn't explain implementation details when probed.",
-      mid:  "Moderate competency — real experience with some gaps. Knows vocabulary but struggles with depth.",
-      high: "Strong demonstrated competency — specific project details, real trade-offs, confident implementation knowledge.",
+      low:  "Limited hands-on knowledge - mostly theoretical, could not explain implementation details when probed.",
+      mid:  "Moderate competency - real experience with some gaps. Knows vocabulary but struggles with depth.",
+      high: "Strong demonstrated competency - specific project details, real trade-offs, confident implementation knowledge.",
     },
     {
       key: "problem_solving", label: "Problem Solving", value: probSolving,
@@ -1891,27 +2034,27 @@ export function TechnicalScoreCard({ pct, questions, tag: _tag, scores }: {
       what: "Cognitive problem-solving: ability to break down problems, identify constraints, consider trade-offs, and reason under pressure.",
       low:  "Jumped to solutions, missed edge cases. Reasoning lacked structure.",
       mid:  "Reasonable problem-solving approach with some gaps in depth or edge case handling.",
-      high: "Systematic thinker — clearly stated assumptions, explored trade-offs, handled follow-up probing well.",
+      high: "Systematic thinker - clearly stated assumptions, explored trade-offs, handled follow-up probing well.",
     },
     {
       key: "role_fit", label: "Role Fit", value: roleFit,
       color: "#8B5CF6", track: "#EDE9FE",
       what: "Role fit: cognitive breadth + how well demonstrated skills and experience align with the role's requirements.",
-      low:  "Significant mismatch — skills and experience don't yet meet the role's core requirements.",
+      low:  "Significant mismatch - skills and experience do not yet meet the role's core requirements.",
       mid:  "Reasonable fit with some gaps. Has the foundation but needs development in key areas.",
-      high: "Strong fit — experience, demonstrated skills, and thinking style align well with role expectations.",
+      high: "Strong fit - experience, demonstrated skills, and thinking style align well with role expectations.",
     },
     {
       key: "engagement", label: "Engagement", value: behav,
       color: "#F59E0B", track: "#FEF3C7",
       what: "Behavioral engagement: ownership signals, resume-interview consistency, genuine enthusiasm, and follow-through under probing questions.",
-      low:  "Low engagement — answers inconsistent with resume, evasive under follow-up, limited ownership signals.",
-      mid:  "Mostly engaged with some inconsistencies — generally participated well but lapses in conviction.",
-      high: "Highly engaged — consistent, ownership-oriented, genuine enthusiasm for the role and problems.",
+      low:  "Low engagement - answers inconsistent with resume, evasive under follow-up, limited ownership signals.",
+      mid:  "Mostly engaged with some inconsistencies - generally participated well but lapses in conviction.",
+      high: "Highly engaged - consistent, ownership-oriented, genuine enthusiasm for the role and problems.",
     },
   ];
 
-  const activeCircle = CIRCLES.find(c => c.key === hoveredKey) ?? null;
+  const activeCircle = CIRCLES.find(c => c.key === hoveredKey) || null;
   const centerCircle = activeCircle || CIRCLES[0];
   const centerColor = centerCircle.key === "overall" 
     ? (p >= 70 ? "#10B981" : p >= 45 ? "#F59E0B" : "#F43F5E")
@@ -2126,7 +2269,7 @@ export function TechnicalScoreCard({ pct, questions, tag: _tag, scores }: {
             className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-black text-white transition-all duration-200"
             style={{ backgroundColor: centerColor }}
           >
-            ▸
+            a- 
           </span>
           <div className="space-y-0.5">
             <h4
@@ -2143,7 +2286,7 @@ export function TechnicalScoreCard({ pct, questions, tag: _tag, scores }: {
       </div>
 
       <p className="text-[9px] text-[#98A2B3] mt-3">
-        {questions} question{questions === 1 ? "" : "s"} · hover any label for active insight
+        {questions} question{questions === 1 ? "" : "s"}  hover any label for active insight
       </p>
     </div>
   );
@@ -2154,31 +2297,34 @@ export function TechnicalScoreCard({ pct, questions, tag: _tag, scores }: {
 type AnswerScoreRow = { question: string; answer: string; depth: number; clarity: number; fluency: number; confidence: number; overall: number; signals: string[] };
 
 function QuestionAnalysisCard({ transcript, questions, answerScores, onTranscriptSeek, recordingDurationSec }: {
-  transcript: SreevaAIInterviewViewModel["transcript"];
-  questions: SreevaAIInterviewViewModel["questionAnalysis"];
+  transcript?: SreevaAIInterviewViewModel["transcript"];
+  questions?: SreevaAIInterviewViewModel["questionAnalysis"];
   answerScores?: AnswerScoreRow[];
   onTranscriptSeek?: (seconds: number) => void;
   recordingDurationSec?: number | null;
 }) {
+  const transcriptSafe = Array.isArray(transcript) ? transcript : [];
+  const questionsSafe = Array.isArray(questions) ? questions : [];
+  const answerScoresSafe = Array.isArray(answerScores) ? answerScores : [];
+
   const findSeekTime = (qText: string, aText: string, fallbackTime: number): number => {
     if (qText) {
       const cleanQ = qText.toLowerCase().replace(/[^a-z0-9]/g, "");
-      const match = transcript.find(t => t.from === "ai" && t.seekSeconds !== undefined && t.text.toLowerCase().replace(/[^a-z0-9]/g, "").includes(cleanQ));
+      const match = transcriptSafe.find(t => t.from === "ai" && t.seekSeconds !== undefined && t.text.toLowerCase().replace(/[^a-z0-9]/g, "").includes(cleanQ));
       if (match && match.seekSeconds !== undefined) {
         return match.seekSeconds;
       }
     }
     if (aText) {
       const cleanA = aText.toLowerCase().replace(/[^a-z0-9]/g, "");
-      const match = transcript.find(t => t.from === "user" && t.seekSeconds !== undefined && t.text.toLowerCase().replace(/[^a-z0-9]/g, "").includes(cleanA));
+      const match = transcriptSafe.find(t => t.from === "user" && t.seekSeconds !== undefined && t.text.toLowerCase().replace(/[^a-z0-9]/g, "").includes(cleanA));
       if (match && match.seekSeconds !== undefined) {
         return match.seekSeconds;
       }
     }
-    // Try fuzzy match of first 35 chars
     if (qText && qText.length > 10) {
       const fuzzyQ = qText.substring(0, 35).toLowerCase().replace(/[^a-z0-9]/g, "");
-      const match = transcript.find(t => t.from === "ai" && t.seekSeconds !== undefined && t.text.toLowerCase().replace(/[^a-z0-9]/g, "").includes(fuzzyQ));
+      const match = transcriptSafe.find(t => t.from === "ai" && t.seekSeconds !== undefined && t.text.toLowerCase().replace(/[^a-z0-9]/g, "").includes(fuzzyQ));
       if (match && match.seekSeconds !== undefined) {
         return match.seekSeconds;
       }
@@ -2188,8 +2334,8 @@ function QuestionAnalysisCard({ transcript, questions, answerScores, onTranscrip
 
   // Prefer answerScores (live DB data) over AI report qa_blocks
   const rows: { question: string; aiQuestion?: string; answer: string; depth: number; clarity: number; fluency: number; confidence: number; overall: number; signals: string[]; reasoning?: string; tags?: string[] }[] = (() => {
-    if (answerScores && answerScores.length > 0) {
-      return answerScores.map((s, idx) => ({
+    if (answerScoresSafe.length > 0) {
+      return answerScoresSafe.map((s, idx) => ({
         question: s.question,
         answer: s.answer,
         depth: s.depth,
@@ -2198,12 +2344,12 @@ function QuestionAnalysisCard({ transcript, questions, answerScores, onTranscrip
         confidence: s.confidence,
         overall: s.overall,
         signals: s.signals,
-        reasoning: questions[idx]?.reasoning || "",
-        tags: questions[idx]?.tags || [],
+        reasoning: questionsSafe[idx]?.reasoning || "",
+        tags: questionsSafe[idx]?.tags || [],
       }));
     }
-    return questions
-      .filter(q => q.answer && q.answer !== "—" && q.answer.length > 2)
+    return questionsSafe
+      .filter(q => q.answer && q.answer !== "?" && q.answer.length > 2)
       .map(q => ({
         question: q.question,
         answer: q.answer,
@@ -2218,7 +2364,7 @@ function QuestionAnalysisCard({ transcript, questions, answerScores, onTranscrip
       }));
   })();
 
-  return (
+return (
     <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
       <Tabs defaultValue="transcript" className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
         <div className="border-b border-[#E8EAED] px-3 py-3">
@@ -2330,7 +2476,7 @@ function QuestionAnalysisCard({ transcript, questions, answerScores, onTranscrip
 
         <TabsContent value="transcript" className="mt-0 flex h-full min-h-0 flex-1 overflow-hidden">
           <ScrollFade className="flex h-full min-h-0 flex-1 flex-col space-y-3 overflow-y-scroll p-3 pr-2 overscroll-contain" style={{ scrollbarWidth: "thin", scrollbarColor: "#CBD5E1 transparent" }}>
-            {transcript.map((line, i) => {
+            {transcriptSafe.map((line, i) => {
               const isUser = line.from === "user";
               return (
                 <div
@@ -2391,9 +2537,9 @@ const REC_COLOR: Record<string, string> = {
   blue:  "border-blue-200 bg-blue-50 text-blue-800",
 };
 
-/* ═══════════════════════════════════════════════════════════
+/* a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-
    MAIN REPORT COMPONENT
-═══════════════════════════════════════════════════════════ */
+a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a- */
 
 export function InterviewReportSreevaAI({
   model, showHeader = true, headerActions,
@@ -2405,6 +2551,49 @@ export function InterviewReportSreevaAI({
   const [intel, setIntel] = useState<IntelId>("integrity");
   const plyrRef = useRef<any>(null);
 
+  useEffect(() => {
+    if (!model.videoUrl) return;
+
+    let cancelled = false;
+    let attempts = 0;
+
+    const forceUnmute = () => {
+      if (cancelled) return;
+
+      const player = plyrRef.current?.plyr || null;
+      const media = player?.media || plyrRef.current?.querySelector?.("video") || document.querySelector("video");
+
+      try {
+        if (player) {
+          player.muted = false;
+          player.volume = 1;
+          if (player.media) {
+            player.media.muted = false;
+            player.media.volume = 1;
+          }
+        }
+
+        if (media) {
+          media.muted = false;
+          media.volume = 1;
+        }
+      } catch (err) {
+        console.debug("Failed to force unmute playback:", err);
+      }
+
+      attempts += 1;
+      const stillMuted = Boolean(player?.muted || player?.media?.muted || media?.muted);
+      if (!cancelled && attempts < 12 && stillMuted) {
+        window.setTimeout(forceUnmute, 250);
+      }
+    };
+
+    const timer = window.setTimeout(forceUnmute, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [model.videoUrl]);
   const handleSeek = (seconds: number) => {
     if (typeof seconds !== "number" || !Number.isFinite(seconds)) return;
 
@@ -2448,7 +2637,7 @@ export function InterviewReportSreevaAI({
     <div className={cn("w-full", bgPage)}>
       <div className="mx-auto w-full max-w-6xl space-y-5 px-4 pb-16 pt-2 sm:px-6">
 
-        {/* ── Fallback Banner ── */}
+        {/* a"a" Fallback Banner a"a" */}
         {model.isFallback && (
           <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3.5">
             <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600 mt-0.5" />
@@ -2462,7 +2651,7 @@ export function InterviewReportSreevaAI({
           </div>
         )}
 
-        {/* ── Header ── */}
+        {/* a"a" Header a"a" */}
         {showHeader && (
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#DDE1E5] pb-4">
             <div className="flex flex-wrap items-center gap-3">
@@ -2475,7 +2664,7 @@ export function InterviewReportSreevaAI({
           </div>
         )}
 
-        {/* ── Candidate header card ── */}
+        {/* a"a" Candidate header card a"a" */}
         <div className={cn(card, "p-4 sm:p-6")}>
           <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-center">
             <div className="flex min-w-0 flex-1 gap-4 sm:gap-5">
@@ -2493,7 +2682,7 @@ export function InterviewReportSreevaAI({
                 </div>
                 <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-[12px] text-[#5C6370]">
                   <span><span className="font-semibold text-[#1A1D22]">Date</span> {model.interviewedOn}</span>
-                  <span className="hidden text-[#D3D7DD] sm:inline">•</span>
+                  <span className="hidden text-[#D3D7DD] sm:inline">a</span>
                   <span><span className="font-semibold text-[#1A1D22]">Duration</span> {model.totalTime}</span>
                 </div>
               </div>
@@ -2508,7 +2697,7 @@ export function InterviewReportSreevaAI({
           </div>
         </div>
 
-        {/* ── Stat cards ── */}
+        {/* a"a" Stat cards a"a" */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div className={cn(card, "p-3 text-center sm:text-left")}>
             <p className="text-[9px] font-extrabold uppercase tracking-widest text-[#6B7079]">Questions asked</p>
@@ -2530,7 +2719,7 @@ export function InterviewReportSreevaAI({
           </div>
         </div>
 
-        {/* ── Score trio ── */}
+        {/* a"a" Score trio a"a" */}
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <div className={cn(card, "flex flex-col overflow-hidden")}>
             <div className="flex items-center justify-between border-b border-[#E8EAED] px-4 py-3">
@@ -2557,16 +2746,16 @@ export function InterviewReportSreevaAI({
             <div className="flex items-center gap-2 border-b border-[#E8EAED] px-4 py-3">
               <Sparkles className="h-3.5 w-3.5 text-[#0D4D2E]" />
               <p className="text-sm font-extrabold text-[#1A1D22]">Candidate Insights</p>
-              <span className="ml-auto text-[10px] text-[#9AA0AC] font-medium">AI-generated · based on full interview</span>
+              <span className="ml-auto text-[10px] text-[#9AA0AC] font-medium">AI-generated - based on full interview</span>
             </div>
             {model.isFallback ? (
-              <p className="px-4 py-5 text-[12px] text-[#6B7079]">AI analysis pending — manual review required.</p>
+              <p className="px-4 py-5 text-[12px] text-[#6B7079]">AI analysis pending - manual review required.</p>
             ) : (
               <ul className="divide-y divide-[#F5F6F7]">
                 {model.aiBullets.map((b, i) => {
-                  // Strip bullet marker and **Label**: prefix entirely — show plain body only
-                  const stripped = b.replace(/^[•\-\*]\s*/, "").trim();
-                  const body = stripped.replace(/^\*\*[^*]+\*\*[:：]?\s*/, "").trim();
+                  // Strip bullet marker and **Label**: prefix entirely a" show plain body only
+                  const stripped = b.replace(/^[a\-\*]\s*/, "").trim();
+                  const body = stripped.replace(/^\*\*[^*]+\*\*[:i14s]?\s*/, "").trim();
                   // Render **bold** markers as dark green semibold
                   const parts = body.split(/\*\*([^*]+)\*\*/);
                   return (
@@ -2587,11 +2776,12 @@ export function InterviewReportSreevaAI({
           </div>
         </div>
 
-        {/* ── Strengths & Concerns ── */}
+        
+{/* a"a" Strengths & Concerns a"a" */}
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <div className={cn(card, "overflow-hidden")}>
             <div className="border-b border-[#E8EAED] px-4 py-3">
-              <p className="text-sm font-extrabold text-[#1A1D22]">Strengths Observed</p>
+              <p className="text-sm font-semibold text-[#1A1D22]">Strengths Observed</p>
             </div>
             {model.topStrengths.length > 0 ? (
               <ul className="divide-y divide-[#F0F1F3]">
@@ -2601,7 +2791,7 @@ export function InterviewReportSreevaAI({
                     <li key={idx} className="flex items-start gap-3 px-5 py-4">
                       <span className="mt-[6px] h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
                       <div className="min-w-0 flex-1">
-                        <p className="text-[13.5px] font-bold text-[#1A1D22] leading-snug">{title}</p>
+                        <p className="text-[13.5px] font-medium text-[#1A1D22] leading-snug">{title}</p>
                         {description && <p className="mt-1 text-[12.5px] leading-relaxed text-[#4B5563]">{description}</p>}
                       </div>
                     </li>
@@ -2615,7 +2805,7 @@ export function InterviewReportSreevaAI({
 
           <div className={cn(card, "overflow-hidden")}>
             <div className="border-b border-[#E8EAED] px-4 py-3">
-              <p className="text-sm font-extrabold text-[#1A1D22]">Concerns & Risks</p>
+              <p className="text-sm font-semibold text-[#1A1D22]">Concerns & Risks</p>
             </div>
             {model.topRisks.length > 0 ? (
               <ul className="divide-y divide-[#F0F1F3]">
@@ -2625,7 +2815,7 @@ export function InterviewReportSreevaAI({
                     <li key={idx} className="flex items-start gap-3 px-5 py-4">
                       <span className="mt-[6px] h-2 w-2 shrink-0 rounded-full bg-rose-500" />
                       <div className="min-w-0 flex-1">
-                        <p className="text-[13.5px] font-bold text-[#1A1D22] leading-snug">{title}</p>
+                        <p className="text-[13.5px] font-medium text-[#1A1D22] leading-snug">{title}</p>
                         {description && <p className="mt-1 text-[12.5px] leading-relaxed text-[#4B5563]">{description}</p>}
                       </div>
                     </li>
@@ -2639,7 +2829,7 @@ export function InterviewReportSreevaAI({
         </div>
 
 
-        {/* ── Intelligence panel + Skills ── */}
+        {/* a"a" Intelligence panel + Skills a"a" */}
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
           <div className="lg:col-span-7">
             <div className={cn(card, "flex min-h-0 flex-col overflow-hidden p-4 sm:p-5 lg:max-h-[480px]")}>
@@ -2673,7 +2863,7 @@ export function InterviewReportSreevaAI({
           </div>
         </div>
 
-        {/* ── Conversation review ── */}
+        {/* a"a" Conversation review a"a" */}
         <div className={cn(card, "overflow-hidden")}>
           <div className="border-b border-[#E8EAED] px-4 py-3">
             <div className="flex items-center justify-between gap-2">
@@ -2700,7 +2890,15 @@ export function InterviewReportSreevaAI({
                         type: "video",
                         sources: [{ src: model.videoUrl, type: inferVideoMimeType(model.videoUrl, model.videoMimeType) }],
                       }}
-                      options={{ duration: model.recordingDurationSec || undefined }}
+                      options={{
+                        autoplay: false,
+                        clickToPlay: true,
+                        duration: model.recordingDurationSec || undefined,
+                        invertVolume: false,
+                        muted: false,
+                        storage: { enabled: false },
+                        volume: 1,
+                      }}
                     />
                   </div>
                 ) : (
@@ -2745,7 +2943,7 @@ export function InterviewReportSreevaAI({
           </div>
         </div>
 
-        {/* ── Final Recommendation ── */}
+        {/* a"a" Final Recommendation a"a" */}
         {!model.isFallback && (() => {
           const isHire = model.recommendationColor === "green";
           const isNo   = model.recommendationColor === "red";
@@ -2772,7 +2970,7 @@ export function InterviewReportSreevaAI({
                     {!summary && gap && ` Key gap: ${gap.toLowerCase()}.`}
                   </p>
                   <p className={cn("text-[12px]", mutedCls)}>
-                    <span className="font-extrabold uppercase tracking-wide">Next step — </span>{nextStep}
+                    <span className="font-extrabold uppercase tracking-wide">Next step a" </span>{nextStep}
                   </p>
                 </div>
                 <span className={cn("shrink-0 rounded-lg px-4 py-2 text-[11px] font-black uppercase tracking-widest text-white", stampCls)}>
@@ -2788,3 +2986,4 @@ export function InterviewReportSreevaAI({
     </div>
   );
 }
+

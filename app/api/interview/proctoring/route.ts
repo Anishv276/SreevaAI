@@ -76,11 +76,11 @@ export async function POST(req: Request) {
     }
 
     const requestedEvents = normalizeProctoringEvents(result.data.events);
-    const interview = await prisma.interview.findUnique({
+    const interview = await (prisma.interview as any).findUnique({
       where: { applicationId },
-      select: { id: true, proctoringEvents: true },
+      select: { id: true, integritySignals: true },
     });
-    const currentEvents = parseStoredEvents(interview?.proctoringEvents);
+    const currentEvents = parseStoredEvents(interview?.integritySignals);
 
     const app = await prisma.application.findUnique({
       where: { id: applicationId },
@@ -116,7 +116,7 @@ export async function POST(req: Request) {
       await prisma.$executeRawUnsafe(
         `
         UPDATE "Interview"
-        SET "proctoringEvents" = $1::jsonb,
+        SET "integritySignals" = $1::jsonb,
             "updatedAt" = $2
         WHERE "applicationId" = $3
         `,
@@ -125,10 +125,10 @@ export async function POST(req: Request) {
         applicationId
       );
     } else {
-      await prisma.interview.upsert({
+      await (prisma.interview as any).upsert({
         where: { applicationId },
         update: {
-          proctoringEvents: mergedEvents as any,
+          integritySignals: mergedEvents as any,
           updatedAt: now,
         },
         create: {
@@ -136,7 +136,7 @@ export async function POST(req: Request) {
           applicationId,
           accessToken: crypto.randomUUID(),
           status: "IN_PROGRESS",
-          proctoringEvents: mergedEvents as any,
+          integritySignals: mergedEvents as any,
           createdAt: now,
           updatedAt: now,
         },
