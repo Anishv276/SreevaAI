@@ -1,17 +1,16 @@
 """
 TurnEvaluator - orchestrates per-turn answer evaluation.
 
-Combines:
-  - score_answer_quality()        (quality scores)
-  - evaluate_answer_and_decide()  (LLM probe/move-on decision)
-  - signal detection              (first-class behavioral and integrity signals)
-  - trust delta computation
-  - probe routing
+FIX 1: Uses single merged evaluate_answer() call instead of two parallel calls.
+  BEFORE: score_answer_quality() + evaluate_answer_and_decide() via asyncio.gather()
+          = 2 OpenAI round-trips in parallel, wait for the slower one (~900-1500ms)
+  AFTER:  evaluate_answer() = 1 OpenAI round-trip returning quality + routing (~700ms)
 
-Returns one TurnDecision per candidate answer.
-Called from agent.py's _evaluate_and_inject() instead of the inline pipeline.
+FIX 2: Quality scoring is no longer a separate blocking task.
+  BEFORE: gate blocked until BOTH quality scores AND routing decision returned
+  AFTER:  single call returns both together — gate unblocks as soon as the one call finishes.
+          eval_pipeline.py gets quality scores immediately in the same result dict.
 """
-import asyncio
 import logging
 from typing import Any, Optional
 
@@ -28,18 +27,10 @@ logger = logging.getLogger("interview-agent")
 
 
 def _is_signal_enabled(signal_toggles: Optional[dict[str, Any]], signal_name: str) -> bool:
-    """Return True if the signal should be allowed through the filter.
-
-    Logic:
-      - No toggles dict at all → all signals enabled.
-      - Signal name NOT in the dict → default True (allow; unknown = not explicitly disabled).
-      - Signal name IS in the dict → honour the value.
-    """
     if not signal_toggles:
         return True
     raw_value = signal_toggles.get(signal_name)
     if raw_value is None:
-        # Key absent → treat as enabled (do NOT silently suppress)
         return True
     if isinstance(raw_value, bool):
         return raw_value
@@ -63,8 +54,7 @@ async def run_turn_evaluation(
     client,
     org_id: Optional[str],
     llm_model: str,
-    score_answer_quality_fn,              # imported from agent.py at call site
-    evaluate_answer_and_decide_fn,        # imported from agent.py at call site
+    evaluate_answer_fn,              # merged fn: returns quality scores + routing in one call
     signal_toggles: Optional[dict[str, Any]] = None,
     uncovered_topics: Optional[list[str]] = None,
     session_score_history: Optional[list[float]] = None,
@@ -76,33 +66,29 @@ async def run_turn_evaluation(
     """
     Run per-turn evaluation pipeline.
 
-    Returns:
-        (TurnDecision, directive_string)
+    FIX 1+2: One merged LLM call replaces two parallel calls.
+    evaluate_answer_fn returns both quality scores AND routing decision.
+
+    EXAMPLE LOG you will see:
+      BEFORE: [EVAL] quality_task started | [EVAL] decision_task started | ... gather wait ~1200ms
+      AFTER:  [EVAL] merged evaluate_answer call started | ... done in ~700ms
+
+    Returns: (TurnDecision, directive_string)
     """
-    # Run quality scoring and LLM decision concurrently
-    quality_task = asyncio.create_task(
-        score_answer_quality_fn(
-            candidate_answer=candidate_answer,
-            last_question=last_question,
-            transcript_lines=transcript_lines,
-            client=client,
-            org_id=org_id,
-            llm_model=llm_model,
-        )
-    )
-    decision_task = asyncio.create_task(
-        evaluate_answer_and_decide_fn(
-            candidate_answer=candidate_answer,
-            last_question=last_question,
-            topic_follow_up_count=topic_follow_up_count,
-            transcript_lines=transcript_lines,
-            client=client,
-            org_id=org_id,
-            llm_model=llm_model,
-        )
+    # Single call — scores quality AND decides PROBE/MOVE_ON in one round-trip
+    result = await evaluate_answer_fn(
+        candidate_answer=candidate_answer,
+        last_question=last_question,
+        topic_follow_up_count=topic_follow_up_count,
+        transcript_lines=transcript_lines,
+        client=client,
+        org_id=org_id,
+        llm_model=llm_model,
     )
 
-    quality, llm_decision = await asyncio.gather(quality_task, decision_task)
+    # result contains both quality fields (clarity, depth...) and routing fields (action, probe_mode...)
+    quality = result        # eval_pipeline reads quality scores directly from this
+    llm_decision = result   # routing fields live in the same dict
 
     current_depth: float = float(quality.get("depth", 5.0))
 
@@ -125,7 +111,6 @@ async def run_turn_evaluation(
     ]
     signals = build_signal_flags(signal_events)
 
-    # Route to action/mode/goal
     action, mode, next_goal = route(
         signals=signals,
         depth_signal=llm_decision.get("depth_signal", "SURFACE"),

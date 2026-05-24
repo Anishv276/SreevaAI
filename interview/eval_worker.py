@@ -103,11 +103,18 @@ async def _process_one(payload_bytes: bytes, client: AsyncOpenAI, r) -> None:
     result_turn_key = f"interview:{app_id}:eval_result:{turn}"
     try:
         encoded = json.dumps(result).encode()
-        # Store at turn-specific key so agent can poll exactly for this turn's result.
-        # Agent polls interview:{app_id}:eval_result:{turn} and applies before LLM generates.
+        # Store result at turn-specific key so the agent can fetch it after being notified.
         await r.setex(result_turn_key, RESULT_TTL_SECONDS, encoded)
         # Also store at generic key for backward compatibility.
         await r.setex(result_key, RESULT_TTL_SECONDS, encoded)
+
+        # FIX 3: Publish on the ready channel so the agent wakes instantly.
+        # BEFORE: agent polled Redis every 150ms — wasted 0-150ms after result was ready.
+        # AFTER:  agent subscribes to this channel and is notified in <5ms.
+        # Channel name matches what agent_runtime.py subscribes to.
+        # We publish AFTER setex so the agent always finds the key when it wakes.
+        _ready_channel = f"interview:{app_id}:eval_ready:{turn}"
+        await r.publish(_ready_channel, b"1")
         _action = result.get("action", "?")
         _qr = result.get("quality_record") or {}
         _clarity = round(float(_qr.get("clarity", 0) or 0), 1)

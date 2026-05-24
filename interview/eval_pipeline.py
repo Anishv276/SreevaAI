@@ -23,9 +23,8 @@ from interview.trust_engine import apply_turn_decision, apply_contradiction_reso
 from interview.contradiction_state import advance_contradiction_state, summarize_contradiction_state
 from interview.agent_scoring import (
     check_contradiction,
-    evaluate_answer_and_decide,
+    evaluate_answer,       # FIX 1: merged fn replaces score_answer_quality + evaluate_answer_and_decide
     extract_claims,
-    score_answer_quality,
 )
 from interview.agent_runtime_support import EVAL_LLM_MODEL
 
@@ -751,8 +750,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
                 client=client,
                 org_id=p.org_id,
                 llm_model=p.llm_model,
-                score_answer_quality_fn=score_answer_quality,
-                evaluate_answer_and_decide_fn=evaluate_answer_and_decide,
+                evaluate_answer_fn=evaluate_answer,   # FIX 1: single merged call
                 signal_toggles=p.signal_toggles,
                 uncovered_topics=uncovered_topics,
                 session_score_history=p.score_history,

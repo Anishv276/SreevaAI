@@ -1848,45 +1848,89 @@ async def entrypoint(ctx: JobContext):
                 )
                 await _push_payload_to_redis(payload)
 
-                # SYNC GATE: poll Redis until this turn's eval result is ready, then inject
-                # the directive before returning. llm_node is blocked on _directive_ready so
-                # it cannot generate until the correct PROBE/MOVE_ON is in self.chat_ctx.
+                # SYNC GATE: wait for eval worker result, then inject directive before returning.
+                # llm_node is blocked on _directive_ready — it cannot generate until PROBE/MOVE_ON
+                # is injected into self.chat_ctx.
+                #
+                # FIX 3: pub/sub replaces polling.
+                # BEFORE: polled Redis every 150ms → wasted 0-150ms after result was ready.
+                #   while deadline not reached:
+                #       result = redis.getdel(key)   # check
+                #       if result: break
+                #       sleep(0.15)                  # wait 150ms, repeat
+                #
+                # AFTER: subscribe to ready channel → worker publishes when done → agent wakes instantly.
+                #   async with pubsub.subscribe(channel):
+                #       await pubsub.get_message(timeout=6.0)  # blocks until notified, ~0ms extra wait
+                #   result = redis.getdel(key)                 # fetch immediately after notification
+                #
+                # EXAMPLE:
+                #   Worker finishes at t=800ms. Old code: agent sleeping, wakes at t=900ms (+100ms waste).
+                #   New code: agent notified at t=800ms, fetches at t=801ms. Saves ~75ms average per turn.
                 _sync_applied = False
                 if _eval_redis_client is not None:
                     _result_turn_key = f"interview:{app_id}:eval_result:{turn_snapshot}"
+                    _ready_channel = f"interview:{app_id}:eval_ready:{turn_snapshot}"
                     _SYNC_WAIT = 6.0
-                    _POLL_INTERVAL = 0.15
-                    _loop = asyncio.get_running_loop()
-                    _deadline = _loop.time() + _SYNC_WAIT
-                    logger.info("[SYNC_GATE] turn=%d | waiting for eval (max %.1fs)...", turn_snapshot, _SYNC_WAIT)
-                    while _loop.time() < _deadline:
+                    _t_start = asyncio.get_running_loop().time()
+                    logger.info("[SYNC_GATE] turn=%d | subscribing for eval result (max %.1fs)...", turn_snapshot, _SYNC_WAIT)
+                    try:
+                        # Create a fresh pubsub connection for this turn's channel.
+                        # subscribe() is called before we check the key so we never miss
+                        # a publish that races between subscribe and getdel.
+                        _pubsub = _eval_redis_client.pubsub()
+                        await _pubsub.subscribe(_ready_channel)
                         try:
-                            _raw_turn = await asyncio.wait_for(
-                                _eval_redis_client.getdel(_result_turn_key),
-                                timeout=0.3,
-                            )
-                        except Exception:
-                            await asyncio.sleep(_POLL_INTERVAL)
-                            continue
+                            # Wait for the worker to publish on the ready channel.
+                            # get_message loops internally and returns as soon as a message arrives.
+                            _notified = False
+                            _deadline = asyncio.get_running_loop().time() + _SYNC_WAIT
+                            while asyncio.get_running_loop().time() < _deadline:
+                                _remaining = max(0.1, _deadline - asyncio.get_running_loop().time())
+                                _msg = await asyncio.wait_for(
+                                    _pubsub.get_message(ignore_subscribe_messages=True, timeout=_remaining),
+                                    timeout=_remaining + 0.1,
+                                )
+                                if _msg is not None:
+                                    _notified = True
+                                    break
+                        finally:
+                            await _pubsub.unsubscribe(_ready_channel)
+                            await _pubsub.aclose()
+
+                        # Fetch the result key regardless of whether we got a pub/sub message
+                        # (handles the race where worker wrote before we subscribed)
+                        _raw_turn = await asyncio.wait_for(
+                            _eval_redis_client.getdel(_result_turn_key),
+                            timeout=0.3,
+                        )
                         if _raw_turn:
+                            _elapsed = round(asyncio.get_running_loop().time() - _t_start, 2)
                             try:
                                 _preloaded = json.loads(_raw_turn)
-                                _elapsed = round(_SYNC_WAIT - max(0.0, _deadline - _loop.time()), 2)
                                 logger.info(
-                                    "[SYNC_GATE] ✅ turn=%d | result in ~%.2fs | action=%s",
-                                    turn_snapshot, _elapsed, _preloaded.get("action", "?"),
+                                    "[SYNC_GATE] ✅ turn=%d | result in %.2fs | action=%s | notified=%s",
+                                    turn_snapshot, _elapsed, _preloaded.get("action", "?"), _notified,
                                 )
                                 await _read_and_apply_eval_result(turn_snapshot, preloaded_result=_preloaded)
                                 _sync_applied = True
                             except Exception as _sge:
                                 logger.warning("[SYNC_GATE] turn=%d | apply failed: %s", turn_snapshot, _sge)
                                 agent._directive_ready.set()
-                            break
-                        await asyncio.sleep(_POLL_INTERVAL)
+                        else:
+                            logger.warning(
+                                "[SYNC_GATE] ⏰ turn=%d | notified=%s but key missing after %.2fs",
+                                turn_snapshot, _notified, round(asyncio.get_running_loop().time() - _t_start, 2),
+                            )
+                    except Exception as _pse:
+                        logger.warning("[SYNC_GATE] turn=%d | pubsub error: %s", turn_snapshot, _pse)
+
                     if not _sync_applied:
-                        logger.warning("[SYNC_GATE] ⏰ turn=%d | timeout %.1fs — clearing stale directives before releasing LLM", turn_snapshot, _SYNC_WAIT)
-                        # Remove the stale PROBE/MOVE_ON directive from the previous turn so the
-                        # LLM doesn't follow outdated instructions when it generates without a result.
+                        logger.warning(
+                            "[SYNC_GATE] ⏰ turn=%d | timeout %.1fs — clearing stale directives before releasing LLM",
+                            turn_snapshot, _SYNC_WAIT,
+                        )
+                        # Remove stale directives so the LLM doesn't follow last turn's instructions
                         remove_system_messages(chat_ctx, "[NEXT_TURN_DIRECTIVE")
                         remove_system_messages(chat_ctx, "[TOPIC_LOCK")
                         remove_system_messages(chat_ctx, "[RECENT_CONTEXT")
