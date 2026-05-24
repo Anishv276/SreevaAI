@@ -185,14 +185,72 @@ def _clean_stt_text(raw_text: str) -> str:
     return _STT_WHITESPACE_RE.sub(" ", " ".join(cleaned_tokens)).strip()
 
 
+_BRIDGE_FALLBACKS = [
+    "Got it.",
+    "Makes sense.",
+    "I see.",
+    "Understood.",
+    "Okay.",
+]
+_bridge_fallback_idx = 0
+
+async def _generate_bridge_text(answer: str, client) -> str:
+    """Generate a 1-sentence candidate-aware acknowledgment in ~300ms.
+    Uses gpt-4o-mini with strict token cap. Never asks a question.
+    Falls back to a rotating neutral phrase if LLM is slow or fails."""
+    global _bridge_fallback_idx
+    if not answer or len(answer.strip()) < 8:
+        phrase = _BRIDGE_FALLBACKS[_bridge_fallback_idx % len(_BRIDGE_FALLBACKS)]
+        _bridge_fallback_idx += 1
+        return phrase
+    try:
+        resp = await asyncio.wait_for(
+            client.chat.completions.create(
+                model="gpt-4o-mini",
+                max_tokens=22,
+                temperature=0.4,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are an AI interviewer. The candidate just answered. "
+                            "Output ONLY a single short acknowledgment sentence (max 12 words). "
+                            "Reflect what they said naturally. Never ask a question. "
+                            "Examples: 'Got it, so you owned the full qualification flow.' "
+                            "'Makes sense, you combined n8n with OpenAI for that.' "
+                            "'Understood, budget and timeline were your main signals.'"
+                        ),
+                    },
+                    {"role": "user", "content": f"Candidate said: {answer[:200]}"},
+                ],
+            ),
+            timeout=2.5,
+        )
+        bridge = (resp.choices[0].message.content or "").strip().strip('"').strip("'")
+        if bridge and not bridge.endswith("?"):
+            return bridge
+    except Exception as _e:
+        logger.debug("[BRIDGE] LLM failed (%s) — using fallback", _e)
+    phrase = _BRIDGE_FALLBACKS[_bridge_fallback_idx % len(_BRIDGE_FALLBACKS)]
+    _bridge_fallback_idx += 1
+    return phrase
+
+
 class InterviewAgent(Agent):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._pending_eval_task: Optional[asyncio.Task] = None
-        # Cleared when a user turn arrives, set after the directive is injected.
-        # llm_node waits on this so it never generates before PROBE/MOVE_ON is in chat_ctx.
+        # Cleared when a user turn arrives, set after directive injected + bridge spoken.
+        # llm_node waits on this before generating the real interview question.
         self._directive_ready: asyncio.Event = asyncio.Event()
         self._directive_ready.set()  # starts set — no blocking until first candidate answer
+        # Set when bridge speech finishes (or no bridge). llm_node waits for BOTH
+        # _bridge_done: kept for compatibility but no longer gates llm_node.
+        self._bridge_done: asyncio.Event = asyncio.Event()
+        self._bridge_done.set()
+        self._bridge_text: str = ""
+        # Tracked so directive arrival can cancel an in-flight bridge.
+        self._bridge_task: Optional[asyncio.Task] = None
 
     @staticmethod
     def _latest_system_message_with_marker(
@@ -245,27 +303,23 @@ class InterviewAgent(Agent):
             "llm_node should only be used with LLM (non-multimodal/realtime APIs) nodes"
         )
 
-        # Block LLM generation until the directive for the current candidate turn has been
-        # injected. _directive_ready is cleared the instant a user turn arrives (before debounce)
-        # and set again only after _read_and_apply_eval_result injects the PROBE/MOVE_ON directive.
-        #
-        # CRITICAL: LiveKit snapshots chat_ctx via .copy() BEFORE calling llm_node, so the
-        # `chat_ctx` parameter here is always stale (pre-directive). After waiting for the gate,
-        # we MUST switch to self.chat_ctx (the live agent context that received the injection).
+        # Wait ONLY for eval directive — bridge is optional and non-blocking.
+        # _directive_ready is cleared on user turn arrival, set after PROBE/MOVE_ON injected.
+        # Bridge plays in background independently — real question starts when eval is ready,
+        # not when bridge finishes. LiveKit handles audio queuing naturally.
+        # CRITICAL: always use self.chat_ctx — LiveKit passes a stale .copy() snapshot.
         timed_out = False
         try:
-            await asyncio.wait_for(self._directive_ready.wait(), timeout=8.0)
-            logger.info("[LLM_GATE] ✅ directive ready — switching to live chat_ctx")
+            await asyncio.wait_for(self._directive_ready.wait(), timeout=15.0)
+            logger.info("[LLM_GATE] ✅ directive ready")
         except asyncio.TimeoutError:
             timed_out = True
-            logger.warning("[LLM_GATE] ⏰ directive gate timed out (8s) — using stale snapshot")
+            logger.warning("[LLM_GATE] ⏰ timed out (15s) — generating anyway")
 
-        # Use the live agent context so the injected directive/TOPIC_LOCK is visible to the LLM.
-        # Fall back to the snapshot only on timeout (directive may not have been injected).
-        effective_ctx = self.chat_ctx if not timed_out else chat_ctx
+        effective_ctx = self.chat_ctx
         logger.info(
-            "[LLM_GATE] using %s ctx | sys_msgs=%d",
-            "live" if not timed_out else "snapshot",
+            "[LLM_GATE] %s | sys_msgs=%d",
+            "on-time" if not timed_out else "timeout",
             sum(1 for m in getattr(effective_ctx, "items", []) if getattr(m, "role", "") == "system"),
         )
 
@@ -920,6 +974,17 @@ async def entrypoint(ctx: JobContext):
     _ai_signal_flushed_count: int = 0       # total events already flushed (slice pointer)
     # Lock protecting all shared session state that is written by background tasks.
     _session_state_lock = asyncio.Lock()
+
+    # Bridge LLM client — lightweight AsyncOpenAI used only for sub-second bridge generation.
+    # Separate from the main LLM plugin so it never blocks the interview pipeline.
+    try:
+        from openai import AsyncOpenAI as _AsyncOpenAI
+        _bridge_client = _AsyncOpenAI(api_key=__import__("os").environ.get("OPENAI_API_KEY", ""))
+        logger.info("[BRIDGE] OpenAI bridge client ready")
+    except Exception as _bce:
+        _bridge_client = None
+        logger.warning("[BRIDGE] Bridge client init failed: %s — will use fallback phrases", _bce)
+
     # Redis eval worker integration  pre-computed directive from previous turn
     _eval_redis_client = None
     if redis_asyncio is None:
@@ -1136,16 +1201,14 @@ async def entrypoint(ctx: JobContext):
     # STT Fragment buffer: collects partial results until final comes
     _stt_fragment_buffer: dict[int, list[str]] = {}  # turn -> [fragment1, fragment2, ...]
     _stt_completion_timers: dict[int, asyncio.Task | None] = {}  # turn -> debounce task
-    _STT_COMPLETE_DEBOUNCE_SECONDS = 0.65
-    _STT_INCOMPLETE_DEBOUNCE_SECONDS = 15.0
-    # Minimum words for an interview answer to be considered "done enough" to flush immediately.
-    # Below this threshold, we debounce even if Deepgram marks it as a final result —
-    # Deepgram splits long answers into multiple final chunks; flushing early drops the rest.
-    # How long to wait after a "complete" STT result before flushing to eval.
-    # Must be non-zero — Deepgram sends multiple final chunks for one utterance,
-    # so we consolidate fragments until silence, then flush the full answer.
-    _STT_SHORT_COMPLETE_DEBOUNCE_SECONDS = 3.5
-    _STT_WARMUP_INCOMPLETE_DEBOUNCE_SECONDS = 1.5
+    _STT_COMPLETE_DEBOUNCE_SECONDS = 0.5
+    # Incomplete answers (no punctuation): wait 4s max — Deepgram usually sends all
+    # chunks within 2s of silence; 4s catches stragglers without 15s dead time.
+    _STT_INCOMPLETE_DEBOUNCE_SECONDS = 4.0
+    # Complete answers: 1.2s to consolidate multi-chunk Deepgram finals.
+    # Previously 3.5s — cut to 1.2s since Deepgram nova-3 sends chunks fast.
+    _STT_SHORT_COMPLETE_DEBOUNCE_SECONDS = 1.2
+    _STT_WARMUP_INCOMPLETE_DEBOUNCE_SECONDS = 1.0
 
     def _is_sentence_complete(text: str) -> bool:
         """
@@ -1756,6 +1819,12 @@ async def entrypoint(ctx: JobContext):
                             (_active_topic or "?")[:40],
                         )
                         _last_applied_eval_turn = max(_last_applied_eval_turn, result_turn)
+                        # Cancel bridge if still in flight — real question takes over.
+                        # Bridge is UX polish only; directive correctness is the hard requirement.
+                        if agent._bridge_task and not agent._bridge_task.done():
+                            agent._bridge_task.cancel()
+                            logger.info("[BRIDGE] Cancelled (directive ready before bridge finished)")
+                            agent._bridge_task = None
                         # Directive fully injected — release llm_node gate.
                         agent._directive_ready.set()
                         logger.info("[LLM_GATE] directive_ready SET (turn=%d action=%s)", result_turn, action)
@@ -1821,11 +1890,9 @@ async def entrypoint(ctx: JobContext):
                 )
                 await _push_payload_to_redis(payload)
 
-                # SYNC GATE: Block until current turn's eval result is ready.
-                # Polls the turn-specific key: interview:{app_id}:eval_result:{turn}
-                # eval_worker (gpt-4o-mini) completes in ~1.5s; timeout is 6s safety net.
-                # Returns only after directive is injected into chat_ctx — so LLM generates
-                # with the correct PROBE/MOVE_ON directive already in context.
+                # SYNC GATE: poll Redis until this turn's eval result is ready, then inject
+                # the directive before returning. llm_node is blocked on _directive_ready so
+                # it cannot generate until the correct PROBE/MOVE_ON is in self.chat_ctx.
                 _sync_applied = False
                 if _eval_redis_client is not None:
                     _result_turn_key = f"interview:{app_id}:eval_result:{turn_snapshot}"
@@ -1833,14 +1900,14 @@ async def entrypoint(ctx: JobContext):
                     _POLL_INTERVAL = 0.15
                     _loop = asyncio.get_running_loop()
                     _deadline = _loop.time() + _SYNC_WAIT
-                    logger.info("[SYNC_GATE] turn=%d | Waiting for eval result (max %.1fs)...", turn_snapshot, _SYNC_WAIT)
+                    logger.info("[SYNC_GATE] turn=%d | waiting for eval (max %.1fs)...", turn_snapshot, _SYNC_WAIT)
                     while _loop.time() < _deadline:
                         try:
                             _raw_turn = await asyncio.wait_for(
                                 _eval_redis_client.getdel(_result_turn_key),
                                 timeout=0.3,
                             )
-                        except (asyncio.TimeoutError, Exception):
+                        except Exception:
                             await asyncio.sleep(_POLL_INTERVAL)
                             continue
                         if _raw_turn:
@@ -1848,27 +1915,22 @@ async def entrypoint(ctx: JobContext):
                                 _preloaded = json.loads(_raw_turn)
                                 _elapsed = round(_SYNC_WAIT - max(0.0, _deadline - _loop.time()), 2)
                                 logger.info(
-                                    "[SYNC_GATE] ✅ turn=%d | result arrived in ~%.2fs | action=%s",
+                                    "[SYNC_GATE] ✅ turn=%d | result in ~%.2fs | action=%s",
                                     turn_snapshot, _elapsed, _preloaded.get("action", "?"),
                                 )
                                 await _read_and_apply_eval_result(turn_snapshot, preloaded_result=_preloaded)
                                 _sync_applied = True
                             except Exception as _sge:
                                 logger.warning("[SYNC_GATE] turn=%d | apply failed: %s", turn_snapshot, _sge)
-                                agent._directive_ready.set()  # release gate on apply failure
+                                agent._directive_ready.set()
                             break
                         await asyncio.sleep(_POLL_INTERVAL)
                     if not _sync_applied:
-                        logger.warning(
-                            "[SYNC_GATE] ⏰ turn=%d | Timeout %.1fs — LLM generates without updated directive",
-                            turn_snapshot, _SYNC_WAIT,
-                        )
-                        # Release the gate even on timeout — otherwise llm_node blocks forever.
+                        logger.warning("[SYNC_GATE] ⏰ turn=%d | timeout %.1fs", turn_snapshot, _SYNC_WAIT)
                         agent._directive_ready.set()
 
         except Exception as e:
             logger.error("[EVAL] _process_user_conversation_item failed turn=%d: %s", turn_snapshot, e, exc_info=True)
-            # Always release gate on exception so llm_node is never permanently blocked.
             agent._directive_ready.set()
 
     #  TRANSCRIPT EVENT HANDLER
@@ -1958,18 +2020,12 @@ async def entrypoint(ctx: JobContext):
                     remove_system_messages(chat_ctx, "[WARMUP PHASE]")
                     logger.info("[WARMUP]  WARMUP COMPLETE at turn=%d  INTERVIEW PHASE ACTIVE", turn_count)
 
-                # Directive injection is now handled by the SYNC GATE below:
-                # after pushing the current turn, we WAIT for the eval result and inject
-                # the directive atomically before returning. Fire-and-forget is gone.
-
                 # STT Fragment Buffering: accumulate all fragments for this turn, process only once
                 # Drop late Deepgram finals for turns already flushed to the eval pipeline.
                 if turn_count in _processed_user_turns:
                     logger.debug("[STT_BUFFER] turn=%d already processed — dropping late fragment '%s'", turn_count, content[:60])
                     return
-                # Block llm_node immediately — before the debounce fires — so the LLM
-                # cannot generate Ishita's next question until the directive is injected.
-                # The event is set again inside _read_and_apply_eval_result after injection.
+                # Block llm_node until eval directive is ready.
                 agent._directive_ready.clear()
 
                 # Buffer the fragment
@@ -2040,18 +2096,41 @@ async def entrypoint(ctx: JobContext):
                     nonlocal _user_turn_chain
                     try:
                         await asyncio.sleep(_delay)
-                        if _turn in _stt_fragment_buffer and _stt_fragment_buffer[_turn]:
-                            _reason = "sentence_complete" if is_complete else "debounce_timeout"
-                            _user_turn_chain = spawn_background_task(
-                                _trigger_processing(_turn=_turn, _event=_event, _reason=_reason),
-                                f"user_turn_{_turn}",
-                            )
-                            agent._pending_eval_task = _user_turn_chain
-                            # Do NOT await here — if LiveKit cancels this task during the await,
-                            # the CancelledError would swallow the work. The chain serializes inside
-                            # _trigger_processing itself.
+                        if _turn not in _stt_fragment_buffer or not _stt_fragment_buffer[_turn]:
+                            return
+                        _reason = "sentence_complete" if is_complete else "debounce_timeout"
+
+                        # Snapshot the consolidated answer RIGHT NOW for the bridge.
+                        # _trigger_processing will pop the buffer — so grab it before.
+                        _answer_for_bridge = " ".join(
+                            f.strip() for f in _stt_fragment_buffer.get(_turn, []) if f.strip()
+                        )
+
+                        # Bridge fires FIRST — immediately at debounce, before eval pipeline.
+                        # This ensures bridge speaks during prev_chain wait / eval compute time.
+                        if _turn >= 3 and _bridge_client is not None and _answer_for_bridge:
+                            async def _speak_bridge(_ans=_answer_for_bridge):
+                                try:
+                                    bridge = await _generate_bridge_text(_ans, _bridge_client)
+                                    if bridge:
+                                        agent._bridge_text = bridge
+                                        logger.info("[BRIDGE] Speaking: %r", bridge)
+                                        await session.say(bridge, add_to_chat_ctx=False)
+                                        logger.info("[BRIDGE] Done speaking")
+                                except Exception as _be:
+                                    logger.warning("[BRIDGE] speak failed: %s", _be)
+                            agent._bridge_task = spawn_background_task(_speak_bridge(), f"bridge_{_turn}")
+
+                        # Eval pipeline runs in background (may wait for prev turn via prev_chain).
+                        _eval_chain = spawn_background_task(
+                            _trigger_processing(_turn=_turn, _event=_event, _reason=_reason),
+                            f"user_turn_{_turn}",
+                        )
+                        agent._pending_eval_task = _eval_chain
+                        _user_turn_chain = _eval_chain
+
                     except asyncio.CancelledError:
-                        logger.debug(f"[STT_BUFFER] turn={_turn} - debounce cancelled (sleep interrupted)")
+                        logger.debug(f"[STT_BUFFER] turn={_turn} - debounce cancelled")
                     except Exception as e:
                         logger.warning(f"[STT_BUFFER] turn={_turn} - debounce error: {e}")
 

@@ -132,7 +132,6 @@ model Application {
   @@index([createdAt(sort: Desc)])
   @@index([updatedAt(sort: Desc)])
 }
-
 model Interview {
   id                    String      @id
   applicationId         String      @unique
@@ -168,11 +167,6 @@ model Interview {
   recordingManifest     Json?       @default("{}")
   billingSnapshot       Json?       @default("{}")
   linkStatus            String      @default("ACTIVE")
-  answerScores          Json?       @default("{}")
-  interviewReport       String?
-  proctoringEvents      Json?       @default("[]")
-  proctoringReport      String?
-  strategicVerdict      Json?       @default("{}")
   application           Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   supportTickets        SupportTicket[]
   @@index([updatedAt(sort: Desc)])

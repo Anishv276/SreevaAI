@@ -1035,11 +1035,16 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         answer_gist = " ".join(p.answer.split()[:20])
         discussed_log_entry = f"- {topic_line}: {answer_gist}"
 
-    # ── Step 10: Append memory block ─────────────────────────────────────────
-    full_discussed = list(p.discussed_log)
-    if discussed_log_entry:
-        full_discussed.append(discussed_log_entry)
-    directive = DirectiveCompiler.append_memory_block(directive, full_discussed)
+    # ── Step 10: Append memory block — PROBE only ────────────────────────────
+    # On MOVE_ON we do NOT inject old-topic memory into the directive. The LLM
+    # is about to open a brand-new topic; giving it the previous topic's Q&A
+    # anchors it to that topic and causes drift back. Only PROBE directives get
+    # the discussed log so Ishita remembers what she already probed this topic.
+    if action != "MOVE_ON":
+        full_discussed = list(p.discussed_log)
+        if discussed_log_entry:
+            full_discussed.append(discussed_log_entry)
+        directive = DirectiveCompiler.append_memory_block(directive, full_discussed)
 
     # ── Step 11: No longer needed with saturation system ─────────────────────
     # Old drift guard and enforce_move_on logic removed

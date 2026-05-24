@@ -52,7 +52,7 @@ _PROVIDER_DEFAULTS: dict[str, Any] = {
     "sarvam_v2_loudness":      1.0,
     "sarvam_temperature":      0.4,
     "deepgram_endpointing_ms": 500,
-    "sarvam_ws_timeout_sec":   10,     # WebSocket operation timeout
+    "sarvam_ws_timeout_sec":   25,     # WebSocket operation timeout
 }
 
 _LANG_MAP: dict[str, str] = {
