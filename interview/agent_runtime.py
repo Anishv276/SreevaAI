@@ -185,72 +185,16 @@ def _clean_stt_text(raw_text: str) -> str:
     return _STT_WHITESPACE_RE.sub(" ", " ".join(cleaned_tokens)).strip()
 
 
-_BRIDGE_FALLBACKS = [
-    "Got it.",
-    "Makes sense.",
-    "I see.",
-    "Understood.",
-    "Okay.",
-]
-_bridge_fallback_idx = 0
-
-async def _generate_bridge_text(answer: str, client) -> str:
-    """Generate a 1-sentence candidate-aware acknowledgment in ~300ms.
-    Uses gpt-4o-mini with strict token cap. Never asks a question.
-    Falls back to a rotating neutral phrase if LLM is slow or fails."""
-    global _bridge_fallback_idx
-    if not answer or len(answer.strip()) < 8:
-        phrase = _BRIDGE_FALLBACKS[_bridge_fallback_idx % len(_BRIDGE_FALLBACKS)]
-        _bridge_fallback_idx += 1
-        return phrase
-    try:
-        resp = await asyncio.wait_for(
-            client.chat.completions.create(
-                model="gpt-4o-mini",
-                max_tokens=22,
-                temperature=0.4,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are an AI interviewer. The candidate just answered. "
-                            "Output ONLY a single short acknowledgment sentence (max 12 words). "
-                            "Reflect what they said naturally. Never ask a question. "
-                            "Examples: 'Got it, so you owned the full qualification flow.' "
-                            "'Makes sense, you combined n8n with OpenAI for that.' "
-                            "'Understood, budget and timeline were your main signals.'"
-                        ),
-                    },
-                    {"role": "user", "content": f"Candidate said: {answer[:200]}"},
-                ],
-            ),
-            timeout=2.5,
-        )
-        bridge = (resp.choices[0].message.content or "").strip().strip('"').strip("'")
-        if bridge and not bridge.endswith("?"):
-            return bridge
-    except Exception as _e:
-        logger.debug("[BRIDGE] LLM failed (%s) — using fallback", _e)
-    phrase = _BRIDGE_FALLBACKS[_bridge_fallback_idx % len(_BRIDGE_FALLBACKS)]
-    _bridge_fallback_idx += 1
-    return phrase
 
 
 class InterviewAgent(Agent):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._pending_eval_task: Optional[asyncio.Task] = None
-        # Cleared when a user turn arrives, set after directive injected + bridge spoken.
+        # Cleared when a user turn arrives, set after directive is injected.
         # llm_node waits on this before generating the real interview question.
         self._directive_ready: asyncio.Event = asyncio.Event()
         self._directive_ready.set()  # starts set — no blocking until first candidate answer
-        # Set when bridge speech finishes (or no bridge). llm_node waits for BOTH
-        # _bridge_done: kept for compatibility but no longer gates llm_node.
-        self._bridge_done: asyncio.Event = asyncio.Event()
-        self._bridge_done.set()
-        self._bridge_text: str = ""
-        # Tracked so directive arrival can cancel an in-flight bridge.
-        self._bridge_task: Optional[asyncio.Task] = None
 
     @staticmethod
     def _latest_system_message_with_marker(
@@ -952,6 +896,7 @@ async def entrypoint(ctx: JobContext):
     answer_scores: list[dict] = []    # log of all answer quality scores for final DB save
     _active_topic: Optional[str] = None         # current topic anchor; rotate away on MOVE_ON
     _topic_states: dict[str, dict] = {}        # PART 3: TopicState serialized per topic for saturation tracking
+    _topic_score_histories: dict[str, list] = {}  # per-topic quality score history for collapse/latency detection
     _last_depth_decay_turn: int = -999           # turn when depth_decay last fired; -999 = never
     _last_applied_eval_turn: int = 0             # monotonic guard against stale eval results
     _question_asked_at: float = 0.0
@@ -975,15 +920,7 @@ async def entrypoint(ctx: JobContext):
     # Lock protecting all shared session state that is written by background tasks.
     _session_state_lock = asyncio.Lock()
 
-    # Bridge LLM client — lightweight AsyncOpenAI used only for sub-second bridge generation.
-    # Separate from the main LLM plugin so it never blocks the interview pipeline.
-    try:
-        from openai import AsyncOpenAI as _AsyncOpenAI
-        _bridge_client = _AsyncOpenAI(api_key=__import__("os").environ.get("OPENAI_API_KEY", ""))
-        logger.info("[BRIDGE] OpenAI bridge client ready")
-    except Exception as _bce:
-        _bridge_client = None
-        logger.warning("[BRIDGE] Bridge client init failed: %s — will use fallback phrases", _bce)
+
 
     # Redis eval worker integration  pre-computed directive from previous turn
     _eval_redis_client: Any = None
@@ -1205,9 +1142,8 @@ async def entrypoint(ctx: JobContext):
     # Incomplete answers (no punctuation): wait 4s max — Deepgram usually sends all
     # chunks within 2s of silence; 4s catches stragglers without 15s dead time.
     _STT_INCOMPLETE_DEBOUNCE_SECONDS = 4.0
-    # Complete answers: 1.2s to consolidate multi-chunk Deepgram finals.
-    # Previously 3.5s — cut to 1.2s since Deepgram nova-3 sends chunks fast.
-    _STT_SHORT_COMPLETE_DEBOUNCE_SECONDS = 1.2
+    # Complete answers: 0.3s — Deepgram nova-3 sends finals fast, no need to wait longer.
+    _STT_SHORT_COMPLETE_DEBOUNCE_SECONDS = 0.3
     _STT_WARMUP_INCOMPLETE_DEBOUNCE_SECONDS = 1.0
 
     def _is_sentence_complete(text: str) -> bool:
@@ -1467,6 +1403,9 @@ async def entrypoint(ctx: JobContext):
                     else:
                         active_topic_state = _ts_obj.to_dict()
 
+                    _topic_key_now = re.sub(r"[^a-z0-9]+", " ", (_active_topic or "").lower()).strip()
+                    _topic_score_history_snap = list(_topic_score_histories.get(_topic_key_now, []))
+
                     return {
                         "app_id": app_id,
                         "turn": turn,
@@ -1474,6 +1413,7 @@ async def entrypoint(ctx: JobContext):
                         "question": resolved_question,
                         "transcript_lines": lines[-12:],
                         "score_history": score_history,
+                        "topic_score_history": _topic_score_history_snap,
                         "turns_since_decay": turns_since_decay,
                         "response_latency_sec": response_latency,
                         "signal_toggles": dict(evaluation_signal_toggles),
@@ -1519,7 +1459,7 @@ async def entrypoint(ctx: JobContext):
                         integrity_risk, depth_risk, suspicion_score, \
                         _last_applied_eval_turn, \
                         _ai_signal_flush_counter, _ai_signal_flushed_count, \
-                        _discussed_log
+                        _discussed_log, _topic_score_histories
 
                     if preloaded_result is not None:
                         result = preloaded_result
@@ -1660,6 +1600,14 @@ async def entrypoint(ctx: JobContext):
                                 _old_depth, depth_risk, _risk_depth_delta,
                                 suspicion_score,
                             )
+                            # Record quality score in the per-topic history for collapse/latency detection.
+                            # Use the topic that was ACTIVE when this turn was evaluated (input_active_topic),
+                            # not new_active_topic which may already point to the next topic after a MOVE_ON.
+                            _scored_topic = result.get("input_active_topic") or result.get("new_active_topic") or ""
+                            _scored_topic_key = re.sub(r"[^a-z0-9]+", " ", _scored_topic.lower()).strip()
+                            if _scored_topic_key and not quality_record.get("is_timeout"):
+                                _topic_score_histories.setdefault(_scored_topic_key, []).append(float(_overall))
+
                             # ASYNC persist answer_scores after each eval turn (no latency)
                             _scores_after_eval = list(answer_scores)
                             _app_id_persist = app_id
@@ -1835,12 +1783,6 @@ async def entrypoint(ctx: JobContext):
                             (_active_topic or "?")[:40],
                         )
                         _last_applied_eval_turn = max(_last_applied_eval_turn, result_turn)
-                        # Cancel bridge if still in flight — real question takes over.
-                        # Bridge is UX polish only; directive correctness is the hard requirement.
-                        if agent._bridge_task and not agent._bridge_task.done():
-                            agent._bridge_task.cancel()
-                            logger.info("[BRIDGE] Cancelled (directive ready before bridge finished)")
-                            agent._bridge_task = None
                         # Directive fully injected — release llm_node gate.
                         agent._directive_ready.set()
                         logger.info("[LLM_GATE] directive_ready SET (turn=%d action=%s)", result_turn, action)
@@ -2120,27 +2062,6 @@ async def entrypoint(ctx: JobContext):
                         if _turn not in _stt_fragment_buffer or not _stt_fragment_buffer[_turn]:
                             return
                         _reason = "sentence_complete" if is_complete else "debounce_timeout"
-
-                        # Snapshot the consolidated answer RIGHT NOW for the bridge.
-                        # _trigger_processing will pop the buffer — so grab it before.
-                        _answer_for_bridge = " ".join(
-                            f.strip() for f in _stt_fragment_buffer.get(_turn, []) if f.strip()
-                        )
-
-                        # Bridge fires FIRST — immediately at debounce, before eval pipeline.
-                        # This ensures bridge speaks during prev_chain wait / eval compute time.
-                        if _turn >= 3 and _bridge_client is not None and _answer_for_bridge:
-                            async def _speak_bridge(_ans=_answer_for_bridge):
-                                try:
-                                    bridge = await _generate_bridge_text(_ans, _bridge_client)
-                                    if bridge:
-                                        agent._bridge_text = bridge
-                                        logger.info("[BRIDGE] Speaking: %r", bridge)
-                                        await session.say(bridge, add_to_chat_ctx=False)
-                                        logger.info("[BRIDGE] Done speaking")
-                                except Exception as _be:
-                                    logger.warning("[BRIDGE] speak failed: %s", _be)
-                            agent._bridge_task = spawn_background_task(_speak_bridge(), f"bridge_{_turn}")
 
                         # Eval pipeline runs in background (may wait for prev turn via prev_chain).
                         _eval_chain = spawn_background_task(

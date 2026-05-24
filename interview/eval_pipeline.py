@@ -193,36 +193,39 @@ class ResponseScoreCalculator:
 
 
 class SignalPenaltyCalculator:
-    """Calculate saturation score penalties when behavioral signals fire.
+    """Calculate saturation score modifiers from behavioral signals.
 
-    Penalties reduce the saturation contribution for a turn so a weak or
-    evasive answer doesn't accidentally saturate a topic and move on too fast.
-    Integrity signals (contradiction, follow_up_collapse) get the largest
-    penalties since they indicate the answer cannot be trusted at face value.
+    Negative modifiers slow saturation (evasion/integrity signals): candidate
+    must prove more before moving on.
+    Positive modifiers accelerate saturation (genuine strength signals): strong
+    candidates move to next topic faster — this is the core adaptive behavior.
     """
 
-    PENALTIES = {
-        # Integrity — answer cannot be trusted
+    MODIFIERS = {
+        # Integrity — answer cannot be trusted: slow down, force more probing
         "contradiction": -2.5,
-        "follow_up_collapse": -1.5,      # was -1.0; collapse is a stronger signal than simple evasion
-        # Behavioral — candidate is hiding or evading
-        "example_evasion": -1.5,         # was -2.0; brought in line with ownership_ambiguity
+        "follow_up_collapse": -1.5,
+        # Behavioral — hiding or evading: hold the topic, extract real evidence
+        "example_evasion": -1.5,
         "ownership_ambiguity": -1.5,
-        "resume_claim_mismatch": -1.2,   # was -1.5; mismatch is softer signal, now maps to clarification not evidence
+        "resume_claim_mismatch": -1.2,
         # Anti-cheat timing
-        "latency_mismatch": -1.0,        # was -0.5; too low, this is a real red flag
-        "complexity_latency_mismatch": -1.2,  # was missing entirely
+        "latency_mismatch": -1.0,
+        "complexity_latency_mismatch": -1.2,
+        # Strength signals — candidate is genuinely strong: accelerate topic transition
+        "strong_under_pressure": +0.5,   # Maintained depth on follow-up → move on sooner
+        "ownership_clarified": +0.3,     # Named personal ownership clearly → credit given
+        "example_given": +0.3,           # Gave a concrete example unprompted → credit given
     }
 
     @staticmethod
     def calculate_penalties(signal_events: list[dict]) -> float:
-        """Sum penalties from all signals that fired this turn."""
+        """Sum all signal modifiers — both negative (evasion) and positive (strength)."""
         total = 0.0
         for event in signal_events:
             signal_name = event.get("signal_name", "")
-            penalty = SignalPenaltyCalculator.PENALTIES.get(signal_name, 0.0)
-            if penalty < 0:
-                total += penalty
+            modifier = SignalPenaltyCalculator.MODIFIERS.get(signal_name, 0.0)
+            total += modifier
         return total
 
 
@@ -269,6 +272,10 @@ class EvaluationPayload(BaseModel):
     candidate_name: str = "?"
     band: str = "?"
     time_limit_mins: int = 20
+    # Per-topic quality score history — quality scores only for turns on the current topic.
+    # Separate from score_history (which is session-wide) so collapse/latency detectors
+    # only compare scores within the same topic, not across topic switches.
+    topic_score_history: List[float] = Field(default_factory=list)
 
     model_config = {"extra": "allow"}  # Ignore unknown fields silently
 
@@ -445,9 +452,14 @@ def evaluate_topic_saturation(
     quality_scores: Dict[str, float],
     signal_events: list[dict],
     turn: int = 0,
+    skip_quality_contribution: bool = False,
 ) -> tuple[bool, str]:
     """
     Evaluate if a topic has reached saturation based on answer quality and signals.
+
+    skip_quality_contribution=True when the quality scorer timed out — we skip the
+    quality band entirely and only add base_turn_credit so the candidate isn't
+    punished for a network failure.
 
     Returns: (is_saturated, saturation_status_str)
     """
@@ -456,12 +468,18 @@ def evaluate_topic_saturation(
 
     # Calculate response score using weighted formula
     response_score = ResponseScoreCalculator.calculate_response_score(quality_scores)
-    contribution = ResponseScoreCalculator.calculate_contribution(response_score)
+    contribution = 0.0 if skip_quality_contribution else ResponseScoreCalculator.calculate_contribution(response_score)
 
-    # Apply signal penalties — floor at 30% of original so strong answers still
-    # contribute even when behavioral signals (ownership_ambiguity etc.) fire.
-    signal_penalty = SignalPenaltyCalculator.calculate_penalties(signal_events)
-    final_contribution = max(contribution * 0.3, contribution + signal_penalty)
+    # Apply signal modifiers — negative (evasion) slow saturation, positive (strength) accelerate it.
+    # Floor only applies to negative net modifiers: a strong answer can never drop below 30% of its
+    # earned contribution. Positive modifiers from strength signals are never floored — they add on top.
+    signal_modifier = SignalPenaltyCalculator.calculate_penalties(signal_events)
+    if signal_modifier < 0:
+        # Evasion/integrity signals: floor at 30% so a good answer still contributes something
+        final_contribution = max(contribution * 0.3, contribution + signal_modifier)
+    else:
+        # Strength signals: add directly — no cap, strong candidates should move topics faster
+        final_contribution = contribution + signal_modifier
 
     # Store state BEFORE increment for comparison logging
     score_before = topic_state.saturation_score
@@ -473,8 +491,8 @@ def evaluate_topic_saturation(
 
     # DETAILED LOG: Show the saturation calculation
     logger.info(
-        "[SAT_CALC] topic=%s | response_score=%.2f contribution=%.2f signal_penalty=%+.2f final_contribution=%.2f",
-        topic_state.topic_name, response_score, contribution, signal_penalty, final_contribution,
+        "[SAT_CALC] topic=%s | response_score=%.2f contribution=%.2f signal_modifier=%+.2f final_contribution=%.2f",
+        topic_state.topic_name, response_score, contribution, signal_modifier, final_contribution,
     )
     logger.info(
         "[SAT_CALC] base_credit=%.1f | score: %.1f → %.1f (delta=+%.1f) | follow_ups: %d → %d",
@@ -716,16 +734,13 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
 
     # ── Step 3: Run turn evaluation (quality + signals + routing) ────────────
     try:
-        # Topic-scoped depth scores: slice score_history to the current topic's turns only.
-        # score_history is a list[float] (overall quality per turn), not dicts.
-        # We use these overall scores as a proxy for depth since no per-dimension
-        # history is stored — this is accurate enough for collapse/latency detection.
+        # Use topic_score_history — quality scores recorded only for the current topic's turns.
+        # Previously this sliced the session-wide score_history by follow_up_count, which
+        # contaminated collapse/latency detection with scores from previous topics.
         _follow_up_count = current_topic_state.follow_up_turns if current_topic_state else 0
-        _topic_depth_scores = (
-            [float(r) for r in p.score_history[-_follow_up_count:] if isinstance(r, (int, float))]
-            if _follow_up_count > 0
-            else []
-        )
+        _topic_depth_scores = [
+            float(r) for r in p.topic_score_history if isinstance(r, (int, float))
+        ]
 
         td, directive = await asyncio.wait_for(
             run_turn_evaluation(
@@ -773,21 +788,39 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     # Contradiction gets a freeze on follow-up increment — it's a clarification turn, not a new probe
     contradiction_hit = any(ev.get("signal_name") == "contradiction" for ev in signal_events)
     freeze_followup_increment = contradiction_hit
-    depth_signal = "SURFACE"
+
+    # Detect scorer timeout — quality scores are neutral 5s, not real measurements.
+    # Skip quality contribution to saturation so the candidate isn't punished.
+    _quality_is_timeout = bool(td.get("quality", {}).get("is_timeout", False))
+
+    # Use the same weighted score that saturation uses so depth_signal thresholds
+    # are on the same scale. Previously this was a simple average, which diverged
+    # from the weighted saturation score and caused DEEP/SPECIFIC to fire at wrong times.
+    _weighted_quality = ResponseScoreCalculator.calculate_response_score(td["quality"])
+    # quality_avg kept as simple avg only for log readability and risk delta math
     quality_avg = (
         td["quality"]["clarity"] + td["quality"]["depth"]
         + td["quality"]["specificity"] + td["quality"]["grounding"]
     ) / 4.0
 
+    # Classify depth using the weighted score — thresholds align with contribution bands:
+    # 7.0 = Strong band boundary, 5.5 = Average band boundary
+    depth_signal = "SURFACE"
+    if _weighted_quality >= 7.0:
+        depth_signal = "DEEP"
+    elif _weighted_quality >= 5.5:
+        depth_signal = "SPECIFIC"
+
     # ── Log evaluator decision ────────────────────────────────────────────────
     _all_signal_names = [ev.get("signal_name", "?") for ev in signal_events if ev.get("signal_name")]
 
     logger.info(
-        "[QUALITY] turn=%d | clarity=%.1f depth=%.1f specificity=%.1f grounding=%.1f | avg=%.2f",
+        "[QUALITY] turn=%d | clarity=%.1f depth=%.1f specificity=%.1f grounding=%.1f | avg=%.2f weighted=%.2f depth_signal=%s%s",
         p.turn,
         td["quality"]["clarity"], td["quality"]["depth"],
         td["quality"]["specificity"], td["quality"]["grounding"],
-        quality_avg,
+        quality_avg, _weighted_quality, depth_signal,
+        " [TIMEOUT-no-sat-credit]" if _quality_is_timeout else "",
     )
     logger.info(
         "[EVAL] turn=%d action=%s mode=%s quality_avg=%.2f signals=[%s]",
@@ -845,6 +878,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         td.get("quality", {}),
         signal_events,
         turn=p.turn,
+        skip_quality_contribution=_quality_is_timeout,
     )
 
     logger.info(

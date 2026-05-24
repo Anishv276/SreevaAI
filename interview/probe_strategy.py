@@ -408,9 +408,14 @@ def select_probe_family_from_rotation(
     safe_index = max(0, min(len(rotation_families) - 1, probe_rotation_index))
     selected_family = rotation_families[safe_index]
 
-    # Gate: failure probe only on HIGH/CRITICAL topics
+    # Gate: failure probe only on HIGH/CRITICAL topics.
+    # Skip forward to the next family so the rotation index isn't wasted — without this,
+    # index 3 (failure) returns "alternatives" for MEDIUM topics, making index 2 repeat.
     if selected_family == "failure" and topic_importance not in ("CRITICAL", "HIGH"):
-        return "alternatives"
+        next_index = safe_index + 1
+        if next_index < len(rotation_families):
+            return rotation_families[next_index]
+        return "outcome"  # wrap-around: outcome is always safe and substantive
 
     return selected_family
 

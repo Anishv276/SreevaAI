@@ -307,11 +307,9 @@ class FollowUpCollapseDetector(BaseDetector):
     def detect(self, ctx: DetectionContext) -> Optional[SignalEvent]:
         if ctx.topic_follow_up_count < 1 or not ctx.prior_depth_scores:
             return None
-        first_answer_depth = (
-            ctx.prior_depth_scores[-ctx.topic_follow_up_count]
-            if len(ctx.prior_depth_scores) > ctx.topic_follow_up_count
-            else ctx.prior_depth_scores[0]
-        )
+        # prior_depth_scores is now topic_score_history — always compare against the
+        # first answer on this topic (index 0), not a negative index into session history.
+        first_answer_depth = ctx.prior_depth_scores[0]
         drop = first_answer_depth - ctx.current_depth
         if first_answer_depth < 6.0:
             return None
@@ -357,11 +355,7 @@ class LatencyMismatchDetector(BaseDetector):
         words = [w for w in re.split(r"\s+", ctx.answer.strip()) if w]
         if len(words) > 42:
             return None
-        first_answer_depth = (
-            ctx.prior_depth_scores[-ctx.topic_follow_up_count]
-            if len(ctx.prior_depth_scores) > ctx.topic_follow_up_count
-            else ctx.prior_depth_scores[0]
-        )
+        first_answer_depth = ctx.prior_depth_scores[0]
         drop = first_answer_depth - ctx.current_depth
         if drop < 1.5 and len(words) > 28:
             return None
@@ -397,10 +391,10 @@ class ContradictionDetector(BaseDetector):
         )
 
 
-_DECAY_WINDOW = 3
-_DECAY_MILD_THRESHOLD = 1.2
-_DECAY_SEVERE_THRESHOLD = 2.0
-_DECAY_COOLDOWN = 2
+_DECAY_WINDOW = 4          # 4 turns gives equal 2+2 halves — more stable than 3's 1+2 split
+_DECAY_MILD_THRESHOLD = 1.0    # slightly easier to detect with more data points
+_DECAY_SEVERE_THRESHOLD = 1.8
+_DECAY_COOLDOWN = 3        # longer cooldown prevents re-fire on the same declining run
 
 class DepthDecayDetector(BaseDetector):
     def detect(self, ctx: DetectionContext) -> Optional[SignalEvent]:

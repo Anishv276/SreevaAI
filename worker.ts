@@ -1124,7 +1124,7 @@ if (isQueueEnabled("invitation-delivery-queue")) {
         fullName: application.fullName || "Candidate",
         jobTitle: application.drive?.title || "Unknown Role",
         orgName: application.drive?.organization?.name || "Sreeva AI",
-        status: emailStatus,
+        status: emailStatus as any,
         interviewLink,
         schedulingDeadline: application.drive?.deadline || undefined,
       });

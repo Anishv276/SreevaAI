@@ -143,20 +143,23 @@ async def score_answer_quality(
         parsed["concerns"] = parsed.get("concerns", [])
         return parsed
     except asyncio.TimeoutError:
-        logger.warning("[SCORE] Answer scorer timed out - scoring conservatively")
-        # Timeout means we can't evaluate — use conservative low scores rather than
-        # neutral 5s which would falsely inflate the candidate's averages.
+        logger.warning("[SCORE] Answer scorer timed out — holding neutral, saturation contribution will be skipped")
+        # Timeout = system failure, not a weak answer. Return neutral 5s with is_timeout=True
+        # so eval_pipeline knows to skip quality contribution entirely for this turn.
+        # This prevents a good answer on a slow network from being punished with fake 2/10 scores.
         return {
-            "clarity": 2, "depth": 2, "specificity": 2, "grounding": 2,
-            "fluency": 2, "grammar": 2, "confidence": 2,
-            "overall": 2.0, "signals": [], "concerns": ["timeout"],
+            "clarity": 5, "depth": 5, "specificity": 5, "grounding": 5,
+            "fluency": 5, "grammar": 5, "confidence": 5,
+            "overall": 5.0, "signals": [], "concerns": ["timeout"],
+            "is_timeout": True,
         }
     except Exception as e:
         logger.warning(f"[SCORE] Answer scorer failed: {e}", exc_info=True)
         return {
-            "clarity": 2, "depth": 2, "specificity": 2, "grounding": 2,
-            "fluency": 2, "grammar": 2, "confidence": 2,
-            "overall": 2.0, "signals": [], "concerns": ["error"],
+            "clarity": 5, "depth": 5, "specificity": 5, "grounding": 5,
+            "fluency": 5, "grammar": 5, "confidence": 5,
+            "overall": 5.0, "signals": [], "concerns": ["error"],
+            "is_timeout": True,
         }
 async def evaluate_answer_and_decide(
     candidate_answer: str,
