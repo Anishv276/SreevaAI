@@ -14,9 +14,13 @@ COPY . .
 # Pass build-time environment variables (required for Next.js NEXT_PUBLIC_ vars)
 ARG NEXT_PUBLIC_LIVEKIT_URL
 ARG NEXT_PUBLIC_APP_URL
+ARG DATABASE_URL="postgresql://dummy:dummy@localhost/dummy"
+ARG DIRECT_URL="postgresql://dummy:dummy@localhost/dummy"
 
 ENV NEXT_PUBLIC_LIVEKIT_URL=$NEXT_PUBLIC_LIVEKIT_URL
 ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
+ENV DATABASE_URL=$DATABASE_URL
+ENV DIRECT_URL=$DIRECT_URL
 
 # Generate Prisma Client
 RUN npx prisma generate
