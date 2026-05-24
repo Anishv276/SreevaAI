@@ -37,7 +37,7 @@ logging.basicConfig(
 
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379")
 EVAL_QUEUE_KEY = "interview:eval_queue"
-RESULT_TTL_SECONDS = 300
+RESULT_TTL_SECONDS = 1800
 
 _shutdown = asyncio.Event()
 
@@ -179,7 +179,8 @@ async def _run_worker() -> None:
     while not _shutdown.is_set():
         try:
             # BLPOP blocks for up to 1s then returns None — no outer timeout needed
-            result = await r.blpop([EVAL_QUEUE_KEY], timeout=1)
+            # type: ignore[not-async] — redis.asyncio uses __call__ magic; blpop IS awaitable at runtime
+            result = await r.blpop([EVAL_QUEUE_KEY], timeout=1)  # type: ignore[misc]
             if result is None:
                 continue
             _key, payload_bytes = result

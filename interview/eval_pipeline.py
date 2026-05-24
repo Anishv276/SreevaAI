@@ -467,8 +467,9 @@ def evaluate_topic_saturation(
     score_before = topic_state.saturation_score
     follow_ups_before = topic_state.follow_up_turns
 
-    # Add to saturation score
-    topic_state.add_response_contribution(final_contribution, signal_penalty, turn=turn)
+    # Add to saturation score. Pass 0.0 for signal_penalties because final_contribution
+    # already incorporates the penalty — passing it again would double-apply it.
+    topic_state.add_response_contribution(final_contribution, 0.0, turn=turn)
 
     # DETAILED LOG: Show the saturation calculation
     logger.info(
@@ -715,6 +716,17 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
 
     # ── Step 3: Run turn evaluation (quality + signals + routing) ────────────
     try:
+        # Topic-scoped depth scores: slice score_history to the current topic's turns only.
+        # score_history is a list[float] (overall quality per turn), not dicts.
+        # We use these overall scores as a proxy for depth since no per-dimension
+        # history is stored — this is accurate enough for collapse/latency detection.
+        _follow_up_count = current_topic_state.follow_up_turns if current_topic_state else 0
+        _topic_depth_scores = (
+            [float(r) for r in p.score_history[-_follow_up_count:] if isinstance(r, (int, float))]
+            if _follow_up_count > 0
+            else []
+        )
+
         td, directive = await asyncio.wait_for(
             run_turn_evaluation(
                 candidate_answer=p.answer,
@@ -731,6 +743,8 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
                 session_score_history=p.score_history,
                 turns_since_last_decay=p.turns_since_decay,
                 response_latency_sec=p.response_latency_sec,
+                topic_follow_up_count=_follow_up_count,
+                prior_depth_scores=_topic_depth_scores,
             ),
             timeout=5.0,
         )
@@ -846,6 +860,19 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     # Kept separate so the return dict doesn't accidentally send the old topic's saturated state.
     next_topic_state: Optional[TopicState] = None
 
+    # Time-aware saturation tightening: in the final 5 minutes, if a topic is more
+    # than 50% saturated, force MOVE_ON to ensure remaining topics get coverage.
+    # Without this, a strong candidate on a CRITICAL topic can hold the interviewer
+    # pinned to one topic for the entire final stretch.
+    _time_pressure_exit = (
+        p.remaining_seconds <= 300
+        and current_topic_state is not None
+        and not is_saturated  # only override if not already saturating naturally
+        and current_topic_state.saturation_threshold > 0
+        and (current_topic_state.saturation_score / current_topic_state.saturation_threshold) >= 0.50
+        and action not in ("MOVE_ON",)
+    )
+
     def _do_move_on(reason: str) -> None:
         nonlocal action, new_active_topic, directive, next_topic_state
         action = "MOVE_ON"
@@ -893,6 +920,13 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     if depth_decay_fired:
         logger.info("[DECISION] ✅ DEPTH_DECAY fired → forcing MOVE_ON turn=%d", p.turn)
         _do_move_on("depth_decay")
+    elif _time_pressure_exit:
+        _sat_pct_now = round(100 * current_topic_state.saturation_score / current_topic_state.saturation_threshold, 0)
+        logger.info(
+            "[DECISION] ✅ TIME_PRESSURE_EXIT → %.0fs remaining, topic %.0f%% saturated → forcing MOVE_ON turn=%d",
+            p.remaining_seconds, _sat_pct_now, p.turn,
+        )
+        _do_move_on(f"time_pressure(remaining={p.remaining_seconds:.0f}s sat={_sat_pct_now:.0f}%)")
     elif _weak_exit:
         logger.info(
             "[DECISION] ✅ WEAK_CANDIDATE_EXIT → turns=%d score=%.1f < min=%.1f → forcing MOVE_ON turn=%d",

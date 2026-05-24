@@ -128,6 +128,21 @@ services:
       - "6379:6379"
     restart: always
 
+  # LiveKit Egress (Requires Redis & LiveKit Server)
+  livekit-egress:
+    image: livekit/egress:latest
+    container_name: livekit-egress
+    restart: always
+    environment:
+      - EGRESS_CONFIG_FILE=/etc/egress.yaml
+    volumes:
+      - ./egress.yaml:/etc/egress.yaml:ro
+    networks:
+      - traefik-proxy
+    depends_on:
+      - redis
+      - livekit
+
 networks:
   traefik-proxy:
     external: true

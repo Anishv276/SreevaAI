@@ -1,0 +1,5 @@
+api_key: "API39GAiDQgxEUa"
+api_secret: "vXH07sp1dsyf2peIzqGwFfONXqlEO96higUxFGoTQhhB"
+ws_url: "ws://livekit:7880"
+redis:
+  address: "redis:6379"

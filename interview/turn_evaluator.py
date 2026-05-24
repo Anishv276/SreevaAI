@@ -70,6 +70,8 @@ async def run_turn_evaluation(
     session_score_history: Optional[list[float]] = None,
     turns_since_last_decay: int = 999,
     response_latency_sec: Optional[float] = None,
+    topic_follow_up_count: int = 0,
+    prior_depth_scores: Optional[list[float]] = None,
 ) -> tuple[TurnDecision, str]:
     """
     Run per-turn evaluation pipeline.
@@ -92,7 +94,7 @@ async def run_turn_evaluation(
         evaluate_answer_and_decide_fn(
             candidate_answer=candidate_answer,
             last_question=last_question,
-            topic_follow_up_count=0,
+            topic_follow_up_count=topic_follow_up_count,
             transcript_lines=transcript_lines,
             client=client,
             org_id=org_id,
@@ -108,10 +110,10 @@ async def run_turn_evaluation(
         candidate_answer=candidate_answer,
         last_question=last_question,
         current_depth=current_depth,
-        prior_depth_scores=[],  # Not used with saturation system
-        topic_follow_up_count=0,  # Not used with saturation system
+        prior_depth_scores=prior_depth_scores or [],
+        topic_follow_up_count=topic_follow_up_count,
         contradiction_detected=contradiction_detected,
-        collapse_stage=0,  # Not used with saturation system
+        collapse_stage=0,
         session_score_history=session_score_history,
         turns_since_last_decay=turns_since_last_decay,
         response_latency_sec=response_latency_sec,

@@ -986,7 +986,7 @@ async def entrypoint(ctx: JobContext):
         logger.warning("[BRIDGE] Bridge client init failed: %s — will use fallback phrases", _bce)
 
     # Redis eval worker integration  pre-computed directive from previous turn
-    _eval_redis_client = None
+    _eval_redis_client: Any = None
     if redis_asyncio is None:
         logger.warning("[REDIS_EVAL] redis package not installed  eval worker disabled, inline eval will be used")
     elif not REDIS_URL:
@@ -1562,10 +1562,22 @@ async def entrypoint(ctx: JobContext):
                                 result_turn, _last_applied_eval_turn,
                             )
                             return False
-                        if expected_input_topic is not None and expected_input_topic != _active_topic:
+                        # Topic-mismatch guard: only reject results where the eval was computed
+                        # for a DIFFERENT topic than the one currently active AND the action is
+                        # not MOVE_ON. For MOVE_ON, the input_active_topic is intentionally the
+                        # OLD topic (the one being closed), so a mismatch is expected and valid.
+                        # Previously this guard was dropping all MOVE_ON results whenever the
+                        # previous turn's MOVE_ON had already advanced _active_topic — causing the
+                        # LLM to generate with a stale PROBE directive from the old topic.
+                        _result_action = result.get("action", "")
+                        if (
+                            expected_input_topic is not None
+                            and expected_input_topic != _active_topic
+                            and _result_action != "MOVE_ON"
+                        ):
                             logger.warning(
-                                "[REDIS_EVAL] Ignoring stale topic result turn=%d expected_topic=%r current_topic=%r",
-                                result_turn, expected_input_topic, _active_topic,
+                                "[REDIS_EVAL] Ignoring stale topic result turn=%d expected_topic=%r current_topic=%r action=%s",
+                                result_turn, expected_input_topic, _active_topic, _result_action,
                             )
                             return False
 
@@ -1795,6 +1807,10 @@ async def entrypoint(ctx: JobContext):
                         # TOPIC_LOCK: placed LAST in context (highest LLM attention).
                         # Two hard constraints ensure the LLM cannot drift to the old topic.
                         if action == "MOVE_ON" and _active_topic:
+                            # Remove RECENT_CONTEXT here too — it was injected at user-turn start
+                            # and contains the previous Q&A (old topic). If left in, it re-anchors
+                            # the LLM to the old topic even when TOPIC_LOCK says move on.
+                            remove_system_messages(chat_ctx, "[RECENT_CONTEXT")
                             chat_ctx.add_message(
                                 role="system",
                                 content=(
@@ -1810,7 +1826,7 @@ async def entrypoint(ctx: JobContext):
                                     f"comfort-repair the previous question. Move on immediately."
                                 ),
                             )
-                            logger.info("[TOPIC_LOCK] Injected for new topic: %s", _active_topic[:60])
+                            logger.info("[TOPIC_LOCK] Injected for new topic: %s | RECENT_CONTEXT cleared", _active_topic[:60])
                         logger.info(
                             "[ROUTER] action=%s mode=%s turn=%d topic=%s (worker)",
                             td.get("decision", {}).get("action", action),
@@ -1926,7 +1942,12 @@ async def entrypoint(ctx: JobContext):
                             break
                         await asyncio.sleep(_POLL_INTERVAL)
                     if not _sync_applied:
-                        logger.warning("[SYNC_GATE] ⏰ turn=%d | timeout %.1fs", turn_snapshot, _SYNC_WAIT)
+                        logger.warning("[SYNC_GATE] ⏰ turn=%d | timeout %.1fs — clearing stale directives before releasing LLM", turn_snapshot, _SYNC_WAIT)
+                        # Remove the stale PROBE/MOVE_ON directive from the previous turn so the
+                        # LLM doesn't follow outdated instructions when it generates without a result.
+                        remove_system_messages(chat_ctx, "[NEXT_TURN_DIRECTIVE")
+                        remove_system_messages(chat_ctx, "[TOPIC_LOCK")
+                        remove_system_messages(chat_ctx, "[RECENT_CONTEXT")
                         agent._directive_ready.set()
 
         except Exception as e:
