@@ -71,7 +71,7 @@ export const interviewTokenSchema = z.object({
 
 export const interviewShutdownSchema = z.object({
   applicationId: z.string().min(1, "Application ID required"),
-  interviewToken: z.string().min(1, "Security token required"),
+  interviewToken: z.string().optional(),
 });
 
 export const presignedUrlSchema = z.object({

@@ -31,7 +31,17 @@
       "Bash(python -c \"import livekit.plugins.sarvam.tts as t; print\\(t.__file__\\)\")",
       "Bash(python -c \"import py_compile; py_compile.compile\\(r'c:\\\\Users\\\\vamsi\\\\OneDrive\\\\Desktop\\\\HR-updates\\\\interview\\\\agent_profile_context.py', doraise=True\\); print\\('ok'\\)\")",
       "Bash(awk '/^[^#]*\\(_is_question_already_covered|_recent_discussion_anchor|_fallback_next_topic\\)\\\\\\(/ && !/def / {print NR\": \"$0}' agent_runtime.py)",
-      "Bash(awk '/_fallback_next_topic|_is_question_already_covered|_recent_discussion_anchor/ {print NR\": \"$0}' agent_runtime.py)"
+      "Bash(awk '/_fallback_next_topic|_is_question_already_covered|_recent_discussion_anchor/ {print NR\": \"$0}' agent_runtime.py)",
+      "Bash(node -r dotenv/config -e ' *)",
+      "Bash(taskkill /F /IM node.exe /FI \"WINDOWTITLE eq prisma*\")",
+      "Bash(Get-Process node *)",
+      "Bash(Select-Object -First 5)",
+      "Bash(DATABASE_URL=\"postgresql://postgres.wfyvdqeqpkmskipyjysw:Lumoscale%403468%5E%25%24@aws-1-ap-south-1.pooler.supabase.com:5432/postgres?sslmode=require\" npx prisma db execute --stdin)",
+      "Bash(pip show *)",
+      "Bash(pip list *)",
+      "Bash(pip install *)",
+      "Bash(npx prisma *)",
+      "Bash(pip index *)"
     ]
   }
 }

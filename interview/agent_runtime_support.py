@@ -105,11 +105,21 @@ def reset_log_context(token) -> None:
         logger.debug("[SESSION] reset_log_context skipped due to cross-context token")
 
 
+_LOG_SESSION_FILTER = os.environ.get("LOG_SESSION_FILTER", "").strip().lower()
+
+
 class _SessionLogContextFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
-        for key, value in _LOG_CONTEXT_FIELDS.get({}).items():
+        ctx = _LOG_CONTEXT_FIELDS.get({})
+        for key, value in ctx.items():
             if not hasattr(record, key):
                 setattr(record, key, value)
+        if _LOG_SESSION_FILTER:
+            session_id = ctx.get("session_id", "")
+            candidate = ctx.get("dispatch_candidate_name", "")
+            haystack = f"{session_id} {candidate}".lower()
+            if haystack and _LOG_SESSION_FILTER not in haystack:
+                return False
         return True
 handler.addFilter(_SessionLogContextFilter())
 class _RuntimeWarningSampler(logging.Filter):

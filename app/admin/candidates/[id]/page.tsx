@@ -135,9 +135,21 @@ export default function CandidateProfilePage() {
 
     const interviewReportData: any = (() => {
         try {
-            const raw = candidate?.interview?.interviewReport;
+            const raw = candidate?.interview?.skillRatings;
             if (!raw) return {};
-            return typeof raw === "string" ? JSON.parse(raw) : raw;
+            const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+            const interview = candidate?.interview as any;
+            const communicationScore = interview?.communicationScore ?? parsed?.communication_score ?? parsed?.scores?.communication ?? null;
+            return {
+                ...parsed,
+                communication_score: communicationScore,
+                scores: { ...(parsed?.scores || {}), communication_score: communicationScore },
+                cognitive_insights: interview?.cognitiveInsights ?? parsed?.cognitive_insights ?? {},
+                integrity_signals: interview?.integritySignals ?? [],
+                behavior_signals: interview?.behaviorSignals ?? {},
+                behavioral_signals_analysis: interview?.behavioralSignalsAnalysis ?? {},
+                question_by_question_analysis: interview?.questionByQuestionAnalysis ?? [],
+            };
         } catch {
             return {};
         }
@@ -182,9 +194,9 @@ export default function CandidateProfilePage() {
         return times;
     })();
 
-    // ── Signal timeline from proctoringReport.checkpoint_events (AI signals) + events (proctoring) ──
+    // ── Signal timeline from behaviorSignals.checkpoint_events (AI signals) + events (proctoring) ──
     const signalTimeline = (() => {
-        const raw = candidate?.interview?.proctoringReport;
+        const raw = candidate?.interview?.behaviorSignals;
         const pr = typeof raw === "string" ? (() => { try { return JSON.parse(raw); } catch { return {}; } })() : (raw || {});
         // AI behavioral signals are stored in checkpoint_events; proctoring events in events
         const checkpointEvents: any[] = Array.isArray(pr?.checkpoint_events) ? pr.checkpoint_events : [];
@@ -371,9 +383,9 @@ export default function CandidateProfilePage() {
         Boolean(candidate?.interview?.completedAt);
     const interviewReportLocked = !interviewIsFinished;
 
-    // ── Parse proctoringEvents — stored as JSON string in DB ──
+    // ── Parse integritySignals — frontend tab-switch/proctoring events ──
     const rawProctoringEvents: any[] = (() => {
-        const raw = candidate?.interview?.proctoringEvents;
+        const raw = candidate?.interview?.integritySignals;
         if (Array.isArray(raw)) return raw;
         if (typeof raw === "string") {
             try { return JSON.parse(raw) as any[]; } catch { return []; }
@@ -412,7 +424,7 @@ export default function CandidateProfilePage() {
 
     // ── Parse answerScores — stored as JSON string in DB ──
     const answerScoresParsed: { question: string; answer: string; depth: number; clarity: number; fluency: number; confidence: number; overall: number; signals: string[] }[] = (() => {
-        const raw = candidate?.interview?.answerScores;
+        const raw = candidate?.interview?.questionByQuestionAnalysis;
         const parsed = (() => {
             if (!raw) return null;
             if (typeof raw === "object") return raw;
@@ -730,11 +742,15 @@ export default function CandidateProfilePage() {
                 method: "POST",
                 headers: { "Content-Type": "application/json" }
             });
-            if (res.ok) {
-                await fetchCandidate();
+            const data = await res.json().catch(() => null);
+            if (!res.ok) {
+                alert(data?.error || "Failed to send interview link. Please try again.");
+                return;
             }
+            await fetchCandidate();
         } catch (err) {
             console.error("Error resending interview link:", err);
+            alert("Failed to send interview link. Please try again.");
         } finally {
             setIsUpdating(false);
         }

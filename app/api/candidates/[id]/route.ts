@@ -84,37 +84,9 @@ export async function GET(
             return NextResponse.json({ error: "Candidate belongs to a different organization" }, { status: 403 });
         }
 
-        const interviewReport = (() => {
-            const interview = candidate.interview as any;
-            const raw = interview?.skillRatings;
-            const parsed = raw
-                ? (typeof raw === "string" ? JSON.parse(raw) : raw)
-                : {};
-            const communicationScore = interview?.communicationScore ?? parsed?.communication_score ?? parsed?.scores?.communication ?? null;
-            return {
-                ...parsed,
-                communication_score: communicationScore,
-                scores: {
-                    ...(parsed?.scores || {}),
-                    communication_score: communicationScore,
-                },
-                cognitive_insights: interview?.cognitiveInsights ?? parsed?.cognitive_insights ?? parsed?.cognitive ?? {},
-                integrity_signals: interview?.integritySignals ?? [],
-                behavior_signals: interview?.behaviorSignals ?? {},
-                behavioral_signals_analysis: interview?.behavioralSignalsAnalysis ?? {},
-                question_by_question_analysis: interview?.questionByQuestionAnalysis ?? [],
-            };
-        })();
-
         return NextResponse.json({
             ...candidate,
-            interview: candidate.interview ? {
-                ...candidate.interview,
-                proctoringEvents: candidate.interview.integritySignals ?? [],
-                proctoringReport: candidate.interview.behaviorSignals ?? {},
-                answerScores: candidate.interview.questionByQuestionAnalysis ?? [],
-                interviewReport,
-            } : candidate.interview,
+            interview: candidate.interview ?? null,
             formattedDate: new Date(candidate.createdAt).toLocaleDateString(),
             driveTitle: candidate.drive?.title || "Role N/A"
         }, {

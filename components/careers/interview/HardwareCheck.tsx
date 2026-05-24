@@ -41,7 +41,6 @@ interface HardwareCheckProps {
     applicationId?: string;
     interviewToken?: string;
     title?: string;
-    bookedSlot?: number | null;
 }
 
 type CheckStatus = "idle" | "requesting" | "granted" | "denied";
@@ -55,7 +54,6 @@ export function HardwareCheck({
     applicationId = "unknown",
     interviewToken = "",
     title = "Environment Check",
-    bookedSlot = null,
 }: HardwareCheckProps) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
@@ -100,26 +98,11 @@ export function HardwareCheck({
     // Keep ref in sync with state so useCallback closures always read the current phrase
     useEffect(() => { verifiedPhraseRef.current = verifiedPhrase; }, [verifiedPhrase]);
 
-    // Countdown logic for future slots
-    const [timeRemainingSeconds, setTimeRemainingSeconds] = useState<number>(0);
     const [canBeginNow, setCanBeginNow] = useState(false);
 
     useEffect(() => {
-        // Force "Always Ready" for testing as requested
         setCanBeginNow(true);
-        if (!bookedSlot) return;
-
-        const updateTimer = () => {
-            const now = Date.now();
-            const diffMs = bookedSlot - now;
-            // setCanBeginNow(diffMs <= 0); // Bypassed for testing
-            setTimeRemainingSeconds(Math.max(0, Math.ceil(diffMs / 1000)));
-        };
-
-        updateTimer();
-        const interval = setInterval(updateTimer, 250);
-        return () => clearInterval(interval);
-    }, [bookedSlot]);
+    }, []);
 
     // Device Selection
     const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
@@ -893,11 +876,6 @@ export function HardwareCheck({
     ];
     const readyCount = checks.filter(Boolean).length;
 
-    const formatTime = (secs: number) => {
-        const m = Math.floor(secs / 60);
-        const s = secs % 60;
-        return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-    };
 
     if (!browserSupported) {
         return (
@@ -925,19 +903,11 @@ export function HardwareCheck({
                     <p className="text-xs text-gray-500 mt-1">Hi {candidateName} - let&apos;s make sure everything is set up before we begin.</p>
                 </div>
 
-                {/* Visual Countdown Timer (Resolves Countdown Request) */}
                 <div className="flex-shrink-0">
-                    {bookedSlot && timeRemainingSeconds > 0 ? (
-                        <div className="bg-orange-50 border border-orange-100 rounded-full px-4 py-2 flex items-center gap-2 text-xs font-bold text-orange-600 shadow-sm animate-pulse-slow">
-                            <span className="w-2 h-2 rounded-full bg-orange-550 animate-ping" />
-                            Interview starts in: {formatTime(timeRemainingSeconds)}
-                        </div>
-                    ) : (
-                        <div className="bg-green-50 border border-green-100 rounded-full px-4 py-2 flex items-center gap-2 text-xs font-bold text-green-700 shadow-sm">
-                            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                            Live &amp; Ready to Begin
-                        </div>
-                    )}
+                    <div className="bg-green-50 border border-green-100 rounded-full px-4 py-2 flex items-center gap-2 text-xs font-bold text-green-700 shadow-sm">
+                        <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                        Live &amp; Ready to Begin
+                    </div>
                 </div>
             </div>
 

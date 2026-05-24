@@ -89,7 +89,9 @@ async def _process_one(payload_bytes: bytes, client: AsyncOpenAI, r) -> None:
 
     app_id = payload.get("app_id", "unknown")
     turn = payload.get("turn", 0)
-    logger.info("[WORKER] Processing app_id=%s turn=%d", app_id, turn)
+    logger.info("─" * 60)
+    logger.info("✅ TURN %d STARTED | app_id=%s", turn, app_id)
+    logger.info("─" * 60)
 
     try:
         result = await run_eval_and_build_directive(payload, client)
@@ -143,6 +145,9 @@ async def _process_one(payload_bytes: bytes, client: AsyncOpenAI, r) -> None:
             _sat_score, _sat_thresh, _sat_pct, _sat_remaining,
             _follow_up_turns, _opened_turn, _probe_idx, _signal_str,
         )
+        logger.info("─" * 60)
+        logger.info("✅ TURN %d DONE | action=%s", turn, _action)
+        logger.info("─" * 60)
 
     except Exception as e:
         logger.error("[WORKER] Failed to store result key=%s: %s", result_key, e)

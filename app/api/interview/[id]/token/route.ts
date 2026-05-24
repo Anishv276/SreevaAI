@@ -1,14 +1,13 @@
 import { AccessToken, AgentDispatchClient, RoomServiceClient } from "livekit-server-sdk";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { isInterviewReopenAllowed, isInterviewTestMode, isInterviewTokenRequired } from "@/lib/interview-access";
+import { isInterviewTokenRequired } from "@/lib/interview-access";
 import {
     FIXED_INTERVIEW_DURATION_MINUTES,
-    INTERVIEW_JOIN_GRACE_MINUTES,
 } from "@/lib/drive-limits";
-import { getSlotJoinDeadline } from "@/lib/interview-slot-policy";
 import crypto from "crypto";
-import { isSlotMode, resolveInterviewMode } from "@/lib/interview-mode";
+
+const JOIN_WINDOW_MS = 5 * 60 * 1000;
 
 export async function POST(
     request: Request,
@@ -19,13 +18,9 @@ export async function POST(
         const { id: applicationId } = await params;
         const { token: interviewToken } = await request.json();
         const requireInterviewToken = isInterviewTokenRequired();
-        const allowReopen = isInterviewReopenAllowed();
-
         if (!applicationId || (requireInterviewToken && !interviewToken)) {
             return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
         }
-
-        const testMode = isInterviewTestMode();
 
         const interview = await prismaAny.interview.findUnique({
             where: { applicationId },
@@ -42,13 +37,7 @@ export async function POST(
         const application = await prismaAny.application.findUnique({
             where: { id: applicationId },
             include: {
-                drive: {
-                    include: {
-                        organization: {
-                            select: { interviewMode: true },
-                        },
-                    },
-                },
+                drive: true,
             },
         });
 
@@ -56,65 +45,26 @@ export async function POST(
             return NextResponse.json({ error: "Application not found" }, { status: 404 });
         }
 
-        const effectiveInterviewMode = resolveInterviewMode(
-            null,
-            application.drive?.organization?.interviewMode
-        );
-        const slotModeEnabled = isSlotMode(effectiveInterviewMode);
-
-        if (interview.status === "COMPLETED") {
-            return NextResponse.json({
-                error: "Access Denied: Interview has been completed. Please contact support.",
-                code: "INTERVIEW_COMPLETED",
-            }, { status: 403 });
-        }
-
-        if (!allowReopen && interview.status === "FAILED") {
-            return NextResponse.json({
-                error: "Access Denied: Interview already finalized",
-                code: "INTERVIEW_FINALIZED",
-            }, { status: 403 });
-        }
-
-        // Slot entry window:
-        // Join/rejoin allowed from slot start until +10 minutes only.
-        if (slotModeEnabled && interview.scheduledAt) {
-            const now = Date.now();
-            const slotStart = interview.scheduledAt.getTime();
-            const joinDeadline = getSlotJoinDeadline(slotStart, INTERVIEW_JOIN_GRACE_MINUTES);
-
-            if (!testMode) {
-                if (now < slotStart) {
-                    return NextResponse.json({
-                        error: `Access Denied: Your interview slot opens at ${new Date(slotStart).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.`,
-                    }, { status: 403 });
-                }
-
-                if (now > joinDeadline) {
-                    return NextResponse.json({
-                        error: "Access Denied: Slot join window is closed. Please contact support to reschedule.",
-                    }, { status: 403 });
-                }
-            }
-
-        }
-        if (!slotModeEnabled) {
+        {
             const now = Date.now();
             const expiresAtMs = interview.expiresAt ? interview.expiresAt.getTime() : null;
+            const startedAtMs = interview.startedAt ? interview.startedAt.getTime() : null;
+            const deadlineExpired = expiresAtMs !== null && now > expiresAtMs;
+            const joinWindowExpired = startedAtMs !== null && (now - startedAtMs) >= JOIN_WINDOW_MS;
+            const isExpiredByTime = deadlineExpired || joinWindowExpired;
 
-            if (expiresAtMs !== null && now > expiresAtMs) {
+            if (isExpiredByTime && interview.linkStatus !== "EXPIRED") {
                 await prismaAny.interview.update({
                     where: { applicationId },
                     data: { linkStatus: "EXPIRED" },
                 }).catch(() => { });
-                return NextResponse.json({ error: "Access Denied: Interview session has expired" }, { status: 403 });
             }
 
-            if (interview.linkStatus !== "ACTIVE") {
-                await prismaAny.interview.update({
-                    where: { applicationId },
-                    data: { linkStatus: "ACTIVE" },
-                }).catch(() => { });
+            if (interview.linkStatus === "EXPIRED" || isExpiredByTime) {
+                return NextResponse.json({
+                    error: "Access Denied: Interview link has expired. Please contact support.",
+                    code: "LINK_EXPIRED",
+                }, { status: 403 });
             }
         }
 
@@ -215,7 +165,6 @@ export async function POST(
                 update: {
                     status: "IN_PROGRESS",
                     startedAt: interview.startedAt || new Date(),
-                    linkStatus: "ACTIVE",
                 },
                 create: {
                     id: crypto.randomUUID(),

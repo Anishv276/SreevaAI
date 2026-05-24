@@ -17,8 +17,7 @@ import { parseDriveScreeningSettings } from "./lib/screening-criteria";
 import { recordOrgBillingUsage } from "./lib/usage-metrics";
 import { generateInterviewReport, computeEnrichedInterviewScore } from "./lib/interview-analysis";
 import { syncCandidateCorpusToPinecone } from "./lib/pinecone";
-import { buildInterviewLink, buildInterviewScheduleLink } from "./lib/interview-links";
-import { INTERVIEW_MODE_DEADLINE, INTERVIEW_MODE_SLOT, isSlotMode, resolveInterviewMode } from "./lib/interview-mode";
+import { buildInterviewLink } from "./lib/interview-links";
 // Load environment variables
 dotenv.config();
 console.log('DEBUG: REDIS_URL length:', process.env.REDIS_URL?.length || 0);
@@ -1021,12 +1020,10 @@ if (isQueueEnabled("invitation-delivery-queue")) {
         applicationId,
         action,
         emailType,
-        scheduledAt,
       }: {
         applicationId?: string;
         action?: "shortlist" | "reject" | "hire" | "nothired" | "confirm";
         emailType?: "screening" | "hiring";
-        scheduledAt?: string;
       } = job.data || {};
 
       console.log(`[Invitation Worker] Job received: action=${action}, applicationId=${applicationId}`);
@@ -1046,11 +1043,9 @@ if (isQueueEnabled("invitation-delivery-queue")) {
               id: true,
               title: true,
               orgId: true,
-              interviewMode: true,
               organization: {
                 select: {
                   name: true,
-                  interviewMode: true,
                 },
               },
               deadline: true,
@@ -1074,11 +1069,6 @@ if (isQueueEnabled("invitation-delivery-queue")) {
       }
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://sreevaai.com';
       const now = new Date();
-      const effectiveInterviewMode = resolveInterviewMode(
-        application.drive?.interviewMode,
-        application.drive?.organization?.interviewMode
-      );
-      const slotModeEnabled = isSlotMode(effectiveInterviewMode);
       let interviewLink: string | undefined;
       if (action === "shortlist") {
         const driveDeadline = application.drive?.deadline ? new Date(application.drive.deadline) : null;
@@ -1089,9 +1079,7 @@ if (isQueueEnabled("invitation-delivery-queue")) {
             status: "PENDING",
             startedAt: null,
             completedAt: null,
-            scheduledAt: null,
-            slotId: null,
-            expiresAt: slotModeEnabled ? null : driveDeadline,
+            expiresAt: driveDeadline,
             linkStatus: "ACTIVE",
           },
           create: {
@@ -1100,21 +1088,14 @@ if (isQueueEnabled("invitation-delivery-queue")) {
             accessToken: crypto.randomUUID(),
             inviteSentAt: now,
             status: "PENDING",
-            expiresAt: slotModeEnabled ? null : driveDeadline,
+            expiresAt: driveDeadline,
             linkStatus: "ACTIVE",
           },
         });
-        const baseUrl = appUrl;
-        interviewLink = slotModeEnabled
-          ? buildInterviewScheduleLink(
-            baseUrl,
-            applicationId,
-            application.drive?.organization?.name || "Sreeva AI"
-          )
-          : buildInterviewLink(baseUrl, applicationId, {
-            token: isInterviewTokenRequired() ? interviewRecord.accessToken : null,
-            orgName: application.drive?.organization?.name || "Sreeva AI",
-          });
+        interviewLink = buildInterviewLink(appUrl, applicationId, {
+          token: isInterviewTokenRequired() ? interviewRecord.accessToken : null,
+          orgName: application.drive?.organization?.name || "Sreeva AI",
+        });
       } else if (action === "confirm") {
         const baseUrl = appUrl;
         interviewLink = buildInterviewLink(baseUrl, applicationId, {
@@ -1145,9 +1126,7 @@ if (isQueueEnabled("invitation-delivery-queue")) {
         orgName: application.drive?.organization?.name || "Sreeva AI",
         status: emailStatus,
         interviewLink,
-        scheduledAt: scheduledAt ? new Date(scheduledAt) : undefined,
         schedulingDeadline: application.drive?.deadline || undefined,
-        interviewMode: slotModeEnabled ? INTERVIEW_MODE_SLOT : INTERVIEW_MODE_DEADLINE,
       });
       if (!mailResult.success) {
         const reason = "error" in mailResult && mailResult.error
@@ -1371,9 +1350,9 @@ if (isQueueEnabled("interview-finalization")) {
               interview: {
                 select: {
                   interviewTranscript: true,
-                  interviewReport: true,
+                  skillRatings: true,
                   interviewDuration: true,
-                  proctoringEvents: true,
+                  integritySignals: true,
                   createdAt: true,
                   updatedAt: true,
                 },
@@ -1392,7 +1371,7 @@ if (isQueueEnabled("interview-finalization")) {
           const createdAtIso = app.createdAt.toISOString();
           const resumeReportCreatedAtIso = app.updatedAt.toISOString();
           const interviewCreatedAtIso = app.interview?.createdAt?.toISOString() || app.interview?.updatedAt?.toISOString() || createdAtIso;
-          const existingInterviewReport = app.interview?.interviewReport || null;
+          const existingInterviewReport = app.interview?.skillRatings || null;
 
           const resumeText =
             app.resumeText?.trim() ||
@@ -1466,8 +1445,8 @@ if (isQueueEnabled("interview-finalization")) {
             : {};
           const jdText = [app.drive?.title || "", JSON.stringify(driveDetails)].filter(Boolean).join("\n\n");
           const durationSeconds = app.interview?.interviewDuration ?? 0;
-          const proctoringEvents = Array.isArray(app.interview?.proctoringEvents)
-            ? (app.interview?.proctoringEvents as any[])
+          const proctoringEvents = Array.isArray(app.interview?.integritySignals)
+            ? (app.interview?.integritySignals as any[])
             : [];
 
           console.log(`[REPORT] Generating AI report for ${applicationId} (transcript length: ${finalTranscript.length})`);
@@ -1493,36 +1472,30 @@ if (isQueueEnabled("interview-finalization")) {
             console.log(`[REPORT] Enriched combined_score=${enriched.combined_score} (tech=${enriched.technical_score}, comm=${enriched.communication_score}, beh=${enriched.behavioral_score}, cog=${enriched.cognitive_score}, integ=${enriched.integrity_score})`);
           }
 
-          // Persist interviewReport + aiSummary
+          // Strip dedicated-column fields out of the skillRatings blob to avoid duplication.
+          // cognitive_insights, behavioral_analysis, and communication_score each have their
+          // own columns — storing them again inside the JSON blob wastes space and causes
+          // stale-read confusion when the columns are updated independently later.
+          const { cognitive_insights: _ci, behavioral_analysis: _ba, ...skillRatingsPayload } = report as any;
+          const communicationScoreVal: number | null = (report as any)?.scores?.communication_score ?? (report as any)?.communication_score ?? null;
+          const cognitiveInsightsVal = _ci ?? null;
+          const behavioralSignalsVal = _ba ?? null;
+
+          // Persist skillRatings + dedicated columns + aiSummary
           await prisma.$executeRawUnsafe(
             `UPDATE "Interview"
-             SET "interviewReport" = $1::jsonb,
-                 "aiSummary" = COALESCE($2::text, "Interview"."aiSummary"),
+             SET "skillRatings" = $1::jsonb,
+                 "communicationScore" = $2,
+                 "cognitiveInsights" = $3::jsonb,
+                 "behavioralSignalsAnalysis" = $4::jsonb,
+                 "aiSummary" = COALESCE($5::text, "Interview"."aiSummary"),
                  "updatedAt" = NOW()
-             WHERE "applicationId" = $3`,
-            JSON.stringify(report),
+             WHERE "applicationId" = $6`,
+            JSON.stringify(skillRatingsPayload),
+            communicationScoreVal,
+            JSON.stringify(cognitiveInsightsVal ?? {}),
+            JSON.stringify(behavioralSignalsVal ?? {}),
             (report as any)?.recording?.summary || (report as any)?.verdict?.summary || null,
-            applicationId
-          );
-
-          // Persist strategicVerdict
-          const sv = (report as any)?.strategic_verdict || {
-            decision:
-              (report as any)?.verdict?.recommendation === "Strong Yes" ||
-              (report as any)?.verdict?.recommendation === "Yes"
-                ? "Hire"
-                : (report as any)?.verdict?.recommendation === "No"
-                ? "Do Not Hire"
-                : "Maybe",
-            summary: (report as any)?.verdict?.summary || "",
-            rationale: (report as any)?.verdict?.recommendation_reason
-              ? [(report as any).verdict.recommendation_reason]
-              : [],
-            next_actions: [],
-          };
-          await prisma.$executeRawUnsafe(
-            `UPDATE "Interview" SET "strategicVerdict" = $1::jsonb, "updatedAt" = NOW() WHERE "applicationId" = $2`,
-            JSON.stringify(sv),
             applicationId
           );
 

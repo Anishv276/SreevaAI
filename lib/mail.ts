@@ -11,51 +11,34 @@ export async function sendApplicationStatusEmail({
     orgName: orgNameProp,
     status,
     interviewLink,
-    scheduledAt,
-    scheduledTimeZone,
     schedulingDeadline,
-    interviewMode,
 }: {
     email: string;
     fullName: string;
     jobTitle: string;
     orgId?: string;
     orgName?: string;
-    status: 'SHORTLISTED' | 'REJECTED' | 'ACCEPTED' | 'INTERVIEW' | 'Hired' | 'CONFIRMED';
+    status: 'SHORTLISTED' | 'REJECTED' | 'ACCEPTED' | 'INTERVIEW' | 'Hired';
     score?: number;
     interviewLink?: string;
-    scheduledAt?: Date;
-    scheduledTimeZone?: string;
     schedulingDeadline?: Date;
-    interviewMode?: "SLOT" | "DEADLINE";
+
 }): Promise<MailResult> {
     const orgName = orgNameProp || "Sreeva AI";
     const teamLabel = `${orgName} Team`;
     console.log(`[MAIL DEBUG] Incoming status: "${status}"`);
     const s = (status || "").toUpperCase();
     const isHired = s === 'HIRED';
-    const isConfirmed = s === 'CONFIRMED';
     const isAccepted = s === 'SHORTLISTED' || s === 'ACCEPTED' || s === 'INTERVIEW' || isHired;
-    const schedulingDeadlineLabel = schedulingDeadline
-        ? schedulingDeadline.toLocaleDateString('en-US', {
-            weekday: 'short',
-            month: 'short',
-            day: 'numeric',
-            year: 'numeric',
-        })
-        : null;
-
-    const slotMode = (interviewMode || "DEADLINE") === "SLOT";
+    const deadlineNote = schedulingDeadline
+        ? `<div style="border-left:3px solid #e4e4e7;padding:12px 16px;margin-bottom:28px;"><p style="margin:0;font-size:13px;color:#71717a;">Complete the interview on or before <strong style="color:#3f3f46;">${schedulingDeadline.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</strong>. You can join anytime before the deadline.</p></div>`
+        : `<div style="border-left:3px solid #e4e4e7;padding:12px 16px;margin-bottom:28px;"><p style="margin:0;font-size:13px;color:#71717a;">Complete the interview using the link above. You can join anytime before your deadline.</p></div>`;
 
     const subject = isHired
         ? `Offer Letter: You've been selected for ${jobTitle}!`
-        : isConfirmed
-            ? `Interview Booked: Your AI Video Interview for ${jobTitle}`
-            : isAccepted
-            ? (slotMode
-                ? `Action Required: Schedule your AI Video Interview for ${jobTitle}`
-                : `Action Required: Complete your AI Video Interview for ${jobTitle}`)
-            : `Update regarding your application for ${jobTitle}`;
+        : isAccepted
+        ? `Action Required: Complete your AI Video Interview for ${jobTitle}`
+        : `Update regarding your application for ${jobTitle}`;
 
     const base = `
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
@@ -95,30 +78,6 @@ export async function sendApplicationStatusEmail({
             </div>
             ${footer}
         </div>
-    ` : isConfirmed ? `
-        <div style="${base}">
-            <div style="background:#18181b;padding:32px;text-align:center;">
-                <p style="margin:0;font-size:13px;font-weight:500;color:#a1a1aa;letter-spacing:0.06em;text-transform:uppercase;">${orgName}</p>
-            </div>
-            <div style="padding:40px 32px 32px;">
-                ${pill("Interview Confirmed", "#1d4ed8", "#eff6ff")}
-                <h1 style="margin:16px 0 10px;font-size:24px;font-weight:700;color:#18181b;letter-spacing:-0.02em;">Your slot is booked.</h1>
-                <p style="margin:0 0 32px;font-size:15px;color:#52525b;line-height:1.6;">Hi ${fullName}, your AI video interview for <strong style="color:#18181b;">${jobTitle}</strong> is confirmed. Details below.</p>
-                <div style="background:#fafafa;border:1px solid #e4e4e7;border-radius:8px;padding:20px 24px;margin-bottom:28px;">
-                    <p style="margin:0 0 4px;font-size:12px;font-weight:600;color:#a1a1aa;text-transform:uppercase;letter-spacing:0.06em;">Scheduled Time</p>
-                    <p style="margin:0;font-size:16px;font-weight:600;color:#18181b;">
-                        ${scheduledAt ? scheduledAt.toLocaleString('en-US', { weekday: 'long', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', ...(scheduledTimeZone ? { timeZone: scheduledTimeZone } : {}) }) : 'Your selected time'}
-                    </p>
-                </div>
-                <div style="margin-bottom:32px;">
-                    ${primaryBtn(interviewLink || '#', 'Open Interview Room')}
-                </div>
-                <div style="border-left:3px solid #e4e4e7;padding:12px 16px;">
-                    <p style="margin:0;font-size:13px;color:#71717a;line-height:1.6;">Complete the hardware check before your session. Please use a reliable laptop or desktop with a working camera, microphone, and stable internet for the smoothest experience.</p>
-                </div>
-            </div>
-            ${footer}
-        </div>
     ` : isAccepted ? `
         <div style="${base}">
             <div style="background:#18181b;padding:32px;text-align:center;">
@@ -129,25 +88,9 @@ export async function sendApplicationStatusEmail({
                 <h1 style="margin:16px 0 10px;font-size:24px;font-weight:700;color:#18181b;letter-spacing:-0.02em;">You've been shortlisted.</h1>
                 <p style="margin:0 0 32px;font-size:15px;color:#52525b;line-height:1.6;">Hi ${fullName}, your profile stood out for <strong style="color:#18181b;">${jobTitle}</strong>. The next step is a 20-minute AI video interview - please use a reliable laptop or desktop with a working camera, microphone, and stable internet.</p>
                 <div style="margin-bottom:28px;">
-                    ${primaryBtn(interviewLink || '#', slotMode ? 'Schedule AI Video Interview' : 'Start AI Video Interview')}
+                    ${primaryBtn(interviewLink || '#', 'Start AI Video Interview')}
                 </div>
-                ${slotMode ? (schedulingDeadlineLabel ? `
-                <div style="border-left:3px solid #e4e4e7;padding:12px 16px;margin-bottom:28px;">
-                    <p style="margin:0;font-size:13px;color:#71717a;">Schedule on or before <strong style="color:#3f3f46;">${schedulingDeadlineLabel}</strong>. Make sure you're in a quiet space with a working camera, microphone, and a dependable computer.</p>
-                </div>
-                ` : `
-                <div style="border-left:3px solid #e4e4e7;padding:12px 16px;margin-bottom:28px;">
-                    <p style="margin:0;font-size:13px;color:#71717a;">Make sure you're in a quiet space with a working camera, microphone, and a dependable computer.</p>
-                </div>
-                `) : (schedulingDeadlineLabel ? `
-                <div style="border-left:3px solid #e4e4e7;padding:12px 16px;margin-bottom:28px;">
-                    <p style="margin:0;font-size:13px;color:#71717a;">Complete the interview on or before <strong style="color:#3f3f46;">${schedulingDeadlineLabel}</strong>. You can join anytime before the deadline.</p>
-                </div>
-                ` : `
-                <div style="border-left:3px solid #e4e4e7;padding:12px 16px;margin-bottom:28px;">
-                    <p style="margin:0;font-size:13px;color:#71717a;">Complete the interview using the link above. You can join anytime before your deadline.</p>
-                </div>
-                `)}
+                ${deadlineNote}
                 <p style="margin:0;font-size:13px;color:#a1a1aa;line-height:1.6;">${teamLabel} will review your interview and follow up within 24-48 hours.</p>
             </div>
             ${footer}

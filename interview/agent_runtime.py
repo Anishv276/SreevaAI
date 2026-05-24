@@ -13,17 +13,17 @@ from interview.agent_utils import (
     _coerce_jsonish,
     _compact_optional,
     parse_dispatch_metadata,
+    build_interview_turns,
+    first_name_from_full_name,
 )
 from interview.agent_profile_context import (
     CandidateBandContext,
     build_merged_interview_brief,
     build_resume_brief,
-    first_name_from_full_name,
     infer_candidate_band,
-    parse_resume_context,
     refresh_candidate_band_context,
 )
-from interview.resume_context_parser import build_interview_turns
+from interview.resume_context_parser import parse_resume_context
 from interview.interview_phases import (
     build_greeting_text,
     build_warmup_directive,
@@ -188,8 +188,11 @@ def _clean_stt_text(raw_text: str) -> str:
 class InterviewAgent(Agent):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Set by on_conversation_item_added (user turn) so llm_node can await it.
         self._pending_eval_task: Optional[asyncio.Task] = None
+        # Cleared when a user turn arrives, set after the directive is injected.
+        # llm_node waits on this so it never generates before PROBE/MOVE_ON is in chat_ctx.
+        self._directive_ready: asyncio.Event = asyncio.Event()
+        self._directive_ready.set()  # starts set — no blocking until first candidate answer
 
     @staticmethod
     def _latest_system_message_with_marker(
@@ -242,24 +245,37 @@ class InterviewAgent(Agent):
             "llm_node should only be used with LLM (non-multimodal/realtime APIs) nodes"
         )
 
-        # Block LLM generation until the eval worker injects the directive (PROBE/MOVE_ON).
-        # Without this gate, llm_node fires concurrently with _process_user_conversation_item
-        # and the LLM generates before the MOVE_ON directive is in chat_ctx.
-        _pending = self._pending_eval_task
-        if _pending is not None and not _pending.done():
-            try:
-                await asyncio.wait_for(asyncio.shield(_pending), timeout=7.0)
-                logger.info("[LLM_GATE] ✅ eval task completed before LLM generation")
-            except (asyncio.TimeoutError, asyncio.CancelledError, Exception) as _gate_err:
-                logger.warning("[LLM_GATE] ⏰ gate timeout/error before LLM generation: %s", _gate_err)
+        # Block LLM generation until the directive for the current candidate turn has been
+        # injected. _directive_ready is cleared the instant a user turn arrives (before debounce)
+        # and set again only after _read_and_apply_eval_result injects the PROBE/MOVE_ON directive.
+        #
+        # CRITICAL: LiveKit snapshots chat_ctx via .copy() BEFORE calling llm_node, so the
+        # `chat_ctx` parameter here is always stale (pre-directive). After waiting for the gate,
+        # we MUST switch to self.chat_ctx (the live agent context that received the injection).
+        timed_out = False
+        try:
+            await asyncio.wait_for(self._directive_ready.wait(), timeout=8.0)
+            logger.info("[LLM_GATE] ✅ directive ready — switching to live chat_ctx")
+        except asyncio.TimeoutError:
+            timed_out = True
+            logger.warning("[LLM_GATE] ⏰ directive gate timed out (8s) — using stale snapshot")
+
+        # Use the live agent context so the injected directive/TOPIC_LOCK is visible to the LLM.
+        # Fall back to the snapshot only on timeout (directive may not have been injected).
+        effective_ctx = self.chat_ctx if not timed_out else chat_ctx
+        logger.info(
+            "[LLM_GATE] using %s ctx | sys_msgs=%d",
+            "live" if not timed_out else "snapshot",
+            sum(1 for m in getattr(effective_ctx, "items", []) if getattr(m, "role", "") == "system"),
+        )
 
         tool_choice = model_settings.tool_choice if model_settings else NOT_GIVEN
-        turn_temp, temp_role = self._select_turn_temperature(chat_ctx)
+        turn_temp, temp_role = self._select_turn_temperature(effective_ctx)
         logger.info("[TEMP] role=%s temperature=%.2f", temp_role, turn_temp)
 
         conn_options = activity.session.conn_options.llm_conn_options
         async with activity.llm.chat(
-            chat_ctx=chat_ctx,
+            chat_ctx=effective_ctx,
             tools=tools,
             tool_choice=tool_choice,
             conn_options=conn_options,
@@ -330,6 +346,14 @@ class InterviewAgent(Agent):
 
 
 def prewarm(proc: JobProcess):
+    import os as _os
+    if _os.getenv("SKIP_PREWARM", "").strip().lower() in ("1", "true", "yes"):
+        logger.info("Prewarm skipped (SKIP_PREWARM=1). All resources will initialize lazily.")
+        proc.userdata["vad"] = None
+        proc.userdata["turn_detector"] = None
+        proc.userdata["default_stt"] = None
+        proc.userdata["default_tts"] = None
+        return
     logger.info("Prewarming worker process...")
     # Load VAD model (ONNX) - heaviest startup cost, must be synchronous
     proc.userdata["vad"] = build_vad()
@@ -820,10 +844,13 @@ async def entrypoint(ctx: JobContext):
                 # Adaptive mode uses ML to distinguish backchannels (hmm/yeah/okay)
                 # from genuine interruptions  avoids cutting off thinking candidates.
                 mode="adaptive",
-                min_duration=1.5,
-                min_words=4,
-                discard_audio_if_uninterruptible=False,
-                resume_false_interruption=True,
+                min_duration=2.0,
+                min_words=5,
+                # Discard audio on interrupted turns — prevents the partial TTS chunk
+                # from being resumed and replayed, which caused "Okay wait" to be
+                # spoken twice when a false interruption was detected and then resumed.
+                discard_audio_if_uninterruptible=True,
+                resume_false_interruption=False,
                 false_interruption_timeout=3.0,
                 # Suppress interruption detection at turn boundaries so candidate
                 # backchannels right after agent finishes don't trigger a new turn.
@@ -882,6 +909,7 @@ async def entrypoint(ctx: JobContext):
     _covered_topic_keys: set[str] = set()        # all topics already covered across the interview
     _user_turn_chain: Optional[asyncio.Task[Any]] = None  # serialize user-turn processing
     _eval_turns_queued: set[int] = set()         # local per-session dedupe: queue each turn once
+    _processed_user_turns: set[int] = set()      # turns whose STT was already flushed; drops late Deepgram finals
     # Running log of topics already covered  injected into every directive so the AI
     # never re-explores something already discussed.
     _discussed_log: list[str] = []
@@ -1109,7 +1137,14 @@ async def entrypoint(ctx: JobContext):
     _stt_fragment_buffer: dict[int, list[str]] = {}  # turn -> [fragment1, fragment2, ...]
     _stt_completion_timers: dict[int, asyncio.Task | None] = {}  # turn -> debounce task
     _STT_COMPLETE_DEBOUNCE_SECONDS = 0.65
-    _STT_INCOMPLETE_DEBOUNCE_SECONDS = 12.0
+    _STT_INCOMPLETE_DEBOUNCE_SECONDS = 15.0
+    # Minimum words for an interview answer to be considered "done enough" to flush immediately.
+    # Below this threshold, we debounce even if Deepgram marks it as a final result —
+    # Deepgram splits long answers into multiple final chunks; flushing early drops the rest.
+    # How long to wait after a "complete" STT result before flushing to eval.
+    # Must be non-zero — Deepgram sends multiple final chunks for one utterance,
+    # so we consolidate fragments until silence, then flush the full answer.
+    _STT_SHORT_COMPLETE_DEBOUNCE_SECONDS = 3.5
     _STT_WARMUP_INCOMPLETE_DEBOUNCE_SECONDS = 1.5
 
     def _is_sentence_complete(text: str) -> bool:
@@ -1667,25 +1702,23 @@ async def entrypoint(ctx: JobContext):
                         remove_system_messages(chat_ctx, "[TOPIC_LOCK")
                         remove_system_messages(chat_ctx, "[RECENT_CONTEXT")
 
-                        # On MOVE_ON: drop old topic user+assistant exchanges from chat history.
-                        # Without this, the LLM context is saturated with the old topic and ignores
-                        # the MOVE_ON directive — this is confirmed root cause of topic drift.
-                        # Keep only the last 2 non-system messages so the agent has minimal context.
+                        # On MOVE_ON: wipe ALL user+assistant exchanges from chat history.
+                        # Keeping even the last exchange anchors the LLM to the old topic and
+                        # causes it to ignore the MOVE_ON directive — confirmed root cause of
+                        # topic drift. The directive contains the new topic; no old context needed.
                         if action == "MOVE_ON":
                             _ctx_items = getattr(chat_ctx, "items", None)
                             if _ctx_items is not None:
-                                _non_sys = [m for m in list(_ctx_items) if getattr(m, "role", "") in ("user", "assistant")]
-                                _keep_ids = {id(m) for m in _non_sys[-2:]}  # keep last exchange only
                                 _before_count = len(_ctx_items)
                                 _ctx_items[:] = [
                                     m for m in list(_ctx_items)
-                                    if getattr(m, "role", "") == "system" or id(m) in _keep_ids
+                                    if getattr(m, "role", "") == "system"
                                 ]
                                 _dropped = _before_count - len(_ctx_items)
                                 logger.info(
                                     "[MOVE_ON_HISTORY_TRIM] Dropped %d old-topic msg(s) from chat_ctx | "
-                                    "kept last %d non-sys | new_topic=%s",
-                                    _dropped, len(_keep_ids), _active_topic,
+                                    "full wipe (0 non-sys kept) | new_topic=%s",
+                                    _dropped, _active_topic,
                                 )
 
                         chat_ctx.add_message(role="system", content=directive)
@@ -1708,7 +1741,10 @@ async def entrypoint(ctx: JobContext):
                                     f"YOUR ONLY JOB: Ask ONE question about '{_active_topic}'. "
                                     f"Start with a brief acknowledgement ('Got it!', 'Sure!'), "
                                     f"then ask what they personally built or owned in '{_active_topic}'. "
-                                    f"Do NOT follow up on anything from the previous topic."
+                                    f"Do NOT follow up on anything from the previous topic.\n"
+                                    f"COMFORT REPAIR OVERRIDE: Even if the candidate said 'I don't know', "
+                                    f"went blank, or gave a weak/incomplete answer — do NOT reframe or "
+                                    f"comfort-repair the previous question. Move on immediately."
                                 ),
                             )
                             logger.info("[TOPIC_LOCK] Injected for new topic: %s", _active_topic[:60])
@@ -1720,6 +1756,9 @@ async def entrypoint(ctx: JobContext):
                             (_active_topic or "?")[:40],
                         )
                         _last_applied_eval_turn = max(_last_applied_eval_turn, result_turn)
+                        # Directive fully injected — release llm_node gate.
+                        agent._directive_ready.set()
+                        logger.info("[LLM_GATE] directive_ready SET (turn=%d action=%s)", result_turn, action)
                     return True
 
 
@@ -1816,6 +1855,7 @@ async def entrypoint(ctx: JobContext):
                                 _sync_applied = True
                             except Exception as _sge:
                                 logger.warning("[SYNC_GATE] turn=%d | apply failed: %s", turn_snapshot, _sge)
+                                agent._directive_ready.set()  # release gate on apply failure
                             break
                         await asyncio.sleep(_POLL_INTERVAL)
                     if not _sync_applied:
@@ -1823,9 +1863,13 @@ async def entrypoint(ctx: JobContext):
                             "[SYNC_GATE] ⏰ turn=%d | Timeout %.1fs — LLM generates without updated directive",
                             turn_snapshot, _SYNC_WAIT,
                         )
+                        # Release the gate even on timeout — otherwise llm_node blocks forever.
+                        agent._directive_ready.set()
 
         except Exception as e:
             logger.error("[EVAL] _process_user_conversation_item failed turn=%d: %s", turn_snapshot, e, exc_info=True)
+            # Always release gate on exception so llm_node is never permanently blocked.
+            agent._directive_ready.set()
 
     #  TRANSCRIPT EVENT HANDLER
     # Registered on session "conversation_item_added"  fires for BOTH Ishita
@@ -1894,7 +1938,7 @@ async def entrypoint(ctx: JobContext):
                 _question_asked_at = time.perf_counter()
                 _candidate_turn_since_last_assistant = False
                 turn_count += 1
-                logger.info("[TURN] turn=%d warmup=%s", turn_count, warmup_complete)
+                logger.info("✅ TURN %d | warmup=%s", turn_count, warmup_complete)
                 # Note: Transcript and answer_scores are now persisted after EVERY eval turn (async).
                 # See _process_user_conversation_item() for per-turn async persistence.
                 # This periodic save is kept as a safety net for orphaned records in edge cases.
@@ -1919,6 +1963,15 @@ async def entrypoint(ctx: JobContext):
                 # the directive atomically before returning. Fire-and-forget is gone.
 
                 # STT Fragment Buffering: accumulate all fragments for this turn, process only once
+                # Drop late Deepgram finals for turns already flushed to the eval pipeline.
+                if turn_count in _processed_user_turns:
+                    logger.debug("[STT_BUFFER] turn=%d already processed — dropping late fragment '%s'", turn_count, content[:60])
+                    return
+                # Block llm_node immediately — before the debounce fires — so the LLM
+                # cannot generate Ishita's next question until the directive is injected.
+                # The event is set again inside _read_and_apply_eval_result after injection.
+                agent._directive_ready.clear()
+
                 # Buffer the fragment
                 if turn_count not in _stt_fragment_buffer:
                     _stt_fragment_buffer[turn_count] = []
@@ -1936,6 +1989,7 @@ async def entrypoint(ctx: JobContext):
 
                 # Helper to trigger processing
                 async def _trigger_processing(_turn=turn_count, _event=event, _reason=""):
+                    nonlocal _processed_user_turns
                     # Cancel any pending timeout for this turn
                     _timer_task = _stt_completion_timers.get(_turn)
                     _current_task = asyncio.current_task()
@@ -1954,6 +2008,7 @@ async def entrypoint(ctx: JobContext):
                     # Get consolidated content from buffer
                     all_fragments = _stt_fragment_buffer.pop(_turn, [])
                     _stt_completion_timers.pop(_turn, None)
+                    _processed_user_turns.add(_turn)
                     consolidated_content = " ".join(f.strip() for f in all_fragments if f.strip())
 
                     if consolidated_content:
@@ -1976,9 +2031,9 @@ async def entrypoint(ctx: JobContext):
                     )
                 else:
                     debounce_seconds = (
-                        0.0  # Zero debounce for turn 3+ complete sentences (latency optimization)
+                        _STT_SHORT_COMPLETE_DEBOUNCE_SECONDS  # wait for more Deepgram chunks before flushing
                         if is_complete
-                        else _STT_INCOMPLETE_DEBOUNCE_SECONDS  # 12s for incomplete on turn 3+
+                        else _STT_INCOMPLETE_DEBOUNCE_SECONDS
                     )
 
                 async def _timeout_handler(_turn=turn_count, _event=event, _delay=debounce_seconds):
@@ -1992,40 +2047,29 @@ async def entrypoint(ctx: JobContext):
                                 f"user_turn_{_turn}",
                             )
                             agent._pending_eval_task = _user_turn_chain
-                            await _user_turn_chain
+                            # Do NOT await here — if LiveKit cancels this task during the await,
+                            # the CancelledError would swallow the work. The chain serializes inside
+                            # _trigger_processing itself.
                     except asyncio.CancelledError:
-                        logger.debug(f"[STT_BUFFER] turn={_turn} - debounce cancelled")
+                        logger.debug(f"[STT_BUFFER] turn={_turn} - debounce cancelled (sleep interrupted)")
                     except Exception as e:
                         logger.warning(f"[STT_BUFFER] turn={_turn} - debounce error: {e}")
 
-                # For turns 1-2 (greeting/warmup), trigger immediately if sentence is complete.
-                # This ensures greeting/warmup responses are persisted quickly without waiting.
-                # For turns 3+ (interview), also trigger immediately if complete to minimize latency (2s goal).
-                if is_complete:
-                    if _stt_completion_timers.get(turn_count):
-                        _stt_completion_timers[turn_count].cancel()
-                    _stt_completion_timers[turn_count] = None
-                    reason = "immediate_greeting_warmup" if turn_count <= 2 else "immediate_interview_fast_path"
-                    _user_turn_chain = spawn_background_task(
-                        _trigger_processing(turn_count, event, reason),
-                        f"sttt_immediate_{turn_count}",
-                    )
-                    agent._pending_eval_task = _user_turn_chain
-                    logger.info(
-                        "[STT_BUFFER] turn=%d - triggered immediately (complete sentence) | reason=%s",
-                        turn_count, reason,
-                    )
-                else:
-                    # Debounce on every fragment so the timer extends while speech continues.
-                    if _stt_completion_timers.get(turn_count):
-                        _stt_completion_timers[turn_count].cancel()
-                    _stt_completion_timers[turn_count] = asyncio.create_task(_timeout_handler(turn_count, event))
-                    logger.debug(
-                        "[STT_BUFFER] turn=%d - debounce %.2fs (is_complete=%s)",
-                        turn_count,
-                        debounce_seconds,
-                        is_complete,
-                    )
+                # Always debounce — Deepgram splits long answers into multiple final chunks,
+                # so we wait for silence before flushing regardless of word count.
+                # Turns 1-2 use a short debounce; turns 3+ use _STT_SHORT_COMPLETE_DEBOUNCE_SECONDS
+                # for complete sentences so all fragments consolidate before eval sees the answer.
+                _word_count = len([w for w in consolidated_so_far.split() if w])
+                if _stt_completion_timers.get(turn_count):
+                    _stt_completion_timers[turn_count].cancel()
+                _stt_completion_timers[turn_count] = asyncio.create_task(_timeout_handler(turn_count, event))
+                logger.debug(
+                    "[STT_BUFFER] turn=%d - debounce %.2fs (is_complete=%s, words=%d)",
+                    turn_count,
+                    debounce_seconds,
+                    is_complete,
+                    _word_count,
+                )
         except Exception as _e:
             logger.warning("[TRANSCRIPT] on_conversation_item_added error: %s", _e)
 
@@ -2588,10 +2632,10 @@ async def entrypoint(ctx: JobContext):
                     org_id=org_id,
                     llm_model=analysis_model,
                 ),
-                timeout=10,
+                timeout=120,
             )
         except asyncio.TimeoutError:
-            logger.warning(f"[REPORT] Timed out for {app_id}; skipped after 10s")
+            logger.warning(f"[REPORT] Timed out for {app_id}; skipped after 120s")
         except Exception as e:
             logger.error(f"[REPORT] Failed post-interview for {app_id}: {e}")
     try:

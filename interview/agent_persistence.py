@@ -6,7 +6,7 @@ import time
 from typing import Any, Optional
 from pydantic import BaseModel, Field
 from urllib.parse import parse_qsl, urlencode, urlunparse, urlparse
-from interview.agent_profile_context import build_interview_turns
+from interview.agent_utils import build_interview_turns
 from behavioral_analysis import synthesize_behavioral_report
 from interview.agent_runtime_support import (
 
@@ -22,7 +22,14 @@ from interview.agent_utils import _coerce_jsonish, truncate_to_tokens
 from livekit.agents.metrics import AgentSessionUsage
 from openai import AsyncOpenAI
 
-_DB_POOL_LOCK = asyncio.Lock()
+_DB_POOL_LOCK: asyncio.Lock | None = None
+
+
+def _get_pool_lock() -> asyncio.Lock:
+    global _DB_POOL_LOCK
+    if _DB_POOL_LOCK is None:
+        _DB_POOL_LOCK = asyncio.Lock()
+    return _DB_POOL_LOCK
 
 def normalize_postgres_dsn(conn_str: str) -> str:
     if conn_str.startswith("postgres://"):
@@ -37,20 +44,46 @@ async def _create_db_pool() -> asyncpg.Pool:
     if not DATABASE_URL:
         raise RuntimeError("DATABASE_URL is not set")
     conn_str = normalize_postgres_dsn(DATABASE_URL)
+    async def _init_conn(conn):
+        await conn.execute("SET statement_timeout = '30s'")
+
     return await asyncpg.create_pool(
         conn_str,
         ssl=False,
         statement_cache_size=0,
-        min_size=2,
+        min_size=1,
         max_size=5,
+        max_inactive_connection_lifetime=60.0,
+        init=_init_conn,
     )
+async def _pool_is_healthy(pool: asyncpg.Pool) -> bool:
+    if pool._closed:
+        return False
+    try:
+        async with pool.acquire(timeout=2.0) as conn:
+            await conn.fetchval("SELECT 1")
+        return True
+    except Exception:
+        return False
+
+
 async def get_db_pool() -> asyncpg.Pool:
-    global _DB_POOL, _DB_POOL_INIT_TASK
+    global _DB_POOL, _DB_POOL_INIT_TASK, _DB_POOL_LOCK
     if _DB_POOL is not None and not _DB_POOL._closed:
         return _DB_POOL
-    async with _DB_POOL_LOCK:
+    async with _get_pool_lock():
         if _DB_POOL is not None and not _DB_POOL._closed:
-            return _DB_POOL
+            # Fast path passed, but verify connections aren't stale
+            if await _pool_is_healthy(_DB_POOL):
+                return _DB_POOL
+            # Pool object alive but connections dead — close and recreate
+            try:
+                await _DB_POOL.close()
+            except Exception:
+                pass
+            _DB_POOL = None
+            _DB_POOL_INIT_TASK = None
+            _DB_POOL_LOCK = None  # reset so next get_db_pool() creates lock on current event loop
         if _DB_POOL_INIT_TASK is not None and not _DB_POOL_INIT_TASK.done():
             _DB_POOL = await _DB_POOL_INIT_TASK
             return _DB_POOL
@@ -696,7 +729,7 @@ async def get_interview_context(app_id: str):
            d.location AS "driveLocation", d."interviewLanguage", d."interviewQuestions",
            COALESCE(d."voiceId", o."voiceId") AS "voiceId",
            COALESCE(d."aiName", 'Ishitha') AS "aiName", o.name AS "orgName", o.location AS "orgLocation",
-           o."deepgramModel", o."llmModel", o."llmTemperature", o."proctoringSignals",
+           o."deepgramModel", NULL AS "llmModel", NULL AS "llmTemperature", o."proctoringSignals",
            ev.provider AS "voiceProvider", ev.model AS "voiceModel"
     FROM "Application" a
     JOIN "Drive" d ON a."driveId" = d.id

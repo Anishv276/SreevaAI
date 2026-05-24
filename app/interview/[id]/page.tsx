@@ -85,7 +85,7 @@ function getAttachableTrack(trackRef: TrackReference): AttachableTrack | null {
 
 function InterviewContent({ id, params }: { id: string, params: Promise<{ id: string }> }) {
     const [phase, setPhase] = useState<"loading" | "check" | "launching" | "interview" | "finalizing" | "completed">("loading");
-    const [bookedSlot, setBookedSlot] = useState<number | null>(null);
+
     const [endMode, setEndMode] = useState<"normal" | "timeout">("normal");
     const [token, setToken] = useState<string | null>(null);
     const [serverUrl, setServerUrl] = useState<string | null>(null);
@@ -172,32 +172,8 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     }, []);
 
     useEffect(() => {
-        let isMounted = true;
-        fetch(`/api/interview/${id}/slots`)
-            .then(res => res.json())
-            .then(data => {
-                if (!isMounted) return;
-                if (data.role) setInterviewRoleLabel(data.role);
-                const schedulingEnabled = data.slotSchedulingEnabled !== false;
-                if (data.bookedSlot) {
-                    setBookedSlot(data.bookedSlot);
-                }
-
-                if (schedulingEnabled && !data.bookedSlot) {
-                    const currentSearchParams = window.location.search;
-                    window.location.href = `/interview/${id}/schedule${currentSearchParams}`;
-                    return;
-                }
-                setPhase("check");
-            })
-            .catch(() => {
-                if (isMounted) {
-                    const searchParams = window.location.search;
-                    window.location.href = `/interview/${id}/schedule${searchParams}`;
-                }
-            });
-        return () => { isMounted = false; };
-    }, [id]);
+        setPhase("check");
+    }, []);
 
     //  Face violation handler 
     const handleFaceViolation = useCallback((
@@ -925,7 +901,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                             applicationId={id}
                             interviewToken={interviewToken}
                             title={`${organizationName ? `${organizationName} - ` : ""}${interviewRoleLabel} Interview Check`}
-                            bookedSlot={bookedSlot}
+
                         />
                     </motion.div>
                 )}

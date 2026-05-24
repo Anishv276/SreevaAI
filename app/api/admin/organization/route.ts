@@ -57,7 +57,7 @@ export async function GET(request: Request) {
                     deepgramModel: true,
                     maxActiveDrives: true,
                     proctoringSignals: true,
-                    interviewMode: true,
+
                     interviewQuotaTotal: true,
                     interviewQuotaUsed: true,
                 }

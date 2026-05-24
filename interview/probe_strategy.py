@@ -472,12 +472,20 @@ def build_directive(
             "a project name, a tool, a number, a claim. Never open with a generic question."
         )
 
-    if action == "MOVE_ON" and uncovered_topics:
-        next_topic = uncovered_topics[0]
+    if action == "MOVE_ON":
         lines.extend([
-            f"BRIDGE NOW to: {next_topic}",
-            "NEXT TOPIC LOCK: Current topic is closed. Your very next question must be about the bridge topic above.",
-            "Do NOT ask another follow-up on the previous topic.",
+            "MOVE_ON OVERRIDE — CRITICAL: Regardless of what the candidate just said —",
+            "  whether they said 'I don't know', went blank, gave a weak answer, or trailed off —",
+            "  DO NOT comfort repair. DO NOT rephrase or reframe the previous question.",
+            "  DO NOT say 'No worries, let's try it differently'. DO NOT stay on this topic.",
+            "  Your ONLY job right now is to bridge to the next topic immediately.",
         ])
+        if uncovered_topics:
+            next_topic = uncovered_topics[0]
+            lines.extend([
+                f"BRIDGE NOW to: {next_topic}",
+                "NEXT TOPIC LOCK: Current topic is closed. Your very next question must be about the bridge topic above.",
+                "Do NOT ask another follow-up on the previous topic.",
+            ])
 
     return "\n".join(lines)

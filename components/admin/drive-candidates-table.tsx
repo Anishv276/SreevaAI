@@ -333,7 +333,12 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
             if (emailConfirm.mode === "single" && emailConfirm.candidateId) {
                 const status = normalizeStatusKey(emailConfirm.resumeStatus);
                 if (status === "shortlisted") {
-                    await fetch(`/api/candidates/${emailConfirm.candidateId}/send-interview-link`, { method: "POST" });
+                    const res = await fetch(`/api/candidates/${emailConfirm.candidateId}/send-interview-link`, { method: "POST" });
+                    const data = await res.json().catch(() => null);
+                    if (!res.ok) {
+                        toast.error(data?.error || "Failed to send interview link");
+                        return;
+                    }
                     toast.success(`Schedule link sent to ${emailConfirm.candidateName}`);
                 } else if (status === "rejected") {
                     await fetch(`/api/candidates/${emailConfirm.candidateId}/send-email`, {

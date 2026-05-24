@@ -3,10 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
 import { normalizeEmail } from "@/lib/email";
-import { buildInterviewLink, buildInterviewScheduleLink } from "@/lib/interview-links";
-import { INTERVIEW_JOIN_GRACE_MINUTES } from "@/lib/drive-limits";
-import { getSlotJoinDeadline } from "@/lib/interview-slot-policy";
-import { isSlotMode, resolveInterviewMode } from "@/lib/interview-mode";
+import { buildInterviewLink } from "@/lib/interview-links";
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
 export async function GET(request: Request) {
@@ -38,7 +35,7 @@ export async function GET(request: Request) {
                         organization: {
                             select: {
                                 name: true,
-                                interviewMode: true,
+
                             },
                         },
                     }
@@ -50,7 +47,6 @@ export async function GET(request: Request) {
                         accessToken: true,
                         expiresAt: true,
                         startedAt: true,
-                        scheduledAt: true,
                         completedAt: true,
                         interviewDuration: true,
                         linkStatus: true,
@@ -61,11 +57,6 @@ export async function GET(request: Request) {
         });
 
         const formattedApplications = applications.map((app: any) => {
-            const effectiveInterviewMode = resolveInterviewMode(
-                null,
-                app.drive?.organization?.interviewMode
-            );
-            const slotModeEnabled = isSlotMode(effectiveInterviewMode);
             const nowMs = Date.now();
             const interviewStage = app.interview
                 ? {
@@ -73,40 +64,20 @@ export async function GET(request: Request) {
                     token: app.interview.accessToken,
                     accessToken: app.interview.accessToken,
                     expiresAt: app.interview.expiresAt,
-                    scheduledAt: app.interview.scheduledAt,
-                    mode: slotModeEnabled ? "SLOT" : "DEADLINE",
+                    mode: "DEADLINE",
                     linkStatus: app.interview.linkStatus || "ACTIVE",
                     canStart: (() => {
                         if (app.interview.status !== "PENDING") return false;
-
-                        if (slotModeEnabled) {
-                            if (!app.interview.scheduledAt) return true;
-                            const slotStartMs = new Date(app.interview.scheduledAt).getTime();
-                            const joinDeadlineMs = getSlotJoinDeadline(slotStartMs, INTERVIEW_JOIN_GRACE_MINUTES);
-                            return nowMs >= slotStartMs && nowMs <= joinDeadlineMs;
-                        }
-
                         const expiresAtMs = app.interview.expiresAt ? new Date(app.interview.expiresAt).getTime() : null;
                         const startedAtMs = app.interview.startedAt ? new Date(app.interview.startedAt).getTime() : null;
                         const deadlineOpen = expiresAtMs === null || nowMs < expiresAtMs;
                         const withinRejoinWindow = startedAtMs === null || nowMs <= startedAtMs + 5 * 60 * 1000;
                         return deadlineOpen && withinRejoinWindow;
                     })(),
-                    interviewLink: slotModeEnabled
-                        ? (app.interview.scheduledAt
-                            ? buildInterviewLink(appUrl, app.id, {
-                                token: isInterviewTokenRequired() ? app.interview.accessToken : null,
-                                orgName: app.drive?.organization?.name || "Sreeva AI",
-                            })
-                            : buildInterviewScheduleLink(
-                                appUrl,
-                                app.id,
-                                app.drive?.organization?.name || "Sreeva AI"
-                            ))
-                        : buildInterviewLink(appUrl, app.id, {
-                            token: isInterviewTokenRequired() ? app.interview.accessToken : null,
-                            orgName: app.drive?.organization?.name || "Sreeva AI",
-                        }),
+                    interviewLink: buildInterviewLink(appUrl, app.id, {
+                        token: isInterviewTokenRequired() ? app.interview.accessToken : null,
+                        orgName: app.drive?.organization?.name || "Sreeva AI",
+                    }),
                 }
                 : null;
 

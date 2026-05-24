@@ -12,7 +12,6 @@ import { getProctoringSignalsForPlan, normalizeProctoringSignals } from "@/lib/p
 import { cn } from "@/lib/utils";
 import { Steps } from "@/components/create-drive/steps";
 import { formatOrgLimitValue } from "@/lib/org-limits";
-import { INTERVIEW_MODE_DEADLINE, INTERVIEW_MODE_SLOT, normalizeInterviewMode, type InterviewMode } from "@/lib/interview-mode";
 
 // UI Components
 function PremiumInput({ label, icon: Icon, error, required = true, ...props }: any) {
@@ -85,7 +84,6 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
         location: "", adminName: "", adminEmail: "", adminPassword: "",
         voiceId: "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
         allowedVoices: [] as string[],
-        interviewMode: INTERVIEW_MODE_DEADLINE as InterviewMode,
     });
 
     const stopCurrentPreview = () => {
@@ -179,7 +177,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                     adminPassword: "",
                     voiceId: data.voiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
                     allowedVoices: Array.isArray(data.allowedVoices) ? data.allowedVoices : [],
-                    interviewMode: normalizeInterviewMode(data.interviewMode),
+
                 });
                 setBillingSnapshot({
                     interviewQuotaTotal: Number(data.interviewQuotaTotal || 0),
@@ -387,39 +385,6 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                     </div>
                 )}
 
-                {true && (
-                    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
-                        <SectionHeader title="Interview Mode" />
-                        <div className="grid gap-4 md:grid-cols-2">
-                            <button
-                                type="button"
-                                onClick={() => setForm(prev => ({ ...prev, interviewMode: INTERVIEW_MODE_DEADLINE }))}
-                                className={cn(
-                                    "rounded-2xl border p-4 text-left transition",
-                                    form.interviewMode === INTERVIEW_MODE_DEADLINE
-                                        ? "border-[#F97316] bg-orange-50 shadow-sm"
-                                        : "border-gray-200 bg-white hover:border-gray-300"
-                                )}
-                            >
-                                <p className="text-sm font-semibold uppercase tracking-wide text-gray-900">Deadline Based Link</p>
-                                <p className="mt-1 text-xs text-gray-500">Candidate can join anytime before the drive deadline.</p>
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setForm(prev => ({ ...prev, interviewMode: INTERVIEW_MODE_SLOT }))}
-                                className={cn(
-                                    "rounded-2xl border p-4 text-left transition",
-                                    form.interviewMode === INTERVIEW_MODE_SLOT
-                                        ? "border-[#F97316] bg-orange-50 shadow-sm"
-                                        : "border-gray-200 bg-white hover:border-gray-300"
-                                )}
-                            >
-                                <p className="text-sm font-semibold uppercase tracking-wide text-gray-900">Slot Scheduling</p>
-                                <p className="mt-1 text-xs text-gray-500">Candidate must pick a slot and join in the slot window.</p>
-                            </button>
-                        </div>
-                    </div>
-                )}
 
                 {true && (
                     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">

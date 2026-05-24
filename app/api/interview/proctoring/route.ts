@@ -5,9 +5,10 @@ import { generateId } from "@/lib/ids";
 import { getProctoringCategory, normalizeProctoringEvents, type ProctoringEvent } from "@/lib/proctoring";
 import { DEFAULT_PROCTORING_SIGNALS, isProctoringSignalEnabled, normalizeProctoringSignals } from "@/lib/proctoring-signals";
 import { z } from "zod";
-import { isInterviewTokenRequired, isInterviewReopenAllowed } from "@/lib/interview-access";
+import { isInterviewTokenRequired } from "@/lib/interview-access";
 
 export const runtime = "nodejs";
+const JOIN_WINDOW_MS = 5 * 60 * 1000;
 
 const proctoringSignalSchema = z.object({
   applicationId: z.string().min(1, "Application ID required"),
@@ -59,20 +60,30 @@ export async function POST(req: Request) {
     // -- AUTHENTICATION & LIFECYCLE --------------------
     const authCheck = await prisma.interview.findUnique({
       where: { applicationId },
-      select: { accessToken: true, status: true, expiresAt: true }
+      select: { accessToken: true, expiresAt: true, startedAt: true, linkStatus: true }
     });
     if (requireInterviewToken && (!authCheck || authCheck.accessToken !== interviewToken)) {
       return NextResponse.json({ error: "Unauthorized: Invalid security token" }, { status: 401 });
     }
 
-    const allowReopen = isInterviewReopenAllowed();
+    if (authCheck) {
+      const now = Date.now();
+      const expiresAtMs = authCheck.expiresAt ? authCheck.expiresAt.getTime() : null;
+      const startedAtMs = authCheck.startedAt ? authCheck.startedAt.getTime() : null;
+      const deadlineExpired = expiresAtMs !== null && now > expiresAtMs;
+      const joinWindowExpired = startedAtMs !== null && (now - startedAtMs) >= JOIN_WINDOW_MS;
+      const isExpiredByTime = deadlineExpired || joinWindowExpired;
 
-    if (!allowReopen && authCheck && (authCheck.status === "COMPLETED" || authCheck.status === "FAILED")) {
-      return NextResponse.json({ error: "Access Denied: Interview already finalized" }, { status: 403 });
-    }
+      if (isExpiredByTime && authCheck.linkStatus !== "EXPIRED") {
+        await prisma.interview.update({
+          where: { applicationId },
+          data: { linkStatus: "EXPIRED" },
+        }).catch(() => { });
+      }
 
-    if (!allowReopen && authCheck && authCheck.expiresAt && authCheck.expiresAt < new Date()) {
-      return NextResponse.json({ error: "Access Denied: Interview session has expired" }, { status: 403 });
+      if (authCheck.linkStatus === "EXPIRED" || isExpiredByTime) {
+        return NextResponse.json({ error: "Access Denied: Interview link has expired. Please contact support." }, { status: 403 });
+      }
     }
 
     const requestedEvents = normalizeProctoringEvents(result.data.events);

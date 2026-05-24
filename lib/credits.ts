@@ -53,7 +53,7 @@ export function getInterviewQuotaUnits(durationSeconds: number): number {
         return 0;
     }
 
-    // Every completed interview consumes one interview slot.
+    // Every completed interview consumes one quota credit.
     // We still keep the duration guard so incomplete/empty sessions do not deduct quota.
     return 1;
 }

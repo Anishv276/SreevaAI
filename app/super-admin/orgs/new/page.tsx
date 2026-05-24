@@ -29,7 +29,6 @@ import { ProctoringSignalsSection } from "@/components/super-admin/proctoring-si
 import { ALL_VOICES, DEFAULT_VOICE_ID, getVoiceById, type Voice } from "@/lib/constants/voices";
 import { DEFAULT_ORG_PLAN, ORG_PLAN_OPTIONS, type OrgPlanId } from "@/lib/org-plans";
 import { getProctoringSignalsForPlan, type ProctoringSignalToggles } from "@/lib/proctoring-signals";
-import { INTERVIEW_MODE_DEADLINE, INTERVIEW_MODE_SLOT, type InterviewMode } from "@/lib/interview-mode";
 import { cn } from "@/lib/utils";
 
 type OrgFormState = {
@@ -46,7 +45,6 @@ type OrgFormState = {
   voiceId: string;
   allowedVoices: string[];
   deepgramModel: string;
-  interviewMode: InterviewMode;
 };
 
 function SectionHeader({ title, description }: { title: string; description?: string }) {
@@ -229,7 +227,6 @@ export default function NewOrgPage() {
     voiceId: DEFAULT_VOICE_ID,
     allowedVoices: [DEFAULT_VOICE_ID],
     deepgramModel: "nova-3-general",
-    interviewMode: INTERVIEW_MODE_DEADLINE,
   }));
 
   const primaryVoiceId = form.voiceId || form.allowedVoices[0] || DEFAULT_VOICE_ID;
@@ -427,7 +424,6 @@ export default function NewOrgPage() {
           voiceId: form.voiceId || DEFAULT_VOICE_ID,
           allowedVoices: form.allowedVoices.length > 0 ? form.allowedVoices : [form.voiceId || DEFAULT_VOICE_ID],
           deepgramModel: form.deepgramModel,
-          interviewMode: form.interviewMode,
         }),
       });
 
@@ -677,38 +673,6 @@ export default function NewOrgPage() {
               placeholder="100"
               type="number"
             />
-          </div>
-        </section>
-
-        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-          <SectionHeader title="Interview Mode" description="Choose whether candidates book a slot or join directly before deadline." />
-          <div className="mt-6 grid gap-4 md:grid-cols-2">
-            <button
-              type="button"
-              onClick={() => updateForm({ interviewMode: INTERVIEW_MODE_DEADLINE })}
-              className={cn(
-                "rounded-2xl border p-4 text-left transition",
-                form.interviewMode === INTERVIEW_MODE_DEADLINE
-                  ? "border-[#F97316] bg-orange-50 shadow-sm"
-                  : "border-slate-200 bg-white hover:border-slate-300"
-              )}
-            >
-              <p className="text-sm font-semibold uppercase tracking-wide text-slate-900">Deadline Based Link</p>
-              <p className="mt-1 text-xs text-slate-500">Candidate can join anytime before the drive deadline.</p>
-            </button>
-            <button
-              type="button"
-              onClick={() => updateForm({ interviewMode: INTERVIEW_MODE_SLOT })}
-              className={cn(
-                "rounded-2xl border p-4 text-left transition",
-                form.interviewMode === INTERVIEW_MODE_SLOT
-                  ? "border-[#F97316] bg-orange-50 shadow-sm"
-                  : "border-slate-200 bg-white hover:border-slate-300"
-              )}
-            >
-              <p className="text-sm font-semibold uppercase tracking-wide text-slate-900">Slot Scheduling</p>
-              <p className="mt-1 text-xs text-slate-500">Candidate must pick a slot and join in slot window.</p>
-            </button>
           </div>
         </section>
 

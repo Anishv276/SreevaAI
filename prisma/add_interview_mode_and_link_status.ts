@@ -5,12 +5,6 @@ const prisma = new PrismaClient();
 async function main() {
   try {
     await prisma.$executeRawUnsafe(`
-      ALTER TABLE "Organization"
-      ADD COLUMN IF NOT EXISTS "interviewMode" TEXT NOT NULL DEFAULT 'DEADLINE';
-    `);
-    console.log('Ensured Organization.interviewMode');
-
-    await prisma.$executeRawUnsafe(`
       ALTER TABLE "Interview"
       ADD COLUMN IF NOT EXISTS "linkStatus" TEXT NOT NULL DEFAULT 'ACTIVE';
     `);
