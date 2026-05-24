@@ -87,6 +87,13 @@ async def evaluate_answer(
 
     recent_context = "\n".join(transcript_lines[-8:]) if transcript_lines else ""
 
+    # Log before the LLM call so you can see it started in the terminal.
+    # If this log appears but [EVAL] DONE never follows, the LLM call hung.
+    logger.info(
+        "[EVAL] ▶ merged evaluate_answer | model=%s words=%d follow_ups=%d",
+        llm_model, word_count, topic_follow_up_count,
+    )
+
     try:
         # One call, one round-trip, both tasks done.
         # max_tokens=320: quality JSON (130 tokens) + routing JSON (130 tokens) + safety margin
@@ -186,6 +193,16 @@ async def evaluate_answer(
         if parsed.get("probe_mode") not in _valid_probe_modes:
             parsed["probe_mode"] = None
 
+        # Terminal log — one line shows scores + routing so you can see both at a glance.
+        # Example: [EVAL] ✅ action=PROBE probe=ownership depth=SPECIFIC | c=6 d=3 s=4 g=5
+        logger.info(
+            "[EVAL] ✅ action=%s probe=%s depth_signal=%s | clarity=%d depth=%d specificity=%d grounding=%d | reason=%s",
+            parsed["action"],
+            parsed.get("probe_mode") or "null",
+            parsed["depth_signal"],
+            parsed["clarity"], parsed["depth"], parsed["specificity"], parsed["grounding"],
+            (parsed.get("reason") or "")[:80],
+        )
         return parsed
 
     except asyncio.TimeoutError:

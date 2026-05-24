@@ -1524,11 +1524,15 @@ async def entrypoint(ctx: JobContext):
                         old_topic = _active_topic
                         _active_topic = result.get("new_active_topic", _active_topic)
                         if old_topic != _active_topic:
+                            # This is the exact moment the topic changes in agent memory.
+                            # MOVE_ON directive is already injected into chat_ctx — LLM will
+                            # acknowledge old topic and ask first question on new topic.
                             logger.info(
-                                "[TOPIC_CHANGE] %s  %s (turn=%d)",
-                                (old_topic or "?")[:50],
-                                (_active_topic or "?")[:50],
+                                "[MOVE_ON] ✅ topic change turn=%d | '%s' → '%s' | covered=%d topics",
                                 result.get("turn", turn_for_log),
+                                (old_topic or "none")[:50],
+                                (_active_topic or "none")[:50],
+                                len(_covered_topic_keys) + 1,
                             )
                         _covered_topic_keys = set(result.get("new_covered_topic_keys") or [])
                         # PART 3: Update TopicState from result
