@@ -22,6 +22,11 @@ export const metadata: Metadata = {
   keywords: ["AI Recruitment", "AI Interviewer", "Candidate Screening", "HR Automation", "Adaptive AI", "Sreeva AI"],
   authors: [{ name: "Sreeva AI Team" }],
   metadataBase: new URL("https://www.sreevaai.com"),
+  icons: {
+    icon: "/icon.png",
+    shortcut: "/icon.png",
+    apple: "/icon.png",
+  },
   alternates: {
     canonical: "/",
   },
@@ -47,11 +52,6 @@ export const metadata: Metadata = {
     description: "Automate your hiring process with AI-driven screening and interviews.",
     images: ["/Logo.png"],
   },
-  icons: {
-    icon: "/Logo.png",
-    shortcut: "/Logo.png",
-    apple: "/Logo.png",
-  },
 };
 
 export default function RootLayout({
@@ -63,7 +63,6 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning className={inter.variable}>
 
       <head>
-        <link rel="icon" href="/Logo.png" />
         <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Instrument+Serif:ital@0;1&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap" />
       </head>
       <body className="font-sans antialiased" suppressHydrationWarning>
