@@ -43,11 +43,6 @@ last_transcript.txt
 *.tsbuildinfo
 next-env.d.ts
 
-# prisma
-/prisma/generated
-/prisma/dev.db
-/prisma/dev.db-journal
-
 # python
 __pycache__/
 *.pyc
