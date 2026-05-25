@@ -1023,7 +1023,9 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
                 f"NEXT MOVE: {probe_goal}\n"
                 f"QUESTION STYLE: {probe_style}\n"
                 "PROBE INTENT: Anchor your question to something specific they actually said — "
-                "a project name, a number, a claim. Don't use a generic opener."
+                "a project name, a number, a claim. Don't use a generic opener.\n"
+                "HARD RULE: DO NOT repeat the same question you just asked, even partially. "
+                "Rephrase completely or approach from a different angle."
             )
             logger.info(
                 "[SIGNAL→BEHAVIOR] turn=%d | action=PROBE(%s) | signals=[%s] | "

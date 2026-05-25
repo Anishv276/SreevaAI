@@ -1975,22 +1975,27 @@ async def entrypoint(ctx: JobContext):
                     return
                 # Save Ishita's line to transcript
                 append_transcript_line("Interviewer", clean_content)
-                # Track last question for eval engine.
-                # Prefer ?-terminated sentence; fall back to last sentence of 20+ chars.
-                # Final fallback: use the entire clean_content (capped) so question_snap
-                # is NEVER empty after Turn 1 — empty question_snap would block eval.
-                _q_text = clean_content.strip()
-                q_match = re.search(r'([^.!?]+\?)\s*$', _q_text)
-                if q_match:
-                    _last_interviewer_question = q_match.group(1).strip()
-                else:
-                    _fallback_q = re.search(r'(?:(?<=[.!?])\s+|^)([^.!?]{20,}[.!?]?)\s*$', _q_text)
-                    if _fallback_q:
-                        _last_interviewer_question = _fallback_q.group(1).strip()
+                # Track last question for eval engine — only for real interview turns.
+                # Greeting (turn 1 AI) and warmup (turn 2 AI) must never overwrite this
+                # because their text ("How are you doing?", "All good on your end?") would
+                # pollute eval context if the candidate gives a slow answer on turn 3+.
+                _is_interview_turn = warmup_complete or turn_count > 2
+                if _is_interview_turn:
+                    # Prefer ?-terminated sentence; fall back to last sentence of 20+ chars.
+                    # Final fallback: use entire clean_content so question_snap is never empty.
+                    _q_text = clean_content.strip()
+                    q_match = re.search(r'([^.!?]+\?)\s*$', _q_text)
+                    if q_match:
+                        _last_interviewer_question = q_match.group(1).strip()
                     else:
-                        # Last resort: use truncated full content so eval is never blocked by empty question
-                        _last_interviewer_question = _q_text[:200]
-                logger.debug("[QUESTION_TRACK] turn=%d last_q=%r", turn_count, _last_interviewer_question[:60])
+                        _fallback_q = re.search(r'(?:(?<=[.!?])\s+|^)([^.!?]{20,}[.!?]?)\s*$', _q_text)
+                        if _fallback_q:
+                            _last_interviewer_question = _fallback_q.group(1).strip()
+                        else:
+                            _last_interviewer_question = _q_text[:200]
+                    logger.debug("[QUESTION_TRACK] turn=%d last_q=%r", turn_count, _last_interviewer_question[:60])
+                else:
+                    logger.debug("[QUESTION_TRACK] turn=%d skipped (greeting/warmup phase)", turn_count)
                 # Track custom question coverage
                 if _custom_questions:
                     _q_lower = clean_content.lower()
@@ -2028,6 +2033,16 @@ async def entrypoint(ctx: JobContext):
                 if not warmup_complete and turn_count >= 2:
                     warmup_complete = True
                     remove_system_messages(chat_ctx, "[WARMUP PHASE]")
+                    remove_system_messages(chat_ctx, "[PHASE_STATUS]")
+                    chat_ctx.add_message(
+                        role="system",
+                        content=(
+                            "[PHASE_STATUS — DO NOT SAY ALOUD]\n"
+                            "GREETING: DONE. WARMUP: DONE.\n"
+                            "DO NOT greet again, re-introduce yourself, ask 'how are you doing', or repeat the readiness check.\n"
+                            "CURRENT PHASE: INTERVIEW — ask your first interview question now."
+                        ),
+                    )
                     logger.info("[WARMUP]  WARMUP COMPLETE at turn=%d  INTERVIEW PHASE ACTIVE", turn_count)
 
                 # STT Fragment Buffering: accumulate all fragments for this turn, process only once
@@ -2296,6 +2311,17 @@ async def entrypoint(ctx: JobContext):
                         append_transcript_line("Interviewer", welcome_text)
                         logger.info("[TRANSCRIPT] Greeting appended to transcript (session.say bypass)")
                         logger.info("[FLOW]  GREETING DONE  WARMUP ACTIVE (waiting for warmup Q&A before interview)")
+                        # Inject phase marker so LLM knows greeting is done and must not repeat it
+                        remove_system_messages(chat_ctx, "[PHASE_STATUS]")
+                        chat_ctx.add_message(
+                            role="system",
+                            content=(
+                                "[PHASE_STATUS — DO NOT SAY ALOUD]\n"
+                                "GREETING: DONE. You have already said hello and introduced yourself.\n"
+                                "DO NOT greet again, re-introduce yourself, or ask 'how are you doing' again.\n"
+                                "CURRENT PHASE: WARMUP — ask one short readiness check, then begin interview."
+                            ),
+                        )
                         break
                     except Exception as _tts_err:
                         err_str = str(_tts_err).lower()
