@@ -11,7 +11,6 @@ import { LowCreditsBanner } from "../../components/admin/LowCreditsBanner";
 import { prisma } from "@/lib/prisma";
 import { canUseRecruiterAssistant } from "@/lib/org-plans";
 import { AdminOrgProvider } from "@/context/admin-org-context";
-import "../editorial.css";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
     const session = await getSession();
@@ -84,7 +83,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             }}
         >
         <AdminStatusGate initialStatus={orgData.status}>
-        <div className="flex min-h-screen bg-[#F8F9FB] relative font-sans editorial-theme">
+        <div className="flex min-h-screen bg-[#F8F9FB] relative font-sans">
             {/*  Background Deck: Aurora Blobs  */}
             <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
                 <div 

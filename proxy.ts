@@ -3,12 +3,7 @@ import { getSessionFromRequest, isAdminRole, isSuperAdminRole, refreshSessionCoo
 
 export async function proxy(req: NextRequest) {
     const host = req.headers.get('host');
-
-    // Serve static index.html for the home page
-    if (req.nextUrl.pathname === "/") {
-        return NextResponse.rewrite(new URL("/index.html", req.url));
-    }
-
+    
     // Redirect sreevaai.com to www.sreevaai.com and strip port (like :3000)
     if (host && (host === 'sreevaai.com' || host.startsWith('sreevaai.com:'))) {
         const url = req.nextUrl.clone();
