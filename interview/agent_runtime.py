@@ -909,6 +909,7 @@ async def entrypoint(ctx: JobContext):
     _user_turn_chain: Optional[asyncio.Task[Any]] = None  # serialize user-turn processing
     _eval_turns_queued: set[int] = set()         # local per-session dedupe: queue each turn once
     _processed_user_turns: set[int] = set()      # turns whose STT was already flushed; drops late Deepgram finals
+    _first_interview_question_asked: bool = False  # True after first post-warmup AI question fires
     # Running log of topics already covered  injected into every directive so the AI
     # never re-explores something already discussed.
     _discussed_log: list[str] = []
@@ -1955,7 +1956,7 @@ async def entrypoint(ctx: JobContext):
     def on_conversation_item_added(event) -> None:
         nonlocal turn_count, _last_interviewer_question, _question_asked_at, \
             _candidate_turn_since_last_assistant, warmup_complete, \
-            _answer_received_at, _user_turn_chain
+            _answer_received_at, _user_turn_chain, _first_interview_question_asked
         try:
             item = event.item
             role = getattr(item, "role", None)
@@ -1994,6 +1995,24 @@ async def entrypoint(ctx: JobContext):
                         else:
                             _last_interviewer_question = _q_text[:200]
                     logger.debug("[QUESTION_TRACK] turn=%d last_q=%r", turn_count, _last_interviewer_question[:60])
+                    # First interview question just fired — seal the opening move so the LLM
+                    # cannot re-ask it. The base system prompt says "Open by asking about X"
+                    # which conflicts with PROBE directives on subsequent turns. This message
+                    # overrides that instruction once the opener has been delivered.
+                    if not _first_interview_question_asked:
+                        _first_interview_question_asked = True
+                        remove_system_messages(chat_ctx, "[PHASE_STATUS]")
+                        chat_ctx.add_message(
+                            role="system",
+                            content=(
+                                "[PHASE_STATUS — DO NOT SAY ALOUD]\n"
+                                "GREETING: DONE. WARMUP: DONE. OPENING QUESTION: DONE.\n"
+                                f"You already asked: \"{_last_interviewer_question[:120]}\"\n"
+                                "DO NOT repeat this opening question. DO NOT re-introduce yourself or re-greet.\n"
+                                "CURRENT PHASE: INTERVIEW IN PROGRESS — follow [NEXT_TURN_DIRECTIVE] exactly."
+                            ),
+                        )
+                        logger.info("[PHASE_STATUS] Opening question sealed: %r", _last_interviewer_question[:80])
                 else:
                     logger.debug("[QUESTION_TRACK] turn=%d skipped (greeting/warmup phase)", turn_count)
                 # Track custom question coverage
