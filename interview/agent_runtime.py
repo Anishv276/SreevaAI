@@ -1138,12 +1138,11 @@ async def entrypoint(ctx: JobContext):
     # STT Fragment buffer: collects partial results until final comes
     _stt_fragment_buffer: dict[int, list[str]] = {}  # turn -> [fragment1, fragment2, ...]
     _stt_completion_timers: dict[int, asyncio.Task | None] = {}  # turn -> debounce task
-    _STT_COMPLETE_DEBOUNCE_SECONDS = 0.5
-    # Incomplete answers (no punctuation): wait 4s max — Deepgram usually sends all
-    # chunks within 2s of silence; 4s catches stragglers without 15s dead time.
+    # Incomplete answers: wait 4s max — Deepgram usually sends all chunks within 2s of silence.
     _STT_INCOMPLETE_DEBOUNCE_SECONDS = 4.0
-    # Complete answers: 0.3s — Deepgram nova-3 sends finals fast, no need to wait longer.
+    # Complete answers (both warmup and interview): 0.3s is enough for nova-3 finals.
     _STT_SHORT_COMPLETE_DEBOUNCE_SECONDS = 0.3
+    # Warmup incomplete: 1.0s — warmup answers are brief, no need to wait 4s.
     _STT_WARMUP_INCOMPLETE_DEBOUNCE_SECONDS = 1.0
 
     def _is_sentence_complete(text: str) -> bool:
@@ -2036,8 +2035,14 @@ async def entrypoint(ctx: JobContext):
                 if turn_count in _processed_user_turns:
                     logger.debug("[STT_BUFFER] turn=%d already processed — dropping late fragment '%s'", turn_count, content[:60])
                     return
-                # Block llm_node until eval directive is ready.
-                agent._directive_ready.clear()
+                # Only block llm_node for interview turns (turn > 2).
+                # Warmup turns (1-2) skip eval entirely — _directive_ready is never re-set
+                # by the eval gate for those turns, so clearing it here caused a 15s hang
+                # waiting for a set() that would never come.
+                if turn_count > 2:
+                    agent._directive_ready.clear()
+                else:
+                    logger.debug("[STT_BUFFER] turn=%d warmup — skipping _directive_ready.clear()", turn_count)
 
                 # Buffer the fragment
                 if turn_count not in _stt_fragment_buffer:
@@ -2088,19 +2093,20 @@ async def entrypoint(ctx: JobContext):
                     else:
                         logger.debug(f"[STT_BUFFER] turn={_turn} - no content after consolidation")
 
-                # For turns 1-2 (greeting/warmup), use shorter debounce to ensure quick processing
-                # For turns 3+, trigger IMMEDIATELY if complete (no debounce) to minimize latency
+                # Warmup turns (1-2) use the SHORTEST debounce — they skip eval entirely
+                # so there is no reason to wait. Interview turns (3+) use 0.3s complete /
+                # 4.0s incomplete to let Deepgram consolidate multi-chunk answers.
                 if turn_count <= 2:
                     debounce_seconds = (
-                        _STT_COMPLETE_DEBOUNCE_SECONDS
+                        _STT_SHORT_COMPLETE_DEBOUNCE_SECONDS   # 0.3s — same as interview complete
                         if is_complete
-                        else _STT_WARMUP_INCOMPLETE_DEBOUNCE_SECONDS
+                        else _STT_WARMUP_INCOMPLETE_DEBOUNCE_SECONDS  # 1.0s — short, warmup answers are brief
                     )
                 else:
                     debounce_seconds = (
-                        _STT_SHORT_COMPLETE_DEBOUNCE_SECONDS  # wait for more Deepgram chunks before flushing
+                        _STT_SHORT_COMPLETE_DEBOUNCE_SECONDS   # 0.3s for complete interview answers
                         if is_complete
-                        else _STT_INCOMPLETE_DEBOUNCE_SECONDS
+                        else _STT_INCOMPLETE_DEBOUNCE_SECONDS  # 4.0s for incomplete (stragglers)
                     )
 
                 async def _timeout_handler(_turn=turn_count, _event=event, _delay=debounce_seconds):
