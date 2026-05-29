@@ -111,8 +111,11 @@ def apply_turn_decision(
     grounding = float(quality.get("grounding", 5.0))
     overall = (clarity + depth + specificity + grounding) / 4.0
 
-    # Track scores for trend
+    # Track scores for trend — keep only the last 8 turns (2× the decay window).
+    # Capping here keeps memory O(1) without changing the TypedDict schema.
     state["score_history"].append(round(overall, 2))
+    if len(state["score_history"]) > 8:
+        state["score_history"] = state["score_history"][-8:]
 
     # Intelligence quality bucket
     iq_delta = 0.0

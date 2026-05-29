@@ -5,7 +5,6 @@ import { isInterviewTokenRequired } from "@/lib/interview-access";
 import {
     FIXED_INTERVIEW_DURATION_MINUTES,
 } from "@/lib/drive-limits";
-import crypto from "crypto";
 
 const JOIN_WINDOW_MS = 5 * 60 * 1000;
 
@@ -153,31 +152,6 @@ export async function POST(
             canPublishData: true,
             canSubscribe: true,
         });
-
-        // Mark interview status as in progress.
-        try {
-            await prismaAny.application.update({
-                where: { id: applicationId },
-                data: { interviewStatus: "in progress" },
-            });
-            await prismaAny.interview.upsert({
-                where: { applicationId },
-                update: {
-                    status: "IN_PROGRESS",
-                    startedAt: interview.startedAt || new Date(),
-                },
-                create: {
-                    id: crypto.randomUUID(),
-                    applicationId,
-                    accessToken: interviewToken || crypto.randomUUID(),
-                    status: "IN_PROGRESS",
-                    startedAt: new Date(),
-                    linkStatus: "ACTIVE",
-                },
-            });
-        } catch (statusErr) {
-            console.warn("[TOKEN_API] Failed to update interview status to in progress:", statusErr);
-        }
 
         return NextResponse.json({
             token: await at.toJwt(),

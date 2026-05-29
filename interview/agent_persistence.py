@@ -1320,7 +1320,7 @@ async def generate_interview_report(
             fallback = {
                 "clarity": 0,
                 "clarity_earned": "Unable to evaluate.",
-                "clarity_missed": "Unable to evaluate.",
+                "clarity_missed": "U    nable to evaluate.",
                 "depth_of_knowledge": 0,
                 "depth_earned": "Unable to evaluate.",
                 "depth_missed": "Unable to evaluate.",

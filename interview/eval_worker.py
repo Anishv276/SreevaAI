@@ -109,10 +109,11 @@ async def _process_one(payload_bytes: bytes, client: AsyncOpenAI, r) -> None:
     result_turn_key = f"interview:{app_id}:eval_result:{turn}"
     try:
         encoded = json.dumps(result).encode()
-        # Store result at turn-specific key so the agent can fetch it after being notified.
+        # Primary write: turn-specific key — agent reads this via SYNC_GATE pub/sub.
         await r.setex(result_turn_key, RESULT_TTL_SECONDS, encoded)
-        # Also store at generic key for backward compatibility.
-        await r.setex(result_key, RESULT_TTL_SECONDS, encoded)
+        # Fallback write: generic key read only when SYNC_GATE times out (Redis slow/down).
+        # Short TTL (30s) because the next turn overwrites it anyway — 1800s was wasted memory.
+        await r.setex(result_key, 30, encoded)
 
         # FIX 3: Publish on the ready channel so the agent wakes instantly.
         # BEFORE: agent polled Redis every 150ms — wasted 0-150ms after result was ready.
@@ -185,23 +186,66 @@ async def _run_worker() -> None:
         sys.exit(1)
 
     client = AsyncOpenAI(api_key=openai_api_key)
-    r = aioredis.from_url(REDIS_URL, decode_responses=False)
 
+    from redis.asyncio.retry import Retry  # type: ignore[import-untyped]
+    from redis.backoff import ExponentialBackoff  # type: ignore[import-untyped]
+    from redis.exceptions import ConnectionError as RedisConnectionError, TimeoutError as RedisTimeoutError  # type: ignore[import-untyped]
+    import socket as _socket
+
+    def _make_redis():
+        return aioredis.from_url(
+            REDIS_URL,
+            decode_responses=False,
+            # Retry on both connection drops and timeouts with exponential backoff
+            retry=Retry(ExponentialBackoff(cap=10, base=1), retries=6),
+            retry_on_error=[RedisConnectionError, RedisTimeoutError],
+            retry_on_timeout=True,
+            # TCP keepalive — OS sends probes if connection is idle, detects dead connections
+            # without waiting for a command to fail. Works on both Windows and Linux.
+            socket_keepalive=True,
+            socket_keepalive_options={
+                _socket.TCP_KEEPIDLE: 30,   # start probes after 30s idle
+                _socket.TCP_KEEPINTVL: 5,   # probe every 5s
+                _socket.TCP_KEEPCNT: 3,     # give up after 3 failed probes (45s total)
+            } if hasattr(_socket, "TCP_KEEPIDLE") else {},  # TCP_KEEPIDLE not on Windows — skip safely
+            socket_connect_timeout=5,
+            socket_timeout=10,
+            # Ping Redis every 30s when idle — detects dropped connections before BLPOP hangs
+            health_check_interval=30,
+        )
+
+    r = _make_redis()
     logger.info("[WORKER] Started — redis=%s queue=%s", REDIS_URL, EVAL_QUEUE_KEY)
 
+    _consecutive_errors = 0
     while not _shutdown.is_set():
         try:
-            # BLPOP blocks for up to 1s then returns None — no outer timeout needed
-            # type: ignore[not-async] — redis.asyncio uses __call__ magic; blpop IS awaitable at runtime
             result = await r.blpop([EVAL_QUEUE_KEY], timeout=1)  # type: ignore[misc]
             if result is None:
+                _consecutive_errors = 0  # successful poll — connection alive
                 continue
+            _consecutive_errors = 0
             _key, payload_bytes = result
             await _process_one(payload_bytes, client, r)
         except asyncio.CancelledError:
             break
+        except (RedisConnectionError, RedisTimeoutError) as e:
+            # Connection-level errors — Retry class handles retries automatically,
+            # but if we get here it means retries were exhausted. Rebuild connection.
+            _consecutive_errors += 1
+            logger.error("[WORKER] Redis connection error (attempt %d): %s", _consecutive_errors, e)
+            try:
+                await r.aclose()
+            except Exception:
+                pass
+            backoff = min(2 ** _consecutive_errors, 30)  # cap at 30s
+            logger.warning("[WORKER] Reconnecting in %ds...", backoff)
+            await asyncio.sleep(backoff)
+            r = _make_redis()
+            logger.info("[WORKER] Reconnected to Redis")
         except Exception as e:
-            logger.error("[WORKER] Unexpected error in loop: %s", e, exc_info=True)
+            _consecutive_errors += 1
+            logger.error("[WORKER] Unexpected error (attempt %d): %s", _consecutive_errors, e, exc_info=True)
             await asyncio.sleep(0.5)
 
     await r.aclose()

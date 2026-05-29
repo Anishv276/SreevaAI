@@ -42,17 +42,26 @@ _ELEVENLABS_DEFAULT_MODEL = "eleven_turbo_v2_5"
 _PROVIDER_DEFAULTS: dict[str, Any] = {
     "cartesia_speed":          0.92,
     "sarvam_pace":             1.2,
-    "sarvam_v3_sample_rate":   24000,
+    # bulbul:v3 — per Sarvam docs (https://docs.sarvam.ai/api-reference-docs/text-to-speech/stream)
+    # 22050 Hz is recommended for streaming (24000 is higher quality but slower to generate)
+    "sarvam_v3_sample_rate":   22050,
     "sarvam_v2_sample_rate":   22050,
-    "sarvam_output_bitrate":   "128k",
+    # 64k is optimal for low-latency streaming per Sarvam docs — 128k adds generation overhead
+    "sarvam_output_bitrate":   "64k",
     "sarvam_output_codec":     "mp3",
+    # min_buffer_size = chars before Sarvam starts processing (not frames/bytes).
+    # 30 is the Sarvam-recommended minimum — below this Sarvam may cut off incomplete words.
     "sarvam_min_buffer":       30,
+    # max_chunk_length = chars per chunk. 100-150 per docs — keeps latency low for conversational
+    # responses. 150 is the sweet spot: short enough for fast first-chunk, long enough for fluency.
     "sarvam_max_chunk":        150,
     "sarvam_v2_pitch":         0.0,
     "sarvam_v2_loudness":      1.0,
     "sarvam_temperature":      0.4,
     "deepgram_endpointing_ms": 500,
-    "sarvam_ws_timeout_sec":   25,     # WebSocket operation timeout
+    # WS connect/send timeout. Sarvam closes idle connections after 60s — keepalive pings every
+    # 20s prevent this. recv timeout is set separately to 90s in _recv_task.
+    "sarvam_ws_timeout_sec":   25,
 }
 
 _LANG_MAP: dict[str, str] = {
@@ -265,19 +274,23 @@ class SarvamDirectSynthesizeStream(tts.SynthesizeStream):
                     raise APIConnectionError(f"Sarvam TTS send task failed: {e}") from e
 
             async def _recv_task() -> None:
+                # Sarvam docs: WS closes after 60s inactivity. Our keepalive pings every 20s
+                # prevent that. But between audio chunks Sarvam can be slow — use 90s receive
+                # timeout (docs recommend 90s+ for idle timeout on client side).
+                recv_timeout_sec = max(timeout_sec, 90.0)
                 try:
                     while True:
                         try:
-                            msg = await ws.receive(timeout=timeout_sec)
+                            msg = await ws.receive(timeout=recv_timeout_sec)
                         except asyncio.TimeoutError as e:
                             logger.error(
                                 "[TTS_SARVAM_WS_RECEIVE_TIMEOUT] request_id=%s timeout=%ss",
                                 request_id,
-                                timeout_sec,
+                                recv_timeout_sec,
                                 exc_info=True,
                             )
                             raise APITimeoutError(
-                                f"Sarvam TTS websocket receive timed out after {timeout_sec}s"
+                                f"Sarvam TTS websocket receive timed out after {recv_timeout_sec}s"
                             ) from e
 
                         if msg.type in (
@@ -692,6 +705,8 @@ def build_stt(language_code: str = "en", model: str = STT_MODEL):
         "language":        language_code,
         "interim_results": False,  # Disabled to prevent debounce timer cancellation from multiple partial results
         "punctuate":       True,
+        "keep_alive":      True,   # Send KeepAlive messages during silence — prevents Deepgram
+                                   # closing the WS with 1011 "no audio received within timeout"
     }
     if "nova" in model.lower() and "enable_diarization" in supported:
         base_kwargs["enable_diarization"] = True

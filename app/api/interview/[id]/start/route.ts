@@ -1,0 +1,96 @@
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { isInterviewTokenRequired } from "@/lib/interview-access";
+import { interviewStartQueue } from "@/lib/queue";
+
+export const runtime = "nodejs";
+
+type StartInterviewBody = {
+  token?: string;
+  startedAtMs?: number;
+};
+
+export async function POST(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const prismaAny = prisma as any;
+    const { id: applicationId } = await params;
+    const body = (await request.json().catch(() => ({}))) as StartInterviewBody;
+    const interviewToken = String(body.token || "").trim();
+    const startedAtMs = Number(body.startedAtMs);
+    const requireInterviewToken = isInterviewTokenRequired();
+
+    if (!applicationId) {
+      return NextResponse.json({ error: "Application ID required" }, { status: 400 });
+    }
+    if (Number.isNaN(startedAtMs) || !Number.isFinite(startedAtMs)) {
+      return NextResponse.json({ error: "startedAtMs is required" }, { status: 400 });
+    }
+    if (requireInterviewToken && !interviewToken) {
+      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+    }
+
+    const interview = await prismaAny.interview.findUnique({
+      where: { applicationId },
+      select: {
+        accessToken: true,
+        expiresAt: true,
+        startedAt: true,
+        linkStatus: true,
+      },
+    });
+
+    if (!interview) {
+      return NextResponse.json({ error: "Interview session not found" }, { status: 404 });
+    }
+
+    if (requireInterviewToken && interview.accessToken !== interviewToken) {
+      return NextResponse.json({ error: "Invalid interview token" }, { status: 401 });
+    }
+
+    if (interview.startedAt) {
+      return NextResponse.json({
+        success: true,
+        alreadyStarted: true,
+        startedAt: interview.startedAt,
+      });
+    }
+
+    const expiresAtMs = interview.expiresAt ? interview.expiresAt.getTime() : null;
+    const isExpiredByTime = expiresAtMs !== null && Date.now() > expiresAtMs;
+
+    if (isExpiredByTime && interview.linkStatus !== "EXPIRED") {
+      await prismaAny.interview.update({
+        where: { applicationId },
+        data: { linkStatus: "EXPIRED" },
+      }).catch(() => {});
+    }
+
+    if (interview.linkStatus === "EXPIRED" || isExpiredByTime) {
+      return NextResponse.json({
+        error: "Access Denied: Interview link has expired. Please contact support.",
+        code: "LINK_EXPIRED",
+      }, { status: 403 });
+    }
+
+    await interviewStartQueue.add(
+      "mark-interview-started",
+      {
+        applicationId,
+        startedAt: new Date(startedAtMs).toISOString(),
+        accessToken: interview.accessToken,
+      },
+    );
+
+    return NextResponse.json({
+      success: true,
+      queued: true,
+      startedAt: new Date(startedAtMs).toISOString(),
+    });
+  } catch (error) {
+    console.error("[INTERVIEW START ERROR]:", error);
+    return NextResponse.json({ error: "Failed to record interview start" }, { status: 500 });
+  }
+}

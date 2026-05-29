@@ -33,6 +33,13 @@ export default async function AdminLayout({ children }: { children: React.ReactN
                     plan: true,
                     name: true,
                     logoUrl: true,
+                    industry: true,
+                    size: true,
+                    website: true,
+                    location: true,
+                    voiceId: true,
+                    allowedVoices: true,
+                    deepgramModel: true,
                     interviewQuotaTotal: true,
                     interviewQuotaUsed: true,
                 },
@@ -71,16 +78,23 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         <AdminOrgProvider
             status={orgData.status}
             orgId={session.orgId}
-            initialData={{
-                status: orgData.status,
-                name: orgData.name,
-                logoUrl: orgData.logoUrl,
-                plan: orgData.plan,
-                interviewQuotaTotal: orgData.interviewQuotaTotal != null ? Number(orgData.interviewQuotaTotal) : undefined,
-                interviewQuotaUsed: orgData.interviewQuotaUsed != null ? Number(orgData.interviewQuotaUsed) : undefined,
-                interviewQuotaRemaining: orgData.interviewQuotaTotal != null 
-                    ? Math.max(0, Number(orgData.interviewQuotaTotal) - Number(orgData.interviewQuotaUsed || 0)) 
-                    : undefined,
+        initialData={{
+            status: orgData.status,
+            name: orgData.name,
+            logoUrl: orgData.logoUrl,
+            plan: orgData.plan,
+            industry: orgData.industry,
+            size: orgData.size,
+            website: orgData.website,
+            location: orgData.location,
+            voiceId: orgData.voiceId,
+            allowedVoices: orgData.allowedVoices,
+            deepgramModel: orgData.deepgramModel,
+            interviewQuotaTotal: orgData.interviewQuotaTotal != null ? Number(orgData.interviewQuotaTotal) : undefined,
+            interviewQuotaUsed: orgData.interviewQuotaUsed != null ? Number(orgData.interviewQuotaUsed) : undefined,
+            interviewQuotaRemaining: orgData.interviewQuotaTotal != null 
+                ? Math.max(0, Number(orgData.interviewQuotaTotal) - Number(orgData.interviewQuotaUsed || 0)) 
+                : undefined,
             }}
         >
         <AdminStatusGate initialStatus={orgData.status}>

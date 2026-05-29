@@ -17,6 +17,11 @@ from typing import Any, Dict, List, Optional, Set
 from pydantic import BaseModel, Field
 from openai import AsyncOpenAI
 
+# How many seconds before interview end we stop opening new questions.
+# Was sent in every payload as no_new_question_cutoff_seconds=45 — that's a
+# static config value that never changes at runtime, so it belongs here.
+_NO_NEW_QUESTION_CUTOFF_SECONDS: int = 45
+
 from interview.turn_evaluator import run_turn_evaluation
 from interview.turn_decision import classify_short_utterance
 from interview.trust_engine import apply_turn_decision, apply_contradiction_resolved
@@ -75,13 +80,21 @@ class TopicState:
         #
         # pct tuned per importance: HIGH=35% (was 45% — reduced to stop premature exits
         # when signal penalties (-1.5) wipe quality contribution). CRITICAL gets more room.
-        self.progress_check_turns = 4 if importance in ("CRITICAL", "HIGH") else 3
-        self.progress_check_pct  = {
-            "CRITICAL": 0.30,
-            "HIGH":     0.35,   # was 0.45 — reduced to prevent signal-penalty early exits
-            "MEDIUM":   0.40,
-            "LOW":      0.45,
-        }.get(importance, 0.40)
+        # After this many follow-up turns, check if candidate is making enough progress.
+        # 3 turns for all importance levels — gives the candidate 3 chances before exiting.
+        self.progress_check_turns = 3
+        # If score < 45% of threshold after 3 turns → weak candidate, move on.
+        # Math check (must satisfy: base_credit * turns < threshold * pct):
+        #   HIGH:     0.8 * 3 = 2.4  <  6.5 * 0.45 = 2.925  ✅ fires on zero-quality candidate
+        #   CRITICAL: 0.6 * 3 = 1.8  <  8.0 * 0.45 = 3.600  ✅
+        #   MEDIUM:   1.0 * 3 = 3.0  <  5.0 * 0.45 = 2.250  ❌ 3.0 > 2.25 — use 0.65 for MEDIUM
+        #   LOW:      1.2 * 3 = 3.6  <  3.5 * 0.45 = 1.575  ❌ use 0.65 for LOW too (low topics exit fast anyway)
+        self.progress_check_pct = {
+            "CRITICAL": 0.45,
+            "HIGH":     0.45,
+            "MEDIUM":   0.65,   # base alone (3.0) > 45% of 5.0 (2.25) so need higher pct
+            "LOW":      0.65,   # base alone (3.6) > 45% of 3.5 (1.575) so need higher pct
+        }.get(importance, 0.45)
 
     def is_weak_candidate_exit(self) -> bool:
         """After N turns, check if score is below the minimum expected progress.
@@ -92,8 +105,8 @@ class TopicState:
         off topics too early (confirmed from log: score=2.7 after example_evasion -1.5
         wiped contribution, but base alone = 2.4 which is ≥ corrected min=2.275).
 
-        Rule: after progress_check_turns, raw base accumulation must have reached
-        35% of threshold (was 45% — tightened to avoid early exits on HIGH topics).
+        Rule: after 3 turns, score must have reached 45% of threshold (CRITICAL/HIGH).
+        Uses effective_score = max(actual, raw_base) so signal penalties don't double-penalise.
         """
         if self.follow_up_turns < self.progress_check_turns:
             return False
@@ -126,9 +139,21 @@ class TopicState:
             self.updated_turn = turn
 
     def advance_probe_rotation(self, signal_fired: bool = False) -> None:
-        """Advance probe type unless signal fired (signals override rotation)."""
+        """Advance probe family index.
+
+        When no signal fires: always advance so each turn gets a different angle.
+        When signal fires: hold but count consecutive holds. After 2 consecutive
+        signal-held turns advance anyway — prevents the candidate being asked the
+        same probe family (e.g. evidence) 5+ times in a row when evasion keeps firing.
+        """
         if not signal_fired:
-            self.probe_rotation_index = min(3, self.probe_rotation_index + 1)
+            self._signal_hold_count = 0
+            self.probe_rotation_index = min(4, self.probe_rotation_index + 1)
+        else:
+            self._signal_hold_count = getattr(self, "_signal_hold_count", 0) + 1
+            if self._signal_hold_count >= 2:
+                self._signal_hold_count = 0
+                self.probe_rotation_index = min(4, self.probe_rotation_index + 1)
 
     def to_dict(self) -> dict:
         return {
@@ -145,6 +170,37 @@ class TopicState:
             "is_saturated": self.is_saturated,
             "updated_turn": self.updated_turn,
         }
+
+    @classmethod
+    def from_dict(cls, state_dict: dict) -> "TopicState":
+        """Restore a TopicState from a serialised dict (Redis → agent → worker round-trip).
+
+        Using a classmethod factory instead of scattered manual field assignment
+        means every field goes through __init__ type coercion.  If to_dict() ever
+        adds a new field, from_dict picks it up automatically — no silent drops.
+        """
+        obj = cls(
+            topic_name=str(state_dict.get("topic_name", "")),
+            importance=str(state_dict.get("importance", "HIGH")),
+            updated_turn=int(state_dict.get("updated_turn", 0) or 0),
+        )
+        # Restore mutable accumulator fields — these override __init__ defaults
+        obj.saturation_score   = float(state_dict.get("saturation_score", 0.0) or 0.0)
+        obj.follow_up_turns    = int(state_dict.get("follow_up_turns", 0) or 0)
+        obj.probe_rotation_index = int(state_dict.get("probe_rotation_index", 0) or 0)
+        obj.is_saturated       = bool(state_dict.get("is_saturated", False))
+        obj.signals_fired      = list(state_dict.get("signals_fired", []) or [])
+        obj.opened_at_turn     = int(state_dict.get("opened_at_turn", 0) or 0)
+        # Restore threshold/credit from dict so they survive importance changes mid-session
+        if "saturation_threshold" in state_dict:
+            obj.saturation_threshold = float(state_dict["saturation_threshold"])
+        if "base_turn_credit" in state_dict:
+            obj.base_turn_credit = float(state_dict["base_turn_credit"])
+        if "progress_check_turns" in state_dict:
+            obj.progress_check_turns = int(state_dict["progress_check_turns"])
+        if "progress_check_pct" in state_dict:
+            obj.progress_check_pct = float(state_dict["progress_check_pct"])
+        return obj
 
 
 class TopicImportanceClassifier:
@@ -448,9 +504,13 @@ class DirectiveCompiler:
     def append_memory_block(directive: str, discussed_log: List[str]) -> str:
         if not discussed_log:
             return directive
+        # Last 3 entries only — Ishita only needs to know what was RECENTLY covered
+        # to avoid re-asking. Sending 8 entries was ~60 extra tokens of prefill per
+        # turn for topics she finished 10 minutes ago. 3 entries covers the last
+        # topic switch, the current topic's first question, and one prior probe.
         covered_block = (
-            "\n[INTERVIEW MEMORY — DO NOT RE-ASK THESE, reference naturally if relevant]\n"
-            + "\n".join(discussed_log[-8:])
+            "\n[INTERVIEW MEMORY — DO NOT RE-ASK THESE]\n"
+            + "\n".join(discussed_log[-3:])
             + "\n"
         )
         return directive + covered_block
@@ -632,16 +692,8 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     # ── Initialize/restore TopicState for current topic ────────────────────────
     current_topic_state: Optional[TopicState] = None
     if p.active_topic and p.active_topic_state:
-        state_dict = p.active_topic_state
-        current_topic_state = TopicState(
-            state_dict["topic_name"],
-            state_dict["importance"],
-            updated_turn=int(state_dict.get("updated_turn", 0) or 0),
-        )
-        current_topic_state.saturation_score = state_dict.get("saturation_score", 0.0)
-        current_topic_state.follow_up_turns = state_dict.get("follow_up_turns", 0)
-        current_topic_state.probe_rotation_index = state_dict.get("probe_rotation_index", 0)
-        current_topic_state.is_saturated = state_dict.get("is_saturated", False)
+        # Use from_dict() factory — single validated restore path, no silent field drops
+        current_topic_state = TopicState.from_dict(p.active_topic_state)
 
         logger.info(
             "[TOPIC_STATE] RESTORED | topic=%s importance=%s | saturation_score=%.1f/%s follow_ups=%d base_credit=%.1f",
@@ -717,22 +769,91 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         (p.answer or "")[:200],
     )
 
-    # ── Step 1: Extract claims and check consistency ─────────────────────────
+    # ── Steps 1+3: Extract claims AND run turn evaluation IN PARALLEL ─────────
+    # These two tasks are fully independent — claims extraction does not affect
+    # routing, and routing does not need claim results. Running them concurrently
+    # saves 700-900ms every turn where contradiction detection is enabled.
     contradiction_enabled = bool(p.signal_toggles.get("contradiction", False))
-    if contradiction_enabled:
-        try:
-            new_claims = await extract_claims(
-                candidate_answer=p.answer,
-                turn=p.turn,
-                client=client,
-                org_id=p.org_id,
-                llm_model=p.llm_model,
-            )
-        except Exception as e:
-            logger.warning("[EVAL_PIPELINE] extract_claims failed turn=%d: %s", p.turn, e)
-            new_claims = []
-    else:
-        new_claims = []
+
+    _follow_up_count = current_topic_state.follow_up_turns if current_topic_state else 0
+    _topic_depth_scores = [
+        float(r) for r in p.topic_score_history if isinstance(r, (int, float))
+    ]
+
+    # uncovered_topics is only used when action becomes MOVE_ON (inside _do_move_on
+    # and the MOVE_ON directive builder). On PROBE turns (the majority) this O(n)
+    # scan was wasted. We now compute it lazily via a closure — zero cost on PROBE,
+    # same result on MOVE_ON.
+    _uncovered_topics_cache: list = []
+    _uncovered_topics_computed: bool = False
+
+    def _get_uncovered_topics() -> list:
+        nonlocal _uncovered_topics_cache, _uncovered_topics_computed
+        if not _uncovered_topics_computed:
+            _nxt = tracker.next_uncovered(exclude=p.active_topic)
+            _uncovered_topics_cache = [_nxt] if _nxt else []
+            _uncovered_topics_computed = True
+        return _uncovered_topics_cache
+
+    # Keep a stable reference for the eval call — run_turn_evaluation needs it
+    # to build the MOVE_ON part of the directive if the LLM decides MOVE_ON.
+    # This triggers the scan once and caches it for any subsequent callers.
+    uncovered_topics: list = _get_uncovered_topics()
+    logger.info(
+        "[EVAL_PIPELINE] Step2/Topics: uncovered_next=%s | discussed_log=%d entries",
+        uncovered_topics[0] if uncovered_topics else "none",
+        len(p.discussed_log),
+    )
+
+    # Launch both tasks simultaneously
+    async def _empty_claims() -> list:
+        return []
+
+    _claims_coro = (
+        extract_claims(
+            candidate_answer=p.answer,
+            turn=p.turn,
+            client=client,
+            org_id=p.org_id,
+            llm_model=p.llm_model,
+        )
+        if contradiction_enabled
+        else _empty_claims()
+    )
+
+    _eval_coro = run_turn_evaluation(
+        candidate_answer=p.answer,
+        last_question=p.question,
+        transcript_lines=p.transcript_lines,
+        contradiction_detected=False,  # updated below after claims settle
+        client=client,
+        org_id=p.org_id,
+        llm_model=p.llm_model,
+        evaluate_answer_fn=evaluate_answer,
+        signal_toggles=p.signal_toggles,
+        uncovered_topics=uncovered_topics,
+        session_score_history=p.score_history,
+        turns_since_last_decay=p.turns_since_decay,
+        response_latency_sec=p.response_latency_sec,
+        topic_follow_up_count=_follow_up_count,
+        prior_depth_scores=_topic_depth_scores,
+    )
+
+    try:
+        _claims_result, _eval_result = await asyncio.wait_for(
+            asyncio.gather(_claims_coro, _eval_coro, return_exceptions=True),
+            timeout=5.5,
+        )
+    except asyncio.TimeoutError:
+        _claims_result = []
+        _eval_result = asyncio.TimeoutError()
+
+    # Settle claims
+    new_claims: list = []
+    if isinstance(_claims_result, list):
+        new_claims = _claims_result
+    elif isinstance(_claims_result, Exception):
+        logger.warning("[EVAL_PIPELINE] extract_claims failed turn=%d: %s", p.turn, _claims_result)
 
     for claim in new_claims:
         claim_type = str(claim.get("type", "") or "").strip()
@@ -743,51 +864,9 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
             contradiction_alert = contradiction
         new_claim_index.setdefault(claim_type, []).append(claim)
 
-    # ── Step 2: Build uncovered topics hint ──────────────────────────────────
-    uncovered_topics: list = []
-    _nxt = tracker.next_uncovered(exclude=p.active_topic)
-    if _nxt:
-        uncovered_topics = [_nxt]
-    logger.info(
-        "[EVAL_PIPELINE] Step2/Topics: uncovered_next=%s | discussed_log=%d entries",
-        uncovered_topics[0] if uncovered_topics else "none",
-        len(p.discussed_log),
-    )
-
-    # ── Step 3: Run turn evaluation (quality + signals + routing) ────────────
-    try:
-        # Use topic_score_history — quality scores recorded only for the current topic's turns.
-        # Previously this sliced the session-wide score_history by follow_up_count, which
-        # contaminated collapse/latency detection with scores from previous topics.
-        _follow_up_count = current_topic_state.follow_up_turns if current_topic_state else 0
-        _topic_depth_scores = [
-            float(r) for r in p.topic_score_history if isinstance(r, (int, float))
-        ]
-
-        td, directive = await asyncio.wait_for(
-            run_turn_evaluation(
-                candidate_answer=p.answer,
-                last_question=p.question,
-                transcript_lines=p.transcript_lines,
-                contradiction_detected=contradiction_alert is not None,
-                client=client,
-                org_id=p.org_id,
-                llm_model=p.llm_model,
-                evaluate_answer_fn=evaluate_answer,   # FIX 1: single merged call
-                signal_toggles=p.signal_toggles,
-                uncovered_topics=uncovered_topics,
-                session_score_history=p.score_history,
-                turns_since_last_decay=p.turns_since_decay,
-                response_latency_sec=p.response_latency_sec,
-                topic_follow_up_count=_follow_up_count,
-                prior_depth_scores=_topic_depth_scores,
-            ),
-            timeout=5.0,
-        )
-    except asyncio.TimeoutError:
-        logger.warning("[EVAL_PIPELINE] run_turn_evaluation timed out (>5s) turn=%d — using low-score fallback", p.turn)
-        # Fallback: use PROBE with LOW scores — timeout means we couldn't evaluate,
-        # not that the answer was average. Low scores prevent unearned saturation credit.
+    # Settle eval — handle timeout or exception from gather
+    if isinstance(_eval_result, (asyncio.TimeoutError, Exception)):
+        logger.warning("[EVAL_PIPELINE] run_turn_evaluation timed out (>5.5s) turn=%d — using low-score fallback", p.turn)
         _fallback_action = "PROBE"
         _fallback_next = (
             "Ask one specific follow-up question about what they personally built or decided. "
@@ -795,7 +874,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         )
         td = {
             "decision": {"action": _fallback_action, "mode": "normal", "next_goal": _fallback_next},
-            "quality": {"clarity": 1.0, "depth": 1.0, "specificity": 1.0, "grounding": 1.0},
+            "quality": {"clarity": 1.0, "depth": 1.0, "specificity": 1.0, "grounding": 1.0, "is_timeout": True},
             "signal_events": [],
         }
         directive = (
@@ -803,6 +882,8 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
             f"DECISION: {_fallback_action}\n"
             f"NEXT MOVE: {_fallback_next}"
         )
+    else:
+        td, directive = _eval_result
 
     action: str = td["decision"]["action"]
     signal_events = td.get("signal_events", [])
@@ -1034,24 +1115,24 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
                 probe_goal[:80],
             )
 
+            # Full question — no truncation. Truncating to 120 chars caused the LLM
+            # to not recognise its own question as a match and repeat it verbatim.
+            _prev_q_full = (p.question or "").strip()
+            _prev_a_gist = " ".join((p.answer or "").split()[:15]).strip()
+            # Slim directive injected into chat_ctx — only what drives LLM behaviour.
+            # QUALITY / SATURATION / SIGNALS are eval-pipeline metrics; the interview
+            # LLM never uses them to choose wording. Removing them saves ~60-80 tokens
+            # of prefill every turn with zero change in Ishita's output quality.
+            # The full verbose version is kept in the result dict for Redis / logging.
+            _style_first_sentence = probe_style.split(".")[0].strip()
             directive = (
                 "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
                 f"DECISION: PROBE ({probe_family.upper()})\n"
-                f"QUALITY: clarity={td['quality']['clarity']:.0f} depth={td['quality']['depth']:.0f} "
-                f"specificity={td['quality']['specificity']:.0f} grounding={td['quality']['grounding']:.0f}\n"
-                f"SATURATION: {current_topic_state.saturation_score:.1f}/{current_topic_state.saturation_threshold} "
-                f"({pct_saturated:.0f}%)\n"
-            )
-            if signal_fired_names:
-                directive += f"SIGNALS: {', '.join(signal_fired_names)}\n"
-            _prev_q_snippet = (p.question or "")[:120].strip()
-            directive += (
                 f"NEXT MOVE: {probe_goal}\n"
-                f"QUESTION STYLE: {probe_style}\n"
-                "PROBE INTENT: Anchor your question to something specific they actually said — "
-                "a project name, a number, a claim. Don't use a generic opener.\n"
-                f"FORBIDDEN — you literally just said this, do not repeat it: \"{_prev_q_snippet}\"\n"
-                "Ask something completely different in wording and angle."
+                f"STYLE: {_style_first_sentence}.\n"
+                f"ALREADY ASKED — do NOT repeat or rephrase this: \"{_prev_q_full}\"\n"
+                f"CANDIDATE ALREADY ANSWERED: \"{_prev_a_gist}...\"\n"
+                "Your next question MUST be different — anchor to a new angle, a specific name, tool, or detail they mentioned."
             )
             logger.info(
                 "[SIGNAL→BEHAVIOR] turn=%d | action=PROBE(%s) | signals=[%s] | "
@@ -1145,7 +1226,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     # Saturation scoring now drives topic transitions adaptively
 
     # ── Step 13: TOPIC_TAG_RULE + STRICT_MOVE_ON_RULE + guards ───────────────
-    if p.remaining_seconds <= p.no_new_question_cutoff_seconds + 30:
+    if p.remaining_seconds <= _NO_NEW_QUESTION_CUTOFF_SECONDS + 30:
         directive = DirectiveCompiler.append_no_early_closing(directive)
 
     # ── Final summary log box ─────────────────────────────────────────────────

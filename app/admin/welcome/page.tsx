@@ -4,35 +4,32 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
-    Sparkles, 
     ArrowRight, 
-    Building2, 
-    User,
     CheckCircle2,
     Rocket
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { useAdminOrg } from "@/context/admin-org-context";
 
 export default function WelcomePage() {
     const router = useRouter();
+    const adminOrg = useAdminOrg();
     const [isLoading, setIsLoading] = useState(true);
-    const [data, setData] = useState({ name: "", company: "", logoUrl: "" });
+    const [data, setData] = useState({
+        name: "",
+        company: adminOrg?.name || "Your Organization",
+        logoUrl: adminOrg?.logoUrl || "",
+    });
 
     useEffect(() => {
         const fetchData = async () => {
             try {
-                const [profRes, orgRes] = await Promise.all([
-                    fetch("/api/admin/profile"),
-                    fetch("/api/admin/organization")
-                ]);
-                
+                const profRes = await fetch("/api/admin/profile");
                 const prof = profRes.ok ? await profRes.json().catch(() => ({})) : {};
-                const org = orgRes.ok ? await orgRes.json().catch(() => ({})) : {};
                 
                 setData({
                     name: prof.name || "Admin",
-                    company: org.name || "Your Organization",
-                    logoUrl: org.logoUrl || ""
+                    company: adminOrg?.name || "Your Organization",
+                    logoUrl: adminOrg?.logoUrl || ""
                 });
             } catch (err) {
                 console.error("Failed to fetch welcome data", err);
@@ -42,7 +39,7 @@ export default function WelcomePage() {
         };
 
         fetchData();
-    }, []);
+    }, [adminOrg?.logoUrl, adminOrg?.name]);
 
     const handleGoToDashboard = () => {
         router.push("/admin");

@@ -10,6 +10,10 @@ export type OrgData = {
     name?: string;
     logoUrl?: string | null;
     plan?: string;
+    industry?: string | null;
+    size?: string | null;
+    website?: string | null;
+    location?: string | null;
     voiceId?: string | null;
     allowedVoices?: string[];
     deepgramModel?: string | null;

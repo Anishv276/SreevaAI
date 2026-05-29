@@ -49,7 +49,11 @@
       "PowerShell(\\(Get-Content \"C:\\\\Users\\\\vamsi\\\\OneDrive\\\\Desktop\\\\HR-updates\\\\package.json\"\\)[6] | Format-Hex)",
       "PowerShell(\\(Get-Content \"C:\\\\Users\\\\vamsi\\\\OneDrive\\\\Desktop\\\\HR-updates\\\\package.json\"\\)[6])",
       "PowerShell(node -e \"const fs=require\\('fs'\\); const j=JSON.parse\\(fs.readFileSync\\('C:/Users/vamsi/OneDrive/Desktop/HR-updates/package.json','utf8'\\)\\); console.log\\('ok'\\)\")",
-      "PowerShell(node -e \"const fs=require\\('fs'\\); JSON.parse\\(fs.readFileSync\\('C:/Users/vamsi/OneDrive/Desktop/HR-updates/package.json','utf8'\\)\\); console.log\\('ok'\\)\")"
+      "PowerShell(node -e \"const fs=require\\('fs'\\); JSON.parse\\(fs.readFileSync\\('C:/Users/vamsi/OneDrive/Desktop/HR-updates/package.json','utf8'\\)\\); console.log\\('ok'\\)\")",
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\vamsi\\\\OneDrive\\\\Desktop\\\\HR-updates\\\\interview\\\\\" -Recurse -File | Select-Object FullName | head -50)",
+      "WebFetch(domain:redis-py.readthedocs.io)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:sarvam.ai)"
     ]
   }
 }

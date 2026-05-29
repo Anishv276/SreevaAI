@@ -155,6 +155,94 @@ async function setDriveCandidateStage(
     });
   }
 }
+
+async function processInterviewStartJob(job: any) {
+  const prismaAny = prisma as any;
+  const {
+    applicationId,
+    startedAt: startedAtRaw,
+    accessToken,
+  } = job.data || {};
+
+  if (!applicationId) {
+    throw new Error("Missing applicationId in interview-start job");
+  }
+
+  const application = await prismaAny.application.findUnique({
+    where: { id: applicationId },
+    select: { id: true },
+  });
+  if (!application) {
+    console.warn(`[INTERVIEW-START] Application ${applicationId} no longer exists. Skipping.`);
+    return { skipped: true, reason: "missing_application" };
+  }
+
+  const startedAtCandidate = startedAtRaw ? new Date(String(startedAtRaw)) : new Date();
+  if (!Number.isFinite(startedAtCandidate.getTime())) {
+    throw new Error(`Invalid startedAt timestamp for ${applicationId}`);
+  }
+
+  const existingInterview = await prismaAny.interview.findUnique({
+    where: { applicationId },
+    select: {
+      startedAt: true,
+      status: true,
+      accessToken: true,
+      linkStatus: true,
+    },
+  });
+
+  if (existingInterview?.startedAt) {
+    console.log(
+      `[INTERVIEW-START] Interview already started for ${applicationId} at ${existingInterview.startedAt.toISOString()}`
+    );
+    await prismaAny.application.update({
+      where: { id: applicationId },
+      data: { interviewStatus: "in progress" },
+    }).catch(() => {});
+    return {
+      success: true,
+      alreadyStarted: true,
+      applicationId,
+      startedAt: existingInterview.startedAt.toISOString(),
+    };
+  }
+
+  const interviewAccessToken = existingInterview?.accessToken || accessToken || crypto.randomUUID();
+
+  await prismaAny.interview.upsert({
+    where: { applicationId },
+    update: {
+      status: "IN_PROGRESS",
+      startedAt: startedAtCandidate,
+      linkStatus: "ACTIVE",
+    },
+    create: {
+      id: generateId("int", applicationId),
+      applicationId,
+      accessToken: interviewAccessToken,
+      status: "IN_PROGRESS",
+      startedAt: startedAtCandidate,
+      linkStatus: "ACTIVE",
+    },
+  });
+
+  await prismaAny.application.update({
+    where: { id: applicationId },
+    data: { interviewStatus: "in progress" },
+  });
+
+  console.log(
+    `[INTERVIEW-START] Persisted start time for ${applicationId} at ${startedAtCandidate.toISOString()}`
+  );
+  return {
+    success: true,
+    applicationId,
+    startedAt: startedAtCandidate.toISOString(),
+    linkStatus: existingInterview?.linkStatus || "ACTIVE",
+    interviewStatus: "in progress",
+  };
+}
 async function processDriveResumeBatchJob(job: any) {
   const { batchId, driveId, orgId } = job.data || {};
   if (!batchId || !driveId || !orgId) {
@@ -1169,6 +1257,30 @@ if (isQueueEnabled("invitation-delivery-queue")) {
  * ðŸ’¾ DATABASE BACKUP WORKER (Phase 5 - Persistent Backups to R2)
  * Runs daily at midnight to export core hiring data.
  */
+if (isQueueEnabled("interview-start")) {
+  const interviewStartWorker = trackWorker("interview-start", new Worker(
+    "interview-start",
+    async (job) => {
+      if (job.name !== "mark-interview-started") {
+        console.warn(`[INTERVIEW-START] Skipping unsupported job name: ${job.name}`);
+        return { skipped: true, reason: "unsupported_job_name" };
+      }
+      return await processInterviewStartJob(job);
+    },
+    {
+      connection: redisConnection,
+      concurrency: 2,
+      lockDuration: 60 * 1000,
+      stalledInterval: 30 * 1000,
+      maxStalledCount: 1,
+      removeOnComplete: { count: 0 },
+      removeOnFail: { count: 20 },
+    }
+  ));
+  interviewStartWorker.on("failed", (job, err) => {
+    console.log(`[FATAL] Interview Start Job ${job?.id} failed permanently: ${err.message}`);
+  });
+}
 if (isQueueEnabled("backup-queue")) {
   const backupWorker = trackWorker("backup-queue", new Worker(
     "backup-queue",

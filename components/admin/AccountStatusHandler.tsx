@@ -1,7 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import React from "react";
 import { motion } from "framer-motion";
 import { Lock, ArrowRight, Phone } from "lucide-react";
 import Link from "next/link";
@@ -12,35 +11,7 @@ interface AccountStatusHandlerProps {
 }
 
 export function AccountStatusHandler({ status }: AccountStatusHandlerProps) {
-    const searchParams = useSearchParams();
-    const orgId = searchParams.get("orgId");
-    const [liveStatus, setLiveStatus] = useState<string>(String(status || "").trim().toUpperCase());
-
-    useEffect(() => {
-        let cancelled = false;
-
-        const loadStatus = async () => {
-            try {
-                const url = orgId ? `/api/admin/organization?orgId=${encodeURIComponent(orgId)}` : "/api/admin/organization";
-                const res = await fetch(url, { cache: "no-store" });
-                if (!res.ok) return;
-                const data = await res.json();
-                if (!cancelled && data?.status) {
-                    setLiveStatus(String(data.status).trim().toUpperCase());
-                }
-            } catch {
-                // Keep the server-rendered status if the fetch fails.
-            }
-        };
-
-        loadStatus();
-
-        return () => {
-            cancelled = true;
-        };
-    }, [status, orgId]);
-
-    const normalizedStatus = String(liveStatus || status || "").trim().toUpperCase();
+    const normalizedStatus = String(status || "").trim().toUpperCase();
     const isRestricted = isOrgRestrictedStatus(normalizedStatus);
 
     if (!isRestricted || normalizedStatus === "SUSPENDED") return null;

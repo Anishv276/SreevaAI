@@ -136,12 +136,7 @@ def _build_recent_context_block(
     lines.append("React naturally to the candidate's last answer. Reference prior context only when it adds meaning.")
     return "\n".join(lines)
 def remove_system_messages(chat_ctx, marker: str) -> None:
-    """
-    Remove matching system instructions from the live chat context.
-
-    LiveKit's ChatContext.messages() returns a new list, so removing from that
-    copy has no effect. Mutate the underlying items list in place instead.
-    """
+    """Remove system messages whose content contains marker. Single linear scan."""
     items = getattr(chat_ctx, "items", None)
     if items is None:
         return
@@ -155,6 +150,32 @@ def remove_system_messages(chat_ctx, marker: str) -> None:
         return marker in str(content)
 
     items[:] = [msg for msg in list(items) if not _contains_marker(msg)]
+
+
+def remove_system_messages_multi(chat_ctx, markers: tuple) -> None:
+    """Remove system messages matching ANY of the given markers in a single scan.
+
+    Replaces calling remove_system_messages() N times, which did N separate
+    linear scans over chat_ctx.items. One scan, same result.
+
+    Example:
+        remove_system_messages_multi(chat_ctx,
+            ("[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT"))
+    """
+    items = getattr(chat_ctx, "items", None)
+    if items is None:
+        return
+
+    def _matches_any(msg: object) -> bool:
+        if getattr(msg, "role", "") != "system":
+            return False
+        content = getattr(msg, "content", "") or ""
+        if isinstance(content, list):
+            content = " ".join(str(part) for part in content)
+        content_str = str(content)
+        return any(m in content_str for m in markers)
+
+    items[:] = [msg for msg in list(items) if not _matches_any(msg)]
 
 
 def append_transcript_line(transcript_lines: list[str], speaker: str, text: str) -> None:

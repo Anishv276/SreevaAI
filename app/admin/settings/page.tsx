@@ -36,6 +36,7 @@ import { PhoneInput } from "@/components/application/phone-input";
 import { cn } from "@/lib/utils";
 
 import { useAuth } from "@/context/auth-context";
+import { useAdminOrg } from "@/context/admin-org-context";
 
 import { ActionConfirmModal } from "@/components/ui/action-confirm-modal";
 
@@ -73,6 +74,7 @@ const sections = [
 export default function SettingsPage() {
 
     const { user } = useAuth();
+    const adminOrg = useAdminOrg();
 
     const searchParams = useSearchParams();
 
@@ -108,25 +110,16 @@ export default function SettingsPage() {
 
     /* Company */
 
-    const [company, setCompany] = useState({
-
-        name: "",
-
-        industry: "SAAS / TECHNOLOGY",
-
-        size: "51–250 EMPLOYEES",
-
-        website: "",
-
-        location: "",
-
-        logoUrl: "",
-
+    const [company, setCompany] = useState(() => ({
+        name: adminOrg?.name || "",
+        industry: adminOrg?.industry || "SAAS / TECHNOLOGY",
+        size: adminOrg?.size || "51–250 EMPLOYEES",
+        website: adminOrg?.website || "",
+        location: adminOrg?.location || "",
+        logoUrl: adminOrg?.logoUrl || "",
         customSenderEmail: "",
-
         customSenderName: ""
-
-    });
+    }));
 
 
 
@@ -213,39 +206,6 @@ export default function SettingsPage() {
         const fetchAll = async () => {
 
             try {
-
-                // Fetch basic org data first
-
-                const orgRes = await fetch("/api/admin/organization");
-
-                if (orgRes.ok) {
-
-                    const data = await orgRes.json();
-
-                    setCompany({
-
-                        name: data.name || "",
-
-                        industry: data.industry || "SAAS / TECHNOLOGY",
-
-                        size: data.size || "1–50 EMPLOYEES",
-
-                        website: data.website || "",
-
-                        location: data.location || "",
-
-                        logoUrl: data.logoUrl || "",
-
-                        customSenderEmail: data.customSenderEmail || "",
-
-                        customSenderName: data.customSenderName || ""
-
-                    });
-
-                }
-
-
-
                 // Fetch detailed personal profile
 
                 const profileRes = await fetch("/api/auth/profile");

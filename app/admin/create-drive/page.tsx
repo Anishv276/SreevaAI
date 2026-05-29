@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef, useEffect, Suspense } from "react";
+import { useState, useRef, useEffect, useMemo, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -47,6 +47,13 @@ function CreateDriveForm() {
   const isEditMode = !!driveId;
   const isEditAction = searchParams.get("mode") === "edit";
   const { addJob, jobs, updateJob, organization } = useJobs();
+  const adminOrg = useAdminOrg();
+  const fallbackVoiceId = adminOrg?.voiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc";
+  const adminAllowedVoices = adminOrg?.allowedVoices || [];
+  const fallbackAllowedVoices = useMemo(
+    () => adminAllowedVoices,
+    [adminAllowedVoices]
+  );
   const [formData, setFormData] = useState<any>({
     title: "",
     role: "",
@@ -55,7 +62,8 @@ function CreateDriveForm() {
     interviewQuestions: [],
     screeningThreshold: 60,
     screeningCriteria: {} as ScreeningCriteria,
-    voiceId: null,
+    voiceId: fallbackVoiceId,
+    allowedVoices: fallbackAllowedVoices,
     aiName: "Ishitha",
     extractedDetails: null,
   });
@@ -65,7 +73,6 @@ function CreateDriveForm() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [isSavingDraft, setIsSavingDraft] = useState(false);
-  const adminOrg = useAdminOrg();
   const quotaLocked = isInterviewQuotaLocked(adminOrg ?? {});
   const orgStatus = String(adminOrg?.status || "ACTIVE").toUpperCase();
   const analysisAbortRef = useRef<AbortController | null>(null);
@@ -112,22 +119,6 @@ function CreateDriveForm() {
   }, [formData.jdPreviewUrl]);
 
   useEffect(() => {
-    if (!isEditMode) {
-      fetch("/api/admin/organization", { cache: "no-store" })
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.error) return;
-          setFormData((prev: any) => ({
-            ...prev,
-            voiceId: data.voiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
-            allowedVoices: Array.isArray(data.allowedVoices) ? data.allowedVoices : [],
-          }));
-        })
-        .catch(() => {});
-    }
-  }, [isEditMode]);
-
-  useEffect(() => {
     if (!allowLanguageSelection && formData.interviewLanguage !== "English") {
       setFormData((prev: any) => ({ ...prev, interviewLanguage: "English" }));
     }
@@ -143,8 +134,6 @@ function CreateDriveForm() {
           const drive = await res.json();
           if (drive.error) { toast.error(drive.error); return; }
           hasInitialLoadedRef.current = driveId;
-          const orgRes = await fetch("/api/admin/organization", { cache: "no-store" });
-          const orgData = await orgRes.json();
           setFormData((prev: any) => ({
             ...prev,
             title: drive.title,
@@ -167,8 +156,8 @@ function CreateDriveForm() {
             jdFileName: (drive as any).jdFileName || "",
             jdPreviewUrl: (drive as any).jdPreviewUrl || "",
             extractedDetails: (drive as any).extractedDetails || null,
-            voiceId: (drive as any).voiceId || (!orgData.error && orgData.voiceId) || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
-            allowedVoices: !orgData.error && Array.isArray(orgData.allowedVoices) ? orgData.allowedVoices : [],
+            voiceId: (drive as any).voiceId || adminOrg?.voiceId || fallbackVoiceId,
+            allowedVoices: Array.isArray(adminOrg?.allowedVoices) ? adminOrg.allowedVoices : fallbackAllowedVoices,
             aiName: (drive as any).aiName || "Ishitha",
           }));
         } catch (err) {
@@ -178,7 +167,7 @@ function CreateDriveForm() {
       };
       loadDrive();
     }
-  }, [isEditMode, driveId]);
+  }, [isEditMode, driveId, adminOrg?.voiceId, fallbackVoiceId, fallbackAllowedVoices]);
 
   // Handle AI-chat sync
   useEffect(() => {
@@ -208,13 +197,15 @@ function CreateDriveForm() {
           title: "", role: "", deadline: "",
           interviewLanguage: "English", interviewQuestions: [],
           screeningThreshold: 60, screeningCriteria: {},
-          voiceId: null, aiName: "Ishitha", extractedDetails: null,
+          voiceId: fallbackVoiceId,
+          allowedVoices: fallbackAllowedVoices,
+          aiName: "Ishitha", extractedDetails: null,
         });
         setIsAnalyzing(false);
         setAnalysisError(null);
       }
     }
-  }, [isEditMode, searchParams]);
+  }, [isEditMode, searchParams, fallbackVoiceId, fallbackAllowedVoices]);
 
   const startAnalysis = async ({ file, url }: { file?: File; url?: string }) => {
     setIsAnalyzing(true);

@@ -100,6 +100,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const [candidateDisplayName, setCandidateDisplayName] = useState<string>("Candidate");
     const containerRef = useRef<HTMLDivElement>(null);
     const agentReadyCommittedRef = useRef(false);
+    const interviewStartSyncQueuedRef = useRef(false);
     const launchStartedAtRef = useRef<number | null>(null);
     const lkRoomRef = useRef<Room | null>(null);
     const connectionAttemptRef = useRef(0);
@@ -353,15 +354,8 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         if (phase !== "launching") return;
         if (!isAgentReady || agentReadyCommittedRef.current) return;
         agentReadyCommittedRef.current = true;
-        interviewStartedAtRef.current = Date.now();
         // Start the countdown timer exactly NOW — greeting audio is playing in the browser.
         // The timer was not started during launching so it counts from this moment.
-        const dur = sessionDurationRef.current;
-        if (typeof dur === "number" && Number.isFinite(dur) && dur > 0) {
-            setInterviewEndsAt(Date.now() + dur * 1000);
-            setRemainingSeconds(dur);
-            setTimerExpired(false);
-        }
         setPhase("interview");
     }, [phase, isAgentReady]);
     useEffect(() => {
@@ -566,11 +560,74 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         setIsAgentReady(false);
         setAgentReadyLatencyMs(null);
         agentReadyCommittedRef.current = false;
+        interviewStartSyncQueuedRef.current = false;
         launchStartedAtRef.current = null;
         setLaunchTimeoutCheck(0);
         setLaunchRecoveryMessage(null);
         setPhase("check");
     }, [exitFullscreenMode, stopInterviewMedia]);
+    useEffect(() => {
+        if (phase !== "interview") return;
+        if (interviewStartSyncQueuedRef.current) return;
+        interviewStartSyncQueuedRef.current = true;
+
+        const startedAtMs = Date.now();
+        interviewStartedAtRef.current = startedAtMs;
+
+        const dur = sessionDurationRef.current;
+        if (typeof dur === "number" && Number.isFinite(dur) && dur > 0) {
+            setInterviewEndsAt(startedAtMs + dur * 1000);
+            setRemainingSeconds(dur);
+            setTimerExpired(false);
+        }
+
+        let cancelled = false;
+        const persistInterviewStart = async (attempt = 0) => {
+            if (cancelled) return;
+            try {
+                const res = await fetch(`/api/interview/${encodeURIComponent(id)}/start`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        token: interviewToken,
+                        startedAtMs,
+                    }),
+                    keepalive: true,
+                });
+                const data = await res.json().catch(() => ({}));
+                if (cancelled) return;
+                if (res.ok) return;
+
+                const errorCode = String(data?.code || "").toUpperCase();
+                const errorMessage = String(data?.error || data?.message || "Unable to record interview start.");
+                if (res.status === 401 || res.status === 403 || errorCode === "LINK_EXPIRED") {
+                    await resetToHardwareCheck(errorMessage);
+                    return;
+                }
+                if (attempt < 1) {
+                    window.setTimeout(() => {
+                        void persistInterviewStart(attempt + 1);
+                    }, 1000);
+                    return;
+                }
+                console.warn("[Interview Start] Failed to persist start time:", data);
+            } catch (err) {
+                if (cancelled) return;
+                if (attempt < 1) {
+                    window.setTimeout(() => {
+                        void persistInterviewStart(attempt + 1);
+                    }, 1000);
+                    return;
+                }
+                console.error("[Interview Start] Failed to enqueue start time:", err);
+            }
+        };
+
+        void persistInterviewStart();
+        return () => {
+            cancelled = true;
+        };
+    }, [id, interviewToken, phase, resetToHardwareCheck]);
     // Hard timeout: if agent never becomes ready within 1.5 minutes (90s), show a popup and return to check.
     useEffect(() => {
         if (phase !== "launching") return;
@@ -605,6 +662,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 // Move the UI into the launching state only after we know the interview can start.
                 connectionAttemptRef.current += 1;
                 agentReadyCommittedRef.current = false;
+                interviewStartSyncQueuedRef.current = false;
                 launchStartedAtRef.current = performance.now();
                 setLaunchRecoveryMessage(null);
                 setIsAgentReady(false);

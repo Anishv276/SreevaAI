@@ -66,4 +66,18 @@ export const interviewRecordingQueue = new Queue('interview-recording', {
   }
 });
 
+// 7. Handles the exact moment an interview transitions from launching to live.
+export const interviewStartQueue = new Queue('interview-start', {
+  connection: redisConnection,
+  defaultJobOptions: {
+    attempts: 3,
+    backoff: {
+      type: 'exponential',
+      delay: 1000,
+    },
+    removeOnComplete: true,
+    removeOnFail: { count: 20 },
+  }
+});
+
 export default redisConnection;

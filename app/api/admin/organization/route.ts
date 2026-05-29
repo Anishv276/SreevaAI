@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSession, isAdminRole, isSuperAdminRole } from "@/lib/auth";
-import { getEffectiveOrgStatus } from "@/lib/credits";
 
 function getRequestedOrgId(request: Request) {
     const url = new URL(request.url);
@@ -24,7 +24,6 @@ function getRequestedOrgId(request: Request) {
 
 export async function GET(request: Request) {
     try {
-        const prismaAny = prisma as any;
         const session = await getSession();
         if (!session?.orgId && !getRequestedOrgId(request)) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -38,32 +37,57 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        const [org, activeDriveCount] = await Promise.all([
-            prismaAny.organization.findUnique({
-                where: { id: orgId },
-                select: {
-                    name: true,
-                    plan: true,
-                    industry: true,
-                    size: true,
-                    website: true,
-                    logoUrl: true,
-                    onboardingComplete: true,
-                    location: true,
-                    status: true,
-                    statusControl: true,
-                    voiceId: true,
-                    allowedVoices: true,
-                    deepgramModel: true,
-                    maxActiveDrives: true,
-                    proctoringSignals: true,
+        const orgRows = await prisma.$queryRaw<Array<{
+            name: string | null;
+            plan: string | null;
+            industry: string | null;
+            size: string | null;
+            website: string | null;
+            logoUrl: string | null;
+            onboardingComplete: boolean | null;
+            location: string | null;
+            status: string | null;
+            statusControl: string | null;
+            voiceId: string | null;
+            allowedVoices: string[] | null;
+            deepgramModel: string | null;
+            maxActiveDrives: string | null;
+            proctoringSignals: unknown;
+            interviewQuotaTotal: number | null;
+            interviewQuotaUsed: number | null;
+            activeDriveCount: number | null;
+        }>>(
+            Prisma.sql`
+                SELECT
+                    o.name,
+                    o.plan,
+                    o.industry,
+                    o.size,
+                    o.website,
+                    o."logoUrl",
+                    o."onboardingComplete",
+                    o.location,
+                    o.status,
+                    o."statusControl",
+                    o."voiceId",
+                    o."allowedVoices",
+                    o."deepgramModel",
+                    o."maxActiveDrives",
+                    o."proctoringSignals",
+                    o."interviewQuotaTotal",
+                    o."interviewQuotaUsed",
+                    (
+                        SELECT COUNT(*)
+                        FROM "Drive" d
+                        WHERE d."orgId" = o.id
+                    )::INT AS "activeDriveCount"
+                FROM "Organization" o
+                WHERE o.id = ${orgId}
+                LIMIT 1
+            `
+        );
 
-                    interviewQuotaTotal: true,
-                    interviewQuotaUsed: true,
-                }
-            }),
-            prisma.drive.count({ where: { orgId } })
-        ]);
+        const org = orgRows[0];
 
         if (!org) {
             return NextResponse.json({ error: "Organization not found" }, { status: 404 });
@@ -77,7 +101,7 @@ export async function GET(request: Request) {
         return NextResponse.json({
             ...org,
             status: effectiveStatus,
-            activeDriveCount,
+            activeDriveCount: Number(org.activeDriveCount ?? 0),
         }, {
             headers: {
                 'Cache-Control': 'private, max-age=120',

@@ -61,6 +61,7 @@ from interview.agent_runtime_helpers import (
     _single_question_transform,
     _tts_acronym_transform,
     remove_system_messages,
+    remove_system_messages_multi,
     sanitize_candidate_facing_text,
     tts_phonetic_processor,
 )
@@ -252,6 +253,14 @@ class InterviewAgent(Agent):
         # Bridge plays in background independently — real question starts when eval is ready,
         # not when bridge finishes. LiveKit handles audio queuing naturally.
         # CRITICAL: always use self.chat_ctx — LiveKit passes a stale .copy() snapshot.
+        #
+        # Yield to the event loop before checking the gate. conversation_item_added fires
+        # concurrently and clears _directive_ready when the user turn arrives — without this
+        # yield, llm_node can race past the gate before the clear runs (observed: 8ms gap),
+        # causing the LLM to generate from stale context (e.g. [WARMUP PHASE] still active
+        # → outputs greeting instead of interview question). Two yields cover any pending
+        # I/O callbacks that might sit one tick deeper in the scheduler.
+        await asyncio.sleep(0)
         timed_out = False
         try:
             await asyncio.wait_for(self._directive_ready.wait(), timeout=15.0)
@@ -272,6 +281,10 @@ class InterviewAgent(Agent):
         logger.info("[TEMP] role=%s temperature=%.2f", temp_role, turn_temp)
 
         conn_options = activity.session.conn_options.llm_conn_options
+        # Override LiveKit's default read timeout — httpcore.ReadTimeout fires mid-stream
+        # when OpenAI takes >10s for a long response, causing _llm_inference_task errors.
+        if (conn_options.timeout or 0) < 30.0:
+            conn_options = replace(conn_options, timeout=30.0)
         async with activity.llm.chat(
             chat_ctx=effective_ctx,
             tools=tools,
@@ -291,6 +304,10 @@ class InterviewAgent(Agent):
         conn_options = activity.session.conn_options.tts_conn_options
         if conn_options.retry_interval > 0.5:
             conn_options = replace(conn_options, retry_interval=0.5)
+        # Override LiveKit's default 10s timeout — Sarvam WS can take up to 25s for
+        # longer responses. At 10s it times out, retries, and causes ~18s silence gap.
+        if (conn_options.timeout or 0) < 25.0:
+            conn_options = replace(conn_options, timeout=25.0)
 
         async def _push_sentences(tts_stream) -> None:
             buf = ""
@@ -842,8 +859,12 @@ async def entrypoint(ctx: JobContext):
                 # Adaptive mode uses ML to distinguish backchannels (hmm/yeah/okay)
                 # from genuine interruptions  avoids cutting off thinking candidates.
                 mode="adaptive",
-                min_duration=2.0,
-                min_words=5,
+                min_duration=2.5,
+                # min_words raised from 5 to 8: "I'm doing great. How about you?" is 6
+                # words and was triggering interruptions during greeting/warmup, causing
+                # Ishita to regenerate warmup phrases 3-4 times. Real interview answers
+                # that need to interrupt are longer than 8 words.
+                min_words=8,
                 # Discard audio on interrupted turns — prevents the partial TTS chunk
                 # from being resumed and replayed, which caused "Okay wait" to be
                 # spoken twice when a false interruption was detected and then resumed.
@@ -1198,6 +1219,16 @@ async def entrypoint(ctx: JobContext):
             if not is_warmup_response and first_agent_turn_committed_at is not None:
                 since_first_ai_turn = time.monotonic() - first_agent_turn_committed_at
                 if since_first_ai_turn <= greeting_echo_suppression_secs:
+                    # Turn 1 = greeting response. Allow it through ONCE (captured in transcript),
+                    # but block any replay of the same content — LiveKit re-sends the same STT
+                    # fragment each time a new agent turn starts, causing the greeting loop.
+                    # Turn 1 content is already recorded; replays at 0:23, 0:27 are STT replays.
+                    if turn_snapshot == 1 and turn_count in _processed_user_turns:
+                        logger.debug(
+                            f"[TRANSCRIPT] Suppressing greeting replay (turn already processed): '{content[:60]}'"
+                        )
+                        return
+                    # For non-turn-1: suppress short echo fragments
                     if _GREETING_ECHO_RE.match(content) or len(content.split()) <= 2:
                         logger.debug(
                             f"[TRANSCRIPT] Suppressing early greeting echo fragment: '{content[:60]}'"
@@ -1436,16 +1467,14 @@ async def entrypoint(ctx: JobContext):
                         "contradiction_state": dict(_contradiction_state),
                         "trust_state": dict(_trust_state),
                         "current_interview_mode": current_interview_mode,
-                        "no_new_question_cutoff_seconds": FINAL_WINDOW_SECONDS,
-                        #  Candidate brief (for worker logging) 
-                        "candidate_name": candidate_name,
-                        "band": session_context.candidate_band or "unknown",
-                        "anchor_full": str(getattr(rb, "anchor_item", "") or ""),
-                        "projects_full": [str(p) for p in list(rb.projects or [])],
-                        "work_history_full": [str(w) for w in list(rb.work_history or [])],
-                        "internships_full": [str(i) for i in list(rb.internships or [])],
-                        "education_full": [str(e) for e in list(rb.education or [])],
-                        "time_limit_mins": getattr(session_context, "timeLimitMins", 20),
+                        # no_new_question_cutoff_seconds removed — now a constant inside
+                        # eval_pipeline.py (_NO_NEW_QUESTION_CUTOFF_SECONDS=45). It never
+                        # changed at runtime so sending it every turn was pure payload waste.
+                        # Logging-only fields removed from payload (anchor_full, projects_full,
+                        # work_history_full, internships_full, education_full, candidate_name,
+                        # band, time_limit_mins). None of these influence routing, saturation,
+                        # or directive content — they were only used for worker log lines.
+                        # Removing them cuts ~300 bytes per payload per turn per Redis write.
                     }
 
 
@@ -1729,9 +1758,46 @@ async def entrypoint(ctx: JobContext):
                         directive = result.get("directive", "")
                         _sys_before = [m for m in getattr(chat_ctx, "items", []) if getattr(m, "role", "") == "system"]
                         _has_old_directive = any("[NEXT_TURN_DIRECTIVE" in str(getattr(m, "content", "")) for m in _sys_before)
-                        remove_system_messages(chat_ctx, "[NEXT_TURN_DIRECTIVE")
-                        remove_system_messages(chat_ctx, "[TOPIC_LOCK")
-                        remove_system_messages(chat_ctx, "[RECENT_CONTEXT")
+                        # Single pass removes all three marker types — was 3 separate scans
+                        remove_system_messages_multi(chat_ctx, (
+                            "[NEXT_TURN_DIRECTIVE",
+                            "[TOPIC_LOCK",
+                            "[RECENT_CONTEXT",
+                        ))
+
+                        # PROBE: cap rolling Q&A window to last 3 user+assistant pairs (6 items).
+                        # At Turn 20 without this cap, chat_ctx holds 35 items — 32 of them are
+                        # stale Q&A from turns 3-18 that the LLM reprocesses uncached every call.
+                        # Keeping only the last 3 pairs (~450 tokens) gives Ishita enough context
+                        # to not repeat herself and maintain conversational flow, while cutting
+                        # ~1500 tokens of uncached prefill per turn from Turn 9 onward.
+                        # MOVE_ON already does a full wipe below — this only runs on PROBE/VERIFY.
+                        if action not in ("MOVE_ON",):
+                            _ctx_items_probe = getattr(chat_ctx, "items", None)
+                            if _ctx_items_probe is not None:
+                                _static_msgs = [
+                                    m for m in list(_ctx_items_probe)
+                                    if getattr(m, "role", "") == "system"
+                                ]
+                                _rolling_msgs = [
+                                    m for m in list(_ctx_items_probe)
+                                    if getattr(m, "role", "") != "system"
+                                ]
+                                # 2 pairs = 4 items — reduced from 3 to prevent LLM anchoring
+                                # to a Q&A 2 turns back and repeating a similar question.
+                                # The ALREADY ASKED directive handles immediate repeat; keeping
+                                # only 1 prior exchange minimises stale-context drift.
+                                _MAX_ROLLING = 2 * 2
+                                if len(_rolling_msgs) > _MAX_ROLLING:
+                                    _dropped_old = len(_rolling_msgs) - _MAX_ROLLING
+                                    _rolling_msgs = _rolling_msgs[-_MAX_ROLLING:]
+                                    _ctx_items_probe[:] = _static_msgs + _rolling_msgs
+                                    logger.info(
+                                        "[CTX_TRIM] PROBE turn=%d | dropped %d stale Q&A item(s) "
+                                        "| kept last 3 pairs (%d items) + %d sys msgs",
+                                        res_turn, _dropped_old,
+                                        len(_rolling_msgs), len(_static_msgs),
+                                    )
 
                         # On MOVE_ON: wipe ALL user+assistant exchanges from chat history.
                         # Keeping even the last exchange anchors the LLM to the old topic and
@@ -1886,80 +1952,167 @@ async def entrypoint(ctx: JobContext):
                 #   Worker finishes at t=800ms. Old code: agent sleeping, wakes at t=900ms (+100ms waste).
                 #   New code: agent notified at t=800ms, fetches at t=801ms. Saves ~75ms average per turn.
                 _sync_applied = False
-                if _eval_redis_client is not None:
-                    _result_turn_key = f"interview:{app_id}:eval_result:{turn_snapshot}"
-                    _ready_channel = f"interview:{app_id}:eval_ready:{turn_snapshot}"
-                    _SYNC_WAIT = 6.0
-                    _t_start = asyncio.get_running_loop().time()
-                    logger.info("[SYNC_GATE] turn=%d | subscribing for eval result (max %.1fs)...", turn_snapshot, _SYNC_WAIT)
-                    try:
-                        # Create a fresh pubsub connection for this turn's channel.
-                        # subscribe() is called before we check the key so we never miss
-                        # a publish that races between subscribe and getdel.
-                        _pubsub = _eval_redis_client.pubsub()
-                        await _pubsub.subscribe(_ready_channel)
-                        try:
-                            # Wait for the worker to publish on the ready channel.
-                            # get_message loops internally and returns as soon as a message arrives.
-                            _notified = False
-                            _deadline = asyncio.get_running_loop().time() + _SYNC_WAIT
-                            while asyncio.get_running_loop().time() < _deadline:
-                                _remaining = max(0.1, _deadline - asyncio.get_running_loop().time())
-                                _msg = await asyncio.wait_for(
-                                    _pubsub.get_message(ignore_subscribe_messages=True, timeout=_remaining),
-                                    timeout=_remaining + 0.1,
-                                )
-                                if _msg is not None:
-                                    _notified = True
-                                    break
-                        finally:
-                            await _pubsub.unsubscribe(_ready_channel)
-                            await _pubsub.aclose()
+                # FIRST EVAL TURN FAST PATH:
+                # Turn 3 is the first turn the eval worker processes. There is no
+                # previous eval result in Redis to wait for — warmup turns (1-2) were
+                # never sent to the worker. Waiting on the sync gate here would always
+                # timeout (pubsub error on a channel that was never published to),
+                # then open the gate with warmup/greeting context still in chat_ctx,
+                # causing Ishita to repeat greeting-style responses on Turn 3.
+                # Fix: skip sync gate for Turn 3, clear stale warmup context directly,
+                # open the gate immediately so LLM generates a clean interview question.
+                if _last_applied_eval_turn == 0 and turn_snapshot == 3:
+                    logger.info("[SYNC_GATE] turn=3 | first eval turn — no prior result to fetch, skipping pubsub")
+                    remove_system_messages_multi(chat_ctx, (
+                        "[NEXT_TURN_DIRECTIVE",
+                        "[TOPIC_LOCK",
+                        "[RECENT_CONTEXT",
+                        "[WARMUP PHASE]",
+                    ))
+                    agent._directive_ready.set()
+                    _sync_applied = True  # skip the entire sync gate block below
 
-                        # Fetch the result key regardless of whether we got a pub/sub message
-                        # (handles the race where worker wrote before we subscribed)
-                        _raw_turn = await asyncio.wait_for(
+                if not _sync_applied and _eval_redis_client is not None:
+                    _result_turn_key = f"interview:{app_id}:eval_result:{turn_snapshot - 1}"
+                    _ready_channel = f"interview:{app_id}:eval_ready:{turn_snapshot - 1}"
+                    # 4.5s: eval worker runs 2 parallel LLM calls (~750ms each) plus
+                    # signal detection + saturation calc = ~3-3.5s total. Old 2.5s was
+                    # timing out before the result was ready, causing sync gate misses
+                    # which reset saturation state and caused Ishita to repeat questions.
+                    _SYNC_WAIT = 4.5
+                    _t_start = asyncio.get_running_loop().time()
+                    logger.info("[SYNC_GATE] turn=%d | subscribing for eval result of turn=%d (max %.1fs)...", turn_snapshot, turn_snapshot - 1, _SYNC_WAIT)
+
+                    # PRE-CHECK: Try a direct GETDEL before subscribing to pub/sub.
+                    # Fixes the race where eval_worker finished before we subscribed,
+                    # closed the pub/sub channel, and our subscribe() then gets a blank
+                    # exception on a dead channel — leaving result unread in Redis forever.
+                    # This was the exact failure in logs: pubsub error: <blank> every turn.
+                    try:
+                        _raw_precheck = await asyncio.wait_for(
                             _eval_redis_client.getdel(_result_turn_key),
-                            timeout=0.3,
+                            timeout=0.2,
                         )
-                        if _raw_turn:
-                            _elapsed = round(asyncio.get_running_loop().time() - _t_start, 2)
-                            try:
-                                _preloaded = json.loads(_raw_turn)
-                                logger.info(
-                                    "[SYNC_GATE] ✅ turn=%d | result in %.2fs | action=%s | notified=%s",
-                                    turn_snapshot, _elapsed, _preloaded.get("action", "?"), _notified,
-                                )
-                                await _read_and_apply_eval_result(turn_snapshot, preloaded_result=_preloaded)
-                                _sync_applied = True
-                            except Exception as _sge:
-                                logger.warning("[SYNC_GATE] turn=%d | apply failed: %s", turn_snapshot, _sge)
-                                agent._directive_ready.set()
-                        else:
-                            logger.warning(
-                                "[SYNC_GATE] ⏰ turn=%d | notified=%s but key missing after %.2fs",
-                                turn_snapshot, _notified, round(asyncio.get_running_loop().time() - _t_start, 2),
+                        if _raw_precheck:
+                            _preloaded_precheck = json.loads(_raw_precheck)
+                            logger.info(
+                                "[SYNC_GATE] ✅ turn=%d | result already in Redis (pre-check %.0fms) | action=%s",
+                                turn_snapshot,
+                                (asyncio.get_running_loop().time() - _t_start) * 1000,
+                                _preloaded_precheck.get("action", "?"),
                             )
-                    except Exception as _pse:
-                        logger.warning("[SYNC_GATE] turn=%d | pubsub error: %s", turn_snapshot, _pse)
+                            await _read_and_apply_eval_result(turn_snapshot, preloaded_result=_preloaded_precheck)
+                            _sync_applied = True
+                    except Exception as _pre_e:
+                        logger.debug("[SYNC_GATE] turn=%d | pre-check miss (will use pubsub): %s", turn_snapshot, _pre_e)
+
+                    if not _sync_applied:
+                        try:
+                            # Pub/sub: only runs if pre-check missed (result not yet in Redis).
+                            # Fresh pubsub connection per turn — reusing a shared connection
+                            # caused the blank exception seen in logs (dead channel state).
+                            _pubsub = _eval_redis_client.pubsub()
+                            await _pubsub.subscribe(_ready_channel)
+                            try:
+                                _notified = False
+                                _deadline = asyncio.get_running_loop().time() + _SYNC_WAIT
+                                while asyncio.get_running_loop().time() < _deadline:
+                                    _remaining = max(0.1, _deadline - asyncio.get_running_loop().time())
+                                    _msg = await asyncio.wait_for(
+                                        _pubsub.get_message(ignore_subscribe_messages=True, timeout=_remaining),
+                                        timeout=_remaining + 0.1,
+                                    )
+                                    if _msg is not None:
+                                        _notified = True
+                                        break
+                            finally:
+                                await _pubsub.unsubscribe(_ready_channel)
+                                await _pubsub.aclose()
+
+                            # Fetch result key — works even if worker wrote before we subscribed
+                            _raw_turn = await asyncio.wait_for(
+                                _eval_redis_client.getdel(_result_turn_key),
+                                timeout=0.3,
+                            )
+                            if _raw_turn:
+                                _elapsed = round(asyncio.get_running_loop().time() - _t_start, 2)
+                                try:
+                                    _preloaded = json.loads(_raw_turn)
+                                    logger.info(
+                                        "[SYNC_GATE] ✅ turn=%d | result in %.2fs | action=%s | notified=%s",
+                                        turn_snapshot, _elapsed, _preloaded.get("action", "?"), _notified,
+                                    )
+                                    await _read_and_apply_eval_result(turn_snapshot, preloaded_result=_preloaded)
+                                    _sync_applied = True
+                                except Exception as _sge:
+                                    logger.warning("[SYNC_GATE] turn=%d | apply failed: %s", turn_snapshot, _sge)
+                                    agent._directive_ready.set()
+                            else:
+                                logger.warning(
+                                    "[SYNC_GATE] ⏰ turn=%d | notified=%s but key missing after %.2fs",
+                                    turn_snapshot, _notified, round(asyncio.get_running_loop().time() - _t_start, 2),
+                                )
+                        except Exception as _pse:
+                            logger.warning("[SYNC_GATE] turn=%d | pubsub error: %s", turn_snapshot, _pse)
+                            # Pubsub failed — result key may still be in Redis.
+                            # This was the exact failure: blank pubsub error every turn,
+                            # result unread, active_topic=None forever.
+                            if not _sync_applied:
+                                try:
+                                    _raw_fallback = await asyncio.wait_for(
+                                        _eval_redis_client.getdel(_result_turn_key),
+                                        timeout=0.5,
+                                    )
+                                    if _raw_fallback:
+                                        _preloaded_fallback = json.loads(_raw_fallback)
+                                        logger.info(
+                                            "[SYNC_GATE] ✅ turn=%d | result via fallback-getdel after pubsub error | action=%s",
+                                            turn_snapshot, _preloaded_fallback.get("action", "?"),
+                                        )
+                                        await _read_and_apply_eval_result(turn_snapshot, preloaded_result=_preloaded_fallback)
+                                        _sync_applied = True
+                                except Exception as _fe:
+                                    logger.warning("[SYNC_GATE] turn=%d | fallback-getdel also failed: %s", turn_snapshot, _fe)
+
+                    if not _sync_applied:
+                        # Final retry: eval worker may have finished during the wait but
+                        # pubsub missed the notification. Result key is in Redis — try once more.
+                        try:
+                            _raw_final = await asyncio.wait_for(
+                                _eval_redis_client.getdel(_result_turn_key),
+                                timeout=0.5,
+                            )
+                            if _raw_final:
+                                _pf = json.loads(_raw_final)
+                                logger.info(
+                                    "[SYNC_GATE] ✅ turn=%d | result via final-retry getdel | action=%s",
+                                    turn_snapshot, _pf.get("action", "?"),
+                                )
+                                await _read_and_apply_eval_result(turn_snapshot, preloaded_result=_pf)
+                                _sync_applied = True
+                        except Exception as _fre:
+                            logger.debug("[SYNC_GATE] turn=%d | final-retry getdel failed: %s", turn_snapshot, _fre)
 
                     if not _sync_applied:
                         logger.warning(
                             "[SYNC_GATE] ⏰ turn=%d | timeout %.1fs — clearing stale directives before releasing LLM",
                             turn_snapshot, _SYNC_WAIT,
                         )
-                        # Remove stale directives so the LLM doesn't follow last turn's instructions
-                        remove_system_messages(chat_ctx, "[NEXT_TURN_DIRECTIVE")
-                        remove_system_messages(chat_ctx, "[TOPIC_LOCK")
-                        remove_system_messages(chat_ctx, "[RECENT_CONTEXT")
+                        # Remove stale directives — single pass across all three marker types
+                        remove_system_messages_multi(chat_ctx, (
+                            "[NEXT_TURN_DIRECTIVE",
+                            "[TOPIC_LOCK",
+                            "[RECENT_CONTEXT",
+                        ))
                         agent._directive_ready.set()
 
-                # BUG FIX (Bug 1): Build payload HERE — after sync gate has applied previous
-                # turn's mutations to _active_topic, _topic_states, _covered_topic_keys.
-                # Building before the sync gate (old code) meant the worker always received
-                # topic state from turn N-1 instead of turn N — causing the "RESTORED 0.8"
-                # stale score loop seen in logs every other turn.
-                payload = _build_eval_payload()
+                # Build payload under lock so _build_eval_payload reads a consistent
+                # snapshot of _active_topic / _topic_states / _covered_topic_keys.
+                # Without the lock a concurrent _read_and_apply_eval_result (from a
+                # very fast back-to-back turn) could mutate those variables mid-read,
+                # producing a torn payload where topic and topic_state disagree.
+                async with _session_state_lock:
+                    payload = _build_eval_payload()
                 logger.info(
                     "[EVAL_DISPATCH] Pushing turn=%d to eval_worker | answer=%r | question=%r | "
                     "active_topic=%r | topic_state_score=%.1f",
@@ -1995,10 +2148,15 @@ async def entrypoint(ctx: JobContext):
             if not role:
                 return
 
-            #  ASSISTANT TURN 
+            #  ASSISTANT TURN
             if role == "assistant":
                 if not _candidate_turn_since_last_assistant:
-                    logger.warning("[TURN_GUARD] Suppressing consecutive assistant turn without candidate reply")
+                    # Hard block — LLM fired twice in a row without a candidate reply.
+                    # This happens when STT echoes Ishita's greeting back as a candidate
+                    # fragment, triggering a second LLM generation before the first one
+                    # finished. During warmup this creates the greeting-repeat loop seen
+                    # in transcript (AI 0:23, 0:27, 0:32 all saying warmup phrases).
+                    logger.warning("[TURN_GUARD] Blocking consecutive assistant turn (no candidate reply since last AI)")
                     return
                 if not llm_spoke_event.is_set():
                     llm_spoke_event.set()
@@ -2044,6 +2202,15 @@ async def entrypoint(ctx: JobContext):
                             ),
                         )
                         logger.info("[PHASE_STATUS] Opening question sealed: %r", _last_interviewer_question[:80])
+                        # Pre-clear the LLM gate NOW — Ishita just delivered the first interview
+                        # question. The next event will be Vamsi answering (Turn 3 candidate turn).
+                        # Without this pre-clear, llm_node fires the moment Turn 3 STT arrives
+                        # (gate was still SET from warmup), generating BEFORE Vamsi's answer is
+                        # in chat_ctx, causing Ishita to repeat the same opening question.
+                        # Clearing here ensures the gate is already closed when Turn 3 fires,
+                        # so the sync gate fast-path (which sets it) runs after the answer lands.
+                        agent._directive_ready.clear()
+                        logger.info("[LLM_GATE] Pre-cleared after opening question delivery (Turn 3 guard)")
                 else:
                     logger.debug("[QUESTION_TRACK] turn=%d skipped (greeting/warmup phase)", turn_count)
                 # Track custom question coverage
@@ -2227,7 +2394,10 @@ async def entrypoint(ctx: JobContext):
     inactivity_nudge_sent_for_current_prompt = False
     first_agent_turn_committed_at: float | None = None
     llm_spoke_event = asyncio.Event()
-    greeting_echo_suppression_secs = 6.0
+    # Extended to 15s: greeting TTS takes ~6s, candidate answers at ~7-10s, and
+    # LiveKit/STT replays the same fragment when each new agent turn starts.
+    # Short window (6s) only caught 2-word echoes; 15s blocks replays through warmup.
+    greeting_echo_suppression_secs = 15.0
     greeting_delivered_at: float | None = None  # Track when greeting finishes
     def reset_inactivity_clock(start_waiting: bool, preserve_nudge_flags: bool = False) -> None:
         nonlocal awaiting_candidate_response, awaiting_candidate_since, \

@@ -101,7 +101,7 @@ async def evaluate_answer(
             client.chat.completions.create(
                 model=llm_model,
                 temperature=EVAL_TEMPERATURE,
-                max_tokens=320,
+                max_tokens=480,
                 messages=[
                     {
                         "role": "system",
@@ -117,10 +117,9 @@ async def evaluate_answer(
                             '  "grammar": 0-10,\n'
                             '  "confidence": 0-10,\n'
                             '  "signals": ["has_numbers"|"has_names"|"has_reasoning"|"has_failure"|"has_tradeoff"|"has_ownership"|"has_emotion"|"has_learning"],\n'
-                            '  "concerns": ["vague"|"rehearsed"|"ownership_unclear"|"contradiction"|"incomplete"|"generic"|"bragging"|"overly_cautious"|"refused_to_answer"],\n'
                             '  "action": "PROBE" or "MOVE_ON",\n'
                             '  "probe_mode": one of the probe modes below or null,\n'
-                            '  "reason": "one sentence quoting what the candidate said that drives this decision",\n'
+                            '  "reason": "max 8 words quoted directly from candidate answer that drove this decision",\n'
                             '  "depth_signal": "SURFACE" | "SPECIFIC" | "DEEP"\n'
                             "}\n\n"
 
@@ -170,7 +169,16 @@ async def evaluate_answer(
             org_id, "interview", _extract_openai_completion_usage(completion)
         )
         raw = completion.choices[0].message.content or ""
-        parsed = json.loads(raw.strip())
+        raw_clean = raw.strip()
+        # Strip markdown code fences that GPT-4.1-mini sometimes wraps around JSON
+        if raw_clean.startswith("```"):
+            raw_clean = re.sub(r"^```(?:json)?\s*", "", raw_clean)
+            raw_clean = re.sub(r"\s*```$", "", raw_clean.strip())
+        # Extract first JSON object if there is surrounding text or truncation artifacts
+        _json_match = re.search(r"\{.*\}", raw_clean, re.DOTALL)
+        if _json_match:
+            raw_clean = _json_match.group(0)
+        parsed = json.loads(raw_clean)
 
         # Clamp quality scores 0-10
         for key in ("clarity", "depth", "specificity", "grounding", "fluency", "grammar", "confidence"):
@@ -179,7 +187,10 @@ async def evaluate_answer(
             parsed["clarity"] + parsed["depth"] + parsed["specificity"] + parsed["grounding"]
         ) / 4.0
         parsed["signals"] = parsed.get("signals", [])
-        parsed["concerns"] = parsed.get("concerns", [])
+        # concerns no longer returned by LLM — computed in eval_pipeline from
+        # signal_events (any event with score_delta < 0 is a concern). Keeping
+        # the key as empty list so downstream code that reads concerns still works.
+        parsed["concerns"] = []
 
         # Validate routing fields
         if parsed.get("action") not in ("PROBE", "MOVE_ON"):
