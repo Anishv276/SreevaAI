@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Sparkles, Mic2, ShieldCheck, ShieldAlert, Zap, ChevronLeft, ChevronRight, Send, Loader2, Video, VideoOff, MicOff, PhoneOff, CheckCircle2, ArrowRight, Camera, Mic, AlertCircle, LogOut, Eye, EyeOff, Users, Volume2, WifiOff, User, ChevronDown, MessageSquare, LifeBuoy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AuraVisualizer } from "@/components/agents-ui/aura-visualizer";
@@ -1232,6 +1232,9 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                             </div>
                             <DialogTitle className="text-xl font-black tracking-tight uppercase tracking-widest">Interview Guidelines</DialogTitle>
                         </div>
+                        <DialogDescription className="sr-only">
+                            Interview guidelines and proctoring reminders shown before the candidate starts the session.
+                        </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-6 py-4">
                         <div className="space-y-4">
@@ -1262,6 +1265,9 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 <DialogContent className="sm:max-w-lg">
                     <DialogHeader>
                         <DialogTitle className="text-xl font-black tracking-tight uppercase tracking-widest">Contact Support</DialogTitle>
+                        <DialogDescription className="sr-only">
+                            Send a support request if you are facing a technical issue during the interview.
+                        </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4 py-2">
                         {supportSuccess ? (

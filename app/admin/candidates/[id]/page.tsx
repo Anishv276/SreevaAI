@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { FileText, Sparkles, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { InterviewReportSreevaAI, buildSreevaAIInterviewViewModel } from "@/components/admin/candidate-profile/interview-report-sreevaai";
 import { ResumeReportSreevaAI, buildSreevaAIResumeViewModel } from "@/components/admin/candidate-profile/resume-report-sreevaai";
 import { useAdminOrg } from "@/context/admin-org-context";
@@ -937,6 +937,9 @@ export default function CandidateProfilePage() {
             <Dialog open={resumeReportOpen} onOpenChange={setResumeReportOpen}>
                 <DialogContent className="w-[95vw] max-w-[95vw] max-h-[95vh] overflow-hidden border-0 bg-transparent p-0 shadow-none">
                     <DialogTitle className="sr-only">Resume Report</DialogTitle>
+                    <DialogDescription className="sr-only">
+                        Detailed resume analysis report for the selected candidate.
+                    </DialogDescription>
                     <div className="h-[95vh] overflow-y-auto">
                         {candidate?.fullName && (candidate?.aiReport || candidate?.resumeText) ? (
                             <ResumeReportSreevaAI model={resumeReportModel} onBack={() => setResumeReportOpen(false)} />

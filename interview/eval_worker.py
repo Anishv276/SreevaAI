@@ -54,26 +54,32 @@ async def _process_one(payload_bytes: bytes, client: AsyncOpenAI, r) -> None:
         logger.error("[WORKER] Failed to decode payload: %s", e)
         return
 
+    import time as _time
     payload = queued
     if isinstance(queued, dict) and "answer" not in queued:
         queued_app_id = str(queued.get("app_id") or "unknown")
         queued_turn = int(queued.get("turn", 0) or 0)
+        enqueued_at = float(queued.get("enqueued_at") or 0)
+        # Drop pointers older than the payload TTL — payload is certainly gone.
+        if enqueued_at and (_time.time() - enqueued_at) > 600:
+            logger.debug(
+                "[WORKER] Dropping stale queue entry app_id=%s turn=%d (enqueued %.0fs ago)",
+                queued_app_id, queued_turn, _time.time() - enqueued_at,
+            )
+            return
         payload_key = f"interview:{queued_app_id}:eval_payload:{queued_turn}"
         try:
             raw_payload = await r.getdel(payload_key)
         except Exception as e:
             logger.warning(
                 "[WORKER] Failed to read pending payload app_id=%s turn=%d: %s",
-                queued_app_id,
-                queued_turn,
-                e,
+                queued_app_id, queued_turn, e,
             )
             return
         if raw_payload is None:
-            logger.warning(
-                "[WORKER] Pending payload missing app_id=%s turn=%d (skipping)",
-                queued_app_id,
-                queued_turn,
+            logger.debug(
+                "[WORKER] Payload already consumed or expired app_id=%s turn=%d (skipping)",
+                queued_app_id, queued_turn,
             )
             return
         try:

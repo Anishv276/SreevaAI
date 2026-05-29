@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "cross-env NODE_OPTIONS='--dns-result-order=ipv4first' next dev --turbo",
+    "dev": "cross-env NODE_OPTIONS=--dns-result-order=ipv4first next dev --turbo",
+    "dev:web": "cross-env NODE_OPTIONS=--dns-result-order=ipv4first next dev --turbo",
+    "dev:worker": "cross-env WORKER_QUEUES=resume-processing,invitation-delivery-queue,interview-finalization,interview-snapshots,interview-recording,jd-upload,jd-extraction,backup-queue tsx worker.ts",
     "worker": "cross-env WORKER_QUEUES=resume-processing,invitation-delivery-queue,interview-finalization,interview-snapshots,interview-recording,jd-upload,jd-extraction tsx worker.ts",
     "worker:resume": "cross-env WORKER_QUEUES=resume-processing tsx worker.ts",
     "worker:invitation": "cross-env WORKER_QUEUES=invitation-delivery-queue tsx worker.ts",

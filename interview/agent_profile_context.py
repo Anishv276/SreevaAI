@@ -155,6 +155,7 @@ class FresherBandStrategy(BandStrategy):
             education=resume_context.education[:2],
             projects=resume_context.projects[:3],
             internships=resume_context.internships[:2],
+            work_history=resume_context.work_history[:2],
             skills=resume_context.skills[:5],
         )
 

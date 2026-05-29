@@ -208,12 +208,13 @@ async def evaluate_answer(
     except asyncio.TimeoutError:
         # Timeout = network/API failure, not a weak answer.
         # is_timeout=True tells eval_pipeline to skip quality contribution to saturation.
-        # Routing defaults to PROBE so the interview continues rather than skipping topics.
-        logger.warning("[EVAL] Merged evaluator timed out turn — returning neutral scores + PROBE fallback")
+        # Scores are 1 (not 5) so that if is_timeout check ever fails, saturation is
+        # not inflated by fake neutral scores — 1s contribute near-zero to quality bands.
+        logger.warning("[EVAL] Merged evaluator timed out turn — returning low scores + PROBE fallback")
         return {
-            "clarity": 5, "depth": 5, "specificity": 5, "grounding": 5,
-            "fluency": 5, "grammar": 5, "confidence": 5,
-            "overall": 5.0, "signals": [], "concerns": ["timeout"],
+            "clarity": 1, "depth": 1, "specificity": 1, "grounding": 1,
+            "fluency": 1, "grammar": 1, "confidence": 1,
+            "overall": 1.0, "signals": [], "concerns": ["timeout"],
             "is_timeout": True,
             "action": "PROBE", "probe_mode": "ownership",
             "reason": "timeout", "depth_signal": "SURFACE",
@@ -221,9 +222,9 @@ async def evaluate_answer(
     except Exception as e:
         logger.warning("[EVAL] Merged evaluator failed: %s", e, exc_info=True)
         return {
-            "clarity": 5, "depth": 5, "specificity": 5, "grounding": 5,
-            "fluency": 5, "grammar": 5, "confidence": 5,
-            "overall": 5.0, "signals": [], "concerns": ["error"],
+            "clarity": 1, "depth": 1, "specificity": 1, "grounding": 1,
+            "fluency": 1, "grammar": 1, "confidence": 1,
+            "overall": 1.0, "signals": [], "concerns": ["error"],
             "is_timeout": True,
             "action": "PROBE", "probe_mode": "ownership",
             "reason": str(e), "depth_signal": "SURFACE",

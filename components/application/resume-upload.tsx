@@ -1,4 +1,4 @@
-﻿import { Upload, FileText, Loader2, X, CheckCircle2 } from "lucide-react";
+import { Upload, FileText, Loader2, X, CheckCircle2 } from "lucide-react";
 import { useRef, useState } from "react";
 
 interface ResumeUploadProps {

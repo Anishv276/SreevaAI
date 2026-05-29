@@ -41,7 +41,15 @@
       "Bash(pip list *)",
       "Bash(pip install *)",
       "Bash(npx prisma *)",
-      "Bash(pip index *)"
+      "Bash(pip index *)",
+      "Bash(find /mnt/c/Users/vamsi/OneDrive/Desktop/HR-updates -name \"*.py\" -not -path \"*/.venv/*\" -not -path \"*/node_modules/*\")",
+      "Read(//mnt/c/Users/vamsi/OneDrive/Desktop/**)",
+      "Bash(Get-Content \"C:\\\\Users\\\\vamsi\\\\OneDrive\\\\Desktop\\\\HR-updates\\\\package.json\")",
+      "Bash(Select-Object -Index 6)",
+      "PowerShell(\\(Get-Content \"C:\\\\Users\\\\vamsi\\\\OneDrive\\\\Desktop\\\\HR-updates\\\\package.json\"\\)[6] | Format-Hex)",
+      "PowerShell(\\(Get-Content \"C:\\\\Users\\\\vamsi\\\\OneDrive\\\\Desktop\\\\HR-updates\\\\package.json\"\\)[6])",
+      "PowerShell(node -e \"const fs=require\\('fs'\\); const j=JSON.parse\\(fs.readFileSync\\('C:/Users/vamsi/OneDrive/Desktop/HR-updates/package.json','utf8'\\)\\); console.log\\('ok'\\)\")",
+      "PowerShell(node -e \"const fs=require\\('fs'\\); JSON.parse\\(fs.readFileSync\\('C:/Users/vamsi/OneDrive/Desktop/HR-updates/package.json','utf8'\\)\\); console.log\\('ok'\\)\")"
     ]
   }
 }

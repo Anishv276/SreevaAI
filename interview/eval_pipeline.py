@@ -72,18 +72,38 @@ class TopicState:
         # Weak candidate early exit: after this many turns, if score < X% of threshold
         # the candidate is clearly struggling — no point spending more time on this topic.
         # Strong/avg candidates will have already saturated naturally by this point.
-        self.progress_check_turns = 3   # check after turn 3
-        self.progress_check_pct  = 0.45 # must have reached 45% of threshold by then
+        #
+        # pct tuned per importance: HIGH=35% (was 45% — reduced to stop premature exits
+        # when signal penalties (-1.5) wipe quality contribution). CRITICAL gets more room.
+        self.progress_check_turns = 4 if importance in ("CRITICAL", "HIGH") else 3
+        self.progress_check_pct  = {
+            "CRITICAL": 0.30,
+            "HIGH":     0.35,   # was 0.45 — reduced to prevent signal-penalty early exits
+            "MEDIUM":   0.40,
+            "LOW":      0.45,
+        }.get(importance, 0.40)
 
     def is_weak_candidate_exit(self) -> bool:
         """After N turns, check if score is below the minimum expected progress.
-        A candidate meeting avg quality would already be saturated by turn 3.
-        If they're still below 45% of threshold, they're clearly struggling — move on.
+
+        Uses RAW accumulated base_credit as the floor — signal penalties (evasion, -1.5)
+        must NOT penalize the threshold check because they already slow saturation by
+        zeroing quality contribution. Double-penalizing pushes genuinely-weak candidates
+        off topics too early (confirmed from log: score=2.7 after example_evasion -1.5
+        wiped contribution, but base alone = 2.4 which is ≥ corrected min=2.275).
+
+        Rule: after progress_check_turns, raw base accumulation must have reached
+        35% of threshold (was 45% — tightened to avoid early exits on HIGH topics).
         """
         if self.follow_up_turns < self.progress_check_turns:
             return False
+        # Floor: base_credit * turns = what a zero-quality candidate accumulates
+        raw_base_accumulated = self.base_turn_credit * self.follow_up_turns
+        # Use the higher of actual score or raw base — so penalty signals don't
+        # push a candidate below a floor they physically crossed via base credits
+        effective_score = max(self.saturation_score, raw_base_accumulated)
         min_expected = self.saturation_threshold * self.progress_check_pct
-        return self.saturation_score < min_expected
+        return effective_score < min_expected
 
     def add_response_contribution(
         self,
@@ -322,20 +342,23 @@ class TopicTracker:
             self.covered_keys.add(_normalize_topic_key(topic))
 
     def next_uncovered(self, exclude: Optional[str] = None) -> Optional[str]:
-        """Return the highest-priority uncovered topic (resume first, then skills)."""
-        covered_text = " ".join(self.discussed_log).lower()
+        """Return the highest-priority uncovered topic (resume first, then skills).
+
+        Uses only the covered_keys set for O(1) dedup — no substring scanning of
+        discussed_log. The old covered_text check caused false-positive skips where
+        a log entry like '- MediSnap: I integrated OCR...' would match 'OCR' as a
+        skill topic and silently skip it before it was ever asked.
+        """
         excluded_key = _normalize_topic_key(exclude or "")
-        for t in (self.resume_topics + self.skill_topics):
-            key = _normalize_topic_key(t)
-            if not key:
-                continue
-            if excluded_key and key == excluded_key:
-                continue
-            if key in self.covered_keys:
-                continue
-            if key not in covered_text:
-                return t
-        return None
+        return next(
+            (
+                t for t in (self.resume_topics + self.skill_topics)
+                if (key := _normalize_topic_key(t))
+                and key != excluded_key
+                and key not in self.covered_keys
+            ),
+            None,
+        )
 
     def fallback_next(self, exclude: Optional[str] = None) -> str:
         """Return the best available next topic — always returns a non-empty string."""
@@ -787,8 +810,10 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     contradiction_hit = any(ev.get("signal_name") == "contradiction" for ev in signal_events)
     freeze_followup_increment = contradiction_hit
 
-    # Detect scorer timeout — quality scores are neutral 5s, not real measurements.
+    # Detect scorer timeout — quality scores are low 1s (not 5s), not real measurements.
     # Skip quality contribution to saturation so the candidate isn't punished.
+    # Scores are 1 (not 5) as a double safety net: if is_timeout flag ever fails,
+    # 1s produce near-zero saturation contribution vs old 5s which inflated scores.
     _quality_is_timeout = bool(td.get("quality", {}).get("is_timeout", False))
 
     # Use the same weighted score that saturation uses so depth_signal thresholds
@@ -854,10 +879,10 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         )
         logger.info("[EVAL_PIPELINE] Dedupe detected — forcing MOVE_ON turn=%d", p.turn)
 
-    if quality_avg >= 7.0:
-        depth_signal = "DEEP"
-    elif quality_avg >= 4.5:
-        depth_signal = "SPECIFIC"
+    # NOTE: depth_signal is already computed from weighted score above (line ~810).
+    # The old second pass using simple quality_avg with a different threshold (4.5) was
+    # overwriting the weighted result and creating a log/behavior mismatch.
+    # Removed — weighted score path is the authoritative computation.
 
     # ── Step 6: Saturation-based decision (PART 3) ──────────────────────────
     # NEW SYSTEM: Evaluate if topic has reached saturation based on quality + signals

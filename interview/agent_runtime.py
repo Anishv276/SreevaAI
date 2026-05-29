@@ -1384,10 +1384,14 @@ async def entrypoint(ctx: JobContext):
                         if key and key not in seen_rt:
                             seen_rt.add(key)
                             unique_resume.append(t)
-                    skill_topics = [str(s).strip() for s in list(rb.skills or []) if str(s).strip()]
+                    # JD skills first (must-haves from JD), then resume skills as fallback.
+                    # This ensures JD-required topics (e.g. LangChain, RAG, Agentic Systems)
+                    # enter the topic cycling machinery, not just the brief as passive context.
+                    _jd_skill_names = [str(s).strip() for s in (_jd_skills or []) if str(s).strip()]
+                    _resume_skill_names = [str(s).strip() for s in list(rb.skills or []) if str(s).strip()]
                     seen_st: set[str] = set()
                     unique_skills: list[str] = []
-                    for s in skill_topics:
+                    for s in (_jd_skill_names + _resume_skill_names):
                         key = s.lower()
                         if key and key not in seen_st:
                             seen_st.add(key)
@@ -1802,9 +1806,11 @@ async def entrypoint(ctx: JobContext):
                     payload_app_id = str(payload.get("app_id", app_id) or app_id)
                     payload_key = f"interview:{payload_app_id}:eval_payload:{payload_turn}"
                     queue_gate_key = f"interview:{payload_app_id}:eval_enqueued:{payload_turn}"
+                    import time as _time
                     queue_token = {
                         "app_id": payload_app_id,
                         "turn": payload_turn,
+                        "enqueued_at": _time.time(),
                     }
                     try:
                         await _eval_redis_client.setex(
@@ -1842,15 +1848,23 @@ async def entrypoint(ctx: JobContext):
                     except Exception as _re:
                         logger.warning("[REDIS_EVAL] Failed to push payload: %s", _re)
 
-                # PUSH current turn's answer for the worker to evaluate.
-                # We push FIRST so the worker can start computing immediately.
-                # Then we WAIT for the result before returning so LLM sees the correct directive.
-                payload = _build_eval_payload()
-                logger.info(
-                    "[EVAL_DISPATCH] Pushing turn=%d to eval_worker | answer=%r | question=%r",
-                    turn_snapshot, payload.get("answer", "")[:60], payload.get("question", "")[:60],
-                )
-                await _push_payload_to_redis(payload)
+                # BUG FIX (Bug 1 + Bug 2): Payload MUST be built AFTER the previous turn's
+                # eval result is applied. The old code built the payload here (before the sync
+                # gate), which captured stale _active_topic_state from BEFORE _read_and_apply_eval_result
+                # ran. The worker then restored the wrong (older) saturation score every turn.
+                #
+                # New order:
+                #   1. SYNC GATE: wait for previous turn's eval result → apply state mutations
+                #   2. BUILD PAYLOAD: capture _topic_states AFTER mutations applied (fresh state)
+                #   3. PUSH: send payload to worker for THIS turn's evaluation
+                #
+                # This also fixes Bug 2 (LLM generating before MOVE_ON directive applied):
+                # The LLM gate (_directive_ready) is set inside _read_and_apply_eval_result,
+                # which now always completes before payload build + push. The LLM cannot start
+                # generating until _directive_ready is set, which only happens after directives
+                # are injected into chat_ctx. This makes the gate truly hard.
+                #
+                # See _directive_ready.set() at end of _read_and_apply_eval_result (line ~1795).
 
                 # SYNC GATE: wait for eval worker result, then inject directive before returning.
                 # llm_node is blocked on _directive_ready — it cannot generate until PROBE/MOVE_ON
@@ -1939,6 +1953,23 @@ async def entrypoint(ctx: JobContext):
                         remove_system_messages(chat_ctx, "[TOPIC_LOCK")
                         remove_system_messages(chat_ctx, "[RECENT_CONTEXT")
                         agent._directive_ready.set()
+
+                # BUG FIX (Bug 1): Build payload HERE — after sync gate has applied previous
+                # turn's mutations to _active_topic, _topic_states, _covered_topic_keys.
+                # Building before the sync gate (old code) meant the worker always received
+                # topic state from turn N-1 instead of turn N — causing the "RESTORED 0.8"
+                # stale score loop seen in logs every other turn.
+                payload = _build_eval_payload()
+                logger.info(
+                    "[EVAL_DISPATCH] Pushing turn=%d to eval_worker | answer=%r | question=%r | "
+                    "active_topic=%r | topic_state_score=%.1f",
+                    turn_snapshot,
+                    payload.get("answer", "")[:60],
+                    payload.get("question", "")[:60],
+                    payload.get("active_topic", "?"),
+                    (payload.get("active_topic_state") or {}).get("saturation_score", 0.0),
+                )
+                await _push_payload_to_redis(payload)
 
         except Exception as e:
             logger.error("[EVAL] _process_user_conversation_item failed turn=%d: %s", turn_snapshot, e, exc_info=True)
