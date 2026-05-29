@@ -254,13 +254,20 @@ class InterviewAgent(Agent):
         # not when bridge finishes. LiveKit handles audio queuing naturally.
         # CRITICAL: always use self.chat_ctx — LiveKit passes a stale .copy() snapshot.
         #
-        # Yield to the event loop before checking the gate. conversation_item_added fires
-        # concurrently and clears _directive_ready when the user turn arrives — without this
-        # yield, llm_node can race past the gate before the clear runs (observed: 8ms gap),
-        # causing the LLM to generate from stale context (e.g. [WARMUP PHASE] still active
-        # → outputs greeting instead of interview question). Two yields cover any pending
-        # I/O callbacks that might sit one tick deeper in the scheduler.
-        await asyncio.sleep(0)
+        # Wait long enough for STT_BUFFER debounce + SYNC_GATE to complete before checking
+        # the gate. Without this, llm_node fires before _directive_ready is cleared and before
+        # the SYNC_GATE can apply MOVE_ON/PROBE directive from the eval worker.
+        #
+        # Timing breakdown (from logs):
+        #   T+0ms   — candidate finishes speaking, LiveKit triggers llm_node
+        #   T+0ms   — LLM_GATE check: _directive_ready is still SET (old PROBE) → LLM fires early
+        #   T+300ms — STT_BUFFER debounce fires, _directive_ready.clear()
+        #   T+370ms — SYNC_GATE pre-check fetches eval result (~70ms after debounce)
+        #   T+380ms — MOVE_ON/PROBE directive injected, _directive_ready.set()
+        #
+        # Fix: sleep 0.4s before checking gate → LLM always waits for directive to be updated.
+        # 0.4s is imperceptible to the user (< half a second after they finish speaking).
+        await asyncio.sleep(0.4)
         timed_out = False
         try:
             await asyncio.wait_for(self._directive_ready.wait(), timeout=15.0)
@@ -849,8 +856,9 @@ async def entrypoint(ctx: JobContext):
             turn_detection=turn_detector,
             endpointing=EndpointingOptions(
                 # Faster endpointing for warmup (short casual answers); interview turns
-                # use a longer max_delay to avoid cutting off longer answers mid-sentence.
-                min_delay=0.5,
+                # use a slightly longer min_delay so fillers like "umm" / "ohh" do not
+                # prematurely end the user's turn.
+                min_delay=0.8,
                 max_delay=2.0,
                 mode="dynamic",
             ),
@@ -1048,6 +1056,9 @@ async def entrypoint(ctx: JobContext):
                 unique.append(t)
         return unique[:8]
 
+    def _normalize_topic_key(text: str) -> str:
+        return re.sub(r"[^a-z0-9]+", " ", str(text or "").lower()).strip()
+
     def _skill_topic_candidates() -> list[str]:
         rb = session_context.resume_brief
         topics: list[str] = []
@@ -1063,9 +1074,6 @@ async def entrypoint(ctx: JobContext):
                 seen.add(key)
                 unique.append(t)
         return unique[:10]
-
-    def _normalize_topic_key(text: str) -> str:
-        return re.sub(r"[^a-z0-9]+", " ", str(text or "").lower()).strip()
 
     def _remaining_total_seconds_now() -> float:
         if not session_start_time:
@@ -2585,9 +2593,9 @@ async def entrypoint(ctx: JobContext):
     #   10s silence  -> soft nudge (up to 3, rotating, 10s apart)
     #   40s silence  -> termination warning
     #   50s silence  -> end call
-    INACTIVITY_NUDGE_SECS = 10       # first nudge after 10s of silence
-    INACTIVITY_NUDGE_INTERVAL = 10   # repeat every 10s until warning fires
-    INACTIVITY_NUDGE_MAX = 3         # max soft nudges before warning
+    INACTIVITY_NUDGE_SECS = 20       # first nudge after 20s silence — 10s was too quick, interrupted thinking
+    INACTIVITY_NUDGE_INTERVAL = 20   # repeat every 20s
+    INACTIVITY_NUDGE_MAX = 2         # max 2 nudges before warning
     INACTIVITY_WARNING_SECS = 40     # termination warning at 40s
     INACTIVITY_END_SECS = 50         # end call at 50s
     FINAL_THANKS_TRIGGER_SECS = 15
@@ -2597,9 +2605,8 @@ async def entrypoint(ctx: JobContext):
 
     _name = candidate_first_name or candidate_name
     _SOFT_NUDGES = [
-        f"Still with me, {_name}? No rush at all.",
-        f"Take your time — just go whenever you're ready.",
-        f"Hey {_name}, feel free to think out loud if that helps.",
+        f"Take your time, {_name}.",
+        f"No rush — think out loud if that helps.",
     ]
 
     async def _deliver_nudge(text: str) -> None:
@@ -2980,7 +2987,7 @@ async def entrypoint(ctx: JobContext):
         _agent_dur = (time.time() - session_start_time) if session_start_time else None
         await update_interview_status(app_id, duration_seconds=_agent_dur)
         # âš¡ Trigger Pinecone Sync immediately
-        await notify_sync_engine(app_id)
+        notify_sync_engine(app_id, turn=turn_count, action="session_end")
     # Cancel any leftover fire-and-forget work so job teardown is instant.
     if background_tasks:
         logger.debug(f"[SHUTDOWN] Cancelling {len(background_tasks)} background task(s)")

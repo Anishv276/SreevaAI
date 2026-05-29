@@ -166,7 +166,7 @@ for logger_name in ("livekit.plugins.cartesia", "livekit.plugins.silero", "livek
 STT_MODEL = "nova-3"
 LLM_MODEL = "gpt-4.1-mini"
 INTERVIEW_LLM_MODEL = LLM_MODEL
-INTERVIEW_TEMPERATURE = 0.45
+INTERVIEW_TEMPERATURE = 0.75
 EVAL_LLM_MODEL = "gpt-4.1-mini"
 EVAL_TEMPERATURE = 0.0
 DEFAULT_VOICE_ID = "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"

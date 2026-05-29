@@ -48,17 +48,21 @@ class TopicState:
         self.importance = importance  # CRITICAL | HIGH | MEDIUM | LOW
         self.updated_turn = updated_turn
 
-        # Saturation thresholds by importance
+        # Saturation thresholds by importance.
+        # HIGH was 6.5 — at base_credit=0.8 that needs 8+ turns for surface candidates,
+        # consuming too much of the 20-min budget and skipping JD skills entirely.
+        # Reduced to 5.5 so a surface candidate exits after ~4-5 turns (base only),
+        # while a strong candidate (quality contribution ~2.0/turn) saturates in 2-3 turns.
         self.saturation_threshold = {
-            "CRITICAL": 8.0,
-            "HIGH": 6.5,
-            "MEDIUM": 5.0,
-            "LOW": 3.5,
-        }.get(importance, 6.5)
+            "CRITICAL": 7.0,
+            "HIGH": 5.5,
+            "MEDIUM": 4.0,
+            "LOW": 3.0,
+        }.get(importance, 5.5)
 
         self.saturation_score = 0.0  # Accumulates per response
         self.follow_up_turns = 0     # Counts each turn on this topic
-        self.probe_rotation_index = 0  # 0=ownership, 1=outcome, 2=tradeoff, 3=failure
+        self.probe_rotation_index = 0  # kept for Redis state compat; rotation removed — LLM picks family
         self.signals_fired: list[str] = []
         self.is_saturated = False
         self.opened_at_turn = 0
@@ -85,15 +89,15 @@ class TopicState:
         self.progress_check_turns = 3
         # If score < 45% of threshold after 3 turns → weak candidate, move on.
         # Math check (must satisfy: base_credit * turns < threshold * pct):
-        #   HIGH:     0.8 * 3 = 2.4  <  6.5 * 0.45 = 2.925  ✅ fires on zero-quality candidate
-        #   CRITICAL: 0.6 * 3 = 1.8  <  8.0 * 0.45 = 3.600  ✅
-        #   MEDIUM:   1.0 * 3 = 3.0  <  5.0 * 0.45 = 2.250  ❌ 3.0 > 2.25 — use 0.65 for MEDIUM
-        #   LOW:      1.2 * 3 = 3.6  <  3.5 * 0.45 = 1.575  ❌ use 0.65 for LOW too (low topics exit fast anyway)
+        #   HIGH:     0.8 * 3 = 2.4  <  5.5 * 0.45 = 2.475  ✅ fires on zero-quality candidate
+        #   CRITICAL: 0.6 * 3 = 1.8  <  7.0 * 0.45 = 3.150  ✅
+        #   MEDIUM:   1.0 * 3 = 3.0  <  4.0 * 0.45 = 1.800  ❌ use 0.80 for MEDIUM
+        #   LOW:      1.2 * 3 = 3.6  <  3.0 * 0.45 = 1.350  ❌ use 0.65 for LOW
         self.progress_check_pct = {
             "CRITICAL": 0.45,
             "HIGH":     0.45,
-            "MEDIUM":   0.65,   # base alone (3.0) > 45% of 5.0 (2.25) so need higher pct
-            "LOW":      0.65,   # base alone (3.6) > 45% of 3.5 (1.575) so need higher pct
+            "MEDIUM":   0.80,   # base alone (3.0) > 45% of 4.0 (1.8) so need higher pct
+            "LOW":      0.65,   # base alone (3.6) > 45% of 3.0 (1.35) so need higher pct
         }.get(importance, 0.45)
 
     def is_weak_candidate_exit(self) -> bool:
@@ -137,23 +141,6 @@ class TopicState:
         self.is_saturated = self.saturation_score >= self.saturation_threshold
         if turn is not None:
             self.updated_turn = turn
-
-    def advance_probe_rotation(self, signal_fired: bool = False) -> None:
-        """Advance probe family index.
-
-        When no signal fires: always advance so each turn gets a different angle.
-        When signal fires: hold but count consecutive holds. After 2 consecutive
-        signal-held turns advance anyway — prevents the candidate being asked the
-        same probe family (e.g. evidence) 5+ times in a row when evasion keeps firing.
-        """
-        if not signal_fired:
-            self._signal_hold_count = 0
-            self.probe_rotation_index = min(4, self.probe_rotation_index + 1)
-        else:
-            self._signal_hold_count = getattr(self, "_signal_hold_count", 0) + 1
-            if self._signal_hold_count >= 2:
-                self._signal_hold_count = 0
-                self.probe_rotation_index = min(4, self.probe_rotation_index + 1)
 
     def to_dict(self) -> dict:
         return {
@@ -337,7 +324,6 @@ class EvaluationPayload(BaseModel):
     contradiction_state: Dict[str, Any] = Field(default_factory=dict)
     trust_state: Dict[str, Any] = Field(default_factory=dict)
     current_interview_mode: str = "normal"
-    no_new_question_cutoff_seconds: int = 45
     # Candidate brief fields (for context logging)
     anchor_full: Optional[str] = None
     projects_full: List[str] = Field(default_factory=list)
@@ -473,7 +459,9 @@ class DirectiveCompiler:
             f"{topic_line}"
             f"YOUR ONLY JOB THIS TURN: {next_goal}\n"
             "HARD RULE: Do NOT ask any follow-up about the previous topic. "
-            "Do NOT reference it. Acknowledge in one sentence max, then pivot immediately."
+            "Do NOT reference it. Acknowledge in one sentence max, then pivot immediately.\n"
+            "DO NOT wrap up, say goodbye, or ask 'any questions for me'. "
+            "The interview is NOT over — keep going until the system tells you to stop."
         )
 
     @staticmethod
@@ -504,13 +492,13 @@ class DirectiveCompiler:
     def append_memory_block(directive: str, discussed_log: List[str]) -> str:
         if not discussed_log:
             return directive
-        # Last 3 entries only — Ishita only needs to know what was RECENTLY covered
-        # to avoid re-asking. Sending 8 entries was ~60 extra tokens of prefill per
-        # turn for topics she finished 10 minutes ago. 3 entries covers the last
-        # topic switch, the current topic's first question, and one prior probe.
+        # Last 5 entries: covers up to 5 follow-ups on the current topic so the LLM
+        # can see the full conversation arc and not repeat an angle asked early on.
+        # 3 was too few — on topics with 4+ follow-ups the first question dropped off
+        # and the LLM repeated it. 5 adds ~40 tokens, well worth the repeat prevention.
         covered_block = (
             "\n[INTERVIEW MEMORY — DO NOT RE-ASK THESE]\n"
-            + "\n".join(discussed_log[-3:])
+            + "\n".join(discussed_log[-5:])
             + "\n"
         )
         return directive + covered_block
@@ -831,7 +819,6 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         llm_model=p.llm_model,
         evaluate_answer_fn=evaluate_answer,
         signal_toggles=p.signal_toggles,
-        uncovered_topics=uncovered_topics,
         session_score_history=p.score_history,
         turns_since_last_decay=p.turns_since_decay,
         response_latency_sec=p.response_latency_sec,
@@ -971,7 +958,6 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
 
     next_topic_hint: Optional[str] = None
     signal_fired_names = [ev.get("signal_name", "") for ev in signal_events]
-    any_signal_fired = len(signal_fired_names) > 0
 
     # depth_decay: candidate is fatiguing — force MOVE_ON regardless of saturation
     depth_decay_fired = any(ev.get("signal_name") == "depth_decay" for ev in signal_events)
@@ -1087,71 +1073,81 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         )
         _do_move_on(f"saturated({saturation_status})")
     elif action not in ("MOVE_ON", "VERIFY"):
-        # PROBE — continue on current topic, select probe family from rotation
+        # PROBE — pick family purely from signal or LLM, no fixed rotation
         if current_topic_state:
-            from interview.probe_strategy import select_probe_family_from_rotation, _PROBE_FAMILIES
-            probe_family = select_probe_family_from_rotation(
-                probe_rotation_index=current_topic_state.probe_rotation_index,
-                signal_names=signal_fired_names,
-                topic_importance=current_topic_state.importance,
-                llm_probe_mode=td["decision"].get("mode"),
-            )
-            probe_goal = _PROBE_FAMILIES.get(probe_family, _PROBE_FAMILIES["ownership"])["goal"]
-            probe_style = _PROBE_FAMILIES.get(probe_family, _PROBE_FAMILIES["ownership"])["style"]
+            from interview.probe_strategy import _PROBE_FAMILIES, _SIGNAL_TO_FAMILY, _MODE_ALIASES
+
+            # Priority 1: signal fired → signal-driven family
+            probe_family = None
+            for sig_name, sig_family in _SIGNAL_TO_FAMILY:
+                if sig_name in signal_fired_names and sig_family != "normal":
+                    probe_family = sig_family
+                    break
+
+            # Priority 2: LLM returned a valid probe_mode
+            if not probe_family:
+                llm_mode = str(td["decision"].get("mode") or "").strip().lower()
+                if llm_mode in _PROBE_FAMILIES:
+                    probe_family = llm_mode
+                elif llm_mode in _MODE_ALIASES:
+                    probe_family = _MODE_ALIASES[llm_mode]
+
+            # Priority 3: fallback — ownership is the safest first angle on any topic
+            if not probe_family or probe_family not in _PROBE_FAMILIES:
+                probe_family = "ownership"
+
+            probe_goal  = _PROBE_FAMILIES[probe_family]["goal"]
+            probe_style = _PROBE_FAMILIES[probe_family]["style"]
             td["decision"]["mode"] = probe_family
             td["decision"]["next_goal"] = probe_goal
 
-            # DETAILED PROBE LOGGING
             pct_saturated = 100 * min(1.0, current_topic_state.saturation_score / current_topic_state.saturation_threshold)
             logger.info(
-                "[DECISION] 🔄 PROBE NOT SATURATED → continue on topic | score=%.1f/%s (%.0f%%) turn=%d",
+                "[DECISION] 🔄 PROBE → continue on topic | family=%s signals=[%s] | score=%.1f/%s (%.0f%%) turn=%d",
+                probe_family,
+                ", ".join(signal_fired_names) if signal_fired_names else "none",
                 current_topic_state.saturation_score, current_topic_state.saturation_threshold,
                 pct_saturated, p.turn,
             )
-            logger.info(
-                "[PROBE] family=%s rotation_index=%d signals=[%s] | goal: %s",
-                probe_family, current_topic_state.probe_rotation_index,
-                ", ".join(signal_fired_names) if signal_fired_names else "none",
-                probe_goal[:80],
-            )
 
-            # Full question — no truncation. Truncating to 120 chars caused the LLM
-            # to not recognise its own question as a match and repeat it verbatim.
             _prev_q_full = (p.question or "").strip()
-            _prev_a_gist = " ".join((p.answer or "").split()[:15]).strip()
-            # Slim directive injected into chat_ctx — only what drives LLM behaviour.
-            # QUALITY / SATURATION / SIGNALS are eval-pipeline metrics; the interview
-            # LLM never uses them to choose wording. Removing them saves ~60-80 tokens
-            # of prefill every turn with zero change in Ishita's output quality.
-            # The full verbose version is kept in the result dict for Redis / logging.
-            _style_first_sentence = probe_style.split(".")[0].strip()
+            _prev_a_full = (p.answer or "").strip()
+            _prev_a_gist = " ".join(_prev_a_full.split()[:20]).strip()
+            # Detect very short / surface answers — add a warm pushback tone to directive
+            _quality = td.get("quality", {})
+            _is_short_answer = (
+                float(_quality.get("overall", 5.0)) <= 0.5
+                and float(_quality.get("depth", 5.0)) == 0.0
+                and len(_prev_a_full.split()) < 8
+            )
+            _short_answer_nudge = (
+                "\nCANDIDATE GAVE A VERY SHORT ANSWER — push back warmly but directly.\n"
+                "Don't just re-ask. React like a real interviewer who expected more:\n"
+                "  - 'That's a start — can you give me a bit more to work with?'\n"
+                "  - 'I'd love to hear more than that — what specifically did you do?'\n"
+                "  - 'Come on, walk me through it a bit more.'\n"
+                "Sound like you genuinely want to hear the story, not like you're filling a form."
+            ) if _is_short_answer else ""
+
             directive = (
                 "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
                 f"DECISION: PROBE ({probe_family.upper()})\n"
-                f"NEXT MOVE: {probe_goal}\n"
-                f"STYLE: {_style_first_sentence}.\n"
-                f"ALREADY ASKED — do NOT repeat or rephrase this: \"{_prev_q_full}\"\n"
-                f"CANDIDATE ALREADY ANSWERED: \"{_prev_a_gist}...\"\n"
-                "Your next question MUST be different — anchor to a new angle, a specific name, tool, or detail they mentioned."
+                f"ANGLE: {probe_goal}\n"
+                f"HOW TO ASK: {probe_style}\n"
+                f"LAST QUESTION YOU ASKED: \"{_prev_q_full}\"\n"
+                f"CANDIDATE SAID: \"{_prev_a_gist}{'...' if len(_prev_a_full.split()) > 20 else ''}\"\n"
+                f"DO NOT ask the same question again. DO NOT rephrase it.\n"
+                f"Pick the most natural angle from ANGLE/HOW TO ASK above based on what they actually said.\n"
+                f"ONE question only. Sound natural.\n"
+                f"DO NOT wrap up or say goodbye — the interview is still in progress."
+                f"{_short_answer_nudge}"
             )
             logger.info(
-                "[SIGNAL→BEHAVIOR] turn=%d | action=PROBE(%s) | signals=[%s] | "
-                "EXPECTED_BEHAVIOR: agent asks '%s' | saturation=%.0f%%",
-                p.turn, probe_family,
+                "[PROBE] family=%s signals=[%s] | goal: %s",
+                probe_family,
                 ", ".join(signal_fired_names) if signal_fired_names else "none",
-                probe_goal[:80], pct_saturated,
+                probe_goal[:80],
             )
-            if not any_signal_fired:
-                current_topic_state.advance_probe_rotation(signal_fired=False)
-                logger.info(
-                    "[PROBE] Rotation advanced: %d → %d (no signal) turn=%d",
-                    current_topic_state.probe_rotation_index - 1, current_topic_state.probe_rotation_index, p.turn,
-                )
-            else:
-                logger.info(
-                    "[PROBE] Rotation held at index=%d (signal fired) turn=%d",
-                    current_topic_state.probe_rotation_index, p.turn,
-                )
     elif action == "MOVE_ON":
         # MOVE_ON from evaluator (not from saturation)
         _do_move_on("evaluator")

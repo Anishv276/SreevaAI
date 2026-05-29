@@ -58,7 +58,9 @@ _PROVIDER_DEFAULTS: dict[str, Any] = {
     "sarvam_v2_pitch":         0.0,
     "sarvam_v2_loudness":      1.0,
     "sarvam_temperature":      0.4,
-    "deepgram_endpointing_ms": 500,
+    # 800ms gives candidates room for fillers like "umm" / "ohh" without
+    # making the bot feel laggy; raise to 1000ms if cut-offs still happen.
+    "deepgram_endpointing_ms": 800,
     # WS connect/send timeout. Sarvam closes idle connections after 60s — keepalive pings every
     # 20s prevent this. recv timeout is set separately to 90s in _recv_task.
     "sarvam_ws_timeout_sec":   25,

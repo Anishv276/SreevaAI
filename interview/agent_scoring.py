@@ -1,39 +1,31 @@
-import asyncio
-import json
-import re
-import time
-import urllib.request
-from typing import Optional
-from interview.agent_persistence import _extract_openai_completion_usage, persist_org_manual_billing_usage
-from interview.agent_runtime_support import (
-    EVAL_TEMPERATURE,
-    APP_BASE_URL,
-    EVAL_LLM_MODEL,
-    WORKER_SYNC_TOKEN,
-    logger,
-)
+"""
+agent_scoring.py
 
-# ─────────────────────────────────────────────────────────────────────────────
-# FIX 1: MERGED EVAL FUNCTION
-#
-# BEFORE (2 separate LLM calls, ~1500ms total):
-#   Call A → score_answer_quality()      → {clarity:7, depth:4, ...}
-#   Call B → evaluate_answer_and_decide() → {action: PROBE, probe_mode: ownership}
-#   Both fired in parallel via asyncio.gather(), but each still costs one full
-#   OpenAI round-trip (~700-900ms each). Parallel means you wait for the SLOWER one.
-#
-# AFTER (1 merged LLM call, ~700ms total):
-#   Call AB → evaluate_answer()          → {clarity:7, depth:4, ..., action: PROBE, probe_mode: ownership}
-#   One round-trip returns BOTH quality scores AND routing decision.
+AFTER (1 merged LLM call, ~700ms total):
+  Call AB → evaluate_answer()          → {clarity:7, depth:4, ..., action: PROBE, probe_mode: ownership}
+  One round-trip returns BOTH quality scores AND routing decision.
 #   Saturation, weak_exit, time_pressure still get quality scores — nothing removed.
 #   turn_evaluator.py no longer needs asyncio.gather() for these two tasks.
 #
 # EXAMPLE:
 #   Candidate says: "We built a REST API using FastAPI"
-#   BEFORE: Call A scores clarity=6,depth=3. Call B sees "we built" → PROBE ownership.
 #   AFTER:  Single call scores clarity=6,depth=3 AND sees "we built" → PROBE ownership.
 #   Result is identical. Latency drops ~800ms.
 # ─────────────────────────────────────────────────────────────────────────────
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import re
+from typing import Any, Optional
+
+logger = logging.getLogger("interview-agent")
+
+EVAL_LLM_MODEL   = "gpt-4.1-mini"
+EVAL_TEMPERATURE = 0.0
+
 
 async def evaluate_answer(
     candidate_answer: str,
@@ -85,7 +77,9 @@ async def evaluate_answer(
             "reason": "answer too short to evaluate", "depth_signal": "SURFACE",
         }
 
-    recent_context = "\n".join(transcript_lines[-8:]) if transcript_lines else ""
+    # Use last 6 lines (3 Q&A pairs) — enough for LLM to see follow-up context
+    # without pulling in old-topic lines that cause the LLM to conflate answers.
+    recent_context = "\n".join(transcript_lines[-6:]) if transcript_lines else ""
 
     # Log before the LLM call so you can see it started in the terminal.
     # If this log appears but [EVAL] DONE never follows, the LLM call hung.
@@ -95,19 +89,17 @@ async def evaluate_answer(
     )
 
     try:
-        # One call, one round-trip, both tasks done.
-        # max_tokens=320: quality JSON (130 tokens) + routing JSON (130 tokens) + safety margin
         completion = await asyncio.wait_for(
             client.chat.completions.create(
                 model=llm_model,
                 temperature=EVAL_TEMPERATURE,
-                max_tokens=480,
+                max_tokens=320,
                 messages=[
                     {
                         "role": "system",
                         "content": (
-                            "You are evaluating a candidate's interview answer. Do TWO things in ONE response.\n\n"
-                            "Output ONLY valid JSON with ALL of these exact fields:\n"
+                            "You are scoring a candidate's interview answer and deciding the next move.\n"
+                            "Output ONLY valid JSON with these exact fields:\n"
                             "{\n"
                             '  "clarity": 0-10,\n'
                             '  "depth": 0-10,\n'
@@ -116,130 +108,146 @@ async def evaluate_answer(
                             '  "fluency": 0-10,\n'
                             '  "grammar": 0-10,\n'
                             '  "confidence": 0-10,\n'
-                            '  "signals": ["has_numbers"|"has_names"|"has_reasoning"|"has_failure"|"has_tradeoff"|"has_ownership"|"has_emotion"|"has_learning"],\n'
                             '  "action": "PROBE" or "MOVE_ON",\n'
-                            '  "probe_mode": one of the probe modes below or null,\n'
-                            '  "reason": "max 8 words quoted directly from candidate answer that drove this decision",\n'
-                            '  "depth_signal": "SURFACE" | "SPECIFIC" | "DEEP"\n'
+                            '  "probe_mode": "ownership"|"depth"|"authenticity"|"pressure"|"clarification"|null,\n'
+                            '  "reason": "max 8 words from the answer that drove your decision",\n'
+                            '  "depth_signal": "SURFACE"|"SPECIFIC"|"DEEP"\n'
                             "}\n\n"
 
-                            "── PART 1: QUALITY SCORES ──\n"
-                            "clarity: How easy to follow structurally? 0-2 incoherent, 3-5 disjointed, 6-8 clear, 9-10 perfect.\n"
-                            "depth: Reasoning shown? 0-2 none, 3-5 shallow, 6-8 good tradeoffs, 9-10 deep systems thinking.\n"
-                            "specificity: Real names/numbers/dates? 0-2 none, 3-5 vague, 6-8 named real things, 9-10 heavily grounded.\n"
-                            "grounding: Real lived experience vs theory? 0-2 no experience, 3-5 mix, 6-8 clearly from real work, 9-10 rich texture.\n"
-                            "fluency: Natural speech flow? 0-2 halting, 3-5 some hesitation, 6-8 mostly fluent, 9-10 natural.\n"
-                            "grammar: Correctness? 0-2 major errors, 3-5 several issues, 6-8 mostly correct, 9-10 correct.\n"
-                            "confidence: Assured and decisive? 0-2 very uncertain, 3-5 tentative, 6-8 confident, 9-10 strongly direct.\n\n"
+                            "── SCORES (clarity, depth, specificity, grounding drive saturation) ──\n"
+                            "clarity: Is it easy to follow? "
+                            "1=disconnected fragments | 4=understandable but scattered | 7=clear structure | 10=precise and logical\n"
+                            "depth: Did they show WHY, not just WHAT? "
+                            "1=no reasoning at all | 4=stated the thing, no reason | 7=explained tradeoffs | 10=cause-effect + edge cases\n"
+                            "specificity: Real names, tools, numbers, dates? "
+                            "1=completely generic | 4=vague ('some tool', 'a while') | 7=named specific things | 10=numbers+names+dates\n"
+                            "grounding: Does this sound like real lived work? "
+                            "1=pure theory/reading | 4=could be anyone | 7=clearly from real experience | 10=rich texture, imperfect detail\n"
+                            "fluency: Natural spoken delivery? 1=halting | 5=hesitant but followable | 10=natural\n"
+                            "grammar: Speech grammar? 1=major errors | 5=understandable | 10=correct\n"
+                            "confidence: Decisive and assured? 1=very uncertain | 5=tentative | 10=direct\n\n"
 
-                            "── PART 2: ROUTING DECISION ──\n"
-                            "Go through these in order, stop at first that fits:\n\n"
-                            "1. INTEGRITY: conflict with earlier answer → clarification | "
-                            "follow-up vaguer than first answer → compression | "
-                            "sounds rehearsed with no real memory → verification\n"
-                            "2. OWNERSHIP: said 'we built/team did' but personal contribution unclear → ownership\n"
-                            "3. PROOF: claimed result with no number/metric → outcome | "
-                            "named tool but no reason why chosen → alternatives\n"
-                            "4. DEPTH (only if ownership+proof clear): no friction/mistake → failure | "
-                            "described what not how → process\n"
-                            "5. HUMAN (only if depth_signal=DEEP): pressure/crisis hook → situational | "
-                            "hard call/mistake hook → behavioral\n"
-                            "6. MOVE_ON: real specifics AND reasoning given, nothing left to pull, "
-                            "or candidate admitted they don't know\n\n"
+                            "── depth_signal ──\n"
+                            "SURFACE: answer is generic, no real names/tools/numbers\n"
+                            "SPECIFIC: named at least one real thing (tool, project, number)\n"
+                            "DEEP: has specifics AND reasoning AND at least one tradeoff or consequence\n\n"
 
-                            "depth_signal: SURFACE=generic/vague, SPECIFIC=named real thing, DEEP=specifics+reasoning+tradeoffs\n\n"
-
-                            "RULES: Pick exactly ONE probe_mode. reason must quote the candidate's actual words."
+                            "── ROUTING: action + probe_mode ──\n"
+                            "Use the scores to drive the decision, not separately from them:\n\n"
+                            "MOVE_ON when:\n"
+                            "  - specificity ≥ 7 AND depth ≥ 6 AND grounding ≥ 6 (they gave a real answer)\n"
+                            "  - OR follow-ups ≥ 4 (enough time spent, move on regardless)\n"
+                            "  - OR candidate said 'I don't know' / 'I didn't do that'\n\n"
+                            "PROBE when: more can be pulled. Pick probe_mode based on what's weakest:\n"
+                            "  ownership     — grounding low, 'we' language, role unclear, HOW unknown\n"
+                            "  depth         — specificity ok but depth low, no tradeoff/metric/reasoning\n"
+                            "  authenticity  — sounds rehearsed, shallower than first answer, skill claimed not shown\n"
+                            "  pressure      — story too clean, no mistake/friction — needs a hard moment\n"
+                            "  clarification — contradicts earlier, or answer keeps getting shorter\n\n"
+                            "RULES: probe_mode must be null when action=MOVE_ON. "
+                            "reason must quote the candidate's actual words."
                         ),
                     },
                     {
                         "role": "user",
                         "content": (
-                            f"QUESTION: {last_question}\n\n"
+                            f"QUESTION ASKED: {last_question}\n\n"
                             f"CANDIDATE ANSWER: {candidate_answer}\n\n"
-                            f"FOLLOW-UPS ALREADY ASKED ON THIS TOPIC: {topic_follow_up_count}\n\n"
-                            f"RECENT CONTEXT:\n{recent_context}"
+                            f"FOLLOW-UPS ALREADY ASKED ON THIS TOPIC: {topic_follow_up_count}\n"
+                            f"(if ≥ 4, bias toward MOVE_ON even on weak answers)\n\n"
+                            f"RECENT CONTEXT (for detecting collapse or contradiction):\n{recent_context}"
                         ),
                     },
                 ],
+                response_format={"type": "json_object"},
             ),
-            timeout=4.0,
+            timeout=6.0,  # raised from 4s — richer prompt + json_object mode needs more room
         )
-        await persist_org_manual_billing_usage(
-            org_id, "interview", _extract_openai_completion_usage(completion)
-        )
-        raw = completion.choices[0].message.content or ""
-        raw_clean = raw.strip()
-        # Strip markdown code fences that GPT-4.1-mini sometimes wraps around JSON
-        if raw_clean.startswith("```"):
-            raw_clean = re.sub(r"^```(?:json)?\s*", "", raw_clean)
-            raw_clean = re.sub(r"\s*```$", "", raw_clean.strip())
-        # Extract first JSON object if there is surrounding text or truncation artifacts
-        _json_match = re.search(r"\{.*\}", raw_clean, re.DOTALL)
-        if _json_match:
-            raw_clean = _json_match.group(0)
-        parsed = json.loads(raw_clean)
 
-        # Clamp quality scores 0-10
-        for key in ("clarity", "depth", "specificity", "grounding", "fluency", "grammar", "confidence"):
-            parsed[key] = max(0, min(10, int(parsed.get(key, 5))))
-        parsed["overall"] = (
-            parsed["clarity"] + parsed["depth"] + parsed["specificity"] + parsed["grounding"]
-        ) / 4.0
-        parsed["signals"] = parsed.get("signals", [])
-        # concerns no longer returned by LLM — computed in eval_pipeline from
-        # signal_events (any event with score_delta < 0 is a concern). Keeping
-        # the key as empty list so downstream code that reads concerns still works.
-        parsed["concerns"] = []
+        raw = completion.choices[0].message.content or "{}"
+        data: dict[str, Any] = json.loads(raw)
 
-        # Validate routing fields
-        if parsed.get("action") not in ("PROBE", "MOVE_ON"):
-            parsed["action"] = "MOVE_ON"
-        if parsed.get("depth_signal") not in ("SURFACE", "SPECIFIC", "DEEP"):
-            parsed["depth_signal"] = "SURFACE"
-        _valid_probe_modes = {
-            "ownership", "outcome", "alternatives", "failure", "process",
-            "clarification", "verification", "compression", "situational", "behavioral",
+        def _clamp(v: Any, lo: float = 0.0, hi: float = 10.0) -> float:
+            try:
+                return max(lo, min(hi, float(v)))
+            except (TypeError, ValueError):
+                return 0.0
+
+        clarity     = _clamp(data.get("clarity", 0))
+        depth       = _clamp(data.get("depth", 0))
+        specificity = _clamp(data.get("specificity", 0))
+        grounding   = _clamp(data.get("grounding", 0))
+        fluency     = _clamp(data.get("fluency", 0))
+        grammar     = _clamp(data.get("grammar", 0))
+        confidence  = _clamp(data.get("confidence", 0))
+
+        overall = (clarity + depth + specificity + grounding) / 4.0
+
+        action = str(data.get("action", "PROBE")).upper()
+        if action not in ("PROBE", "MOVE_ON"):
+            action = "PROBE"
+
+        # Validate probe_mode against our 5 families + legacy aliases
+        _VALID_FAMILIES = {"ownership", "depth", "authenticity", "pressure", "clarification"}
+        _LEGACY_MAP = {
+            "process": "ownership", "evidence": "authenticity",
+            "verification": "authenticity", "compression": "clarification",
+            "outcome": "depth", "alternatives": "depth",
+            "failure": "pressure", "situational": "pressure", "behavioral": "pressure",
         }
-        if parsed.get("probe_mode") not in _valid_probe_modes:
-            parsed["probe_mode"] = None
+        raw_mode = str(data.get("probe_mode") or "").strip().lower()
+        if raw_mode in _VALID_FAMILIES:
+            probe_mode = raw_mode
+        elif raw_mode in _LEGACY_MAP:
+            probe_mode = _LEGACY_MAP[raw_mode]  # remap old names gracefully
+        elif action == "MOVE_ON":
+            probe_mode = None
+        else:
+            probe_mode = "ownership"  # safe default
 
-        # Terminal log — one line shows scores + routing so you can see both at a glance.
-        # Example: [EVAL] ✅ action=PROBE probe=ownership depth=SPECIFIC | c=6 d=3 s=4 g=5
+        reason = str(data.get("reason", ""))[:120]
+        depth_signal = str(data.get("depth_signal", "SURFACE")).upper()
+        if depth_signal not in ("SURFACE", "SPECIFIC", "DEEP"):
+            depth_signal = "SURFACE"
+
         logger.info(
-            "[EVAL] ✅ action=%s probe=%s depth_signal=%s | clarity=%d depth=%d specificity=%d grounding=%d | reason=%s",
-            parsed["action"],
-            parsed.get("probe_mode") or "null",
-            parsed["depth_signal"],
-            parsed["clarity"], parsed["depth"], parsed["specificity"], parsed["grounding"],
-            (parsed.get("reason") or "")[:80],
+            "[EVAL] ✅ action=%s probe=%s depth_signal=%s | "
+            "clarity=%d depth=%d specificity=%d grounding=%d | reason=%s",
+            action, probe_mode, depth_signal,
+            int(clarity), int(depth), int(specificity), int(grounding),
+            repr(reason),
         )
-        return parsed
+
+        return {
+            "clarity": clarity, "depth": depth,
+            "specificity": specificity, "grounding": grounding,
+            "fluency": fluency, "grammar": grammar, "confidence": confidence,
+            "overall": overall,
+            "action": action, "probe_mode": probe_mode,
+            "reason": reason, "depth_signal": depth_signal,
+        }
 
     except asyncio.TimeoutError:
-        # Timeout = network/API failure, not a weak answer.
-        # is_timeout=True tells eval_pipeline to skip quality contribution to saturation.
-        # Scores are 1 (not 5) so that if is_timeout check ever fails, saturation is
-        # not inflated by fake neutral scores — 1s contribute near-zero to quality bands.
-        logger.warning("[EVAL] Merged evaluator timed out turn — returning low scores + PROBE fallback")
+        logger.warning("[EVAL] ⏰ evaluate_answer timed out (6s) — returning surface fallback")
         return {
             "clarity": 1, "depth": 1, "specificity": 1, "grounding": 1,
             "fluency": 1, "grammar": 1, "confidence": 1,
-            "overall": 1.0, "signals": [], "concerns": ["timeout"],
-            "is_timeout": True,
+            "overall": 1.0,
             "action": "PROBE", "probe_mode": "ownership",
-            "reason": "timeout", "depth_signal": "SURFACE",
+            "reason": "eval timeout", "depth_signal": "SURFACE",
+            "is_timeout": True,
         }
     except Exception as e:
-        logger.warning("[EVAL] Merged evaluator failed: %s", e, exc_info=True)
+        logger.error("[EVAL] ❌ evaluate_answer failed: %s", e, exc_info=True)
         return {
-            "clarity": 1, "depth": 1, "specificity": 1, "grounding": 1,
-            "fluency": 1, "grammar": 1, "confidence": 1,
-            "overall": 1.0, "signals": [], "concerns": ["error"],
-            "is_timeout": True,
+            "clarity": 0, "depth": 0, "specificity": 0, "grounding": 0,
+            "fluency": 0, "grammar": 0, "confidence": 0,
+            "overall": 0.0,
             "action": "PROBE", "probe_mode": "ownership",
-            "reason": str(e), "depth_signal": "SURFACE",
+            "reason": "eval error", "depth_signal": "SURFACE",
         }
+
+
 async def extract_claims(
     candidate_answer: str,
     turn: int,
@@ -247,9 +255,10 @@ async def extract_claims(
     org_id: Optional[str] = None,
     llm_model: str = EVAL_LLM_MODEL,
 ) -> list[dict]:
-    """Extract verifiable factual claims from a single candidate answer."""
-    if not candidate_answer or len(candidate_answer.strip()) < 20:
+    """Extract verifiable factual claims from candidate answer for contradiction detection."""
+    if not candidate_answer or not candidate_answer.strip():
         return []
+
     try:
         completion = await asyncio.wait_for(
             client.chat.completions.create(
@@ -260,124 +269,112 @@ async def extract_claims(
                     {
                         "role": "system",
                         "content": (
-                            "Extract verifiable factual claims from an interview answer. "
-                            "Only extract claims that are specific and checkable - skip vague statements.\n\n"
-                            "Output a JSON array. Each item has:\n"
-                            '  "type": one of [team_size, years_experience, tenure_at_company, role_title, '
-                            "project_ownership, reporting_structure, outcome_metric, tech_stack, company_name, timeline]\n"
-                            '  "value": the specific claim value as a short string (e.g. "2 people", "5 years", "solo")\n'
-                            '  "quote": the exact phrase from the answer that contains this claim (max 15 words)\n'
-                            '  "context": which company/project this refers to (or "general" if unclear)\n\n'
-                            "RULES:\n"
-                            "- Only extract claims with specific values. Skip: 'a small team', 'a few years'.\n"
-                            "- Include: 'team of 2', '5 years', 'I was the only engineer'.\n"
-                            "- If no specific claims, return [].\n"
-                            "- Maximum 5 claims per answer."
+                            "Extract verifiable factual claims from the candidate's answer. "
+                            "Output a JSON array (max 5 items). Each item:\n"
+                            '{"type": one of [team_size,years_experience,tenure_at_company,role_title,'
+                            'project_ownership,reporting_structure,outcome_metric,tech_stack,company_name,timeline], '
+                            '"value": "the claimed value", '
+                            '"quote": "max 15 words from answer", '
+                            '"context": "company/project name or general", '
+                            f'"turn": {turn}}}\n'
+                            "Only extract concrete, checkable claims. Skip opinions and vague statements."
                         ),
                     },
-                    {
-                        "role": "user",
-                        "content": f"CANDIDATE ANSWER (turn {turn}):\n{candidate_answer}",
-                    },
+                    {"role": "user", "content": f"CANDIDATE ANSWER (turn {turn}):\n{candidate_answer}"},
                 ],
+                response_format={"type": "json_object"},
             ),
             timeout=3.0,
         )
-        await persist_org_manual_billing_usage(
-            org_id, "interview", _extract_openai_completion_usage(completion)
-        )
-        raw = completion.choices[0].message.content or "[]"
-        claims = json.loads(raw.strip())
-        if not isinstance(claims, list):
-            return []
-        for claim in claims:
-            claim["turn"] = turn
-        return claims[:5]
-    except Exception as e:
-        logger.debug(f"[CLAIMS] Claim extraction failed at turn {turn}: {e}")
+        raw = completion.choices[0].message.content or "{}"
+        parsed = json.loads(raw)
+        if isinstance(parsed, list):
+            return parsed
+        # Sometimes model wraps in {"claims": [...]}
+        for v in parsed.values():
+            if isinstance(v, list):
+                return v
         return []
+    except Exception:
+        return []
+
+
 def check_contradiction(
     new_claim: dict,
     existing_claims_by_type: dict[str, list[dict]],
 ) -> Optional[dict]:
-    """Compare a new claim against existing claims of the same type and context."""
-    claim_type = new_claim.get("type")
-    new_value = str(new_claim.get("value", "")).lower().strip()
-    new_context = str(new_claim.get("context", "general")).lower().strip()
-    new_turn = new_claim.get("turn", 0)
-    if not claim_type or not new_value:
+    """Compare new_claim against existing claims of same type. Returns contradiction dict or None."""
+    claim_type = new_claim.get("type", "")
+    existing = existing_claims_by_type.get(claim_type, [])
+    if not existing:
         return None
-    for old in existing_claims_by_type.get(claim_type, []):
-        old_context = str(old.get("context", "general")).lower().strip()
-        if new_context != "general" and old_context != "general" and new_context != old_context:
-            continue
-        old_value = str(old.get("value", "")).lower().strip()
-        old_turn = old.get("turn", 0)
-        if old_value == new_value:
-            continue
-        def _extract_number(s: str) -> Optional[float]:
-            m = re.search(r"(\d+(?:\.\d+)?)", s)
-            return float(m.group(1)) if m else None
-        new_num = _extract_number(new_value)
-        old_num = _extract_number(old_value)
-        is_contradiction = False
+
+    def _extract_num(s: str) -> Optional[float]:
+        m = re.search(r"\d+(?:\.\d+)?", str(s))
+        return float(m.group()) if m else None
+
+    for old in existing:
+        old_val = str(old.get("value", ""))
+        new_val = str(new_claim.get("value", ""))
+        contradiction = False
+
         if claim_type == "team_size":
-            if new_num is not None and old_num is not None and abs(new_num - old_num) >= 3:
-                is_contradiction = True
+            on, nn = _extract_num(old_val), _extract_num(new_val)
+            if on is not None and nn is not None and abs(on - nn) >= 3:
+                contradiction = True
         elif claim_type == "years_experience":
-            if new_num is not None and old_num is not None and abs(new_num - old_num) > 2:
-                is_contradiction = True
+            on, nn = _extract_num(old_val), _extract_num(new_val)
+            if on is not None and nn is not None and abs(on - nn) > 2:
+                contradiction = True
         elif claim_type == "project_ownership":
-            solo_words = {"solo", "alone", "only", "just me", "myself"}
-            team_words = {"team", "we", "group", "together", "collective"}
-            new_is_solo = any(w in new_value for w in solo_words)
-            new_is_team = any(w in new_value for w in team_words)
-            old_is_solo = any(w in old_value for w in solo_words)
-            old_is_team = any(w in old_value for w in team_words)
-            if (new_is_solo and old_is_team) or (new_is_team and old_is_solo):
-                is_contradiction = True
-        elif claim_type in ("tenure_at_company", "reporting_structure", "outcome_metric", "timeline"):
-            if new_num is not None and old_num is not None and abs(new_num - old_num) / max(old_num, 1) > 0.4:
-                is_contradiction = True
-        else:
-            if new_value != old_value and new_num is None and old_num is None:
-                if len(set(new_value.split()) & set(old_value.split())) == 0:
-                    is_contradiction = True
-        if is_contradiction:
+            solo_words = {"solo", "alone", "myself", "i built", "i made"}
+            team_words = {"team", "we", "together", "collaborated"}
+            old_solo = any(w in old_val.lower() for w in solo_words)
+            new_solo = any(w in new_val.lower() for w in solo_words)
+            old_team = any(w in old_val.lower() for w in team_words)
+            new_team = any(w in new_val.lower() for w in team_words)
+            if (old_solo and new_team) or (old_team and new_solo):
+                contradiction = True
+        elif claim_type == "tenure_at_company":
+            on, nn = _extract_num(old_val), _extract_num(new_val)
+            if on is not None and nn is not None and on > 0:
+                if abs(on - nn) / on > 0.40:
+                    contradiction = True
+
+        if contradiction:
             return {
                 "type": claim_type,
-                "context": new_context,
-                "old_turn": old_turn,
-                "old_value": old.get("value"),
+                "context": new_claim.get("context", ""),
+                "old_turn": old.get("turn", 0),
+                "old_value": old_val,
+                "new_turn": new_claim.get("turn", 0),
+                "new_value": new_val,
                 "old_quote": old.get("quote", ""),
-                "new_turn": new_turn,
-                "new_value": new_claim.get("value"),
                 "new_quote": new_claim.get("quote", ""),
-                "detected_at": time.time(),
             }
+
     return None
-async def notify_sync_engine(app_id: str):
-    """Call the Next.js API to trigger Pinecone indexing for this candidate."""
-    try:
-        url = f"{APP_BASE_URL}/api/admin/candidates/{app_id}/sync"
-        def _post_sync_request() -> tuple[int, str]:
-            request = urllib.request.Request(
-                url,
+
+
+def notify_sync_engine(app_id: str, turn: int, action: str) -> None:
+    """Fire-and-forget HTTP ping to the sync engine after eval completes."""
+    import threading, urllib.request, urllib.error, os
+    sync_url = os.environ.get("SYNC_ENGINE_URL", "")
+    if not sync_url:
+        return
+
+    def _ping():
+        try:
+            payload = json.dumps({"app_id": app_id, "turn": turn, "action": action}).encode()
+            req = urllib.request.Request(
+                f"{sync_url}/eval-complete",
+                data=payload,
+                headers={"Content-Type": "application/json"},
                 method="POST",
-                headers={
-                    "Content-Type": "application/json",
-                    "User-Agent": "hr-updates-agent/1.0",
-                    "x-internal-sync-token": str(WORKER_SYNC_TOKEN or ""),
-                },
-                data=b"{}",
             )
-            with urllib.request.urlopen(request, timeout=10) as response:
-                status = int(getattr(response, "status", response.getcode()))
-                body = response.read().decode("utf-8", errors="replace")
-                return status, body
-        status, body = await asyncio.to_thread(_post_sync_request)
-        logger.info(f"[SYNC] Notified sync engine for {app_id} status={status}")
-        if body.strip():
-            logger.debug(f"[SYNC] Response body for {app_id}: {body[:500]}")
-    except Exception as e:
-        logger.warning(f"[SYNC_ERROR] Failed to notify sync engine: {e}")
+            with urllib.request.urlopen(req, timeout=5):
+                pass
+        except Exception as e:
+            logger.warning("[SYNC_ERROR] Failed to notify sync engine: %s", e)
+
+    threading.Thread(target=_ping, daemon=True).start()

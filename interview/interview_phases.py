@@ -24,16 +24,15 @@ def build_warmup_directive() -> str:
     return (
         "[DO NOT SAY ALOUD — INTERNAL INTERVIEWER INSTRUCTION]\n"
         "[WARMUP PHASE]\n"
-        "The candidate just responded to your greeting. This is a quick readiness check — NOT the interview yet.\n"
-        "In ONE short, friendly turn do exactly this:\n"
-        "  1. Give a warm 1-sentence reaction to what they said.\n"
-        "  2. Ask a simple readiness check — confirm they're all set. Use only positive framing. Examples:\n"
-        "     - 'Before we dive in, are you all set on your end — audio clear, everything good?'\n"
-        "     - 'Just making sure you're comfortable and ready — all good on your end?'\n"
-        "     - 'Are you all set and ready to go?'\n"
-        "     Pick the one that fits naturally. Never offer a negative option like 'need a moment' or 'need more time'.\n"
-        "Keep it under 3 sentences. Do NOT ask about skills, experience, or the role.\n"
-        "Once they confirm they're ready, say something like 'Perfect, let's dive in!' and the system will begin the interview."
+        "React to what the candidate just said. TWO sentences only:\n"
+        "  Sentence 1: A warm, casual reply — mention you've been doing a lot of interviews today\n"
+        "    and you're happy to have a good chat. Be genuine, not scripted.\n"
+        "    Example feel (not exact words): 'Ha, good! Been a packed day of interviews — happy to\n"
+        "    have a good chat now.'\n"
+        "  Sentence 2: Check they're ready. One short question — 'Ready to jump in?' or 'All set?'\n"
+        "Do NOT say 'Thanks for sharing that', 'Just making sure', or any checklist phrase.\n"
+        "Sound like a real person, not a customer service agent.\n"
+        "Once they say yes/ready: say 'Great, let's get into it!' and start the interview."
     )
 
 
@@ -78,20 +77,32 @@ def build_interview_directive(
         anchor = resume_brief.get("anchor_item", "their most recent work")
         anchor_type = resume_brief.get("anchor_type", "project")
 
+    anchor_name = anchor.split(' - ')[0].strip()
+    anchor_detail = anchor.split(' - ')[1].strip() if ' - ' in anchor else ""
+
     if anchor_type == "project":
         opening = (
-            f"Open by asking what they personally built or owned in: "
-            f"{anchor.split(' - ')[0].strip()}"
+            f"Open on: {anchor_name}.\n"
+            f"Context from resume: {anchor_detail}\n"
+            f"DO NOT use a fixed opener. Pick ONE angle that feels natural given the context above.\n"
+            f"Options (pick the most natural one, or make your own variant):\n"
+            f"  - Ask about the problem they were solving and what they built to solve it\n"
+            f"  - Ask what the hardest part of building it was\n"
+            f"  - Ask what they'd do differently if they rebuilt it today\n"
+            f"  - Pick a specific detail from the resume context and ask about it directly\n"
+            f"ONE question only. Do NOT say 'what did you personally build or own' — that's a script, not a conversation."
         )
     elif anchor_type in ("role", "internship"):
         opening = (
-            f"Open by asking what they personally handled day-to-day at: "
-            f"{anchor.split(' - ')[0].strip()}"
+            f"Open on their role at: {anchor_name}.\n"
+            f"Context: {anchor_detail}\n"
+            f"Ask something specific about their day-to-day work — what they actually did, "
+            f"not a generic 'what did you do there?' ONE question, natural."
         )
     else:
         opening = (
-            "Open by asking what they've been working on most recently "
-            "and what was specifically theirs."
+            "Open by asking what they've been working on most recently. "
+            "Pick a specific angle — what they're most proud of, or what was hardest."
         )
 
     # ── Band-aware instinct ───────────────────────────────────────────────────

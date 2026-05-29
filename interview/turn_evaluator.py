@@ -21,7 +21,6 @@ from interview.turn_decision import (
     compute_trust_delta,
     build_turn_decision,
 )
-from interview.probe_strategy import route, build_directive
 
 logger = logging.getLogger("interview-agent")
 
@@ -56,7 +55,6 @@ async def run_turn_evaluation(
     llm_model: str,
     evaluate_answer_fn,              # merged fn: returns quality scores + routing in one call
     signal_toggles: Optional[dict[str, Any]] = None,
-    uncovered_topics: Optional[list[str]] = None,
     session_score_history: Optional[list[float]] = None,
     turns_since_last_decay: int = 999,
     response_latency_sec: Optional[float] = None,
@@ -111,12 +109,13 @@ async def run_turn_evaluation(
     ]
     signals = build_signal_flags(signal_events)
 
-    action, mode, next_goal = route(
-        signals=signals,
-        depth_signal=llm_decision.get("depth_signal", "SURFACE"),
-        llm_action=llm_decision.get("action", "MOVE_ON"),
-        llm_probe_mode=llm_decision.get("probe_mode"),
-    )
+    # action/mode/next_goal come directly from the LLM decision.
+    # eval_pipeline.py overwrites the directive completely on every path
+    # (PROBE inline, MOVE_ON via DirectiveCompiler, REPHRASE, contradiction)
+    # so route() and build_directive() from probe_strategy are not needed here.
+    action = llm_decision.get("action", "MOVE_ON")
+    mode = llm_decision.get("probe_mode") or "normal"
+    next_goal = llm_decision.get("next_goal", "")
 
     trust = compute_trust_delta(signal_events=signal_events, quality=quality)
 
@@ -130,11 +129,7 @@ async def run_turn_evaluation(
         next_goal=next_goal,
     )
 
-    directive = build_directive(
-        td=td,
-        depth_signal=llm_decision.get("depth_signal", "SURFACE"),
-        collapse_stage=0,
-        uncovered_topics=uncovered_topics,
-    )
+    # directive is a placeholder — eval_pipeline.py always overwrites it.
+    directive = ""
 
     return td, directive

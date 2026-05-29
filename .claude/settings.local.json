@@ -53,7 +53,8 @@
       "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\vamsi\\\\OneDrive\\\\Desktop\\\\HR-updates\\\\interview\\\\\" -Recurse -File | Select-Object FullName | head -50)",
       "WebFetch(domain:redis-py.readthedocs.io)",
       "WebFetch(domain:github.com)",
-      "WebFetch(domain:sarvam.ai)"
+      "WebFetch(domain:sarvam.ai)",
+      "Bash(python -c \"import sys; sys.path.insert\\(0, 'c:/Users/vamsi/OneDrive/Desktop/HR-updates'\\); from interview.probe_strategy import _PROBE_FAMILIES, _SIGNAL_TO_FAMILY, _MODE_ALIASES, select_probe_family_from_rotation, route; print\\('Families:', list\\(_PROBE_FAMILIES.keys\\(\\)\\)\\); print\\('Signals:', [s[0]+'=>'+s[1] for s in _SIGNAL_TO_FAMILY]\\); print\\('Rotation test:', [select_probe_family_from_rotation\\(i, []\\) for i in range\\(5\\)]\\)\")"
     ]
   }
 }
