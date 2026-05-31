@@ -169,6 +169,7 @@ def summarize_session_usage(session_usage: AgentSessionUsage | None) -> dict[str
         summary[kind]["sessions"] = 1
     return summary
 _OPENAI_MODEL_RATES: dict[str, dict[str, float]] = {
+    "gpt-5.4-mini": {"input": 0.75, "cached_input": 0.075, "output": 4.5},
     "gpt-4o-mini": {"input": 0.15, "cached_input": 0.075, "output": 0.6},
     "gpt-4.1-mini": {"input": 0.4, "cached_input": 0.1, "output": 1.6},
     "gpt-4o": {"input": 2.5, "cached_input": 1.25, "output": 10.0},
@@ -176,24 +177,50 @@ _OPENAI_MODEL_RATES: dict[str, dict[str, float]] = {
 }
 # TTS pricing controls:
 # - Sarvam: INR rates from provider docs, converted to USD using BILLING_INR_PER_USD.
-# - Cartesia: default estimate in USD per 1M characters.
+# - Cartesia: $15/1M chars (Sonic standard), $30/1M chars (Sonic HD). Source: cartesia.ai/pricing
+# - ElevenLabs: $50/1M chars (Flash/Turbo), $100/1M chars (Multilingual v2/v3). Source: elevenlabs.io/pricing/api
+# - Deepgram: $0.0048/min streaming (nova-3 monolingual PAYG). Source: deepgram.com/pricing
 _BILLING_INR_PER_USD = float(os.environ.get("BILLING_INR_PER_USD", "83.0"))
 _SARVAM_TTS_INR_PER_10K_CHARS: dict[str, float] = {
     "bulbul:v3": 30.0,
     "bulbul:v2": 15.0,
 }
+# Cartesia per-model rates (USD per 1M characters). Sonic standard=$15, HD=$30.
+_CARTESIA_TTS_USD_PER_MILLION_CHARS_BY_MODEL: dict[str, float] = {
+    "sonic-3": 15.0,
+    "sonic-2": 15.0,
+    "sonic": 15.0,
+    "sonic-3-hd": 30.0,
+    "sonic-2-hd": 30.0,
+    "sonic-hd": 30.0,
+}
 _CARTESIA_TTS_DEFAULT_USD_PER_MILLION_CHARS = float(
-    os.environ.get("CARTESIA_TTS_USD_PER_MILLION_CHARS", "30.0")
+    os.environ.get("CARTESIA_TTS_USD_PER_MILLION_CHARS", "15.0")
 )
+# ElevenLabs per-model rates (USD per 1M characters). Source: elevenlabs.io/pricing/api
+_ELEVENLABS_TTS_USD_PER_MILLION_CHARS_BY_MODEL: dict[str, float] = {
+    "eleven_flash_v2": 50.0,
+    "eleven_flash_v2_5": 50.0,
+    "eleven_turbo_v2": 50.0,
+    "eleven_turbo_v2_5": 50.0,
+    "eleven_multilingual_v2": 100.0,
+    "eleven_multilingual_v3": 100.0,
+}
 _ELEVENLABS_TTS_DEFAULT_USD_PER_MILLION_CHARS = float(
-    os.environ.get("ELEVENLABS_TTS_USD_PER_MILLION_CHARS", "30.0")
+    os.environ.get("ELEVENLABS_TTS_USD_PER_MILLION_CHARS", "100.0")
 )
 _SARVAM_STT_INR_PER_HOUR: dict[str, float] = {
     "saaras:v3": 30.0,
 }
+# Deepgram streaming rates (USD/min). nova-3 PAYG streaming=$0.0048. Source: deepgram.com/pricing
 _DEEPGRAM_STT_USD_PER_MIN: dict[str, float] = {
-    "nova-3": 0.0077,
-    "nova-3-general": 0.0077,
+    "nova-3": 0.0048,
+    "nova-3-general": 0.0048,
+    "nova-3-multilingual": 0.0058,
+    "nova-2": 0.0043,
+    "nova-2-general": 0.0043,
+    "flux": 0.0065,
+    "flux-multilingual": 0.0078,
 }
 # ── Pydantic Billing Models (replaces _empty_billing_feature + _coerce_billing_metrics) ──
 class _ModelBilling(BaseModel):
@@ -266,8 +293,19 @@ def _merge_llm_into_bucket(
         mb.sessionDuration += session_dur
         mb.costUsd += cost
     bucket.costUsd += session_cost
+def _normalize_openai_model(model_name: str) -> str:
+    """Strip date/version suffixes so 'gpt-4.1-mini-2025-04-14' matches 'gpt-4.1-mini'."""
+    import re as _re
+    m = model_name.strip().lower()
+    # Remove trailing -YYYY-MM-DD
+    m = _re.sub(r"-\d{4}-\d{2}-\d{2}$", "", m)
+    # Remove trailing :YYYY-MM-DD
+    m = _re.sub(r":\d{4}-\d{2}-\d{2}$", "", m)
+    return m
+
 def _estimate_openai_cost(model_name: str, input_tokens: int, cached_tokens: int, output_tokens: int) -> float:
-    rates = _OPENAI_MODEL_RATES.get(model_name.strip().lower())
+    normalized = _normalize_openai_model(model_name)
+    rates = _OPENAI_MODEL_RATES.get(normalized)
     if not rates:
         return 0.0
     input_tokens = max(0, int(input_tokens or 0))
@@ -287,6 +325,10 @@ def _estimate_tts_cost_usd(provider_name: str, model_name: str, characters: int)
         return 0.0
     provider = str(provider_name or "").strip().upper()
     normalized_model = _normalize_tts_model_name(model_name)
+    # Strip "cartesia/" or "elevenlabs/" prefix if present
+    for pfx in ("cartesia/", "elevenlabs/"):
+        if normalized_model.startswith(pfx):
+            normalized_model = normalized_model[len(pfx):]
     if provider == "SARVAM":
         inr_per_10k = _SARVAM_TTS_INR_PER_10K_CHARS.get(normalized_model)
         if inr_per_10k is None:
@@ -294,9 +336,11 @@ def _estimate_tts_cost_usd(provider_name: str, model_name: str, characters: int)
         inr_cost = (chars / 10_000.0) * inr_per_10k
         return inr_cost / max(_BILLING_INR_PER_USD, 1e-6)
     if provider == "CARTESIA":
-        return (chars / 1_000_000.0) * _CARTESIA_TTS_DEFAULT_USD_PER_MILLION_CHARS
+        rate = _CARTESIA_TTS_USD_PER_MILLION_CHARS_BY_MODEL.get(normalized_model, _CARTESIA_TTS_DEFAULT_USD_PER_MILLION_CHARS)
+        return (chars / 1_000_000.0) * rate
     if provider == "ELEVENLABS":
-        return (chars / 1_000_000.0) * _ELEVENLABS_TTS_DEFAULT_USD_PER_MILLION_CHARS
+        rate = _ELEVENLABS_TTS_USD_PER_MILLION_CHARS_BY_MODEL.get(normalized_model, _ELEVENLABS_TTS_DEFAULT_USD_PER_MILLION_CHARS)
+        return (chars / 1_000_000.0) * rate
     return 0.0
 def _normalize_stt_model_name(model_name: str) -> str:
     return str(model_name or "").strip().lower()
@@ -730,11 +774,13 @@ async def get_interview_context(app_id: str):
            COALESCE(d."voiceId", o."voiceId") AS "voiceId",
            COALESCE(d."aiName", 'Ishitha') AS "aiName", o.name AS "orgName", o.location AS "orgLocation",
            o."deepgramModel", NULL AS "llmModel", NULL AS "llmTemperature", o."proctoringSignals",
-           ev.provider AS "voiceProvider", ev.model AS "voiceModel"
+           ev.provider AS "voiceProvider", ev.model AS "voiceModel",
+           i.status AS "interviewStatus"
     FROM "Application" a
     JOIN "Drive" d ON a."driveId" = d.id
     LEFT JOIN "Organization" o ON d."orgId" = o.id
     LEFT JOIN "EngineVoice" ev ON ev.id = COALESCE(d."voiceId", o."voiceId")
+    LEFT JOIN "Interview" i ON i."applicationId" = a.id
     WHERE a.id = $1
     LIMIT 1
     """
@@ -769,6 +815,7 @@ async def get_interview_context(app_id: str):
                 "llmTemperature": row["llmTemperature"],
                 "proctoringSignals": row["proctoringSignals"],
                 "interviewQuestions": row["interviewQuestions"],
+                "interviewStatus": row["interviewStatus"],
             }
         except Exception as e:
             last_error = e
@@ -1209,13 +1256,15 @@ async def generate_interview_report(
         interview_scores = [s for s in answer_scores if not s.get("is_warmup", False)]
 
         # Generate behavioral analysis
-        behavioral_report = await synthesize_behavioral_report(
+        behavioral_report, behavioral_llm_usages = await synthesize_behavioral_report(
             transcript_lines=transcript_lines,
             answer_scores=interview_scores,
             total_duration_sec=int(proctoring_data.get("session_duration", 0)) if proctoring_data else 0,
             proctoring_events=proctoring_data.get("events", []) if proctoring_data else [],
             contradictions_found=proctoring_data.get("contradictions", []) if proctoring_data else [],
         )
+        for _bu in behavioral_llm_usages:
+            await persist_org_manual_billing_usage(org_id, "interviewReport", _bu)
         client = AsyncOpenAI()
         # Strip warmup lines from transcript before sending to report LLM
         # Warmup is the first 4 lines (2 interviewer + 2 candidate exchanges)

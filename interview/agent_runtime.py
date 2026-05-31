@@ -496,6 +496,7 @@ class InterviewContext(BaseModel):
     extractedDetails: Any = None
     interviewQuestions: Any = None
     proctoringSignals: Any = None
+    interviewStatus: Optional[str] = None
 
     @field_validator("fullName", "jobTitle", "language", mode="before")
     @classmethod
