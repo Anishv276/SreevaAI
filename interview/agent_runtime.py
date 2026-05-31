@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import json
 import time
 import asyncpg
@@ -39,7 +39,6 @@ from interview.agent_providers import (
 )
 from interview.agent_persistence import (
     _create_db_pool,
-    checkpoint_ai_signals,
     flush_pending_manual_billing,
     generate_interview_report,
     generate_interview_summary,
@@ -492,6 +491,7 @@ class InterviewContext(BaseModel):
     deepgramModel: Optional[str] = None
     resumeData: Any = None
     extractedDetails: Any = None
+    screeningCriteria: Any = None
     interviewQuestions: Any = None
     proctoringSignals: Any = None
     interviewStatus: Optional[str] = None
@@ -625,6 +625,8 @@ async def entrypoint(ctx: JobContext):
 
     evaluation_signal_toggles = _extract_evaluation_signal_toggles(ctx_data.proctoringSignals)
     extracted_details = _coerce_jsonish(ctx_data.extractedDetails or "{}")
+    if not extracted_details:
+        extracted_details = _coerce_jsonish(ctx_data.screeningCriteria or "{}")
     structured_resume = _coerce_jsonish(ctx_data.resumeData or "{}")
     _raw_interview_questions = ctx_data.interviewQuestions
     _interview_questions: list = []
@@ -644,13 +646,50 @@ async def entrypoint(ctx: JobContext):
     # JD extraction produces criteria[].{name, priority} where priority=critical/high  must-have, medium  nice-to-have.
     # Legacy format used mustHaveSkills/niceToHaveSkills flat arrays  fall back to those if criteria absent.
     def _extract_jd_skill_lists(details: dict):
+        def _names_from(raw: Any) -> list[str]:
+            items = raw if isinstance(raw, list) else ([raw] if raw else [])
+            names: list[str] = []
+            for item in items:
+                if isinstance(item, dict):
+                    name = item.get("name") or item.get("skill") or item.get("title") or item.get("value")
+                else:
+                    name = item
+                text = str(name or "").strip()
+                if text:
+                    names.append(text)
+            return names
+
         criteria = details.get("criteria") or []
         if criteria:
-            must = [c.get("name", "") for c in criteria if c.get("priority") in ("critical", "high") and c.get("name")]
-            nice = [c.get("name", "") for c in criteria if c.get("priority") == "medium" and c.get("name")]
+            must = [
+                str(c.get("name", "")).strip()
+                for c in criteria
+                if isinstance(c, dict)
+                and c.get("priority") in ("critical", "high")
+                and str(c.get("name", "")).strip()
+            ]
+            nice = [
+                str(c.get("name", "")).strip()
+                for c in criteria
+                if isinstance(c, dict)
+                and c.get("priority") == "medium"
+                and str(c.get("name", "")).strip()
+            ]
             return must, nice
-        # Legacy fallback
-        return (details.get("mustHaveSkills") or []), (details.get("niceToHaveSkills") or [])
+        skills = details.get("skills") if isinstance(details.get("skills"), dict) else {}
+        must = (
+            _names_from(skills.get("must_have"))
+            or _names_from(skills.get("mustHave"))
+            or _names_from(details.get("mustHaveSkills"))
+            or _names_from(details.get("requirements"))
+            or _names_from(details.get("keywords"))
+        )
+        nice = (
+            _names_from(skills.get("nice_to_have"))
+            or _names_from(skills.get("good_to_have"))
+            or _names_from(details.get("niceToHaveSkills"))
+        )
+        return must, nice
 
     _jd_skills, _jd_nice = _extract_jd_skill_lists(extracted_details) if extracted_details else ([], [])
     logger.info(
@@ -958,7 +997,12 @@ async def entrypoint(ctx: JobContext):
     _last_interviewer_question = ""   # most recent question Ishita asked
     _last_question_topic: Optional[str] = None  # _active_topic at the moment that question was asked
     answer_scores: list[dict] = []    # log of all answer quality scores for final DB save
-    _active_topic: Optional[str] = None         # current topic anchor; rotate away on MOVE_ON
+    _active_topic: Optional[str] = (
+        # Use only the short title before the first " - " in the anchor item.
+        # The full anchor string ("Campaign Metrics... - Built automation...") bloats
+        # the eval payload and triggers topic-align warnings. The short title is enough.
+        (str(session_context.resume_brief.anchor_item or "").strip().split(" - ")[0].strip() or None)
+    )  # current topic anchor; rotate away on MOVE_ON
     _topic_states: dict[str, dict] = {}        # PART 3: TopicState serialized per topic for saturation tracking
     _topic_score_histories: dict[str, list] = {}  # per-topic quality score history for collapse/latency detection
     _last_depth_decay_turn: int = -999           # turn when depth_decay last fired; -999 = never
@@ -992,7 +1036,13 @@ async def entrypoint(ctx: JobContext):
         logger.warning("[REDIS_EVAL] REDIS_URL not set  eval worker disabled, inline eval will be used")
     else:
         try:
-            _eval_redis_client = redis_asyncio.from_url(REDIS_URL, decode_responses=False)
+            _eval_redis_client = redis_asyncio.from_url(
+                REDIS_URL,
+                decode_responses=False,
+                socket_connect_timeout=5,
+                socket_timeout=5,
+                health_check_interval=30,
+            )
             async def _ping_redis():
                 try:
                     await _eval_redis_client.ping()
@@ -1169,6 +1219,13 @@ async def entrypoint(ctx: JobContext):
     _STT_SHORT_COMPLETE_DEBOUNCE_SECONDS = 0.3
     # Warmup incomplete: 1.0s â€” warmup answers are brief, no need to wait 4s.
     _STT_WARMUP_INCOMPLETE_DEBOUNCE_SECONDS = 1.0
+    _MEANINGFUL_SHORT_ANSWERS = {
+        "no", "yes", "yeah", "yep", "okay", "ok", "sure", "maybe",
+        "nothing", "none", "pass", "skip", "na", "n/a",
+    }
+
+    def _normalized_short_answer(text: str) -> str:
+        return re.sub(r"[^a-z0-9/]+", "", (text or "").strip().lower())
 
     def _is_sentence_complete(text: str) -> bool:
         """
@@ -1181,9 +1238,154 @@ async def entrypoint(ctx: JobContext):
         stripped = text.strip()
         if not stripped:
             return False
+        if _normalized_short_answer(stripped) in _MEANINGFUL_SHORT_ANSWERS:
+            return True
         # Minimum 2 words to be meaningful (lowered since these are final results)
         word_count = len([w for w in stripped.split() if w])
         return word_count >= 2
+
+    async def _apply_eval_result(
+        result: dict[str, Any],
+        *,
+        result_turn: int,
+        target_chat_ctx: Optional[llm.ChatContext] = None,
+        inject_directive: bool = False,
+    ) -> bool:
+        nonlocal current_interview_mode, answer_scores, _active_topic, \
+            _covered_topic_keys, _topic_states, integrity_risk, depth_risk, \
+            _last_applied_eval_turn, _discussed_log, _topic_score_histories
+
+        if result_turn <= _last_applied_eval_turn:
+            logger.debug(
+                "[LIVE_N] skipping stale eval result turn=%d last_applied=%d",
+                result_turn,
+                _last_applied_eval_turn,
+            )
+            return False
+
+        action = str(result.get("action", "PROBE")).upper()
+        directive = str(result.get("directive", ""))
+        new_topic = result.get("new_active_topic")
+        new_covered = list(result.get("new_covered_topic_keys") or [])
+        new_topic_state = result.get("new_active_topic_state")
+        new_mode = str(result.get("new_current_interview_mode") or current_interview_mode)
+        signal_events = list(result.get("signal_events") or [])
+        quality_record = result.get("quality_record")
+        risk_integrity_delta = int(result.get("risk_integrity_delta", 0) or 0)
+        risk_depth_delta = int(result.get("risk_depth_delta", 0) or 0)
+        discussed_log_entry = result.get("discussed_log_entry")
+
+        async with _session_state_lock:
+            old_topic = _active_topic
+            if new_topic is not None:
+                _active_topic = new_topic
+            if new_covered:
+                _covered_topic_keys.clear()
+                _covered_topic_keys.update(new_covered)
+            if new_topic_state and _active_topic:
+                _topic_states[_active_topic] = new_topic_state
+            current_interview_mode = new_mode
+
+            for event in signal_events:
+                delta = float(event.get("score_delta", 0.0) or 0.0)
+                legacy_delta = int(round(max(0.0, -delta) * 100))
+                if legacy_delta:
+                    if event.get("signal_layer") == "hard_integrity":
+                        integrity_risk = min(100, integrity_risk + legacy_delta)
+                    else:
+                        depth_risk = min(100, depth_risk + legacy_delta)
+            if risk_integrity_delta or risk_depth_delta:
+                integrity_risk = min(100, integrity_risk + risk_integrity_delta)
+                depth_risk = min(100, depth_risk + risk_depth_delta)
+            refresh_composite_risk()
+
+            if discussed_log_entry:
+                _discussed_log.append(discussed_log_entry)
+
+            if quality_record:
+                answer_scores.append(quality_record)
+                topic_key = re.sub(
+                    r"[^a-z0-9]+",
+                    " ",
+                    str(quality_record.get("topic") or _active_topic or "").lower(),
+                ).strip()
+                if topic_key and not quality_record.get("is_timeout"):
+                    _topic_score_histories.setdefault(topic_key, []).append(
+                        float(quality_record.get("overall", 0) or 0)
+                    )
+                spawn_background_task(
+                    persist_answer_scores(app_id, list(answer_scores)),
+                    f"scores_turn_{result_turn}",
+                )
+
+            _last_applied_eval_turn = max(_last_applied_eval_turn, result_turn)
+
+        if old_topic != _active_topic:
+            logger.info(
+                "[LIVE_N] applied eval turn=%d | topic %r -> %r",
+                result_turn,
+                old_topic,
+                _active_topic,
+            )
+            if inject_directive and target_chat_ctx is not None:
+                ctx_items = getattr(target_chat_ctx, "items", None)
+                if ctx_items is not None:
+                    before = len(ctx_items)
+                    ctx_items[:] = [m for m in list(ctx_items) if getattr(m, "role", "") == "system"]
+                    logger.info("[LIVE_N] MOVE_ON history wipe: dropped %d msg(s)", before - len(ctx_items))
+
+        if inject_directive and target_chat_ctx is not None and directive:
+            remove_system_messages_multi(target_chat_ctx, (
+                "[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT",
+            ))
+            target_chat_ctx.add_message(role="system", content=directive)
+
+            if action == "MOVE_ON" and _active_topic:
+                remove_system_messages(target_chat_ctx, "[RECENT_CONTEXT")
+                target_chat_ctx.add_message(role="system", content=(
+                    "[TOPIC_LOCK - CRITICAL INSTRUCTION]\n"
+                    "PREVIOUS TOPIC IS CLOSED. DO NOT REFERENCE IT.\n"
+                    "IGNORE anything the candidate said at the end of the previous topic.\n"
+                    f"NEW ACTIVE TOPIC: {_active_topic}\n"
+                    f"YOUR ONLY JOB: Ask ONE question about '{_active_topic}'. "
+                    f"Start with a brief acknowledgement, then ask what they personally "
+                    f"built or owned in '{_active_topic}'."
+                ))
+
+        return True
+
+    async def _recover_late_eval_results(before_turn: int) -> None:
+        if _eval_redis_client is None:
+            return
+        from interview.eval_models import EvalKeys
+
+        start_turn = max(3, _last_applied_eval_turn + 1)
+        for missed_turn in range(start_turn, before_turn):
+            try:
+                raw_result = await asyncio.wait_for(
+                    _eval_redis_client.getdel(EvalKeys.routing_result(app_id, missed_turn)),
+                    timeout=0.15,
+                )
+            except Exception:
+                raw_result = None
+            if not raw_result:
+                continue
+            try:
+                result = json.loads(raw_result)
+            except Exception as decode_err:
+                logger.warning(
+                    "[LIVE_N] late eval result decode failed turn=%d: %s",
+                    missed_turn,
+                    decode_err,
+                )
+                continue
+            applied = await _apply_eval_result(
+                result,
+                result_turn=missed_turn,
+                inject_directive=False,
+            )
+            if applied:
+                logger.info("[LIVE_N] recovered late eval result turn=%d before turn=%d", missed_turn, before_turn)
 
     async def _process_user_conversation_item(
         event,
@@ -1268,7 +1470,21 @@ async def entrypoint(ctx: JobContext):
                     return
             # Ignore tiny STT fragments (except greeting responses - those can be short)
             word_count = len([w for w in content.strip().split() if w])
-            if word_count <= 2 and not is_greeting_response and turn_snapshot != 3:
+            is_meaningful_short_answer = (
+                _normalized_short_answer(content) in _MEANINGFUL_SHORT_ANSWERS
+                or re.fullmatch(
+                    r"(?i)\s*(i\s+)?(do\s+not|don't|dont|can't|cannot|can\s+not)\s+"
+                    r"(know|answer|say|remember|recall)\s*[.!?]*\s*",
+                    content,
+                )
+                is not None
+            )
+            if (
+                word_count <= 2
+                and not is_greeting_response
+                and turn_snapshot != 3
+                and not is_meaningful_short_answer
+            ):
                 logger.debug(
                     f"[TRANSCRIPT] Ignoring probable STT fragment ({word_count} words): '{content[:60]}'"
                 )
@@ -1507,38 +1723,34 @@ async def entrypoint(ctx: JobContext):
                         "turn": payload_turn,
                         "enqueued_at": time.time(),
                     }
+                    t0 = time.monotonic()
                     try:
-                        await _eval_redis_client.setex(
-                            payload_key,
-                            600,
-                            json.dumps(payload).encode(),
-                        )
+                        encoded_payload = json.dumps(payload).encode()
                         if payload_turn in _eval_turns_queued:
+                            await _eval_redis_client.setex(payload_key, 600, encoded_payload)
                             logger.info(
-                                "[REDIS_EVAL] Updated pending payload turn=%d (already queued in-session)",
-                                payload_turn,
+                                "[REDIS_EVAL] Updated pending payload turn=%d (already queued in-session, %.0fms)",
+                                payload_turn, (time.monotonic() - t0) * 1000,
                             )
                             return
-                        is_first_enqueue = await _eval_redis_client.set(
-                            queue_gate_key,
-                            b"1",
-                            ex=600,
-                            nx=True,
-                        )
+                        pipe = _eval_redis_client.pipeline(transaction=False)
+                        pipe.setex(payload_key, 600, encoded_payload)
+                        pipe.set(queue_gate_key, b"1", ex=600, nx=True)
+                        _, is_first_enqueue = await pipe.execute()
                         if is_first_enqueue:
                             await _eval_redis_client.rpush(
                                 "interview:eval_queue",
                                 json.dumps(queue_token).encode(),
                             )
                             logger.info(
-                                "[REDIS_EVAL] Pushed payload turn=%d to worker queue",
-                                payload_turn,
+                                "[REDIS_EVAL] Pushed payload turn=%d to worker queue (%.0fms)",
+                                payload_turn, (time.monotonic() - t0) * 1000,
                             )
                             _eval_turns_queued.add(payload_turn)
                         else:
                             logger.info(
-                                "[REDIS_EVAL] Updated pending payload turn=%d (already queued)",
-                                payload_turn,
+                                "[REDIS_EVAL] Updated pending payload turn=%d (already queued, %.0fms)",
+                                payload_turn, (time.monotonic() - t0) * 1000,
                             )
                     except Exception as _re:
                         logger.warning("[REDIS_EVAL] Failed to push payload: %s", _re)
@@ -1555,6 +1767,8 @@ async def entrypoint(ctx: JobContext):
                     logger.info("[TIME_GUARD] turn=%d skipped", turn_snapshot)
                     agent._directive_ready.set()
                     return
+
+                await _recover_late_eval_results(turn_snapshot)
 
                 # All turns >= 4: push payload â†’ wait for THIS turn's routing
                 async with _session_state_lock:
@@ -1585,118 +1799,102 @@ async def entrypoint(ctx: JobContext):
                 # Wait for Phase 1 routing result for THIS turn
                 _routing_key   = EvalKeys.routing_result(app_id, turn_snapshot)
                 _routing_ready = EvalKeys.routing_ready(app_id, turn_snapshot)
-                _SAFETY_TIMEOUT = 10.0  # only fires if worker crashes or Redis dies
+                _SAFETY_TIMEOUT = 6.0  # reduced: worker completes in 2-3s; 6s gives headroom
                 _t_start       = asyncio.get_running_loop().time()
 
                 _routing_raw: Optional[bytes] = None
 
-                # Pre-check: result may already be there (worker very fast)
-                try:
-                    _routing_raw = await asyncio.wait_for(
-                        _eval_redis_client.getdel(_routing_key), timeout=0.15,
-                    )
-                    if _routing_raw:
-                        logger.info(
-                            "[LIVE_N] âœ… turn=%d | routing pre-check HIT (%.0fms)",
-                            turn_snapshot,
-                            (asyncio.get_running_loop().time() - _t_start) * 1000,
+                async def _read_routing_result_once() -> Optional[bytes]:
+                    try:
+                        return await asyncio.wait_for(
+                            _eval_redis_client.getdel(_routing_key),
+                            timeout=0.08,
                         )
-                except Exception:
-                    pass
+                    except Exception:
+                        return None
+
+                # Subscribe BEFORE pre-check to eliminate the race condition where
+                # the worker publishes between the failed pre-check and the subscribe call.
+                # Order: subscribe → pre-check → wait. If publish fires at any point
+                # after subscribe, get_message() catches it. If it fired before subscribe,
+                # the pre-check or first poll catches it via getdel.
+                ps = None
+                try:
+                    ps = _eval_redis_client.pubsub()
+                    await ps.subscribe(_routing_ready)
+                except Exception as pubsub_err:
+                    ps = None
+                    logger.debug(
+                        "[LIVE_N] turn=%d | pubsub unavailable, polling only: %s",
+                        turn_snapshot,
+                        pubsub_err,
+                    )
+
+                # Pre-check: result may already be there (worker very fast).
+                _routing_raw = await _read_routing_result_once()
+                if _routing_raw:
+                    logger.info(
+                        "[LIVE_N] ✅ turn=%d | routing pre-check HIT (%.0fms)",
+                        turn_snapshot,
+                        (asyncio.get_running_loop().time() - _t_start) * 1000,
+                    )
 
                 if not _routing_raw:
-                    # Concurrent pubsub + adaptive poll.
-                    # Pubsub is the primary wake-up path; poll is the backup if the signal is missed.
-                    _poll_found: list[bytes] = []
-                    _pubsub_hit = False
+                    poll_interval = 0.03
+                    pubsub_hit = False
+                    deadline = _t_start + _SAFETY_TIMEOUT
+                    try:
+                        while asyncio.get_running_loop().time() < deadline and not _routing_raw:
+                            _routing_raw = await _read_routing_result_once()
+                            if _routing_raw:
+                                break
 
-                    async def _route_poll() -> None:
-                        interval = 0.10
-                        deadline = _t_start + _SAFETY_TIMEOUT
-                        while asyncio.get_running_loop().time() < deadline:
-                            await asyncio.sleep(interval)
-                            interval = min(interval * 1.5, 0.35)
-                            try:
-                                result = await asyncio.wait_for(
-                                    _eval_redis_client.getdel(_routing_key),
-                                    timeout=0.2,
-                                )
-                                if result:
-                                    _poll_found.append(result)
-                                    return
-                            except Exception:
-                                pass
-
-                    async def _route_pubsub() -> None:
-                        try:
-                            ps = _eval_redis_client.pubsub()
-                            await ps.subscribe(_routing_ready)
-                            try:
-                                deadline = _t_start + _SAFETY_TIMEOUT
-                                while asyncio.get_running_loop().time() < deadline:
-                                    remaining_wait = max(
-                                        0.05,
-                                        deadline - asyncio.get_running_loop().time(),
-                                    )
+                            if ps is not None:
+                                try:
                                     msg = await asyncio.wait_for(
                                         ps.get_message(
                                             ignore_subscribe_messages=True,
-                                            timeout=remaining_wait,
+                                            timeout=0.05,
                                         ),
-                                        timeout=remaining_wait + 0.1,
+                                        timeout=0.15,
                                     )
                                     if msg is not None:
-                                        return
-                            finally:
-                                try:
-                                    await ps.unsubscribe(_routing_ready)
-                                    await ps.aclose()
+                                        pubsub_hit = True
+                                        _routing_raw = await _read_routing_result_once()
+                                        if _routing_raw:
+                                            break
+                                        continue
                                 except Exception:
                                     pass
-                        except Exception as pubsub_err:
-                            logger.debug(
-                                "[LIVE_N] turn=%d | pubsub failed: %s",
-                                turn_snapshot,
-                                pubsub_err,
-                            )
 
-                    poll_task = asyncio.create_task(_route_poll())
-                    pubsub_task = asyncio.create_task(_route_pubsub())
-                    try:
-                        done, pending = await asyncio.wait(
-                            {poll_task, pubsub_task},
-                            timeout=_SAFETY_TIMEOUT,
-                            return_when=asyncio.FIRST_COMPLETED,
-                        )
-                        _pubsub_hit = pubsub_task in done
+                            await asyncio.sleep(poll_interval)
+                            poll_interval = min(poll_interval * 1.25, 0.20)
                     finally:
-                        for task in (poll_task, pubsub_task):
-                            if not task.done():
-                                task.cancel()
-                                try:
-                                    await task
-                                except (asyncio.CancelledError, Exception):
-                                    pass
-
-                    if _poll_found:
-                        _routing_raw = _poll_found[0]
-                        logger.info(
-                            "[LIVE_N] ✅ turn=%d | routing via poll (%.2fs)",
-                            turn_snapshot,
-                            asyncio.get_running_loop().time() - _t_start,
-                        )
-                    else:
-                        # pubsub fired (or both timed out) — fetch the result now.
+                        if ps is not None:
+                            try:
+                                await ps.unsubscribe(_routing_ready)
+                                await ps.aclose()
+                            except Exception:
+                                pass
+                else:
+                    # Pre-check hit — clean up pubsub immediately
+                    if ps is not None:
                         try:
-                            _routing_raw = await asyncio.wait_for(
-                                _eval_redis_client.getdel(_routing_key),
-                                timeout=0.3,
-                            )
+                            await ps.unsubscribe(_routing_ready)
+                            await ps.aclose()
                         except Exception:
-                            _routing_raw = None
-                        if _routing_raw and _pubsub_hit:
+                            pass
+
+                    if _routing_raw:
+                        if pubsub_hit:
                             logger.info(
                                 "[LIVE_N] ✅ turn=%d | routing via pubsub (%.2fs)",
+                                turn_snapshot,
+                                asyncio.get_running_loop().time() - _t_start,
+                            )
+                        else:
+                            logger.info(
+                                "[LIVE_N] ✅ turn=%d | routing via poll (%.2fs)",
                                 turn_snapshot,
                                 asyncio.get_running_loop().time() - _t_start,
                             )
@@ -1705,89 +1903,13 @@ async def entrypoint(ctx: JobContext):
                 if _routing_raw:
                     try:
                         _rd = json.loads(_routing_raw)
-                        _action_str  = str(_rd.get("action", "PROBE")).upper()
-                        _directive   = str(_rd.get("directive", ""))
-                        _new_topic   = _rd.get("new_active_topic")
-                        _new_covered = list(_rd.get("new_covered_topic_keys") or [])
-                        _new_ts      = _rd.get("new_active_topic_state")
-                        _new_mode    = str(_rd.get("new_current_interview_mode") or current_interview_mode)
-                        _sig_evts    = list(_rd.get("signal_events") or [])
-                        _qr          = _rd.get("quality_record")
-                        _ri          = int(_rd.get("risk_integrity_delta", 0))
-                        _rdelta      = int(_rd.get("risk_depth_delta", 0))
-                        _dle         = _rd.get("discussed_log_entry")
-
-                        async with _session_state_lock:
-                            old_topic = _active_topic
-                            if _new_topic is not None:
-                                _active_topic = _new_topic
-                            if _new_covered:
-                                _covered_topic_keys.clear()
-                                _covered_topic_keys.update(_new_covered)
-                            if _new_ts and _active_topic:
-                                _topic_states[_active_topic] = _new_ts
-                            current_interview_mode = _new_mode
-                            # Signals â†’ risk deltas
-                            for _ev in _sig_evts:
-                                _delta = float(_ev.get("score_delta", 0.0) or 0.0)
-                                _legacy = int(round(max(0.0, -_delta) * 100))
-                                if _legacy:
-                                    if _ev.get("signal_layer") == "hard_integrity":
-                                        integrity_risk = min(100, integrity_risk + _legacy)
-                                    else:
-                                        depth_risk = min(100, depth_risk + _legacy)
-                            # Risk deltas from eval pipeline
-                            if _ri or _rdelta:
-                                integrity_risk = min(100, integrity_risk + _ri)
-                                depth_risk     = min(100, depth_risk + _rdelta)
-                            refresh_composite_risk()
-                            # Discussed log
-                            if _dle:
-                                _discussed_log.append(_dle)
-                            # Quality record â†’ answer_scores + topic score history
-                            if _qr:
-                                answer_scores.append(_qr)
-                                _stk = re.sub(r"[^a-z0-9]+", " ",
-                                              str(_qr.get("topic") or _active_topic or "").lower()).strip()
-                                if _stk and not _qr.get("is_timeout"):
-                                    _topic_score_histories.setdefault(_stk, []).append(
-                                        float(_qr.get("overall", 0))
-                                    )
-                                spawn_background_task(
-                                    persist_answer_scores(app_id, list(answer_scores)),
-                                    f"scores_turn_{turn_snapshot}",
-                                )
-
-                        _last_applied_eval_turn = max(_last_applied_eval_turn, turn_snapshot)
-
-                        if old_topic != _active_topic:
-                            logger.info(
-                                "[LIVE_N] âœ… MOVE_ON turn=%d | %r â†’ %r",
-                                turn_snapshot, old_topic, _active_topic,
-                            )
-                            _ctx_items = getattr(chat_ctx, "items", None)
-                            if _ctx_items is not None:
-                                _before = len(_ctx_items)
-                                _ctx_items[:] = [m for m in list(_ctx_items) if getattr(m, "role", "") == "system"]
-                                logger.info("[LIVE_N] MOVE_ON history wipe: dropped %d msg(s)", _before - len(_ctx_items))
-
-                        remove_system_messages_multi(chat_ctx, (
-                            "[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT",
-                        ))
-                        chat_ctx.add_message(role="system", content=_directive)
-
-                        if _action_str == "MOVE_ON" and _active_topic:
-                            remove_system_messages(chat_ctx, "[RECENT_CONTEXT")
-                            chat_ctx.add_message(role="system", content=(
-                                f"[TOPIC_LOCK - CRITICAL INSTRUCTION]\n"
-                                f"PREVIOUS TOPIC IS CLOSED. DO NOT REFERENCE IT.\n"
-                                f"IGNORE anything the candidate said at the end of the previous topic.\n"
-                                f"NEW ACTIVE TOPIC: {_active_topic}\n"
-                                f"YOUR ONLY JOB: Ask ONE question about '{_active_topic}'. "
-                                f"Start with a brief acknowledgement, then ask what they personally "
-                                f"built or owned in '{_active_topic}'."
-                            ))
-
+                        _action_str = str(_rd.get("action", "PROBE")).upper()
+                        await _apply_eval_result(
+                            _rd,
+                            result_turn=turn_snapshot,
+                            target_chat_ctx=chat_ctx,
+                            inject_directive=True,
+                        )
                         logger.info(
                             "[LIVE_N] âœ… turn=%d action=%s topic=%r (%.2fs total)",
                             turn_snapshot, _action_str, _active_topic,
@@ -1993,8 +2115,23 @@ async def entrypoint(ctx: JobContext):
                     # Get consolidated content from buffer
                     all_fragments = _stt_fragment_buffer.pop(_turn, [])
                     _stt_completion_timers.pop(_turn, None)
-                    _processed_user_turns.add(_turn)
                     consolidated_content = " ".join(f.strip() for f in all_fragments if f.strip())
+
+                    # Don't mark the turn as processed if the answer is too short and
+                    # the reason is a debounce timeout (not sentence complete). A 1-word
+                    # straggler like "tomorrow." arrives early and would lock the turn
+                    # shut before the real answer arrives. Only lock when we have enough
+                    # words OR the sentence was genuinely complete.
+                    _word_count_now = len([w for w in consolidated_content.split() if w])
+                    if _reason == "debounce_timeout" and _word_count_now <= 3:
+                        # Put the fragments back — more speech is likely still coming
+                        logger.debug(
+                            "[STT_BUFFER] turn=%d debounce fired with only %d word(s) — not locking turn, waiting for more",
+                            _turn, _word_count_now,
+                        )
+                        _stt_fragment_buffer[_turn] = all_fragments
+                        return
+                    _processed_user_turns.add(_turn)
 
                     if consolidated_content:
                         logger.info(
@@ -2643,27 +2780,12 @@ async def entrypoint(ctx: JobContext):
     )
     # Ã°Å¸Â¤- AI Scorecard (NEW)
     if session_start_time:
-        try:
-            await asyncio.wait_for(
-                generate_interview_summary(
-                    app_id,
-                    transcript_lines,
-                    job_title,
-                    org_id=org_id,
-                    llm_model=analysis_model,
-                ),
-                timeout=8,
-            )
-        except asyncio.TimeoutError:
-            logger.warning(f"[SUMMARY] Timed out for {app_id}; skipped after 8s")
-        except Exception as e:
-            logger.error(f"[SUMMARY] Failed post-interview for {app_id}: {e}")
-        # Generate structured interview report (scores, skills, strengths)
-        # IMPORTANT: Re-fetch latest answer_scores from DB to ensure we have all evaluated turns
+        # ── Generate structured report FIRST (scores, skills, strengths) ──────────
+        # The report returns a scores_context dict that the summary uses for context.
         try:
             final_scores = list(answer_scores)
             logger.info("[REPORT] Generating with answer_scores=%d turns from memory", len(final_scores))
-            await asyncio.wait_for(
+            scores_context = await asyncio.wait_for(
                 generate_interview_report(
                     app_id,
                     transcript_lines,
@@ -2675,10 +2797,33 @@ async def entrypoint(ctx: JobContext):
                 ),
                 timeout=120,
             )
+            logger.info("[REPORT] Completed. scores_context=%s", scores_context)
         except asyncio.TimeoutError:
             logger.warning(f"[REPORT] Timed out for {app_id}; skipped after 120s")
+            scores_context = None
         except Exception as e:
             logger.error(f"[REPORT] Failed post-interview for {app_id}: {e}")
+            scores_context = None
+
+        # ── Generate candidate insights summary AFTER report ─────────────────
+        # Passes scores_context so the summary LLM can reference actual evaluated scores.
+        try:
+            await asyncio.wait_for(
+                generate_interview_summary(
+                    app_id,
+                    transcript_lines,
+                    job_title,
+                    org_id=org_id,
+                    llm_model=analysis_model,
+                    scores_context=scores_context,
+                ),
+                timeout=30,
+            )
+        except asyncio.TimeoutError:
+            logger.warning(f"[SUMMARY] Timed out for {app_id}; skipped after 30s")
+        except Exception as e:
+            logger.error(f"[SUMMARY] Failed post-interview for {app_id}: {e}")
+
     try:
         await persist_interview_billing_snapshot(
             app_id,

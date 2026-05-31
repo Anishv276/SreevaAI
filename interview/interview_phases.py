@@ -8,6 +8,7 @@ The single stage covers resume projects/work and JD skills. Hard moments
 """
 
 from __future__ import annotations
+import random
 from typing import Any
 
 _BriefType = Any
@@ -24,16 +25,26 @@ def build_greeting_text(candidate_name: str, ai_name: str, job_title: str) -> st
 def build_warmup_directive() -> str:
     return (
         "[DO NOT SAY ALOUD — INTERNAL INTERVIEWER INSTRUCTION]\n"
-        "[WARMUP PHASE]\n"
-        "React to what the candidate just said. TWO sentences only:\n"
-        "  Sentence 1: A warm, casual reply — mention you've been doing a lot of interviews today\n"
-        "    and you're happy to have a good chat. Be genuine, not scripted.\n"
-        "    Example feel (not exact words): 'Ha, good! Been a packed day of interviews — happy to\n"
-        "    have a good chat now.'\n"
-        "  Sentence 2: Check they're ready. One short question — 'Ready to jump in?' or 'All set?'\n"
-        "Do NOT say 'Thanks for sharing that', 'Just making sure', or any checklist phrase.\n"
-        "Sound like a real person, not a customer service agent.\n"
-        "Once they say yes/ready: say 'Great, let's get into it!' and start the interview."
+        "[WARMUP PHASE — DO NOT START THE INTERVIEW YET]\n"
+        "CRITICAL: You are still in WARMUP. Do NOT ask any resume or technical question yet.\n"
+        "Do NOT mention any project, skill, or role from the candidate's background.\n"
+        "Your ONLY job this turn: react to what the candidate said + ask ONE simple readiness check.\n"
+        "\n"
+        "React naturally to what the candidate just said. Keep it SHORT — two sentences max.\n"
+        "  Sentence 1: Respond like a real person who just had a busy day. You can riff off what they said,\n"
+        "    mention it's been a busy day, or just sound like someone who's genuinely glad to talk.\n"
+        "    Vary your tone — relaxed, a little dry humor, warm, whatever fits the moment.\n"
+        "    AVOID: 'packed day of interviews', 'happy to have a good chat', 'happy to chat' — these sound canned.\n"
+        "    AVOID: starting with 'Ha,' — it reads as scripted.\n"
+        "    Good examples (DO NOT copy verbatim — use as tone references only):\n"
+        "      'Nice, same here — it's been one of those days. Good to finally slow down a bit.'\n"
+        "      'Glad to hear it. Honestly been a whirlwind today, so this is a good change of pace.'\n"
+        "      'Oh yeah, I hear you — today's been nonstop. Let's make this a good one.'\n"
+        "  Sentence 2: Ask ONE simple readiness check — nothing more.\n"
+        "    Examples: 'Ready to dive in?' / 'Shall we get going?' / 'Ready when you are.'\n"
+        "Do NOT say 'Thanks for sharing that', 'Just making sure', 'Absolutely', or any call-center phrase.\n"
+        "Sound like a real recruiter, not a bot.\n"
+        "WAIT for the candidate to confirm before starting the interview."
     )
 
 
@@ -82,28 +93,41 @@ def build_interview_directive(
     anchor_detail = anchor.split(' - ')[1].strip() if ' - ' in anchor else ""
 
     if anchor_type == "project":
+        # Pre-select one angle so the LLM can't default to the same opener every session.
+        # All angles are about the anchor — they vary HOW we enter it, not WHAT we ask about.
+        _project_angles = [
+            f"Ask what problem {anchor_name} was built to solve and what made that problem worth solving.",
+            f"Pick one specific detail from this context and ask about it directly: {anchor_detail}",
+            f"Ask what they would do differently if they rebuilt {anchor_name} from scratch today.",
+            f"Ask how they knew {anchor_name} was actually working — what did success look like in practice.",
+            f"Ask what the first thing they built for {anchor_name} was and how it evolved from there.",
+            f"Ask what the trickiest decision they made while building {anchor_name} was.",
+        ]
+        _chosen_angle = random.choice(_project_angles)
         opening = (
             f"Open on: {anchor_name}.\n"
             f"Context from resume: {anchor_detail}\n"
-            f"DO NOT use a fixed opener. Pick ONE angle that feels natural given the context above.\n"
-            f"Options (pick the most natural one, or make your own variant):\n"
-            f"  - Ask about the problem they were solving and what they built to solve it\n"
-            f"  - Ask what the hardest part of building it was\n"
-            f"  - Ask what they'd do differently if they rebuilt it today\n"
-            f"  - Pick a specific detail from the resume context and ask about it directly\n"
-            f"ONE question only. Do NOT say 'what did you personally build or own' — that's a script, not a conversation."
+            f"YOUR OPENING ANGLE THIS SESSION: {_chosen_angle}\n"
+            f"ONE question only. Stay on {anchor_name} — do not switch topics."
         )
     elif anchor_type in ("role", "internship"):
+        _role_angles = [
+            f"Ask what a typical day actually looked like at {anchor_name} — what they spent most of their time on.",
+            f"Ask what the first thing they owned independently was when they started at {anchor_name}.",
+            f"Ask what the most interesting problem they worked on at {anchor_name} was.",
+            f"Ask what changed or improved because of their specific contribution at {anchor_name}.",
+        ]
+        _chosen_angle = random.choice(_role_angles)
         opening = (
             f"Open on their role at: {anchor_name}.\n"
             f"Context: {anchor_detail}\n"
-            f"Ask something specific about their day-to-day work — what they actually did, "
-            f"not a generic 'what did you do there?' ONE question, natural."
+            f"YOUR OPENING ANGLE THIS SESSION: {_chosen_angle}\n"
+            f"ONE question only. Stay on {anchor_name}."
         )
     else:
         opening = (
             "Open by asking what they've been working on most recently. "
-            "Pick a specific angle — what they're most proud of, or what was hardest."
+            "Pick a specific angle — what they're most proud of, or what was the core problem they solved."
         )
 
     # ── Band-aware instinct ───────────────────────────────────────────────────
