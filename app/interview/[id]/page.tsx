@@ -411,7 +411,9 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 const errorCode = String(data?.code || "").toUpperCase();
                 const isInProgress = errorCode === "IN_PROGRESS" || /in progress/i.test(apiError);
                 const isCompleted = errorCode === "INTERVIEW_COMPLETED" || /interview has been completed|already completed|completed interview/i.test(apiError);
-                const isFinalized = /already finalized|session has expired|expired|invalid token|invalid token payload|token expiry|token expired/i.test(apiError);
+                const isDriveClosed = errorCode === "DRIVE_CLOSED";
+                const isLinkExpired = errorCode === "LINK_EXPIRED";
+                const isFinalized = !isDriveClosed && !isLinkExpired && /already finalized|session has expired|invalid token|invalid token payload|token expiry|token expired/i.test(apiError);
                 if (isInProgress) {
                     return {
                         ok: false,
@@ -420,19 +422,24 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                     };
                 }
                 if (isCompleted) {
-                    const blockedMessage = "Interview has been completed. Please contact support to rejoin or reschedule.";
                     return {
                         ok: false,
                         title: "Interview completed",
-                        message: blockedMessage,
+                        message: "Interview has been completed. Please contact support to rejoin or reschedule.",
                     };
                 }
-                if (isFinalized) {
-                    const blockedMessage = "This interview session is no longer available. Please contact support for help.";
+                if (isDriveClosed) {
+                    return {
+                        ok: false,
+                        title: "Job closed",
+                        message: "This job posting is no longer accepting applications. The recruitment drive has ended.",
+                    };
+                }
+                if (isLinkExpired || isFinalized) {
                     return {
                         ok: false,
                         title: "Access restricted",
-                        message: blockedMessage,
+                        message: "This interview session is no longer available. Please contact support for help.",
                     };
                 }
                 console.warn(
@@ -600,7 +607,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
 
                 const errorCode = String(data?.code || "").toUpperCase();
                 const errorMessage = String(data?.error || data?.message || "Unable to record interview start.");
-                if (res.status === 401 || res.status === 403 || errorCode === "LINK_EXPIRED") {
+                if (res.status === 401 || res.status === 403 || errorCode === "LINK_EXPIRED" || errorCode === "DRIVE_CLOSED") {
                     await resetToHardwareCheck(errorMessage);
                     return;
                 }

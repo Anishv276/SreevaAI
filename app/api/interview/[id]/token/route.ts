@@ -77,6 +77,12 @@ export async function POST(
                 }
 
                 if (interview.linkStatus === "EXPIRED" || isExpiredByTime) {
+                    if (deadlineExpired) {
+                        return NextResponse.json({
+                            error: "This job posting has closed. Applications are no longer being accepted.",
+                            code: "DRIVE_CLOSED",
+                        }, { status: 403 });
+                    }
                     return NextResponse.json({
                         error: "Access Denied: Interview link has expired. Please contact support.",
                         code: "LINK_EXPIRED",
