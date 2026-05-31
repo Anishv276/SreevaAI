@@ -47,6 +47,7 @@ from interview.agent_persistence import (
     mark_interview_started,
     persist_answer_scores,
     persist_interview_billing_snapshot,
+    persist_org_manual_billing_usage,
     persist_org_usage_metrics,
     persist_skill_ratings,
     persist_transcript,
@@ -277,10 +278,36 @@ class InterviewAgent(Agent):
             logger.warning("[LLM_GATE] ⏰ timed out (15s) — generating anyway")
 
         effective_ctx = self.chat_ctx
+
+        # MOVE_ON guard: if a MOVE_ON directive is present, strip ALL user+assistant
+        # messages from context before the LLM generates. This prevents the candidate's
+        # last answer (added by LiveKit pipeline AFTER our history wipe) from anchoring
+        # the LLM back to the old topic. The MOVE_ON + TOPIC_LOCK system messages are
+        # the only context the LLM needs to open a new topic question.
+        _ctx_items = getattr(effective_ctx, "items", None)
+        _has_moveon = any(
+            "[NEXT_TURN_DIRECTIVE" in str(getattr(m, "content", ""))
+            and "DECISION: MOVE_ON" in str(getattr(m, "content", ""))
+            for m in (_ctx_items or [])
+            if getattr(m, "role", "") == "system"
+        )
+        if _has_moveon and _ctx_items is not None:
+            _before = len(_ctx_items)
+            _ctx_items[:] = [m for m in list(_ctx_items) if getattr(m, "role", "") == "system"]
+            _dropped = _before - len(_ctx_items)
+            if _dropped:
+                logger.info(
+                    "[LLM_GATE] MOVE_ON detected — stripped %d user/assistant msg(s) "
+                    "from ctx so LLM opens new topic cleanly",
+                    _dropped,
+                )
+
+        _sys_count = sum(1 for m in getattr(effective_ctx, "items", []) if getattr(m, "role", "") == "system")
         logger.info(
-            "[LLM_GATE] %s | sys_msgs=%d",
+            "[LLM_GATE] %s | sys_msgs=%d%s",
             "on-time" if not timed_out else "timeout",
-            sum(1 for m in getattr(effective_ctx, "items", []) if getattr(m, "role", "") == "system"),
+            _sys_count,
+            " [MOVE_ON-clean]" if _has_moveon else "",
         )
 
         tool_choice = model_settings.tool_choice if model_settings else NOT_GIVEN
@@ -588,6 +615,15 @@ async def entrypoint(ctx: JobContext):
     except Exception as _ctx_err:
         logger.error("Invalid interview context from DB: %s", _ctx_err)
         return
+
+    # GUARD: Prevent re-entry if interview is already completed
+    if ctx_data.interviewStatus and str(ctx_data.interviewStatus).strip().upper() in ("COMPLETED", "NO_SHOW", "ABANDONED"):
+        logger.warning(
+            f"[GUARD] Interview {app_id} is already {ctx_data.interviewStatus}. "
+            f"Rejecting duplicate job dispatch. Exiting immediately."
+        )
+        return
+
     evaluation_signal_toggles = _extract_evaluation_signal_toggles(ctx_data.proctoringSignals)
     extracted_details = _coerce_jsonish(ctx_data.extractedDetails or "{}")
     structured_resume = _coerce_jsonish(ctx_data.resumeData or "{}")
@@ -784,7 +820,6 @@ async def entrypoint(ctx: JobContext):
         candidate_name=candidate_first_name or candidate_name,
         job_title=job_title,
         time_limit_mins=time_limit_mins,
-        depth_instruction=session_context.depth_instruction,
         candidate_band=session_context.candidate_band,
         ai_name=_compact_optional(ctx_data.aiName),
         org_name=_compact_optional(ctx_data.orgName),
@@ -795,6 +830,7 @@ async def entrypoint(ctx: JobContext):
         live_prompt_context=session_context.live_prompt_context,
         candidate_name=candidate_first_name or candidate_name,
         job_title=job_title,
+        candidate_band=session_context.candidate_band,
     )
     system_prompt = build_system_prompt(
         voice_layer_prompt=voice_layer_prompt,
@@ -908,6 +944,7 @@ async def entrypoint(ctx: JobContext):
     warmup_complete = False  # True when candidate gives substantive response (>8 words) past greeting
     # Interview state
     _final_no_new_question_guard = False
+    _time_guard_active = False          # True when <= 20s remain — blocks eval + signals
     _candidate_turn_since_last_assistant = True
     environment_risk = 0     # browser-side proctoring signals
     integrity_risk = 0       # integrity-related proctoring signals
@@ -922,6 +959,7 @@ async def entrypoint(ctx: JobContext):
     launch_prereqs_signal_sent = False
     # Per-turn decision engine state
     _last_interviewer_question = ""   # most recent question Ishita asked
+    _last_question_topic: Optional[str] = None  # _active_topic at the moment that question was asked
     answer_scores: list[dict] = []    # log of all answer quality scores for final DB save
     _active_topic: Optional[str] = None         # current topic anchor; rotate away on MOVE_ON
     _topic_states: dict[str, dict] = {}        # PART 3: TopicState serialized per topic for saturation tracking
@@ -952,7 +990,7 @@ async def entrypoint(ctx: JobContext):
 
 
 
-    # Redis eval worker integration  pre-computed directive from previous turn
+    # Redis eval worker integration — Live-N: agent waits for THIS turn's result
     _eval_redis_client: Any = None
     if redis_asyncio is None:
         logger.warning("[REDIS_EVAL] redis package not installed  eval worker disabled, inline eval will be used")
@@ -1039,41 +1077,8 @@ async def entrypoint(ctx: JobContext):
             data["contradictions"] = _contradictions_found
             data["claim_index"] = _claim_index
         return data
-    def _resume_topic_candidates() -> list[str]:
-        rb = session_context.resume_brief
-        topics: list[str] = []
-        for raw in (list(rb.projects) + list(rb.work_history) + list(rb.internships)):
-            txt = str(raw).strip()
-            if not txt:
-                continue
-            topics.append(txt.split(" - ")[0].strip())
-        unique: list[str] = []
-        seen: set[str] = set()
-        for t in topics:
-            key = t.lower()
-            if key and key not in seen:
-                seen.add(key)
-                unique.append(t)
-        return unique[:8]
-
     def _normalize_topic_key(text: str) -> str:
         return re.sub(r"[^a-z0-9]+", " ", str(text or "").lower()).strip()
-
-    def _skill_topic_candidates() -> list[str]:
-        rb = session_context.resume_brief
-        topics: list[str] = []
-        for raw in list(rb.skills):
-            txt = str(raw).strip()
-            if txt:
-                topics.append(txt)
-        unique: list[str] = []
-        seen: set[str] = set()
-        for t in topics:
-            key = _normalize_topic_key(t)
-            if key and key not in seen:
-                seen.add(key)
-                unique.append(t)
-        return unique[:10]
 
     def _remaining_total_seconds_now() -> float:
         if not session_start_time:
@@ -1201,7 +1206,10 @@ async def entrypoint(ctx: JobContext):
             _claim_index, _contradictions_found, \
             _trust_state, _contradiction_state, greeting_delivered_at, \
             _ai_signal_flush_counter, _ai_signal_flushed_count, \
-            warmup_complete, _last_depth_decay_turn
+            warmup_complete, _last_depth_decay_turn, \
+            _active_topic, _covered_topic_keys, _topic_states, \
+            integrity_risk, depth_risk, \
+            _last_applied_eval_turn, _discussed_log, _topic_score_histories
         try:
             if not content or role != "user":
                 return
@@ -1399,13 +1407,18 @@ async def entrypoint(ctx: JobContext):
                     # captured as the "question". Those fragments can cause noisy eval routing.
                     resolved_question = (question or "").strip()
                     if len(resolved_question) < 16:
+                        _greeting_skip = re.compile(
+                            r"(?:really glad|how are you|hope the day|ready to jump|let's get into it|"
+                            r"hi \w+|hello \w+|been a packed day|happy to have)",
+                            re.IGNORECASE,
+                        )
                         for _line in reversed(lines):
                             _txt = str(_line or "").strip()
                             if not _txt:
                                 continue
                             if _txt.lower().startswith("interviewer:"):
                                 _txt = _txt.split(":", 1)[1].strip()
-                            if len(_txt) >= 24:
+                            if len(_txt) >= 24 and not _greeting_skip.search(_txt):
                                 resolved_question = _txt
                                 break
 
@@ -1438,7 +1451,13 @@ async def entrypoint(ctx: JobContext):
                     # PART 3: Include TopicState for saturation tracking (serialize to dict)
                     # _topic_states stores plain dicts (returned by eval worker via JSON).
                     # Guard against calling .to_dict() on a dict that was already serialized.
-                    _ts_obj = _topic_states.get(_active_topic) if _active_topic else None
+                    # scoring_topic = the topic Ishita was asking about when she asked
+                    # the question the candidate is now answering. This is captured at
+                    # question-delivery time (_last_question_topic) so it never flips
+                    # when MOVE_ON updates _active_topic mid-session.
+                    # active_topic = current routing topic (may already be the new one).
+                    _scoring_topic = _last_question_topic or _active_topic
+                    _ts_obj = _topic_states.get(_scoring_topic) if _scoring_topic else None
                     if _ts_obj is None:
                         active_topic_state = None
                     elif isinstance(_ts_obj, dict):
@@ -1446,7 +1465,7 @@ async def entrypoint(ctx: JobContext):
                     else:
                         active_topic_state = _ts_obj.to_dict()
 
-                    _topic_key_now = re.sub(r"[^a-z0-9]+", " ", (_active_topic or "").lower()).strip()
+                    _topic_key_now = re.sub(r"[^a-z0-9]+", " ", (_scoring_topic or "").lower()).strip()
                     _topic_score_history_snap = list(_topic_score_histories.get(_topic_key_now, []))
 
                     return {
@@ -1462,12 +1481,16 @@ async def entrypoint(ctx: JobContext):
                         "signal_toggles": dict(evaluation_signal_toggles),
                         "org_id": org_id,
                         "llm_model": analysis_model,
-                        "active_topic": _active_topic,
+                        "active_topic": _scoring_topic,       # topic the answer is ABOUT
                         "active_topic_state": active_topic_state,
+                        "routing_topic": _active_topic or "",  # current agent state (may differ)
                         "covered_topic_keys": list(_covered_topic_keys),
                         "discussed_log": list(_discussed_log[-8:]),
-                        "resume_topics": unique_resume[:8],
-                        "skill_topics": unique_skills[:10],
+                        # Band-aware topic pool caps:
+                        # fresher: more topics (breadth) → wider pool
+                        # senior: fewer topics (depth) → narrower pool, each probed longer
+                        "resume_topics": unique_resume[:{"fresher": 10, "mid": 8, "experienced": 6, "senior": 4}.get(session_context.candidate_band, 8)],
+                        "skill_topics": unique_skills[:{"fresher": 12, "mid": 10, "experienced": 7, "senior": 5}.get(session_context.candidate_band, 10)],
                         "anchor_item": str(getattr(rb, "anchor_item", "") or ""),
                         "job_title": job_title,
                         "remaining_seconds": float(_remaining_total_seconds_now()),
@@ -1475,400 +1498,12 @@ async def entrypoint(ctx: JobContext):
                         "contradiction_state": dict(_contradiction_state),
                         "trust_state": dict(_trust_state),
                         "current_interview_mode": current_interview_mode,
-                        # no_new_question_cutoff_seconds removed — now a constant inside
-                        # eval_pipeline.py (_NO_NEW_QUESTION_CUTOFF_SECONDS=45). It never
-                        # changed at runtime so sending it every turn was pure payload waste.
-                        # Logging-only fields removed from payload (anchor_full, projects_full,
-                        # work_history_full, internships_full, education_full, candidate_name,
-                        # band, time_limit_mins). None of these influence routing, saturation,
-                        # or directive content — they were only used for worker log lines.
-                        # Removing them cuts ~300 bytes per payload per turn per Redis write.
+                        "band": session_context.candidate_band,
+                        # The actual question Ishita asked this turn — used by the worker
+                        # to detect if the AI already pivoted to a new topic (e.g. due to
+                        # a previous MOVE_ON directive) so worker and agent stay aligned.
+                        "ai_question_this_turn": (_last_interviewer_question or "").strip(),
                     }
-
-
-                async def _read_and_apply_eval_result(turn_for_log: int, preloaded_result: dict = None) -> bool:
-                    """Read pre-computed result from Redis (or use preloaded dict) and apply all mutations.
-
-                    preloaded_result: if provided, skip Redis read and apply this directly.
-                    Returns True if result was found and applied, False if no result available.
-                    """
-                    nonlocal \
-                        _active_topic, _topic_states, \
-                        _covered_topic_keys, \
-                        _trust_state, _contradiction_state, \
-                        _claim_index, current_interview_mode, \
-                        integrity_risk, depth_risk, suspicion_score, \
-                        _last_applied_eval_turn, \
-                        _ai_signal_flush_counter, _ai_signal_flushed_count, \
-                        _discussed_log, _topic_score_histories
-
-                    if preloaded_result is not None:
-                        result = preloaded_result
-                    else:
-                        if _eval_redis_client is None:
-                            logger.debug("[REDIS_EVAL] _eval_redis_client is None  skipping result read for turn=%d", turn_for_log)
-                            return False
-                        result_key = f"interview:{app_id}:eval_result"
-                        try:
-                            raw = await asyncio.wait_for(
-                                _eval_redis_client.getdel(result_key),
-                                timeout=0.5,
-                            )
-                        except asyncio.TimeoutError:
-                            logger.warning("[REDIS_EVAL] getdel timed out for turn=%d", turn_for_log)
-                            return False
-                        except Exception as _re:
-                            logger.warning("[REDIS_EVAL] getdel failed turn=%d: %s", turn_for_log, _re)
-                            return False
-                        if raw is None:
-                            logger.info("[REDIS_EVAL] No pre-computed result for turn=%d  will run inline", turn_for_log)
-                            return False
-                        try:
-                            result = json.loads(raw)
-                        except Exception as _re:
-                            logger.warning("[REDIS_EVAL] Failed to decode result turn=%d: %s", turn_for_log, _re)
-                            return False
-                    logger.info(
-                        "[REDIS_EVAL] Applying pre-computed result turn=%d action=%s",
-                        result.get("turn", 0), result.get("action", "?"),
-                    )
-                    result_turn = int(result.get("turn", turn_for_log) or turn_for_log)
-                    expected_input_topic = result.get("input_active_topic", None)
-                    # Apply all mutations atomically under lock
-                    # (variables already declared as nonlocal in _process_user_conversation_item scope)
-                    async with _session_state_lock:
-                        if result_turn < _last_applied_eval_turn:
-                            logger.warning(
-                                "[REDIS_EVAL] Ignoring stale result turn=%d < last_applied=%d",
-                                result_turn, _last_applied_eval_turn,
-                            )
-                            return False
-                        # Topic-mismatch guard: only reject results where the eval was computed
-                        # for a DIFFERENT topic than the one currently active AND the action is
-                        # not MOVE_ON. For MOVE_ON, the input_active_topic is intentionally the
-                        # OLD topic (the one being closed), so a mismatch is expected and valid.
-                        # Previously this guard was dropping all MOVE_ON results whenever the
-                        # previous turn's MOVE_ON had already advanced _active_topic — causing the
-                        # LLM to generate with a stale PROBE directive from the old topic.
-                        _result_action = result.get("action", "")
-                        if (
-                            expected_input_topic is not None
-                            and expected_input_topic != _active_topic
-                            and _result_action != "MOVE_ON"
-                        ):
-                            logger.warning(
-                                "[REDIS_EVAL] Ignoring stale topic result turn=%d expected_topic=%r current_topic=%r action=%s",
-                                result_turn, expected_input_topic, _active_topic, _result_action,
-                            )
-                            return False
-
-                        old_topic = _active_topic
-                        _active_topic = result.get("new_active_topic", _active_topic)
-                        if old_topic != _active_topic:
-                            # This is the exact moment the topic changes in agent memory.
-                            # MOVE_ON directive is already injected into chat_ctx — LLM will
-                            # acknowledge old topic and ask first question on new topic.
-                            logger.info(
-                                "[MOVE_ON] ✅ topic change turn=%d | '%s' → '%s' | covered=%d topics",
-                                result.get("turn", turn_for_log),
-                                (old_topic or "none")[:50],
-                                (_active_topic or "none")[:50],
-                                len(_covered_topic_keys) + 1,
-                            )
-                        _covered_topic_keys = set(result.get("new_covered_topic_keys") or [])
-                        # PART 3: Update TopicState from result
-                        new_topic_state = result.get("new_active_topic_state")
-                        _nts_followups = 0  # safe default; overwritten inside block if new_topic_state applies
-                        if new_topic_state and _active_topic:
-                            _existing_state = _topic_states.get(_active_topic)
-                            _existing_turn = 0
-                            if isinstance(_existing_state, dict):
-                                _existing_turn = int(_existing_state.get("updated_turn", 0) or 0)
-                            _incoming_turn = int(new_topic_state.get("updated_turn", result_turn) or result_turn)
-                            if _incoming_turn < _existing_turn:
-                                logger.warning(
-                                    "[REDIS_EVAL] Ignoring stale topic-state update turn=%d for topic=%r (incoming=%d < existing=%d)",
-                                    result_turn, _active_topic, _incoming_turn, _existing_turn,
-                                )
-                                return False
-                            _topic_states[_active_topic] = new_topic_state
-                            _nts_sat = new_topic_state.get("saturation_score", 0)
-                            _nts_thresh = new_topic_state.get("saturation_threshold", 0)
-                            _nts_remaining = max(0, _nts_thresh - _nts_sat)
-                            _nts_pct = round(100 * min(1.0, _nts_sat / _nts_thresh), 0) if _nts_thresh else 0
-                            _nts_saturated = new_topic_state.get("is_saturated", False)
-                            _nts_importance = new_topic_state.get("importance", "?")
-                            _nts_followups = int(new_topic_state.get("follow_up_turns", 0))
-                            _nts_opened = new_topic_state.get("opened_at_turn", 0)
-                            _nts_probe = new_topic_state.get("probe_rotation_index", 0)
-                            logger.info(
-                                "[TOPIC_STATE_APPLY] turn=%d topic='%s' | importance=%s | saturated=%s | "
-                                "progress: %.1f/%.1f (%.0f%% done, %.1f more needed) | "
-                                "follow_ups=%d (opened_turn=%d) | probe_rotation=%d",
-                                result.get("turn", turn_for_log), _active_topic,
-                                _nts_importance, _nts_saturated,
-                                _nts_sat, _nts_thresh, _nts_pct, _nts_remaining,
-                                _nts_followups, _nts_opened, _nts_probe,
-                            )
-                        _trust_state = result.get("new_trust_state") or _trust_state
-                        _contradiction_state = result.get("new_contradiction_state") or _contradiction_state
-                        _claim_index = {k: list(v) for k, v in (result.get("new_claim_index") or {}).items()}
-                        current_interview_mode = result.get("new_current_interview_mode", current_interview_mode)
-                        # Apply risk deltas
-                        _old_integrity = integrity_risk
-                        _old_depth = depth_risk
-                        _risk_int_delta = int(result.get("risk_integrity_delta", 0))
-                        _risk_depth_delta = int(result.get("risk_depth_delta", 0))
-                        integrity_risk = min(100, integrity_risk + _risk_int_delta)
-                        depth_risk = min(100, depth_risk + _risk_depth_delta)
-                        if _risk_int_delta or _risk_depth_delta:
-                            refresh_composite_risk()
-                        # Append discussed log entry
-                        discussed_log_entry = result.get("discussed_log_entry")
-                        if discussed_log_entry:
-                            _discussed_log.append(discussed_log_entry)
-                        # Append quality record
-                        quality_record = result.get("quality_record")
-                        if quality_record:
-                            answer_scores.append(quality_record)
-                            _clarity = quality_record.get("clarity", 0)
-                            _depth = quality_record.get("depth", 0)
-                            _fluency = quality_record.get("fluency", 0)
-                            _confidence = quality_record.get("confidence", 0)
-                            _overall = quality_record.get("overall", 0)
-                            logger.info(
-                                "[SCORES] turn=%d | clarity=%.1f depth=%.1f fluency=%.1f confidence=%.1f | overall=%.1f | "
-                                "integrity: %d→%d (Δ%+d) | depth: %d→%d (Δ%+d) | composite=%d",
-                                result.get("turn", turn_for_log),
-                                _clarity, _depth, _fluency, _confidence, _overall,
-                                _old_integrity, integrity_risk, _risk_int_delta,
-                                _old_depth, depth_risk, _risk_depth_delta,
-                                suspicion_score,
-                            )
-                            # Record quality score in the per-topic history for collapse/latency detection.
-                            # Use the topic that was ACTIVE when this turn was evaluated (input_active_topic),
-                            # not new_active_topic which may already point to the next topic after a MOVE_ON.
-                            _scored_topic = result.get("input_active_topic") or result.get("new_active_topic") or ""
-                            _scored_topic_key = re.sub(r"[^a-z0-9]+", " ", _scored_topic.lower()).strip()
-                            if _scored_topic_key and not quality_record.get("is_timeout"):
-                                _topic_score_histories.setdefault(_scored_topic_key, []).append(float(_overall))
-
-                            # ASYNC persist answer_scores after each eval turn (no latency)
-                            _scores_after_eval = list(answer_scores)
-                            _app_id_persist = app_id
-                            _turn_persist = result.get("turn", 0)
-                            async def _persist_scores_async():
-                                try:
-                                    await persist_answer_scores(_app_id_persist, _scores_after_eval)
-                                    logger.info("[PERSIST] Answer scores saved after turn=%d (%d records)", _turn_persist, len(_scores_after_eval))
-                                except Exception as _ps_err:
-                                    logger.warning("[PERSIST] Answer scores save failed turn=%d: %s", _turn_persist, _ps_err)
-                            spawn_background_task(_persist_scores_async(), f"answer_scores_turn_{_turn_persist}")
-                        # Update depth_decay turn tracker when it fires
-                        if any(ev.get("signal_name") == "depth_decay" for ev in (result.get("signal_events") or [])):
-                            _last_depth_decay_turn = result.get("turn", turn_for_log)
-                        # Append signal events to proctoring_events
-                        signal_events = result.get("signal_events") or []
-                        _now_elapsed = round(time.time() - session_start_time, 1) if session_start_time else 0.0
-                        res_turn = result.get("turn", turn_for_log)
-                        for event in signal_events:
-                            _sig_name = event.get("signal_name", "")
-                            if not _sig_name:
-                                continue
-                            proctoring_events.append({
-                                "event": _sig_name,
-                                "signal_name": _sig_name,
-                                "signal_layer": event.get("signal_layer", ""),
-                                "risk_bucket": "integrity" if event.get("signal_layer") == "hard_integrity" else "depth",
-                                "confidence": event.get("confidence", 0.5),
-                                "evidence": event.get("evidence", ""),
-                                "trust_bucket_affected": event.get("trust_bucket_affected", ""),
-                                "score_delta": float(event.get("score_delta", 0.0) or 0.0),
-                                "probe_mode": event.get("probe_mode", ""),
-                                "recoverable": event.get("recoverable", True),
-                                "recruiter_visible": event.get("recruiter_visible", False),
-                                "turn": res_turn,
-                                "elapsed_sec": _now_elapsed,
-                                "score_after": suspicion_score,
-                            })
-                            logger.info(
-                                "[SIGNAL] %s layer=%s confidence=%.2f trust_delta=%+.2f visible=%s turn=%d",
-                                _sig_name, event.get("signal_layer", "?"),
-                                event.get("confidence", 0.5), float(event.get("score_delta", 0.0) or 0.0),
-                                event.get("recruiter_visible", False), res_turn,
-                            )
-                        # Contradiction state event
-                        cs_event = result.get("contradiction_state_event")
-                        if cs_event:
-                            _c_status = cs_event.get("status", "")
-                            _c_signal_name = "contradiction_resolved" if _c_status == "candidate_clarified" else "contradiction"
-                            proctoring_events.append({
-                                "event": cs_event.get("event", ""),
-                                "signal_name": _c_signal_name,
-                                "signal_layer": "hard_integrity",
-                                "source": cs_event.get("source", ""),
-                                "status": _c_status,
-                                "turn": cs_event.get("turn", res_turn),
-                                "surfaced_turn": cs_event.get("surfaced_turn", 0),
-                                "repeat_count": cs_event.get("repeat_count", 0),
-                                "probe_type": cs_event.get("probe_type", ""),
-                                "recovery_path": cs_event.get("recovery_path", ""),
-                                "recruiter_note": cs_event.get("recruiter_note", ""),
-                                "trust_delta": cs_event.get("trust_delta", 0.0),
-                                "score_delta": cs_event.get("trust_delta", 0.0),
-                                "score_after": suspicion_score,
-                                "confidence": 0.9,
-                                "recruiter_visible": True,
-                                "evidence": cs_event.get("evidence", ""),
-                                "contradiction_type": cs_event.get("contradiction_type", ""),
-                                "elapsed_sec": _now_elapsed,
-                            })
-                        # Signal checkpoint
-                        new_total = len(proctoring_events)
-                        _ai_signal_flush_counter += new_total - _ai_signal_flushed_count
-                        if _ai_signal_flush_counter >= 5:
-                            flush_slice = proctoring_events[_ai_signal_flushed_count:]
-                            _ai_signal_flushed_count = new_total
-                            _ai_signal_flush_counter = 0
-                            spawn_background_task(
-                                checkpoint_ai_signals(app_id, flush_slice),
-                                f"ai_signal_checkpoint_turn_{res_turn}",
-                            )
-                        td = result.get("td") or {}
-                        action = result.get("action", "MOVE_ON")
-                        quality_avg = float((quality_record or {}).get("overall", 5.0))
-                        td_decision = td.get("decision", {})
-                        td_mode = td_decision.get("mode", "normal")
-                        td_next_goal = td_decision.get("next_goal", "")
-                        td_quality = td.get("quality", {})
-                        logger.info(
-                            "[DECISION] turn=%d | action=%s | mode=%s | next_goal='%s' | "
-                            "quality: clarity=%.1f depth=%.1f | overall=%.1f",
-                            res_turn, action, td_mode, td_next_goal[:60],
-                            td_quality.get("clarity", 0), td_quality.get("depth", 0),
-                            quality_avg,
-                        )
-                        if action == "MOVE_ON":
-                            logger.info(
-                                "[MOVE_ON] SWITCHING TOPIC | from='%s' to='%s' | covered_so_far=%d topics | covered_keys=%s",
-                                (old_topic or "?")[:40], (_active_topic or "TBD")[:40],
-                                len(_covered_topic_keys),
-                                list(_covered_topic_keys)[:6],
-                            )
-                        elif action == "PROBE":
-                            logger.info(
-                                "[PROBE] DEEPER ON '%s' | mode=%s | follow_ups=%d | goal=%s",
-                                (_active_topic or "?")[:40], td_mode,
-                                _nts_followups if new_topic_state else 0,
-                                td_next_goal[:60],
-                            )
-                        # Inject directive (full handler — applies state mutations too)
-                        directive = result.get("directive", "")
-                        _sys_before = [m for m in getattr(chat_ctx, "items", []) if getattr(m, "role", "") == "system"]
-                        _has_old_directive = any("[NEXT_TURN_DIRECTIVE" in str(getattr(m, "content", "")) for m in _sys_before)
-                        # Single pass removes all three marker types — was 3 separate scans
-                        remove_system_messages_multi(chat_ctx, (
-                            "[NEXT_TURN_DIRECTIVE",
-                            "[TOPIC_LOCK",
-                            "[RECENT_CONTEXT",
-                        ))
-
-                        # PROBE: cap rolling Q&A window to last 3 user+assistant pairs (6 items).
-                        # At Turn 20 without this cap, chat_ctx holds 35 items — 32 of them are
-                        # stale Q&A from turns 3-18 that the LLM reprocesses uncached every call.
-                        # Keeping only the last 3 pairs (~450 tokens) gives Ishita enough context
-                        # to not repeat herself and maintain conversational flow, while cutting
-                        # ~1500 tokens of uncached prefill per turn from Turn 9 onward.
-                        # MOVE_ON already does a full wipe below — this only runs on PROBE/VERIFY.
-                        if action not in ("MOVE_ON",):
-                            _ctx_items_probe = getattr(chat_ctx, "items", None)
-                            if _ctx_items_probe is not None:
-                                _static_msgs = [
-                                    m for m in list(_ctx_items_probe)
-                                    if getattr(m, "role", "") == "system"
-                                ]
-                                _rolling_msgs = [
-                                    m for m in list(_ctx_items_probe)
-                                    if getattr(m, "role", "") != "system"
-                                ]
-                                # 2 pairs = 4 items — reduced from 3 to prevent LLM anchoring
-                                # to a Q&A 2 turns back and repeating a similar question.
-                                # The ALREADY ASKED directive handles immediate repeat; keeping
-                                # only 1 prior exchange minimises stale-context drift.
-                                _MAX_ROLLING = 2 * 2
-                                if len(_rolling_msgs) > _MAX_ROLLING:
-                                    _dropped_old = len(_rolling_msgs) - _MAX_ROLLING
-                                    _rolling_msgs = _rolling_msgs[-_MAX_ROLLING:]
-                                    _ctx_items_probe[:] = _static_msgs + _rolling_msgs
-                                    logger.info(
-                                        "[CTX_TRIM] PROBE turn=%d | dropped %d stale Q&A item(s) "
-                                        "| kept last 3 pairs (%d items) + %d sys msgs",
-                                        res_turn, _dropped_old,
-                                        len(_rolling_msgs), len(_static_msgs),
-                                    )
-
-                        # On MOVE_ON: wipe ALL user+assistant exchanges from chat history.
-                        # Keeping even the last exchange anchors the LLM to the old topic and
-                        # causes it to ignore the MOVE_ON directive — confirmed root cause of
-                        # topic drift. The directive contains the new topic; no old context needed.
-                        if action == "MOVE_ON":
-                            _ctx_items = getattr(chat_ctx, "items", None)
-                            if _ctx_items is not None:
-                                _before_count = len(_ctx_items)
-                                _ctx_items[:] = [
-                                    m for m in list(_ctx_items)
-                                    if getattr(m, "role", "") == "system"
-                                ]
-                                _dropped = _before_count - len(_ctx_items)
-                                logger.info(
-                                    "[MOVE_ON_HISTORY_TRIM] Dropped %d old-topic msg(s) from chat_ctx | "
-                                    "full wipe (0 non-sys kept) | new_topic=%s",
-                                    _dropped, _active_topic,
-                                )
-
-                        chat_ctx.add_message(role="system", content=directive)
-                        _sys_after = len([m for m in getattr(chat_ctx, "items", []) if getattr(m, "role", "") == "system"])
-                        logger.info(
-                            "[INJECT_FULL] turn=%d action=%s | old_directive_existed=%s | sys_msgs_after=%d | "
-                            "directive: %s",
-                            res_turn, action, _has_old_directive, _sys_after,
-                            directive[:200].replace("\n", " | "),
-                        )
-                        # TOPIC_LOCK: placed LAST in context (highest LLM attention).
-                        # Two hard constraints ensure the LLM cannot drift to the old topic.
-                        if action == "MOVE_ON" and _active_topic:
-                            # Remove RECENT_CONTEXT here too — it was injected at user-turn start
-                            # and contains the previous Q&A (old topic). If left in, it re-anchors
-                            # the LLM to the old topic even when TOPIC_LOCK says move on.
-                            remove_system_messages(chat_ctx, "[RECENT_CONTEXT")
-                            chat_ctx.add_message(
-                                role="system",
-                                content=(
-                                    f"[TOPIC_LOCK - CRITICAL INSTRUCTION]\n"
-                                    f"PREVIOUS TOPIC IS CLOSED. DO NOT REFERENCE IT.\n"
-                                    f"NEW ACTIVE TOPIC: {_active_topic}\n"
-                                    f"YOUR ONLY JOB: Ask ONE question about '{_active_topic}'. "
-                                    f"Start with a brief acknowledgement ('Got it!', 'Sure!'), "
-                                    f"then ask what they personally built or owned in '{_active_topic}'. "
-                                    f"Do NOT follow up on anything from the previous topic.\n"
-                                    f"COMFORT REPAIR OVERRIDE: Even if the candidate said 'I don't know', "
-                                    f"went blank, or gave a weak/incomplete answer — do NOT reframe or "
-                                    f"comfort-repair the previous question. Move on immediately."
-                                ),
-                            )
-                            logger.info("[TOPIC_LOCK] Injected for new topic: %s | RECENT_CONTEXT cleared", _active_topic[:60])
-                        logger.info(
-                            "[ROUTER] action=%s mode=%s turn=%d topic=%s (worker)",
-                            td.get("decision", {}).get("action", action),
-                            td.get("decision", {}).get("mode", "normal"),
-                            res_turn,
-                            (_active_topic or "?")[:40],
-                        )
-                        _last_applied_eval_turn = max(_last_applied_eval_turn, result_turn)
-                        # Directive fully injected — release llm_node gate.
-                        agent._directive_ready.set()
-                        logger.info("[LLM_GATE] directive_ready SET (turn=%d action=%s)", result_turn, action)
-                    return True
 
 
                 async def _push_payload_to_redis(payload: dict) -> None:
@@ -1880,11 +1515,10 @@ async def entrypoint(ctx: JobContext):
                     payload_app_id = str(payload.get("app_id", app_id) or app_id)
                     payload_key = f"interview:{payload_app_id}:eval_payload:{payload_turn}"
                     queue_gate_key = f"interview:{payload_app_id}:eval_enqueued:{payload_turn}"
-                    import time as _time
                     queue_token = {
                         "app_id": payload_app_id,
                         "turn": payload_turn,
-                        "enqueued_at": _time.time(),
+                        "enqueued_at": time.time(),
                     }
                     try:
                         await _eval_redis_client.setex(
@@ -1922,215 +1556,247 @@ async def entrypoint(ctx: JobContext):
                     except Exception as _re:
                         logger.warning("[REDIS_EVAL] Failed to push payload: %s", _re)
 
-                # BUG FIX (Bug 1 + Bug 2): Payload MUST be built AFTER the previous turn's
-                # eval result is applied. The old code built the payload here (before the sync
-                # gate), which captured stale _active_topic_state from BEFORE _read_and_apply_eval_result
-                # ran. The worker then restored the wrong (older) saturation score every turn.
-                #
-                # New order:
-                #   1. SYNC GATE: wait for previous turn's eval result → apply state mutations
-                #   2. BUILD PAYLOAD: capture _topic_states AFTER mutations applied (fresh state)
-                #   3. PUSH: send payload to worker for THIS turn's evaluation
-                #
-                # This also fixes Bug 2 (LLM generating before MOVE_ON directive applied):
-                # The LLM gate (_directive_ready) is set inside _read_and_apply_eval_result,
-                # which now always completes before payload build + push. The LLM cannot start
-                # generating until _directive_ready is set, which only happens after directives
-                # are injected into chat_ctx. This makes the gate truly hard.
-                #
-                # See _directive_ready.set() at end of _read_and_apply_eval_result (line ~1795).
+                # ── LIVE-N GATE ──────────────────────────────────────────────
+                # Push payload first → worker starts immediately.
+                # Then wait for THIS turn's routing result (Phase 1, ~200ms).
+                # LLM gate opens the moment routing result arrives.
+                # Scoring result (Phase 2, ~700ms) applied async after Ishita speaks.
+                from interview.eval_models import EvalKeys
 
-                # SYNC GATE: wait for eval worker result, then inject directive before returning.
-                # llm_node is blocked on _directive_ready — it cannot generate until PROBE/MOVE_ON
-                # is injected into self.chat_ctx.
-                #
-                # FIX 3: pub/sub replaces polling.
-                # BEFORE: polled Redis every 150ms → wasted 0-150ms after result was ready.
-                #   while deadline not reached:
-                #       result = redis.getdel(key)   # check
-                #       if result: break
-                #       sleep(0.15)                  # wait 150ms, repeat
-                #
-                # AFTER: subscribe to ready channel → worker publishes when done → agent wakes instantly.
-                #   async with pubsub.subscribe(channel):
-                #       await pubsub.get_message(timeout=6.0)  # blocks until notified, ~0ms extra wait
-                #   result = redis.getdel(key)                 # fetch immediately after notification
-                #
-                # EXAMPLE:
-                #   Worker finishes at t=800ms. Old code: agent sleeping, wakes at t=900ms (+100ms waste).
-                #   New code: agent notified at t=800ms, fetches at t=801ms. Saves ~75ms average per turn.
-                _sync_applied = False
-                # FIRST EVAL TURN FAST PATH:
-                # Turn 3 is the first turn the eval worker processes. There is no
-                # previous eval result in Redis to wait for — warmup turns (1-2) were
-                # never sent to the worker. Waiting on the sync gate here would always
-                # timeout (pubsub error on a channel that was never published to),
-                # then open the gate with warmup/greeting context still in chat_ctx,
-                # causing Ishita to repeat greeting-style responses on Turn 3.
-                # Fix: skip sync gate for Turn 3, clear stale warmup context directly,
-                # open the gate immediately so LLM generates a clean interview question.
+                # Time guard — no new questions in final 20s
+                if _time_guard_active:
+                    logger.info("[TIME_GUARD] turn=%d skipped", turn_snapshot)
+                    agent._directive_ready.set()
+                    return
+
+                # Turn 3 fast-path: first eval turn, no prior result exists.
+                # Clear warmup context and open gate now so LLM generates the
+                # first interview question from the system prompt's opening move.
                 if _last_applied_eval_turn == 0 and turn_snapshot == 3:
-                    logger.info("[SYNC_GATE] turn=3 | first eval turn — no prior result to fetch, skipping pubsub")
+                    logger.info("[LIVE_N] turn=3 | first eval — clearing warmup, opening gate")
                     remove_system_messages_multi(chat_ctx, (
-                        "[NEXT_TURN_DIRECTIVE",
-                        "[TOPIC_LOCK",
-                        "[RECENT_CONTEXT",
-                        "[WARMUP PHASE]",
+                        "[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK",
+                        "[RECENT_CONTEXT", "[WARMUP PHASE]",
                     ))
                     agent._directive_ready.set()
-                    _sync_applied = True  # skip the entire sync gate block below
+                    # Still push payload so worker evaluates and updates saturation
+                    async with _session_state_lock:
+                        payload = _build_eval_payload()
+                    await _push_payload_to_redis(payload)
+                    return  # gate already open, nothing more to do this turn
 
-                if not _sync_applied and _eval_redis_client is not None:
-                    _result_turn_key = f"interview:{app_id}:eval_result:{turn_snapshot - 1}"
-                    _ready_channel = f"interview:{app_id}:eval_ready:{turn_snapshot - 1}"
-                    # 4.5s: eval worker runs 2 parallel LLM calls (~750ms each) plus
-                    # signal detection + saturation calc = ~3-3.5s total. Old 2.5s was
-                    # timing out before the result was ready, causing sync gate misses
-                    # which reset saturation state and caused Ishita to repeat questions.
-                    _SYNC_WAIT = 4.5
-                    _t_start = asyncio.get_running_loop().time()
-                    logger.info("[SYNC_GATE] turn=%d | subscribing for eval result of turn=%d (max %.1fs)...", turn_snapshot, turn_snapshot - 1, _SYNC_WAIT)
-
-                    # PRE-CHECK: Try a direct GETDEL before subscribing to pub/sub.
-                    # Fixes the race where eval_worker finished before we subscribed,
-                    # closed the pub/sub channel, and our subscribe() then gets a blank
-                    # exception on a dead channel — leaving result unread in Redis forever.
-                    # This was the exact failure in logs: pubsub error: <blank> every turn.
-                    try:
-                        _raw_precheck = await asyncio.wait_for(
-                            _eval_redis_client.getdel(_result_turn_key),
-                            timeout=0.2,
-                        )
-                        if _raw_precheck:
-                            _preloaded_precheck = json.loads(_raw_precheck)
-                            logger.info(
-                                "[SYNC_GATE] ✅ turn=%d | result already in Redis (pre-check %.0fms) | action=%s",
-                                turn_snapshot,
-                                (asyncio.get_running_loop().time() - _t_start) * 1000,
-                                _preloaded_precheck.get("action", "?"),
-                            )
-                            await _read_and_apply_eval_result(turn_snapshot, preloaded_result=_preloaded_precheck)
-                            _sync_applied = True
-                    except Exception as _pre_e:
-                        logger.debug("[SYNC_GATE] turn=%d | pre-check miss (will use pubsub): %s", turn_snapshot, _pre_e)
-
-                    if not _sync_applied:
-                        try:
-                            # Pub/sub: only runs if pre-check missed (result not yet in Redis).
-                            # Fresh pubsub connection per turn — reusing a shared connection
-                            # caused the blank exception seen in logs (dead channel state).
-                            _pubsub = _eval_redis_client.pubsub()
-                            await _pubsub.subscribe(_ready_channel)
-                            try:
-                                _notified = False
-                                _deadline = asyncio.get_running_loop().time() + _SYNC_WAIT
-                                while asyncio.get_running_loop().time() < _deadline:
-                                    _remaining = max(0.1, _deadline - asyncio.get_running_loop().time())
-                                    _msg = await asyncio.wait_for(
-                                        _pubsub.get_message(ignore_subscribe_messages=True, timeout=_remaining),
-                                        timeout=_remaining + 0.1,
-                                    )
-                                    if _msg is not None:
-                                        _notified = True
-                                        break
-                            finally:
-                                await _pubsub.unsubscribe(_ready_channel)
-                                await _pubsub.aclose()
-
-                            # Fetch result key — works even if worker wrote before we subscribed
-                            _raw_turn = await asyncio.wait_for(
-                                _eval_redis_client.getdel(_result_turn_key),
-                                timeout=0.3,
-                            )
-                            if _raw_turn:
-                                _elapsed = round(asyncio.get_running_loop().time() - _t_start, 2)
-                                try:
-                                    _preloaded = json.loads(_raw_turn)
-                                    logger.info(
-                                        "[SYNC_GATE] ✅ turn=%d | result in %.2fs | action=%s | notified=%s",
-                                        turn_snapshot, _elapsed, _preloaded.get("action", "?"), _notified,
-                                    )
-                                    await _read_and_apply_eval_result(turn_snapshot, preloaded_result=_preloaded)
-                                    _sync_applied = True
-                                except Exception as _sge:
-                                    logger.warning("[SYNC_GATE] turn=%d | apply failed: %s", turn_snapshot, _sge)
-                                    agent._directive_ready.set()
-                            else:
-                                logger.warning(
-                                    "[SYNC_GATE] ⏰ turn=%d | notified=%s but key missing after %.2fs",
-                                    turn_snapshot, _notified, round(asyncio.get_running_loop().time() - _t_start, 2),
-                                )
-                        except Exception as _pse:
-                            logger.warning("[SYNC_GATE] turn=%d | pubsub error: %s", turn_snapshot, _pse)
-                            # Pubsub failed — result key may still be in Redis.
-                            # This was the exact failure: blank pubsub error every turn,
-                            # result unread, active_topic=None forever.
-                            if not _sync_applied:
-                                try:
-                                    _raw_fallback = await asyncio.wait_for(
-                                        _eval_redis_client.getdel(_result_turn_key),
-                                        timeout=0.5,
-                                    )
-                                    if _raw_fallback:
-                                        _preloaded_fallback = json.loads(_raw_fallback)
-                                        logger.info(
-                                            "[SYNC_GATE] ✅ turn=%d | result via fallback-getdel after pubsub error | action=%s",
-                                            turn_snapshot, _preloaded_fallback.get("action", "?"),
-                                        )
-                                        await _read_and_apply_eval_result(turn_snapshot, preloaded_result=_preloaded_fallback)
-                                        _sync_applied = True
-                                except Exception as _fe:
-                                    logger.warning("[SYNC_GATE] turn=%d | fallback-getdel also failed: %s", turn_snapshot, _fe)
-
-                    if not _sync_applied:
-                        # Final retry: eval worker may have finished during the wait but
-                        # pubsub missed the notification. Result key is in Redis — try once more.
-                        try:
-                            _raw_final = await asyncio.wait_for(
-                                _eval_redis_client.getdel(_result_turn_key),
-                                timeout=0.5,
-                            )
-                            if _raw_final:
-                                _pf = json.loads(_raw_final)
-                                logger.info(
-                                    "[SYNC_GATE] ✅ turn=%d | result via final-retry getdel | action=%s",
-                                    turn_snapshot, _pf.get("action", "?"),
-                                )
-                                await _read_and_apply_eval_result(turn_snapshot, preloaded_result=_pf)
-                                _sync_applied = True
-                        except Exception as _fre:
-                            logger.debug("[SYNC_GATE] turn=%d | final-retry getdel failed: %s", turn_snapshot, _fre)
-
-                    if not _sync_applied:
-                        logger.warning(
-                            "[SYNC_GATE] ⏰ turn=%d | timeout %.1fs — clearing stale directives before releasing LLM",
-                            turn_snapshot, _SYNC_WAIT,
-                        )
-                        # Remove stale directives — single pass across all three marker types
-                        remove_system_messages_multi(chat_ctx, (
-                            "[NEXT_TURN_DIRECTIVE",
-                            "[TOPIC_LOCK",
-                            "[RECENT_CONTEXT",
-                        ))
-                        agent._directive_ready.set()
-
-                # Build payload under lock so _build_eval_payload reads a consistent
-                # snapshot of _active_topic / _topic_states / _covered_topic_keys.
-                # Without the lock a concurrent _read_and_apply_eval_result (from a
-                # very fast back-to-back turn) could mutate those variables mid-read,
-                # producing a torn payload where topic and topic_state disagree.
+                # All turns >= 4: push payload → wait for THIS turn's routing
                 async with _session_state_lock:
                     payload = _build_eval_payload()
                 logger.info(
-                    "[EVAL_DISPATCH] Pushing turn=%d to eval_worker | answer=%r | question=%r | "
-                    "active_topic=%r | topic_state_score=%.1f",
+                    "[LIVE_N] turn=%d | pushing payload | topic=%r score=%.1f",
                     turn_snapshot,
-                    payload.get("answer", "")[:60],
-                    payload.get("question", "")[:60],
                     payload.get("active_topic", "?"),
                     (payload.get("active_topic_state") or {}).get("saturation_score", 0.0),
                 )
                 await _push_payload_to_redis(payload)
+
+                if _eval_redis_client is None:
+                    logger.warning("[LIVE_N] no Redis — releasing LLM gate without directive turn=%d", turn_snapshot)
+                    agent._directive_ready.set()
+                    return
+
+                # Wait for Phase 1 routing result for THIS turn
+                _routing_key   = EvalKeys.routing_result(app_id, turn_snapshot)
+                _routing_ready = EvalKeys.routing_ready(app_id, turn_snapshot)
+                _ROUTE_WAIT    = 4.0   # routing ~200ms; 4s gives headroom for slow OpenAI days
+                _t_start       = asyncio.get_running_loop().time()
+
+                _routing_raw: Optional[bytes] = None
+
+                # Pre-check: result may already be there (worker very fast)
+                try:
+                    _routing_raw = await asyncio.wait_for(
+                        _eval_redis_client.getdel(_routing_key), timeout=0.15,
+                    )
+                    if _routing_raw:
+                        logger.info(
+                            "[LIVE_N] ✅ turn=%d | routing pre-check HIT (%.0fms)",
+                            turn_snapshot,
+                            (asyncio.get_running_loop().time() - _t_start) * 1000,
+                        )
+                except Exception:
+                    pass
+
+                if not _routing_raw:
+                    # Concurrent pubsub + adaptive poll — same resilience pattern as before
+                    _poll_found: list = []
+
+                    async def _route_poll() -> None:
+                        _iv = 0.10
+                        _dl = _t_start + _ROUTE_WAIT
+                        while asyncio.get_running_loop().time() < _dl:
+                            await asyncio.sleep(_iv)
+                            _iv = min(_iv * 1.5, 0.35)
+                            try:
+                                _r = await asyncio.wait_for(
+                                    _eval_redis_client.getdel(_routing_key), timeout=0.2,
+                                )
+                                if _r:
+                                    _poll_found.append(_r)
+                                    return
+                            except Exception:
+                                pass
+
+                    async def _route_pubsub() -> None:
+                        try:
+                            _ps = _eval_redis_client.pubsub()
+                            await _ps.subscribe(_routing_ready)
+                            try:
+                                _dl = _t_start + _ROUTE_WAIT
+                                while asyncio.get_running_loop().time() < _dl:
+                                    _rem = max(0.05, _dl - asyncio.get_running_loop().time())
+                                    _msg = await asyncio.wait_for(
+                                        _ps.get_message(ignore_subscribe_messages=True, timeout=_rem),
+                                        timeout=_rem + 0.1,
+                                    )
+                                    if _msg is not None:
+                                        return
+                            finally:
+                                try:
+                                    await _ps.unsubscribe(_routing_ready)
+                                    await _ps.aclose()
+                                except Exception:
+                                    pass
+                        except Exception as _pe:
+                            logger.debug("[LIVE_N] turn=%d | pubsub failed: %s", turn_snapshot, _pe)
+
+                    _pt = asyncio.create_task(_route_poll())
+                    _st = asyncio.create_task(_route_pubsub())
+                    try:
+                        await asyncio.wait({_pt, _st}, timeout=_ROUTE_WAIT,
+                                           return_when=asyncio.FIRST_COMPLETED)
+                    finally:
+                        for _t in (_pt, _st):
+                            if not _t.done():
+                                _t.cancel()
+                                try:
+                                    await _t
+                                except (asyncio.CancelledError, Exception):
+                                    pass
+
+                    if _poll_found:
+                        _routing_raw = _poll_found[0]
+                        logger.info(
+                            "[LIVE_N] ✅ turn=%d | routing via poll (%.2fs)",
+                            turn_snapshot, asyncio.get_running_loop().time() - _t_start,
+                        )
+                    else:
+                        # Final retry before giving up
+                        try:
+                            _routing_raw = await asyncio.wait_for(
+                                _eval_redis_client.getdel(_routing_key), timeout=0.3,
+                            )
+                        except Exception:
+                            pass
+
+                # Apply routing result or fall back to safe PROBE
+                if _routing_raw:
+                    try:
+                        _rd = json.loads(_routing_raw)
+                        _action_str  = str(_rd.get("action", "PROBE")).upper()
+                        _directive   = str(_rd.get("directive", ""))
+                        _new_topic   = _rd.get("new_active_topic")
+                        _new_covered = list(_rd.get("new_covered_topic_keys") or [])
+                        _new_ts      = _rd.get("new_active_topic_state")
+                        _new_mode    = str(_rd.get("new_current_interview_mode") or current_interview_mode)
+                        _sig_evts    = list(_rd.get("signal_events") or [])
+                        _qr          = _rd.get("quality_record")
+                        _ri          = int(_rd.get("risk_integrity_delta", 0))
+                        _rdelta      = int(_rd.get("risk_depth_delta", 0))
+                        _dle         = _rd.get("discussed_log_entry")
+
+                        async with _session_state_lock:
+                            old_topic = _active_topic
+                            if _new_topic is not None:
+                                _active_topic = _new_topic
+                            if _new_covered:
+                                _covered_topic_keys.clear()
+                                _covered_topic_keys.update(_new_covered)
+                            if _new_ts and _active_topic:
+                                _topic_states[_active_topic] = _new_ts
+                            current_interview_mode = _new_mode
+                            # Signals → risk deltas
+                            for _ev in _sig_evts:
+                                _delta = float(_ev.get("score_delta", 0.0) or 0.0)
+                                _legacy = int(round(max(0.0, -_delta) * 100))
+                                if _legacy:
+                                    if _ev.get("signal_layer") == "hard_integrity":
+                                        integrity_risk = min(100, integrity_risk + _legacy)
+                                    else:
+                                        depth_risk = min(100, depth_risk + _legacy)
+                            # Risk deltas from eval pipeline
+                            if _ri or _rdelta:
+                                integrity_risk = min(100, integrity_risk + _ri)
+                                depth_risk     = min(100, depth_risk + _rdelta)
+                            refresh_composite_risk()
+                            # Discussed log
+                            if _dle:
+                                _discussed_log.append(_dle)
+                            # Quality record → answer_scores + topic score history
+                            if _qr:
+                                answer_scores.append(_qr)
+                                _stk = re.sub(r"[^a-z0-9]+", " ",
+                                              str(_qr.get("topic") or _active_topic or "").lower()).strip()
+                                if _stk and not _qr.get("is_timeout"):
+                                    _topic_score_histories.setdefault(_stk, []).append(
+                                        float(_qr.get("overall", 0))
+                                    )
+                                spawn_background_task(
+                                    persist_answer_scores(app_id, list(answer_scores)),
+                                    f"scores_turn_{turn_snapshot}",
+                                )
+
+                        _last_applied_eval_turn = max(_last_applied_eval_turn, turn_snapshot)
+
+                        if old_topic != _active_topic:
+                            logger.info(
+                                "[LIVE_N] ✅ MOVE_ON turn=%d | %r → %r",
+                                turn_snapshot, old_topic, _active_topic,
+                            )
+                            _ctx_items = getattr(chat_ctx, "items", None)
+                            if _ctx_items is not None:
+                                _before = len(_ctx_items)
+                                _ctx_items[:] = [m for m in list(_ctx_items) if getattr(m, "role", "") == "system"]
+                                logger.info("[LIVE_N] MOVE_ON history wipe: dropped %d msg(s)", _before - len(_ctx_items))
+
+                        remove_system_messages_multi(chat_ctx, (
+                            "[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT",
+                        ))
+                        chat_ctx.add_message(role="system", content=_directive)
+
+                        if _action_str == "MOVE_ON" and _active_topic:
+                            remove_system_messages(chat_ctx, "[RECENT_CONTEXT")
+                            chat_ctx.add_message(role="system", content=(
+                                f"[TOPIC_LOCK - CRITICAL INSTRUCTION]\n"
+                                f"PREVIOUS TOPIC IS CLOSED. DO NOT REFERENCE IT.\n"
+                                f"IGNORE anything the candidate said at the end of the previous topic.\n"
+                                f"NEW ACTIVE TOPIC: {_active_topic}\n"
+                                f"YOUR ONLY JOB: Ask ONE question about '{_active_topic}'. "
+                                f"Start with a brief acknowledgement, then ask what they personally "
+                                f"built or owned in '{_active_topic}'."
+                            ))
+
+                        logger.info(
+                            "[LIVE_N] ✅ turn=%d action=%s topic=%r (%.2fs total)",
+                            turn_snapshot, _action_str, _active_topic,
+                            asyncio.get_running_loop().time() - _t_start,
+                        )
+                    except Exception as _ae:
+                        logger.warning("[LIVE_N] turn=%d | apply routing failed: %s — using stale ctx", turn_snapshot, _ae)
+                else:
+                    logger.warning(
+                        "[LIVE_N] ⏰ turn=%d | routing timeout (%.1fs) — releasing LLM with existing directives",
+                        turn_snapshot, asyncio.get_running_loop().time() - _t_start,
+                    )
+                    remove_system_messages_multi(chat_ctx, ("[RECENT_CONTEXT",))
+
+                agent._directive_ready.set()
 
         except Exception as e:
             logger.error("[EVAL] _process_user_conversation_item failed turn=%d: %s", turn_snapshot, e, exc_info=True)
@@ -2191,7 +1857,8 @@ async def entrypoint(ctx: JobContext):
                             _last_interviewer_question = _fallback_q.group(1).strip()
                         else:
                             _last_interviewer_question = _q_text[:200]
-                    logger.debug("[QUESTION_TRACK] turn=%d last_q=%r", turn_count, _last_interviewer_question[:60])
+                    _last_question_topic = _active_topic  # topic Ishita was on when she asked this
+                    logger.debug("[QUESTION_TRACK] turn=%d last_q=%r topic=%r", turn_count, _last_interviewer_question[:60], _last_question_topic)
                     # First interview question just fired — seal the opening move so the LLM
                     # cannot re-ask it. The base system prompt says "Open by asking about X"
                     # which conflicts with PROBE directives on subsequent turns. This message
@@ -2240,7 +1907,7 @@ async def entrypoint(ctx: JobContext):
                 _question_asked_at = time.perf_counter()
                 _candidate_turn_since_last_assistant = False
                 turn_count += 1
-                logger.info("✅ TURN %d | warmup=%s", turn_count, warmup_complete)
+                logger.info("✅ TURN %d | phase=%s", turn_count, "interview" if warmup_complete else "warmup")
                 # Note: Transcript and answer_scores are now persisted after EVERY eval turn (async).
                 # See _process_user_conversation_item() for per-turn async persistence.
                 # This periodic save is kept as a safety net for orphaned records in edge cases.
@@ -2598,7 +2265,7 @@ async def entrypoint(ctx: JobContext):
     INACTIVITY_NUDGE_MAX = 2         # max 2 nudges before warning
     INACTIVITY_WARNING_SECS = 40     # termination warning at 40s
     INACTIVITY_END_SECS = 50         # end call at 50s
-    FINAL_THANKS_TRIGGER_SECS = 15
+    TIME_GUARD_SECS = 20             # final 20s: block eval/signals, fire goodbye
     final_timeout_announced = False
     _nudge_count = 0                 # how many soft nudges already sent this turn
     _last_nudge_at: float = 0.0      # monotonic time of last nudge sent
@@ -2716,17 +2383,40 @@ async def entrypoint(ctx: JobContext):
                 "[TIMER] Final window active  remaining=%.1fs",
                 remaining,
             )
-        # --- Final 15 seconds: thank you and close ---
-        if remaining <= FINAL_THANKS_TRIGGER_SECS:
-            if not final_timeout_announced:
-                final_timeout_announced = True
-                try:
-                    await session.say(
-                        f"Thank you for your time today, {candidate_first_name or candidate_name}. That's all from my side. All the best.",
-                        allow_interruptions=True,
-                    )
-                except Exception as e:
-                    logger.warning(f"[TIMING] Final timeout announcement failed: {e}")
+        # --- Final 20 seconds: time guard ---
+        # Activate the guard flag so eval dispatch and signal processing are blocked.
+        if remaining <= TIME_GUARD_SECS and not _time_guard_active:
+            _time_guard_active = True
+            logger.info("[TIME_GUARD] Activated at remaining=%.1fs — eval/signals blocked", remaining)
+
+        if remaining <= TIME_GUARD_SECS and not final_timeout_announced:
+            final_timeout_announced = True
+            _goodbye = (
+                f"Thank you so much for your time today, {candidate_first_name or candidate_name}. "
+                "That wraps up our interview. All the very best!"
+            )
+            try:
+                # Scenario 1: agent is mid-speech — interrupt it immediately then say goodbye
+                if is_agent_speaking:
+                    logger.info("[TIME_GUARD] Agent speaking — interrupting and delivering goodbye")
+                    session.interrupt()
+                    await asyncio.sleep(0.3)   # brief gap so interrupt flushes before next say()
+                    await session.say(_goodbye, allow_interruptions=False)
+
+                # Scenario 2: candidate is speaking — politely cut in
+                elif is_candidate_speaking:
+                    logger.info("[TIME_GUARD] Candidate speaking — interrupting and delivering goodbye")
+                    session.interrupt()
+                    await asyncio.sleep(0.2)
+                    await session.say(_goodbye, allow_interruptions=False)
+
+                # Scenario 3: silence — just say goodbye cleanly
+                else:
+                    logger.info("[TIME_GUARD] Silence — delivering goodbye")
+                    await session.say(_goodbye, allow_interruptions=False)
+
+            except Exception as e:
+                logger.warning("[TIME_GUARD] Goodbye delivery failed: %s", e)
             break
         inactivity_elapsed = (
             (time.monotonic() - awaiting_candidate_since)
@@ -2853,6 +2543,16 @@ async def entrypoint(ctx: JobContext):
         final_status="COMPLETED",
     )
     await persist_answer_scores(app_id, answer_scores)
+
+    # CRITICAL: Mark as COMPLETED immediately after first save to prevent re-dispatch
+    # This must happen before any async work (summary, report, billing) that could fail
+    if finished_task.done():
+        try:
+            _agent_dur = (time.time() - session_start_time) if session_start_time else None
+            await update_interview_status(app_id, duration_seconds=_agent_dur)
+            logger.info("[EARLY_STATUS_UPDATE] Marked COMPLETED to prevent duplicate job dispatch")
+        except Exception as e:
+            logger.error(f"[EARLY_STATUS_UPDATE] Failed to mark COMPLETED: {e}")
 
     # Calculate and persist skill ratings (async)
     async def _persist_skill_ratings_async():
@@ -2984,9 +2684,7 @@ async def entrypoint(ctx: JobContext):
     await flush_pending_manual_billing(org_id)
     # Sync with dashboard: Application COMPLETED
     if finished_task.done():
-        _agent_dur = (time.time() - session_start_time) if session_start_time else None
-        await update_interview_status(app_id, duration_seconds=_agent_dur)
-        # âš¡ Trigger Pinecone Sync immediately
+        # âš¡ Trigger Pinecone Sync immediately (status already updated in EARLY_STATUS_UPDATE)
         notify_sync_engine(app_id, turn=turn_count, action="session_end")
     # Cancel any leftover fire-and-forget work so job teardown is instant.
     if background_tasks:
