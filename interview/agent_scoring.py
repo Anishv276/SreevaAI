@@ -36,6 +36,7 @@ async def evaluate_answer(
     org_id: Optional[str] = None,
     llm_model: str = EVAL_LLM_MODEL,
     is_warmup: bool = False,
+    candidate_band: str = "mid",
 ) -> dict:
     """
     Single merged LLM call: scores answer quality AND decides PROBE/MOVE_ON.
@@ -88,6 +89,35 @@ async def evaluate_answer(
         llm_model, word_count, topic_follow_up_count,
     )
 
+    # Band-aware follow-up cutoff: how many turns before the LLM judge biases to MOVE_ON.
+    # Saturation system is the primary gatekeeper, but the LLM judge needs a matching signal.
+    # Fresher: move after 2 (breadth). Mid: 3. Experienced: 5. Senior: 6.
+    _followup_cutoff = {"fresher": 2, "mid": 3, "experienced": 5, "senior": 6}.get(candidate_band, 3)
+
+    # Band-aware scoring bar: what counts as "good enough" to MOVE_ON at each level.
+    _band_scoring_note = {
+        "fresher": (
+            "FRESHER candidate — score generously on grounding (they have limited work history).\n"
+            "MOVE_ON if they showed they understand WHY they made a choice, even simply.\n"
+            "Do NOT expect tradeoffs, scale, or architecture depth."
+        ),
+        "mid": (
+            "MID-LEVEL candidate — expect clear ownership and at least one real decision.\n"
+            "MOVE_ON if they named what was specifically theirs and gave one concrete detail.\n"
+            "Push back on 'we' language once — if still vague, MOVE_ON."
+        ),
+        "experienced": (
+            "EXPERIENCED candidate — expect depth, specifics, and real tradeoffs.\n"
+            "Do NOT MOVE_ON on vague answers — probe harder. A clean story with no friction is a red flag.\n"
+            "MOVE_ON only when you have a real tradeoff, a consequence, or a specific metric."
+        ),
+        "senior": (
+            "SENIOR candidate — expect strategic judgment, org impact, high-stakes decisions.\n"
+            "Polished generic answers are not enough — push for what actually went wrong or what they'd change.\n"
+            "MOVE_ON only when you have evidence of real judgment under pressure, not just competence."
+        ),
+    }.get(candidate_band, "Probe for real ownership and specific decisions.")
+
     try:
         completion = await asyncio.wait_for(
             client.chat.completions.create(
@@ -136,14 +166,18 @@ async def evaluate_answer(
                             "Use the scores to drive the decision, not separately from them:\n\n"
                             "MOVE_ON when:\n"
                             "  - specificity ≥ 7 AND depth ≥ 6 AND grounding ≥ 6 (they gave a real answer)\n"
-                            "  - OR follow-ups ≥ 4 (enough time spent, move on regardless)\n"
-                            "  - OR candidate said 'I don't know' / 'I didn't do that'\n\n"
+                            f"  - OR follow-ups ≥ {_followup_cutoff} (band-appropriate time spent, move on regardless)\n"
+                            "  - OR candidate said 'I don't know' / 'I didn't do that' / 'I can't answer'\n"
+                            "  - OR candidate explicitly said 'don't ask about X' / 'I didn't build anything' / 'ask me about skills instead'\n"
+                            "    → Respect the redirect. Do NOT probe further. MOVE_ON immediately.\n\n"
                             "PROBE when: more can be pulled. Pick probe_mode based on what's weakest:\n"
                             "  ownership     — grounding low, 'we' language, role unclear, HOW unknown\n"
                             "  depth         — specificity ok but depth low, no tradeoff/metric/reasoning\n"
                             "  authenticity  — sounds rehearsed, shallower than first answer, skill claimed not shown\n"
                             "  pressure      — story too clean, no mistake/friction — needs a hard moment\n"
                             "  clarification — contradicts earlier, or answer keeps getting shorter\n\n"
+                            f"── BAND: {candidate_band.upper()} ──\n"
+                            f"{_band_scoring_note}\n\n"
                             "RULES: probe_mode must be null when action=MOVE_ON. "
                             "reason must quote the candidate's actual words."
                         ),
@@ -154,8 +188,8 @@ async def evaluate_answer(
                             f"QUESTION ASKED: {last_question}\n\n"
                             f"CANDIDATE ANSWER: {candidate_answer}\n\n"
                             f"FOLLOW-UPS ALREADY ASKED ON THIS TOPIC: {topic_follow_up_count}\n"
-                            f"(if ≥ 4, bias toward MOVE_ON even on weak answers)\n\n"
-                            f"RECENT CONTEXT (for detecting collapse or contradiction):\n{recent_context}"
+                            f"(band cutoff = {_followup_cutoff} follow-ups — bias to MOVE_ON if at or past this)\n\n"
+                            f"RECENT CONTEXT (for detecting collapse or consistency issues):\n{recent_context}"
                         ),
                     },
                 ],
@@ -165,6 +199,13 @@ async def evaluate_answer(
         )
 
         raw = completion.choices[0].message.content or "{}"
+        _usage = getattr(completion, "usage", None)
+        _eval_llm_usage = {
+            "model": llm_model,
+            "inputTokens": int(getattr(_usage, "prompt_tokens", 0) or 0),
+            "outputTokens": int(getattr(_usage, "completion_tokens", 0) or 0),
+            "cachedInputTokens": int(getattr(getattr(_usage, "prompt_tokens_details", None), "cached_tokens", 0) or 0),
+        }
         data: dict[str, Any] = json.loads(raw)
 
         def _clamp(v: Any, lo: float = 0.0, hi: float = 10.0) -> float:
@@ -225,6 +266,7 @@ async def evaluate_answer(
             "overall": overall,
             "action": action, "probe_mode": probe_mode,
             "reason": reason, "depth_signal": depth_signal,
+            "_llm_usage": _eval_llm_usage,
         }
 
     except asyncio.TimeoutError:
@@ -246,114 +288,6 @@ async def evaluate_answer(
             "action": "PROBE", "probe_mode": "ownership",
             "reason": "eval error", "depth_signal": "SURFACE",
         }
-
-
-async def extract_claims(
-    candidate_answer: str,
-    turn: int,
-    client,
-    org_id: Optional[str] = None,
-    llm_model: str = EVAL_LLM_MODEL,
-) -> list[dict]:
-    """Extract verifiable factual claims from candidate answer for contradiction detection."""
-    if not candidate_answer or not candidate_answer.strip():
-        return []
-
-    try:
-        completion = await asyncio.wait_for(
-            client.chat.completions.create(
-                model=llm_model,
-                temperature=EVAL_TEMPERATURE,
-                max_tokens=300,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "Extract verifiable factual claims from the candidate's answer. "
-                            "Output a JSON array (max 5 items). Each item:\n"
-                            '{"type": one of [team_size,years_experience,tenure_at_company,role_title,'
-                            'project_ownership,reporting_structure,outcome_metric,tech_stack,company_name,timeline], '
-                            '"value": "the claimed value", '
-                            '"quote": "max 15 words from answer", '
-                            '"context": "company/project name or general", '
-                            f'"turn": {turn}}}\n'
-                            "Only extract concrete, checkable claims. Skip opinions and vague statements."
-                        ),
-                    },
-                    {"role": "user", "content": f"CANDIDATE ANSWER (turn {turn}):\n{candidate_answer}"},
-                ],
-                response_format={"type": "json_object"},
-            ),
-            timeout=3.0,
-        )
-        raw = completion.choices[0].message.content or "{}"
-        parsed = json.loads(raw)
-        if isinstance(parsed, list):
-            return parsed
-        # Sometimes model wraps in {"claims": [...]}
-        for v in parsed.values():
-            if isinstance(v, list):
-                return v
-        return []
-    except Exception:
-        return []
-
-
-def check_contradiction(
-    new_claim: dict,
-    existing_claims_by_type: dict[str, list[dict]],
-) -> Optional[dict]:
-    """Compare new_claim against existing claims of same type. Returns contradiction dict or None."""
-    claim_type = new_claim.get("type", "")
-    existing = existing_claims_by_type.get(claim_type, [])
-    if not existing:
-        return None
-
-    def _extract_num(s: str) -> Optional[float]:
-        m = re.search(r"\d+(?:\.\d+)?", str(s))
-        return float(m.group()) if m else None
-
-    for old in existing:
-        old_val = str(old.get("value", ""))
-        new_val = str(new_claim.get("value", ""))
-        contradiction = False
-
-        if claim_type == "team_size":
-            on, nn = _extract_num(old_val), _extract_num(new_val)
-            if on is not None and nn is not None and abs(on - nn) >= 3:
-                contradiction = True
-        elif claim_type == "years_experience":
-            on, nn = _extract_num(old_val), _extract_num(new_val)
-            if on is not None and nn is not None and abs(on - nn) > 2:
-                contradiction = True
-        elif claim_type == "project_ownership":
-            solo_words = {"solo", "alone", "myself", "i built", "i made"}
-            team_words = {"team", "we", "together", "collaborated"}
-            old_solo = any(w in old_val.lower() for w in solo_words)
-            new_solo = any(w in new_val.lower() for w in solo_words)
-            old_team = any(w in old_val.lower() for w in team_words)
-            new_team = any(w in new_val.lower() for w in team_words)
-            if (old_solo and new_team) or (old_team and new_solo):
-                contradiction = True
-        elif claim_type == "tenure_at_company":
-            on, nn = _extract_num(old_val), _extract_num(new_val)
-            if on is not None and nn is not None and on > 0:
-                if abs(on - nn) / on > 0.40:
-                    contradiction = True
-
-        if contradiction:
-            return {
-                "type": claim_type,
-                "context": new_claim.get("context", ""),
-                "old_turn": old.get("turn", 0),
-                "old_value": old_val,
-                "new_turn": new_claim.get("turn", 0),
-                "new_value": new_val,
-                "old_quote": old.get("quote", ""),
-                "new_quote": new_claim.get("quote", ""),
-            }
-
-    return None
 
 
 def notify_sync_engine(app_id: str, turn: int, action: str) -> None:
@@ -378,3 +312,96 @@ def notify_sync_engine(app_id: str, turn: int, action: str) -> None:
             logger.warning("[SYNC_ERROR] Failed to notify sync engine: %s", e)
 
     threading.Thread(target=_ping, daemon=True).start()
+
+
+# ---------------------------------------------------------------------------
+# Live-N Phase 1: Fast Routing Call (~200ms)
+# ---------------------------------------------------------------------------
+# This is the ONLY call that blocks the LLM gate in Live-N.
+# It decides MOVE_ON/PROBE and which probe family — nothing else.
+# Quality scoring (evaluate_answer) runs async AFTER Ishita has already spoken.
+#
+# Prompt is intentionally lean: max_tokens=80, no quality dimensions, just routing.
+# Typical latency: 150-300ms vs 700-1500ms for full evaluate_answer.
+# ---------------------------------------------------------------------------
+
+_ROUTING_SYSTEM_PROMPT = """You decide the next interview move based on the candidate's answer.
+Output ONLY valid JSON with exactly these fields:
+{
+  "action": "PROBE" or "MOVE_ON",
+  "probe_mode": "ownership"|"depth"|"authenticity"|"pressure"|"clarification"|null,
+  "reason": "max 6 words from the answer"
+}
+
+MOVE_ON when:
+  - Candidate gave a real, specific answer (named something concrete)
+  - Candidate said "I don't know" / "I didn't do that" / "don't ask about X"
+  - follow_ups >= band_cutoff (time spent is enough)
+
+PROBE when more can be pulled. Pick probe_mode:
+  ownership     — vague "we" language, HOW unknown, role unclear
+  depth         — specific but no tradeoff/metric/reasoning
+  authenticity  — sounds rehearsed, shallower than first answer
+  pressure      — story too clean, no friction or failure mentioned
+  clarification — contradicts earlier, answer getting shorter
+
+RULES: probe_mode must be null when action=MOVE_ON."""
+
+
+async def route_answer(
+    candidate_answer: str,
+    last_question: str,
+    topic_follow_up_count: int,
+    candidate_band: str = "mid",
+    client = None,
+    llm_model: str = EVAL_LLM_MODEL,
+) -> dict:
+    """
+    Phase 1 routing: fast LLM call that returns MOVE_ON/PROBE only.
+    Target latency: 150-300ms. Blocks LLM gate in Live-N.
+    """
+    if not candidate_answer or not candidate_answer.strip():
+        return {"action": "PROBE", "probe_mode": "ownership", "reason": "empty answer"}
+
+    _band_cutoff = {"fresher": 2, "mid": 3, "experienced": 5, "senior": 6}.get(candidate_band, 3)
+
+    user_content = (
+        f"QUESTION: {last_question}\n\n"
+        f"ANSWER: {candidate_answer}\n\n"
+        f"FOLLOW-UPS ON THIS TOPIC: {topic_follow_up_count} "
+        f"(band cutoff={_band_cutoff} — bias MOVE_ON if at or past this)"
+    )
+
+    try:
+        completion = await asyncio.wait_for(
+            client.chat.completions.create(
+                model=llm_model,
+                temperature=0.0,
+                max_tokens=80,
+                messages=[
+                    {"role": "system", "content": _ROUTING_SYSTEM_PROMPT},
+                    {"role": "user",   "content": user_content},
+                ],
+                response_format={"type": "json_object"},
+            ),
+            timeout=3.0,
+        )
+        data = json.loads(completion.choices[0].message.content or "{}")
+        action = str(data.get("action", "PROBE")).upper()
+        if action not in ("PROBE", "MOVE_ON"):
+            action = "PROBE"
+        _VALID = {"ownership", "depth", "authenticity", "pressure", "clarification"}
+        raw_mode = str(data.get("probe_mode") or "").strip().lower()
+        probe_mode = raw_mode if raw_mode in _VALID else (None if action == "MOVE_ON" else "ownership")
+        logger.info(
+            "[ROUTE] action=%s probe=%s reason=%r | turn_followups=%d band=%s",
+            action, probe_mode, str(data.get("reason", ""))[:40],
+            topic_follow_up_count, candidate_band,
+        )
+        return {"action": action, "probe_mode": probe_mode, "reason": data.get("reason", "")}
+    except asyncio.TimeoutError:
+        logger.warning("[ROUTE] route_answer timed out (3s) — defaulting PROBE(ownership)")
+        return {"action": "PROBE", "probe_mode": "ownership", "reason": "timeout"}
+    except Exception as e:
+        logger.warning("[ROUTE] route_answer failed: %s — defaulting PROBE(ownership)", e)
+        return {"action": "PROBE", "probe_mode": "ownership", "reason": "error"}

@@ -874,7 +874,7 @@ export default function OrgsPage() {
                                                             <div className="text-[11px] font-[800] uppercase tracking-[0.2em] text-orange-600">STT</div>
                                                         </div>
                                                         <div className="text-right">
-                                                            <div className="text-[24px] font-[800] text-gray-900 tracking-[-0.03em]">{(metricSections.reduce((sum, s) => sum + Number(getBillingFeature(metricsOrg, s.key).sttAudioSeconds || 0), 0) / 60).toFixed(1)}m</div>
+                                                            <div className="text-[24px] font-[800] text-gray-900 tracking-[-0.03em]">{(metricSections.reduce((sum, s) => sum + Number(getBillingFeature(metricsOrg, s.key).sttAudioSeconds || 0), 0) / 60).toFixed(1)} <span className="text-[14px] font-[700] opacity-50">min</span></div>
                                                             <div className="text-[10px] font-[800] uppercase tracking-[0.15em] text-gray-500">Minutes Transcribed</div>
                                                         </div>
                                                     </div>
@@ -983,7 +983,7 @@ export default function OrgsPage() {
                                                             <div className="text-[28px] font-[800] text-gray-900 tabular-nums">
                                                                 {Number(feature.sessionDuration || 0) > 0
                                                                     ? (Number(feature.sessionDuration || 0) / 60).toFixed(1)
-                                                                    : (Number(feature.sttAudioSeconds || 0) / 60).toFixed(1)}<span className="text-sm ml-1 opacity-40">M</span>
+                                                                    : (Number(feature.sttAudioSeconds || 0) / 60).toFixed(1)}<span className="text-[13px] font-[600] ml-1 opacity-40">min</span>
                                                             </div>
                                                         </div>
                                                         <div className="space-y-1.5 col-span-2">

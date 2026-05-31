@@ -1,11 +1,9 @@
 """
-Standalone evaluation pipeline for the Redis worker architecture.
+Live-N evaluation pipeline.
 
-Unified 20-minute interview — single topic pool (resume projects + JD skills),
-no stage index, no dual topic trackers.
-Topic priority: resume projects/work/internships → JD skills → next uncovered.
-
-Contract: run_eval_and_build_directive(payload: dict, client) -> dict
+Single-shot: run_eval_and_build_directive() scores + routes in one LLM call.
+Worker writes ONE result key: routing_result:{app_id}:{turn} for the current turn.
+Agent waits for THIS turn's result — live-N, not N-1.
 """
 from __future__ import annotations
 
@@ -17,19 +15,13 @@ from typing import Any, Dict, List, Optional, Set
 from pydantic import BaseModel, Field
 from openai import AsyncOpenAI
 
-# How many seconds before interview end we stop opening new questions.
-# Was sent in every payload as no_new_question_cutoff_seconds=45 — that's a
-# static config value that never changes at runtime, so it belongs here.
 _NO_NEW_QUESTION_CUTOFF_SECONDS: int = 45
 
 from interview.turn_evaluator import run_turn_evaluation
 from interview.turn_decision import classify_short_utterance
-from interview.trust_engine import apply_turn_decision, apply_contradiction_resolved
-from interview.contradiction_state import advance_contradiction_state, summarize_contradiction_state
+from interview.trust_engine import apply_turn_decision
 from interview.agent_scoring import (
-    check_contradiction,
-    evaluate_answer,       # FIX 1: merged fn replaces score_answer_quality + evaluate_answer_and_decide
-    extract_claims,
+    evaluate_answer,
 )
 from interview.agent_runtime_support import EVAL_LLM_MODEL
 
@@ -40,25 +32,65 @@ logger = logging.getLogger("eval_worker")
 # Topic Saturation System (PART 2)
 # ---------------------------------------------------------------------------
 
+
+# ---------------------------------------------------------------------------
+# Band-aware saturation config — controls turns-per-topic per experience level.
+#
+# Research basis (20-min interview, ~23 eval turns available after warmup):
+#   fresher:    breadth > depth → 5-6 topics → 2-3 turns/topic → low threshold
+#   mid:        balanced       → 4-5 topics → 3-4 turns/topic → mid threshold
+#   experienced: depth > breadth → 3-4 topics → 4-5 turns/topic → high threshold
+#   senior:     depth-only     → 2-3 topics → 5-6 turns/topic → very high threshold
+#
+# Threshold math: base_credit * turns_until_exit = threshold * progress_check_pct
+# (guarantees weak candidates exit before eating the entire budget)
+# ---------------------------------------------------------------------------
+
+_BAND_SATURATION: dict[str, dict[str, dict]] = {
+    # importance → {threshold, base_turn_credit} per band
+    "fresher": {
+        "CRITICAL": {"threshold": 5.0, "base_credit": 1.1},
+        "HIGH":     {"threshold": 4.0, "base_credit": 1.0},
+        "MEDIUM":   {"threshold": 3.0, "base_credit": 1.2},
+        "LOW":      {"threshold": 2.5, "base_credit": 1.4},
+    },
+    "mid": {
+        "CRITICAL": {"threshold": 7.0, "base_credit": 0.6},
+        "HIGH":     {"threshold": 5.5, "base_credit": 0.8},
+        "MEDIUM":   {"threshold": 4.0, "base_credit": 1.0},
+        "LOW":      {"threshold": 3.0, "base_credit": 1.2},
+    },
+    "experienced": {
+        "CRITICAL": {"threshold": 9.0, "base_credit": 0.55},
+        "HIGH":     {"threshold": 7.0, "base_credit": 0.65},
+        "MEDIUM":   {"threshold": 5.0, "base_credit": 0.85},
+        "LOW":      {"threshold": 3.5, "base_credit": 1.0},
+    },
+    "senior": {
+        "CRITICAL": {"threshold": 11.0, "base_credit": 0.50},
+        "HIGH":     {"threshold": 8.5,  "base_credit": 0.55},
+        "MEDIUM":   {"threshold": 6.0,  "base_credit": 0.70},
+        "LOW":      {"threshold": 4.0,  "base_credit": 0.90},
+    },
+}
+
+
 class TopicState:
     """Single source of truth for per-topic state."""
 
-    def __init__(self, topic_name: str, importance: str, updated_turn: int = 0):
+    def __init__(self, topic_name: str, importance: str, updated_turn: int = 0, band: str = "mid"):
         self.topic_name = topic_name
         self.importance = importance  # CRITICAL | HIGH | MEDIUM | LOW
+        self.band = band
         self.updated_turn = updated_turn
 
-        # Saturation thresholds by importance.
-        # HIGH was 6.5 — at base_credit=0.8 that needs 8+ turns for surface candidates,
-        # consuming too much of the 20-min budget and skipping JD skills entirely.
-        # Reduced to 5.5 so a surface candidate exits after ~4-5 turns (base only),
-        # while a strong candidate (quality contribution ~2.0/turn) saturates in 2-3 turns.
-        self.saturation_threshold = {
-            "CRITICAL": 7.0,
-            "HIGH": 5.5,
-            "MEDIUM": 4.0,
-            "LOW": 3.0,
-        }.get(importance, 5.5)
+        # Band-aware saturation thresholds and base credits.
+        # Fresher: low threshold → moves faster → covers more topics (breadth).
+        # Senior: high threshold → stays longer → goes much deeper per topic (depth).
+        _band_cfg = _BAND_SATURATION.get(band, _BAND_SATURATION["mid"])
+        _importance_cfg = _band_cfg.get(importance, _band_cfg.get("HIGH", {"threshold": 5.5, "base_credit": 0.8}))
+        self.saturation_threshold: float = _importance_cfg["threshold"]
+        self.base_turn_credit: float = _importance_cfg["base_credit"]
 
         self.saturation_score = 0.0  # Accumulates per response
         self.follow_up_turns = 0     # Counts each turn on this topic
@@ -67,38 +99,19 @@ class TopicState:
         self.is_saturated = False
         self.opened_at_turn = 0
 
-        # Base credit per turn: added regardless of answer quality.
-        # Ensures even weak candidates eventually move on (no infinite loop).
-        # Lower importance = bigger base credit = fewer turns needed.
-        # Strong candidates still saturate fast via quality contribution on top.
-        self.base_turn_credit = {
-            "CRITICAL": 0.6,
-            "HIGH":     0.8,
-            "MEDIUM":   1.0,
-            "LOW":      1.2,
-        }.get(importance, 0.8)
-
-        # Weak candidate early exit: after this many turns, if score < X% of threshold
-        # the candidate is clearly struggling — no point spending more time on this topic.
-        # Strong/avg candidates will have already saturated naturally by this point.
-        #
-        # pct tuned per importance: HIGH=35% (was 45% — reduced to stop premature exits
-        # when signal penalties (-1.5) wipe quality contribution). CRITICAL gets more room.
-        # After this many follow-up turns, check if candidate is making enough progress.
-        # 3 turns for all importance levels — gives the candidate 3 chances before exiting.
-        self.progress_check_turns = 3
-        # If score < 45% of threshold after 3 turns → weak candidate, move on.
+        # Weak candidate early exit: after progress_check_turns, if score < pct of threshold → move on.
         # Math check (must satisfy: base_credit * turns < threshold * pct):
-        #   HIGH:     0.8 * 3 = 2.4  <  5.5 * 0.45 = 2.475  ✅ fires on zero-quality candidate
-        #   CRITICAL: 0.6 * 3 = 1.8  <  7.0 * 0.45 = 3.150  ✅
-        #   MEDIUM:   1.0 * 3 = 3.0  <  4.0 * 0.45 = 1.800  ❌ use 0.80 for MEDIUM
-        #   LOW:      1.2 * 3 = 3.6  <  3.0 * 0.45 = 1.350  ❌ use 0.65 for LOW
+        #   fresher  HIGH: 1.0*3=3.0 < 4.0*0.80=3.20 ✅
+        #   mid      HIGH: 0.8*3=2.4 < 5.5*0.45=2.475 ✅
+        #   experienced HIGH: 0.65*3=1.95 < 7.0*0.30=2.10 ✅
+        #   senior   HIGH: 0.55*3=1.65 < 8.5*0.22=1.87 ✅
+        self.progress_check_turns = 3
         self.progress_check_pct = {
-            "CRITICAL": 0.45,
-            "HIGH":     0.45,
-            "MEDIUM":   0.80,   # base alone (3.0) > 45% of 4.0 (1.8) so need higher pct
-            "LOW":      0.65,   # base alone (3.6) > 45% of 3.0 (1.35) so need higher pct
-        }.get(importance, 0.45)
+            "fresher":    {"CRITICAL": 0.75, "HIGH": 0.80, "MEDIUM": 0.90, "LOW": 0.90},
+            "mid":        {"CRITICAL": 0.45, "HIGH": 0.45, "MEDIUM": 0.80, "LOW": 0.65},
+            "experienced":{"CRITICAL": 0.28, "HIGH": 0.30, "MEDIUM": 0.45, "LOW": 0.60},
+            "senior":     {"CRITICAL": 0.20, "HIGH": 0.22, "MEDIUM": 0.35, "LOW": 0.50},
+        }.get(band, {"CRITICAL": 0.45, "HIGH": 0.45, "MEDIUM": 0.80, "LOW": 0.65}).get(importance, 0.45)
 
     def is_weak_candidate_exit(self) -> bool:
         """After N turns, check if score is below the minimum expected progress.
@@ -146,6 +159,7 @@ class TopicState:
         return {
             "topic_name": self.topic_name,
             "importance": self.importance,
+            "band": self.band,
             "saturation_threshold": self.saturation_threshold,
             "saturation_score": round(self.saturation_score, 2),
             "follow_up_turns": self.follow_up_turns,
@@ -170,6 +184,7 @@ class TopicState:
             topic_name=str(state_dict.get("topic_name", "")),
             importance=str(state_dict.get("importance", "HIGH")),
             updated_turn=int(state_dict.get("updated_turn", 0) or 0),
+            band=str(state_dict.get("band", "mid")),
         )
         # Restore mutable accumulator fields — these override __init__ defaults
         obj.saturation_score   = float(state_dict.get("saturation_score", 0.0) or 0.0)
@@ -264,8 +279,6 @@ class SignalPenaltyCalculator:
     """
 
     MODIFIERS = {
-        # Integrity — answer cannot be trusted: slow down, force more probing
-        "contradiction": -2.5,
         "follow_up_collapse": -1.5,
         # Behavioral — hiding or evading: hold the topic, extract real evidence
         "example_evasion": -1.5,
@@ -320,8 +333,6 @@ class EvaluationPayload(BaseModel):
     anchor_item: Optional[str] = None
     job_title: str = "the role"
     remaining_seconds: float = 999.0
-    claim_index: Dict[str, Any] = Field(default_factory=dict)
-    contradiction_state: Dict[str, Any] = Field(default_factory=dict)
     trust_state: Dict[str, Any] = Field(default_factory=dict)
     current_interview_mode: str = "normal"
     # Candidate brief fields (for context logging)
@@ -331,12 +342,16 @@ class EvaluationPayload(BaseModel):
     internships_full: List[str] = Field(default_factory=list)
     education_full: List[str] = Field(default_factory=list)
     candidate_name: str = "?"
-    band: str = "?"
+    band: str = "mid"
     time_limit_mins: int = 20
-    # Per-topic quality score history — quality scores only for turns on the current topic.
-    # Separate from score_history (which is session-wide) so collapse/latency detectors
-    # only compare scores within the same topic, not across topic switches.
     topic_score_history: List[float] = Field(default_factory=list)
+    # The actual question Ishita asked this turn — used to detect topic drift.
+    # If Ishita's question mentions a topic not in active_topic, the worker auto-corrects.
+    ai_question_this_turn: str = ""
+    # routing_topic = _active_topic in agent (may already be the new topic after MOVE_ON).
+    # active_topic = the topic the candidate's answer is actually ABOUT (question topic).
+    # Worker uses active_topic for scoring/saturation and routing_topic for next-topic selection.
+    routing_topic: str = ""
 
     model_config = {"extra": "allow"}  # Ignore unknown fields silently
 
@@ -465,30 +480,6 @@ class DirectiveCompiler:
         )
 
     @staticmethod
-    def contradiction_active(summary: dict, turn: int) -> str:
-        evidence = summary["evidence"]
-        old_t = evidence.get("oldTurn", 0)
-        old_v = str(evidence.get("oldValue", ""))[:100]
-        new_v = str(evidence.get("newValue", ""))[:100]
-        claim_t = (
-            re.sub(r"[^\w\s]", "", summary["contradictionType"].replace("_", " ")).strip()
-            or "contradiction"
-        )
-        return (
-            f"[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
-            f"DECISION: CONTRADICTION {summary['status'].upper()}\n"
-            f"INCONSISTENCY DETECTED: {claim_t}\n"
-            f"  Earlier (turn {old_t}): '{old_v}'\n"
-            f"  Just now (turn {turn}): '{new_v}'\n"
-            f"ACTION: Surface this with genuine confusion - not accusation."
-            f"Say something like: 'wait, I want to make sure I understood this right - "
-            f"earlier it sounded like {old_v}, but just now it sounds more like {new_v}. "
-            f"Help me connect those two.' "
-            f"If they clarify convincingly, accept it and move on. "
-            f"If they stall or contradict again, note it internally and continue."
-        )
-
-    @staticmethod
     def append_memory_block(directive: str, discussed_log: List[str]) -> str:
         if not discussed_log:
             return directive
@@ -600,29 +591,91 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     # ── Parse + validate payload via Pydantic ────────────────────────────────
     p = EvaluationPayload(**payload)
 
-    # ── Early guard: Clarification or connection check ────────────────────────
-    # If the candidate said "can you repeat that", "sorry?", "hello?", etc.,
-    # short-circuit: no LLM call, no counter increment, no state mutations.
+    # ── Early guard: Clarification, connection check, or explicit redirect ───────
     _utterance_cls = classify_short_utterance(p.answer)
     _is_clarification_turn = (
         _utterance_cls is not None
         and _utterance_cls["response_class"] in ("clarification_question", "connection_check")
     )
+    _is_explicit_redirect = (
+        _utterance_cls is not None
+        and _utterance_cls["response_class"] == "explicit_redirect"
+    )
+
+    if _is_explicit_redirect:
+        # Candidate said "don't ask about X" or "ask about my skills/work instead"
+        # MOVE_ON immediately — don't probe, don't rephrase, just go to next topic.
+        logger.info(
+            "[EVAL_PIPELINE] Explicit redirect detected (text=%r) — forcing MOVE_ON turn=%d",
+            (p.answer or "")[:80], p.turn,
+        )
+        tracker_redirect = TopicTracker(
+            resume_topics=p.resume_topics, skill_topics=p.skill_topics,
+            covered_keys=set(p.covered_topic_keys), discussed_log=list(p.discussed_log),
+            active_topic=p.active_topic, job_title=p.job_title,
+        )
+        tracker_redirect.mark_covered(p.active_topic)
+        _redirect_next = tracker_redirect.fallback_next(exclude=p.active_topic)
+        _redirect_directive = (
+            "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
+            "DECISION: MOVE_ON\n"
+            f"NEW ACTIVE TOPIC: {_redirect_next}\n"
+            "CANDIDATE REDIRECTED — they asked you not to continue on this topic.\n"
+            "Respect it. One brief acknowledgement ('Sure, let's go there'), then ask "
+            f"one natural question about: {_redirect_next}.\n"
+            "Do NOT reference the previous topic again."
+        )
+        return {
+            "app_id": p.app_id, "turn": p.turn,
+            "directive": _redirect_directive, "action": "MOVE_ON",
+            "td": {"decision": {"action": "MOVE_ON", "mode": "normal", "next_goal": f"Move to {_redirect_next}"},
+                   "quality": {"clarity": 0.0, "depth": 0.0, "specificity": 0.0, "grounding": 0.0}},
+            "quality_record": None, "signal_events": [],
+            "depth_signal": "SURFACE",
+            "freeze_followup_increment": True,
+            "new_active_topic": _redirect_next,
+            "new_covered_topic_keys": list(tracker_redirect.covered_keys),
+            "new_active_topic_state": None,
+            "new_trust_state": dict(p.trust_state),
+            "new_current_interview_mode": p.current_interview_mode,
+            "risk_integrity_delta": 0, "risk_depth_delta": 0,
+            "discussed_log_entry": None,
+        }
+
     if _is_clarification_turn:
         _cls_name = _utterance_cls["response_class"]
+        # Edge case: MOVE_ON already happened (N-1 lag) before the candidate said
+        # "can you repeat". p.routing_topic = new topic, p.active_topic = old topic.
+        # Rephrasing the OLD question is wrong — the agent already pivoted.
+        # Correct behaviour: treat this as the first question on the NEW topic,
+        # re-ask that opening question simply and clearly.
+        _post_moveon_rephrase = bool(p.routing_topic and p.routing_topic != p.active_topic)
         logger.info(
             "[EVAL_PIPELINE] Clarification/connection detected (class=%s, text=%r) — "
-            "injecting REPHRASE directive turn=%d",
-            _cls_name, (p.answer or "")[:60], p.turn,
+            "injecting REPHRASE directive turn=%d (post_moveon=%s)",
+            _cls_name, (p.answer or "")[:60], p.turn, _post_moveon_rephrase,
         )
-        _rephrase_directive = (
-            "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
-            "DECISION: REPHRASE\n"
-            "NEXT MOVE: The candidate asked for clarification or had a connection issue. "
-            "Briefly acknowledge ('Sure!', 'Of course!'), then rephrase your last question "
-            "in simpler, shorter language. Do NOT ask a brand-new question — re-ask the same one more clearly.\n"
-            "[FOLLOW_UP_RULE] This turn does NOT count as a follow-up. Counter is unchanged."
-        )
+        if _post_moveon_rephrase:
+            # MOVE_ON already fired — rephrase as the NEW topic's opening question
+            _new_topic = p.routing_topic
+            _rephrase_directive = (
+                "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
+                "DECISION: REPHRASE\n"
+                f"NOTE: We already moved to a new topic: {_new_topic}\n"
+                "NEXT MOVE: The candidate asked to repeat the question, but we already moved on. "
+                f"Say 'Sure! We've actually moved to {_new_topic} — ' then ask ONE simple, clear "
+                f"opening question about {_new_topic}. What did they personally build or own there?\n"
+                "[FOLLOW_UP_RULE] This turn does NOT count as a follow-up. Counter is unchanged."
+            )
+        else:
+            _rephrase_directive = (
+                "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
+                "DECISION: REPHRASE\n"
+                "NEXT MOVE: The candidate asked for clarification or forgot the question. "
+                "Briefly acknowledge ('Sure!', 'No worries!'), then rephrase your last question "
+                "in simpler, shorter language. Do NOT ask a brand-new question — re-ask the same one more clearly.\n"
+                "[FOLLOW_UP_RULE] This turn does NOT count as a follow-up. Counter is unchanged."
+            )
         _rephrase_directive = DirectiveCompiler.append_memory_block(_rephrase_directive, list(p.discussed_log))
         return {
             "app_id": p.app_id,
@@ -635,16 +688,12 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
             },
             "quality_record": None,
             "signal_events": [],
-            "contradiction_state_event": None,
             "depth_signal": "SURFACE",
             "freeze_followup_increment": True,
-            # All state mutations: unchanged (clarification doesn't change topic state)
             "new_active_topic": p.active_topic,
             "new_covered_topic_keys": list(p.covered_topic_keys),
-            "new_active_topic_state": None,  # Clarification turn — topic state unchanged
+            "new_active_topic_state": None,
             "new_trust_state": dict(p.trust_state),
-            "new_contradiction_state": dict(p.contradiction_state),
-            "new_claim_index": {k: list(v) for k, v in p.claim_index.items()},
             "new_current_interview_mode": p.current_interview_mode,
             "risk_integrity_delta": 0,
             "risk_depth_delta": 0,
@@ -655,12 +704,8 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     new_active_topic = p.active_topic
     new_current_interview_mode = p.current_interview_mode
     new_trust_state: dict = dict(p.trust_state)
-    new_contradiction_state: dict = dict(p.contradiction_state)
-    new_claim_index: dict = {k: list(v) for k, v in p.claim_index.items()}
 
     signal_events: list = []
-    contradiction_state_event: Optional[dict] = None
-    contradiction_alert: Optional[dict] = None
     risk_integrity_delta = 0
     risk_depth_delta = 0
     discussed_log_entry: Optional[str] = None
@@ -702,11 +747,11 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
             topic_source=_topic_source,
             is_anchor=p.active_topic == p.anchor_item,
         )
-        current_topic_state = TopicState(p.active_topic, importance, updated_turn=p.turn)
+        current_topic_state = TopicState(p.active_topic, importance, updated_turn=p.turn, band=p.band)
 
         logger.info(
-            "[TOPIC_STATE] CREATED NEW | topic=%s source=%s importance=%s | threshold=%.1f base_credit=%.1f",
-            p.active_topic, _topic_source, importance,
+            "[TOPIC_STATE] CREATED NEW | topic=%s source=%s importance=%s band=%s | threshold=%.1f base_credit=%.1f",
+            p.active_topic, _topic_source, importance, p.band,
             current_topic_state.saturation_threshold, current_topic_state.base_turn_credit,
         )
 
@@ -729,12 +774,60 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
                 topic_source=_boot_src,
                 is_anchor=_first_topic == p.anchor_item,
             )
-            current_topic_state = TopicState(_first_topic, _boot_importance, updated_turn=p.turn)
+            current_topic_state = TopicState(_first_topic, _boot_importance, updated_turn=p.turn, band=p.band)
             logger.info(
-                "[TOPIC_BOOT] ✅ BOOTSTRAPPED | topic='%s' source=%s importance=%s | threshold=%.1f base_credit=%.1f turn=%d",
-                _first_topic, _boot_src, _boot_importance,
+                "[TOPIC_BOOT] ✅ BOOTSTRAPPED | topic='%s' source=%s importance=%s band=%s | threshold=%.1f base_credit=%.1f turn=%d",
+                _first_topic, _boot_src, _boot_importance, p.band,
                 current_topic_state.saturation_threshold, current_topic_state.base_turn_credit,
                 p.turn,
+            )
+
+    # ── Topic alignment guard ────────────────────────────────────────────────
+    # Problem: if a previous SYNC_GATE miss meant the agent never applied a MOVE_ON
+    # result, the next payload arrives with stale active_topic. But the AI's actual
+    # question (ai_question_this_turn) reveals what topic Ishita really moved to.
+    # We check if any resume/skill topic appears in Ishita's question — if it does
+    # and differs from the stale active_topic, we auto-correct before scoring.
+    if p.ai_question_this_turn and p.active_topic:
+        _ai_q_lower = p.ai_question_this_turn.lower()
+        _stale_key = _normalize_topic_key(p.active_topic)
+        _all_topics = p.resume_topics + p.skill_topics
+        _best_match: Optional[str] = None
+        _best_score = 0
+        for _t in _all_topics:
+            _t_key = _normalize_topic_key(_t)
+            if not _t_key or _t_key == _stale_key:
+                continue
+            # Count how many words of the topic appear in the question
+            _t_words = [w for w in _t_key.split() if len(w) >= 4]
+            if not _t_words:
+                continue
+            _hits = sum(1 for w in _t_words if w in _ai_q_lower)
+            _score = _hits / len(_t_words)
+            if _score >= 0.5 and _score > _best_score:
+                _best_score = _score
+                _best_match = _t
+        if _best_match:
+            _corrected_key = _normalize_topic_key(_best_match)
+            logger.warning(
+                "[TOPIC_ALIGN] Stale topic detected | payload_topic=%r AI_asked_about=%r "
+                "(match_score=%.0f%%) — auto-correcting turn=%d",
+                p.active_topic, _best_match, _best_score * 100, p.turn,
+            )
+            # Mark the stale topic as covered and open the new one
+            tracker.mark_covered(p.active_topic)
+            new_active_topic = _best_match
+            _tk_new = _corrected_key
+            _resume_keys_align = {_normalize_topic_key(t) for t in p.resume_topics}
+            _src_new = "resume" if _tk_new in _resume_keys_align else "skill"
+            _imp_new = TopicImportanceClassifier.classify(
+                topic_source=_src_new,
+                is_anchor=_best_match == p.anchor_item,
+            )
+            current_topic_state = TopicState(_best_match, _imp_new, updated_turn=p.turn, band=p.band)
+            logger.info(
+                "[TOPIC_ALIGN] ✅ Corrected to topic=%r importance=%s | threshold=%.1f turn=%d",
+                _best_match, _imp_new, current_topic_state.saturation_threshold, p.turn,
             )
 
     # ── Context log box ──────────────────────────────────────────────────────
@@ -742,13 +835,17 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     if current_topic_state:
         _sat_pct = 100 * min(1.0, current_topic_state.saturation_score / current_topic_state.saturation_threshold)
         _saturation_status = f" | saturation={_sat_pct:.0f}% ({current_topic_state.saturation_score:.1f}/{current_topic_state.saturation_threshold})"
+    _routing_note = ""
+    if p.routing_topic and p.routing_topic != p.active_topic:
+        _routing_note = f" | agent_routing_on={p.routing_topic!r} (answer is about={p.active_topic!r})"
     logger.info(
-        "[TURN] INTERVIEW | turn=%d | active=%s | covered=%s | remaining=%.0fs | mode=%s%s",
+        "[TURN] INTERVIEW | turn=%d | scoring_topic=%s | covered=%s | remaining=%.0fs | mode=%s%s%s",
         p.turn,
         (p.active_topic or "?"),
         list(tracker.covered_keys) if tracker.covered_keys else "none",
         p.remaining_seconds, p.current_interview_mode,
         _saturation_status,
+        _routing_note,
     )
     logger.info(
         "[QA] turn=%d  Q: %s\n              A: %s",
@@ -757,12 +854,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         (p.answer or "")[:200],
     )
 
-    # ── Steps 1+3: Extract claims AND run turn evaluation IN PARALLEL ─────────
-    # These two tasks are fully independent — claims extraction does not affect
-    # routing, and routing does not need claim results. Running them concurrently
-    # saves 700-900ms every turn where contradiction detection is enabled.
-    contradiction_enabled = bool(p.signal_toggles.get("contradiction", False))
-
+    # ── Step 3: Run turn evaluation ───────────────────────────────────────────
     _follow_up_count = current_topic_state.follow_up_turns if current_topic_state else 0
     _topic_depth_scores = [
         float(r) for r in p.topic_score_history if isinstance(r, (int, float))
@@ -793,65 +885,41 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         len(p.discussed_log),
     )
 
-    # Launch both tasks simultaneously
-    async def _empty_claims() -> list:
-        return []
+    # Capture LLM usage from evaluate_answer via a wrapper closure
+    _captured_eval_usage: list[dict] = []
 
-    _claims_coro = (
-        extract_claims(
-            candidate_answer=p.answer,
-            turn=p.turn,
-            client=client,
-            org_id=p.org_id,
-            llm_model=p.llm_model,
-        )
-        if contradiction_enabled
-        else _empty_claims()
-    )
+    async def _evaluate_answer_capturing(**kwargs):
+        result = await evaluate_answer(**kwargs)
+        usage = result.pop("_llm_usage", None)
+        if usage:
+            _captured_eval_usage.append(usage)
+        return result
 
     _eval_coro = run_turn_evaluation(
         candidate_answer=p.answer,
         last_question=p.question,
         transcript_lines=p.transcript_lines,
-        contradiction_detected=False,  # updated below after claims settle
         client=client,
         org_id=p.org_id,
         llm_model=p.llm_model,
-        evaluate_answer_fn=evaluate_answer,
+        evaluate_answer_fn=_evaluate_answer_capturing,
         signal_toggles=p.signal_toggles,
-        session_score_history=p.score_history,
+        session_score_history=p.topic_score_history,
         turns_since_last_decay=p.turns_since_decay,
         response_latency_sec=p.response_latency_sec,
         topic_follow_up_count=_follow_up_count,
         prior_depth_scores=_topic_depth_scores,
+        candidate_band=p.band,
     )
 
+    _eval_llm_usages: list[dict] = list(_captured_eval_usage)  # from evaluate_answer wrapper
+
     try:
-        _claims_result, _eval_result = await asyncio.wait_for(
-            asyncio.gather(_claims_coro, _eval_coro, return_exceptions=True),
-            timeout=5.5,
-        )
+        _eval_result = await asyncio.wait_for(_eval_coro, timeout=5.5)
     except asyncio.TimeoutError:
-        _claims_result = []
         _eval_result = asyncio.TimeoutError()
 
-    # Settle claims
-    new_claims: list = []
-    if isinstance(_claims_result, list):
-        new_claims = _claims_result
-    elif isinstance(_claims_result, Exception):
-        logger.warning("[EVAL_PIPELINE] extract_claims failed turn=%d: %s", p.turn, _claims_result)
-
-    for claim in new_claims:
-        claim_type = str(claim.get("type", "") or "").strip()
-        if not claim_type:
-            continue
-        contradiction = check_contradiction(claim, new_claim_index)
-        if contradiction and not contradiction_alert:
-            contradiction_alert = contradiction
-        new_claim_index.setdefault(claim_type, []).append(claim)
-
-    # Settle eval — handle timeout or exception from gather
+    # Settle eval — handle timeout or exception
     if isinstance(_eval_result, (asyncio.TimeoutError, Exception)):
         logger.warning("[EVAL_PIPELINE] run_turn_evaluation timed out (>5.5s) turn=%d — using low-score fallback", p.turn)
         _fallback_action = "PROBE"
@@ -874,9 +942,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
 
     action: str = td["decision"]["action"]
     signal_events = td.get("signal_events", [])
-    # Contradiction gets a freeze on follow-up increment — it's a clarification turn, not a new probe
-    contradiction_hit = any(ev.get("signal_name") == "contradiction" for ev in signal_events)
-    freeze_followup_increment = contradiction_hit
+    freeze_followup_increment = False
 
     # Detect scorer timeout — quality scores are low 1s (not 5s), not real measurements.
     # Skip quality contribution to saturation so the candidate isn't punished.
@@ -1020,7 +1086,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
                 topic_source=_next_source,
                 is_anchor=_next == p.anchor_item,
             )
-            next_topic_state = TopicState(_next, _next_importance, updated_turn=p.turn)
+            next_topic_state = TopicState(_next, _next_importance, updated_turn=p.turn, band=p.band)
         logger.info(
             "[SATURATION] MOVE_ON reason=%s → next=%s (importance=%s) turn=%d",
             reason, _next or "?", next_topic_state.importance if next_topic_state else "?", p.turn,
@@ -1039,118 +1105,108 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
             p.turn, depth_decay_fired, _weak_exit, is_saturated, action,
         )
 
-    # Forced exit conditions must override VERIFY/PROBE.
-    # Otherwise VERIFY can keep the interviewer pinned to one topic.
+    # ── Single decision point ────────────────────────────────────────────────
+    # Priority (highest to lowest):
+    #   1. depth_decay / time_pressure / weak_exit / saturated → MOVE_ON (no LLM override possible)
+    #   2. LLM said MOVE_ON (explicit "enough was said") → MOVE_ON
+    #   3. Everything else → PROBE (signal chooses family, then LLM mode, then ownership fallback)
+    #
+    # The LLM is consulted for two things only:
+    #   a) action (PROBE/MOVE_ON) — "did the candidate say enough?"
+    #   b) probe_mode (which family) — "what angle to probe next?"
+    # Saturation is the final gate — even if LLM says PROBE, saturation can override to MOVE_ON.
+
+    from interview.probe_strategy import _PROBE_FAMILIES, _SIGNAL_TO_FAMILY, _MODE_ALIASES
+
+    def _resolve_probe_family() -> str:
+        # 1. Signal fired → signal drives family (behavioral evidence beats LLM opinion)
+        for sig_name, sig_family in _SIGNAL_TO_FAMILY:
+            if sig_name in signal_fired_names and sig_family != "normal":
+                return sig_family
+        # 2. LLM returned a valid probe_mode
+        llm_mode = str(td["decision"].get("mode") or "").strip().lower()
+        if llm_mode in _PROBE_FAMILIES:
+            return llm_mode
+        if llm_mode in _MODE_ALIASES:
+            return _MODE_ALIASES[llm_mode]
+        # 3. Fallback
+        return "ownership"
+
     if depth_decay_fired:
-        logger.info("[DECISION] ✅ DEPTH_DECAY fired → forcing MOVE_ON turn=%d", p.turn)
+        logger.info("[DECISION] ✅ MOVE_ON reason=depth_decay turn=%d", p.turn)
         _do_move_on("depth_decay")
+
     elif _time_pressure_exit:
-        _sat_pct_now = round(100 * current_topic_state.saturation_score / current_topic_state.saturation_threshold, 0)
-        logger.info(
-            "[DECISION] ✅ TIME_PRESSURE_EXIT → %.0fs remaining, topic %.0f%% saturated → forcing MOVE_ON turn=%d",
-            p.remaining_seconds, _sat_pct_now, p.turn,
-        )
-        _do_move_on(f"time_pressure(remaining={p.remaining_seconds:.0f}s sat={_sat_pct_now:.0f}%)")
+        _pct = round(100 * current_topic_state.saturation_score / current_topic_state.saturation_threshold, 0)
+        logger.info("[DECISION] ✅ MOVE_ON reason=time_pressure (%.0f%% sat, %.0fs left) turn=%d",
+                    _pct, p.remaining_seconds, p.turn)
+        _do_move_on(f"time_pressure(sat={_pct:.0f}%)")
+
     elif _weak_exit:
-        logger.info(
-            "[DECISION] ✅ WEAK_CANDIDATE_EXIT → turns=%d score=%.1f < min=%.1f → forcing MOVE_ON turn=%d",
-            current_topic_state.follow_up_turns,
-            current_topic_state.saturation_score,
-            current_topic_state.saturation_threshold * current_topic_state.progress_check_pct,
-            p.turn,
-        )
-        _do_move_on(
-            f"weak_candidate_exit(turns={current_topic_state.follow_up_turns}"
-            f" score={current_topic_state.saturation_score:.1f}"
-            f" min={current_topic_state.saturation_threshold * current_topic_state.progress_check_pct:.1f})"
-        )
+        logger.info("[DECISION] ✅ MOVE_ON reason=weak_exit (turns=%d score=%.1f<min=%.1f) turn=%d",
+                    current_topic_state.follow_up_turns, current_topic_state.saturation_score,
+                    current_topic_state.saturation_threshold * current_topic_state.progress_check_pct, p.turn)
+        _do_move_on(f"weak_exit(score={current_topic_state.saturation_score:.1f})")
+
     elif is_saturated:
-        logger.info(
-            "[DECISION] ✅ SATURATED → score=%.1f >= threshold=%.1f → forcing MOVE_ON turn=%d",
-            current_topic_state.saturation_score if current_topic_state else 0,
-            current_topic_state.saturation_threshold if current_topic_state else 0,
-            p.turn,
-        )
+        logger.info("[DECISION] ✅ MOVE_ON reason=saturated (score=%.1f>=%.1f) turn=%d",
+                    current_topic_state.saturation_score, current_topic_state.saturation_threshold, p.turn)
         _do_move_on(f"saturated({saturation_status})")
-    elif action not in ("MOVE_ON", "VERIFY"):
-        # PROBE — pick family purely from signal or LLM, no fixed rotation
-        if current_topic_state:
-            from interview.probe_strategy import _PROBE_FAMILIES, _SIGNAL_TO_FAMILY, _MODE_ALIASES
 
-            # Priority 1: signal fired → signal-driven family
-            probe_family = None
-            for sig_name, sig_family in _SIGNAL_TO_FAMILY:
-                if sig_name in signal_fired_names and sig_family != "normal":
-                    probe_family = sig_family
-                    break
-
-            # Priority 2: LLM returned a valid probe_mode
-            if not probe_family:
-                llm_mode = str(td["decision"].get("mode") or "").strip().lower()
-                if llm_mode in _PROBE_FAMILIES:
-                    probe_family = llm_mode
-                elif llm_mode in _MODE_ALIASES:
-                    probe_family = _MODE_ALIASES[llm_mode]
-
-            # Priority 3: fallback — ownership is the safest first angle on any topic
-            if not probe_family or probe_family not in _PROBE_FAMILIES:
-                probe_family = "ownership"
-
-            probe_goal  = _PROBE_FAMILIES[probe_family]["goal"]
-            probe_style = _PROBE_FAMILIES[probe_family]["style"]
-            td["decision"]["mode"] = probe_family
-            td["decision"]["next_goal"] = probe_goal
-
-            pct_saturated = 100 * min(1.0, current_topic_state.saturation_score / current_topic_state.saturation_threshold)
-            logger.info(
-                "[DECISION] 🔄 PROBE → continue on topic | family=%s signals=[%s] | score=%.1f/%s (%.0f%%) turn=%d",
-                probe_family,
-                ", ".join(signal_fired_names) if signal_fired_names else "none",
-                current_topic_state.saturation_score, current_topic_state.saturation_threshold,
-                pct_saturated, p.turn,
-            )
-
-            _prev_q_full = (p.question or "").strip()
-            _prev_a_full = (p.answer or "").strip()
-            _prev_a_gist = " ".join(_prev_a_full.split()[:20]).strip()
-            # Detect very short / surface answers — add a warm pushback tone to directive
-            _quality = td.get("quality", {})
-            _is_short_answer = (
-                float(_quality.get("overall", 5.0)) <= 0.5
-                and float(_quality.get("depth", 5.0)) == 0.0
-                and len(_prev_a_full.split()) < 8
-            )
-            _short_answer_nudge = (
-                "\nCANDIDATE GAVE A VERY SHORT ANSWER — push back warmly but directly.\n"
-                "Don't just re-ask. React like a real interviewer who expected more:\n"
-                "  - 'That's a start — can you give me a bit more to work with?'\n"
-                "  - 'I'd love to hear more than that — what specifically did you do?'\n"
-                "  - 'Come on, walk me through it a bit more.'\n"
-                "Sound like you genuinely want to hear the story, not like you're filling a form."
-            ) if _is_short_answer else ""
-
-            directive = (
-                "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
-                f"DECISION: PROBE ({probe_family.upper()})\n"
-                f"ANGLE: {probe_goal}\n"
-                f"HOW TO ASK: {probe_style}\n"
-                f"LAST QUESTION YOU ASKED: \"{_prev_q_full}\"\n"
-                f"CANDIDATE SAID: \"{_prev_a_gist}{'...' if len(_prev_a_full.split()) > 20 else ''}\"\n"
-                f"DO NOT ask the same question again. DO NOT rephrase it.\n"
-                f"Pick the most natural angle from ANGLE/HOW TO ASK above based on what they actually said.\n"
-                f"ONE question only. Sound natural.\n"
-                f"DO NOT wrap up or say goodbye — the interview is still in progress."
-                f"{_short_answer_nudge}"
-            )
-            logger.info(
-                "[PROBE] family=%s signals=[%s] | goal: %s",
-                probe_family,
-                ", ".join(signal_fired_names) if signal_fired_names else "none",
-                probe_goal[:80],
-            )
     elif action == "MOVE_ON":
-        # MOVE_ON from evaluator (not from saturation)
-        _do_move_on("evaluator")
+        # LLM explicitly said enough was said — trust it
+        logger.info("[DECISION] ✅ MOVE_ON reason=llm_judge turn=%d", p.turn)
+        _do_move_on("llm_judge")
+
+    else:
+        # PROBE — build directive from single resolved family
+        probe_family = _resolve_probe_family()
+        if probe_family not in _PROBE_FAMILIES:
+            probe_family = "ownership"
+
+        probe_goal  = _PROBE_FAMILIES[probe_family]["goal"]
+        probe_style = _PROBE_FAMILIES[probe_family]["style"]
+        td["decision"]["mode"] = probe_family
+        td["decision"]["next_goal"] = probe_goal
+
+        _prev_q = (p.question or "").strip()
+        _prev_a = (p.answer or "").strip()
+        _prev_a_gist = " ".join(_prev_a.split()[:20])
+        _is_short = (
+            float(td.get("quality", {}).get("overall", 5.0)) <= 0.5
+            and float(td.get("quality", {}).get("depth", 5.0)) == 0.0
+            and len(_prev_a.split()) < 8
+        )
+        _short_nudge = (
+            "\nCANDIDATE GAVE A VERY SHORT ANSWER — push back warmly but directly.\n"
+            "Don't just re-ask. React like a real interviewer who expected more:\n"
+            "  - 'That's a start — can you give me a bit more to work with?'\n"
+            "  - 'I'd love to hear more than that — what specifically did you do?'\n"
+            "Sound like you genuinely want to hear the story, not like you're filling a form."
+        ) if _is_short else ""
+
+        pct_sat = 100 * min(1.0, current_topic_state.saturation_score / current_topic_state.saturation_threshold) \
+                  if current_topic_state else 0
+        logger.info(
+            "[DECISION] 🔄 PROBE family=%s signals=[%s] sat=%.0f%% turn=%d",
+            probe_family, ", ".join(signal_fired_names) or "none", pct_sat, p.turn,
+        )
+
+        directive = (
+            "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
+            f"DECISION: PROBE ({probe_family.upper()})\n"
+            f"BAND: {p.band.upper()}\n"
+            f"ANGLE: {probe_goal}\n"
+            f"HOW TO ASK: {probe_style}\n"
+            f"LAST QUESTION YOU ASKED: \"{_prev_q}\"\n"
+            f"CANDIDATE SAID: \"{_prev_a_gist}{'...' if len(_prev_a.split()) > 20 else ''}\"\n"
+            "DO NOT ask the same question again. DO NOT rephrase it.\n"
+            "Pick the most natural angle from ANGLE/HOW TO ASK based on what they actually said.\n"
+            "ONE question only. Sound natural.\n"
+            "DO NOT wrap up or say goodbye — the interview is still in progress."
+            f"{_short_nudge}"
+        )
+        directive = DirectiveCompiler.append_memory_block(directive, list(p.discussed_log))
 
     # ── Step 7: Trust state update ─────────────────────────────────────────────
     new_trust_state = apply_turn_decision(
@@ -1175,30 +1231,6 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     if depth_signal == "DEEP" and p.current_interview_mode == "normal":
         new_current_interview_mode = "deep"
 
-    # ── Step 8: Contradiction state machine ──────────────────────────────────
-    contradiction_resolved_enabled = bool(p.signal_toggles.get("contradiction_resolved", False))
-    if contradiction_enabled:
-        new_contradiction_state, contradiction_state_event = advance_contradiction_state(
-            new_contradiction_state,
-            contradiction_alert,
-            turn=p.turn,
-            action=action,
-            quality_avg=quality_avg,
-        )
-        if contradiction_state_event:
-            if (
-                contradiction_state_event["status"] == "candidate_clarified"
-                and contradiction_resolved_enabled
-            ):
-                new_trust_state = apply_contradiction_resolved(new_trust_state)
-                logger.info(
-                    "[EVAL_PIPELINE] Contradiction resolved - hard_integrity restored turn=%d",
-                    p.turn,
-                )
-
-    contradiction_summary = summarize_contradiction_state(new_contradiction_state)
-    if contradiction_summary["active"] and contradiction_enabled:
-        directive = DirectiveCompiler.contradiction_active(contradiction_summary, p.turn)
 
     # ── Step 9: Append discussed log entry on MOVE_ON ────────────────────────
     if action == "MOVE_ON" and p.question and p.answer:
@@ -1253,7 +1285,6 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         _signal_names_final or ["none"],
         action,
         (
-            "ask clarification (contradiction)" if action == "VERIFY" and contradiction_hit else
             f"probe signal ({td['decision'].get('mode','?')})" if action == "VERIFY" else
             f"probe deeper on '{new_active_topic}' ({td['decision'].get('mode','?')})" if action == "PROBE" else
             f"move to next topic '{new_active_topic}'" if action == "MOVE_ON" else
@@ -1292,7 +1323,6 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         "td": td,
         "quality_record": quality_record,
         "signal_events": signal_events,
-        "contradiction_state_event": contradiction_state_event,
         "depth_signal": depth_signal,
         "freeze_followup_increment": freeze_followup_increment,
         # Mutations — unified single topic with saturation state
@@ -1305,10 +1335,11 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
             current_topic_state.to_dict() if current_topic_state else None
         ),
         "new_trust_state": new_trust_state,
-        "new_contradiction_state": new_contradiction_state,
-        "new_claim_index": new_claim_index,
         "new_current_interview_mode": new_current_interview_mode,
         "risk_integrity_delta": risk_integrity_delta,
         "risk_depth_delta": risk_depth_delta,
         "discussed_log_entry": discussed_log_entry,
+        # Consumed by agent_runtime to persist billing for the 'interview' feature
+        "eval_llm_usages": _eval_llm_usages,
     }
+

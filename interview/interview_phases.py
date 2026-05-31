@@ -2,8 +2,9 @@
 Interview phase helpers — single unified 20-minute interview.
 
 Flow: greeting → warmup → unified interview stage (full 20min)
-The single stage covers resume projects/work, JD skills, situational, and
-behavioral questions — all interwoven naturally by the AI. No hard stage cut.
+The single stage covers resume projects/work and JD skills. Hard moments
+(pressure/situational/behavioral) emerge naturally via the probe system's
+"pressure" family — not scheduled as a separate quota.
 """
 
 from __future__ import annotations
@@ -131,35 +132,115 @@ def build_interview_directive(
 
     cq_block = _build_custom_questions_block(custom_questions)
 
+    # Band-aware coverage goals and mandatory quota.
+    # Research basis: as seniority increases, interviews shift from breadth → depth.
+    # Fresher: cover many topics lightly (5-6), understand how they think.
+    # Mid: balance breadth + depth (4-5 topics), push ownership.
+    # Experienced: fewer topics (3-4), probe architecture/tradeoffs deeply.
+    # Senior: 2-3 critical topics, deep probing, challenge strategic judgment.
+    # NOTE: Situational and behavioral questions are NOT listed here.
+    # The probe system handles them automatically via the "pressure" family —
+    # it fires when a story is too clean, no friction, or a hard moment is needed.
+    # Listing them as a quota creates noise: the LLM tries to manually schedule them
+    # instead of letting them emerge naturally from the conversation flow.
+    coverage_goals, mandatory_quota, how_to_move_extra = {
+        "fresher": (
+            (
+                "  1) Start with the anchor project. Ask what they personally built and why.\n"
+                "  2) Cover ALL resume projects and internships — breadth matters here.\n"
+                "  3) Probe JD skills as time allows — keep going until time is up."
+            ),
+            (
+                "  ☐ Anchor project + as many other resume items as time allows.\n"
+                "  ☐ JD skills — probe as many as time allows, no fixed minimum."
+            ),
+            "  → BREADTH FIRST — cover more topics with 2-3 follow-ups each. Move on when you have signal.\n"
+            "  → Accept incomplete answers — they're learning. Note gaps, don't dwell.\n"
+            "  → If one area runs dry, immediately move to the next: skills, learning, aspirations, projects.\n"
+            "  → If they say they don't know — acknowledge briefly, move on. Never dwell on a gap.\n",
+        ),
+        "mid": (
+            (
+                "  1) Start with the anchor. Ask what they personally owned, not what the team did.\n"
+                "  2) Cover resume items (work roles + projects) — push past 'we' language.\n"
+                "  3) Probe JD skills as time allows — real usage in production."
+            ),
+            (
+                "  ☐ Anchor + other resume roles/projects — their specific contribution each time.\n"
+                "  ☐ JD skills — probe as many as time allows, no fixed minimum."
+            ),
+            "  → BALANCED — 3-4 follow-ups per topic. Move on when you have clear ownership signal.\n"
+            "  → If they say 'we', always ask: 'What was specifically yours in that?'\n"
+            "  → If one area runs dry, move immediately to the next topic.\n",
+        ),
+        "experienced": (
+            (
+                "  1) Start with the anchor. Expect end-to-end ownership — probe tradeoffs immediately.\n"
+                "  2) Cover key roles/projects deeply — architecture decisions, scale, consequences.\n"
+                "  3) Probe JD must-have skills as time allows — real production depth."
+            ),
+            (
+                "  ☐ Anchor + other major roles/projects — deep ownership each time.\n"
+                "  ☐ JD skills — probe as many as time allows, architecture-level."
+            ),
+            "  → DEPTH OVER BREADTH — 4-5 follow-ups per topic. Vague = probe harder, not move on.\n"
+            "  → If an answer is too clean, ask what went wrong or what they'd do differently.\n",
+        ),
+        "senior": (
+            (
+                "  1) Start with the anchor initiative. Probe strategic judgment — why, what risk, what outcome.\n"
+                "  2) Go deep on critical areas — org impact, architecture at scale, high-stakes calls.\n"
+                "  3) Challenge their decisions directly — seniors should defend them with confidence.\n"
+                "  4) Probe JD skills as time allows — only where they intersect with strategic decisions."
+            ),
+            (
+                "  ☐ Anchor initiative probed deeply — strategic reasoning, org impact, what they'd change.\n"
+                "  ☐ At least 1 other critical area — architectural judgment or leadership decision."
+            ),
+            "  → DEPTH ONLY — 5-6 follow-ups on critical topics. Breadth is secondary.\n"
+            "  → Peer-level conversation — challenge reasoning directly, not with softeners.\n"
+            "  → If they give a polished answer, press: 'What would have happened if you were wrong?'\n",
+        ),
+    }.get(band, (
+        (
+            "  1) Start with the anchor. Probe ownership and decisions.\n"
+            "  2) Cover resume projects and work history.\n"
+            "  3) Probe JD skills as time allows."
+        ),
+        (
+            "  ☐ Anchor + resume items as time allows.\n"
+            "  ☐ JD skills — probe as many as time allows."
+        ),
+        "",
+    ))
+
     return (
         f"[DO NOT SAY ALOUD]\n\n"
         f"GOAL: In the next ~19 minutes, understand who this candidate really is —\n"
         f"what they built, what they own, how they think, and how deep their skills go.\n\n"
         f"COVERAGE GOALS (background plan — a [NEXT_TURN_DIRECTIVE] always overrides this):\n"
-        f"  1) Start with the anchor project below. Ask what they personally built and owned.\n"
-        f"  2) Move through other resume projects, work history, and internships.\n"
-        f"  3) Probe JD skills that haven't surfaced naturally from resume discussion.\n"
-        f"  4) Weave in at least 1 SITUATIONAL question naturally during the conversation.\n"
-        f"  5) Weave in at least 1 BEHAVIORAL question naturally during the conversation.\n\n"
+        f"{coverage_goals}\n\n"
         f"IMPORTANT: If a [NEXT_TURN_DIRECTIVE] or [TOPIC_LOCK] appears in this context, follow it\n"
         f"EXACTLY and IMMEDIATELY — it is a real-time routing decision and overrides the coverage plan above.\n\n"
         f"MANDATORY QUOTA (complete all before wrap-up — track quietly, never announce):\n"
-        f"  ☐ Resume anchor + at least 2 other resume items (projects / work / internship).\n"
-        f"  ☐ At least 2 JD skills probed — where/how used in a real project.\n"
-        f"  ☐ At least 1 SITUATIONAL — 'What would you do if...' anchored to real work.\n"
-        f"  ☐ At least 1 BEHAVIORAL — 'Tell me about a time when...' a real lived moment.\n\n"
+        f"{mandatory_quota}\n\n"
         f"OPENING MOVE: {opening}\n\n"
-        f"YOUR INSTINCT FOR THIS CANDIDATE ({band}):\n{band_instinct}\n"
+        f"YOUR INSTINCT FOR THIS CANDIDATE ({band.upper()}):\n{band_instinct}\n"
         f"{cq_block}\n"
         f"HOW TO MOVE:\n"
         f"  → Always follow the [NEXT_TURN_DIRECTIVE] when present — it tells you exactly what to do next.\n"
         f"  → Start with the anchor. Follow what they say — a tool, a decision, something that broke.\n"
-        f"  → Follow the natural conversation — go deeper when needed, move on when you have enough context.\n"
-        f"  → Breadth first: move through distinct topics; come back to deepen only if time allows.\n"
+        f"{how_to_move_extra}"
         f"  → When a skill comes up naturally in a project story, drill into it right there — no need to wait.\n"
-        f"  → Drop in situational or behavioral when it fits — never announce the type.\n"
-        f"  → Don't revisit the same area twice. Accept a weak answer and move on.\n"
         f"  → ONE question per turn ONLY — never bundle two questions together with 'and' or commas.\n"
         f"  → Short, warm, direct.\n"
-        f"  → Do NOT wrap up or say goodbye until the system signals you to."
+        f"  → Do NOT wrap up or say goodbye until the system signals you to.\n\n"
+        f"IF TOPICS RUN DRY — keep going with adaptive questions (pick what fits):\n"
+        f"  'What are you learning or building right now outside of work?'\n"
+        f"  'What kind of work do you most enjoy doing day-to-day?'\n"
+        f"  'What drew you to this specific role?'\n"
+        f"  'What does your best work look like — give me one example.'\n"
+        f"  'What skill are you actively trying to get better at?'\n"
+        f"  'If you could pick one area to grow in over the next year, what would it be?'\n"
+        f"There is always something to ask. Never close early."
     )

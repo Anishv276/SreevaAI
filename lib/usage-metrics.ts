@@ -138,7 +138,8 @@ export const emptyBillingMetrics = () => ({
 });
 
 function normalizeModelName(model: string | undefined | null) {
-  return (model || "").trim().toLowerCase();
+  // Strip trailing date suffix e.g. "gpt-4.1-mini-2025-04-14" → "gpt-4.1-mini"
+  return (model || "").trim().toLowerCase().replace(/-\d{4}-\d{2}-\d{2}$/, "");
 }
 
 function getRate(model: string | undefined | null): ModelCostRate {

@@ -125,7 +125,7 @@ def _build_recent_context_block(
             i -= 1
     if not exchanges:
         return ""
-    lines = ["PRIOR EXCHANGES (for callbacks and contradiction detection â€” do not read aloud):"]
+    lines = ["PRIOR EXCHANGES (for callbacks and consistency checks â€” do not read aloud):"]
     for idx, ex in enumerate(exchanges, 1):
         q_text = ex["q"][:150]
         a_text = ex["a"][:250]

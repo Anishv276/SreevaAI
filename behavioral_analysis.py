@@ -67,21 +67,21 @@ def extract_engagement_signals(
 
 def extract_consistency_signals(
     transcript_lines: list[str],  # noqa: ARG001
-    contradictions_found: list[dict],
+    inconsistencies_found: list[dict],
 ) -> list[str]:
     signals = []
-    if contradictions_found:
-        for contradiction in contradictions_found[:3]:
-            old_val = contradiction.get("old_value", "N/A")
-            new_val = contradiction.get("new_value", "N/A")
-            claim_type = str(contradiction.get("type", "unknown")).replace("_", " ")
+    if inconsistencies_found:
+        for inconsistency in inconsistencies_found[:3]:
+            old_val = inconsistency.get("old_value", "N/A")
+            new_val = inconsistency.get("new_value", "N/A")
+            claim_type = str(inconsistency.get("type", "unknown")).replace("_", " ")
             signals.append(
                 f"Inconsistency in {claim_type}: earlier said '{old_val}', later said '{new_val}' — "
                 f"recruiter should probe this directly before making a hiring decision"
             )
     else:
         signals.append(
-            "No factual contradictions detected — statements about experience, tenure, and "
+            "No factual inconsistencies detected — statements about experience, tenure, and "
             "technical claims remained consistent throughout the interview"
         )
     return signals
@@ -166,11 +166,11 @@ def extract_confidence_indicators(answer_scores: list[dict]) -> list[str]:
 def extract_integrity_flags(
     proctoring_events: list[dict],
     answer_scores: list[dict],
-    contradictions: list[dict],
+    inconsistencies: list[dict],
 ) -> list[str]:
     signals = []
 
-    if not proctoring_events and not contradictions:
+    if not proctoring_events and not inconsistencies:
         signals.append(
             "No integrity concerns detected — proctoring data shows no anomalies and interview "
             "statements were consistent with resume claims"
@@ -187,9 +187,9 @@ def extract_integrity_flags(
                 f"the timing suggests possible external reference lookup, not genuine recall"
             )
 
-    if contradictions:
+    if inconsistencies:
         signals.append(
-            f"{len(contradictions)} factual inconsistency detected in the interview — "
+            f"{len(inconsistencies)} factual inconsistency detected in the interview — "
             f"see Consistency section for specifics. Requires direct recruiter follow-up before advancing"
         )
 
@@ -230,7 +230,7 @@ def extract_strengths_observed(answer_scores: list[dict], consistency_clean: boo
 
     if consistency_clean:
         strengths.append(
-            "All factual claims remained consistent — no contradictions between resume, early answers, "
+            "All factual claims remained consistent — no inconsistencies between resume, early answers, "
             "and later responses. Suggests honest, well-grounded self-presentation"
         )
 
@@ -249,7 +249,7 @@ def extract_strengths_observed(answer_scores: list[dict], consistency_clean: boo
 
 def extract_concerns_noted(
     answer_scores: list[dict],
-    contradictions_found: list[dict],
+    inconsistencies_found: list[dict],
     communication_signals: list[str],
 ) -> list[str]:
     concerns = []
@@ -268,8 +268,8 @@ def extract_concerns_noted(
                 f"too generic, or failed to address what was actually asked"
             )
 
-    if contradictions_found:
-        types = [str(c.get("type", "")).replace("_", " ") for c in contradictions_found]
+    if inconsistencies_found:
+        types = [str(c.get("type", "")).replace("_", " ") for c in inconsistencies_found]
         concerns.append(
             f"Unresolved inconsistency in {', '.join(set(types[:2]))} — "
             f"candidate gave conflicting information that was not satisfactorily clarified when probed"
@@ -298,13 +298,13 @@ def extract_concerns_noted(
 
 async def extract_proctoring_signals(
     proctoring_events: list[dict],
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], list[dict]]:
     """
     Extract all visible signals + hidden signals when cumulative count >= 2 or confidence >= 0.85.
-    Returns structured signal dicts with full context for recruiter UI.
+    Returns (signal_dicts, llm_usages) — llm_usages contains one entry per LLM call made.
     """
     if not proctoring_events:
-        return []
+        return [], []
 
     signal_groups: dict[str, list[dict]] = {}
     for event in proctoring_events:
@@ -314,6 +314,7 @@ async def extract_proctoring_signals(
         signal_groups[sig_name].append(event)
 
     result = []
+    llm_usages: list[dict] = []
     for sig_name, events in signal_groups.items():
         if not events:
             continue
@@ -330,7 +331,9 @@ async def extract_proctoring_signals(
         highest_confidence = max(e.get("confidence", 0) for e in events)
         turn_numbers = sorted(set(e.get("turn", 0) for e in events if e.get("turn")))
 
-        interpretation = await _interpret_hidden_signal(sig_name, events)
+        interpretation, sig_usage = await _interpret_hidden_signal(sig_name, events)
+        if sig_usage:
+            llm_usages.append(sig_usage)
 
         evidence_parts = [e.get("evidence", "") for e in events[:3] if e.get("evidence")]
         combined_evidence = "; ".join(evidence_parts) if evidence_parts else ""
@@ -345,14 +348,14 @@ async def extract_proctoring_signals(
             "count": event_count,
         })
 
-    return result
+    return result, llm_usages
 
 
-async def _interpret_hidden_signal(signal_name: str, events: list[dict]) -> str:
+async def _interpret_hidden_signal(signal_name: str, events: list[dict]) -> tuple[str, dict | None]:
     if signal_name in (
         "ownership_ambiguity", "example_evasion", "resume_claim_mismatch",
         "follow_up_collapse", "latency_mismatch", "ownership_clarified", "example_given",
-        "contradiction", "contradiction_resolved", "complexity_latency_mismatch",
+        "inconsistency", "inconsistency_resolved", "complexity_latency_mismatch",
     ) and events:
         try:
             from openai import AsyncOpenAI
@@ -370,22 +373,22 @@ async def _interpret_hidden_signal(signal_name: str, events: list[dict]) -> str:
                 "example_given": "Candidate provided a concrete specific example after initially giving a theoretical answer",
             }
 
-            if signal_name == "contradiction":
+            if signal_name == "inconsistency":
                 latest = events[-1]
                 old_v = latest.get("old_value") or latest.get("evidence", "earlier claim")
                 new_v = latest.get("new_value") or "a conflicting statement"
-                c_type = str(latest.get("contradiction_type", "") or "").replace("_", " ")
+                c_type = str(latest.get("inconsistency_type", "") or "").replace("_", " ")
                 repeat = sum(1 for e in events if e.get("status") == "repeated")
                 signal_desc = (
                     f"Candidate contradicted a prior claim about {c_type or 'a key fact'}: "
                     f"earlier said '{old_v}', then said '{new_v}'"
-                    + (f". This contradiction repeated {repeat} time(s)" if repeat else "")
+                    + (f". This inconsistency repeated {repeat} time(s)" if repeat else "")
                 )
-            elif signal_name == "contradiction_resolved":
+            elif signal_name == "inconsistency_resolved":
                 latest = events[-1]
-                c_type = str(latest.get("contradiction_type", "") or "").replace("_", " ")
+                c_type = str(latest.get("inconsistency_type", "") or "").replace("_", " ")
                 signal_desc = (
-                    f"Candidate clarified and resolved a contradiction about {c_type or 'a prior claim'} "
+                    f"Candidate clarified and resolved a inconsistency about {c_type or 'a prior claim'} "
                     "convincingly when probed"
                 )
             elif signal_name == "complexity_latency_mismatch":
@@ -417,7 +420,14 @@ async def _interpret_hidden_signal(signal_name: str, events: list[dict]) -> str:
                 temperature=0.4,
                 max_tokens=80,
             )
-            return response.choices[0].message.content.strip()
+            _usage = getattr(response, "usage", None)
+            _signal_llm_usage: dict | None = {
+                "model": "gpt-4o-mini",
+                "inputTokens": int(getattr(_usage, "prompt_tokens", 0) or 0),
+                "outputTokens": int(getattr(_usage, "completion_tokens", 0) or 0),
+                "cachedInputTokens": int(getattr(getattr(_usage, "prompt_tokens_details", None), "cached_tokens", 0) or 0),
+            }
+            return response.choices[0].message.content.strip(), _signal_llm_usage
         except Exception:
             pass
 
@@ -442,12 +452,12 @@ async def _interpret_hidden_signal(signal_name: str, events: list[dict]) -> str:
             "Candidate cited resume items without being able to back them up with concrete details. "
             "Listed technologies or projects could not be verified through interview answers."
         ),
-        "contradiction": (
+        "inconsistency": (
             "Candidate made conflicting statements about a verifiable fact. "
             "Recruiter must probe this directly — may indicate inflated claims or poor recall."
         ),
-        "contradiction_resolved": (
-            "Candidate clarified a prior contradiction convincingly when probed. "
+        "inconsistency_resolved": (
+            "Candidate clarified a prior inconsistency convincingly when probed. "
             "Inconsistency is considered resolved — no further follow-up needed on this specific point."
         ),
         "depth_decay": (
@@ -466,7 +476,7 @@ async def _interpret_hidden_signal(signal_name: str, events: list[dict]) -> str:
     return interpretations.get(
         signal_name,
         f"Signal '{signal_name}' detected — pattern suggests a potential gap between claimed and demonstrated knowledge."
-    )
+    ), None
 
 
 async def synthesize_behavioral_report(
@@ -474,17 +484,18 @@ async def synthesize_behavioral_report(
     answer_scores: list[dict],
     total_duration_sec: int,
     proctoring_events: list[dict],
-    contradictions_found: list[dict],
-) -> dict[str, Any]:
+    inconsistencies_found: list[dict],
+) -> tuple[dict[str, Any], list[dict]]:
+    """Returns (report_dict, llm_usages) where llm_usages lists any LLM calls made."""
     engagement = extract_engagement_signals(transcript_lines, total_duration_sec, answer_scores)
-    consistency = extract_consistency_signals(transcript_lines, contradictions_found)
+    consistency = extract_consistency_signals(transcript_lines, inconsistencies_found)
     communication = extract_communication_patterns(answer_scores)
     confidence = extract_confidence_indicators(answer_scores)
-    integrity = extract_integrity_flags(proctoring_events, answer_scores, contradictions_found)
-    consistency_clean = not bool(contradictions_found)
+    integrity = extract_integrity_flags(proctoring_events, answer_scores, inconsistencies_found)
+    consistency_clean = not bool(inconsistencies_found)
     strengths = extract_strengths_observed(answer_scores, consistency_clean)
-    concerns = extract_concerns_noted(answer_scores, contradictions_found, communication)
-    hidden_signals = await extract_proctoring_signals(proctoring_events)
+    concerns = extract_concerns_noted(answer_scores, inconsistencies_found, communication)
+    hidden_signals, behavioral_llm_usages = await extract_proctoring_signals(proctoring_events)
 
     report: dict[str, Any] = {
         "summary": _generate_behavioral_summary(engagement, consistency, communication, integrity, answer_scores),
@@ -500,7 +511,7 @@ async def synthesize_behavioral_report(
     if hidden_signals:
         report["proctoring_signals_detected"] = hidden_signals
 
-    return report
+    return report, behavioral_llm_usages
 
 
 def _generate_behavioral_summary(
@@ -544,7 +555,7 @@ def _generate_behavioral_summary(
         parts.append("communication was clearer on comfortable topics and broke down on harder ones")
 
     # Integrity
-    if any("contradiction" in s.lower() for s in integrity) and not any("no integrity" in s.lower() for s in integrity):
+    if any("inconsistency" in s.lower() for s in integrity) and not any("no integrity" in s.lower() for s in integrity):
         parts.append("factual inconsistencies were detected that require recruiter follow-up before a decision")
     elif any("concern" in s.lower() or "evasion" in s.lower() for s in integrity):
         parts.append("some behavioral patterns warrant closer review")

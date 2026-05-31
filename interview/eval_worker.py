@@ -27,6 +27,7 @@ load_dotenv()  # Must be before any os.environ.get() — loads .env so REDIS_URL
 from openai import AsyncOpenAI
 
 from interview.eval_pipeline import run_eval_and_build_directive
+from interview.eval_models import EvalKeys
 
 logger = logging.getLogger("eval_worker")
 logging.basicConfig(
@@ -37,7 +38,6 @@ logging.basicConfig(
 
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379")
 EVAL_QUEUE_KEY = "interview:eval_queue"
-RESULT_TTL_SECONDS = 1800
 
 _shutdown = asyncio.Event()
 
@@ -94,83 +94,92 @@ async def _process_one(payload_bytes: bytes, client: AsyncOpenAI, r) -> None:
             return
 
     app_id = payload.get("app_id", "unknown")
-    turn = payload.get("turn", 0)
+    turn   = payload.get("turn", 0)
     logger.info("─" * 60)
     logger.info("✅ TURN %d STARTED | app_id=%s", turn, app_id)
     logger.info("─" * 60)
 
+    # ── Live-N: full eval (score + route) in one shot ────────────────────────
+    # Scoring and routing are inseparable — quality scores drive saturation
+    # which drives MOVE_ON/PROBE. We run the full pipeline and write ONE result.
+    # Agent waits for THIS turn's result key (not N-1). That's the only change.
+    #
+    # Timeline:
+    #   T+0ms    payload received
+    #   T+700ms  evaluate_answer() + signals + saturation → result ready
+    #   T+700ms  write routing_result:{turn} + publish → agent unblocks
+    #   T+700ms  agent injects directive → LLM fires → Ishita speaks
+    #   (total silence: ~700ms — imperceptible in voice interview)
+
+    t0 = _time.monotonic()
+
     try:
         result = await run_eval_and_build_directive(payload, client)
     except Exception as e:
-        logger.error("[WORKER] Eval pipeline error app_id=%s turn=%d: %s", app_id, turn, e, exc_info=True)
-        return
+        logger.error("[WORKER] eval pipeline error turn=%d: %s", turn, e, exc_info=True)
+        result = None
 
-    result_key = f"interview:{app_id}:eval_result"
-    result_turn_key = f"interview:{app_id}:eval_result:{turn}"
-    try:
-        encoded = json.dumps(result).encode()
-        # Primary write: turn-specific key — agent reads this via SYNC_GATE pub/sub.
-        await r.setex(result_turn_key, RESULT_TTL_SECONDS, encoded)
-        # Fallback write: generic key read only when SYNC_GATE times out (Redis slow/down).
-        # Short TTL (30s) because the next turn overwrites it anyway — 1800s was wasted memory.
-        await r.setex(result_key, 30, encoded)
+    routing_key   = EvalKeys.routing_result(app_id, turn)
+    routing_ready = EvalKeys.routing_ready(app_id, turn)
 
-        # FIX 3: Publish on the ready channel so the agent wakes instantly.
-        # BEFORE: agent polled Redis every 150ms — wasted 0-150ms after result was ready.
-        # AFTER:  agent subscribes to this channel and is notified in <5ms.
-        # Channel name matches what agent_runtime.py subscribes to.
-        # We publish AFTER setex so the agent always finds the key when it wakes.
-        _ready_channel = f"interview:{app_id}:eval_ready:{turn}"
-        await r.publish(_ready_channel, b"1")
-        _action = result.get("action", "?")
-        _qr = result.get("quality_record") or {}
-        _clarity = round(float(_qr.get("clarity", 0) or 0), 1)
-        _depth = round(float(_qr.get("depth", 0) or 0), 1)
-        _fluency = round(float(_qr.get("fluency", 0) or 0), 1)
-        _confidence = round(float(_qr.get("confidence", 0) or 0), 1)
-        _overall = round(float(_qr.get("overall", 0) or 0), 2)
-        _next_topic = result.get("new_active_topic") or "?"
-        _signals = _qr.get("signals") or []
-        _signal_str = f" | signals=[{', '.join(_signals)}]" if _signals else ""
-        _ts = result.get("new_active_topic_state") or {}
-        _sat_score = _ts.get("saturation_score", 0)
-        _sat_thresh = _ts.get("saturation_threshold", 0)
-        _sat_remaining = max(0, _sat_thresh - _sat_score)
-        _sat_pct = round(100 * min(1.0, _sat_score / _sat_thresh), 0) if _sat_thresh else 0
-        _is_saturated = _ts.get("is_saturated", False)
-        _importance = _ts.get("importance", "?")
-        _follow_up_turns = _ts.get("follow_up_turns", 0)
-        _opened_turn = _ts.get("opened_at_turn", 0)
-        _probe_idx = _ts.get("probe_rotation_index", 0)
-        _risk_int_delta = result.get("risk_integrity_delta", 0)
-        _risk_depth_delta = result.get("risk_depth_delta", 0)
-        logger.info(
-            "[WORKER] ✓ turn=%d action=%s | scores: clarity=%.1f depth=%.1f fluency=%.1f confidence=%.1f | overall=%.2f | "
-            "risk: integrity%+d depth%+d",
-            turn, _action,
-            _clarity, _depth, _fluency, _confidence, _overall,
-            _risk_int_delta, _risk_depth_delta,
-        )
-        logger.info(
-            "[TOPIC_STATE] turn=%d | topic='%s' | importance=%s | saturated=%s | "
-            "progress: %.1f/%.1f (%.0f%% done, %.1f remaining) | "
-            "follow_ups=%d (opened_turn=%d) | probe_mode=%d%s",
-            turn, str(_next_topic)[:40], _importance, _is_saturated,
-            _sat_score, _sat_thresh, _sat_pct, _sat_remaining,
-            _follow_up_turns, _opened_turn, _probe_idx, _signal_str,
-        )
-        logger.info("─" * 60)
-        logger.info("✅ TURN %d DONE | action=%s", turn, _action)
-        logger.info("─" * 60)
-
-    except Exception as e:
-        logger.error("[WORKER] Failed to store result key=%s: %s", result_key, e)
-    finally:
-        # Allow any late same-turn retry update to enqueue again if needed.
+    if result is not None:
         try:
-            await r.delete(f"interview:{app_id}:eval_enqueued:{turn}")
-        except Exception:
-            pass
+            encoded = json.dumps(result).encode()
+            # Live-N key — agent waits on THIS key for current turn
+            await r.setex(routing_key, EvalKeys.TTL_ROUTING, encoded)
+            await r.publish(routing_ready, b"1")
+            t1 = _time.monotonic()
+            _action    = result.get("action", "?")
+            _qr        = result.get("quality_record") or {}
+            _overall   = round(float(_qr.get("overall", 0) or 0), 2)
+            _sat_state = result.get("new_active_topic_state") or {}
+            _sat_score = _sat_state.get("saturation_score", 0)
+            _sat_thres = _sat_state.get("saturation_threshold", 0)
+            logger.info(
+                "[WORKER] ✅ turn=%d action=%s overall=%.2f sat=%.1f/%.1f topic=%r→%r (%.0fms)",
+                turn, _action, _overall, _sat_score, _sat_thres,
+                payload.get("active_topic", "?"), result.get("new_active_topic", "?"),
+                (t1 - t0) * 1000,
+            )
+        except Exception as e:
+            logger.error("[WORKER] Failed to write result turn=%d: %s", turn, e)
+    else:
+        # Pipeline failed — write a safe PROBE fallback so agent never hangs
+        try:
+            _fallback = json.dumps({
+                "app_id": app_id, "turn": turn,
+                "action": "PROBE",
+                "directive": (
+                    "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
+                    "DECISION: PROBE (OWNERSHIP)\n"
+                    "BAND: " + str(payload.get("band", "mid")).upper() + "\n"
+                    "ANGLE: Ask one specific question about what they personally built.\n"
+                    "ONE question only. Sound natural."
+                ),
+                "signal_events": [],
+                "new_active_topic": payload.get("active_topic"),
+                "new_covered_topic_keys": list(payload.get("covered_topic_keys") or []),
+                "new_active_topic_state": payload.get("active_topic_state"),
+                "new_current_interview_mode": payload.get("current_interview_mode", "normal"),
+                "new_trust_state": dict(payload.get("trust_state") or {}),
+                "risk_integrity_delta": 0, "risk_depth_delta": 3,
+                "discussed_log_entry": None, "quality_record": None,
+                "freeze_followup_increment": False,
+            }).encode()
+            await r.setex(routing_key, EvalKeys.TTL_ROUTING, _fallback)
+            await r.publish(routing_ready, b"1")
+            logger.warning("[WORKER] Wrote PROBE fallback for turn=%d", turn)
+        except Exception as _fe:
+            logger.error("[WORKER] Fallback write failed turn=%d: %s", turn, _fe)
+
+    logger.info("─" * 60)
+    logger.info("✅ TURN %d DONE", turn)
+    logger.info("─" * 60)
+
+    try:
+        await r.delete(f"interview:{app_id}:eval_enqueued:{turn}")
+    except Exception:
+        pass
 
 
 async def _run_worker() -> None:

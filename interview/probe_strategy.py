@@ -97,9 +97,9 @@ _PROBE_FAMILIES: dict[str, dict[str, str]] = {
         ),
     },
 
-    # ── 5. CLARIFICATION — contradiction or answer collapsing ────────────────
+    # ── 5. CLARIFICATION — inconsistency or answer collapsing ────────────────
     # Covers: clarification, compression
-    # Fires when: contradiction detected, answer getting shorter not longer
+    # Fires when: inconsistency detected, answer getting shorter not longer
     "clarification": {
         "goal": (
             "Something isn't adding up — surface it or slow them down. "
@@ -127,7 +127,6 @@ _PROBE_FAMILIES: dict[str, dict[str, str]] = {
 
 _SIGNAL_TO_FAMILY = [
     # Integrity signals — highest priority
-    ("contradiction",               "clarification"),  # Said two conflicting things → reconcile
     ("follow_up_collapse",          "authenticity"),   # First answer strong, follow-up collapsed → probe real memory
     ("resume_claim_mismatch",       "clarification"),  # Resume vs answer mismatch → surface it
 
@@ -146,7 +145,6 @@ _SIGNAL_TO_FAMILY = [
 
 _MODE_ALIASES = {
     # LLM probe_mode values → merged family names
-    "contradiction":   "clarification",
     "compression":     "clarification",
     "evidence":        "authenticity",
     "verification":    "authenticity",
@@ -160,4 +158,5 @@ _MODE_ALIASES = {
     "specificity":     "ownership",
     "depth":           "authenticity",
 }
+
 

@@ -11,12 +11,25 @@ import { getLandingPackageByName, getLandingPackageForOrgPlan, type LandingPacka
 import type { InterviewRow } from "./internal/types";
 import { useCount } from "./internal/use-billing-count";
 
+type FeatureBilling = {
+  runs?: number;
+  costUsd?: number;
+  ttsCostUsd?: number;
+  ttsCharacters?: number;
+  sttCostUsd?: number;
+  sttAudioSeconds?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  sessionDuration?: number;
+};
+
 type BillingStatus = {
   interviewQuotaTotal: number;
   interviewQuotaUsed: number;
   interviewQuotaRemaining: number;
   creditsUsed: number;
   hasSufficientInterviews: boolean;
+  usageMetrics?: Record<string, unknown> | null;
 };
 
 type BillingContentProps = {
@@ -51,6 +64,7 @@ export function BillingContent({
     interviewQuotaRemaining: 0,
     creditsUsed: 0,
     hasSufficientInterviews: true,
+    usageMetrics: null,
   });
   const [statusLoading, setStatusLoading] = React.useState(true);
   const [statusError, setStatusError] = React.useState<string | null>(null);
@@ -82,6 +96,7 @@ export function BillingContent({
           interviewQuotaRemaining: Number(data.interviewQuotaRemaining ?? 0),
           creditsUsed: Number(data.creditsUsed ?? 0),
           hasSufficientInterviews: Boolean(data.hasSufficientInterviews ?? true),
+          usageMetrics: data.usageMetrics ?? null,
         });
       } catch (error) {
         if (cancelled) return;
@@ -407,6 +422,71 @@ export function BillingContent({
           ) : null}
         </div>
       </div>
+
+      {showCreditInternals && status.usageMetrics ? (() => {
+        const billingAll = ((status.usageMetrics as Record<string, unknown>).billing ?? {}) as Record<string, FeatureBilling>;
+        const FEATURES: { key: string; label: string }[] = [
+          { key: "interview", label: "Interview LLM" },
+          { key: "resumeExtraction", label: "Resume Extraction" },
+          { key: "jdExtraction", label: "JD Extraction" },
+          { key: "chatbot", label: "Chatbot" },
+          { key: "resumeReport", label: "Resume Report" },
+          { key: "interviewReport", label: "Interview Report" },
+        ];
+        const totalAiCost = FEATURES.reduce((sum, f) => {
+          const b = billingAll[f.key] ?? {};
+          return sum + Number(b.costUsd || 0) + Number(b.ttsCostUsd || 0) + Number(b.sttCostUsd || 0);
+        }, 0);
+        return (
+          <div style={{ marginTop: 28 }}>
+            <div style={{ marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Sparkles size={16} color={ORANGE} />
+                <span style={{ fontSize: 13, fontWeight: 700, color: INK }}>AI cost breakdown</span>
+              </div>
+              <span style={{ fontSize: 12, fontWeight: 700, color: INK }}>
+                Total: <span style={{ color: ORANGE }}>${totalAiCost.toFixed(4)}</span>
+              </span>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+              {FEATURES.map((f) => {
+                const b = billingAll[f.key] ?? {};
+                const llm = Number(b.costUsd || 0);
+                const tts = Number(b.ttsCostUsd || 0);
+                const stt = Number(b.sttCostUsd || 0);
+                const total = llm + tts + stt;
+                const tokens = Number(b.inputTokens || 0) + Number(b.outputTokens || 0);
+                return (
+                  <div key={f.key} style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 14, padding: "14px 16px" }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: MUTED }}>{f.label}</div>
+                    <div style={{ fontSize: 22, fontWeight: 800, color: INK, marginTop: 4 }}>${total.toFixed(4)}</div>
+                    <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 3 }}>
+                      <div style={{ fontSize: 11.5, color: MUTED }}>Runs: <span style={{ color: INK, fontWeight: 600 }}>{b.runs ?? 0}</span></div>
+                      <div style={{ fontSize: 11.5, color: MUTED }}>Tokens: <span style={{ color: INK, fontWeight: 600 }}>{tokens.toLocaleString()}</span></div>
+                      <div style={{ fontSize: 11.5, color: MUTED }}>LLM cost: <span style={{ color: INK, fontWeight: 600 }}>${llm.toFixed(4)}</span></div>
+                      {tts > 0 || f.key === "interview" ? (
+                        <div style={{ fontSize: 11.5, color: MUTED }}>
+                          TTS cost: <span style={{ color: INK, fontWeight: 600 }}>${tts.toFixed(4)}</span>
+                          {b.ttsCharacters ? <span style={{ color: MUTED }}> · {Number(b.ttsCharacters).toLocaleString()} chars</span> : null}
+                        </div>
+                      ) : null}
+                      {stt > 0 || f.key === "interview" ? (
+                        <div style={{ fontSize: 11.5, color: MUTED }}>
+                          STT cost: <span style={{ color: INK, fontWeight: 600 }}>${stt.toFixed(4)}</span>
+                          {b.sttAudioSeconds ? <span style={{ color: MUTED }}> · {(Number(b.sttAudioSeconds) / 60).toFixed(1)} min</span> : null}
+                        </div>
+                      ) : null}
+                      {f.key === "interview" && b.sessionDuration ? (
+                        <div style={{ fontSize: 11.5, color: MUTED }}>Interview time: <span style={{ color: INK, fontWeight: 600 }}>{(Number(b.sessionDuration) / 60).toFixed(1)} min</span></div>
+                      ) : null}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })() : null}
 
       <div style={{ marginTop: 28 }}>
         <div style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>

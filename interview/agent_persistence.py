@@ -856,7 +856,7 @@ async def persist_transcript(
         if proctoring_data:
             proctor_report = {
                 "events": proctoring_data.get("events", []),
-                "contradictions": proctoring_data.get("contradictions", []),
+                "inconsistencies": proctoring_data.get("inconsistencies", []),
             }
         pool = await get_db_pool()
         async with pool.acquire() as conn:
@@ -1261,7 +1261,7 @@ async def generate_interview_report(
             answer_scores=interview_scores,
             total_duration_sec=int(proctoring_data.get("session_duration", 0)) if proctoring_data else 0,
             proctoring_events=proctoring_data.get("events", []) if proctoring_data else [],
-            contradictions_found=proctoring_data.get("contradictions", []) if proctoring_data else [],
+            inconsistencies_found=proctoring_data.get("inconsistencies", []) if proctoring_data else [],
         )
         for _bu in behavioral_llm_usages:
             await persist_org_manual_billing_usage(org_id, "interviewReport", _bu)
@@ -1487,8 +1487,6 @@ async def generate_interview_report(
             "complexity_latency_mismatch",
             "ownership_clarified",
             "example_given",
-            "contradiction",
-            "contradiction_resolved",
             "depth_decay",
             "strong_under_pressure",
         }

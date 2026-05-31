@@ -7,18 +7,29 @@ human-readable summary object for the dashboard/DB.
 No LLM calls. Pure aggregation from existing session data.
 """
 from interview.session_state import TrustState, INTEGRITY_BAND, QUALITY_BAND
-from interview.contradiction_state import summarize_contradiction_state
+
+
+def _safe_int(value, default: int = 0) -> int:
+    try:
+        return int(value or default)
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_float(value, default: float = 0.0) -> float:
+    try:
+        return float(value if value is not None else default)
+    except (TypeError, ValueError):
+        return default
 
 
 # -- Recommendation thresholds -------------------------------------------------
 def build_recruiter_summary(
     trust_state: TrustState,
     answer_scores: list[dict],
-    contradictions_found: list[dict],
     total_turns: int,
     candidate_name: str = "",
     job_title: str = "",
-    contradiction_state: dict | None = None,
     proctoring_profile: dict | None = None,
 ) -> dict:
     """
@@ -34,13 +45,17 @@ def build_recruiter_summary(
     risk_factors = ts["risk_factors"]
     recovery_factors = ts["recovery_factors"]
     buckets = ts["buckets"]
-    suspicion_score = _derive_legacy_suspicion_score(ts, contradictions_found)
-    contradiction_summary = summarize_contradiction_state(contradiction_state or {})
     proctoring_profile = proctoring_profile or {}
-    environment_risk = int(proctoring_profile.get("environment_risk", 0) or 0)
-    integrity_risk = int(proctoring_profile.get("integrity_risk", 0) or 0)
-    depth_risk = int(proctoring_profile.get("depth_risk", 0) or 0)
-    composite_risk = int(proctoring_profile.get("composite_risk", suspicion_score) or suspicion_score)
+    environment_risk = _safe_int(proctoring_profile.get("environment_risk"))
+    integrity_risk = _safe_int(proctoring_profile.get("integrity_risk"))
+    depth_risk = _safe_int(proctoring_profile.get("depth_risk"))
+    composite_risk = _safe_int(
+        proctoring_profile.get(
+            "composite_risk",
+            max(environment_risk, integrity_risk, depth_risk),
+        )
+    )
+    suspicion_score = composite_risk
 
     # -- Strengths ----------------------------------------------------------
     strengths = []
@@ -52,14 +67,11 @@ def build_recruiter_summary(
         strengths.append("No significant integrity signals detected - answers were consistent.")
     if trend == "improving":
         strengths.append("Performance improved noticeably under deeper probing.")
-    if "contradiction_resolved" in recovery_factors:
         strengths.append("Clarified an apparent inconsistency convincingly when asked.")
     if "strong_under_pressure" in recovery_factors:
         strengths.append("Maintained answer quality under follow-up pressure.")
     if "concrete_example_after_evasion" in recovery_factors:
         strengths.append("Recovered from initial vagueness with a real, specific example.")
-    if contradiction_summary["status"] == "candidate_clarified":
-        strengths.append("Resolved a contradiction cleanly after follow-up.")
 
     # -- Concerns ----------------------------------------------------------
     concerns = []
@@ -69,14 +81,6 @@ def build_recruiter_summary(
         concerns.append("Stayed theoretical when asked for specific examples.")
     if "follow_up_collapse" in risk_factors:
         concerns.append("Answer depth dropped significantly on follow-up questions.")
-    if contradictions_found:
-        concerns.append(f"{len(contradictions_found)} factual inconsistency(ies) detected across the session.")
-    if contradiction_summary["status"] == "surfaced":
-        concerns.append("A contradiction surfaced and is still open.")
-    elif contradiction_summary["status"] == "unresolved":
-        concerns.append("A contradiction remained unresolved after clarification.")
-    elif contradiction_summary["status"] == "repeated":
-        concerns.append("The same contradiction pattern surfaced more than once.")
     if integrity == INTEGRITY_BAND.CRITICAL:
         concerns.append("Multiple hard integrity signals - answers may not reflect genuine experience.")
     elif integrity == INTEGRITY_BAND.LOW:
@@ -91,14 +95,19 @@ def build_recruiter_summary(
 
     # -- Final recommendation ------------------------------------------------
     recommendation, recommendation_reason = _recommendation(
-        score, integrity, quality, trend, suspicion_score, len(contradictions_found)
+        score=score,
+        integrity=integrity,
+        quality=quality,
+        trend=trend,
+        suspicion=suspicion_score,
     )
 
     # -- Quality averages from answer_scores --------------------------------
-    n = max(len(answer_scores), 1)
-    avg_depth = sum(s.get("depth", 5) for s in answer_scores) / n
-    avg_specificity = sum(s.get("specificity", 5) for s in answer_scores) / n
-    avg_overall = sum(s.get("overall", 5) for s in answer_scores) / n
+    scored_answers = [s for s in answer_scores if not s.get("is_warmup")]
+    n = max(len(scored_answers), 1)
+    avg_depth = sum(_safe_float(s.get("depth"), 5.0) for s in scored_answers) / n
+    avg_specificity = sum(_safe_float(s.get("specificity"), 5.0) for s in scored_answers) / n
+    avg_overall = sum(_safe_float(s.get("overall"), 5.0) for s in scored_answers) / n
 
     return {
         "candidate": candidate_name,
@@ -132,8 +141,6 @@ def build_recruiter_summary(
             "depth": depth_risk,
             "composite": composite_risk,
         },
-        "contradictionCount": len(contradictions_found),
-        "contradictionState": contradiction_summary,
     }
 
 
@@ -149,40 +156,20 @@ def _authenticity_label(score: float, integrity: str, suspicion: int) -> str:
     return "moderate"
 
 
-def _derive_legacy_suspicion_score(ts: TrustState, contradictions_found: list[dict]) -> int:
-    """
-    Derive a legacy display score from the finalized TrustState.
-
-    This keeps the dashboard's old numeric field available without treating it as
-    an independent decision source.
-    """
-    hard_integrity = float(ts["buckets"]["hard_integrity"])
-    risk_count = len(ts["risk_factors"])
-    recovery_count = len(ts["recovery_factors"])
-    contradiction_penalty = min(30, len(contradictions_found) * 8)
-
-    score = (1.0 - hard_integrity) * 100.0
-    score += min(20, risk_count * 4)
-    score -= min(15, recovery_count * 3)
-    score += contradiction_penalty
-    return max(0, min(100, int(round(score))))
-
-
 def _recommendation(
     score: float,
     integrity: str,
     quality: str,
     trend: str,
     suspicion: int,
-    contradiction_count: int,
 ) -> tuple[str, str]:
     """Returns (recommendation_label, reason_string)."""
 
     # Hard disqualifiers
     if integrity == INTEGRITY_BAND.CRITICAL or suspicion >= 70:
         return ("DO_NOT_ADVANCE", "Integrity signals too severe to proceed without manual review.")
-    if contradiction_count >= 3:
-        return ("DO_NOT_ADVANCE", "Multiple unresolved factual contradictions detected.")
+    if quality == QUALITY_BAND.POOR and trend in ("declining", "collapsing"):
+        return ("DO_NOT_ADVANCE", "Answer quality stayed poor and declined during the interview.")
 
     # Strong pass
     if score >= 0.72 and integrity in (INTEGRITY_BAND.HIGH, INTEGRITY_BAND.MEDIUM) and trend in ("stable", "improving"):

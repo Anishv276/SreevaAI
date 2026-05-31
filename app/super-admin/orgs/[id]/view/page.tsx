@@ -1041,8 +1041,6 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
 
                                             <div className="mt-3 text-xs font-bold text-gray-500 uppercase tracking-wider">
 
-                                                <th className="px-4 py-3 text-center font-bold text-[10px] text-gray-400 uppercase tracking-wider">Jobs</th>
-
                                                 Interview time: <span className="text-gray-900">{interviewMinutes} min</span>
 
                                             </div>
