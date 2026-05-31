@@ -2622,7 +2622,13 @@ async def entrypoint(ctx: JobContext):
             logger.warning("[SKILL_RATINGS] Failed to persist skill ratings: %s", e)
 
     spawn_background_task(_persist_skill_ratings_async(), "final_skill_ratings")
-    logger.info("[PERSIST] Transcript and scores saved")
+    logger.info("[PERSIST] Transcript and scores saved (answer_scores has %d turns)", len(answer_scores))
+
+    # IMPORTANT: Wait briefly for any pending answer_scores to be added from background eval tasks
+    # This ensures the report generator has all available scores
+    await asyncio.sleep(0.5)
+    logger.info("[REPORT_PREP] answer_scores final count: %d turns", len(answer_scores))
+
     await persist_org_usage_metrics(
         org_id,
         latest_session_usage or session.usage,
@@ -2649,12 +2655,15 @@ async def entrypoint(ctx: JobContext):
         except Exception as e:
             logger.error(f"[SUMMARY] Failed post-interview for {app_id}: {e}")
         # Generate structured interview report (scores, skills, strengths)
+        # IMPORTANT: Re-fetch latest answer_scores from DB to ensure we have all evaluated turns
         try:
+            final_scores = list(answer_scores)
+            logger.info("[REPORT] Generating with answer_scores=%d turns from memory", len(final_scores))
             await asyncio.wait_for(
                 generate_interview_report(
                     app_id,
                     transcript_lines,
-                    answer_scores,
+                    final_scores,
                     job_title,
                     proctoring_data=proctoring_data,
                     org_id=org_id,
