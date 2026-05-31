@@ -29,24 +29,27 @@ export function RecentActivity() {
         const controller = new AbortController();
         const { signal } = controller;
 
-        setLoading(true);
-        setError(null);
+        const loadActivity = async () => {
+            setLoading(true);
+            setError(null);
 
-        fetch("/api/super-admin/stats", { signal })
-            .then(async (res) => {
-                if (!signal.aborted) {
-                    if (res.ok) {
-                        const data = await res.json();
-                        setActivities(data.recentActivity || []);
-                    } else {
-                        setError("Failed to load activity.");
-                    }
+            try {
+                const res = await fetch("/api/super-admin/stats", { signal });
+                if (signal.aborted) return;
+                if (res.ok) {
+                    const data = await res.json();
+                    setActivities(data.recentActivity || []);
+                } else {
+                    setError("Failed to load activity.");
                 }
-            })
-            .catch((err) => {
+            } catch (err: any) {
                 if (!signal.aborted && err.name !== "AbortError") setError("Network error.");
-            })
-            .finally(() => { if (!signal.aborted) setLoading(false); });
+            } finally {
+                if (!signal.aborted) setLoading(false);
+            }
+        };
+
+        void loadActivity();
 
         return () => controller.abort();
     }, [retryKey]);

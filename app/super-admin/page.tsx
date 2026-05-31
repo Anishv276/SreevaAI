@@ -44,15 +44,12 @@ function getStatusBadge(org: Org) {
 }
 
 export default function SuperAdminDashboard() {
-    const [mounted, setMounted] = useState(false);
     const [orgs, setOrgs] = useState<Org[]>([]);
     const [chartStats, setChartStats] = useState<ChartStats>({ orgCreditStats: [], orgInterviewStats: [], orgQuotaStats: [] });
     const [orgsLoading, setOrgsLoading] = useState(true);
     const [chartsLoading, setChartsLoading] = useState(true);
 
     useEffect(() => {
-        setMounted(true);
-
         // Fetch recent orgs separately — lightweight
         fetch("/api/super-admin/orgs?limit=6")
             .then(async (res) => {
@@ -76,8 +73,6 @@ export default function SuperAdminDashboard() {
             .catch(() => {})
             .finally(() => setChartsLoading(false));
     }, []);
-
-    if (!mounted) return <DashboardSkeleton />;
 
     return (
         <div className="space-y-7 pb-10 animate-in fade-in duration-700" style={{ zoom: 0.78, transformOrigin: "top center" }}>
@@ -188,27 +183,6 @@ export default function SuperAdminDashboard() {
 
             {/* Global Activity */}
             <RecentActivity />
-        </div>
-    );
-}
-
-function DashboardSkeleton() {
-    return (
-        <div className="space-y-7 pb-10 animate-pulse" style={{ zoom: 0.78, transformOrigin: "top center" }}>
-            <div className="flex items-center gap-5">
-                <div className="h-12 w-1.5 bg-gray-200 rounded-full" />
-                <div className="space-y-2">
-                    <div className="h-9 w-40 bg-gray-200 rounded-xl" />
-                    <div className="h-3 w-28 bg-gray-100 rounded-lg" />
-                </div>
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-                {[...Array(6)].map((_, i) => <div key={i} className="h-28 bg-gray-100 rounded-2xl" />)}
-            </div>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-                <div className="h-80 bg-gray-100 rounded-2xl" />
-                <div className="h-80 bg-gray-100 rounded-2xl" />
-            </div>
         </div>
     );
 }

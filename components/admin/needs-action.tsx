@@ -69,20 +69,26 @@ export function NeedsAction() {
         const controller = new AbortController();
         const { signal } = controller;
 
-        setLoading(true);
-        setError(null);
+        const loadNeedsAction = async () => {
+            setLoading(true);
+            setError(null);
 
-        fetch("/api/admin/needs-action", { signal })
-            .then(async (res) => {
-                if (!signal.aborted) {
-                    if (res.ok) setData(await res.json());
-                    else setError("Failed to load action items.");
+            try {
+                const res = await fetch("/api/admin/needs-action", { signal });
+                if (signal.aborted) return;
+                if (res.ok) {
+                    setData(await res.json());
+                } else {
+                    setError("Failed to load action items.");
                 }
-            })
-            .catch((err) => {
+            } catch (err: any) {
                 if (!signal.aborted && err.name !== "AbortError") setError("Network error.");
-            })
-            .finally(() => { if (!signal.aborted) setLoading(false); });
+            } finally {
+                if (!signal.aborted) setLoading(false);
+            }
+        };
+
+        void loadNeedsAction();
 
         return () => controller.abort();
     }, [retryKey]);

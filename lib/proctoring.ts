@@ -17,8 +17,6 @@ export type ProctoringEventType =
   | "example_given"
   | "strong_under_pressure"
   | "follow_up_collapse"
-  | "contradiction"
-  | "contradiction_resolved"
   | "depth_decay"
   | "complexity_latency_mismatch";
 
@@ -65,9 +63,6 @@ const EVENT_ALIASES: Record<string, ProctoringEventType> = {
   strongUnderPressure: "strong_under_pressure",
   follow_up_collapse: "follow_up_collapse",
   followUpCollapse: "follow_up_collapse",
-  contradiction: "contradiction",
-  contradiction_resolved: "contradiction_resolved",
-  contradictionResolved: "contradiction_resolved",
   depth_decay: "depth_decay",
   depthDecay: "depth_decay",
   complexity_latency_mismatch: "complexity_latency_mismatch",
@@ -91,8 +86,6 @@ export const PROCTORING_SEVERITY_BY_TYPE: Record<ProctoringEventType, Proctoring
   example_given: "low",
   strong_under_pressure: "low",
   follow_up_collapse: "high",
-  contradiction: "high",
-  contradiction_resolved: "low",
   depth_decay: "high",
   complexity_latency_mismatch: "high",
 };
@@ -114,8 +107,6 @@ export const PROCTORING_EVENT_ORDER: ProctoringEventType[] = [
   "example_given",
   "strong_under_pressure",
   "follow_up_collapse",
-  "contradiction",
-  "contradiction_resolved",
   "depth_decay",
   "complexity_latency_mismatch",
 ];

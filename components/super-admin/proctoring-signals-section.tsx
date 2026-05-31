@@ -19,8 +19,6 @@ type SignalKey =
   | "example_given"
   | "strong_under_pressure"
   | "follow_up_collapse"
-  | "contradiction"
-  | "contradiction_resolved"
   | "duplicate_ip"
   | "depth_decay"
   | "complexity_latency_mismatch";
@@ -84,8 +82,6 @@ const SIGNAL_GROUPS: Group[] = [
     items: [
       { key: "strong_under_pressure", label: "Strong Under Pressure" },
       { key: "follow_up_collapse", label: "Follow-Up Collapse" },
-      { key: "contradiction", label: "Contradiction" },
-      { key: "contradiction_resolved", label: "Contradiction Resolved" },
       { key: "depth_decay", label: "Depth Decay" },
       { key: "complexity_latency_mismatch", label: "Complexity Latency Mismatch" },
     ],

@@ -1,7 +1,7 @@
 "use client";
 
 import { X, ShieldAlert, Loader2, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 
 interface ActionConfirmModalProps {
@@ -29,20 +29,15 @@ export function ActionConfirmModal({
 }: ActionConfirmModalProps) {
     const [isSubmitting, setIsSubmitting] = useState(false);
 
-    // Reset local loading state if external loading changes
-    useEffect(() => {
-        if (!externalLoading && isSubmitting) {
-            setIsSubmitting(false);
-        }
-    }, [externalLoading]);
-
     if (!isOpen) return null;
 
     const handleConfirm = async () => {
         setIsSubmitting(true);
         try {
             await onConfirm();
-        } catch (error) {
+        } catch {
+            // Keep the modal open so the caller can surface an error state.
+        } finally {
             setIsSubmitting(false);
         }
     };

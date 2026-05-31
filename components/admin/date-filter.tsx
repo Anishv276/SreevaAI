@@ -40,15 +40,14 @@ export function DateFilter({ value, onChange }: DateFilterProps) {
             setRect(triggerRef.current.getBoundingClientRect());
         }
         setOpen(o => !o);
-        if (!open) setView(value.type === "custom" ? "custom" : "presets");
-    };
-
-    useEffect(() => {
-        if (value.type === "custom") {
-            setCustomFrom(value.from);
-            setCustomTo(value.to);
+        if (!open) {
+            setView(value.type === "custom" ? "custom" : "presets");
+            if (value.type === "custom") {
+                setCustomFrom(value.from);
+                setCustomTo(value.to);
+            }
         }
-    }, [value]);
+    };
 
     useEffect(() => {
         if (!open) return;

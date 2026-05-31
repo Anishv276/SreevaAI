@@ -12,6 +12,16 @@ interface PhoneInputProps {
     className?: string;
 }
 
+function parsePhoneValue(value: string) {
+    const found = [...countryCodes]
+        .sort((a, b) => b.code.length - a.code.length)
+        .find(c => value.startsWith(c.code));
+
+    return found
+        ? { selectedCode: found.code, phoneNumber: value.slice(found.code.length) }
+        : { selectedCode: "+91", phoneNumber: value };
+}
+
 export function PhoneInput({ value = "", onChange, className }: PhoneInputProps) {
     const [open, setOpen] = useState(false);
     const [search, setSearch] = useState("");
@@ -19,28 +29,9 @@ export function PhoneInput({ value = "", onChange, className }: PhoneInputProps)
     const triggerRef = useRef<HTMLButtonElement>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
 
-    // Initial parsing of value to find selected country
-    // We assume the stored value might have a code + number
-    // For simplicity, we'll track code and number separately in the component state
-    const [selectedCode, setSelectedCode] = useState("+91");
-    const [phoneNumber, setPhoneNumber] = useState("");
-
-    // Sync from props if needed, but phone input usually controls its own state for the prefix
-    useEffect(() => {
-        if (value && !phoneNumber) {
-            // Very basic heuristic to split code and number
-            const found = countryCodes
-                .sort((a, b) => b.code.length - a.code.length)
-                .find(c => value.startsWith(c.code));
-            
-            if (found) {
-                setSelectedCode(found.code);
-                setPhoneNumber(value.slice(found.code.length));
-            } else {
-                setPhoneNumber(value);
-            }
-        }
-    }, [value]);
+    const initialPhone = parsePhoneValue(value);
+    const [selectedCode, setSelectedCode] = useState(initialPhone.selectedCode);
+    const [phoneNumber, setPhoneNumber] = useState(initialPhone.phoneNumber);
 
     const filtered = countryCodes.filter(c => 
         c.country.toLowerCase().includes(search.toLowerCase()) || 

@@ -141,12 +141,13 @@ export const CommunicationDonutChart = memo(function CommunicationDonutChart({ m
         y: cy + radius * Math.sin(rad),
     });
 
-    let cursor = -90;
-    const slices = metrics.map((m) => {
+    const slices = metrics.map((m, index) => {
+        const cursor = metrics
+            .slice(0, index)
+            .reduce((sum, metric) => sum + (metric.value / total) * 360, -90);
         const sliceDeg = (m.value / total) * 360 - gap;
         const startDeg = cursor + gap / 2;
         const endDeg = startDeg + sliceDeg * animProgress;
-        cursor += (m.value / total) * 360;
 
         const startRad = toRad(startDeg);
         const endRad = toRad(endDeg);

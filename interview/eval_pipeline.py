@@ -480,6 +480,17 @@ class DirectiveCompiler:
         )
 
     @staticmethod
+    def verify_ownership(signals: List[str]) -> str:
+        signal_text = ", ".join(signals or ["ownership_ambiguity"])
+        return (
+            "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
+            "DECISION: VERIFY (CLARIFICATION)\n"
+            f"SIGNALS: {signal_text}\n"
+            "Ask one direct question about what was specifically theirs. "
+            "Anchor it to the exact work they just described."
+        )
+
+    @staticmethod
     def append_memory_block(directive: str, discussed_log: List[str]) -> str:
         if not discussed_log:
             return directive
@@ -965,7 +976,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     depth_signal = "SURFACE"
     if _weighted_quality >= 7.0:
         depth_signal = "DEEP"
-    elif _weighted_quality >= 5.5:
+    elif _weighted_quality >= 5.0:
         depth_signal = "SPECIFIC"
 
     # ── Log evaluator decision ────────────────────────────────────────────────

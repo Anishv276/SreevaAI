@@ -899,6 +899,189 @@ def classify_short_utterance(utterance: str) -> Optional[ShortUtteranceClassific
     )
 
 
+def _legacy_detection_context(
+    *,
+    answer: str = "",
+    last_question: str = "",
+    current_depth: float = 5.0,
+    prior_depth_scores: Optional[list[float]] = None,
+    topic_follow_up_count: int = 0,
+    collapse_stage: int = 0,
+    session_score_history: Optional[list[float]] = None,
+    turns_since_last_decay: int = 999,
+    response_latency_sec: Optional[float] = None,
+) -> DetectionContext:
+    return DetectionContext(
+        answer=answer,
+        last_question=last_question,
+        current_depth=current_depth,
+        prior_depth_scores=prior_depth_scores or [],
+        topic_follow_up_count=topic_follow_up_count,
+        collapse_stage=collapse_stage,
+        session_score_history=session_score_history or [],
+        turns_since_last_decay=turns_since_last_decay,
+        response_latency_sec=response_latency_sec,
+    )
+
+
+def detect_ownership_ambiguity(answer: str) -> bool:
+    return _detect_ownership_ambiguity_event(answer=answer) is not None
+
+
+def detect_example_evasion(answer: str, last_question: str) -> bool:
+    return _detect_example_evasion_event(answer=answer, last_question=last_question) is not None
+
+
+def detect_follow_up_collapse(
+    current_depth: float,
+    prior_depth_scores: list[float],
+    topic_follow_up_count: int,
+) -> bool:
+    return _detect_follow_up_collapse_event(
+        answer="",
+        last_question="",
+        current_depth=current_depth,
+        prior_depth_scores=prior_depth_scores,
+        topic_follow_up_count=topic_follow_up_count,
+    ) is not None
+
+
+def _detect_ownership_ambiguity_event(
+    answer: str,
+    last_question: str = "",
+    current_depth: float = 5.0,
+    prior_depth_scores: Optional[list[float]] = None,
+    topic_follow_up_count: int = 0,
+) -> Optional[SignalEvent]:
+    return OwnershipAmbiguityDetector().detect(_legacy_detection_context(
+        answer=answer,
+        last_question=last_question,
+        current_depth=current_depth,
+        prior_depth_scores=prior_depth_scores,
+        topic_follow_up_count=topic_follow_up_count,
+    ))
+
+
+def _detect_example_evasion_event(
+    answer: str,
+    last_question: str,
+    current_depth: float = 5.0,
+    prior_depth_scores: Optional[list[float]] = None,
+    topic_follow_up_count: int = 0,
+) -> Optional[SignalEvent]:
+    return ExampleEvasionDetector().detect(_legacy_detection_context(
+        answer=answer,
+        last_question=last_question,
+        current_depth=current_depth,
+        prior_depth_scores=prior_depth_scores,
+        topic_follow_up_count=topic_follow_up_count,
+    ))
+
+
+def _detect_resume_claim_mismatch_event(
+    answer: str,
+    last_question: str,
+    current_depth: float,
+    prior_depth_scores: Optional[list[float]] = None,
+    topic_follow_up_count: int = 0,
+) -> Optional[SignalEvent]:
+    return ResumeClaimMismatchDetector().detect(_legacy_detection_context(
+        answer=answer,
+        last_question=last_question,
+        current_depth=current_depth,
+        prior_depth_scores=prior_depth_scores,
+        topic_follow_up_count=topic_follow_up_count,
+    ))
+
+
+def _detect_follow_up_collapse_event(
+    answer: str,
+    last_question: str,
+    current_depth: float,
+    prior_depth_scores: Optional[list[float]],
+    topic_follow_up_count: int,
+    collapse_stage: int = 0,
+) -> Optional[SignalEvent]:
+    return FollowUpCollapseDetector().detect(_legacy_detection_context(
+        answer=answer,
+        last_question=last_question,
+        current_depth=current_depth,
+        prior_depth_scores=prior_depth_scores,
+        topic_follow_up_count=topic_follow_up_count,
+        collapse_stage=collapse_stage,
+    ))
+
+
+def _detect_latency_mismatch_event(
+    answer: str,
+    last_question: str,
+    current_depth: float,
+    prior_depth_scores: Optional[list[float]],
+    topic_follow_up_count: int,
+) -> Optional[SignalEvent]:
+    return LatencyMismatchDetector().detect(_legacy_detection_context(
+        answer=answer,
+        last_question=last_question,
+        current_depth=current_depth,
+        prior_depth_scores=prior_depth_scores,
+        topic_follow_up_count=topic_follow_up_count,
+    ))
+
+
+def _detect_depth_decay_event(
+    answer: str,
+    last_question: str,
+    current_depth: float,
+    prior_depth_scores: Optional[list[float]],
+    topic_follow_up_count: int,
+    session_score_history: Optional[list[float]] = None,
+    turns_since_last_decay: int = 999,
+) -> Optional[SignalEvent]:
+    # Legacy helper detected cross-turn decay from session history alone.
+    effective_followups = max(topic_follow_up_count, _DECAY_MIN_TOPIC_TURNS)
+    return DepthDecayDetector().detect(_legacy_detection_context(
+        answer=answer,
+        last_question=last_question,
+        current_depth=current_depth,
+        prior_depth_scores=prior_depth_scores,
+        topic_follow_up_count=effective_followups,
+        session_score_history=session_score_history,
+        turns_since_last_decay=turns_since_last_decay,
+    ))
+
+
+def _detect_complexity_latency_mismatch_event(
+    answer: str,
+    last_question: str,
+    current_depth: float,
+    prior_depth_scores: Optional[list[float]],
+    topic_follow_up_count: int,
+    response_latency_sec: Optional[float] = None,
+) -> Optional[SignalEvent]:
+    return ComplexityLatencyMismatchDetector().detect(_legacy_detection_context(
+        answer=answer,
+        last_question=last_question,
+        current_depth=current_depth,
+        prior_depth_scores=prior_depth_scores,
+        topic_follow_up_count=topic_follow_up_count,
+        response_latency_sec=response_latency_sec,
+    ))
+
+
+def _detect_ownership_clarified_event(answer: str, last_question: str = "") -> Optional[SignalEvent]:
+    return OwnershipClarifiedDetector().detect(_legacy_detection_context(
+        answer=answer,
+        last_question=last_question,
+    ))
+
+
+def _detect_example_given_event(answer: str, last_question: str = "") -> Optional[SignalEvent]:
+    return ExampleGivenDetector().detect(_legacy_detection_context(
+        answer=answer,
+        last_question=last_question,
+    ))
+
+
 def detect_signal_events(
     *,
     candidate_answer: str,

@@ -125,10 +125,6 @@ export function AuditLogModal({
 
     const fallbackSnapshots = useMemo(() => snapshots.slice(0, 6), [snapshots]);
 
-    useEffect(() => {
-        setSelectedOccurrence(0);
-    }, [selectedEvent]);
-
     const getOccurrenceOffsetSeconds = (timestamp?: number) => {
         if (!timestamp || !interviewStartedAt) return null;
         const start = new Date(interviewStartedAt).getTime();

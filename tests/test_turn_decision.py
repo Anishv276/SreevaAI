@@ -6,7 +6,6 @@ from turn_decision import (
     _detect_resume_claim_mismatch_event,
     _detect_follow_up_collapse_event,
     _detect_latency_mismatch_event,
-    _detect_contradiction_event,
     classify_short_utterance,
     _detect_depth_decay_event,
     _score_question_complexity,
@@ -48,7 +47,6 @@ def test_detect_resume_claim_mismatch():
         current_depth=4.0,
         prior_depth_scores=[],
         topic_follow_up_count=0,
-        contradiction_detected=False
     )
     assert ev is not None
     assert ev["signal_name"] == "resume_claim_mismatch"
@@ -61,7 +59,6 @@ def test_detect_resume_claim_mismatch():
         current_depth=6.0,
         prior_depth_scores=[],
         topic_follow_up_count=0,
-        contradiction_detected=False
     ) is None
 
 def test_detect_follow_up_collapse():
@@ -72,7 +69,6 @@ def test_detect_follow_up_collapse():
         current_depth=2.5,
         prior_depth_scores=[6.5],
         topic_follow_up_count=1,
-        contradiction_detected=False
     )
     assert ev is not None
     assert ev["signal_name"] == "follow_up_collapse"
@@ -86,7 +82,6 @@ def test_detect_follow_up_collapse():
         current_depth=4.0,
         prior_depth_scores=[6.5],
         topic_follow_up_count=1,
-        contradiction_detected=False
     )
     assert ev_partial is not None
     assert "partial collapse" in ev_partial["evidence"]
@@ -100,24 +95,10 @@ def test_detect_latency_mismatch():
         current_depth=4.0,
         prior_depth_scores=[6.0],
         topic_follow_up_count=1,
-        contradiction_detected=False
     )
     assert ev is not None
     assert ev["signal_name"] == "latency_mismatch"
     assert ev["score_delta"] == -0.10
-
-def test_detect_contradiction():
-    ev = _detect_contradiction_event(
-        answer="",
-        last_question="",
-        current_depth=5.0,
-        prior_depth_scores=[],
-        topic_follow_up_count=0,
-        contradiction_detected=True
-    )
-    assert ev is not None
-    assert ev["signal_name"] == "contradiction"
-    assert ev["score_delta"] == -0.40
 
 def test_classify_short_utterance():
     assert classify_short_utterance("") is None
@@ -144,7 +125,6 @@ def test_detect_depth_decay():
         current_depth=5.0,
         prior_depth_scores=[],
         topic_follow_up_count=0,
-        contradiction_detected=False,
         session_score_history=[7.0, 7.5, 3.0, 2.5],
         turns_since_last_decay=5
     )
@@ -165,7 +145,6 @@ def test_detect_complexity_latency_mismatch():
         current_depth=5.0,
         prior_depth_scores=[],
         topic_follow_up_count=0,
-        contradiction_detected=False,
         response_latency_sec=4.0
     )
     assert ev_fast is not None
@@ -179,7 +158,6 @@ def test_detect_complexity_latency_mismatch():
         current_depth=5.0,
         prior_depth_scores=[],
         topic_follow_up_count=0,
-        contradiction_detected=False,
         response_latency_sec=25.0
     )
     assert ev_slow is not None

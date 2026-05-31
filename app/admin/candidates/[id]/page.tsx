@@ -283,8 +283,6 @@ export default function CandidateProfilePage() {
         "complexity_latency_mismatch",
         "ownership_clarified",
         "example_given",
-        "contradiction",
-        "contradiction_resolved",
         "depth_decay",
         "strong_under_pressure",
     ]);

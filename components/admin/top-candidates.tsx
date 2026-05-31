@@ -73,29 +73,35 @@ export function TopCandidates({ dateRange }: TopCandidatesProps) {
         const controller = new AbortController();
         const { signal } = controller;
 
-        setLoading(true);
-        setError(null);
+        const loadCandidates = async () => {
+            setLoading(true);
+            setError(null);
 
-        const params = new URLSearchParams();
-        if (dateRange.type === "custom") {
-            params.set("range", "custom");
-            params.set("from", dateRange.from);
-            params.set("to", dateRange.to);
-        } else {
-            params.set("range", dateRange.type);
-        }
+            const params = new URLSearchParams();
+            if (dateRange.type === "custom") {
+                params.set("range", "custom");
+                params.set("from", dateRange.from);
+                params.set("to", dateRange.to);
+            } else {
+                params.set("range", dateRange.type);
+            }
 
-        fetch(`/api/admin/top-candidates?${params.toString()}`, { signal })
-            .then(async (res) => {
-                if (!signal.aborted) {
-                    if (res.ok) setCandidates((await res.json()).candidates ?? []);
-                    else setError("Failed to load top candidates.");
+            try {
+                const res = await fetch(`/api/admin/top-candidates?${params.toString()}`, { signal });
+                if (signal.aborted) return;
+                if (res.ok) {
+                    setCandidates((await res.json()).candidates ?? []);
+                } else {
+                    setError("Failed to load top candidates.");
                 }
-            })
-            .catch((err) => {
+            } catch (err: any) {
                 if (!signal.aborted && err.name !== "AbortError") setError("Network error.");
-            })
-            .finally(() => { if (!signal.aborted) setLoading(false); });
+            } finally {
+                if (!signal.aborted) setLoading(false);
+            }
+        };
+
+        void loadCandidates();
 
         return () => controller.abort();
     }, [dateRange, retryKey]);

@@ -15,6 +15,9 @@ const eslintConfig = defineConfig([
     // Utility scripts - not production code, use CommonJS require() intentionally
     "scratch/**",
     "tmp/**",
+    "temp_*.js",
+    ".venv/**",
+    "public/vad/**",
     "scripts/**",
     "prisma/**",
   ]),

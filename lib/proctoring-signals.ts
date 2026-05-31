@@ -14,8 +14,6 @@ export type ManagedProctoringSignal =
   | "example_given"
   | "strong_under_pressure"
   | "follow_up_collapse"
-  | "contradiction"
-  | "contradiction_resolved"
   | "duplicate_ip"
   | "depth_decay"
   | "complexity_latency_mismatch";
@@ -38,8 +36,6 @@ export const MANAGED_PROCTORING_SIGNALS: ManagedProctoringSignal[] = [
   "example_given",
   "strong_under_pressure",
   "follow_up_collapse",
-  "contradiction",
-  "contradiction_resolved",
   "duplicate_ip",
   "depth_decay",
   "complexity_latency_mismatch",
@@ -65,8 +61,6 @@ export const DEFAULT_PROCTORING_SIGNALS: ProctoringSignalToggles = {
   example_given: true,
   strong_under_pressure: true,
   follow_up_collapse: true,
-  contradiction: true,
-  contradiction_resolved: true,
   duplicate_ip: true,
   depth_decay: true,
   complexity_latency_mismatch: true,
@@ -94,11 +88,9 @@ export const GROWTH_PLAN_SIGNALS: ProctoringSignalToggles = {
   strong_under_pressure: true,
 } as ProctoringSignalToggles;
 
-// SCALE / ENTERPRISE adds the heavy vision / contradiction checks.
+// SCALE / ENTERPRISE adds the heavier vision checks.
 export const SCALE_PLAN_SIGNALS: ProctoringSignalToggles = {
   ...GROWTH_PLAN_SIGNALS,
-  contradiction: true,
-  contradiction_resolved: true,
   face_absence: true,
   multiple_faces: true,
   identity_mismatch: true,
@@ -142,8 +134,6 @@ export function normalizeProctoringSignals(raw: unknown): ProctoringSignalToggle
     example_given: toBoolean(source.example_given, DEFAULT_PROCTORING_SIGNALS.example_given),
     strong_under_pressure: toBoolean(source.strong_under_pressure, DEFAULT_PROCTORING_SIGNALS.strong_under_pressure),
     follow_up_collapse: toBoolean(source.follow_up_collapse, DEFAULT_PROCTORING_SIGNALS.follow_up_collapse),
-    contradiction: toBoolean(source.contradiction, DEFAULT_PROCTORING_SIGNALS.contradiction),
-    contradiction_resolved: toBoolean(source.contradiction_resolved, DEFAULT_PROCTORING_SIGNALS.contradiction_resolved),
     duplicate_ip: toBoolean(source.duplicate_ip, DEFAULT_PROCTORING_SIGNALS.duplicate_ip),
     depth_decay: toBoolean(source.depth_decay, DEFAULT_PROCTORING_SIGNALS.depth_decay),
     complexity_latency_mismatch: toBoolean(source.complexity_latency_mismatch, DEFAULT_PROCTORING_SIGNALS.complexity_latency_mismatch),

@@ -37,7 +37,7 @@ def _base_payload(**overrides) -> dict:
         "score_history": [5.0, 5.5],
         "turns_since_decay": 5,
         "response_latency_sec": 8.0,
-        "signal_toggles": {"contradiction": False, "ownership_ambiguity": True},
+        "signal_toggles": {"ownership_ambiguity": True},
         "org_id": "org-test",
         "llm_model": "gpt-4o",
         "active_topic": "Lead Qualification System",
@@ -48,8 +48,6 @@ def _base_payload(**overrides) -> dict:
         "skill_topics": ["python", "n8n", "powerbi"],
         "job_title": "GTM Engineer",
         "remaining_seconds": 480.0,
-        "claim_index": {},
-        "contradiction_state": {},
         "trust_state": {},
         "current_interview_mode": "normal",
         "no_new_question_cutoff_seconds": 45,
@@ -71,7 +69,7 @@ class TestEvaluationPayload:
     def test_defaults_applied(self):
         p = EvaluationPayload(**_base_payload())
         assert p.candidate_name == "?"
-        assert p.band == "?"
+        assert p.band == "mid"
         assert p.time_limit_mins == 20
         assert p.current_interview_mode == "normal"
 
@@ -137,7 +135,7 @@ class TestTopicStateAndSaturation:
         ts = TopicState("Lead Qualification System", "CRITICAL")
         assert ts.topic_name == "Lead Qualification System"
         assert ts.importance == "CRITICAL"
-        assert ts.saturation_threshold == 8.0
+        assert ts.saturation_threshold == 7.0
         assert ts.saturation_score == 0.0
         assert ts.follow_up_turns == 0
         assert ts.is_saturated is False
@@ -145,7 +143,7 @@ class TestTopicStateAndSaturation:
 
     def test_add_response_contribution(self):
         ts = TopicState("Test Topic", "MEDIUM")
-        assert ts.saturation_threshold == 5.0
+        assert ts.saturation_threshold == 4.0
         # Add contribution
         ts.add_response_contribution(2.5, 0.0, turn=4)
         assert ts.saturation_score == 3.5
@@ -159,15 +157,6 @@ class TestTopicStateAndSaturation:
         assert ts.follow_up_turns == 2
         assert ts.is_saturated is True
         assert ts.updated_turn == 5
-
-    def test_advance_probe_rotation(self):
-        ts = TopicState("Test Topic", "MEDIUM")
-        assert ts.probe_rotation_index == 0
-        ts.advance_probe_rotation(signal_fired=False)
-        assert ts.probe_rotation_index == 1
-        # Signal fired should override and NOT advance
-        ts.advance_probe_rotation(signal_fired=True)
-        assert ts.probe_rotation_index == 1
 
     def test_topic_importance_classifier(self):
         assert TopicImportanceClassifier.classify("resume", is_anchor=False) == "HIGH"
@@ -185,11 +174,11 @@ class TestTopicStateAndSaturation:
     def test_signal_penalty_calculator(self):
         events = [
             {"signal_name": "example_evasion"},
-            {"signal_name": "contradiction"},
+            {"signal_name": "ownership_ambiguity"},
             {"signal_name": "unknown_signal"},
         ]
         penalty = SignalPenaltyCalculator.calculate_penalties(events)
-        assert penalty == -4.5  # -2.0 + -2.5
+        assert penalty == -3.0
 
 
 # ─────────────────────────────────────────────────────────────
@@ -201,11 +190,6 @@ class TestDirectiveCompiler:
         d = DirectiveCompiler.move_on("Ask about Sensex project")
         assert "DECISION: MOVE_ON" in d
         assert "Ask about Sensex project" in d
-
-    def test_verify_contradiction(self):
-        d = DirectiveCompiler.verify_contradiction(["contradiction"])
-        assert "DECISION: VERIFY (CLARIFICATION)" in d
-        assert "contradiction" in d
 
     def test_verify_ownership(self):
         d = DirectiveCompiler.verify_ownership(["ownership_ambiguity"])
@@ -247,14 +231,8 @@ def mock_client():
 async def _run_pipeline(payload: dict, mock_td_tuple):
     client = MagicMock()
     with patch("interview.eval_pipeline.run_turn_evaluation", new_callable=AsyncMock) as mock_eval, \
-         patch("interview.eval_pipeline.extract_claims", new_callable=AsyncMock) as mock_claims, \
-         patch("interview.eval_pipeline.apply_turn_decision", side_effect=lambda ts, *a, **kw: ts), \
-         patch("interview.eval_pipeline.advance_contradiction_state",
-               return_value=({}, None)), \
-         patch("interview.eval_pipeline.summarize_contradiction_state",
-               return_value={"active": False, "evidence": {}, "status": "", "contradictionType": ""}):
+         patch("interview.eval_pipeline.apply_turn_decision", side_effect=lambda ts, *a, **kw: ts):
         mock_eval.return_value = mock_td_tuple
-        mock_claims.return_value = []
         result = await run_eval_and_build_directive(payload, client)
     return result
 
@@ -266,11 +244,10 @@ class TestPipelineEndToEnd:
 
         required_keys = [
             "app_id", "turn", "directive", "action", "td", "quality_record",
-            "signal_events", "contradiction_state_event", "depth_signal",
+            "signal_events", "depth_signal",
             "freeze_followup_increment", "new_active_topic",
             "new_covered_topic_keys", "new_active_topic_state",
-            "new_trust_state", "new_contradiction_state", "new_claim_index",
-            "new_current_interview_mode", "risk_integrity_delta",
+            "new_trust_state", "new_current_interview_mode", "risk_integrity_delta",
             "risk_depth_delta", "discussed_log_entry",
         ]
         for key in required_keys:

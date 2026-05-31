@@ -51,15 +51,16 @@ function DonutChart({
         return () => cancelAnimationFrame(t);
     }, []);
 
-    let offsetPct = 0;
-    const arcs = segments.map((seg) => {
+    const arcs = segments.map((seg, index) => {
+        const offsetPct = segments
+            .slice(0, index)
+            .reduce((sum, segment) => sum + (total > 0 ? segment.value / total : 0), 0);
         const pct = total > 0 ? seg.value / total : 0;
         const dashLen = pct * circumference;
         // strokeDasharray: [filled portion, gap]
         // strokeDashoffset: rotates start position
         const dashArray = `${dashLen} ${circumference - dashLen}`;
         const dashOffset = -offsetPct * circumference;
-        offsetPct += pct;
         return { ...seg, dashArray, dashOffset };
     });
 

@@ -48,7 +48,6 @@ export function Sidebar() {
     const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
     const [isLoggingOut, setIsLoggingOut] = useState(false);
     const { logout, user } = useAuth();
-    const [mounted, setMounted] = useState(false);
     const isSuperAdmin = user?.role === "SUPER_ADMIN";
 
     // ⚡ Read from shared context — no fetch needed (was 2 API calls per page load)
@@ -61,8 +60,6 @@ export function Sidebar() {
 
     const modalRef = useRef<HTMLDivElement>(null);
     const isSuspended = isOrgRestrictedStatus(orgStatus);
-
-    useEffect(() => { setMounted(true); }, []);
 
     useEffect(() => {
         if (!showLogoutConfirm) return;
@@ -277,16 +274,16 @@ export function Sidebar() {
                                         menuOpen ? "bg-[#F97316] text-white" : "bg-gray-100 text-gray-500 group-hover:bg-[#F97316] group-hover:text-white"
                                     )}
                                 >
-                                    {mounted ? (user?.name?.[0] || user?.email?.[0] || "A") : "A"}
+                                    {user?.name?.[0] || user?.email?.[0] || "A"}
                                 </div>
                                 <div className="absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full border-2 border-white bg-green-500" />
                             </div>
                             <div className="flex-1 text-left min-w-0">
                                 <p className={cn("text-[17px] font-bold truncate tracking-tight text-gray-900")}>
-                                    {mounted ? (user?.name || "Recruiter") : "Recruiter"}
+                                    {user?.name || "Recruiter"}
                                 </p>
                                 <p className={cn("text-[10px] font-medium truncate text-gray-400")}>
-                                    {mounted ? user?.email : ""}
+                                    {user?.email}
                                 </p>
                             </div>
                             <ChevronDown className={cn(

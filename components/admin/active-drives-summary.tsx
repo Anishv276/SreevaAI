@@ -40,30 +40,36 @@ export function ActiveDrivesSummary({ dateRange }: ActiveDrivesSummaryProps) {
         const controller = new AbortController();
         const { signal } = controller;
 
-        setLoading(true);
-        setError(null);
+        const loadDrives = async () => {
+            setLoading(true);
+            setError(null);
 
-        const params = new URLSearchParams();
-        if (dateRange.type === "custom") {
-            params.set("range", "custom");
-            params.set("from", dateRange.from);
-            params.set("to", dateRange.to);
-        } else {
-            params.set("range", dateRange.type);
-        }
-        params.set("limit", "3");
+            const params = new URLSearchParams();
+            if (dateRange.type === "custom") {
+                params.set("range", "custom");
+                params.set("from", dateRange.from);
+                params.set("to", dateRange.to);
+            } else {
+                params.set("range", dateRange.type);
+            }
+            params.set("limit", "3");
 
-        fetch(`/api/admin/drives-summary?${params.toString()}`, { signal })
-            .then(async (res) => {
-                if (!signal.aborted) {
-                    if (res.ok) setDrives((await res.json()).drives ?? []);
-                    else setError("Failed to load active jobs.");
+            try {
+                const res = await fetch(`/api/admin/drives-summary?${params.toString()}`, { signal });
+                if (signal.aborted) return;
+                if (res.ok) {
+                    setDrives((await res.json()).drives ?? []);
+                } else {
+                    setError("Failed to load active jobs.");
                 }
-            })
-            .catch((err) => {
+            } catch (err: any) {
                 if (!signal.aborted && err.name !== "AbortError") setError("Network error.");
-            })
-            .finally(() => { if (!signal.aborted) setLoading(false); });
+            } finally {
+                if (!signal.aborted) setLoading(false);
+            }
+        };
+
+        void loadDrives();
 
         return () => controller.abort();
     }, [dateRange, retryKey]);

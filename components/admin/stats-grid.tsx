@@ -45,20 +45,26 @@ export function StatsGrid({ dateRange }: StatsGridProps) {
         const controller = new AbortController();
         const { signal } = controller;
 
-        setLoading(true);
-        setError(null);
+        const loadStats = async () => {
+            setLoading(true);
+            setError(null);
 
-        fetch(buildUrl(dateRange), { signal })
-            .then(async (res) => {
-                if (!signal.aborted) {
-                    if (res.ok) setStats(await res.json());
-                    else setError("Failed to load stats.");
+            try {
+                const res = await fetch(buildUrl(dateRange), { signal });
+                if (signal.aborted) return;
+                if (res.ok) {
+                    setStats(await res.json());
+                } else {
+                    setError("Failed to load stats.");
                 }
-            })
-            .catch((err) => {
+            } catch (err: any) {
                 if (!signal.aborted && err.name !== "AbortError") setError("Network error.");
-            })
-            .finally(() => { if (!signal.aborted) setLoading(false); });
+            } finally {
+                if (!signal.aborted) setLoading(false);
+            }
+        };
+
+        void loadStats();
 
         return () => controller.abort();
     }, [dateRange, retryKey]);

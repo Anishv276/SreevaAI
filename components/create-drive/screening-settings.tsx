@@ -19,6 +19,42 @@ interface ScreeningSettingsProps {
 
 type SkillItem = { name: string; weight?: number };
 type CustomCheckItem = { text: string; required?: boolean };
+type ScreeningSection = "skills" | "custom";
+
+function SectionHeader({
+    title,
+    section,
+    expanded,
+    onToggle,
+}: {
+    title: string;
+    section: ScreeningSection;
+    expanded: boolean;
+    onToggle: (section: ScreeningSection, expanded: boolean) => void;
+}) {
+    return (
+        <button
+            type="button"
+            onClick={() => onToggle(section, expanded)}
+            className="flex w-full items-center justify-between rounded-3xl border border-slate-200/80 bg-gradient-to-r from-slate-50 via-white to-slate-50 px-4 py-4 text-left transition-all hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-sm"
+        >
+            <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-sm">
+                    {section === "skills" ? <Star className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
+                </div>
+                <div>
+                    <span className="text-sm font-semibold text-slate-900">{title}</span>
+                    <p className="text-xs text-slate-500">
+                        {section === "skills"
+                            ? "Mark an item as must-have when it is essential."
+                            : "Add client-specific screening checks for scoring."}
+                    </p>
+                </div>
+            </div>
+            <ChevronDown className={cn("h-4 w-4 text-slate-400 transition-transform", expanded && "rotate-180")} />
+        </button>
+    );
+}
 
 export function ScreeningSettings({ config, setConfig }: ScreeningSettingsProps) {
     const threshold = config?.threshold ?? 60;
@@ -133,28 +169,9 @@ export function ScreeningSettings({ config, setConfig }: ScreeningSettingsProps)
         });
     };
 
-    const SectionHeader = ({ title, expanded }: { title: string; expanded: boolean }) => (
-        <button
-            type="button"
-            onClick={() => setExpandedSection(expanded ? null : (title.toLowerCase() as "skills" | "custom"))}
-            className="flex w-full items-center justify-between rounded-3xl border border-slate-200/80 bg-gradient-to-r from-slate-50 via-white to-slate-50 px-4 py-4 text-left transition-all hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-sm"
-        >
-            <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-sm">
-                    {title === "Skills" ? <Star className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
-                </div>
-                <div>
-                    <span className="text-sm font-semibold text-slate-900">{title}</span>
-                    <p className="text-xs text-slate-500">
-                        {title === "Skills"
-                            ? "Mark an item as must-have when it is essential."
-                            : "Add client-specific screening checks for scoring."}
-                    </p>
-                </div>
-            </div>
-            <ChevronDown className={cn("h-4 w-4 text-slate-400 transition-transform", expanded && "rotate-180")} />
-        </button>
-    );
+    const toggleSection = (section: ScreeningSection, expanded: boolean) => {
+        setExpandedSection(expanded ? null : section);
+    };
 
     return (
         <div className="mx-auto max-w-5xl space-y-8">
@@ -215,7 +232,7 @@ export function ScreeningSettings({ config, setConfig }: ScreeningSettingsProps)
                 </div>
 
                 <div className="space-y-3 rounded-3xl border border-slate-200/80 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.06)]">
-                    <SectionHeader title="Skills" expanded={expandedSection === "skills"} />
+                    <SectionHeader title="Skills" section="skills" expanded={expandedSection === "skills"} onToggle={toggleSection} />
                     {expandedSection === "skills" && (
                         <div className="space-y-5 border-t border-slate-200/80 px-4 pb-4 pt-4">
                             <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-3 text-xs leading-relaxed text-slate-500">
@@ -309,7 +326,7 @@ export function ScreeningSettings({ config, setConfig }: ScreeningSettingsProps)
                 </div>
 
                 <div className="space-y-3 rounded-3xl border border-slate-200/80 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.06)]">
-                    <SectionHeader title="Custom" expanded={expandedSection === "custom"} />
+                    <SectionHeader title="Custom" section="custom" expanded={expandedSection === "custom"} onToggle={toggleSection} />
                     {expandedSection === "custom" && (
                         <div className="space-y-5 border-t border-slate-200/80 px-4 pb-4 pt-4">
                             <div className="space-y-2">

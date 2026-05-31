@@ -385,18 +385,6 @@ function buildIntegritySignals(
   return signals;
 }
 
-// Extract the core observation from an AI bullet formatted as "[Signal] a" [Evidence] a" [Risk level]"
-// Returns just the first meaningful clause, cleaned of em dashes
-function extractBulletCore(raw: string): string {
-  if (!raw) return "";
-  // Remove risk level suffix patterns like "a" Medium risk", "a" High risk", "a" Low risk"
-  const withoutRisk = raw.replace(/[\-\u2014\u2013]\s*(Low|Medium|High)\s+risk[^\n]*/gi, "").trim();
-  // Take just the first em-dash-separated segment (the actual observation)
-  const firstClause = withoutRisk.split(/\s*[\-\u2014\u2013]\s*/)[0].trim();
-  // Clean remaining dashes and normalize
-  return cleanAiText(firstClause || raw);
-}
-
 function buildTopStrengthsRisks(args: {
   technicalPct: number;
   techTag: "GOOD" | "AVERAGE" | "WEAK";
@@ -436,7 +424,7 @@ function buildTopStrengthsRisks(args: {
     if (topSkill && topSkill.stars >= 4 && topStrengths.length < 3)
       topStrengths.push(`Strong ${topSkill.name} signal - the strongest demonstrated skill in the session, backed by specific examples and confident articulation - this area can be relied upon without further validation`);
     if (topStrengths.length < 2)
-      topStrengths.push("Factual consistency across the session - no contradictions detected between resume claims and interview answers - suggests honest, well-grounded self-presentation that can be trusted at face value");
+      topStrengths.push("Evidence consistency across the session - answers stayed grounded in concrete examples and role-relevant details - suggests a dependable, well-supported self-presentation");
   }
 
   if (topRisks.length < 3) {
@@ -617,8 +605,6 @@ export function buildSreevaAIInterviewViewModel(i: {
     "complexity_latency_mismatch",
     "ownership_clarified",
     "example_given",
-    "contradiction",
-    "contradiction_resolved",
     "depth_decay",
     "strong_under_pressure",
   ]);
@@ -961,8 +947,6 @@ export function buildSreevaAIInterviewViewModel(i: {
 a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a- */
 
 const SIGNAL_META: Record<string, { label: string; tone: "rose" | "amber" | "emerald" | "sky" | "slate" }> = {
-  contradiction:           { label: "Contradiction",         tone: "rose" },
-  contradiction_resolved:  { label: "Contradiction resolved", tone: "emerald" },
   ownership_ambiguity:     { label: "Ownership ambiguity",   tone: "amber" },
   depth_decay:             { label: "Depth decay",           tone: "amber" },
   complexity_latency_mismatch: { label: "Slow on simple Q", tone: "amber" },
@@ -981,7 +965,6 @@ function toneForSignal(signalName: string): "rose" | "amber" | "emerald" | "sky"
   const meta = SIGNAL_META[normalized];
   if (meta) return meta.tone;
   if (
-    normalized.includes("contradiction") ||
     normalized.includes("mismatch") ||
     normalized.includes("evasion") ||
     normalized.includes("collapse") ||
@@ -1415,10 +1398,9 @@ const SIGNAL_LABEL_MAP: Record<string, string> = {
   resume_claim_mismatch: "Resume Claim Mismatch", follow_up_collapse: "Follow-up Collapse",
   latency_mismatch: "Response Timing Anomaly", complexity_latency_mismatch: "Complexity-Timing Mismatch",
   ownership_clarified: "Ownership Clarified", example_given: "Concrete Example Provided",
-  contradiction: "Factual Contradiction", contradiction_resolved: "Contradiction Resolved",
   depth_decay: "Depth Decay", strong_under_pressure: "Strong Under Pressure",
 };
-const RECOVERY_SIGNALS = new Set(["ownership_clarified", "example_given", "contradiction_resolved", "strong_under_pressure"]);
+const RECOVERY_SIGNALS = new Set(["ownership_clarified", "example_given", "strong_under_pressure"]);
 
 function HiringStamp({ recommendation, color }: { recommendation: string; color: "green" | "amber" | "red" | "blue" }) {
   const cfg = {
@@ -1706,55 +1688,6 @@ function BehavioralSignalsPanel({ analysis }: { analysis: Record<string, any> })
 }
 
 
-const EVENT_TYPE_LABELS: Record<string, { label: string; what: string; clarified?: string }> = {
-  tab_switch:      { label: "Tab / App switch",    what: "Candidate switched away from the interview window. This could indicate looking up answers or distraction." },
-  connection_lost: { label: "Connection dropped",  what: "Candidate's session disconnected. May be a genuine network issue or a deliberate reset." },
-  face_absence:    { label: "Face not visible",    what: "Camera detected no face in the frame. The candidate may have moved away, turned off camera, or left the desk." },
-  multiple_faces:  { label: "Multiple faces",      what: "More than one person visible in the camera frame. Possible coaching or external assistance." },
-  camera_disabled: { label: "Camera off",          what: "Candidate disabled their camera mid-session, removing visual proctoring coverage." },
-  identity_mismatch: { label: "Identity mismatch", what: "Face did not consistently match the registered candidate identity. Verify with photo ID." },
-};
-
-function ProctoringEventsPanel({ events }: { events: { time: string; eventType: string; reason: string; severity: string; elapsedSeconds: number }[] }) {
-  if (events.length === 0) {
-    return (
-      <div className="flex items-center gap-2 px-4 py-5 text-[12px] text-emerald-700">
-        <span className="h-2 w-2 rounded-full bg-emerald-500" />
-        No proctoring events recorded during this session.
-      </div>
-    );
-  }
-
-  const sevCls = (sev: string) =>
-    sev === "high" ? "bg-rose-50 text-rose-700 border-rose-200" :
-    sev === "medium" ? "bg-amber-50 text-amber-700 border-amber-200" :
-    "bg-slate-50 text-slate-600 border-slate-200";
-
-  return (
-    <div className="divide-y divide-[#F2F4F7]">
-      {events.map((ev, idx) => {
-        const meta = EVENT_TYPE_LABELS[ev.eventType];
-        const label = meta?.label || ev.eventType.replace(/_/g, " ");
-        const what = meta?.what || ev.reason;
-        return (
-          <div key={idx} className="px-4 py-3 flex gap-3 items-start">
-            <span className="shrink-0 w-[42px] text-[10px] font-bold tabular-nums text-[#6B7079] pt-0.5">{ev.time}</span>
-            <div className="flex-1 min-w-0">
-              <div className="flex flex-wrap items-center gap-2 mb-1">
-                <span className={`rounded border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${sevCls(ev.severity)}`}>{label}</span>
-              </div>
-              <p className="text-[11px] text-[#5C6370] leading-relaxed">{what}</p>
-              {ev.reason && ev.reason !== what && (
-                <p className="text-[11px] text-[#9AA0AC] leading-relaxed mt-0.5 italic">{ev.reason}</p>
-              )}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 /* a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-
    CHART COMPONENTS
 a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a- */
@@ -1934,40 +1867,7 @@ export function CommunicationScoreCardDonutLive({ comm }: { comm: SreevaAIInterv
         <div className="mt-5 grid grid-cols-2 gap-x-4 gap-y-3 px-2">
           {segments.map((m) => {
             const isActive = activeMetric === m.key;
-            const WHY: Record<string, { what: string; scored: string }> = {
-              clarity: {
-                what: "Did the candidate's answers have a logical structure - opening point, supporting reasoning, conclusion? Were ideas immediately understandable or did they require re-reading?",
-                scored: m.value >= 75
-                  ? `${m.value}/100 - Candidate structured answers with a clear point first, supported by reasoning. Ideas were easy to follow on first listen.`
-                  : m.value >= 50
-                  ? `${m.value}/100 - Answers were generally understandable but occasionally drifted before landing on the key point. Some re-listening needed.`
-                  : `${m.value}/100 - Answers frequently lacked structure. Key points were buried or unclear, requiring significant effort to follow.`,
-              },
-              fluency: {
-                what: "How smooth was the delivery? Counted against filler words, long unnatural pauses, repeated restarts, and incomplete sentences.",
-                scored: m.value >= 75
-                  ? `${m.value}/100 - Delivery was smooth with minimal filler. Thoughts connected naturally with consistent pacing throughout.`
-                  : m.value >= 50
-                  ? `${m.value}/100 - Noticeable filler words or pauses in several answers, but speech remained followable. Moderate disruption to delivery.`
-                  : `${m.value}/100 - Frequent filler words, restarts, or long pauses significantly disrupted speech flow. Listener effort was high.`,
-              },
-              grammar: {
-                what: "Sentence-level correctness - complete sentences, correct subject-verb agreement, and no structural fragments. Assessed from transcribed speech patterns.",
-                scored: m.value >= 75
-                  ? `${m.value}/100 - Consistently used complete, well-formed sentences. Very few grammatical fragments or structural errors detected in the transcript.`
-                  : m.value >= 50
-                  ? `${m.value}/100 - Mostly correct grammar with some sentence fragments or tense inconsistencies, typical of spoken language under pressure.`
-                  : `${m.value}/100 - Frequent grammatical errors or fragmented sentences throughout. May affect professional credibility in client-facing or written communication roles.`,
-              },
-              confidence: {
-                what: "Assertiveness of delivery - did the candidate state positions clearly, or hedge with 'I think maybe', 'not sure', 'kind of'? Did they maintain tone under follow-up questions?",
-                scored: m.value >= 75
-                  ? `${m.value}/100 - Candidate stated answers decisively. Minimal hedging language. Tone remained steady even when challenged or probed.`
-                  : m.value >= 50
-                  ? `${m.value}/100 - Generally confident with occasional hedging. Some answers became tentative under follow-up but recovered.`
-                  : `${m.value}/100 - Frequent use of hedging language ('I think', 'maybe', 'not entirely sure'). Tone dropped under follow-up questions, signalling low assertiveness.`,
-              },
-            };            const scoreColor = m.value >= 75 ? "text-emerald-600" : m.value >= 55 ? "text-amber-600" : "text-rose-600";
+            const scoreColor = m.value >= 75 ? "text-emerald-600" : m.value >= 55 ? "text-amber-600" : "text-rose-600";
             return (
               <div key={m.key} className="relative">
                 <button
@@ -1998,9 +1898,8 @@ export function CommunicationScoreCardDonutLive({ comm }: { comm: SreevaAIInterv
   );
 }
 
-export function TechnicalScoreCard({ pct, questions, tag: _tag, scores }: {
+export function TechnicalScoreCard({ pct, questions, tag: _tag }: {
   pct: number; questions: number; tag: string; questionsLabel?: string;
-  scores?: { technical: number; communication: number; behavioral: number; cognitive: number; problem_solving: number };
 }) {
   const p = Math.max(0, Math.min(100, pct));
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
@@ -2730,7 +2629,7 @@ export function InterviewReportSreevaAI({
                 : "bg-rose-100 text-rose-800"
               )}>{model.technical.tag}</span>
             </div>
-            <TechnicalScoreCard pct={model.technical.percent} questions={model.technical.questions} tag={model.technical.tag} questionsLabel={`${model.technical.questions} Questions`} scores={model.technical.scores} />
+            <TechnicalScoreCard pct={model.technical.percent} questions={model.technical.questions} tag={model.technical.tag} questionsLabel={`${model.technical.questions} Questions`} />
           </div>
 
           <div className={cn(card, "flex flex-col")}>
