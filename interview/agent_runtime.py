@@ -46,7 +46,6 @@ from interview.agent_persistence import (
     mark_interview_started,
     persist_answer_scores,
     persist_interview_billing_snapshot,
-    persist_org_manual_billing_usage,
     persist_org_usage_metrics,
     persist_skill_ratings,
     persist_transcript,
@@ -1020,9 +1019,6 @@ async def entrypoint(ctx: JobContext):
     # Running log of topics already covered  injected into every directive so the AI
     # never re-explores something already discussed.
     _discussed_log: list[str] = []
-    # Cross-turn consistency engine state
-    _ai_signal_flush_counter: int = 0       # counts new AI signal events since last checkpoint
-    _ai_signal_flushed_count: int = 0       # total events already flushed (slice pointer)
     # Lock protecting all shared session state that is written by background tasks.
     _session_state_lock = asyncio.Lock()
 
@@ -1101,7 +1097,7 @@ async def entrypoint(ctx: JobContext):
         except Exception as send_err:
             logger.warning("[FLOW] Failed to publish launch_prereqs_ready: %s", send_err)
 
-    def _build_proctoring_data(exit_reason: str, *, full: bool = True) -> dict:
+    def _build_proctoring_data(exit_reason: str) -> dict:
         """Single builder for proctoring_data dict  eliminates duplicate construction."""
         data: dict = {
             "role_category": session_context.candidate_band,
@@ -1388,7 +1384,6 @@ async def entrypoint(ctx: JobContext):
                 logger.info("[LIVE_N] recovered late eval result turn=%d before turn=%d", missed_turn, before_turn)
 
     async def _process_user_conversation_item(
-        event,
         content: str,
         role: str,
         turn_snapshot: int,
@@ -1396,7 +1391,6 @@ async def entrypoint(ctx: JobContext):
         nonlocal suspicion_score, proctoring_events, _last_interviewer_question, \
             current_interview_mode, answer_scores, \
             _trust_state, greeting_delivered_at, \
-            _ai_signal_flush_counter, _ai_signal_flushed_count, \
             warmup_complete, _last_depth_decay_turn, \
             _active_topic, _covered_topic_keys, _topic_states, \
             integrity_risk, depth_risk, \
@@ -1799,7 +1793,7 @@ async def entrypoint(ctx: JobContext):
                 # Wait for Phase 1 routing result for THIS turn
                 _routing_key   = EvalKeys.routing_result(app_id, turn_snapshot)
                 _routing_ready = EvalKeys.routing_ready(app_id, turn_snapshot)
-                _SAFETY_TIMEOUT = 6.0  # reduced: worker completes in 2-3s; 6s gives headroom
+                _SAFETY_TIMEOUT = 10.0  # worker completes in 2-5s; 10s gives real headroom for slow LLMs
                 _t_start       = asyncio.get_running_loop().time()
 
                 _routing_raw: Optional[bytes] = None
@@ -2095,7 +2089,7 @@ async def entrypoint(ctx: JobContext):
                 is_complete = _is_sentence_complete(consolidated_so_far)
 
                 # Helper to trigger processing
-                async def _trigger_processing(_turn=turn_count, _event=event, _reason=""):
+                async def _trigger_processing(_turn=turn_count, _reason=""):
                     nonlocal _processed_user_turns
                     # Cancel any pending timeout for this turn
                     _timer_task = _stt_completion_timers.get(_turn)
@@ -2139,7 +2133,7 @@ async def entrypoint(ctx: JobContext):
                             f"complete utterance ({_reason}): '{consolidated_content[:80]}...'"
                         )
                         # Process with consolidated, complete content (not fragments)
-                        await _process_user_conversation_item(_event, consolidated_content, "user", _turn)
+                        await _process_user_conversation_item(consolidated_content, "user", _turn)
                     else:
                         logger.debug(f"[STT_BUFFER] turn={_turn} - no content after consolidation")
 
@@ -2159,7 +2153,7 @@ async def entrypoint(ctx: JobContext):
                         else _STT_INCOMPLETE_DEBOUNCE_SECONDS  # 4.0s for incomplete (stragglers)
                     )
 
-                async def _timeout_handler(_turn=turn_count, _event=event, _delay=debounce_seconds):
+                async def _timeout_handler(_turn=turn_count, _delay=debounce_seconds):
                     nonlocal _user_turn_chain
                     try:
                         await asyncio.sleep(_delay)
@@ -2169,7 +2163,7 @@ async def entrypoint(ctx: JobContext):
 
                         # Eval pipeline runs in background (may wait for prev turn via prev_chain).
                         _eval_chain = spawn_background_task(
-                            _trigger_processing(_turn=_turn, _event=_event, _reason=_reason),
+                            _trigger_processing(_turn=_turn, _reason=_reason),
                             f"user_turn_{_turn}",
                         )
                         agent._pending_eval_task = _eval_chain
@@ -2187,7 +2181,7 @@ async def entrypoint(ctx: JobContext):
                 _word_count = len([w for w in consolidated_so_far.split() if w])
                 if _stt_completion_timers.get(turn_count):
                     _stt_completion_timers[turn_count].cancel()
-                _stt_completion_timers[turn_count] = asyncio.create_task(_timeout_handler(turn_count, event))
+                _stt_completion_timers[turn_count] = asyncio.create_task(_timeout_handler(turn_count))
                 logger.debug(
                     "[STT_BUFFER] turn=%d - debounce %.2fs (is_complete=%s, words=%d)",
                     turn_count,
@@ -2285,7 +2279,7 @@ async def entrypoint(ctx: JobContext):
         )
         # Phase 5: Mark interview as NO_SHOW in database
         try:
-            proctoring_data = _build_proctoring_data("no_show_timeout", full=False)
+            proctoring_data = _build_proctoring_data("no_show_timeout")
             await persist_transcript(
                 app_id,
                 [],
