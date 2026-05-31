@@ -71,6 +71,7 @@ export async function POST(req: Request) {
       const expiresAtMs = authCheck.expiresAt ? authCheck.expiresAt.getTime() : null;
       const startedAtMs = authCheck.startedAt ? authCheck.startedAt.getTime() : null;
       const deadlineExpired = expiresAtMs !== null && now > expiresAtMs;
+      // joinWindow only blocks active sessions — not already-completed/no-show ones
       const joinWindowExpired = startedAtMs !== null && (now - startedAtMs) >= JOIN_WINDOW_MS;
       const isExpiredByTime = deadlineExpired || joinWindowExpired;
 

@@ -58,21 +58,33 @@ export async function POST(
       });
     }
 
+    const now = Date.now();
     const expiresAtMs = interview.expiresAt ? interview.expiresAt.getTime() : null;
-    const isExpiredByTime = expiresAtMs !== null && Date.now() > expiresAtMs;
+    const isExpiredByTime = expiresAtMs !== null && now > expiresAtMs;
+    const interviewStatus = String(interview.linkStatus || "").toUpperCase();
 
-    if (isExpiredByTime && interview.linkStatus !== "EXPIRED") {
+    // Reset EXPIRED status if the deadline hasn't passed — handles re-attempts after
+    // a previous session completed or timed out with startedAt set.
+    if (interview.linkStatus === "EXPIRED" && !isExpiredByTime) {
       await prismaAny.interview.update({
         where: { applicationId },
-        data: { linkStatus: "EXPIRED" },
+        data: { linkStatus: "ACTIVE", startedAt: null },
       }).catch(() => {});
-    }
+      // Allow access — fall through
+    } else {
+      if (isExpiredByTime && interview.linkStatus !== "EXPIRED") {
+        await prismaAny.interview.update({
+          where: { applicationId },
+          data: { linkStatus: "EXPIRED" },
+        }).catch(() => {});
+      }
 
-    if (interview.linkStatus === "EXPIRED" || isExpiredByTime) {
-      return NextResponse.json({
-        error: "Access Denied: Interview link has expired. Please contact support.",
-        code: "LINK_EXPIRED",
-      }, { status: 403 });
+      if (interview.linkStatus === "EXPIRED" || isExpiredByTime) {
+        return NextResponse.json({
+          error: "Access Denied: Interview link has expired. Please contact support.",
+          code: "LINK_EXPIRED",
+        }, { status: 403 });
+      }
     }
 
     await interviewStartQueue.add(

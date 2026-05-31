@@ -48,22 +48,40 @@ export async function POST(
             const now = Date.now();
             const expiresAtMs = interview.expiresAt ? interview.expiresAt.getTime() : null;
             const startedAtMs = interview.startedAt ? interview.startedAt.getTime() : null;
+            const interviewStatus = String(interview.status || "").toUpperCase();
+            const isAlreadyDone = interviewStatus === "COMPLETED" || interviewStatus === "NO_SHOW";
+
             const deadlineExpired = expiresAtMs !== null && now > expiresAtMs;
-            const joinWindowExpired = startedAtMs !== null && (now - startedAtMs) >= JOIN_WINDOW_MS;
+            // joinWindow only blocks if interview is CURRENTLY in progress — not if it was
+            // completed/no-show days ago. An old startedAt on a finished interview must not
+            // permanently lock the candidate out of re-attempting after an admin reset.
+            const joinWindowExpired = !isAlreadyDone
+                && startedAtMs !== null
+                && (now - startedAtMs) >= JOIN_WINDOW_MS;
             const isExpiredByTime = deadlineExpired || joinWindowExpired;
 
-            if (isExpiredByTime && interview.linkStatus !== "EXPIRED") {
+            // Reset EXPIRED linkStatus if the interview was already done (completed/no-show)
+            // and the deadline hasn't actually passed — this lets admins re-send links.
+            if (interview.linkStatus === "EXPIRED" && isAlreadyDone && !deadlineExpired) {
                 await prismaAny.interview.update({
                     where: { applicationId },
-                    data: { linkStatus: "EXPIRED" },
+                    data: { linkStatus: "ACTIVE", startedAt: null },
                 }).catch(() => { });
-            }
+                // Allow access — fall through to token generation
+            } else {
+                if (isExpiredByTime && interview.linkStatus !== "EXPIRED") {
+                    await prismaAny.interview.update({
+                        where: { applicationId },
+                        data: { linkStatus: "EXPIRED" },
+                    }).catch(() => { });
+                }
 
-            if (interview.linkStatus === "EXPIRED" || isExpiredByTime) {
-                return NextResponse.json({
-                    error: "Access Denied: Interview link has expired. Please contact support.",
-                    code: "LINK_EXPIRED",
-                }, { status: 403 });
+                if (interview.linkStatus === "EXPIRED" || isExpiredByTime) {
+                    return NextResponse.json({
+                        error: "Access Denied: Interview link has expired. Please contact support.",
+                        code: "LINK_EXPIRED",
+                    }, { status: 403 });
+                }
             }
         }
 
