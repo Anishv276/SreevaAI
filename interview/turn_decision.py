@@ -4,7 +4,7 @@ Consumed by evaluate_answer_and_decide() in agent.py via turn_evaluator.py.
 
 Refactor additions (all non-breaking):
   - Pydantic models: QualityScoresModel, SignalEventModel, DecisionOutputModel,
-    TrustDeltaModel — runtime validation + dot-access alongside TypedDicts.
+    TrustDeltaModel -- runtime validation + dot-access alongside TypedDicts.
   - DetectionContext: migrated to Pydantic BaseModel (same attrs, same creation sites).
   - CollapseRule dataclass: replaces nested if/elif in FollowUpCollapseDetector.
   - QuestionComplexityScorer: OOP wrapper with class-level LRU cache.
@@ -23,7 +23,7 @@ from typing import Any, Callable, ClassVar, Optional, TypedDict
 
 from pydantic import BaseModel, Field, field_validator
 
-# LangChain — optional; graceful fallback if not installed
+# LangChain -- optional; graceful fallback if not installed
 try:
     from langchain_core.runnables import RunnableLambda, RunnableParallel
     _LANGCHAIN_AVAILABLE = True
@@ -32,7 +32,7 @@ except ImportError:  # pragma: no cover
 
 
 # ===========================================================================
-# Schema TypedDicts — preserved exactly for all existing callers
+# Schema TypedDicts -- preserved exactly for all existing callers
 # ===========================================================================
 
 class QualityScores(TypedDict):
@@ -100,11 +100,11 @@ class ShortUtteranceClassification(TypedDict):
 
 
 # ===========================================================================
-# Pydantic Models — dot-access + validation wrappers (alongside TypedDicts)
+# Pydantic Models -- dot-access + validation wrappers (alongside TypedDicts)
 # ===========================================================================
 
 class QualityScoresModel(BaseModel):
-    """Validated quality scores — all fields clamped 0.0–10.0."""
+    """Validated quality scores -- all fields clamped 0.0-10.0."""
     clarity: float = Field(default=5.0, ge=0.0, le=10.0)
     depth: float = Field(default=5.0, ge=0.0, le=10.0)
     specificity: float = Field(default=5.0, ge=0.0, le=10.0)
@@ -131,7 +131,7 @@ class QualityScoresModel(BaseModel):
 
 
 class SignalEventModel(BaseModel):
-    """Validated signal event — confidence clamped to [0.0, 1.0]."""
+    """Validated signal event -- confidence clamped to [0.0, 1.0]."""
     signal_name: str
     signal_layer: str
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
@@ -181,7 +181,7 @@ class TrustDeltaModel(BaseModel):
 
 
 # ===========================================================================
-# Signal detection helpers — unchanged from original
+# Signal detection helpers -- unchanged from original
 # ===========================================================================
 
 _WE_TOKENS = {"we", "our", "team", "they", "everyone"}
@@ -243,7 +243,7 @@ _SHORT_UTTERANCE_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
 
 
 # ===========================================================================
-# Builder helper — unchanged
+# Builder helper -- unchanged
 # ===========================================================================
 
 def _build_signal_event(
@@ -272,7 +272,7 @@ def _build_signal_event(
 
 
 # ===========================================================================
-# DSA: CollapseRule — replaces nested if/elif in FollowUpCollapseDetector
+# DSA: CollapseRule -- replaces nested if/elif in FollowUpCollapseDetector
 # ===========================================================================
 
 @dataclass(frozen=True)
@@ -280,7 +280,7 @@ class CollapseRule:
     """Declarative collapse classification rule.
 
     Evaluated in order; first matching rule wins (replaces the if/elif chain).
-    Frozen dataclass — rules are immutable config, never mutated at runtime.
+    Frozen dataclass -- rules are immutable config, never mutated at runtime.
     """
     label: str           # "complete" | "partial"
     max_depth: float     # current_depth must be <= this to match
@@ -307,7 +307,7 @@ class CollapseRule:
         return self.delta_normal if self.label == "complete" else self.delta_partial
 
 
-# Ordered — first match wins (mirrors original if/elif evaluation order)
+# Ordered -- first match wins (mirrors original if/elif evaluation order)
 _COLLAPSE_RULES: tuple[CollapseRule, ...] = (
     CollapseRule(label="complete", max_depth=3.0, min_drop=0.0),  # depth ≤ 3.0
     CollapseRule(label="partial",  max_depth=5.0, min_drop=2.0),  # depth ≤ 5.0 AND drop ≥ 2.0
@@ -315,7 +315,7 @@ _COLLAPSE_RULES: tuple[CollapseRule, ...] = (
 
 
 # ===========================================================================
-# DetectionContext — Pydantic BaseModel (same attrs, validated, no positional args)
+# DetectionContext -- Pydantic BaseModel (same attrs, validated, no positional args)
 # ===========================================================================
 
 class DetectionContext(BaseModel):
@@ -325,7 +325,7 @@ class DetectionContext(BaseModel):
       - depth clamped to [0, 10]
       - latency normalized (None if negative)
       - score lists coerced to list[float]
-    All creation sites already use keyword arguments — zero call-site changes.
+    All creation sites already use keyword arguments -- zero call-site changes.
     """
     answer: str
     last_question: str
@@ -358,7 +358,7 @@ class DetectionContext(BaseModel):
 
 
 # ===========================================================================
-# Abstract detector base — unchanged interface
+# Abstract detector base -- unchanged interface
 # ===========================================================================
 
 class BaseDetector(ABC):
@@ -368,7 +368,7 @@ class BaseDetector(ABC):
 
 
 # ===========================================================================
-# All detectors — logic unchanged; CollapseRule used in FollowUpCollapseDetector
+# All detectors -- logic unchanged; CollapseRule used in FollowUpCollapseDetector
 # ===========================================================================
 
 class OwnershipAmbiguityDetector(BaseDetector):
@@ -464,7 +464,7 @@ class FollowUpCollapseDetector(BaseDetector):
     """Detects sharp quality drop from first to follow-up answer.
 
     Uses the CollapseRule dispatch table instead of nested if/elif:
-    new collapse types → add a rule to _COLLAPSE_RULES, no method changes needed.
+    new collapse types -> add a rule to _COLLAPSE_RULES, no method changes needed.
     """
 
     def detect(self, ctx: DetectionContext) -> Optional[SignalEvent]:
@@ -592,14 +592,14 @@ _CLM_MIN_WORDS = 20
 
 
 # ===========================================================================
-# OOP: QuestionComplexityScorer — class-level LRU cache (max 256 entries)
+# OOP: QuestionComplexityScorer -- class-level LRU cache (max 256 entries)
 # ===========================================================================
 
 class QuestionComplexityScorer:
     """OOP wrapper with class-level LRU cache for question complexity scoring.
 
     Repeated question strings (same probe template used many turns) are scored
-    once and memoized — avoids redundant phrase-set scanning on every turn.
+    once and memoized -- avoids redundant phrase-set scanning on every turn.
     Cache evicts oldest entry when it reaches _CACHE_SIZE.
     """
 
@@ -767,16 +767,16 @@ class StrongUnderPressureDetector(BaseDetector):
 
 
 # ===========================================================================
-# OOP: SignalEvaluator — Registry + Orchestrator (extended, unchanged evaluate())
+# OOP: SignalEvaluator -- Registry + Orchestrator (extended, unchanged evaluate())
 # ===========================================================================
 
 class SignalEvaluator:
     """OOP Registry and orchestrator for all BaseDetector subclasses.
 
     Adds over original:
-      register() / unregister() — dynamic per-org detector management
-      evaluate_async()           — parallel execution via asyncio.gather
-      langchain_pipeline()       — optional RunnableParallel composable path
+      register() / unregister() -- dynamic per-org detector management
+      evaluate_async()           -- parallel execution via asyncio.gather
+      langchain_pipeline()       -- optional RunnableParallel composable path
     """
 
     _DETECTORS: ClassVar[dict[str, BaseDetector]] = {
@@ -806,7 +806,7 @@ class SignalEvaluator:
         """Remove a detector by name (no-op if not found)."""
         cls._DETECTORS.pop(name, None)
 
-    # -- Synchronous path — original, unchanged ------------------------------
+    # -- Synchronous path -- original, unchanged ------------------------------
 
     @classmethod
     def evaluate(cls, ctx: DetectionContext) -> list[SignalEvent]:
@@ -819,7 +819,7 @@ class SignalEvaluator:
                 events.append(event)
         return events
 
-    # -- Async parallel path — new -------------------------------------------
+    # -- Async parallel path -- new -------------------------------------------
 
     @classmethod
     async def evaluate_async(cls, ctx: DetectionContext) -> list[SignalEvent]:
@@ -846,7 +846,7 @@ class SignalEvaluator:
                 events.append(event)
         return events
 
-    # -- LangChain composable path — optional --------------------------------
+    # -- LangChain composable path -- optional --------------------------------
 
     @classmethod
     def langchain_pipeline(cls):
@@ -871,7 +871,7 @@ class SignalEvaluator:
 
 
 # ===========================================================================
-# Public facade endpoints — all signatures unchanged
+# Public facade endpoints -- all signatures unchanged
 # ===========================================================================
 
 def classify_short_utterance(utterance: str) -> Optional[ShortUtteranceClassification]:

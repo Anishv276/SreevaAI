@@ -56,9 +56,9 @@ async def _tts_acronym_transform(text_stream):
 
 _TTS_PHONETIC_FIXES = [
     # Remove em/en dashes that cause TTS to pause-split surrounding words
-    (re.compile(r"\s*[—–]\s*"), ", "),
+    (re.compile(r"\s*[---]\s*"), ", "),
     # Remove soft-hyphen / mid-word hyphen the LLM inserts (e.g. "respon-sibilities")
-    # Only strip hyphens that are surrounded by letters — keep valid compounds like "well-known"
+    # Only strip hyphens that are surrounded by letters -- keep valid compounds like "well-known"
     # by replacing letter-hyphen-letter with the letters joined directly.
     (re.compile(r"(?<=[a-zA-Z])-(?=[a-zA-Z])"), ""),
     # Normalize ellipsis to a pause comma so TTS doesn't spell dots
@@ -93,7 +93,12 @@ async def _single_question_transform(text_stream):
         # (e.g. "bu..ild", "thr-ough") when those words land at the start of a chunk.
         yield result
     else:
-        # Never fall back to raw text because it can leak internal directives.
+        # LLM output was entirely internal directives -- the eval directive arrived and
+        # the LLM echoed it instead of generating a question. This is a recoverable
+        # state: the directive IS already injected into chat_ctx (that's what the LLM
+        # read), so the next pipeline_reply turn will pick it up correctly.
+        # We suppress output here (don't speak garbage) and let the routing timeout
+        # path trigger a clean second LLM call with the directive already in context.
         logger.warning(
             "[SINGLE_Q] Transform yielded empty after directive sanitization; suppressing output."
         )
@@ -125,7 +130,7 @@ def _build_recent_context_block(
             i -= 1
     if not exchanges:
         return ""
-    lines = ["PRIOR EXCHANGES (for callbacks and consistency checks â€” do not read aloud):"]
+    lines = ["PRIOR EXCHANGES (for callbacks and consistency checks -- do not read aloud):"]
     for idx, ex in enumerate(exchanges, 1):
         q_text = ex["q"][:150]
         a_text = ex["a"][:250]

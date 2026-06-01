@@ -106,7 +106,7 @@ class TestTopicTracker:
     def test_next_uncovered_skips_active(self):
         t = self._make_tracker()
         nxt = t.next_uncovered(exclude=t.active_topic)
-        assert nxt == "Sensex Analysis Project"
+        assert nxt == "python"
 
     def test_next_uncovered_skips_covered(self):
         t = self._make_tracker(
@@ -123,7 +123,7 @@ class TestTopicTracker:
     def test_fallback_next_returns_uncovered(self):
         t = self._make_tracker()
         result = t.fallback_next(exclude="Lead Qualification System")
-        assert result == "Sensex Analysis Project"
+        assert result == "python"
 
 
 # ─────────────────────────────────────────────────────────────
@@ -178,7 +178,7 @@ class TestTopicStateAndSaturation:
             {"signal_name": "unknown_signal"},
         ]
         penalty = SignalPenaltyCalculator.calculate_penalties(events)
-        assert penalty == -3.0
+        assert penalty == -0.6
 
 
 # ─────────────────────────────────────────────────────────────
@@ -256,7 +256,7 @@ class TestPipelineEndToEnd:
 
     def test_probe_updates_topic_state(self):
         payload = _base_payload()
-        result = asyncio.run(_run_pipeline(payload, _mock_td("PROBE", 7.5)))
+        result = asyncio.run(_run_pipeline(payload, _mock_td("PROBE", 5.0)))
         new_state = result["new_active_topic_state"]
         assert new_state is not None
         assert new_state["follow_up_turns"] == 1

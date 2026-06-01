@@ -5,10 +5,6 @@ import asyncpg
 from typing import Optional, Any
 import re
 from dataclasses import replace
-try:
-    import redis.asyncio as redis_asyncio  # type: ignore[import-untyped]
-except Exception:  # pragma: no cover - optional dependency
-    redis_asyncio = None
 from interview.agent_utils import (
     _coerce_jsonish,
     _compact_optional,
@@ -46,11 +42,13 @@ from interview.agent_persistence import (
     mark_interview_started,
     persist_answer_scores,
     persist_interview_billing_snapshot,
+    persist_org_manual_billing_usage,
     persist_org_usage_metrics,
     persist_skill_ratings,
     persist_transcript,
     update_interview_status,
 )
+from openai import AsyncOpenAI
 from interview.agent_scoring import (
     notify_sync_engine,
 )
@@ -71,7 +69,6 @@ from interview.agent_runtime_support import (
     INTERVIEW_LLM_MODEL,
     VOICE_REGISTRY,
     FIXED_INTERVIEW_DURATION_MINUTES,
-    REDIS_URL,
     STT_MODEL,
     compose_risk_score,
     logger,
@@ -193,7 +190,7 @@ class InterviewAgent(Agent):
         # Cleared when a user turn arrives, set after directive is injected.
         # llm_node waits on this before generating the real interview question.
         self._directive_ready: asyncio.Event = asyncio.Event()
-        self._directive_ready.set()  # starts set â€” no blocking until first candidate answer
+        self._directive_ready.set()  # starts set -- no blocking until first candidate answer
 
     @staticmethod
     def _latest_system_message_with_marker(
@@ -246,33 +243,38 @@ class InterviewAgent(Agent):
             "llm_node should only be used with LLM (non-multimodal/realtime APIs) nodes"
         )
 
-        # Wait ONLY for eval directive â€” bridge is optional and non-blocking.
-        # _directive_ready is cleared on user turn arrival, set after PROBE/MOVE_ON injected.
-        # Bridge plays in background independently â€” real question starts when eval is ready,
-        # not when bridge finishes. LiveKit handles audio queuing naturally.
-        # CRITICAL: always use self.chat_ctx â€” LiveKit passes a stale .copy() snapshot.
+        # Wait for the inline eval directive before generating.
         #
-        # Wait long enough for STT_BUFFER debounce + SYNC_GATE to complete before checking
-        # the gate. Without this, llm_node fires before _directive_ready is cleared and before
-        # the SYNC_GATE can apply MOVE_ON/PROBE directive from the eval worker.
+        # Root cause fix: LiveKit fires llm_node simultaneously with on_conversation_item_added.
+        # The old clear() inside STT_BUFFER fires AFTER llm_node already passed the gate -- race.
+        # Fix: clear _directive_ready HERE at the start of llm_node for all interview turns.
+        # This guarantees eval always completes and injects its directive before LLM generates.
         #
-        # Timing breakdown (from logs):
-        #   T+0ms   â€” candidate finishes speaking, LiveKit triggers llm_node
-        #   T+0ms   â€” LLM_GATE check: _directive_ready is still SET (old PROBE) â†’ LLM fires early
-        #   T+300ms â€” STT_BUFFER debounce fires, _directive_ready.clear()
-        #   T+370ms â€” SYNC_GATE pre-check fetches eval result (~70ms after debounce)
-        #   T+380ms â€” MOVE_ON/PROBE directive injected, _directive_ready.set()
-        #
-        # Fix: sleep 0.4s before checking gate â†’ LLM always waits for directive to be updated.
-        # 0.4s is imperceptible to the user (< half a second after they finish speaking).
-        await asyncio.sleep(0.4)
+        # CRITICAL: always use self.chat_ctx -- LiveKit passes a stale .copy() snapshot.
+        # Detect interview phase from chat_ctx -- closure vars are not accessible here.
+        # An interview turn has either a [NEXT_TURN_DIRECTIVE] (eval injected) or
+        # [PHASE_STATUS] INTERVIEW IN PROGRESS (opening question delivered).
+        # Warmup/greeting turns have neither -- LLM should fire immediately for those.
+        # Detect interview phase by looking for injected directive/status messages.
+        # These always START with their tag -- base prompt only mentions them inline,
+        # so a startswith check avoids false positives that caused 15s warmup timeouts.
+        _is_interview_turn = any(
+            str(getattr(m, "content", "") or "").lstrip().startswith(("[NEXT_TURN_DIRECTIVE", "[PHASE_STATUS"))
+            and "INTERVIEW" in str(getattr(m, "content", "") or "")
+            for m in getattr(self.chat_ctx, "items", [])
+            if getattr(m, "role", "") == "system"
+        )
+        if _is_interview_turn:
+            self._directive_ready.clear()
+            logger.debug("[LLM_GATE] cleared at entry (interview turn) -- waiting for eval")
+
         timed_out = False
         try:
             await asyncio.wait_for(self._directive_ready.wait(), timeout=15.0)
-            logger.info("[LLM_GATE] âœ… directive ready")
+            logger.info("[LLM_GATE] directive ready")
         except asyncio.TimeoutError:
             timed_out = True
-            logger.warning("[LLM_GATE] â° timed out (15s) â€” generating anyway")
+            logger.warning("[LLM_GATE] timed out (15s) -- generating anyway")
 
         effective_ctx = self.chat_ctx
 
@@ -294,7 +296,7 @@ class InterviewAgent(Agent):
             _dropped = _before - len(_ctx_items)
             if _dropped:
                 logger.info(
-                    "[LLM_GATE] MOVE_ON detected â€” stripped %d user/assistant msg(s) "
+                    "[LLM_GATE] MOVE_ON detected -- stripped %d user/assistant msg(s) "
                     "from ctx so LLM opens new topic cleanly",
                     _dropped,
                 )
@@ -312,7 +314,7 @@ class InterviewAgent(Agent):
         logger.info("[TEMP] role=%s temperature=%.2f", temp_role, turn_temp)
 
         conn_options = activity.session.conn_options.llm_conn_options
-        # Override LiveKit's default read timeout â€” httpcore.ReadTimeout fires mid-stream
+        # Override LiveKit's default read timeout -- httpcore.ReadTimeout fires mid-stream
         # when OpenAI takes >10s for a long response, causing _llm_inference_task errors.
         if (conn_options.timeout or 0) < 30.0:
             conn_options = replace(conn_options, timeout=30.0)
@@ -335,7 +337,7 @@ class InterviewAgent(Agent):
         conn_options = activity.session.conn_options.tts_conn_options
         if conn_options.retry_interval > 0.5:
             conn_options = replace(conn_options, retry_interval=0.5)
-        # Override LiveKit's default 10s timeout â€” Sarvam WS can take up to 25s for
+        # Override LiveKit's default 10s timeout -- Sarvam WS can take up to 25s for
         # longer responses. At 10s it times out, retries, and causes ~18s silence gap.
         if (conn_options.timeout or 0) < 25.0:
             conn_options = replace(conn_options, timeout=25.0)
@@ -944,7 +946,7 @@ async def entrypoint(ctx: JobContext):
                 # Lowered from 8 to 3 so barge-in triggers sooner while still giving
                 # the detector a little speech to distinguish from backchannels.
                 min_words=3,
-                # Discard audio on interrupted turns â€” prevents the partial TTS chunk
+                # Discard audio on interrupted turns -- prevents the partial TTS chunk
                 # from being resumed and replayed, which caused "Okay wait" to be
                 # spoken twice when a false interruption was detected and then resumed.
                 discard_audio_if_uninterruptible=True,
@@ -979,7 +981,7 @@ async def entrypoint(ctx: JobContext):
     warmup_complete = False  # True when candidate gives substantive response (>8 words) past greeting
     # Interview state
     _final_no_new_question_guard = False
-    _time_guard_active = False          # True when <= 20s remain â€” blocks eval + signals
+    _time_guard_active = False          # True when <= 20s remain -- blocks eval + signals
     _candidate_turn_since_last_assistant = True
     environment_risk = 0     # browser-side proctoring signals
     integrity_risk = 0       # integrity-related proctoring signals
@@ -1002,7 +1004,7 @@ async def entrypoint(ctx: JobContext):
         # the eval payload and triggers topic-align warnings. The short title is enough.
         (str(session_context.resume_brief.anchor_item or "").strip().split(" - ")[0].strip() or None)
     )  # current topic anchor; rotate away on MOVE_ON
-    _topic_states: dict[str, dict] = {}        # PART 3: TopicState serialized per topic for saturation tracking
+    _topic_states: dict[str, dict] = {}        # TopicState serialized per topic for saturation tracking
     _topic_score_histories: dict[str, list] = {}  # per-topic quality score history for collapse/latency detection
     _last_depth_decay_turn: int = -999           # turn when depth_decay last fired; -999 = never
     _last_applied_eval_turn: int = 0             # monotonic guard against stale eval results
@@ -1013,7 +1015,6 @@ async def entrypoint(ctx: JobContext):
     _custom_q_final_reminder_fired: bool = False
     _covered_topic_keys: set[str] = set()        # all topics already covered across the interview
     _user_turn_chain: Optional[asyncio.Task[Any]] = None  # serialize user-turn processing
-    _eval_turns_queued: set[int] = set()         # local per-session dedupe: queue each turn once
     _processed_user_turns: set[int] = set()      # turns whose STT was already flushed; drops late Deepgram finals
     _first_interview_question_asked: bool = False  # True after first post-warmup AI question fires
     # Running log of topics already covered  injected into every directive so the AI
@@ -1022,33 +1023,103 @@ async def entrypoint(ctx: JobContext):
     # Lock protecting all shared session state that is written by background tasks.
     _session_state_lock = asyncio.Lock()
 
+    # -- Agent-side topic tracker ----------------------------------------------
+    # The agent owns topic selection -- eval only scores the current topic.
+    # resume_topics and skill_topics are built once from session_context here
+    # and reused every turn in the inline eval payload and topic selection.
+    def _build_topic_pools() -> tuple[list[str], list[str]]:
+        """
+        Build resume topic pool (full context strings) and skill topic pool (short names).
+
+        Resume topics keep the full "Title - Description [tech]" string so the LLM
+        has enough context to ask a specific, grounded question about the project or role.
+        Skills remain single words since that's all the context needed.
+
+        The 'short key' (title before ' - ') is used only for deduplication and
+        coverage tracking -- the full string is what's passed to the LLM.
+        """
+        rb = session_context.resume_brief
+        _band = session_context.candidate_band
+        _cap_r = {"fresher": 10, "mid": 8, "experienced": 6, "senior": 4}.get(_band, 8)
+        _cap_s = {"fresher": 12, "mid": 10, "experienced": 7, "senior": 5}.get(_band, 10)
+
+        # Keep FULL string -- "Title - Description [tech]" -- so LLM has context
+        raw_resume = [
+            str(r).strip()
+            for r in (list(rb.projects) + list(rb.work_history) + list(rb.internships))
+            if str(r).strip()
+        ]
+        # Deduplicate using the short title (before ' - ') as the key
+        seen_r: set[str] = set()
+        unique_r: list[str] = []
+        for t in raw_resume:
+            short_key = t.split(" - ")[0].strip().lower()
+            if short_key and short_key not in seen_r:
+                seen_r.add(short_key); unique_r.append(t)
+
+        # Skills: single word is sufficient context
+        _jd = [str(s).strip() for s in (_jd_skills or []) if str(s).strip()]
+        _rs = [str(s).strip() for s in list(rb.skills or []) if str(s).strip()]
+        seen_s: set[str] = set()
+        unique_s: list[str] = []
+        for s in (_jd + _rs):
+            k = s.lower()
+            if k and k not in seen_s:
+                seen_s.add(k); unique_s.append(s)
+        return unique_r[:_cap_r], unique_s[:_cap_s]
+
+    _resume_topics_pool, _skill_topics_pool = _build_topic_pools()
+
+    def _ordered_topics() -> list[str]:
+        """Return topic pool (full context strings) in priority order: anchor first, shuffled rest."""
+        import random as _random
+        first = _resume_topics_pool[:1]
+        remaining_r = list(_resume_topics_pool[1:])
+        _random.shuffle(remaining_r)
+        skill_pool = list(_skill_topics_pool)
+        _random.shuffle(skill_pool)
+        ordered = first + skill_pool[:3] + remaining_r + skill_pool[3:]
+        seen: set[str] = set()
+        deduped: list[str] = []
+        for t in ordered:
+            k = _topic_short_key(t)  # dedup by short title, not full description
+            if k and k not in seen:
+                seen.add(k); deduped.append(t)
+        return deduped
+
+    def _topic_short_key(topic: str) -> str:
+        """Normalised short title -- used for coverage dedup, NOT for LLM context."""
+        short = (topic or "").split(" - ")[0].strip()
+        return re.sub(r"[^a-z0-9]+", " ", short.lower()).strip()
+
+    def _next_uncovered_topic(exclude: Optional[str] = None) -> Optional[str]:
+        """Return the next uncovered topic (full context string) the agent should ask about."""
+        excluded_key = _topic_short_key(exclude or "")
+        for t in _ordered_topics():
+            k = _topic_short_key(t)
+            if k and k != excluded_key and k not in _covered_topic_keys:
+                return t
+        # All covered -- pick any that isn't current
+        for t in _ordered_topics():
+            k = _topic_short_key(t)
+            if k and k != excluded_key:
+                return t
+        return None
+
+    def _mark_topic_covered(topic: Optional[str]) -> None:
+        if topic:
+            k = _topic_short_key(topic)
+            if k:
+                _covered_topic_keys.add(k)
 
 
-    # Redis eval worker integration â€” Live-N: agent waits for THIS turn's result
-    _eval_redis_client: Any = None
-    if redis_asyncio is None:
-        logger.warning("[REDIS_EVAL] redis package not installed  eval worker disabled, inline eval will be used")
-    elif not REDIS_URL:
-        logger.warning("[REDIS_EVAL] REDIS_URL not set  eval worker disabled, inline eval will be used")
-    else:
-        try:
-            _eval_redis_client = redis_asyncio.from_url(
-                REDIS_URL,
-                decode_responses=False,
-                socket_connect_timeout=5,
-                socket_timeout=5,
-                health_check_interval=30,
-            )
-            async def _ping_redis():
-                try:
-                    await _eval_redis_client.ping()
-                    logger.info("[REDIS_EVAL] Redis eval client connected and ping OK  %s", REDIS_URL)
-                except Exception as _ping_err:
-                    logger.warning("[REDIS_EVAL] Redis ping failed: %s  eval worker may not work", _ping_err)
-            asyncio.create_task(_ping_redis())
-        except Exception as _re:
-            logger.warning("[REDIS_EVAL] Redis eval client init failed: %s  inline eval will be used", _re)
-            _eval_redis_client = None
+
+    # Inline eval: OpenAI client used directly for scoring -- no worker process needed.
+    _eval_openai_client: AsyncOpenAI = AsyncOpenAI()
+    # Accumulated per-turn eval LLM usage records (gpt-4.1-mini calls). Applied to
+    # billing snapshot at session end so eval costs are tracked per org.
+    _eval_llm_usages_accumulated: list[dict] = []
+
     def refresh_composite_risk() -> int:
         nonlocal suspicion_score
         suspicion_score = compose_risk_score(integrity_risk, depth_risk)
@@ -1209,11 +1280,11 @@ async def entrypoint(ctx: JobContext):
     # STT Fragment buffer: collects partial results until final comes
     _stt_fragment_buffer: dict[int, list[str]] = {}  # turn -> [fragment1, fragment2, ...]
     _stt_completion_timers: dict[int, asyncio.Task | None] = {}  # turn -> debounce task
-    # Incomplete answers: wait 4s max â€” Deepgram usually sends all chunks within 2s of silence.
+    # Incomplete answers: wait 4s max -- Deepgram usually sends all chunks within 2s of silence.
     _STT_INCOMPLETE_DEBOUNCE_SECONDS = 4.0
     # Complete answers (both warmup and interview): 0.3s is enough for nova-3 finals.
     _STT_SHORT_COMPLETE_DEBOUNCE_SECONDS = 0.3
-    # Warmup incomplete: 1.0s â€” warmup answers are brief, no need to wait 4s.
+    # Warmup incomplete: 1.0s -- warmup answers are brief, no need to wait 4s.
     _STT_WARMUP_INCOMPLETE_DEBOUNCE_SECONDS = 1.0
     _MEANINGFUL_SHORT_ANSWERS = {
         "no", "yes", "yeah", "yep", "okay", "ok", "sure", "maybe",
@@ -1244,56 +1315,44 @@ async def entrypoint(ctx: JobContext):
         result: dict[str, Any],
         *,
         result_turn: int,
-        target_chat_ctx: Optional[llm.ChatContext] = None,
-        inject_directive: bool = False,
     ) -> bool:
-        nonlocal current_interview_mode, answer_scores, _active_topic, \
-            _covered_topic_keys, _topic_states, integrity_risk, depth_risk, \
-            _last_applied_eval_turn, _discussed_log, _topic_score_histories
+        """Persist eval state mutations. Agent already owns topic/directive decisions."""
+        nonlocal answer_scores, integrity_risk, depth_risk,             _last_applied_eval_turn, _discussed_log, _topic_score_histories,             _trust_state, _last_depth_decay_turn, _eval_llm_usages_accumulated,             current_interview_mode
 
         if result_turn <= _last_applied_eval_turn:
             logger.debug(
-                "[LIVE_N] skipping stale eval result turn=%d last_applied=%d",
-                result_turn,
-                _last_applied_eval_turn,
+                "[EVAL] skipping stale eval result turn=%d last_applied=%d",
+                result_turn, _last_applied_eval_turn,
             )
             return False
 
-        action = str(result.get("action", "PROBE")).upper()
-        directive = str(result.get("directive", ""))
-        new_topic = result.get("new_active_topic")
-        new_covered = list(result.get("new_covered_topic_keys") or [])
-        new_topic_state = result.get("new_active_topic_state")
-        new_mode = str(result.get("new_current_interview_mode") or current_interview_mode)
-        signal_events = list(result.get("signal_events") or [])
         quality_record = result.get("quality_record")
         risk_integrity_delta = int(result.get("risk_integrity_delta", 0) or 0)
-        risk_depth_delta = int(result.get("risk_depth_delta", 0) or 0)
-        discussed_log_entry = result.get("discussed_log_entry")
+        risk_depth_delta     = int(result.get("risk_depth_delta", 0) or 0)
+        discussed_log_entry  = result.get("discussed_log_entry")
+
+        # depth_signal -> interview mode escalation
+        depth_signal = result.get("depth_signal", "SURFACE")
+        if depth_signal == "DEEP" and current_interview_mode == "normal":
+            current_interview_mode = "deep"
 
         async with _session_state_lock:
-            old_topic = _active_topic
-            if new_topic is not None:
-                _active_topic = new_topic
-            if new_covered:
-                _covered_topic_keys.clear()
-                _covered_topic_keys.update(new_covered)
-            if new_topic_state and _active_topic:
-                _topic_states[_active_topic] = new_topic_state
-            current_interview_mode = new_mode
-
-            for event in signal_events:
-                delta = float(event.get("score_delta", 0.0) or 0.0)
-                legacy_delta = int(round(max(0.0, -delta) * 100))
-                if legacy_delta:
-                    if event.get("signal_layer") == "hard_integrity":
-                        integrity_risk = min(100, integrity_risk + legacy_delta)
-                    else:
-                        depth_risk = min(100, depth_risk + legacy_delta)
             if risk_integrity_delta or risk_depth_delta:
                 integrity_risk = min(100, integrity_risk + risk_integrity_delta)
                 depth_risk = min(100, depth_risk + risk_depth_delta)
             refresh_composite_risk()
+
+            new_trust_state = result.get("new_trust_state")
+            if new_trust_state:
+                _trust_state = new_trust_state
+
+            saturation = result.get("saturation") or {}
+            if saturation.get("depth_decay"):
+                _last_depth_decay_turn = result_turn
+
+            eval_usages = result.get("eval_llm_usages") or []
+            if eval_usages:
+                _eval_llm_usages_accumulated.extend(eval_usages)
 
             if discussed_log_entry:
                 _discussed_log.append(discussed_log_entry)
@@ -1301,8 +1360,7 @@ async def entrypoint(ctx: JobContext):
             if quality_record:
                 answer_scores.append(quality_record)
                 topic_key = re.sub(
-                    r"[^a-z0-9]+",
-                    " ",
+                    r"[^a-z0-9]+", " ",
                     str(quality_record.get("topic") or _active_topic or "").lower(),
                 ).strip()
                 if topic_key and not quality_record.get("is_timeout"):
@@ -1316,72 +1374,7 @@ async def entrypoint(ctx: JobContext):
 
             _last_applied_eval_turn = max(_last_applied_eval_turn, result_turn)
 
-        if old_topic != _active_topic:
-            logger.info(
-                "[LIVE_N] applied eval turn=%d | topic %r -> %r",
-                result_turn,
-                old_topic,
-                _active_topic,
-            )
-            if inject_directive and target_chat_ctx is not None:
-                ctx_items = getattr(target_chat_ctx, "items", None)
-                if ctx_items is not None:
-                    before = len(ctx_items)
-                    ctx_items[:] = [m for m in list(ctx_items) if getattr(m, "role", "") == "system"]
-                    logger.info("[LIVE_N] MOVE_ON history wipe: dropped %d msg(s)", before - len(ctx_items))
-
-        if inject_directive and target_chat_ctx is not None and directive:
-            remove_system_messages_multi(target_chat_ctx, (
-                "[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT",
-            ))
-            target_chat_ctx.add_message(role="system", content=directive)
-
-            if action == "MOVE_ON" and _active_topic:
-                remove_system_messages(target_chat_ctx, "[RECENT_CONTEXT")
-                target_chat_ctx.add_message(role="system", content=(
-                    "[TOPIC_LOCK - CRITICAL INSTRUCTION]\n"
-                    "PREVIOUS TOPIC IS CLOSED. DO NOT REFERENCE IT.\n"
-                    "IGNORE anything the candidate said at the end of the previous topic.\n"
-                    f"NEW ACTIVE TOPIC: {_active_topic}\n"
-                    f"YOUR ONLY JOB: Ask ONE question about '{_active_topic}'. "
-                    f"Start with a brief acknowledgement, then ask what they personally "
-                    f"built or owned in '{_active_topic}'."
-                ))
-
         return True
-
-    async def _recover_late_eval_results(before_turn: int) -> None:
-        if _eval_redis_client is None:
-            return
-        from interview.eval_models import EvalKeys
-
-        start_turn = max(3, _last_applied_eval_turn + 1)
-        for missed_turn in range(start_turn, before_turn):
-            try:
-                raw_result = await asyncio.wait_for(
-                    _eval_redis_client.getdel(EvalKeys.routing_result(app_id, missed_turn)),
-                    timeout=0.15,
-                )
-            except Exception:
-                raw_result = None
-            if not raw_result:
-                continue
-            try:
-                result = json.loads(raw_result)
-            except Exception as decode_err:
-                logger.warning(
-                    "[LIVE_N] late eval result decode failed turn=%d: %s",
-                    missed_turn,
-                    decode_err,
-                )
-                continue
-            applied = await _apply_eval_result(
-                result,
-                result_turn=missed_turn,
-                inject_directive=False,
-            )
-            if applied:
-                logger.info("[LIVE_N] recovered late eval result turn=%d before turn=%d", missed_turn, before_turn)
 
     async def _process_user_conversation_item(
         content: str,
@@ -1394,7 +1387,8 @@ async def entrypoint(ctx: JobContext):
             warmup_complete, _last_depth_decay_turn, \
             _active_topic, _covered_topic_keys, _topic_states, \
             integrity_risk, depth_risk, \
-            _last_applied_eval_turn, _discussed_log, _topic_score_histories
+            _last_applied_eval_turn, _discussed_log, _topic_score_histories, \
+            _resume_topics_pool, _skill_topics_pool
         try:
             if not content or role != "user":
                 return
@@ -1421,7 +1415,7 @@ async def entrypoint(ctx: JobContext):
                 since_first_ai_turn = time.monotonic() - first_agent_turn_committed_at
                 if since_first_ai_turn <= greeting_echo_suppression_secs:
                     # Turn 1 = greeting response. Allow it through ONCE (captured in transcript),
-                    # but block any replay of the same content â€” LiveKit re-sends the same STT
+                    # but block any replay of the same content -- LiveKit re-sends the same STT
                     # fragment each time a new agent turn starts, causing the greeting loop.
                     # Turn 1 content is already recorded; replays at 0:23, 0:27 are STT replays.
                     if turn_snapshot == 1 and turn_count in _processed_user_turns:
@@ -1569,12 +1563,12 @@ async def entrypoint(ctx: JobContext):
                 logger.info("[WARMUP]  warmup_complete=True at turn=%d (fallback setter)", turn_snapshot)
 
             # Start eval only after warmup has fully finished.
-            # Warmup = turns 1-2, interview starts at turn 3, so first worker job is turn 3.
+            # Warmup = turns 1-2, interview starts at turn 3, so first eval fires at turn 3.
             _gate_reason = (
                 "PASS" if (warmup_complete and turn_snapshot > 2 and question_snap)
-                else f"BLOCK(warmup={warmup_complete},turn={turn_snapshot}>2={turn_snapshot>2},question={'Y' if question_snap else 'EMPTY'},redis={'Y' if _eval_redis_client else 'NONE'})"
+                else f"BLOCK(warmup={warmup_complete},turn={turn_snapshot}>2={turn_snapshot>2},question={'Y' if question_snap else 'EMPTY'})"
             )
-            logger.info("[EVAL_GATE] turn=%d â†’ %s", turn_snapshot, _gate_reason)
+            logger.info("[EVAL_GATE] turn=%d -> %s", turn_snapshot, _gate_reason)
             if warmup_complete and turn_snapshot > 2 and question_snap and _first_interview_question_asked:
                 score_history_snap = list(_trust_state.get("score_history", []))
                 turns_since_decay_snap = (
@@ -1588,10 +1582,9 @@ async def entrypoint(ctx: JobContext):
                     else None
                 )
                 # ---------------------------------------------------------------
-                # Redis eval worker: build payload for the worker, which will
-                # compute the directive for the NEXT turn while Ishita speaks.
-                # The result from the PREVIOUS turn's eval is read and applied NOW
-                # so the directive is injected before LLM generation starts.
+                # Build eval payload for the inline pipeline (run_eval_and_build_directive).
+                # Scoring, signal detection, saturation, and directive generation all run
+                # directly in the agent -- no Redis, no worker, no polling.
                 # ---------------------------------------------------------------
                 def _build_eval_payload(
                     answer=answer_snap,
@@ -1602,8 +1595,6 @@ async def entrypoint(ctx: JobContext):
                     turns_since_decay=turns_since_decay_snap,
                     response_latency=response_latency_snap,
                 ) -> dict:
-                    # Guard against partial assistant fragments ("Got", "Okay so...") being
-                    # captured as the "question". Those fragments can cause noisy eval routing.
                     resolved_question = (question or "").strip()
                     if len(resolved_question) < 16:
                         _greeting_skip = re.compile(
@@ -1621,49 +1612,20 @@ async def entrypoint(ctx: JobContext):
                                 resolved_question = _txt
                                 break
 
-                    rb = session_context.resume_brief
-                    resume_topics = [
-                        str(raw).strip().split(" - ")[0].strip()
-                        for raw in (list(rb.projects) + list(rb.work_history) + list(rb.internships))
-                        if str(raw).strip()
-                    ]
-                    # Deduplicate while preserving order
-                    seen_rt: set[str] = set()
-                    unique_resume: list[str] = []
-                    for t in resume_topics:
-                        key = t.lower()
-                        if key and key not in seen_rt:
-                            seen_rt.add(key)
-                            unique_resume.append(t)
-                    # JD skills first (must-haves from JD), then resume skills as fallback.
-                    # This ensures JD-required topics (e.g. LangChain, RAG, Agentic Systems)
-                    # enter the topic cycling machinery, not just the brief as passive context.
-                    _jd_skill_names = [str(s).strip() for s in (_jd_skills or []) if str(s).strip()]
-                    _resume_skill_names = [str(s).strip() for s in list(rb.skills or []) if str(s).strip()]
-                    seen_st: set[str] = set()
-                    unique_skills: list[str] = []
-                    for s in (_jd_skill_names + _resume_skill_names):
-                        key = s.lower()
-                        if key and key not in seen_st:
-                            seen_st.add(key)
-                            unique_skills.append(s)
-                    # PART 3: Include TopicState for saturation tracking (serialize to dict)
-                    # _topic_states stores plain dicts (returned by eval worker via JSON).
-                    # Guard against calling .to_dict() on a dict that was already serialized.
-                    # scoring_topic = the topic Ishita was asking about when she asked
-                    # the question the candidate is now answering. This is captured at
-                    # question-delivery time (_last_question_topic) so it never flips
-                    # when MOVE_ON updates _active_topic mid-session.
-                    # active_topic = current routing topic (may already be the new one).
-                    _scoring_topic = _last_question_topic or _active_topic
+                    # scoring_topic = the topic the answer is ABOUT (what Ishita asked)
+                    # Use the full string for _active_topic tracking but the short key
+                    # for topic_states lookup (states are keyed by short title).
+                    _scoring_topic_full = _last_question_topic or _active_topic
+                    # Short title for eval -- eval classifies importance from resume_topics
+                    _scoring_topic = (
+                        (_scoring_topic_full or "").split(" - ")[0].strip()
+                        if _scoring_topic_full else None
+                    )
                     _ts_obj = _topic_states.get(_scoring_topic) if _scoring_topic else None
-                    if _ts_obj is None:
-                        active_topic_state = None
-                    elif isinstance(_ts_obj, dict):
-                        active_topic_state = _ts_obj  # already serialized
-                    else:
-                        active_topic_state = _ts_obj.to_dict()
-
+                    active_topic_state = (
+                        _ts_obj if isinstance(_ts_obj, dict) else
+                        _ts_obj.to_dict() if _ts_obj is not None else None
+                    )
                     _topic_key_now = re.sub(r"[^a-z0-9]+", " ", (_scoring_topic or "").lower()).strip()
                     _topic_score_history_snap = list(_topic_score_histories.get(_topic_key_now, []))
 
@@ -1680,244 +1642,225 @@ async def entrypoint(ctx: JobContext):
                         "signal_toggles": dict(evaluation_signal_toggles),
                         "org_id": org_id,
                         "llm_model": analysis_model,
-                        "active_topic": _scoring_topic,       # topic the answer is ABOUT
+                        # Agent tells eval exactly which topic to score -- no topic selection in eval
+                        "active_topic": _scoring_topic,
                         "active_topic_state": active_topic_state,
-                        "routing_topic": _active_topic or "",  # current agent state (may differ)
-                        "covered_topic_keys": list(_covered_topic_keys),
+                        "anchor_item": str(getattr(session_context.resume_brief, "anchor_item", "") or "").split(" - ")[0].strip(),
+                        "resume_topics": _resume_topics_pool,
+                        "skill_topics": _skill_topics_pool,
                         "discussed_log": list(_discussed_log[-8:]),
-                        # Band-aware topic pool caps:
-                        # fresher: more topics (breadth) â†’ wider pool
-                        # senior: fewer topics (depth) â†’ narrower pool, each probed longer
-                        "resume_topics": unique_resume[:{"fresher": 10, "mid": 8, "experienced": 6, "senior": 4}.get(session_context.candidate_band, 8)],
-                        "skill_topics": unique_skills[:{"fresher": 12, "mid": 10, "experienced": 7, "senior": 5}.get(session_context.candidate_band, 10)],
-                        "anchor_item": str(getattr(rb, "anchor_item", "") or ""),
                         "job_title": job_title,
                         "remaining_seconds": float(_remaining_total_seconds_now()),
                         "trust_state": dict(_trust_state),
                         "current_interview_mode": current_interview_mode,
                         "band": session_context.candidate_band,
-                        # The actual question Ishita asked this turn â€” used by the worker
-                        # to detect if the AI already pivoted to a new topic (e.g. due to
-                        # a previous MOVE_ON directive) so worker and agent stay aligned.
                         "ai_question_this_turn": (_last_interviewer_question or "").strip(),
                     }
 
 
-                async def _push_payload_to_redis(payload: dict) -> None:
-                    nonlocal _eval_turns_queued
-                    if _eval_redis_client is None:
-                        logger.warning("[REDIS_EVAL] _eval_redis_client is None - eval payload for turn=%d not pushed (eval worker disabled)", payload.get("turn", 0))
-                        return
-                    payload_turn = int(payload.get("turn", 0) or 0)
-                    payload_app_id = str(payload.get("app_id", app_id) or app_id)
-                    payload_key = f"interview:{payload_app_id}:eval_payload:{payload_turn}"
-                    queue_gate_key = f"interview:{payload_app_id}:eval_enqueued:{payload_turn}"
-                    queue_token = {
-                        "app_id": payload_app_id,
-                        "turn": payload_turn,
-                        "enqueued_at": time.time(),
-                    }
-                    t0 = time.monotonic()
-                    try:
-                        encoded_payload = json.dumps(payload).encode()
-                        if payload_turn in _eval_turns_queued:
-                            await _eval_redis_client.setex(payload_key, 600, encoded_payload)
-                            logger.info(
-                                "[REDIS_EVAL] Updated pending payload turn=%d (already queued in-session, %.0fms)",
-                                payload_turn, (time.monotonic() - t0) * 1000,
-                            )
-                            return
-                        pipe = _eval_redis_client.pipeline(transaction=False)
-                        pipe.setex(payload_key, 600, encoded_payload)
-                        pipe.set(queue_gate_key, b"1", ex=600, nx=True)
-                        _, is_first_enqueue = await pipe.execute()
-                        if is_first_enqueue:
-                            await _eval_redis_client.rpush(
-                                "interview:eval_queue",
-                                json.dumps(queue_token).encode(),
-                            )
-                            logger.info(
-                                "[REDIS_EVAL] Pushed payload turn=%d to worker queue (%.0fms)",
-                                payload_turn, (time.monotonic() - t0) * 1000,
-                            )
-                            _eval_turns_queued.add(payload_turn)
-                        else:
-                            logger.info(
-                                "[REDIS_EVAL] Updated pending payload turn=%d (already queued, %.0fms)",
-                                payload_turn, (time.monotonic() - t0) * 1000,
-                            )
-                    except Exception as _re:
-                        logger.warning("[REDIS_EVAL] Failed to push payload: %s", _re)
+                # -- INLINE EVAL -----------------------------------------------
+                # Agent calls eval to SCORE the answer on the current topic.
+                # Agent then decides: PROBE (stay, build probe directive) or
+                # MOVE_ON (pick next topic, build move-on directive).
+                # Eval never picks topics or builds directives.
+                from interview.eval_pipeline import run_eval_and_build_directive
+                from interview.probe_strategy import get_probe_goal, get_probe_style
 
-                #             LIVE-N GATE
-                # Push payload first â†’ worker starts immediately.
-                # Then wait for THIS turn's routing result (Phase 1, ~200ms).
-                # LLM gate opens the moment routing result arrives.
-                # Scoring result (Phase 2, ~700ms) applied async after Ishita speaks.
-                from interview.eval_models import EvalKeys
-
-                # Time guard â€” no new questions in final 20s
+                # Time guard -- no new questions in final 20s
                 if _time_guard_active:
                     logger.info("[TIME_GUARD] turn=%d skipped", turn_snapshot)
                     agent._directive_ready.set()
                     return
 
-                await _recover_late_eval_results(turn_snapshot)
-
-                # All turns >= 4: push payload â†’ wait for THIS turn's routing
-                async with _session_state_lock:
-                    payload = _build_eval_payload()
-                logger.info(
-                    "[LIVE_N] turn=%d | pushing payload | topic=%r score=%.1f",
-                    turn_snapshot,
-                    payload.get("active_topic", "?"),
-                    (payload.get("active_topic_state") or {}).get("saturation_score", 0.0),
-                )
-                await _push_payload_to_redis(payload)
-
-                # Turn 3: strip warmup context AFTER payload is pushed (not before),
-                # so the 2-word filter cannot leave chat_ctx in a stripped state
-                # with no directive at all.
+                # Turn 3: strip warmup context so directive is first interview message
                 if turn_snapshot == 3:
-                    logger.info("[LIVE_N] turn=3 | clearing warmup context after payload push")
+                    logger.info("[EVAL] turn=3 | clearing warmup context")
                     remove_system_messages_multi(chat_ctx, (
                         "[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK",
                         "[RECENT_CONTEXT", "[WARMUP PHASE]",
                     ))
 
-                if _eval_redis_client is None:
-                    logger.warning("[LIVE_N] no Redis â€” releasing LLM gate without directive turn=%d", turn_snapshot)
+                async with _session_state_lock:
+                    payload = _build_eval_payload()
+
+                _scoring_topic_log = payload.get("active_topic", "?")
+                _sat_before_log = (payload.get("active_topic_state") or {}).get("saturation_score", 0.0)
+
+                logger.info(
+                    "[EVAL] > turn=%d STARTED | topic=%r | sat_before=%.1f | answer_words=%d",
+                    turn_snapshot, _scoring_topic_log, _sat_before_log,
+                    len((payload.get("answer") or "").split()),
+                )
+                logger.debug("[EVAL] turn=%d | answer=%r", turn_snapshot, (payload.get("answer") or "")[:120])
+
+                _eval_t0 = asyncio.get_running_loop().time()
+                _eval_result_inline: Optional[dict] = None
+                try:
+                    _eval_result_inline = await run_eval_and_build_directive(payload, _eval_openai_client)
+                except Exception as _eval_err:
+                    logger.error("[EVAL] turn=%d | pipeline failed: %s", turn_snapshot, _eval_err, exc_info=True)
+
+                _eval_elapsed = asyncio.get_running_loop().time() - _eval_t0
+
+                if _eval_result_inline is None:
+                    # Eval failed hard -- inject PROBE fallback, release gate
+                    logger.warning("[EVAL] turn=%d | eval failed -- using PROBE fallback", turn_snapshot)
+                    _fallback_dir = (
+                        "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
+                        f"DECISION: PROBE (OWNERSHIP)\n"
+                        f"BAND: {payload.get('band', 'mid').upper()}\n"
+                        "ANGLE: Ask one specific question about what the candidate personally built or decided.\n"
+                        "ONE question only. Sound natural."
+                    )
+                    remove_system_messages_multi(chat_ctx, ("[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT"))
+                    chat_ctx.add_message(role="system", content=_fallback_dir)
+                    logger.info("[EVAL] turn=%d | releasing LLM gate -- Ishita will speak now", turn_snapshot)
                     agent._directive_ready.set()
                     return
 
-                # Wait for Phase 1 routing result for THIS turn
-                _routing_key   = EvalKeys.routing_result(app_id, turn_snapshot)
-                _routing_ready = EvalKeys.routing_ready(app_id, turn_snapshot)
-                _SAFETY_TIMEOUT = 10.0  # worker completes in 2-5s; 10s gives real headroom for slow LLMs
-                _t_start       = asyncio.get_running_loop().time()
+                # -- Unpack eval result ----------------------------------------
+                _action       = str(_eval_result_inline.get("action", "PROBE")).upper()
+                _probe_family = _eval_result_inline.get("probe_family") or "ownership"
+                _probe_goal   = _eval_result_inline.get("probe_goal") or get_probe_goal(_probe_family)
+                _probe_style  = _eval_result_inline.get("probe_style") or get_probe_style(_probe_family)
+                _qr           = _eval_result_inline.get("quality_record") or {}
+                _signals      = [e.get("signal_name") for e in (_eval_result_inline.get("signal_events") or []) if e.get("signal_name")]
+                _saturation   = _eval_result_inline.get("saturation") or {}
+                _sat_after    = _saturation.get("score", 0.0)
+                _sat_thresh   = _saturation.get("threshold", 0.0)
+                _is_clarif    = _eval_result_inline.get("is_clarification", False)
+                _is_redirect  = _eval_result_inline.get("is_redirect", False)
 
-                _routing_raw: Optional[bytes] = None
+                # Log scores
+                logger.info(
+                    "[EVAL] [OK] turn=%d SCORED (%.2fs) | clarity=%.0f depth=%.0f specificity=%.0f grounding=%.0f overall=%.2f",
+                    turn_snapshot, _eval_elapsed,
+                    _qr.get("clarity", 0), _qr.get("depth", 0),
+                    _qr.get("specificity", 0), _qr.get("grounding", 0), _qr.get("overall", 0),
+                )
+                logger.info("[EVAL] turn=%d | signals=[%s]", turn_snapshot, ", ".join(_signals) if _signals else "none")
+                logger.info("[EVAL] turn=%d | saturation: %.1f -> %.1f / %.1f", turn_snapshot, _sat_before_log, _sat_after, _sat_thresh)
 
-                async def _read_routing_result_once() -> Optional[bytes]:
-                    try:
-                        return await asyncio.wait_for(
-                            _eval_redis_client.getdel(_routing_key),
-                            timeout=0.08,
-                        )
-                    except Exception:
-                        return None
+                # -- Update topic saturation state in agent --------------------
+                _new_topic_state_dict = _saturation.get("topic_state_dict")
+                if _new_topic_state_dict and _scoring_topic_log and _scoring_topic_log != "?":
+                    async with _session_state_lock:
+                        _topic_states[_scoring_topic_log] = _new_topic_state_dict
 
-                # Subscribe BEFORE pre-check to eliminate the race condition where
-                # the worker publishes between the failed pre-check and the subscribe call.
-                # Order: subscribe → pre-check → wait. If publish fires at any point
-                # after subscribe, get_message() catches it. If it fired before subscribe,
-                # the pre-check or first poll catches it via getdel.
-                ps = None
-                try:
-                    ps = _eval_redis_client.pubsub()
-                    await ps.subscribe(_routing_ready)
-                except Exception as pubsub_err:
-                    ps = None
-                    logger.debug(
-                        "[LIVE_N] turn=%d | pubsub unavailable, polling only: %s",
-                        turn_snapshot,
-                        pubsub_err,
+                # -- Persist state mutations (scores, trust, risk, log) --------
+                await _apply_eval_result(_eval_result_inline, result_turn=turn_snapshot)
+
+                # -- Agent decides: PROBE or MOVE_ON ---------------------------
+                if _is_clarification or _is_redirect or _action == "REPHRASE":
+                    # Rephrase: re-ask same question more clearly
+                    logger.info("[EVAL] turn=%d | REPHRASE -- re-asking same question", turn_snapshot)
+                    _directive = (
+                        "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
+                        "DECISION: REPHRASE\n"
+                        "NEXT MOVE: The candidate asked for clarification. "
+                        "Briefly acknowledge ('Sure!'), then rephrase your last question "
+                        "in simpler, shorter language. Do NOT ask a brand-new question.\n"
+                        "[FOLLOW_UP_RULE] This turn does NOT count as a follow-up."
                     )
+                    remove_system_messages_multi(chat_ctx, ("[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT"))
+                    chat_ctx.add_message(role="system", content=_directive)
+                    logger.info("[EVAL] turn=%d | REPHRASE directive injected", turn_snapshot)
 
-                # Pre-check: result may already be there (worker very fast).
-                _routing_raw = await _read_routing_result_once()
-                if _routing_raw:
+                elif _action == "MOVE_ON":
+                    # -- Agent picks the next topic ----------------------------
+                    _old_topic = _active_topic
+                    _mark_topic_covered(_old_topic)
+                    _next_topic = _next_uncovered_topic(exclude=_old_topic)
+
+                    async with _session_state_lock:
+                        _active_topic = _next_topic or _old_topic
+
                     logger.info(
-                        "[LIVE_N] ✅ turn=%d | routing pre-check HIT (%.0fms)",
-                        turn_snapshot,
-                        (asyncio.get_running_loop().time() - _t_start) * 1000,
+                        "[EVAL] turn=%d | DECISION=MOVE_ON | TOPIC SWITCH: %r -> %r",
+                        turn_snapshot, _old_topic, _active_topic,
                     )
 
-                if not _routing_raw:
-                    poll_interval = 0.03
-                    pubsub_hit = False
-                    deadline = _t_start + _SAFETY_TIMEOUT
-                    try:
-                        while asyncio.get_running_loop().time() < deadline and not _routing_raw:
-                            _routing_raw = await _read_routing_result_once()
-                            if _routing_raw:
-                                break
+                    # Wipe conversation history so LLM opens new topic cleanly
+                    _ctx_items = getattr(chat_ctx, "items", None)
+                    if _ctx_items is not None:
+                        _before = len(_ctx_items)
+                        _ctx_items[:] = [m for m in list(_ctx_items) if getattr(m, "role", "") == "system"]
+                        if _before != len(_ctx_items):
+                            logger.info("[EVAL] MOVE_ON history wipe: dropped %d msg(s)", _before - len(_ctx_items))
 
-                            if ps is not None:
-                                try:
-                                    msg = await asyncio.wait_for(
-                                        ps.get_message(
-                                            ignore_subscribe_messages=True,
-                                            timeout=0.05,
-                                        ),
-                                        timeout=0.15,
-                                    )
-                                    if msg is not None:
-                                        pubsub_hit = True
-                                        _routing_raw = await _read_routing_result_once()
-                                        if _routing_raw:
-                                            break
-                                        continue
-                                except Exception:
-                                    pass
-
-                            await asyncio.sleep(poll_interval)
-                            poll_interval = min(poll_interval * 1.25, 0.20)
-                    finally:
-                        if ps is not None:
-                            try:
-                                await ps.unsubscribe(_routing_ready)
-                                await ps.aclose()
-                            except Exception:
-                                pass
-                else:
-                    # Pre-check hit — clean up pubsub immediately
-                    if ps is not None:
-                        try:
-                            await ps.unsubscribe(_routing_ready)
-                            await ps.aclose()
-                        except Exception:
-                            pass
-
-                    if _routing_raw:
-                        if pubsub_hit:
-                            logger.info(
-                                "[LIVE_N] ✅ turn=%d | routing via pubsub (%.2fs)",
-                                turn_snapshot,
-                                asyncio.get_running_loop().time() - _t_start,
-                            )
-                        else:
-                            logger.info(
-                                "[LIVE_N] ✅ turn=%d | routing via poll (%.2fs)",
-                                turn_snapshot,
-                                asyncio.get_running_loop().time() - _t_start,
-                            )
-
-                # Apply routing result or fall back to safe PROBE
-                if _routing_raw:
-                    try:
-                        _rd = json.loads(_routing_raw)
-                        _action_str = str(_rd.get("action", "PROBE")).upper()
-                        await _apply_eval_result(
-                            _rd,
-                            result_turn=turn_snapshot,
-                            target_chat_ctx=chat_ctx,
-                            inject_directive=True,
-                        )
-                        logger.info(
-                            "[LIVE_N] âœ… turn=%d action=%s topic=%r (%.2fs total)",
-                            turn_snapshot, _action_str, _active_topic,
-                            asyncio.get_running_loop().time() - _t_start,
-                        )
-                    except Exception as _ae:
-                        logger.warning("[LIVE_N] turn=%d | apply routing failed: %s â€” using stale ctx", turn_snapshot, _ae)
-                else:
-                    logger.warning(
-                        "[LIVE_N] â° turn=%d | routing timeout (%.1fs) â€” releasing LLM with existing directives",
-                        turn_snapshot, asyncio.get_running_loop().time() - _t_start,
+                    # Build MOVE_ON directive -- agent writes it, not eval
+                    _move_goal = (
+                        f"Acknowledge briefly and move to: {_active_topic}. "
+                        "Ask ONE focused question about what they personally built or owned there. "
+                        "Do NOT ask a follow-up on the previous topic."
                     )
-                    remove_system_messages_multi(chat_ctx, ("[RECENT_CONTEXT",))
+                    _directive = (
+                        "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
+                        "DECISION: MOVE_ON\n"
+                        f"NEW ACTIVE TOPIC: {_active_topic}\n"
+                        f"YOUR ONLY JOB THIS TURN: {_move_goal}\n"
+                        "HARD RULE: Do NOT ask any follow-up about the previous topic. "
+                        "Do NOT reference it. Acknowledge in one sentence max, then pivot immediately.\n"
+                        "DO NOT wrap up, say goodbye, or ask questions for me."
+                    )
+                    remove_system_messages_multi(chat_ctx, ("[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT"))
+                    chat_ctx.add_message(role="system", content=_directive)
+                    chat_ctx.add_message(role="system", content=(
+                        "[TOPIC_LOCK - CRITICAL INSTRUCTION]\n"
+                        "PREVIOUS TOPIC IS CLOSED. DO NOT REFERENCE IT.\n"
+                        f"NEW ACTIVE TOPIC: {_active_topic}\n"
+                        f"Ask ONE question about '{_active_topic}'. "
+                        "Start with a brief acknowledgement, then ask what they personally built or owned."
+                    ))
+                    logger.info("[EVAL] turn=%d | MOVE_ON directive injected | new_topic=%r", turn_snapshot, _active_topic)
 
+                else:
+                    # -- PROBE -- agent builds the probe directive --------------
+                    _prev_q = (payload.get("question") or "").strip()
+                    _prev_a = (payload.get("answer") or "").strip()
+                    _prev_a_gist = " ".join(_prev_a.split()[:20])
+                    _is_short = (
+                        float(_qr.get("overall", 5.0)) <= 0.5
+                        and float(_qr.get("depth", 5.0)) == 0.0
+                        and len(_prev_a.split()) < 8
+                    )
+                    _short_nudge = (
+                        "\nCANDIDATE GAVE A VERY SHORT ANSWER -- push back warmly but directly.\n"
+                        "Don't just re-ask. React like a real interviewer who expected more:\n"
+                        "  - 'That's a start -- can you give me a bit more to work with?'\n"
+                        "  - 'I'd love to hear more than that -- what specifically did you do?'"
+                    ) if _is_short else ""
+
+                    # Memory block: last 5 discussed entries so LLM doesn't re-ask
+                    _memory = "\n".join(_discussed_log[-5:])
+                    _memory_block = (
+                        f"\n[INTERVIEW MEMORY -- DO NOT RE-ASK THESE]\n{_memory}\n"
+                    ) if _memory else ""
+
+                    _directive = (
+                        "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
+                        f"DECISION: PROBE ({_probe_family.upper()})\n"
+                        f"BAND: {payload.get('band', 'mid').upper()}\n"
+                        f"ANGLE: {_probe_goal}\n"
+                        f"HOW TO ASK: {_probe_style}\n"
+                        f"LAST QUESTION YOU ASKED: \"{_prev_q}\"\n"
+                        f"CANDIDATE SAID: \"{_prev_a_gist}{'...' if len(_prev_a.split()) > 20 else ''}\"\n"
+                        "DO NOT ask the same question again. DO NOT rephrase it.\n"
+                        "Pick the most natural angle from ANGLE/HOW TO ASK based on what they actually said.\n"
+                        "ONE question only. Sound natural.\n"
+                        "DO NOT wrap up or say goodbye -- the interview is still in progress."
+                        f"{_short_nudge}"
+                        f"{_memory_block}"
+                    )
+                    remove_system_messages_multi(chat_ctx, ("[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT"))
+                    chat_ctx.add_message(role="system", content=_directive)
+                    logger.info(
+                        "[EVAL] turn=%d | DECISION=PROBE(%s) | STAYING ON: %r | sat=%.1f/%.1f",
+                        turn_snapshot, _probe_family, _scoring_topic_log, _sat_after, _sat_thresh,
+                    )
+                    logger.debug("[EVAL] turn=%d | directive=%r", turn_snapshot, _directive[:200])
+
+                logger.info("[EVAL] turn=%d | releasing LLM gate -- Ishita will speak now", turn_snapshot)
                 agent._directive_ready.set()
 
         except Exception as e:
@@ -1936,7 +1879,8 @@ async def entrypoint(ctx: JobContext):
     def on_conversation_item_added(event) -> None:
         nonlocal turn_count, _last_interviewer_question, _question_asked_at, \
             _candidate_turn_since_last_assistant, warmup_complete, \
-            _answer_received_at, _user_turn_chain, _first_interview_question_asked
+            _answer_received_at, _user_turn_chain, _first_interview_question_asked, \
+            _last_question_topic
         try:
             item = event.item
             role = getattr(item, "role", None)
@@ -1947,7 +1891,7 @@ async def entrypoint(ctx: JobContext):
             #  ASSISTANT TURN
             if role == "assistant":
                 if not _candidate_turn_since_last_assistant:
-                    # Hard block â€” LLM fired twice in a row without a candidate reply.
+                    # Hard block -- LLM fired twice in a row without a candidate reply.
                     # This happens when STT echoes Ishita's greeting back as a candidate
                     # fragment, triggering a second LLM generation before the first one
                     # finished. During warmup this creates the greeting-repeat loop seen
@@ -1961,7 +1905,7 @@ async def entrypoint(ctx: JobContext):
                     return
                 # Save Ishita's line to transcript
                 append_transcript_line("Interviewer", clean_content)
-                # Track last question for eval engine â€” only for real interview turns.
+                # Track last question for eval engine -- only for real interview turns.
                 # Greeting (turn 1 AI) and warmup (turn 2 AI) must never overwrite this
                 # because their text ("How are you doing?", "All good on your end?") would
                 # pollute eval context if the candidate gives a slow answer on turn 3+.
@@ -1981,7 +1925,7 @@ async def entrypoint(ctx: JobContext):
                             _last_interviewer_question = _q_text[:200]
                     _last_question_topic = _active_topic  # topic Ishita was on when she asked this
                     logger.debug("[QUESTION_TRACK] turn=%d last_q=%r topic=%r", turn_count, _last_interviewer_question[:60], _last_question_topic)
-                    # First interview question just fired â€” seal the opening move so the LLM
+                    # First interview question just fired -- seal the opening move so the LLM
                     # cannot re-ask it. The base system prompt says "Open by asking about X"
                     # which conflicts with PROBE directives on subsequent turns. This message
                     # overrides that instruction once the opener has been delivered.
@@ -1991,15 +1935,15 @@ async def entrypoint(ctx: JobContext):
                         chat_ctx.add_message(
                             role="system",
                             content=(
-                                "[PHASE_STATUS â€” DO NOT SAY ALOUD]\n"
+                                "[PHASE_STATUS -- DO NOT SAY ALOUD]\n"
                                 "GREETING: DONE. WARMUP: DONE. OPENING QUESTION: DONE.\n"
                                 f"You already asked: \"{_last_interviewer_question[:120]}\"\n"
                                 "DO NOT repeat this opening question. DO NOT re-introduce yourself or re-greet.\n"
-                                "CURRENT PHASE: INTERVIEW IN PROGRESS â€” follow [NEXT_TURN_DIRECTIVE] exactly."
+                                "CURRENT PHASE: INTERVIEW IN PROGRESS -- follow [NEXT_TURN_DIRECTIVE] exactly."
                             ),
                         )
                         logger.info("[PHASE_STATUS] Opening question sealed: %r", _last_interviewer_question[:80])
-                        # Pre-clear the LLM gate NOW â€” Ishita just delivered the first interview
+                        # Pre-clear the LLM gate NOW -- Ishita just delivered the first interview
                         # question. The next event will be Vamsi answering (Turn 3 candidate turn).
                         # Without this pre-clear, llm_node fires the moment Turn 3 STT arrives
                         # (gate was still SET from warmup), generating BEFORE Vamsi's answer is
@@ -2029,7 +1973,7 @@ async def entrypoint(ctx: JobContext):
                 _question_asked_at = time.perf_counter()
                 _candidate_turn_since_last_assistant = False
                 turn_count += 1
-                logger.info("âœ… TURN %d | phase=%s", turn_count, "interview" if warmup_complete else "warmup")
+                logger.info("âœ... TURN %d | phase=%s", turn_count, "interview" if warmup_complete else "warmup")
                 # Note: Transcript and answer_scores are now persisted after EVERY eval turn (async).
                 # See _process_user_conversation_item() for per-turn async persistence.
                 # This periodic save is kept as a safety net for orphaned records in edge cases.
@@ -2051,10 +1995,10 @@ async def entrypoint(ctx: JobContext):
                     chat_ctx.add_message(
                         role="system",
                         content=(
-                            "[PHASE_STATUS â€” DO NOT SAY ALOUD]\n"
+                            "[PHASE_STATUS -- DO NOT SAY ALOUD]\n"
                             "GREETING: DONE. WARMUP: DONE.\n"
                             "DO NOT greet again, re-introduce yourself, ask 'how are you doing', or repeat the readiness check.\n"
-                            "CURRENT PHASE: INTERVIEW â€” ask your first interview question now."
+                            "CURRENT PHASE: INTERVIEW -- ask your first interview question now."
                         ),
                     )
                     logger.info("[WARMUP]  WARMUP COMPLETE at turn=%d  INTERVIEW PHASE ACTIVE", turn_count)
@@ -2062,16 +2006,11 @@ async def entrypoint(ctx: JobContext):
                 # STT Fragment Buffering: accumulate all fragments for this turn, process only once
                 # Drop late Deepgram finals for turns already flushed to the eval pipeline.
                 if turn_count in _processed_user_turns:
-                    logger.debug("[STT_BUFFER] turn=%d already processed â€” dropping late fragment '%s'", turn_count, content[:60])
+                    logger.debug("[STT_BUFFER] turn=%d already processed -- dropping late fragment '%s'", turn_count, content[:60])
                     return
-                # Only block llm_node for interview turns (turn > 2).
-                # Warmup turns (1-2) skip eval entirely â€” _directive_ready is never re-set
-                # by the eval gate for those turns, so clearing it here caused a 15s hang
-                # waiting for a set() that would never come.
-                if turn_count > 2:
-                    agent._directive_ready.clear()
-                else:
-                    logger.debug("[STT_BUFFER] turn=%d warmup â€” skipping _directive_ready.clear()", turn_count)
+                # llm_node clears _directive_ready at its own entry for interview turns,
+                # so no clear needed here -- avoids the race where llm_node fired before clear.
+
 
                 # Buffer the fragment
                 if turn_count not in _stt_fragment_buffer:
@@ -2118,9 +2057,9 @@ async def entrypoint(ctx: JobContext):
                     # words OR the sentence was genuinely complete.
                     _word_count_now = len([w for w in consolidated_content.split() if w])
                     if _reason == "debounce_timeout" and _word_count_now <= 3:
-                        # Put the fragments back — more speech is likely still coming
+                        # Put the fragments back -- more speech is likely still coming
                         logger.debug(
-                            "[STT_BUFFER] turn=%d debounce fired with only %d word(s) — not locking turn, waiting for more",
+                            "[STT_BUFFER] turn=%d debounce fired with only %d word(s) -- not locking turn, waiting for more",
                             _turn, _word_count_now,
                         )
                         _stt_fragment_buffer[_turn] = all_fragments
@@ -2137,14 +2076,14 @@ async def entrypoint(ctx: JobContext):
                     else:
                         logger.debug(f"[STT_BUFFER] turn={_turn} - no content after consolidation")
 
-                # Warmup turns (1-2) use the SHORTEST debounce â€” they skip eval entirely
+                # Warmup turns (1-2) use the SHORTEST debounce -- they skip eval entirely
                 # so there is no reason to wait. Interview turns (3+) use 0.3s complete /
                 # 4.0s incomplete to let Deepgram consolidate multi-chunk answers.
                 if turn_count <= 2:
                     debounce_seconds = (
-                        _STT_SHORT_COMPLETE_DEBOUNCE_SECONDS   # 0.3s â€” same as interview complete
+                        _STT_SHORT_COMPLETE_DEBOUNCE_SECONDS   # 0.3s -- same as interview complete
                         if is_complete
-                        else _STT_WARMUP_INCOMPLETE_DEBOUNCE_SECONDS  # 1.0s â€” short, warmup answers are brief
+                        else _STT_WARMUP_INCOMPLETE_DEBOUNCE_SECONDS  # 1.0s -- short, warmup answers are brief
                     )
                 else:
                     debounce_seconds = (
@@ -2174,7 +2113,7 @@ async def entrypoint(ctx: JobContext):
                     except Exception as e:
                         logger.warning(f"[STT_BUFFER] turn={_turn} - debounce error: {e}")
 
-                # Always debounce â€” Deepgram splits long answers into multiple final chunks,
+                # Always debounce -- Deepgram splits long answers into multiple final chunks,
                 # so we wait for silence before flushing regardless of word count.
                 # Turns 1-2 use a short debounce; turns 3+ use _STT_SHORT_COMPLETE_DEBOUNCE_SECONDS
                 # for complete sentences so all fragments consolidate before eval sees the answer.
@@ -2348,10 +2287,10 @@ async def entrypoint(ctx: JobContext):
                         chat_ctx.add_message(
                             role="system",
                             content=(
-                                "[PHASE_STATUS â€” DO NOT SAY ALOUD]\n"
+                                "[PHASE_STATUS -- DO NOT SAY ALOUD]\n"
                                 "GREETING: DONE. You have already said hello and introduced yourself.\n"
                                 "DO NOT greet again, re-introduce yourself, or ask 'how are you doing' again.\n"
-                                "CURRENT PHASE: WARMUP â€” ask one short readiness check, then begin interview."
+                                "CURRENT PHASE: WARMUP -- ask one short readiness check, then begin interview."
                             ),
                         )
                         break
@@ -2397,7 +2336,7 @@ async def entrypoint(ctx: JobContext):
     #   10s silence  -> soft nudge (up to 3, rotating, 10s apart)
     #   40s silence  -> termination warning
     #   50s silence  -> end call
-    INACTIVITY_NUDGE_SECS = 20       # first nudge after 20s silence â€” 10s was too quick, interrupted thinking
+    INACTIVITY_NUDGE_SECS = 20       # first nudge after 20s silence -- 10s was too quick, interrupted thinking
     INACTIVITY_NUDGE_INTERVAL = 20   # repeat every 20s
     INACTIVITY_NUDGE_MAX = 2         # max 2 nudges before warning
     INACTIVITY_WARNING_SECS = 40     # termination warning at 40s
@@ -2410,7 +2349,7 @@ async def entrypoint(ctx: JobContext):
     _name = candidate_first_name or candidate_name
     _SOFT_NUDGES = [
         f"Take your time, {_name}.",
-        f"No rush â€” think out loud if that helps.",
+        f"No rush -- think out loud if that helps.",
     ]
 
     async def _deliver_nudge(text: str) -> None:
@@ -2524,7 +2463,7 @@ async def entrypoint(ctx: JobContext):
         # Activate the guard flag so eval dispatch and signal processing are blocked.
         if remaining <= TIME_GUARD_SECS and not _time_guard_active:
             _time_guard_active = True
-            logger.info("[TIME_GUARD] Activated at remaining=%.1fs â€” eval/signals blocked", remaining)
+            logger.info("[TIME_GUARD] Activated at remaining=%.1fs -- eval/signals blocked", remaining)
 
         if remaining <= TIME_GUARD_SECS and not final_timeout_announced:
             final_timeout_announced = True
@@ -2533,23 +2472,23 @@ async def entrypoint(ctx: JobContext):
                 "That wraps up our interview. All the very best!"
             )
             try:
-                # Scenario 1: agent is mid-speech â€” interrupt it immediately then say goodbye
+                # Scenario 1: agent is mid-speech -- interrupt it immediately then say goodbye
                 if is_agent_speaking:
-                    logger.info("[TIME_GUARD] Agent speaking â€” interrupting and delivering goodbye")
+                    logger.info("[TIME_GUARD] Agent speaking -- interrupting and delivering goodbye")
                     session.interrupt()
                     await asyncio.sleep(0.3)   # brief gap so interrupt flushes before next say()
                     await session.say(_goodbye, allow_interruptions=False)
 
-                # Scenario 2: candidate is speaking â€” politely cut in
+                # Scenario 2: candidate is speaking -- politely cut in
                 elif is_candidate_speaking:
-                    logger.info("[TIME_GUARD] Candidate speaking â€” interrupting and delivering goodbye")
+                    logger.info("[TIME_GUARD] Candidate speaking -- interrupting and delivering goodbye")
                     session.interrupt()
                     await asyncio.sleep(0.2)
                     await session.say(_goodbye, allow_interruptions=False)
 
-                # Scenario 3: silence â€” just say goodbye cleanly
+                # Scenario 3: silence -- just say goodbye cleanly
                 else:
-                    logger.info("[TIME_GUARD] Silence â€” delivering goodbye")
+                    logger.info("[TIME_GUARD] Silence -- delivering goodbye")
                     await session.say(_goodbye, allow_interruptions=False)
 
             except Exception as e:
@@ -2774,7 +2713,7 @@ async def entrypoint(ctx: JobContext):
     )
     # Ã°Å¸Â¤- AI Scorecard (NEW)
     if session_start_time:
-        # ── Generate structured report FIRST (scores, skills, strengths) ──────────
+        # -- Generate structured report FIRST (scores, skills, strengths) ----------
         # The report returns a scores_context dict that the summary uses for context.
         try:
             final_scores = list(answer_scores)
@@ -2799,7 +2738,7 @@ async def entrypoint(ctx: JobContext):
             logger.error(f"[REPORT] Failed post-interview for {app_id}: {e}")
             scores_context = None
 
-        # ── Generate candidate insights summary AFTER report ─────────────────
+        # -- Generate candidate insights summary AFTER report -----------------
         # Passes scores_context so the summary LLM can reference actual evaluated scores.
         try:
             await asyncio.wait_for(
@@ -2833,6 +2772,10 @@ async def entrypoint(ctx: JobContext):
         )
     except Exception as e:
         logger.error(f"[USAGE] Failed to persist interview billing snapshot for {app_id}: {e}")
+    # Queue accumulated eval LLM usage (gpt-4.1-mini per-turn calls) so they are
+    # included in the billing snapshot written by flush_pending_manual_billing below.
+    for _eval_usage in _eval_llm_usages_accumulated:
+        await persist_org_manual_billing_usage(org_id, "interview", _eval_usage)
     await flush_pending_manual_billing(org_id)
     # Sync with dashboard: Application COMPLETED
     if finished_task.done():

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, use, useRef, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Building2, User, Mail, ShieldCheck, Globe, RefreshCw, Play, Pause, MapPin as MapPinIcon, ChevronRight, Coins, ChevronDown, Loader2, Shield, Layers, AudioLines, Search, Lock } from "lucide-react";
+import { ArrowLeft, Building2, User, Mail, ShieldCheck, Globe, RefreshCw, Play, Pause, MapPin as MapPinIcon, ChevronRight, Coins, ChevronDown, Loader2, Shield, Layers, AudioLines, Search, Lock, Clock } from "lucide-react";
 import { LocationAutocomplete } from "@/components/ui/location-autocomplete";
 import { toast } from "@/components/ui/toast-custom";
 import { ProctoringSignalsSection } from "@/components/super-admin/proctoring-signals-section";
@@ -84,6 +84,8 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
         location: "", adminName: "", adminEmail: "", adminPassword: "",
         voiceId: "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
         allowedVoices: [] as string[],
+        recordingEnabled: true,
+        recordingRetentionDays: "30",
     });
 
     const stopCurrentPreview = () => {
@@ -177,6 +179,8 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                     adminPassword: "",
                     voiceId: data.voiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
                     allowedVoices: Array.isArray(data.allowedVoices) ? data.allowedVoices : [],
+                    recordingEnabled: Boolean(data.recordingEnabled ?? true),
+                    recordingRetentionDays: String(Math.max(1, Number(data.recordingRetentionDays ?? 30) || 30)),
 
                 });
                 setBillingSnapshot({
@@ -193,6 +197,13 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
 
     const handleSubmit = async (e: FormEvent) => {
         e.preventDefault();
+        if (form.recordingEnabled) {
+            const retentionDays = Number(form.recordingRetentionDays);
+            if (!Number.isFinite(retentionDays) || retentionDays < 1) {
+                toast.error("Recording retention days must be at least 1");
+                return;
+            }
+        }
         setSaving(true);
         try {
             const res = await fetch(`/api/super-admin/orgs/${id}`, {
@@ -381,6 +392,65 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                             <p className="text-[11px] font-medium text-gray-500 leading-relaxed">
                                 Use <span className="font-black text-gray-700">Total Interviews Allocated</span> to set the exact quota. Use <span className="font-black text-gray-700">Top-Up Interviews</span> only to add more on top of that total.
                             </p>
+                        </div>
+                    </div>
+                )}
+
+                {true && (
+                    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
+                        <SectionHeader title="Recording Retention" />
+                        <div className="grid gap-6 md:grid-cols-2">
+                            <div className="space-y-2">
+                                <label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest">
+                                    <Shield className="h-3 w-3 text-[#F97316]" />
+                                    Recording Enabled
+                                </label>
+                                <div className="flex items-center gap-2 rounded-2xl border border-gray-100 bg-gray-50 p-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setForm(p => ({ ...p, recordingEnabled: true }))}
+                                        className={cn(
+                                            "rounded-xl px-4 py-2 text-[11px] font-black uppercase tracking-widest transition",
+                                            form.recordingEnabled ? "bg-white text-[#F97316] shadow-sm" : "text-gray-400 hover:text-gray-700"
+                                        )}
+                                    >
+                                        ON
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setForm(p => ({ ...p, recordingEnabled: false }))}
+                                        className={cn(
+                                            "rounded-xl px-4 py-2 text-[11px] font-black uppercase tracking-widest transition",
+                                            !form.recordingEnabled ? "bg-white text-rose-600 shadow-sm" : "text-gray-400 hover:text-gray-700"
+                                        )}
+                                    >
+                                        OFF
+                                    </button>
+                                    <p className="ml-2 text-[11px] font-medium text-gray-500 leading-relaxed">
+                                        When off, interview egress is blocked and recordings are not persisted.
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="space-y-2">
+                                <label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest">
+                                    <Clock className="h-3 w-3 text-[#F97316]" />
+                                    Recording Retention (Days)
+                                </label>
+                                {form.recordingEnabled ? (
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        value={form.recordingRetentionDays}
+                                        onChange={(e) => setForm(p => ({ ...p, recordingRetentionDays: String(Math.max(1, Number(e.target.value) || 1)) }))}
+                                        className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3.5 text-sm font-medium text-gray-900 shadow-sm outline-none transition focus:border-[#F97316] focus:ring-4 focus:ring-orange-50"
+                                        placeholder="30"
+                                    />
+                                ) : (
+                                    <div className="flex h-11 items-center rounded-xl border border-dashed border-gray-200 bg-gray-50 px-3.5 text-sm font-medium text-gray-400">
+                                        Enable recording to configure retention days.
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
                 )}

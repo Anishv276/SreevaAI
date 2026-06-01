@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, GetObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, GetObjectCommand, ListObjectsV2Command, DeleteObjectCommand } from "@aws-sdk/client-s3";
 
 let _r2Client: S3Client | null = null;
 
@@ -70,21 +70,11 @@ export const putObject = async (bucket: string, key: string, body: Buffer, conte
  * Use this to cleanup old resumes, logos, or JDs when records are deleted in the app.
  */
 export const deleteObject = async (bucket: string, key: string) => {
-    const { DeleteObjectCommand } = await import("@aws-sdk/client-s3");
-    
     // Normalize key: remove any leading slash R2/S3 doesn't like them in the Key field
     const normalizedKey = key.startsWith('/') ? key.substring(1) : key;
 
-    const command = new DeleteObjectCommand({
-        Bucket: bucket,
-        Key: normalizedKey,
-    });
-
     try {
-        if (!process.env.R2_ENDPOINT) {
-      throw new Error("S3_UPLOAD_FAILED: Cloudflare R2 is not configured. Please set R2_ENDPOINT in your environment.");
-    }
-    await getR2Client().send(command);
+        await deleteObjectStrict(bucket, normalizedKey);
         if (process.env.S3_DELETE_LOGS === "true") {
             console.log(`Successfully deleted ${normalizedKey} from bucket ${bucket}`);
         }
@@ -93,6 +83,21 @@ export const deleteObject = async (bucket: string, key: string) => {
         console.error(`R2 Deletion Error [${bucket}/${key}]:`, error);
         return false;
     }
+};
+
+export const deleteObjectStrict = async (bucket: string, key: string) => {
+  const normalizedKey = key.startsWith("/") ? key.slice(1) : key;
+
+  if (!process.env.R2_ENDPOINT) {
+    throw new Error("S3_UPLOAD_FAILED: Cloudflare R2 is not configured. Please set R2_ENDPOINT in your environment.");
+  }
+
+  const command = new DeleteObjectCommand({
+    Bucket: bucket,
+    Key: normalizedKey,
+  });
+
+  await getR2Client().send(command);
 };
 
 /**

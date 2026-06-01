@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
 import { interviewRecordingQueue } from "@/lib/queue";
+import { getOrgRecordingSettings } from "@/lib/recording-retention";
 
 export const runtime = "nodejs";
 
@@ -259,7 +260,7 @@ export async function POST(req: Request) {
                 where: { id: applicationId },
                 select: {
                     fullName: true,
-                    drive: { select: { title: true } },
+                    drive: { select: { title: true, orgId: true } },
                 },
             });
             const safeCandidate = buildCandidateRoleFolder(
@@ -267,6 +268,16 @@ export async function POST(req: Request) {
                 application?.drive?.title,
                 applicationId
             );
+            const orgId = String(application?.drive?.orgId || "");
+            if (orgId) {
+                const recordingSettings = await getOrgRecordingSettings(orgId);
+                if (!recordingSettings.recordingEnabled) {
+                    return NextResponse.json({
+                        error: "Recording is disabled for this organization.",
+                        code: "RECORDING_DISABLED",
+                    }, { status: 403 });
+                }
+            }
 
             // Idempotency: if an egress is already active, do not create another.
             let active = null;

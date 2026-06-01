@@ -1,13 +1,13 @@
 """
 interview/agent_utils.py
 ========================
-General Parsing and Text Helpers — Production-Grade Modernization
+General Parsing and Text Helpers -- Production-Grade Modernization
 
 Tech Stack Applied:
-  - OOP Strategy & Registry Pattern → For safe type coercion and JSON/Float parsing.
-  - OOP GoF Builder Pattern        → MarkdownSectionBuilder for structured prompt building.
-  - DSA O(1) Sets & Search         → frozenset indexing and backward-scan token truncation.
-  - Safe Defaults & Compatibility  → 100% functional parity with legacy facade wrappers.
+  - OOP Strategy & Registry Pattern -> For safe type coercion and JSON/Float parsing.
+  - OOP GoF Builder Pattern        -> MarkdownSectionBuilder for structured prompt building.
+  - DSA O(1) Sets & Search         -> frozenset indexing and backward-scan token truncation.
+  - Safe Defaults & Compatibility  -> 100% functional parity with legacy facade wrappers.
 """
 
 import re
@@ -354,8 +354,8 @@ def first_name_from_full_name(full_name: str) -> str:
     Extract a usable first name from an Indian full name.
     Skips single-letter initials at the start. For 3+ token names with no leading
     initial, uses the second token (given name in South/North Indian conventions).
-    Examples: "S Meenakshi" → "Meenakshi", "Vadla Vamsi Krishna" → "Vamsi",
-              "Ravi Kumar" → "Ravi", "John" → "John".
+    Examples: "S Meenakshi" -> "Meenakshi", "Vadla Vamsi Krishna" -> "Vamsi",
+              "Ravi Kumar" -> "Ravi", "John" -> "John".
     """
     if not full_name:
         return ""

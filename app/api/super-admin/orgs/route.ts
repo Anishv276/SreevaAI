@@ -12,6 +12,7 @@ import { normalizeOrgAiConfig } from "@/lib/ai-provider-config";
 import { normalizeOrgLimitInput } from "@/lib/org-limits";
 import { normalizeOrgStatusControl, ORG_STATUS_CONTROL_MANUAL } from "@/lib/credits";
 import { normalizeEmail } from "@/lib/email";
+import { DEFAULT_RECORDING_RETENTION_DAYS, normalizeRecordingRetentionDays } from "@/lib/recording-retention";
 
 // GET /api/super-admin/orgs - list organizations with stats, pagination, and search
 export async function GET(request: Request) {
@@ -263,6 +264,8 @@ export async function POST(request: Request) {
             orgName, slug, plan, logoUrl, adminEmail, adminName, adminPassword,
             maxActiveDrives,
             interviewQuotaTotal,
+            recordingEnabled,
+            recordingRetentionDays,
             proctoringSignals,
             voiceId, allowedVoices,
             deepgramModel,
@@ -328,6 +331,12 @@ export async function POST(request: Request) {
             proctoringSignals !== undefined
                 ? normalizeProctoringSignals(proctoringSignals)
                 : undefined;
+        const resolvedRecordingEnabled =
+            recordingEnabled === undefined ? true : Boolean(recordingEnabled);
+        const resolvedRecordingRetentionDays = normalizeRecordingRetentionDays(
+            recordingRetentionDays ?? DEFAULT_RECORDING_RETENTION_DAYS,
+            DEFAULT_RECORDING_RETENTION_DAYS
+        );
 
         console.log("[SuperAdmin] Provisioning Org with AI Config:", { voiceId, deepgramModel });
 
@@ -345,6 +354,8 @@ export async function POST(request: Request) {
                 interviewQuotaTotal: Math.max(0, Math.round(Number(interviewQuotaTotal ?? 0) || 0)),
                 creditsUsed: 0,
                 logoUrl: logoUrl || null,
+                recordingEnabled: resolvedRecordingEnabled,
+                recordingRetentionDays: resolvedRecordingRetentionDays,
                 usageMetrics: {},
                 location: location || null,
 

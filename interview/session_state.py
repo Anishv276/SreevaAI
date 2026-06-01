@@ -7,17 +7,17 @@ per-turn by trust_engine.apply_turn_decision(), and finalized once at
 session end by trust_engine.finalize_trust_state().
 
 Bucket weights (must sum to 1.0):
-  intelligence_quality  45%  — answer depth, specificity, clarity, grounding
-  behavioral_confidence 30%  — ownership clarity, example quality, follow-up consistency
-  hard_integrity        25%  — inconsistencies, proctoring events
+  intelligence_quality  45%  -- answer depth, specificity, clarity, grounding
+  behavioral_confidence 30%  -- ownership clarity, example quality, follow-up consistency
+  hard_integrity        25%  -- inconsistencies, proctoring events
 
-Trust score = weighted sum of the three buckets, clamped 0.0–1.0.
+Trust score = weighted sum of the three buckets, clamped 0.0-1.0.
 Bands (integrity_band, quality_band) are only meaningful after finalization.
 
 Refactor additions (non-breaking):
-  - IntegrityBand / QualityBand / TrendLabel: str Enum — replaces sentinel classes
-  - SlidingWindow: O(1) amortized fixed-size deque — replaces raw list slicing
-  - OrderedSet: O(1) membership + insertion-order dedup — replaces list + "not in" scan
+  - IntegrityBand / QualityBand / TrendLabel: str Enum -- replaces sentinel classes
+  - SlidingWindow: O(1) amortized fixed-size deque -- replaces raw list slicing
+  - OrderedSet: O(1) membership + insertion-order dedup -- replaces list + "not in" scan
   - BucketScoresModel: Pydantic BaseModel with field-level clamping
   - TrustStateModel: Pydantic BaseModel wrapper for LangGraph nodes and API surfaces
   All legacy TypedDicts and init_trust_state() remain unchanged.
@@ -32,23 +32,23 @@ from pydantic import BaseModel, Field, field_validator
 
 
 # ---------------------------------------------------------------------------
-# Band Enums — str-Enum so existing `== "high"` comparisons still work
+# Band Enums -- str-Enum so existing `== "high"` comparisons still work
 # ---------------------------------------------------------------------------
 
 class IntegrityBand(str, Enum):
-    """Integrity quality tier — reflects hard_integrity bucket score."""
-    HIGH     = "high"      # >= 0.75 — no integrity concerns
-    MEDIUM   = "medium"    # >= 0.50 — minor flags
-    LOW      = "low"       # >= 0.30 — significant concerns
-    CRITICAL = "critical"  # <  0.30 — severe integrity issues
+    """Integrity quality tier -- reflects hard_integrity bucket score."""
+    HIGH     = "high"      # >= 0.75 -- no integrity concerns
+    MEDIUM   = "medium"    # >= 0.50 -- minor flags
+    LOW      = "low"       # >= 0.30 -- significant concerns
+    CRITICAL = "critical"  # <  0.30 -- severe integrity issues
 
 
 class QualityBand(str, Enum):
-    """Answer quality tier — reflects intelligence_quality bucket score."""
-    STRONG   = "strong"    # >= 0.75 — consistently deep answers
-    ADEQUATE = "adequate"  # >= 0.50 — acceptable depth
-    WEAK     = "weak"      # >= 0.30 — mostly surface answers
-    POOR     = "poor"      # <  0.30 — consistently shallow
+    """Answer quality tier -- reflects intelligence_quality bucket score."""
+    STRONG   = "strong"    # >= 0.75 -- consistently deep answers
+    ADEQUATE = "adequate"  # >= 0.50 -- acceptable depth
+    WEAK     = "weak"      # >= 0.30 -- mostly surface answers
+    POOR     = "poor"      # <  0.30 -- consistently shallow
 
 
 class TrendLabel(str, Enum):
@@ -60,7 +60,7 @@ class TrendLabel(str, Enum):
 
 
 # ---------------------------------------------------------------------------
-# Legacy string constants — kept so all existing imports never break
+# Legacy string constants -- kept so all existing imports never break
 # ---------------------------------------------------------------------------
 
 INTEGRITY_BAND_HIGH     = IntegrityBand.HIGH
@@ -78,7 +78,7 @@ TREND_IMPROVING  = TrendLabel.IMPROVING
 TREND_DECLINING  = TrendLabel.DECLINING
 TREND_COLLAPSING = TrendLabel.COLLAPSING
 
-# Legacy class-style accessors — kept so trust_engine.py import doesn't break
+# Legacy class-style accessors -- kept so trust_engine.py import doesn't break
 class _IntegrityBand:
     HIGH     = INTEGRITY_BAND_HIGH
     MEDIUM   = INTEGRITY_BAND_MEDIUM
@@ -96,7 +96,7 @@ QUALITY_BAND   = _QualityBand()
 
 
 # ---------------------------------------------------------------------------
-# DSA: SlidingWindow — O(1) amortized fixed-size window
+# DSA: SlidingWindow -- O(1) amortized fixed-size window
 # ---------------------------------------------------------------------------
 
 class SlidingWindow:
@@ -111,10 +111,10 @@ class SlidingWindow:
 
         w = SlidingWindow(maxlen=8)
         w.append(7.5)
-        w.window(4)     # → list of last 4 entries
-        w.average(4)    # → mean of last 4 entries (0.0 if empty)
-        len(w)          # → current size
-        w.to_list()     # → full window as list
+        w.window(4)     # -> list of last 4 entries
+        w.average(4)    # -> mean of last 4 entries (0.0 if empty)
+        len(w)          # -> current size
+        w.to_list()     # -> full window as list
     """
 
     __slots__ = ("_dq",)
@@ -160,7 +160,7 @@ class SlidingWindow:
         return (first, second)
 
     def to_list(self) -> list[float]:
-        """Full window contents as a plain list (oldest → newest)."""
+        """Full window contents as a plain list (oldest -> newest)."""
         return list(self._dq)
 
     # -- dunder --------------------------------------------------------------
@@ -173,7 +173,7 @@ class SlidingWindow:
 
 
 # ---------------------------------------------------------------------------
-# DSA: OrderedSet — O(1) membership + insertion-order dedup
+# DSA: OrderedSet -- O(1) membership + insertion-order dedup
 # ---------------------------------------------------------------------------
 
 class OrderedSet:
@@ -188,7 +188,7 @@ class OrderedSet:
 
         s = OrderedSet(["ownership_ambiguity"])
         s.add("follow_up_collapse")
-        "ownership_ambiguity" in s    # True  — O(1)
+        "ownership_ambiguity" in s    # True  -- O(1)
         s.to_list()                   # ["ownership_ambiguity", "follow_up_collapse"]
     """
 
@@ -235,11 +235,11 @@ class OrderedSet:
 
 
 # ---------------------------------------------------------------------------
-# Pydantic: BucketScoresModel — validated, dot-access sub-model
+# Pydantic: BucketScoresModel -- validated, dot-access sub-model
 # ---------------------------------------------------------------------------
 
 class BucketScoresModel(BaseModel):
-    """Pydantic model for the three trust buckets (all clamped 0.0–1.0).
+    """Pydantic model for the three trust buckets (all clamped 0.0-1.0).
 
     Use alongside the legacy BucketScores TypedDict:
     - New code: use BucketScoresModel for dot-access + validation
@@ -249,15 +249,15 @@ class BucketScoresModel(BaseModel):
 
     intelligence_quality: float = Field(
         default=0.65, ge=0.0, le=1.0,
-        description="Answer depth, specificity, clarity, grounding — 45% weight",
+        description="Answer depth, specificity, clarity, grounding -- 45% weight",
     )
     behavioral_confidence: float = Field(
         default=0.65, ge=0.0, le=1.0,
-        description="Ownership clarity, examples, follow-up consistency — 30% weight",
+        description="Ownership clarity, examples, follow-up consistency -- 30% weight",
     )
     hard_integrity: float = Field(
         default=0.75, ge=0.0, le=1.0,
-        description="Inconsistencies and proctoring events — 25% weight",
+        description="Inconsistencies and proctoring events -- 25% weight",
     )
 
     model_config = {"extra": "forbid"}
@@ -302,7 +302,7 @@ class BucketScoresModel(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Pydantic: TrustStateModel — full validated model for LangGraph + APIs
+# Pydantic: TrustStateModel -- full validated model for LangGraph + APIs
 # ---------------------------------------------------------------------------
 
 class TrustStateModel(BaseModel):
@@ -314,8 +314,8 @@ class TrustStateModel(BaseModel):
 
     Convert::
 
-        model = TrustStateModel.from_trust_state(state)   # TypedDict → Model
-        state = model.to_trust_state()                     # Model → TypedDict
+        model = TrustStateModel.from_trust_state(state)   # TypedDict -> Model
+        state = model.to_trust_state()                     # Model -> TypedDict
     """
 
     trust_score: float = Field(default=0.675, ge=0.0, le=1.0)
@@ -385,50 +385,50 @@ class TrustStateModel(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Legacy TypedDicts — unchanged, preserved for all existing callers
+# Legacy TypedDicts -- unchanged, preserved for all existing callers
 # ---------------------------------------------------------------------------
 
 class BucketScores(TypedDict):
-    intelligence_quality: float    # 0.0–1.0 — answer depth, specificity, clarity, grounding
-    behavioral_confidence: float   # 0.0–1.0 — ownership, examples, follow-up consistency
-    hard_integrity: float          # 0.0–1.0 — inconsistencies and proctoring events
+    intelligence_quality: float    # 0.0-1.0 -- answer depth, specificity, clarity, grounding
+    behavioral_confidence: float   # 0.0-1.0 -- ownership, examples, follow-up consistency
+    hard_integrity: float          # 0.0-1.0 -- inconsistencies and proctoring events
 
 
 class TrustState(TypedDict):
-    # ── Composite score ───────────────────────────────────────────────────────
-    trust_score: float             # 0.0–1.0 weighted sum of buckets
+    # -- Composite score -------------------------------------------------------
+    trust_score: float             # 0.0-1.0 weighted sum of buckets
 
-    # ── Bands — only meaningful after finalize_trust_state() ─────────────────
+    # -- Bands -- only meaningful after finalize_trust_state() -----------------
     integrity_band: str            # high / medium / low / critical
     quality_band: str              # strong / adequate / weak / poor
 
-    # ── Trend — direction of quality over last N turns ────────────────────────
+    # -- Trend -- direction of quality over last N turns ------------------------
     trend: str                     # stable / improving / declining / collapsing
 
-    # ── Weighted sub-scores ───────────────────────────────────────────────────
+    # -- Weighted sub-scores ---------------------------------------------------
     buckets: BucketScores
 
-    # ── Evidence lists (append-only, deduplicated) ────────────────────────────
+    # -- Evidence lists (append-only, deduplicated) ----------------------------
     risk_factors: list[str]        # negative signal names accumulated across session
     recovery_factors: list[str]    # positive rebound events accumulated across session
 
-    # ── Per-turn quality history — used for trend + depth_decay detection ─────
-    score_history: list[float]     # overall quality score per interview turn (floats 0–10)
+    # -- Per-turn quality history -- used for trend + depth_decay detection -----
+    score_history: list[float]     # overall quality score per interview turn (floats 0-10)
 
-    # ── Turn counter ──────────────────────────────────────────────────────────
+    # -- Turn counter ----------------------------------------------------------
     turn_count: int
 
-    # ── Internal carry-over for recovery detection (not in recruiter summary) ──
+    # -- Internal carry-over for recovery detection (not in recruiter summary) --
     _last_signals: dict[str, bool] # signal flags from previous turn
     _last_action: str              # action from previous turn (PROBE / MOVE_ON / VERIFY)
 
-    # ── Finalization ──────────────────────────────────────────────────────────
+    # -- Finalization ----------------------------------------------------------
     finalized: bool                # True after finalize_trust_state() is called
     finalized_at: float            # Unix timestamp of finalization
 
 
 # ---------------------------------------------------------------------------
-# Initializer — public API signature unchanged
+# Initializer -- public API signature unchanged
 # ---------------------------------------------------------------------------
 
 def init_trust_state() -> TrustState:
@@ -436,9 +436,9 @@ def init_trust_state() -> TrustState:
     Return a fresh TrustState at session start.
 
     Starting values:
-      intelligence_quality  = 0.65  (neutral — no answers yet)
-      behavioral_confidence = 0.65  (neutral — no behavioral signals yet)
-      hard_integrity        = 0.75  (benefit of the doubt — innocent until proven otherwise)
+      intelligence_quality  = 0.65  (neutral -- no answers yet)
+      behavioral_confidence = 0.65  (neutral -- no behavioral signals yet)
+      hard_integrity        = 0.75  (benefit of the doubt -- innocent until proven otherwise)
 
     Composite trust_score is computed from the three buckets so it stays
     consistent with _recompute_score() throughout the session:

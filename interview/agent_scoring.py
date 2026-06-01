@@ -2,16 +2,16 @@
 agent_scoring.py
 
 AFTER (1 merged LLM call, ~700ms total):
-  Call AB → evaluate_answer()          → {clarity:7, depth:4, ..., action: PROBE, probe_mode: ownership}
+  Call AB -> evaluate_answer()          -> {clarity:7, depth:4, ..., action: PROBE, probe_mode: ownership}
   One round-trip returns BOTH quality scores AND routing decision.
-#   Saturation, weak_exit, time_pressure still get quality scores — nothing removed.
+#   Saturation, weak_exit, time_pressure still get quality scores -- nothing removed.
 #   turn_evaluator.py no longer needs asyncio.gather() for these two tasks.
 #
 # EXAMPLE:
 #   Candidate says: "We built a REST API using FastAPI"
-#   AFTER:  Single call scores clarity=6,depth=3 AND sees "we built" → PROBE ownership.
+#   AFTER:  Single call scores clarity=6,depth=3 AND sees "we built" -> PROBE ownership.
 #   Result is identical. Latency drops ~800ms.
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 """
 from __future__ import annotations
 
@@ -26,6 +26,24 @@ logger = logging.getLogger("interview-agent")
 EVAL_LLM_MODEL   = "gpt-4.1-mini"
 EVAL_TEMPERATURE = 0.0
 
+_UNABLE_TO_ANSWER_RE = re.compile(
+    r"\b("
+    r"i\s+(?:do\s+not|don't|dont)\s+know|"
+    r"no\s+idea|"
+    r"not\s+sure|"
+    r"(?:can't|cant|cannot)\s+answer|"
+    r"i\s+(?:did\s+not|didn't|didnt)\s+(?:do|work|build|use|handle)\b|"
+    r"i\s+have\s+not\s+(?:done|worked|built|used|handled)\b|"
+    r"nothing\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _candidate_cannot_answer(text: str) -> bool:
+    """Detect explicit no-answer/refusal turns before generic short-answer handling."""
+    return bool(_UNABLE_TO_ANSWER_RE.search(str(text or "").strip()))
+
 
 async def evaluate_answer(
     candidate_answer: str,
@@ -37,56 +55,64 @@ async def evaluate_answer(
     llm_model: str = EVAL_LLM_MODEL,
     is_warmup: bool = False,
     candidate_band: str = "mid",
+    active_topic: str = "",
+    topic_importance: str = "HIGH",
+    job_title: str = "",
 ) -> dict:
     """
     Single merged LLM call: scores answer quality AND decides PROBE/MOVE_ON.
 
-    Returns a dict with ALL fields from the old separate functions:
-      Quality scores: clarity, depth, specificity, grounding, fluency, grammar, confidence
-      Routing:        action, probe_mode, reason, depth_signal
+    Returns:
+      Quality scores: clarity, depth, specificity, grounding, overall
+      Routing:        action, probe_mode, reason
     """
-    # Warmup turns skip scoring — return zeroed quality + safe routing default
+    # Warmup turns skip scoring -- return zeroed quality + safe routing default
     if is_warmup:
         return {
             "clarity": 0, "depth": 0, "specificity": 0, "grounding": 0,
-            "fluency": 0, "grammar": 0, "confidence": 0,
-            "overall": 0.0, "signals": [], "concerns": [],
+            "overall": 0.0,
             "is_warmup": True,
             "action": "MOVE_ON", "probe_mode": None,
-            "reason": "warmup turn", "depth_signal": "SURFACE",
+            "reason": "warmup turn",
         }
 
-    # Empty answer — no LLM call needed
+    # Empty answer -- no LLM call needed
     if not candidate_answer or not candidate_answer.strip():
         return {
             "clarity": 0, "depth": 0, "specificity": 0, "grounding": 0,
-            "fluency": 0, "grammar": 0, "confidence": 0,
-            "overall": 0.0, "signals": [], "concerns": ["empty_answer"],
+            "overall": 0.0,
             "action": "MOVE_ON", "probe_mode": None,
-            "reason": "empty answer", "depth_signal": "SURFACE",
+            "reason": "empty answer",
         }
 
-    # Very short answers can't demonstrate depth — hard-cap scores, still ask for routing
+    # Very short answers can't demonstrate depth -- hard-cap scores, still ask for routing
     word_count = len(candidate_answer.strip().split())
+    if _candidate_cannot_answer(candidate_answer):
+        return {
+            "clarity": 1, "depth": 0, "specificity": 0, "grounding": 0,
+            "overall": 0.2,
+            "action": "MOVE_ON", "probe_mode": None,
+            "reason": "candidate cannot answer",
+        }
+
     if word_count < 5:
         clarity = 1 if word_count > 0 else 0
         return {
             "clarity": clarity, "depth": 0, "specificity": 0, "grounding": 0,
-            "fluency": 1, "grammar": 1, "confidence": 1,
-            "overall": clarity / 4.0, "signals": [], "concerns": ["incomplete"],
+            "overall": clarity * 0.20,
             "action": "PROBE", "probe_mode": "ownership",
-            "reason": "answer too short to evaluate", "depth_signal": "SURFACE",
+            "reason": "answer too short to evaluate",
         }
 
-    # Use last 6 lines (3 Q&A pairs) — enough for LLM to see follow-up context
+    # Use last 6 lines (3 Q&A pairs) -- enough for LLM to see follow-up context
     # without pulling in old-topic lines that cause the LLM to conflate answers.
     recent_context = "\n".join(transcript_lines[-6:]) if transcript_lines else ""
 
     # Log before the LLM call so you can see it started in the terminal.
     # If this log appears but [EVAL] DONE never follows, the LLM call hung.
     logger.info(
-        "[EVAL] ▶ merged evaluate_answer | model=%s words=%d follow_ups=%d",
-        llm_model, word_count, topic_follow_up_count,
+        "[EVAL] > merged evaluate_answer | model=%s words=%d follow_ups=%d topic=%s",
+        llm_model, word_count, topic_follow_up_count, active_topic or "?",
     )
 
     # Band-aware follow-up cutoff: how many turns before the LLM judge biases to MOVE_ON.
@@ -97,23 +123,23 @@ async def evaluate_answer(
     # Band-aware scoring bar: what counts as "good enough" to MOVE_ON at each level.
     _band_scoring_note = {
         "fresher": (
-            "FRESHER candidate — score generously on grounding (they have limited work history).\n"
+            "FRESHER candidate -- score generously on grounding (they have limited work history).\n"
             "MOVE_ON if they showed they understand WHY they made a choice, even simply.\n"
             "Do NOT expect tradeoffs, scale, or architecture depth."
         ),
         "mid": (
-            "MID-LEVEL candidate — expect clear ownership and at least one real decision.\n"
+            "MID-LEVEL candidate -- expect clear ownership and at least one real decision.\n"
             "MOVE_ON if they named what was specifically theirs and gave one concrete detail.\n"
-            "Push back on 'we' language once — if still vague, MOVE_ON."
+            "Push back on 'we' language once -- if still vague, MOVE_ON."
         ),
         "experienced": (
-            "EXPERIENCED candidate — expect depth, specifics, and real tradeoffs.\n"
-            "Do NOT MOVE_ON on vague answers — probe harder. A clean story with no friction is a red flag.\n"
+            "EXPERIENCED candidate -- expect depth, specifics, and real tradeoffs.\n"
+            "Do NOT MOVE_ON on vague answers -- probe harder. A clean story with no friction is a red flag.\n"
             "MOVE_ON only when you have a real tradeoff, a consequence, or a specific metric."
         ),
         "senior": (
-            "SENIOR candidate — expect strategic judgment, org impact, high-stakes decisions.\n"
-            "Polished generic answers are not enough — push for what actually went wrong or what they'd change.\n"
+            "SENIOR candidate -- expect strategic judgment, org impact, high-stakes decisions.\n"
+            "Polished generic answers are not enough -- push for what actually went wrong or what they'd change.\n"
             "MOVE_ON only when you have evidence of real judgment under pressure, not just competence."
         ),
     }.get(candidate_band, "Probe for real ownership and specific decisions.")
@@ -128,74 +154,93 @@ async def evaluate_answer(
                     {
                         "role": "system",
                         "content": (
-                            "You are scoring a candidate's interview answer and deciding the next move.\n"
-                            "Output ONLY valid JSON with these exact fields:\n"
+                            "You score a candidate interview answer and decide the next interviewing move.\n"
+                            "Output ONLY valid JSON with exactly these 7 fields:\n"
                             "{\n"
                             '  "clarity": 0-10,\n'
                             '  "depth": 0-10,\n'
                             '  "specificity": 0-10,\n'
                             '  "grounding": 0-10,\n'
-                            '  "fluency": 0-10,\n'
-                            '  "grammar": 0-10,\n'
-                            '  "confidence": 0-10,\n'
                             '  "action": "PROBE" or "MOVE_ON",\n'
                             '  "probe_mode": "ownership"|"depth"|"authenticity"|"pressure"|"clarification"|null,\n'
-                            '  "reason": "max 8 words from the answer that drove your decision",\n'
-                            '  "depth_signal": "SURFACE"|"SPECIFIC"|"DEEP"\n'
+                            '  "reason": "one short phrase from their answer that drove your call"\n'
                             "}\n\n"
 
-                            "── SCORES (clarity, depth, specificity, grounding drive saturation) ──\n"
-                            "clarity: Is it easy to follow? "
-                            "1=disconnected fragments | 4=understandable but scattered | 7=clear structure | 10=precise and logical\n"
-                            "depth: Did they show WHY, not just WHAT? "
-                            "1=no reasoning at all | 4=stated the thing, no reason | 7=explained tradeoffs | 10=cause-effect + edge cases\n"
-                            "specificity: Real names, tools, numbers, dates? "
-                            "1=completely generic | 4=vague ('some tool', 'a while') | 7=named specific things | 10=numbers+names+dates\n"
-                            "grounding: Does this sound like real lived work? "
-                            "1=pure theory/reading | 4=could be anyone | 7=clearly from real experience | 10=rich texture, imperfect detail\n"
-                            "fluency: Natural spoken delivery? 1=halting | 5=hesitant but followable | 10=natural\n"
-                            "grammar: Speech grammar? 1=major errors | 5=understandable | 10=correct\n"
-                            "confidence: Decisive and assured? 1=very uncertain | 5=tentative | 10=direct\n\n"
+                            f"-- INTERVIEW CONTEXT --\n"
+                            f"Role being hired for: {job_title or 'not specified'}\n"
+                            f"Topic being evaluated: {active_topic or 'general'}\n"
+                            f"Topic importance: {topic_importance} (CRITICAL = must go deep, LOW = breadth is fine)\n\n"
+                            "Use this context to judge whether the candidate's answer is appropriate for the role and topic.\n"
+                            "A strong answer on a CRITICAL topic must show real domain knowledge -- not just communication skill.\n"
+                            "If the answer is technically incorrect or misunderstands the topic, penalise depth and grounding.\n\n"
 
-                            "── depth_signal ──\n"
-                            "SURFACE: answer is generic, no real names/tools/numbers\n"
-                            "SPECIFIC: named at least one real thing (tool, project, number)\n"
-                            "DEEP: has specifics AND reasoning AND at least one tradeoff or consequence\n\n"
+                            "-- THE 4 SCORES --\n"
+                            "All 4 scores feed directly into the saturation system that decides when to change topics.\n"
+                            "Score what they actually said -- not what they could have said.\n\n"
 
-                            "── ROUTING: action + probe_mode ──\n"
-                            "Use the scores to drive the decision, not separately from them:\n\n"
-                            "MOVE_ON when:\n"
-                            "  - specificity ≥ 7 AND depth ≥ 6 AND grounding ≥ 6 (they gave a real answer)\n"
-                            f"  - OR follow-ups ≥ {_followup_cutoff} (band-appropriate time spent, move on regardless)\n"
-                            "  - OR candidate said 'I don't know' / 'I didn't do that' / 'I can't answer'\n"
-                            "  - OR candidate explicitly said 'don't ask about X' / 'I didn't build anything' / 'ask me about skills instead'\n"
-                            "    → Respect the redirect. Do NOT probe further. MOVE_ON immediately.\n\n"
-                            "PROBE when: more can be pulled. Pick probe_mode based on what's weakest:\n"
-                            "  ownership     — grounding low, 'we' language, role unclear, HOW unknown\n"
-                            "  depth         — specificity ok but depth low, no tradeoff/metric/reasoning\n"
-                            "  authenticity  — sounds rehearsed, shallower than first answer, skill claimed not shown\n"
-                            "  pressure      — story too clean, no mistake/friction — needs a hard moment\n"
-                            "  clarification — contradicts earlier, or answer keeps getting shorter\n\n"
-                            f"── BAND: {candidate_band.upper()} ──\n"
+                            "clarity (0-10) -- Is the answer easy to follow?\n"
+                            "  0-2: disconnected, hard to parse\n"
+                            "  3-5: followable but jumps around or trails off\n"
+                            "  6-8: clear structure, logical flow\n"
+                            "  9-10: precise, concise, logically tight\n\n"
+
+                            "depth (0-10) -- Did they explain WHY or HOW, not just WHAT?\n"
+                            "  0-2: stated a fact with zero reasoning\n"
+                            "  3-5: some reasoning, no tradeoffs\n"
+                            "  6-8: explained a real decision or tradeoff\n"
+                            "  9-10: cause-effect chain, edge cases, consequences named\n\n"
+
+                            "specificity (0-10) -- Real names, tools, numbers, dates?\n"
+                            "  0-2: completely generic ('we used a tool', 'some time ago')\n"
+                            "  3-5: vague references, no real names or numbers\n"
+                            "  6-8: named at least one real tool, project, metric, or date\n"
+                            "  9-10: specific names + numbers + timeline present\n\n"
+
+                            "grounding (0-10) -- Does this sound like real lived work?\n"
+                            "  0-2: pure theory, could be copied from docs\n"
+                            "  3-5: plausible but could be anyone\n"
+                            "  6-8: clearly from real experience, has texture\n"
+                            "  9-10: rich imperfect detail only someone who did it would know\n\n"
+
+                            "-- ROUTING --\n"
+                            "Your action tells the system whether this answer gave enough signal or needs more digging.\n"
+                            "The saturation system handles when to change topics -- your job is to say what to do NEXT.\n\n"
+
+                            "PROBE -- when more can be pulled from this answer. Pick probe_mode based on what is weakest:\n"
+                            "  ownership     -- grounding or specificity low, heavy 'we' language, HOW is unknown\n"
+                            "  depth         -- specificity ok but depth low, no tradeoff, metric, or real reasoning\n"
+                            "  authenticity  -- sounds rehearsed, shallower than their first answer, claimed skill not shown\n"
+                            "  pressure      -- story is too clean, no friction, mistake, or hard moment mentioned\n"
+                            "  clarification -- contradicts something said earlier, or answers are getting shorter each turn\n\n"
+
+                            "MOVE_ON -- only when this answer genuinely covered the topic:\n"
+                            "  - depth >= 7 AND specificity >= 7 AND grounding >= 6 (real, specific, reasoned answer)\n"
+                            "  - For CRITICAL topics: require depth >= 8 -- a polished answer is not enough, need real domain knowledge\n"
+                            "  - OR the candidate clearly cannot answer this (said I don't know / I didn't do that)\n"
+                            "  probe_mode must be null when action=MOVE_ON\n\n"
+
+                            f"-- BAND: {candidate_band.upper()} --\n"
                             f"{_band_scoring_note}\n\n"
-                            "RULES: probe_mode must be null when action=MOVE_ON. "
-                            "reason must quote the candidate's actual words."
+
+                            "RULES:\n"
+                            "  - Score THIS answer only -- not the candidate overall\n"
+                            "  - reason must quote actual words from their answer (max 8 words)\n"
+                            "  - probe_mode is required when action=PROBE, null when action=MOVE_ON"
                         ),
                     },
                     {
                         "role": "user",
                         "content": (
-                            f"QUESTION ASKED: {last_question}\n\n"
-                            f"CANDIDATE ANSWER: {candidate_answer}\n\n"
-                            f"FOLLOW-UPS ALREADY ASKED ON THIS TOPIC: {topic_follow_up_count}\n"
-                            f"(band cutoff = {_followup_cutoff} follow-ups — bias to MOVE_ON if at or past this)\n\n"
-                            f"RECENT CONTEXT (for detecting collapse or consistency issues):\n{recent_context}"
+                            f"QUESTION: {last_question}\n\n"
+                            f"ANSWER: {candidate_answer}\n\n"
+                            f"FOLLOW-UPS ON THIS TOPIC SO FAR: {topic_follow_up_count}\n\n"
+                            f"RECENT TRANSCRIPT (last 3 exchanges -- use to detect collapse or contradiction):\n{recent_context}"
                         ),
                     },
                 ],
                 response_format={"type": "json_object"},
             ),
-            timeout=6.0,  # raised from 4s — richer prompt + json_object mode needs more room
+            timeout=6.0,  # raised from 4s -- richer prompt + json_object mode needs more room
         )
 
         raw = completion.choices[0].message.content or "{}"
@@ -218,11 +263,14 @@ async def evaluate_answer(
         depth       = _clamp(data.get("depth", 0))
         specificity = _clamp(data.get("specificity", 0))
         grounding   = _clamp(data.get("grounding", 0))
-        fluency     = _clamp(data.get("fluency", 0))
-        grammar     = _clamp(data.get("grammar", 0))
-        confidence  = _clamp(data.get("confidence", 0))
-
-        overall = (clarity + depth + specificity + grounding) / 4.0
+        # Weighted to match ResponseScoreCalculator in eval_pipeline -- same number
+        # drives both the log and the saturation contribution calculation.
+        overall = (
+            clarity * 0.20
+            + depth * 0.35
+            + specificity * 0.30
+            + grounding * 0.15
+        )
 
         action = str(data.get("action", "PROBE")).upper()
         if action not in ("PROBE", "MOVE_ON"):
@@ -247,14 +295,11 @@ async def evaluate_answer(
             probe_mode = "ownership"  # safe default
 
         reason = str(data.get("reason", ""))[:120]
-        depth_signal = str(data.get("depth_signal", "SURFACE")).upper()
-        if depth_signal not in ("SURFACE", "SPECIFIC", "DEEP"):
-            depth_signal = "SURFACE"
 
         logger.info(
-            "[EVAL] ✅ action=%s probe=%s depth_signal=%s | "
+            "[EVAL] [OK] action=%s probe=%s | "
             "clarity=%d depth=%d specificity=%d grounding=%d | reason=%s",
-            action, probe_mode, depth_signal,
+            action, probe_mode,
             int(clarity), int(depth), int(specificity), int(grounding),
             repr(reason),
         )
@@ -262,31 +307,28 @@ async def evaluate_answer(
         return {
             "clarity": clarity, "depth": depth,
             "specificity": specificity, "grounding": grounding,
-            "fluency": fluency, "grammar": grammar, "confidence": confidence,
             "overall": overall,
             "action": action, "probe_mode": probe_mode,
-            "reason": reason, "depth_signal": depth_signal,
+            "reason": reason,
             "_llm_usage": _eval_llm_usage,
         }
 
     except asyncio.TimeoutError:
-        logger.warning("[EVAL] ⏰ evaluate_answer timed out (6s) — returning surface fallback")
+        logger.warning("[EVAL] ⏰ evaluate_answer timed out (6s) -- returning surface fallback")
         return {
             "clarity": 1, "depth": 1, "specificity": 1, "grounding": 1,
-            "fluency": 1, "grammar": 1, "confidence": 1,
             "overall": 1.0,
             "action": "PROBE", "probe_mode": "ownership",
-            "reason": "eval timeout", "depth_signal": "SURFACE",
+            "reason": "eval timeout",
             "is_timeout": True,
         }
     except Exception as e:
-        logger.error("[EVAL] ❌ evaluate_answer failed: %s", e, exc_info=True)
+        logger.error("[EVAL] [X] evaluate_answer failed: %s", e, exc_info=True)
         return {
             "clarity": 0, "depth": 0, "specificity": 0, "grounding": 0,
-            "fluency": 0, "grammar": 0, "confidence": 0,
             "overall": 0.0,
             "action": "PROBE", "probe_mode": "ownership",
-            "reason": "eval error", "depth_signal": "SURFACE",
+            "reason": "eval error",
         }
 
 
@@ -312,96 +354,3 @@ def notify_sync_engine(app_id: str, turn: int, action: str) -> None:
             logger.warning("[SYNC_ERROR] Failed to notify sync engine: %s", e)
 
     threading.Thread(target=_ping, daemon=True).start()
-
-
-# ---------------------------------------------------------------------------
-# Live-N Phase 1: Fast Routing Call (~200ms)
-# ---------------------------------------------------------------------------
-# This is the ONLY call that blocks the LLM gate in Live-N.
-# It decides MOVE_ON/PROBE and which probe family — nothing else.
-# Quality scoring (evaluate_answer) runs async AFTER Ishita has already spoken.
-#
-# Prompt is intentionally lean: max_tokens=80, no quality dimensions, just routing.
-# Typical latency: 150-300ms vs 700-1500ms for full evaluate_answer.
-# ---------------------------------------------------------------------------
-
-_ROUTING_SYSTEM_PROMPT = """You decide the next interview move based on the candidate's answer.
-Output ONLY valid JSON with exactly these fields:
-{
-  "action": "PROBE" or "MOVE_ON",
-  "probe_mode": "ownership"|"depth"|"authenticity"|"pressure"|"clarification"|null,
-  "reason": "max 6 words from the answer"
-}
-
-MOVE_ON when:
-  - Candidate gave a real, specific answer (named something concrete)
-  - Candidate said "I don't know" / "I didn't do that" / "don't ask about X"
-  - follow_ups >= band_cutoff (time spent is enough)
-
-PROBE when more can be pulled. Pick probe_mode:
-  ownership     — vague "we" language, HOW unknown, role unclear
-  depth         — specific but no tradeoff/metric/reasoning
-  authenticity  — sounds rehearsed, shallower than first answer
-  pressure      — story too clean, no friction or failure mentioned
-  clarification — contradicts earlier, answer getting shorter
-
-RULES: probe_mode must be null when action=MOVE_ON."""
-
-
-async def route_answer(
-    candidate_answer: str,
-    last_question: str,
-    topic_follow_up_count: int,
-    candidate_band: str = "mid",
-    client = None,
-    llm_model: str = EVAL_LLM_MODEL,
-) -> dict:
-    """
-    Phase 1 routing: fast LLM call that returns MOVE_ON/PROBE only.
-    Target latency: 150-300ms. Blocks LLM gate in Live-N.
-    """
-    if not candidate_answer or not candidate_answer.strip():
-        return {"action": "PROBE", "probe_mode": "ownership", "reason": "empty answer"}
-
-    _band_cutoff = {"fresher": 2, "mid": 3, "experienced": 5, "senior": 6}.get(candidate_band, 3)
-
-    user_content = (
-        f"QUESTION: {last_question}\n\n"
-        f"ANSWER: {candidate_answer}\n\n"
-        f"FOLLOW-UPS ON THIS TOPIC: {topic_follow_up_count} "
-        f"(band cutoff={_band_cutoff} — bias MOVE_ON if at or past this)"
-    )
-
-    try:
-        completion = await asyncio.wait_for(
-            client.chat.completions.create(
-                model=llm_model,
-                temperature=0.0,
-                max_tokens=80,
-                messages=[
-                    {"role": "system", "content": _ROUTING_SYSTEM_PROMPT},
-                    {"role": "user",   "content": user_content},
-                ],
-                response_format={"type": "json_object"},
-            ),
-            timeout=3.0,
-        )
-        data = json.loads(completion.choices[0].message.content or "{}")
-        action = str(data.get("action", "PROBE")).upper()
-        if action not in ("PROBE", "MOVE_ON"):
-            action = "PROBE"
-        _VALID = {"ownership", "depth", "authenticity", "pressure", "clarification"}
-        raw_mode = str(data.get("probe_mode") or "").strip().lower()
-        probe_mode = raw_mode if raw_mode in _VALID else (None if action == "MOVE_ON" else "ownership")
-        logger.info(
-            "[ROUTE] action=%s probe=%s reason=%r | turn_followups=%d band=%s",
-            action, probe_mode, str(data.get("reason", ""))[:40],
-            topic_follow_up_count, candidate_band,
-        )
-        return {"action": action, "probe_mode": probe_mode, "reason": data.get("reason", "")}
-    except asyncio.TimeoutError:
-        logger.warning("[ROUTE] route_answer timed out (3s) — defaulting PROBE(ownership)")
-        return {"action": "PROBE", "probe_mode": "ownership", "reason": "timeout"}
-    except Exception as e:
-        logger.warning("[ROUTE] route_answer failed: %s — defaulting PROBE(ownership)", e)
-        return {"action": "PROBE", "probe_mode": "ownership", "reason": "error"}

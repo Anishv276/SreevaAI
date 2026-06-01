@@ -1,7 +1,7 @@
 """
 interview/agent_profile_context.py
 ===================================
-Candidate Knowledge Base — builds the CANDIDATE BRIEF injected into Ishita's system prompt.
+Candidate Knowledge Base -- builds the CANDIDATE BRIEF injected into Ishita's system prompt.
 
 Design principles:
   - Every line of the brief must enable a SPECIFIC question, not just describe the candidate.
@@ -15,6 +15,7 @@ Tech stack: Pydantic V2, OOP Strategy Pattern, O(1) dict lookups.
 
 from __future__ import annotations
 
+import random
 from abc import ABC, abstractmethod
 from typing import Any, Optional
 
@@ -35,7 +36,7 @@ from interview.agent_utils import (
 
 # ---------------------------------------------------------------------------
 # Pydantic Model: ResumeBrief
-# Minimal — only what the band strategy needs to pick an anchor and seed coverage.
+# Minimal -- only what the band strategy needs to pick an anchor and seed coverage.
 # The full rendered brief is built by build_merged_interview_brief().
 # ---------------------------------------------------------------------------
 
@@ -50,7 +51,7 @@ class ResumeBrief(BaseModel):
     internships: list[str] = Field(default_factory=list)
     current_role: str = Field(default="")
     years_label: str = Field(default="")
-    # Experienced/Senior-specific names — kept for band strategy compat
+    # Experienced/Senior-specific names -- kept for band strategy compat
     major_projects: list[str] = Field(default_factory=list)
     career_trajectory: list[str] = Field(default_factory=list)
     flagship_initiatives: list[str] = Field(default_factory=list)
@@ -80,7 +81,7 @@ class ResumeBrief(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Pydantic Model: CandidateBandContext — live session state
+# Pydantic Model: CandidateBandContext -- live session state
 # ---------------------------------------------------------------------------
 
 class CandidateBandContext(BaseModel):
@@ -119,7 +120,7 @@ class CandidateBandContext(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Band Strategies — determine anchor and coverage seed per band
+# Band Strategies -- determine anchor and coverage seed per band
 # ---------------------------------------------------------------------------
 
 class BandStrategy(ABC):
@@ -134,7 +135,12 @@ class BandStrategy(ABC):
     ) -> tuple[str, str]:
         for source_list, anchor_type in priority:
             if source_list:
-                item = source_list[0]
+                # Weighted random from top 3 items so the opening topic varies
+                # across sessions with the same resume. Index 0 is most likely (50%)
+                # but sessions can open on item 1 (35%) or item 2 (15%).
+                candidates = source_list[:min(3, len(source_list))]
+                weights = [0.50, 0.35, 0.15][: len(candidates)]
+                item = random.choices(candidates, weights=weights, k=1)[0]
                 return (str(item).strip() if item else fallback), anchor_type
         return fallback, fallback_type
 
@@ -233,7 +239,7 @@ _BAND_STRATEGY_MAP: dict[str, BandStrategy] = {
     "senior": SeniorBandStrategy(),
 }
 
-# Depth instruction injected into the voice layer — what Ishita should feel during the session.
+# Depth instruction injected into the voice layer -- what Ishita should feel during the session.
 _BAND_DEPTH_INSTRUCTIONS: dict[str, str] = {
     "fresher": "Focus on how they think, not just what they've done. Warm, curious, patient.",
     "mid": "Push for individual ownership and real decisions. Probe past 'we'. Warm but rigorous.",
@@ -250,8 +256,8 @@ def infer_candidate_band(structured_resume_raw: Any, resume_text_block: str) -> 
     """
     Band thresholds:
       fresher:     < 1.5 years
-      mid:         1.5 – 5 years
-      experienced: 5 – 10 years
+      mid:         1.5 - 5 years
+      experienced: 5 - 10 years
       senior:      > 10 years
     """
     context = _ensure_resume_context(structured_resume_raw, resume_text_block)
@@ -343,9 +349,17 @@ def _parse_jd_criteria(jd_data: dict[str, Any]) -> tuple[list[dict], list[dict]]
         if must or nice:
             return must[:8], nice[:5]
 
-    # Fallback: skills.must_have / skills.nice_to_have (legacy schema)
-    must_raw = _as_list(_deep_get(jd_data, "skills.must_have")) or _as_list(jd_data.get("mustHaveSkills"))
-    nice_raw = _as_list(_deep_get(jd_data, "skills.nice_to_have")) or _as_list(jd_data.get("niceToHaveSkills"))
+    # Fallback: skills.* / legacy flat arrays / screeningCriteria-compatible names.
+    must_raw = (
+        _as_list(_deep_get(jd_data, "skills.must_have"))
+        or _as_list(_deep_get(jd_data, "skills.mustHave"))
+        or _as_list(jd_data.get("mustHaveSkills"))
+    )
+    nice_raw = (
+        _as_list(_deep_get(jd_data, "skills.nice_to_have"))
+        or _as_list(_deep_get(jd_data, "skills.good_to_have"))
+        or _as_list(jd_data.get("niceToHaveSkills"))
+    )
     must = [n for n in (_normalise(c) for c in must_raw) if n]
     nice = [n for n in (_normalise(c) for c in nice_raw) if n]
 
@@ -367,8 +381,8 @@ def _cross_reference_skills(
 ) -> tuple[list[dict], list[dict], list[dict]]:
     """
     Split JD must-haves into:
-      claimed  — candidate listed this skill on resume (verify depth)
-      missing  — candidate does NOT have this skill (probe gap or check relevance)
+      claimed  -- candidate listed this skill on resume (verify depth)
+      missing  -- candidate does NOT have this skill (probe gap or check relevance)
     Also returns nice_to_haves unchanged.
     """
     skill_text = " ".join(resume_skills).lower()
@@ -440,7 +454,7 @@ def _render_work_role(i: int, role: Any) -> list[str]:
     if team_size:
         lines.append(f"       Team : {team_size}")
     for r in resps[:4]:
-        lines.append(f"       • {r}")
+        lines.append(f"       - {r}")
     return lines
 
 
@@ -484,8 +498,8 @@ def build_merged_interview_brief(
     Build the CANDIDATE BRIEF injected into Ishita's evaluation layer.
 
     Every section is designed to enable specific questions, not just describe.
-    - Projects: show claimed role + missing impact → AI knows what to verify.
-    - Skills: cross-referenced with JD → AI knows claimed vs gap.
+    - Projects: show claimed role + missing impact -> AI knows what to verify.
+    - Skills: cross-referenced with JD -> AI knows claimed vs gap.
     - Work history: scope signals (team size, duration, responsibilities).
     - JD cross-reference: claimed skills to verify depth, missing skills to probe gap.
     - Opening anchor: single clearest starting point with a ready-to-ask framing.
@@ -524,7 +538,7 @@ def build_merged_interview_brief(
 
     out: list[str] = []
 
-    # ── Header ────────────────────────────────────────────────────────────────
+    # -- Header ----------------------------------------------------------------
     out.append("╔══ CANDIDATE BRIEF ═════════════════════════════════════════╗")
     out.append(f"  Candidate : {safe_name}")
     out.append(f"  Role      : {safe_role}")
@@ -533,41 +547,41 @@ def build_merged_interview_brief(
     out.append(f"  Current   : {resume_context.current_role or 'Not stated'}")
     out.append("╚════════════════════════════════════════════════════════════╝")
 
-    # ── Opening Anchor ────────────────────────────────────────────────────────
-    out.append("\n── OPENING ANCHOR ───────────────────────────────────────────")
+    # -- Opening Anchor --------------------------------------------------------
+    out.append("\n-- OPENING ANCHOR -------------------------------------------")
     out.append(f"  [{anchor_type.upper()}] {anchor_item}")
 
-    # ── Projects ─────────────────────────────────────────────────────────────
+    # -- Projects -------------------------------------------------------------
     raw_projects = _as_list(_deep_get(raw_resume, "projects")) or []
     if raw_projects:
-        out.append("\n── PROJECTS ─────────────────────────────────────────────────")
+        out.append("\n-- PROJECTS -------------------------------------------------")
         for i, proj in enumerate(raw_projects, 1):
             out.extend(_render_project(i, proj))
 
-    # ── Work History ──────────────────────────────────────────────────────────
+    # -- Work History ----------------------------------------------------------
     raw_work = _as_list(_deep_get(raw_resume, "work_history")) or []
     if raw_work:
-        out.append("\n── WORK HISTORY ─────────────────────────────────────────────")
+        out.append("\n-- WORK HISTORY ---------------------------------------------")
         for i, role in enumerate(raw_work, 1):
             out.extend(_render_work_role(i, role))
 
-    # ── Internships ───────────────────────────────────────────────────────────
+    # -- Internships -----------------------------------------------------------
     raw_intern = _as_list(
         _deep_get(raw_resume, "internships") or _deep_get(raw_resume, "internship")
     ) or []
     if raw_intern:
-        out.append("\n── INTERNSHIPS ──────────────────────────────────────────────")
+        out.append("\n-- INTERNSHIPS ----------------------------------------------")
         for i, intern in enumerate(raw_intern, 1):
             out.extend(_render_internship(i, intern))
 
-    # ── Education ─────────────────────────────────────────────────────────────
+    # -- Education -------------------------------------------------------------
     if resume_context.education:
-        out.append("\n── EDUCATION ────────────────────────────────────────────────")
+        out.append("\n-- EDUCATION ------------------------------------------------")
         for edu in resume_context.education:
-            out.append(f"  • {edu}")
+            out.append(f"  - {edu}")
 
-    # ── Skills ────────────────────────────────────────────────────────────────
-    out.append("\n── SKILLS ───────────────────────────────────────────────────")
+    # -- Skills ----------------------------------------------------------------
+    out.append("\n-- SKILLS ---------------------------------------------------")
     if claimed_skills:
         out.append("  Claimed  : " + " | ".join(item["name"] for item in claimed_skills))
     if missing_skills:
@@ -577,10 +591,10 @@ def build_merged_interview_brief(
     if jd_nice:
         out.append("  Nice-to-have: " + " | ".join(item["name"] for item in jd_nice))
 
-    # ── Custom Questions ───────────────────────────────────────────────────────
+    # -- Custom Questions -------------------------------------------------------
     cqs = [str(q).strip() for q in (custom_questions or []) if str(q).strip()]
     if cqs:
-        out.append("\n── CUSTOM QUESTIONS (ask ALL before wrap-up) ────────────────")
+        out.append("\n-- CUSTOM QUESTIONS (ask ALL before wrap-up) ----------------")
         for i, q in enumerate(cqs, 1):
             out.append(f"  {i}. {q}")
 

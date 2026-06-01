@@ -42,7 +42,7 @@ from interview.session_state import (
     QUALITY_BAND,
 )
 
-# LangChain — optional; graceful fallback if not installed
+# LangChain -- optional; graceful fallback if not installed
 try:
     from langchain_core.runnables import RunnableLambda
     _LANGCHAIN_AVAILABLE = True
@@ -51,7 +51,7 @@ except ImportError:  # pragma: no cover
 
 
 # ---------------------------------------------------------------------------
-# Bucket weights (must sum to 1.0) — unchanged
+# Bucket weights (must sum to 1.0) -- unchanged
 # ---------------------------------------------------------------------------
 _BUCKET_WEIGHTS = {
     "intelligence_quality": 0.45,   # answer depth, specificity, clarity, grounding
@@ -60,7 +60,7 @@ _BUCKET_WEIGHTS = {
 }
 
 # ---------------------------------------------------------------------------
-# Per-turn delta table — unchanged values
+# Per-turn delta table -- unchanged values
 # ---------------------------------------------------------------------------
 _TURN_DELTAS = {
     # quality-driven (-> intelligence_quality bucket)
@@ -76,16 +76,16 @@ _TURN_DELTAS = {
     "ownership_clarified":  +0.05,
     "example_given":        +0.04,
     "strong_under_pressure":+0.05,
-    # depth decay (-> intelligence_quality bucket) — documentation only
+    # depth decay (-> intelligence_quality bucket) -- documentation only
     "depth_decay_mild":     -0.06,
     "depth_decay_severe":   -0.12,
-    # complexity-latency mismatch (-> behavioral_confidence) — documentation only
+    # complexity-latency mismatch (-> behavioral_confidence) -- documentation only
     "complexity_latency_mismatch_fast_complex": -0.14,
     "complexity_latency_mismatch_slow_simple":  -0.08,
 }
 
 # ---------------------------------------------------------------------------
-# Proctoring event delta table (-> hard_integrity bucket) — unchanged
+# Proctoring event delta table (-> hard_integrity bucket) -- unchanged
 # ---------------------------------------------------------------------------
 _PROCTOR_DELTAS = {
     "tab_switch":          -0.03,
@@ -99,7 +99,7 @@ _TREND_WINDOW = 4
 
 
 # ===========================================================================
-# DSA: IQRule — replaces 4-branch if/elif for intelligence_quality delta
+# DSA: IQRule -- replaces 4-branch if/elif for intelligence_quality delta
 # ===========================================================================
 
 @dataclass(frozen=True)
@@ -119,7 +119,7 @@ class IQRule:
         return _TURN_DELTAS[self.key]
 
 
-# Ordered list — first rule that matches is applied (mirrors original if/elif order)
+# Ordered list -- first rule that matches is applied (mirrors original if/elif order)
 _IQ_RULES: tuple[IQRule, ...] = (
     IQRule(key="deep_answer",        condition=lambda o, d, s: o >= 7.5 or d >= 7.5),
     IQRule(key="specific_answer",    condition=lambda o, d, s: o >= 6.0 and s >= 7.0),
@@ -129,7 +129,7 @@ _IQ_RULES: tuple[IQRule, ...] = (
 
 
 # ===========================================================================
-# DSA: RecoveryRule — replaces 3 stacked if-blocks for bc_delta
+# DSA: RecoveryRule -- replaces 3 stacked if-blocks for bc_delta
 # ===========================================================================
 
 @dataclass(frozen=True)
@@ -176,7 +176,7 @@ class RecoveryRule:
         return True
 
 
-# Ordered list — all matching rules are applied (recovery can stack)
+# Ordered list -- all matching rules are applied (recovery can stack)
 _RECOVERY_RULES: tuple[RecoveryRule, ...] = (
     RecoveryRule(
         toggle_key="ownership_clarified",
@@ -205,12 +205,12 @@ _RECOVERY_RULES: tuple[RecoveryRule, ...] = (
 
 
 # ===========================================================================
-# DSA: TrendRule — replaces if/elif chain in _recompute_trend
+# DSA: TrendRule -- replaces if/elif chain in _recompute_trend
 # ===========================================================================
 
 @dataclass(frozen=True)
 class TrendRule:
-    """One trend classification rule — first match wins."""
+    """One trend classification rule -- first match wins."""
     label: str
     min_delta: float  # delta >= min_delta (use -inf for no lower bound)
     max_delta: float  # delta < max_delta (exclusive upper, use +inf for no cap)
@@ -219,7 +219,7 @@ class TrendRule:
         return self.min_delta <= delta < self.max_delta
 
 
-# Ordered — first match wins; covers all float ranges
+# Ordered -- first match wins; covers all float ranges
 _TREND_RULES: tuple[TrendRule, ...] = (
     TrendRule(label=TrendLabel.IMPROVING,  min_delta=0.8,   max_delta=float("inf")),
     TrendRule(label=TrendLabel.STABLE,     min_delta=-0.5,  max_delta=0.8),
@@ -229,7 +229,7 @@ _TREND_RULES: tuple[TrendRule, ...] = (
 
 
 # ===========================================================================
-# Internal helpers — preserved with same signatures
+# Internal helpers -- preserved with same signatures
 # ===========================================================================
 
 def _is_toggle_enabled(toggles: Optional[dict[str, Any]], key: str) -> bool:
@@ -257,7 +257,7 @@ def _clamp(v: float, lo: float = 0.0, hi: float = 1.0) -> float:
 
 
 def _add_risk(state: TrustState, factor: str) -> None:
-    """Append risk factor — O(1) via OrderedSet when state uses OrderedSet,
+    """Append risk factor -- O(1) via OrderedSet when state uses OrderedSet,
     falls back to original O(n) list check for plain list state."""
     rf = state["risk_factors"]
     if isinstance(rf, OrderedSet):
@@ -268,7 +268,7 @@ def _add_risk(state: TrustState, factor: str) -> None:
 
 
 def _add_recovery(state: TrustState, factor: str) -> None:
-    """Append recovery factor — O(1) via OrderedSet, O(n) fallback for list."""
+    """Append recovery factor -- O(1) via OrderedSet, O(n) fallback for list."""
     rcf = state["recovery_factors"]
     if isinstance(rcf, OrderedSet):
         rcf.add(factor)
@@ -332,7 +332,7 @@ def _quality_band(score: float) -> str:
 
 
 # ===========================================================================
-# OOP: TrustEngine — encapsulates all trust update logic
+# OOP: TrustEngine -- encapsulates all trust update logic
 # ===========================================================================
 
 class TrustEngine:
@@ -343,7 +343,7 @@ class TrustEngine:
     so all existing callers (agent_runtime.py, eval_pipeline.py) require
     zero changes.
 
-    The engine is stateless — all mutable state lives in TrustState (TypedDict)
+    The engine is stateless -- all mutable state lives in TrustState (TypedDict)
     that is passed in and returned, never stored on the engine instance.
     """
 
@@ -359,7 +359,7 @@ class TrustEngine:
         """Apply one TurnDecision to the trust state.
 
         Steps:
-          1. Extract quality scores → compute overall
+          1. Extract quality scores -> compute overall
           2. Append overall to score_history (capped at 8 entries)
           3. Apply IQ bucket delta via _IQ_RULES dispatch table
           4. Apply signal events from contract
@@ -377,7 +377,7 @@ class TrustEngine:
         grounding   = float(quality.get("grounding", 5.0))
         overall     = (clarity + depth + specificity + grounding) / 4.0
 
-        # Score history — keep last 8 entries (O(1) if SlidingWindow, O(n) if list)
+        # Score history -- keep last 8 entries (O(1) if SlidingWindow, O(n) if list)
         history = state["score_history"]
         if isinstance(history, SlidingWindow):
             history.append(round(overall, 2))
@@ -577,14 +577,14 @@ class TrustEngine:
 
 
 # ===========================================================================
-# Module-level singleton — all public APIs delegate here
+# Module-level singleton -- all public APIs delegate here
 # ===========================================================================
 
 _engine = TrustEngine()
 
 
 # ===========================================================================
-# Public API — signatures identical to original; zero call-site changes needed
+# Public API -- signatures identical to original; zero call-site changes needed
 # ===========================================================================
 
 def apply_turn_decision(
@@ -596,7 +596,7 @@ def apply_turn_decision(
     """Update trust state from one TurnDecision object.
 
     td is the TurnDecision TypedDict from turn_decision.py.
-    Delegates to TrustEngine.apply_turn() — all logic lives there.
+    Delegates to TrustEngine.apply_turn() -- all logic lives there.
     """
     return _engine.apply_turn(state, td, behavioral_toggles=behavioral_toggles)
 

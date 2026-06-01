@@ -42,17 +42,17 @@ _ELEVENLABS_DEFAULT_MODEL = "eleven_turbo_v2_5"
 _PROVIDER_DEFAULTS: dict[str, Any] = {
     "cartesia_speed":          0.92,
     "sarvam_pace":             1.2,
-    # bulbul:v3 — per Sarvam docs (https://docs.sarvam.ai/api-reference-docs/text-to-speech/stream)
+    # bulbul:v3 -- per Sarvam docs (https://docs.sarvam.ai/api-reference-docs/text-to-speech/stream)
     # 22050 Hz is recommended for streaming (24000 is higher quality but slower to generate)
     "sarvam_v3_sample_rate":   22050,
     "sarvam_v2_sample_rate":   22050,
-    # 64k is optimal for low-latency streaming per Sarvam docs — 128k adds generation overhead
+    # 64k is optimal for low-latency streaming per Sarvam docs -- 128k adds generation overhead
     "sarvam_output_bitrate":   "64k",
     "sarvam_output_codec":     "mp3",
     # min_buffer_size = chars before Sarvam starts processing (not frames/bytes).
-    # 30 is the Sarvam-recommended minimum — below this Sarvam may cut off incomplete words.
+    # 30 is the Sarvam-recommended minimum -- below this Sarvam may cut off incomplete words.
     "sarvam_min_buffer":       30,
-    # max_chunk_length = chars per chunk. 100-150 per docs — keeps latency low for conversational
+    # max_chunk_length = chars per chunk. 100-150 per docs -- keeps latency low for conversational
     # responses. 150 is the sweet spot: short enough for fast first-chunk, long enough for fluency.
     "sarvam_max_chunk":        150,
     "sarvam_v2_pitch":         0.0,
@@ -61,7 +61,7 @@ _PROVIDER_DEFAULTS: dict[str, Any] = {
     # 800ms gives candidates room for fillers like "umm" / "ohh" without
     # making the bot feel laggy; raise to 1000ms if cut-offs still happen.
     "deepgram_endpointing_ms": 800,
-    # WS connect/send timeout. Sarvam closes idle connections after 60s — keepalive pings every
+    # WS connect/send timeout. Sarvam closes idle connections after 60s -- keepalive pings every
     # 20s prevent this. recv timeout is set separately to 90s in _recv_task.
     "sarvam_ws_timeout_sec":   25,
 }
@@ -277,7 +277,7 @@ class SarvamDirectSynthesizeStream(tts.SynthesizeStream):
 
             async def _recv_task() -> None:
                 # Sarvam docs: WS closes after 60s inactivity. Our keepalive pings every 20s
-                # prevent that. But between audio chunks Sarvam can be slow — use 90s receive
+                # prevent that. But between audio chunks Sarvam can be slow -- use 90s receive
                 # timeout (docs recommend 90s+ for idle timeout on client side).
                 recv_timeout_sec = max(timeout_sec, 90.0)
                 try:
@@ -707,7 +707,7 @@ def build_stt(language_code: str = "en", model: str = STT_MODEL):
         "language":        language_code,
         "interim_results": False,  # Disabled to prevent debounce timer cancellation from multiple partial results
         "punctuate":       True,
-        "keep_alive":      True,   # Send KeepAlive messages during silence — prevents Deepgram
+        "keep_alive":      True,   # Send KeepAlive messages during silence -- prevents Deepgram
                                    # closing the WS with 1011 "no audio received within timeout"
     }
     if "nova" in model.lower() and "enable_diarization" in supported:

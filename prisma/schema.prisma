@@ -11,6 +11,8 @@ model Organization {
   name                 String
   slug                 String      @unique
   logoUrl              String?
+  recordingEnabled     Boolean     @default(true)
+  recordingRetentionDays Int        @default(30)
   plan                 String      @default("STARTER")
   maxActiveDrives      String      @default("Unlimited")
   proctoringSignals    Json?       @default("{\"tab_switch\":true,\"camera_disabled\":true,\"microphone_disabled\":true,\"connection_lost\":true,\"duplicate_ip\":true,\"face_absence\":true,\"multiple_faces\":true,\"identity_mismatch\":true,\"ownership_ambiguity\":true,\"example_evasion\":true,\"latency_mismatch\":true,\"resume_claim_mismatch\":true,\"ownership_clarified\":true,\"example_given\":true,\"strong_under_pressure\":true,\"follow_up_collapse\":true}")
@@ -164,6 +166,12 @@ model Interview {
   recordingStartedAt    DateTime?
   recordingCompletedAt  DateTime?
   recordingDurationSec  Int?
+  recordingRetentionDays Int?
+  recordingRetentionDueAt DateTime?
+  recordingCleanupStatus String      @default("PENDING")
+  recordingCleanupAttempts Int       @default(0)
+  recordingCleanupLastError String?
+  recordingDeletedAt    DateTime?
   recordingManifest     Json?       @default("{}")
   billingSnapshot       Json?       @default("{}")
   linkStatus            String      @default("ACTIVE")
@@ -171,6 +179,7 @@ model Interview {
   supportTickets        SupportTicket[]
   @@index([updatedAt(sort: Desc)])
   @@index([status])
+  @@index([recordingRetentionDueAt])
 }
 
 model ResumeCandidate {

@@ -18,6 +18,17 @@ import { recordOrgBillingUsage } from "./lib/usage-metrics";
 import { generateInterviewReport, computeEnrichedInterviewScore } from "./lib/interview-analysis";
 import { syncCandidateCorpusToPinecone } from "./lib/pinecone";
 import { buildInterviewLink } from "./lib/interview-links";
+import { recordingRetentionQueue } from "./lib/queue";
+import {
+  computeRecordingRetentionDueAt,
+  deleteRecordingAsset,
+  extractRecordingKey,
+  getOrgRecordingSettings,
+  getRecordingRetentionJobId,
+  RECORDING_RETENTION_DELETE_JOB,
+  RECORDING_RETENTION_SWEEP_JOB,
+  scheduleRecordingRetentionDeletion,
+} from "./lib/recording-retention";
 // Load environment variables
 dotenv.config();
 console.log('DEBUG: REDIS_URL length:', process.env.REDIS_URL?.length || 0);
@@ -243,6 +254,178 @@ async function processInterviewStartJob(job: any) {
     interviewStatus: "in progress",
   };
 }
+
+async function processRecordingRetentionDeleteJob(job: any) {
+  const {
+    applicationId,
+    recordingUrl,
+    recordingKey,
+    recordingManifest,
+  } = job.data || {};
+
+  if (!applicationId) {
+    throw new Error("Missing applicationId in delete-recording-asset job");
+  }
+
+  const interviewRow = await prisma.interview.findUnique({
+    where: { applicationId },
+    select: {
+      interviewRecordingUrl: true,
+      recordingManifest: true,
+      recordingDeletedAt: true,
+      recordingCleanupStatus: true,
+      recordingCleanupAttempts: true,
+      recordingCleanupLastError: true,
+    },
+  });
+
+  if (!interviewRow) {
+    console.warn(`[RETENTION] Interview ${applicationId} no longer exists. Skipping.`);
+    return { skipped: true, reason: "missing_interview", applicationId };
+  }
+
+  const cleanupStatus = String(interviewRow.recordingCleanupStatus || "").toUpperCase();
+  if (interviewRow.recordingDeletedAt || cleanupStatus === "COMPLETED") {
+    console.log(`[RETENTION] Recording already deleted for ${applicationId}. Skipping duplicate job.`);
+    return { success: true, alreadyDeleted: true, applicationId };
+  }
+
+  const effectiveKey = extractRecordingKey({
+    recordingUrl: recordingUrl || interviewRow.interviewRecordingUrl,
+    recordingKey: recordingKey || null,
+    recordingManifest: recordingManifest || interviewRow.recordingManifest,
+  });
+  if (!effectiveKey) {
+    throw new Error(`[RETENTION] Missing recording key/url for ${applicationId}`);
+  }
+
+  const attempt = Math.max(1, Number(job.attemptsMade || 0) + 1);
+  await prisma.interview.update({
+    where: { applicationId },
+    data: {
+      recordingCleanupStatus: "PROCESSING",
+      recordingCleanupAttempts: attempt,
+      recordingCleanupLastError: null,
+    },
+  }).catch(() => {});
+
+  const deleteResult = await deleteRecordingAsset({
+    recordingUrl: recordingUrl || interviewRow.interviewRecordingUrl,
+    recordingKey: effectiveKey,
+    recordingManifest: recordingManifest || interviewRow.recordingManifest,
+    bucket: process.env.R2_INTERVIEW_BUCKET || "interview",
+    attempts: 2,
+    baseDelayMs: 1000,
+  });
+
+  if (!deleteResult.success) {
+    const lastError = deleteResult.lastError || "Failed to delete recording asset from Cloudflare R2";
+    await prisma.interview.update({
+      where: { applicationId },
+      data: {
+        recordingCleanupStatus: "FAILED",
+        recordingCleanupAttempts: attempt,
+        recordingCleanupLastError: lastError,
+      },
+    }).catch(() => {});
+    console.error(`[RETENTION] Failed to delete recording for ${applicationId}: ${lastError}`);
+    throw new Error(lastError);
+  }
+
+  const deletedAt = new Date();
+  await prisma.interview.update({
+    where: { applicationId },
+    data: {
+      interviewRecordingUrl: null,
+      interviewRecordedAt: null,
+      recordingStatus: null,
+      recordingMimeType: null,
+      recordingStartedAt: null,
+      recordingCompletedAt: null,
+      recordingDurationSec: null,
+      recordingManifest: null,
+      recordingRetentionDays: null,
+      recordingRetentionDueAt: null,
+      recordingCleanupStatus: "COMPLETED",
+      recordingCleanupAttempts: attempt,
+      recordingCleanupLastError: null,
+      recordingDeletedAt: deletedAt,
+    },
+  });
+
+  console.log(`[RETENTION] Deleted recording for ${applicationId} after ${attempt} attempt(s).`);
+  return {
+    success: true,
+    applicationId,
+    attempts: attempt,
+    deletedAt: deletedAt.toISOString(),
+  };
+}
+
+async function processRecordingRetentionSweepJob(job: any) {
+  console.log("[RETENTION] Sweep started.");
+  const rows = await prisma.$queryRaw<Array<{
+    applicationId: string;
+    interviewRecordingUrl: string | null;
+    recordingManifest: unknown;
+    recordingRetentionDays: number | null;
+    recordingRetentionDueAt: Date | null;
+  }>>(
+    Prisma.sql`
+      SELECT
+        i."applicationId",
+        i."interviewRecordingUrl",
+        i."recordingManifest",
+        i."recordingRetentionDays",
+        i."recordingRetentionDueAt"
+      FROM "Interview" i
+      JOIN "Application" a ON a.id = i."applicationId"
+      JOIN "Drive" d ON d.id = a."driveId"
+      JOIN "Organization" o ON o.id = d."orgId"
+      WHERE i."interviewRecordingUrl" IS NOT NULL
+        AND i."recordingDeletedAt" IS NULL
+        AND (
+          (i."recordingRetentionDueAt" IS NOT NULL AND i."recordingRetentionDueAt" <= NOW())
+          OR (
+            i."recordingRetentionDueAt" IS NULL
+            AND i."recordingCompletedAt" IS NOT NULL
+            AND i."recordingCompletedAt" + (
+              GREATEST(COALESCE(i."recordingRetentionDays", o."recordingRetentionDays"), 1) * INTERVAL '1 day'
+            ) <= NOW()
+          )
+        )
+      ORDER BY COALESCE(i."recordingRetentionDueAt", i."recordingCompletedAt", i."updatedAt") ASC
+      LIMIT 100
+    `
+  );
+
+  let enqueued = 0;
+  for (const row of rows) {
+    const payload = {
+      applicationId: row.applicationId,
+      recordingUrl: row.interviewRecordingUrl || null,
+      recordingManifest: row.recordingManifest || null,
+      retentionDays: row.recordingRetentionDays || null,
+      dueAt: row.recordingRetentionDueAt ? row.recordingRetentionDueAt.toISOString() : null,
+    };
+    await recordingRetentionQueue.add(
+      RECORDING_RETENTION_DELETE_JOB,
+      payload,
+      {
+        jobId: getRecordingRetentionJobId(row.applicationId),
+        delay: 0,
+      }
+    );
+    enqueued += 1;
+  }
+
+  console.log(`[RETENTION] Sweep enqueued ${enqueued} expired recording deletion job(s).`);
+  return {
+    success: true,
+    enqueued,
+  };
+}
+
 async function processDriveResumeBatchJob(job: any) {
   const { batchId, driveId, orgId } = job.data || {};
   if (!batchId || !driveId || !orgId) {
@@ -295,7 +478,7 @@ async function processDriveResumeBatchJob(job: any) {
   let structuredJd = parseJsonSafe<Record<string, any>>(drive.extractedDetails, {});
   const jdRawText = buildJdRawText(drive);
   if (!hasJdMustHaves(structuredJd) && jdRawText.length >= 80) {
-    const extracted = await extractJDFromText(jdRawText, "gpt-4.1-mini");
+    const extracted = await extractJDFromText(jdRawText, "gpt-5.4-mini");
     if (hasJdMustHaves(extracted.data || {})) {
       structuredJd = extracted.data || {};
       await prisma.drive.update({
@@ -652,6 +835,7 @@ const managedWorkers: Worker[] = [];
 let backupQueue: Queue | null = null;
 let shutdownInProgress = false;
 let setupCronJobs: (() => Promise<void>) | null = null;
+let setupRetentionCronJobs: (() => Promise<void>) | null = null;
 const requestedQueues = new Set(
   (process.env.WORKER_QUEUES || "resume-processing")
     .split(",")
@@ -1253,6 +1437,39 @@ if (isQueueEnabled("invitation-delivery-queue")) {
     console.log(`[FATAL] Invitation Delivery Job ${job?.id} failed permanently: ${err.message}`);
   });
 }
+
+if (isQueueEnabled("recording-retention-cleanup")) {
+  const recordingRetentionWorker = trackWorker("recording-retention-cleanup", new Worker(
+    "recording-retention-cleanup",
+    async (job) => {
+      if (job.name === RECORDING_RETENTION_SWEEP_JOB) {
+        return await processRecordingRetentionSweepJob(job);
+      }
+
+      if (job.name !== RECORDING_RETENTION_DELETE_JOB) {
+        console.warn(`[RETENTION] Skipping unsupported job name: ${job.name}`);
+        return { skipped: true, reason: "unsupported_job_name" };
+      }
+
+      return await processRecordingRetentionDeleteJob(job);
+    },
+    {
+      connection: redisConnection,
+      concurrency: 2,
+      lockDuration: 5 * 60 * 1000,
+      stalledInterval: 2 * 60 * 1000,
+      maxStalledCount: 1,
+      removeOnComplete: { count: 0 },
+      removeOnFail: { count: 50 },
+    }
+  ));
+  recordingRetentionWorker.on("failed", (job, err) => {
+    console.error(
+      `[FATAL] Recording Retention Job ${job?.id} failed permanently for ${job?.data?.applicationId || job?.name}: ${err.message}`
+    );
+  });
+}
+
 /**
  * ðŸ’¾ DATABASE BACKUP WORKER (Phase 5 - Persistent Backups to R2)
  * Runs daily at midnight to export core hiring data.
@@ -1374,6 +1591,26 @@ if (isQueueEnabled("backup-queue")) {
     console.log("[Worker] Registered recurring daily backup job.");
     await queue.close();
     backupQueue = null;
+  };
+}
+
+if (isQueueEnabled("recording-retention-cleanup")) {
+  setupRetentionCronJobs = async function setupRetentionCronJobs() {
+    const retentionQueue = recordingRetentionQueue;
+    const repeatableRetentionJobs = await retentionQueue.getRepeatableJobs();
+    for (const job of repeatableRetentionJobs) {
+      await retentionQueue.removeRepeatableByKey(job.key);
+    }
+    await retentionQueue.add(
+      RECORDING_RETENTION_SWEEP_JOB,
+      {},
+      {
+        repeat: {
+          pattern: "*/15 * * * *",
+        },
+      }
+    );
+    console.log("[Worker] Registered recurring recording retention sweep job.");
   };
 }
 /**
@@ -1723,6 +1960,20 @@ if (isQueueEnabled("interview-recording")) {
 
       const bucket = process.env.R2_INTERVIEW_BUCKET || "interview";
       const publicBase = String(process.env.NEXT_PUBLIC_R2_INTERVIEW_URL || "").trim().replace(/\/$/, "");
+      const application = await prisma.application.findUnique({
+        where: { id: applicationId },
+        select: {
+          drive: {
+            select: {
+              orgId: true,
+            },
+          },
+        },
+      });
+      const orgId = String(application?.drive?.orgId || "");
+      const recordingSettings = orgId
+        ? await getOrgRecordingSettings(orgId)
+        : { recordingEnabled: true, recordingRetentionDays: 30 };
 
       const interviewRow = await prisma.interview.findUnique({
         where: { applicationId },
@@ -1768,6 +2019,8 @@ if (isQueueEnabled("interview-recording")) {
         startedAt && Number.isFinite(startedAt.getTime())
           ? Math.max(1, Math.round((completedAt.getTime() - startedAt.getTime()) / 1000))
           : null;
+      const retentionDays = recordingSettings.recordingRetentionDays;
+      const retentionDueAt = computeRecordingRetentionDueAt(completedAt, retentionDays);
 
       const nextManifest = {
         ...manifest,
@@ -1777,29 +2030,82 @@ if (isQueueEnabled("interview-recording")) {
         recordingUrl: resolvedUrl || null,
         stoppedAt: manifest.stoppedAt || completedAt.toISOString(),
         finalizedAt: completedAt.toISOString(),
+        retentionDays,
+        retentionDueAt: retentionDueAt ? retentionDueAt.toISOString() : null,
         lastStatus: "COMPLETED",
         lastError: null,
       };
 
+      const shouldStoreRecording = Boolean(recordingSettings.recordingEnabled);
+      if (!shouldStoreRecording) {
+        const deleteResult = await deleteRecordingAsset({
+          recordingUrl: resolvedUrl || null,
+          recordingKey: resolvedKey || null,
+          recordingManifest: nextManifest,
+          bucket,
+          attempts: 3,
+          baseDelayMs: 1000,
+        });
+        if (!deleteResult.success) {
+          throw new Error(deleteResult.lastError || `[RECORDING_WORKER] Failed to delete disabled recording for ${applicationId}`);
+        }
+      }
+
+      const recordingStatusToPersist = shouldStoreRecording ? "COMPLETED" : "ABORTED";
+      const recordingUrlToPersist = shouldStoreRecording ? (resolvedUrl || null) : null;
+      const recordingRetentionDaysToPersist = shouldStoreRecording ? retentionDays : null;
+      const recordingRetentionDueAtToPersist = shouldStoreRecording ? retentionDueAt : null;
+      const recordingCleanupStatusToPersist = shouldStoreRecording ? "PENDING" : "COMPLETED";
+      const recordingCleanupAttemptsToPersist = shouldStoreRecording ? 0 : 1;
+      const recordingCleanupLastErrorToPersist = null;
+      const recordingDeletedAtToPersist = shouldStoreRecording ? null : completedAt;
+      const recordingManifestToPersist = shouldStoreRecording ? JSON.stringify(nextManifest) : null;
+
       await prisma.$executeRawUnsafe(
         `UPDATE "Interview"
-         SET "recordingStatus" = 'COMPLETED',
+         SET "recordingStatus" = $1::text,
              "recordingMimeType" = COALESCE($1::text, "recordingMimeType"),
              "recordingCompletedAt" = $2::timestamp,
              "recordingDurationSec" = CASE WHEN $3::integer IS NOT NULL THEN $3::integer ELSE "recordingDurationSec" END,
              "interviewDuration" = CASE WHEN $3::integer IS NOT NULL THEN $3::integer ELSE "interviewDuration" END,
-             "interviewRecordingUrl" = COALESCE($4::text, "interviewRecordingUrl"),
-             "interviewRecordedAt" = $2::timestamp,
+             "interviewRecordingUrl" = $4::text,
+             "interviewRecordedAt" = CASE WHEN $4::text IS NOT NULL THEN $2::timestamp ELSE NULL END,
+             "recordingRetentionDays" = $6::integer,
+             "recordingRetentionDueAt" = $7::timestamp,
+             "recordingCleanupStatus" = $8::text,
+             "recordingCleanupAttempts" = $9::integer,
+             "recordingCleanupLastError" = $10::text,
+             "recordingDeletedAt" = $11::timestamp,
              "recordingManifest" = $5::jsonb,
              "updatedAt" = NOW()
-         WHERE "applicationId" = $6::text`,
+         WHERE "applicationId" = $12::text`,
+        recordingStatusToPersist,
         mimeType,
         completedAt,
         durationSec,
-        resolvedUrl || null,
-        JSON.stringify(nextManifest),
+        recordingUrlToPersist,
+        recordingManifestToPersist,
+        retentionDays,
+        retentionDueAt,
+        recordingCleanupStatusToPersist,
+        recordingCleanupAttemptsToPersist,
+        recordingCleanupLastErrorToPersist,
+        recordingDeletedAtToPersist,
         applicationId
       );
+
+      if (shouldStoreRecording) {
+        await scheduleRecordingRetentionDeletion({
+          applicationId,
+          completedAt,
+          retentionDays,
+          recordingUrl: resolvedUrl || null,
+          recordingKey: resolvedKey || null,
+          recordingManifest: nextManifest,
+        }).catch((error) => {
+          console.warn(`[RECORDING_RETENTION] Failed to schedule cleanup for ${applicationId}:`, error);
+        });
+      }
 
       const finalizationQueue = new Queue("interview-finalization", { connection: redisConnection });
       await finalizationQueue.add(
@@ -2089,6 +2395,7 @@ const ALL_QUEUE_NAMES = [
   "interview-snapshots",
   "jd-upload",
   "backup-queue",
+  "recording-retention-cleanup",
 ];
 async function purgeAllQueues() {
   console.log("[Worker] 🧹 Cleaning Redis queues to free memory...");
@@ -2156,6 +2463,15 @@ async function initializeWorkerMetadata() {
         console.log("  ??? Daily backup job registered successfully.");
       } catch (cronErr: any) {
         console.error("  ?? ?? Failed to register backup job (Redis memory may be full):", cronErr.message);
+        console.warn("  ??????????  Continuing worker initialization. Background scoring will still function.");
+      }
+    }
+    if (setupRetentionCronJobs) {
+      try {
+        await setupRetentionCronJobs();
+        console.log("  ??? Recording retention sweep registered successfully.");
+      } catch (cronErr: any) {
+        console.error("  ?? ?? Failed to register recording retention sweep:", cronErr.message);
         console.warn("  ??????????  Continuing worker initialization. Background scoring will still function.");
       }
     }

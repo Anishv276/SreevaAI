@@ -11,6 +11,7 @@ import {
   incrementOrgCreditsUsed,
 } from "@/lib/credits";
 import { recordOrgBillingUsage } from "@/lib/usage-metrics";
+import { getOrgRecordingSettings, scheduleRecordingRetentionDeletion } from "@/lib/recording-retention";
 
 export const runtime = "nodejs";
 
@@ -195,12 +196,35 @@ export async function POST(req: Request) {
     const finalTranscript = transcriptRaw?.trim();
     const interviewTurns = finalTranscript ? buildInterviewTurns(finalTranscript) : [];
     const finalDuration = typeof duration === 'number' ? duration : (duration ? parseInt(String(duration)) : null);
+    let recordingUrlForPersist = recordingUrl;
+    let recordingSettingsForOrg: { recordingEnabled: boolean; recordingRetentionDays: number } | null = null;
+    try {
+      const appForRecordingPolicy = await prisma.application.findUnique({
+        where: { id: applicationId },
+        select: {
+          drive: {
+            select: {
+              orgId: true,
+            },
+          },
+        },
+      });
+      const recordingOrgId = appForRecordingPolicy?.drive?.orgId || "";
+      if (recordingOrgId) {
+        recordingSettingsForOrg = await getOrgRecordingSettings(recordingOrgId);
+        if (!recordingSettingsForOrg.recordingEnabled) {
+          recordingUrlForPersist = undefined;
+        }
+      }
+    } catch (policyError) {
+      console.warn("[RETENTION] Failed to resolve recording policy for finalize route:", policyError);
+    }
 
     console.log(`[FINALIZE] ${applicationId} | status=${finalInterviewStatus} | duration=${finalDuration}s`);
 
     await persistInterviewUpdateRaw({
       applicationId,
-      recordingUrl,
+      recordingUrl: recordingUrlForPersist,
       transcript: finalTranscript,
       interviewStatus: finalInterviewStatus,
       interviewTurns,
@@ -249,6 +273,21 @@ export async function POST(req: Request) {
           }
         });
         const orgId = appForOrg?.drive?.orgId;
+
+        if (recordingUrlForPersist && orgId) {
+          const recordingSettings = recordingSettingsForOrg || await getOrgRecordingSettings(orgId);
+          if (recordingSettings.recordingEnabled) {
+            await scheduleRecordingRetentionDeletion({
+              applicationId,
+              completedAt: recordingCompletedAt || new Date(),
+              retentionDays: recordingSettings.recordingRetentionDays,
+              recordingUrl: recordingUrlForPersist,
+            }).catch((error) => {
+              console.warn(`[RETENTION] Failed to schedule cleanup for ${applicationId}:`, error);
+            });
+          }
+        }
+
         if (orgId) {
           const interviewForBilling = await prisma.interview.findUnique({
             where: { applicationId },

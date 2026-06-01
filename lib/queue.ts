@@ -66,7 +66,18 @@ export const interviewRecordingQueue = new Queue('interview-recording', {
   }
 });
 
-// 7. Handles the exact moment an interview transitions from launching to live.
+// 7. Handles recording retention cleanup after the retention window expires.
+export const recordingRetentionQueue = new Queue('recording-retention-cleanup', {
+  connection: redisConnection,
+  defaultJobOptions: {
+    attempts: 5,
+    backoff: { type: 'exponential', delay: 5000 },
+    removeOnComplete: true,
+    removeOnFail: { count: 50 },
+  }
+});
+
+// 8. Handles the exact moment an interview transitions from launching to live.
 export const interviewStartQueue = new Queue('interview-start', {
   connection: redisConnection,
   defaultJobOptions: {

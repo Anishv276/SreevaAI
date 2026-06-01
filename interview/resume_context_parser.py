@@ -235,7 +235,7 @@ class _ResumeContextParser:
         return _extract_text_items(internships)
 
     def _build_ownership_risks(self) -> list[str]:
-        # Only return explicit red flags from the parser — never auto-generate generic ones.
+        # Only return explicit red flags from the parser -- never auto-generate generic ones.
         # Ownership is probed for every item anyway via the probe strategy.
         return _extract_text_items(
             _deep_get(self.parsed_resume, "red_flags")

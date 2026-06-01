@@ -19,6 +19,7 @@ import {
   Play,
   RefreshCw,
   Search,
+  Clock,
   Shield,
   User,
 } from "lucide-react";
@@ -38,6 +39,8 @@ type OrgFormState = {
   plan: OrgPlanId;
   maxActiveDrives: string;
   interviewQuotaTotal: string;
+  recordingEnabled: boolean;
+  recordingRetentionDays: string;
   proctoringSignals: ProctoringSignalToggles;
   adminName: string;
   adminEmail: string;
@@ -220,6 +223,8 @@ export default function NewOrgPage() {
     plan: DEFAULT_ORG_PLAN,
     maxActiveDrives: "Unlimited",
     interviewQuotaTotal: "100",
+    recordingEnabled: true,
+    recordingRetentionDays: "30",
     proctoringSignals: getProctoringSignalsForPlan(DEFAULT_ORG_PLAN),
     adminName: "",
     adminEmail: "",
@@ -398,6 +403,13 @@ export default function NewOrgPage() {
       toast.error("Password must be at least 8 characters long");
       return false;
     }
+    if (form.recordingEnabled) {
+      const retentionDays = Number(form.recordingRetentionDays);
+      if (!Number.isFinite(retentionDays) || retentionDays < 1) {
+        toast.error("Recording retention days must be at least 1");
+        return false;
+      }
+    }
     return true;
   };
 
@@ -410,7 +422,7 @@ export default function NewOrgPage() {
       const res = await fetch("/api/super-admin/orgs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+          body: JSON.stringify({
           orgName: form.orgName.trim(),
           slug: form.slug.trim().toLowerCase(),
           plan: form.plan,
@@ -420,6 +432,8 @@ export default function NewOrgPage() {
           adminPassword: form.adminPassword,
           maxActiveDrives: form.maxActiveDrives,
           interviewQuotaTotal: Number(form.interviewQuotaTotal || 0),
+          recordingEnabled: form.recordingEnabled,
+          recordingRetentionDays: Number(form.recordingRetentionDays || 30),
           proctoringSignals: form.proctoringSignals,
           voiceId: form.voiceId || DEFAULT_VOICE_ID,
           allowedVoices: form.allowedVoices.length > 0 ? form.allowedVoices : [form.voiceId || DEFAULT_VOICE_ID],
@@ -673,6 +687,63 @@ export default function NewOrgPage() {
               placeholder="100"
               type="number"
             />
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+          <SectionHeader title="Recording Retention" description="Control whether interviews are recorded and how long Cloudflare recordings stay available." />
+          <div className="mt-6 grid gap-6 md:grid-cols-2">
+            <div className="space-y-2">
+              <label className="flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-widest text-slate-500">
+                <Shield className="h-3.5 w-3.5 text-[#F97316]" />
+                Recording Enabled
+              </label>
+              <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-2">
+                <button
+                  type="button"
+                  onClick={() => updateForm({ recordingEnabled: true })}
+                  className={cn(
+                    "rounded-xl px-4 py-2 text-[11px] font-black uppercase tracking-widest transition",
+                    form.recordingEnabled ? "bg-white text-[#F97316] shadow-sm" : "text-slate-400 hover:text-slate-700"
+                  )}
+                >
+                  ON
+                </button>
+                <button
+                  type="button"
+                  onClick={() => updateForm({ recordingEnabled: false })}
+                  className={cn(
+                    "rounded-xl px-4 py-2 text-[11px] font-black uppercase tracking-widest transition",
+                    !form.recordingEnabled ? "bg-white text-rose-600 shadow-sm" : "text-slate-400 hover:text-slate-700"
+                  )}
+                >
+                  OFF
+                </button>
+                <p className="ml-2 text-[11px] font-medium leading-relaxed text-slate-500">
+                  When off, interview egress is blocked and recordings are not persisted.
+                </p>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className="flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-widest text-slate-500">
+                <Clock className="h-3.5 w-3.5 text-[#F97316]" />
+                Recording Retention (Days)
+              </label>
+              {form.recordingEnabled ? (
+                <input
+                  type="number"
+                  min="1"
+                  value={form.recordingRetentionDays}
+                  onChange={(e) => updateForm({ recordingRetentionDays: String(Math.max(1, Number(e.target.value) || 1)) })}
+                  className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-medium text-slate-900 shadow-sm outline-none transition focus:border-[#F97316] focus:ring-4 focus:ring-orange-50"
+                  placeholder="30"
+                />
+              ) : (
+                <div className="flex h-11 items-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3.5 text-sm font-medium text-slate-400">
+                  Enable recording to configure retention days.
+                </div>
+              )}
+            </div>
           </div>
         </section>
 

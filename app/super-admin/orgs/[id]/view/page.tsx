@@ -163,7 +163,7 @@ type BillingFeatureMetrics = {
 const FEATURE_MODEL_FALLBACK: Record<string, string> = {
     interview: "gpt-4.1-mini",
     resumeExtraction: "gpt-5.4-mini",
-    jdExtraction: "gpt-4.1-mini",
+    jdExtraction: "gpt-5.4-mini",
     chatbot: "gpt-4o-mini",
     resumeReport: "gpt-5.4-mini",
     interviewReport: "gpt-5.4-mini",

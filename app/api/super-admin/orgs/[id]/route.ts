@@ -10,6 +10,7 @@ import { normalizeOrgAiConfig } from "@/lib/ai-provider-config";
 import { ORG_STATUS_CONTROL_MANUAL, ORG_STATUS_CONTROL_QUOTA, getEffectiveOrgStatus, normalizeOrgStatusControl, syncOrgStatusWithInterviewQuota } from "@/lib/credits";
 import { normalizeOrgLimitInput } from "@/lib/org-limits";
 import { normalizeEmail } from "@/lib/email";
+import { DEFAULT_RECORDING_RETENTION_DAYS, normalizeRecordingRetentionDays } from "@/lib/recording-retention";
 
 // GET /api/super-admin/orgs/[id] - fetch org for editing
 export async function GET(
@@ -79,6 +80,7 @@ export async function PATCH(
         const body = rawBody.trim() ? JSON.parse(rawBody) : {};
         const {
             name, plan, status, logoUrl, slug, location, maxActiveDrives,
+            recordingEnabled, recordingRetentionDays,
             proctoringSignals,
             adminName, adminEmail,
             voiceId, allowedVoices,
@@ -103,6 +105,8 @@ export async function PATCH(
                 plan: true,
                 voiceId: true,
                 allowedVoices: true,
+                recordingEnabled: true,
+                recordingRetentionDays: true,
             },
         });
 
@@ -154,6 +158,8 @@ export async function PATCH(
             slug === undefined &&
             location === undefined &&
             maxActiveDrives === undefined &&
+            recordingEnabled === undefined &&
+            recordingRetentionDays === undefined &&
             proctoringSignals === undefined &&
             adminName === undefined &&
             adminEmail === undefined &&
@@ -195,6 +201,13 @@ export async function PATCH(
         if (logoUrl !== undefined) updateData.logoUrl = logoUrl;
         if (slug !== undefined) updateData.slug = slug;
         if (location !== undefined) updateData.location = location;
+        if (recordingEnabled !== undefined) updateData.recordingEnabled = Boolean(recordingEnabled);
+        if (recordingRetentionDays !== undefined) {
+            updateData.recordingRetentionDays = normalizeRecordingRetentionDays(
+                recordingRetentionDays ?? DEFAULT_RECORDING_RETENTION_DAYS,
+                DEFAULT_RECORDING_RETENTION_DAYS
+            );
+        }
         if (shouldUpdateInterviewQuotaTotal) {
             updateData.interviewQuotaTotal = parsedInterviewQuotaTotal;
         }

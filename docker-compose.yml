@@ -42,7 +42,7 @@ services:
     environment:
       LIVEKIT_URL: "wss://lk.sreevaai.com"
       NEXT_PUBLIC_LIVEKIT_URL: "wss://lk.sreevaai.com"
-      WORKER_QUEUES: "resume-processing,invitation-delivery-queue,interview-finalization,interview-snapshots,interview-recording,jd-upload,jd-extraction,backup-queue"
+      WORKER_QUEUES: "resume-processing,invitation-delivery-queue,interview-finalization,interview-snapshots,interview-recording,recording-retention-cleanup,jd-upload,jd-extraction,backup-queue"
     restart: always
     depends_on:
       - redis

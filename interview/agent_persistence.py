@@ -1,12 +1,12 @@
 """
-agent_persistence.py — Production-level interview data persistence layer.
+agent_persistence.py -- Production-level interview data persistence layer.
 
 Architecture (5 layers):
-  1. DatabasePool    — singleton asyncpg pool with health-check
-  2. Domain Models   — Pydantic typed models for DB + LLM responses
-  3. BillingEngine   — Strategy pattern for multi-provider cost estimation
-  4. InterviewRepository — thin async DB wrappers, no business logic
-  5. ReportPipeline  — LangGraph StateGraph: 3 parallel LLM calls + deterministic scoring
+  1. DatabasePool    -- singleton asyncpg pool with health-check
+  2. Domain Models   -- Pydantic typed models for DB + LLM responses
+  3. BillingEngine   -- Strategy pattern for multi-provider cost estimation
+  4. InterviewRepository -- thin async DB wrappers, no business logic
+  5. ReportPipeline  -- LangGraph StateGraph: 3 parallel LLM calls + deterministic scoring
 
 External contracts (agent_runtime.py imports) are preserved exactly.
 """
@@ -49,7 +49,7 @@ from interview.agent_runtime_support import (
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# LAYER 1 — DatabasePool singleton
+# LAYER 1 -- DatabasePool singleton
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class DatabasePool:
@@ -148,10 +148,10 @@ def normalize_postgres_dsn(conn_str: str) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# LAYER 2 — Domain / Pydantic Models
+# LAYER 2 -- Domain / Pydantic Models
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# ── LLM Response Models ──────────────────────────────────────────────────────
+# -- LLM Response Models ------------------------------------------------------
 
 class SkillRating(BaseModel):
     topic:    str
@@ -249,7 +249,7 @@ class LLMCognitiveResponse(BaseModel):
             return 0
 
 
-# ── Billing Models (unchanged from existing Pydantic classes) ─────────────────
+# -- Billing Models (unchanged from existing Pydantic classes) -----------------
 
 class _ModelBilling(BaseModel):
     provider:        str   = "unknown"
@@ -291,7 +291,7 @@ class _OrgBilling(BaseModel):
     resumeReport:    _FeatureBilling = Field(default_factory=_FeatureBilling)
 
 
-# ── LangGraph State ───────────────────────────────────────────────────────────
+# -- LangGraph State -----------------------------------------------------------
 
 class ReportState(TypedDict, total=False):
     # Inputs
@@ -320,7 +320,7 @@ class ReportState(TypedDict, total=False):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# LAYER 3 — Billing Engine (Strategy Pattern)
+# LAYER 3 -- Billing Engine (Strategy Pattern)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 _BILLING_INR_PER_USD = float(os.environ.get("BILLING_INR_PER_USD", "83.0"))
@@ -352,7 +352,7 @@ _DEEPGRAM_STT_USD_PER_MIN: dict[str, float] = {
     "flux": 0.0065, "flux-multilingual": 0.0078,
 }
 
-# Usage bucket field mapping (unchanged — referenced by summarize_session_usage)
+# Usage bucket field mapping (unchanged -- referenced by summarize_session_usage)
 _USAGE_BUCKET_FIELDS: dict[str, tuple[tuple[str, str], ...]] = {
     "llm": (
         ("input_tokens", "inputTokens"),
@@ -702,12 +702,12 @@ def merge_interview_billing(
     tts_config: Optional[dict[str, Any]] = None,
     stt_config: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
-    """Backward-compat alias — delegates to merge_feature_billing for 'interview'."""
+    """Backward-compat alias -- delegates to merge_feature_billing for 'interview'."""
     return merge_feature_billing(existing, "interview", session_summary, tts_config, stt_config)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# LAYER 4 — Interview Persistence (thin async DB wrappers)
+# LAYER 4 -- Interview Persistence (thin async DB wrappers)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 async def persist_org_manual_billing_usage(org_id: Optional[str], feature: str, usage: dict[str, Any]) -> None:
@@ -1019,8 +1019,8 @@ async def persist_transcript(
 ) -> None:
     """Save transcript, duration, and proctoring report to Interview table.
 
-    partial=True → only update transcript/duration/turns (no status change).
-    partial=False → full update including status and completedAt.
+    partial=True -> only update transcript/duration/turns (no status change).
+    partial=False -> full update including status and completedAt.
     """
     if not transcript_lines and final_status != "NO_SHOW":
         logger.info("[TRANSCRIPT] No lines captured - skipping save to avoid overwriting existing data")
@@ -1172,11 +1172,11 @@ async def deduct_interview_billing(app_id: str, duration_seconds: Optional[float
                 app_id,
             )
             if not row:
-                logger.warning(f"[BILLING] No interview row found for {app_id} — skipping billing")
+                logger.warning(f"[BILLING] No interview row found for {app_id} -- skipping billing")
                 return
             org_id = row["orgId"]
             if not org_id:
-                logger.warning(f"[BILLING] No orgId for {app_id} — skipping billing")
+                logger.warning(f"[BILLING] No orgId for {app_id} -- skipping billing")
                 return
 
             dur = duration_seconds
@@ -1198,7 +1198,7 @@ async def deduct_interview_billing(app_id: str, duration_seconds: Optional[float
                 app_id,
             )
             if not marked:
-                logger.info(f"[BILLING] Already billed for {app_id} — skipping")
+                logger.info(f"[BILLING] Already billed for {app_id} -- skipping")
                 return
 
             await conn.execute(
@@ -1214,7 +1214,7 @@ async def deduct_interview_billing(app_id: str, duration_seconds: Optional[float
                     )
                     logger.info(f"[BILLING] Deducted 1 quota + {credits_delta:.2f} credits for {app_id} org={org_id} dur={dur:.0f}s")
                 else:
-                    logger.info(f"[BILLING] Deducted 1 quota (no credits — dur={dur:.0f}s) for {app_id} org={org_id}")
+                    logger.info(f"[BILLING] Deducted 1 quota (no credits -- dur={dur:.0f}s) for {app_id} org={org_id}")
             else:
                 logger.warning(f"[BILLING] Deducted 1 quota but duration unknown for {app_id} org={org_id}")
     except Exception as e:
@@ -1254,7 +1254,7 @@ async def update_interview_status(app_id: str, duration_seconds: Optional[float]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# LAYER 5A — Deterministic Scorers (pure functions, O(n) DSA)
+# LAYER 5A -- Deterministic Scorers (pure functions, O(n) DSA)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # Integrity signal weights (negative = risk, positive = mitigating)
@@ -1277,7 +1277,7 @@ _INTEGRITY_POS: dict[str, float] = {
     "inconsistency_resolved": +8.0,
 }
 
-# Skills noise filter — single-word tools and libraries are never valid topics
+# Skills noise filter -- single-word tools and libraries are never valid topics
 _TOOL_KEYWORDS: frozenset[str] = frozenset({
     "google sheets", "google calendar", "instagram", "facebook", "n8n", "zapier",
     "python", "javascript", "typescript", "excel", "notion", "slack", "whatsapp",
@@ -1294,7 +1294,7 @@ def _compute_integrity_score(
 ) -> dict:
     """Deterministic integrity score 0-100 using signal-weighted formula.
 
-    Uses Counter (O(n)) for signal aggregation — no nested loops.
+    Uses Counter (O(n)) for signal aggregation -- no nested loops.
     """
     score: float = 100.0
     sig_counts: Counter[str] = Counter()
@@ -1408,10 +1408,10 @@ def _extract_openai_completion_usage(completion: Any) -> dict[str, Any]:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# LAYER 5B — LangChain Prompt Templates + Chains
+# LAYER 5B -- LangChain Prompt Templates + Chains
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# ── Communication Analysis ────────────────────────────────────────────────────
+# -- Communication Analysis ----------------------------------------------------
 
 _COMM_SYSTEM = """You are evaluating a candidate's communication quality across their entire interview.
 Role: {job_title}
@@ -1453,7 +1453,7 @@ _COMM_PROMPT = ChatPromptTemplate.from_messages([
 ])
 
 
-# ── Scores + Skills ───────────────────────────────────────────────────────────
+# -- Scores + Skills -----------------------------------------------------------
 
 _SCORES_SYSTEM = """You are analyzing a completed interview for the '{job_title}' role.
 {jd_skills_text}
@@ -1483,7 +1483,7 @@ Output ONLY valid JSON with EXACTLY these fields:
   0-20: No reasoning  21-40: Facts only  41-60: Some structured thinking  61-80: Clear logical approach  81-100: Sophisticated reasoning
 
 "skills_evaluated": List 2-8 MAJOR EVALUATION TOPICS only.
-  RULES: Topics must be DOMAIN/AREA names — NOT tools, products, libraries, or APIs.
+  RULES: Topics must be DOMAIN/AREA names -- NOT tools, products, libraries, or APIs.
   GOOD: 'Lead Qualification Strategy', 'Marketing Automation', 'Data Analysis'
   BAD: 'Google Sheets', 'Instagram API', 'Python', 'n8n', 'Zapier', 'Excel'
   Single-word tool names are NEVER valid topics.
@@ -1510,10 +1510,10 @@ _SCORES_PROMPT = ChatPromptTemplate.from_messages([
 ])
 
 
-# ── Cognitive Insights ────────────────────────────────────────────────────────
+# -- Cognitive Insights --------------------------------------------------------
 
 _COGNITIVE_SYSTEM = """You are evaluating a candidate's cognitive patterns across their entire interview for '{job_title}'.
-Analyze the FULL transcript — not individual answers in isolation.
+Analyze the FULL transcript -- not individual answers in isolation.
 Every dimension must be scored using EVIDENCE from the transcript.
 *_earned and *_missed fields must cite a SPECIFIC transcript moment.
 
@@ -1538,7 +1538,7 @@ _COGNITIVE_PROMPT = ChatPromptTemplate.from_messages([
 ])
 
 
-# ── Summary Prompt ────────────────────────────────────────────────────────────
+# -- Summary Prompt ------------------------------------------------------------
 
 _SUMMARY_SYSTEM = """You are a senior talent partner writing a confidential post-interview evaluation for the hiring team.
 
@@ -1547,13 +1547,13 @@ _SUMMARY_SYSTEM = """You are a senior talent partner writing a confidential post
 Using the full interview transcript AND the evaluation context above, write 4 bullet points.
 Each bullet is ONE clear sentence. Use plain, professional language. Reference specific evidence.
 
-Bullet 1 — Role readiness: State clearly whether this candidate demonstrated strong, moderate, weak, or no fit for the {job_title} role. Reference the evaluation context and a specific moment from the interview.
+Bullet 1 -- Role readiness: State clearly whether this candidate demonstrated strong, moderate, weak, or no fit for the {job_title} role. Reference the evaluation context and a specific moment from the interview.
 
-Bullet 2 — Strongest demonstrated area: Name the ONE domain where they showed the most depth. Cite a specific answer or topic. If they showed nothing, say so directly.
+Bullet 2 -- Strongest demonstrated area: Name the ONE domain where they showed the most depth. Cite a specific answer or topic. If they showed nothing, say so directly.
 
-Bullet 3 — Communication and engagement: Describe how they participated — fluency, directness, consistency. Was quality improving, declining, or flat?
+Bullet 3 -- Communication and engagement: Describe how they participated -- fluency, directness, consistency. Was quality improving, declining, or flat?
 
-Bullet 4 — Key hiring decision flag: The single most important insight — a risk, standout strength, or integrity concern. If integrity is LOW, mention it explicitly.
+Bullet 4 -- Key hiring decision flag: The single most important insight -- a risk, standout strength, or integrity concern. If integrity is LOW, mention it explicitly.
 
 RULES:
 - Do NOT soften negative findings. If the interview was poor, say so professionally.
@@ -1569,7 +1569,7 @@ _SUMMARY_PROMPT = ChatPromptTemplate.from_messages([
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# LAYER 5C — LangGraph Report Pipeline (4 nodes + parallel LLM calls)
+# LAYER 5C -- LangGraph Report Pipeline (4 nodes + parallel LLM calls)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 async def _node_deterministic_signals(state: ReportState) -> dict:
@@ -1767,7 +1767,7 @@ async def _node_assemble_and_persist(state: ReportState) -> dict:
     qa_blocks_all       = [_build_qa_block(i + 1, s) for i, s in enumerate(all_scores)]
     qa_blocks_interview = [b for b in qa_blocks_all if not b["is_warmup"]]
 
-    # Skill ratings — validate and deduplicate via Pydantic models
+    # Skill ratings -- validate and deduplicate via Pydantic models
     skill_ratings_list = [
         {
             "topic":    r.topic,
@@ -1880,7 +1880,7 @@ async def _node_assemble_and_persist(state: ReportState) -> dict:
     return {"scores_context": scores_context}
 
 
-# ── Build the LangGraph pipeline (compiled once at module load) ────────────────
+# -- Build the LangGraph pipeline (compiled once at module load) ----------------
 
 def _build_report_graph() -> Any:
     builder = StateGraph(ReportState)
@@ -1898,7 +1898,7 @@ _REPORT_GRAPH = _build_report_graph()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# PUBLIC API — generate_interview_report + generate_interview_summary
+# PUBLIC API -- generate_interview_report + generate_interview_summary
 # ═══════════════════════════════════════════════════════════════════════════════
 
 async def generate_interview_report(

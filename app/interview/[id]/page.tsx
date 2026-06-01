@@ -1688,6 +1688,11 @@ function InterviewRoomContent({
             try {
                 await startServerRecording();
             } catch (error) {
+                const message = error instanceof Error ? error.message.toLowerCase() : String(error || "").toLowerCase();
+                if (message.includes("recording is disabled") || message.includes("recording_disabled")) {
+                    console.warn("[Egress] Recording disabled for this organization. Skipping retries.");
+                    return;
+                }
                 console.warn("[Egress] Start failed. Retrying...", error);
                 retryTimer = window.setTimeout(() => {
                     void attemptStart();

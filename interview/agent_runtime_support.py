@@ -171,7 +171,7 @@ EVAL_LLM_MODEL = "gpt-4.1-mini"
 EVAL_TEMPERATURE = 0.0
 DEFAULT_VOICE_ID = "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"
 
-# Voice registry — single source of truth for voice→provider+model mapping.
+# Voice registry -- single source of truth for voice->provider+model mapping.
 # Provider is "CARTESIA" or "SARVAM". Model is the TTS model string for that provider.
 VOICE_REGISTRY: dict[str, dict[str, str]] = {
     # Cartesia voices
@@ -206,7 +206,6 @@ VOICE_REGISTRY: dict[str, dict[str, str]] = {
 }
 FIXED_INTERVIEW_DURATION_MINUTES = 20
 DATABASE_URL = os.environ.get("DATABASE_URL")
-REDIS_URL = os.environ.get("REDIS_URL", "").strip()
 AGENT_NAME = os.environ.get("LIVEKIT_AGENT_NAME", "ai_interviewer")
 APP_BASE_URL = (
     os.environ.get("APP_URL")

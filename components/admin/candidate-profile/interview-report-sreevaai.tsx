@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, forwardRef, type ReactNode } from "react";
+
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -76,7 +77,7 @@ export type SreevaAIInterviewViewModel = {
   fitPercent: number;
   fitLabel: string;
   isFallback: boolean;
-  technical: { percent: number; questions: number; tag: "GOOD" | "AVERAGE" | "WEAK"; scores?: { technical: number; communication: number; behavioral: number; cognitive: number; problem_solving: number } };
+  technical: { percent: number; questions: number; tag: "GOOD" | "AVERAGE" | "WEAK"; scores?: { overall: number; engagement: number; demonstrated_knowledge: number; role_fit: number; problem_solving: number; technical: number; communication: number; behavioral: number; cognitive: number } };
   comm: { pronunciation: number; grammar: number; fluency: number; confidence: number; vocabulary: number; minimalFiller: number; tag: string; commSummary: string; hasNewSchema: boolean };
   verdictSummary: string;
   verdictRecommendationReason: string;
@@ -108,7 +109,7 @@ export type SreevaAIInterviewViewModel = {
     recruiter_visible: boolean;
   }[];
   proctoringEventsFull: { time: string; eventType: string; reason: string; severity: string; elapsedSeconds: number }[];
-  answerScores: { question: string; answer: string; depth: number; clarity: number; fluency: number; confidence: number; overall: number; signals: string[] }[];
+  answerScores: { question: string; answer: string; depth: number; clarity: number; specificity: number; grounding: number; overall: number; signals: string[] }[];
 };
 
 function formatDurationM(totalSeconds: number) {
@@ -475,6 +476,13 @@ export function buildSreevaAIInterviewViewModel(i: {
   signalTimeline: { elapsed_sec: number; signal_name: string; signal_layer: string; evidence: string; score_delta: number; turn: number; recruiter_visible: boolean }[];
   proctoringEventsFull?: { time: string; eventType: string; reason: string; severity: string; elapsedSeconds: number }[];
   answerScoresParsed?: { question: string; answer: string; depth: number; clarity: number; fluency: number; confidence: number; overall: number; signals: string[] }[];
+  // New schema fields (from redesigned agent_persistence.py report)
+  integrityScore?: number;
+  integrityBand?: string;
+  skillsEvaluated?: string[];
+  skillRatingsList?: { topic: string; score: number; status: string; evidence?: string; gaps?: string }[];
+  qaBlocksInterview?: any[];
+  qaBlocksAll?: any[];
 }): SreevaAIInterviewViewModel {
   const c = i.candidate;
   const com = i.interviewReportCommunication || {};
@@ -487,22 +495,22 @@ export function buildSreevaAIInterviewViewModel(i: {
     const n = Number(v);
     return Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : fallback;
   };
-  // a"a" Demonstrated competency (replaces narrow technical_score) a"a"
-  // Prefer demonstrated_competency (new schema) a' technical_score (old) a' qa_blocks average
+  // -- Demonstrated knowledge (new primary signal: replaces technical_score) --
+  // Priority: demonstrated_knowledge (new) > technical_score (legacy) > qa_blocks average
   const technicalPct = (() => {
-    const dc = Number(scores.demonstrated_competency);
-    if (Number.isFinite(dc) && dc > 0) return Math.min(100, Math.max(0, Math.round(dc)));
-    const aiTech = Number(scores.technical_score);
+    const dk = Number(scores.demonstrated_knowledge);
+    if (Number.isFinite(dk) && dk > 0) return Math.min(100, Math.max(0, Math.round(dk)));
+    const aiTech = Number(scores.technical_score ?? scores.technical);
     if (Number.isFinite(aiTech) && aiTech > 0) return Math.min(100, Math.max(0, Math.round(aiTech)));
-    // Derive from qa_blocks: average of all 4 score_breakdown dimensions A- 10
+    // Derive from qa_blocks: average of score_breakdown dimensions x 10
     const qaRows = i.interviewQaRows || [];
     const blockAvgs = qaRows.map((r: any) => {
       const sb = r?.score_breakdown || {};
       const dims = [
-        Number(sb.technical_accuracy ?? sb.depth ?? 0),
         Number(sb.depth ?? 0),
         Number(sb.clarity ?? 0),
-        Number(sb.practical_application ?? sb.confidence ?? 0),
+        Number(sb.specificity ?? sb.technical_accuracy ?? 0),
+        Number(sb.grounding ?? sb.practical_application ?? 0),
       ].filter((n: number) => Number.isFinite(n) && n > 0);
       return dims.length > 0 ? (dims.reduce((a: number, b: number) => a + b, 0) / dims.length) * 10 : null;
     }).filter((n: number | null): n is number => n !== null);
@@ -793,11 +801,11 @@ export function buildSreevaAIInterviewViewModel(i: {
       depth:                Math.max(0, Math.min(10, Number(sb.depth ?? 0))),
       technical_accuracy:   Math.max(0, Math.min(10, Number(sb.technical_accuracy ?? sb.fluency ?? 0))),
       practical_application:Math.max(0, Math.min(10, Number(sb.practical_application ?? sb.confidence ?? 0))),
-    } : liveScore && (liveScore.clarity || liveScore.depth || liveScore.fluency || liveScore.confidence) ? {
+    } : liveScore && (liveScore.clarity || liveScore.depth || liveScore.specificity || liveScore.grounding) ? {
       clarity:              Math.max(0, Math.min(10, liveScore.clarity)),
       depth:                Math.max(0, Math.min(10, liveScore.depth)),
-      technical_accuracy:   Math.max(0, Math.min(10, liveScore.fluency)),
-      practical_application:Math.max(0, Math.min(10, liveScore.confidence)),
+      technical_accuracy:   Math.max(0, Math.min(10, liveScore.specificity)),
+      practical_application:Math.max(0, Math.min(10, liveScore.grounding)),
     } : null;
     questionAnalysis.push({
       id: idx, question: q, answer: a || "?", score, qBadge: b, bad,
@@ -818,7 +826,8 @@ export function buildSreevaAIInterviewViewModel(i: {
   // a"a" Recommendation from AI verdict (not from fitPct) a"a"
   const { label: recommendation, color: recommendationColor } = recommendationFromAI(verdict.recommendation, fitPct);
   // a"a" AI Summary bullets a" use concise 4-line summary from AI a"a"
-  const verdictSummaryText = cleanAiText(String(verdict.summary || i.interviewReportSummary || i.interviewAiSummary || "").trim());
+  const rawVerdictSummary = String(verdict.summary || i.interviewReportSummary || i.interviewAiSummary || "").trim();
+  const verdictSummaryText = rawVerdictSummary.replace(/\*{1,2}/g, "").replace(/\n{3,}/g, "\n\n");
   const verdictRecommendationReason = cleanAiText(String(verdict.recommendation_reason || "").trim());
   const aiSummaryConcise = String((verdict as any).ai_summary_concise || "").trim();
 
@@ -832,24 +841,36 @@ export function buildSreevaAIInterviewViewModel(i: {
     qaRows: questionAnalysis,
   });
 
-  // Use AI's concise 4-bullet summary if available, otherwise generate fallback
+  // Primary: use interviewAiSummary — the new 4-bullet evidence-based summary generated by generate_interview_summary
   const aiBullets: string[] = (() => {
     const bullets: string[] = [];
 
-    // Primary: AI-generated concise summary
-    if (aiSummaryConcise) {
-      const lines = aiSummaryConcise
+    // Source 1: aiSummary from DB (4-bullet evidence-based format from new generate_interview_summary)
+    const aiSummaryText = String(i.interviewAiSummary || "").trim();
+    if (aiSummaryText) {
+      aiSummaryText
+        .split(/\n/)
+        .map((line: string) => line.trim())
+        .filter((line: string) => line.startsWith("-") || line.length > 20)
+        .slice(0, 4)
+        .forEach((line: string) => {
+          const cleaned = cleanAiText(line.replace(/^[-•*]\s*/, "").trim());
+          if (cleaned.length > 10) bullets.push(cleaned);
+        });
+    }
+
+    // Source 2: verdict concise AI summary
+    if (bullets.length === 0 && aiSummaryConcise) {
+      aiSummaryConcise
         .split(/\n/)
         .map((line: string) => line.trim())
         .filter((line: string) => line.length > 5)
-        .slice(0, 4);
-      lines.forEach((line: string) => {
-        // Strip leading bullet marker (a, -, *, +) but preserve ** inside
-        const cleaned = cleanAiText(line.replace(/^[\sa\-+]\s*/, "").replace(/^\*(?!\*)/, "").trim());
-        if (cleaned.length > 5) bullets.push(cleaned);
-      });
+        .slice(0, 4)
+        .forEach((line: string) => {
+          const cleaned = cleanAiText(line.replace(/^[\s•\-+]\s*/, "").replace(/^\*(?!\*)/, "").trim());
+          if (cleaned.length > 5) bullets.push(cleaned);
+        });
     }
-
     // Fallback: evidence-based bullets derived from actual data, no comm/recommendation duplication
     if (bullets.length === 0 && !i.isFallbackReport) {
       const provedSkills = skills.filter(s => s.status === "PROVED" || s.status === "PARTIAL").slice(0, 2);
@@ -910,11 +931,17 @@ export function buildSreevaAIInterviewViewModel(i: {
       questions: questionsAsked,
       tag: techTag,
       scores: {
-        technical: toPct(scores.technical_score, technicalPct),
-        communication: toPct(scores.communication_score, commAvg),
-        behavioral: toPct(scores.behavioral_score, Math.round(commAvg * 0.8)),
-        cognitive: toPct(scores.cognitive_score, 50),
-        problem_solving: toPct(Number(cogInsights.problem_solving), Math.round(technicalPct * 0.9)),
+        // New 5-category breakdown
+        overall:                toPct(scores.overall,                technicalPct),
+        engagement:             toPct(scores.engagement,             60),
+        demonstrated_knowledge: toPct(scores.demonstrated_knowledge, technicalPct),
+        role_fit:               toPct(scores.role_fit,               fitPct),
+        problem_solving:        toPct(scores.problem_solving ?? Number(cogInsights.problem_solving), Math.round(technicalPct * 0.9)),
+        // Legacy aliases
+        technical:              toPct(scores.technical_score ?? scores.technical, technicalPct),
+        communication:          toPct(scores.communication_score, commAvg),
+        behavioral:             toPct(scores.behavioral_score, Math.round(commAvg * 0.8)),
+        cognitive:              toPct(scores.cognitive_score, 50),
       },
     },
     comm,
@@ -2193,7 +2220,7 @@ export function TechnicalScoreCard({ pct, questions, tag: _tag }: {
 
 
 
-type AnswerScoreRow = { question: string; answer: string; depth: number; clarity: number; fluency: number; confidence: number; overall: number; signals: string[] };
+type AnswerScoreRow = { question: string; answer: string; depth: number; clarity: number; specificity: number; grounding: number; overall: number; signals: string[] };
 
 function QuestionAnalysisCard({ transcript, questions, answerScores, onTranscriptSeek, recordingDurationSec }: {
   transcript?: SreevaAIInterviewViewModel["transcript"];
@@ -2232,17 +2259,17 @@ function QuestionAnalysisCard({ transcript, questions, answerScores, onTranscrip
   };
 
   // Prefer answerScores (live DB data) over AI report qa_blocks
-  const rows: { question: string; aiQuestion?: string; answer: string; depth: number; clarity: number; fluency: number; confidence: number; overall: number; signals: string[]; reasoning?: string; tags?: string[] }[] = (() => {
+  const rows: { question: string; answer: string; depth: number; clarity: number; specificity: number; grounding: number; overall: number; signals: string[]; reasoning?: string; tags?: string[] }[] = (() => {
     if (answerScoresSafe.length > 0) {
       return answerScoresSafe.map((s, idx) => ({
         question: s.question,
         answer: s.answer,
-        depth: s.depth,
-        clarity: s.clarity,
-        fluency: s.fluency,
-        confidence: s.confidence,
-        overall: s.overall,
-        signals: s.signals,
+        depth:       s.depth,
+        clarity:     s.clarity,
+        specificity: s.specificity,
+        grounding:   s.grounding,
+        overall:     s.overall,
+        signals:     s.signals,
         reasoning: questionsSafe[idx]?.reasoning || "",
         tags: questionsSafe[idx]?.tags || [],
       }));
@@ -2252,14 +2279,14 @@ function QuestionAnalysisCard({ transcript, questions, answerScores, onTranscrip
       .map(q => ({
         question: q.question,
         answer: q.answer,
-        depth: q.scoreBreakdown?.depth ?? 0,
-        clarity: q.scoreBreakdown?.clarity ?? 0,
-        fluency: q.scoreBreakdown?.practical_application ?? 0,
-        confidence: 0,
-        overall: parseFloat(q.score.replace(/[^\d.]/g, "")) || 0,
-        signals: [],
-        reasoning: q.reasoning,
-        tags: q.tags,
+        depth:       q.scoreBreakdown?.depth ?? 0,
+        clarity:     q.scoreBreakdown?.clarity ?? 0,
+        specificity: q.scoreBreakdown?.technical_accuracy ?? 0,
+        grounding:   q.scoreBreakdown?.practical_application ?? 0,
+        overall:     parseFloat(q.score.replace(/[^\d.]/g, "")) || 0,
+        signals:     [],
+        reasoning:   q.reasoning,
+        tags:        q.tags,
       }));
   })();
 
@@ -2330,13 +2357,13 @@ return (
                   )}
 
                   {/* Score breakdown rings */}
-                  {(item.depth > 0 || item.clarity > 0 || item.fluency > 0 || item.confidence > 0) && (
+                  {(item.depth > 0 || item.clarity > 0 || item.specificity > 0 || item.grounding > 0) && (
                     <div className="mt-2 grid grid-cols-4 gap-2 rounded-xl bg-[#FAFBFC] border border-[#F0F1F3] p-3">
                       {([
-                        ["Clarity",    item.clarity,    "#6366F1"],
-                        ["Depth",      item.depth,      "#10B981"],
-                        ["Fluency",    item.fluency,    "#F59E0B"],
-                        ["Confidence", item.confidence, "#F43F5E"],
+                        ["Clarity",     item.clarity,     "#6366F1"],
+                        ["Depth",       item.depth,       "#10B981"],
+                        ["Specificity", item.specificity, "#F59E0B"],
+                        ["Grounding",   item.grounding,   "#F43F5E"],
                       ] as [string, number, string][]).map(([label, val, color]) => (
                         <div key={label} className="text-center">
                           <div className="relative mx-auto h-10 w-10">
@@ -2855,26 +2882,52 @@ export function InterviewReportSreevaAI({
             : "Schedule a focused follow-up or second-round interview.";
           const borderCls = isHire ? "border-emerald-200" : isNo ? "border-rose-200" : "border-amber-200";
           const bgCls     = isHire ? "bg-emerald-50"      : isNo ? "bg-rose-50"      : "bg-amber-50";
-          const stampCls  = isHire ? "bg-emerald-600"     : isNo ? "bg-rose-600"     : "bg-amber-500";
-          const textCls   = isHire ? "text-emerald-900"   : isNo ? "text-rose-900"   : "text-amber-900";
+          const stampCls  = isHire ? "bg-emerald-600 shadow-emerald-600/20" : isNo ? "bg-rose-600 shadow-rose-600/20" : "bg-amber-500 shadow-amber-500/20";
+          const textCls   = isHire ? "text-emerald-950"   : isNo ? "text-rose-950"   : "text-amber-950";
           const mutedCls  = isHire ? "text-emerald-700"   : isNo ? "text-rose-700"   : "text-amber-700";
           const summary   = model.verdictSummary || model.verdictRecommendationReason || "";
+          const paragraphs = summary ? summary.split(/\n+/).filter(Boolean) : [];
+          
           return (
-            <div className={cn("rounded-2xl border px-6 py-5", borderCls, bgCls)}>
-              <div className="flex items-start justify-between gap-6">
-                <div className="min-w-0 flex-1 space-y-2.5">
-                  <p className={cn("text-[13.5px] leading-relaxed", textCls)}>
-                    {summary || `${model.fullName} is a ${model.fitLabel.toLowerCase()} candidate for the ${model.roleLabel} role with ${model.fitPercent}% fit.`}
-                    {!summary && strength && ` Strong in ${strength.toLowerCase()}.`}
-                    {!summary && gap && ` Key gap: ${gap.toLowerCase()}.`}
-                  </p>
-                  <p className={cn("text-[12px]", mutedCls)}>
-                    <span className="font-extrabold uppercase tracking-wide">Next step a" </span>{nextStep}
-                  </p>
+            <div className={cn("rounded-[24px] border px-6 py-7 shadow-sm", borderCls, bgCls)}>
+              <div className="flex flex-col md:flex-row md:items-start justify-between gap-8">
+                <div className="min-w-0 flex-1 space-y-5">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white shadow-sm shrink-0">
+                      <Sparkles className={cn("h-4 w-4", mutedCls)} />
+                    </span>
+                    <h3 className={cn("text-[17px] font-black tracking-tight", textCls)}>Executive Hiring Decision</h3>
+                  </div>
+                  
+                  <div className="space-y-4 pr-4">
+                    {paragraphs.length > 0 ? (
+                      paragraphs.map((para, i) => (
+                        <p key={i} className={cn("text-[14px] leading-[1.7] font-medium", textCls, i === 0 ? "font-bold text-[14.5px]" : "opacity-90")}>
+                          {para}
+                        </p>
+                      ))
+                    ) : (
+                      <p className={cn("text-[14px] leading-[1.7] font-medium", textCls)}>
+                        {`${model.fullName} is a ${model.fitLabel.toLowerCase()} candidate for the ${model.roleLabel} role with ${model.fitPercent}% fit.`}
+                        {strength && ` Strong in ${strength.toLowerCase()}.`}
+                        {gap && ` Key gap: ${gap.toLowerCase()}.`}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="pt-4 border-t border-black/5">
+                    <p className={cn("text-[13px] flex items-center gap-2", mutedCls)}>
+                      <span className="font-black uppercase tracking-[0.15em] shrink-0">Recommended Next Step:</span>
+                      <span className="font-semibold">{nextStep}</span>
+                    </p>
+                  </div>
                 </div>
-                <span className={cn("shrink-0 rounded-lg px-4 py-2 text-[11px] font-black uppercase tracking-widest text-white", stampCls)}>
-                  {model.recommendation}
-                </span>
+                <div className="shrink-0 flex flex-col md:items-end gap-2.5">
+                  <span className="text-[10px] font-black uppercase tracking-[0.2em] text-black/40">Final Verdict</span>
+                  <span className={cn("rounded-xl px-6 py-3 text-[15px] font-black uppercase tracking-widest text-white shadow-lg", stampCls)}>
+                    {model.recommendation}
+                  </span>
+                </div>
               </div>
             </div>
           );
