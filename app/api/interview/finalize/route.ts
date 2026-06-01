@@ -406,7 +406,7 @@ export async function POST(req: Request) {
   try {
       const job = await interviewFinalizationQueue.add(
         "finalize-interview",
-        { applicationId, recordingUrl, transcript: finalTranscript, interviewStatus: finalInterviewStatus, appStatus },
+        { applicationId, recordingUrl: recordingUrlForPersist, transcript: finalTranscript, interviewStatus: finalInterviewStatus, appStatus },
         {
         attempts: 3,
         backoff: { type: "exponential", delay: 1000 },

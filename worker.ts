@@ -18,6 +18,7 @@ import { recordOrgBillingUsage } from "./lib/usage-metrics";
 import { generateInterviewReport, computeEnrichedInterviewScore } from "./lib/interview-analysis";
 import { syncCandidateCorpusToPinecone } from "./lib/pinecone";
 import { buildInterviewLink } from "./lib/interview-links";
+import { Prisma } from "@prisma/client";
 import { recordingRetentionQueue } from "./lib/queue";
 import {
   computeRecordingRetentionDueAt,
@@ -370,6 +371,8 @@ async function processRecordingRetentionSweepJob(job: any) {
     recordingManifest: unknown;
     recordingRetentionDays: number | null;
     recordingRetentionDueAt: Date | null;
+    recordingCleanupStatus: string | null;
+    recordingCleanupAttempts: number | null;
   }>>(
     Prisma.sql`
       SELECT
@@ -377,7 +380,9 @@ async function processRecordingRetentionSweepJob(job: any) {
         i."interviewRecordingUrl",
         i."recordingManifest",
         i."recordingRetentionDays",
-        i."recordingRetentionDueAt"
+        i."recordingRetentionDueAt",
+        i."recordingCleanupStatus",
+        i."recordingCleanupAttempts"
       FROM "Interview" i
       JOIN "Application" a ON a.id = i."applicationId"
       JOIN "Drive" d ON d.id = a."driveId"
@@ -401,6 +406,11 @@ async function processRecordingRetentionSweepJob(job: any) {
 
   let enqueued = 0;
   for (const row of rows) {
+    const cleanupStatus = String(row.recordingCleanupStatus || "").toUpperCase();
+    const jobId =
+      cleanupStatus === "FAILED"
+        ? `${getRecordingRetentionJobId(row.applicationId)}:retry:${Math.max(1, Number(row.recordingCleanupAttempts || 0))}`
+        : getRecordingRetentionJobId(row.applicationId);
     const payload = {
       applicationId: row.applicationId,
       recordingUrl: row.interviewRecordingUrl || null,
@@ -412,7 +422,7 @@ async function processRecordingRetentionSweepJob(job: any) {
       RECORDING_RETENTION_DELETE_JOB,
       payload,
       {
-        jobId: getRecordingRetentionJobId(row.applicationId),
+        jobId,
         delay: 0,
       }
     );
@@ -1629,6 +1639,36 @@ if (isQueueEnabled("interview-finalization")) {
       console.log(`[JOB] Finalizing interview for ${applicationId}`);
       try {
         // ── 1. Persist transcript / recording / status ────────────────────
+        const appForPolicy = await prisma.application.findUnique({
+          where: { id: applicationId },
+          select: {
+            drive: {
+              select: {
+                orgId: true,
+              },
+            },
+          },
+        });
+        const policyOrgId = String(appForPolicy?.drive?.orgId || "");
+        const recordingSettings = policyOrgId
+          ? await getOrgRecordingSettings(policyOrgId)
+          : { recordingEnabled: true, recordingRetentionDays: 30 };
+        const shouldStoreRecording = Boolean(recordingUrl) && recordingSettings.recordingEnabled;
+        const recordingUrlToPersist = shouldStoreRecording ? recordingUrl : undefined;
+        if (recordingUrl && !recordingSettings.recordingEnabled) {
+          await deleteRecordingAsset({
+            recordingUrl,
+            bucket: process.env.R2_INTERVIEW_BUCKET || "interview",
+            attempts: 3,
+            baseDelayMs: 1000,
+          }).catch((deleteError) => {
+            console.warn(
+              `[FINALIZE] Failed to delete disabled recording for ${applicationId}:`,
+              deleteError
+            );
+          });
+        }
+
         const updateData: any = { updatedAt: new Date() };
         const existingInterview = await prisma.interview.findUnique({
           where: { applicationId },
@@ -1636,8 +1676,8 @@ if (isQueueEnabled("interview-finalization")) {
         });
         const existingTranscript = String(existingInterview?.interviewTranscript || "").trim();
         const incomingTranscript = String(transcript || "").trim();
-        if (recordingUrl) {
-          updateData.interviewRecordingUrl = recordingUrl;
+        if (recordingUrlToPersist) {
+          updateData.interviewRecordingUrl = recordingUrlToPersist;
           updateData.interviewRecordedAt = new Date();
         }
         if (incomingTranscript && incomingTranscript.length >= existingTranscript.length) {
@@ -1668,7 +1708,12 @@ if (isQueueEnabled("interview-finalization")) {
             },
           });
         } catch {
-          await persistInterviewUpdateRaw({ applicationId, recordingUrl, transcript, interviewStatus });
+          await persistInterviewUpdateRaw({
+            applicationId,
+            recordingUrl: recordingUrlToPersist,
+            transcript,
+            interviewStatus,
+          });
         }
 
         if (appStatus) {
