@@ -252,28 +252,37 @@ def _order_interview_topics(
 
 
 def _build_move_on_question(topic: str) -> str:
-    """Build a specific opening question for a new topic using its description details."""
-    detail = ""
-    tech_tags: list[str] = []
+    """Build a GENTLE, GROUNDED opening question for a new topic.
 
+    The first question on a new topic must work exactly like the topic-1 opener:
+      1. Name the topic so the candidate knows we've switched.
+      2. Anchor to a concrete detail (what it does / a named tool) so it's specific.
+      3. Stay at the SURFACE -- ask what they built / what problem it solved.
+         Deep mechanics ('walk me through the data syncing step-by-step') come LATER
+         via probes, never as the entry question -- that's what made topic 2 feel
+         abrupt and disorienting.
+    """
+    title = (topic or "").split(" - ")[0].strip() or "your next project"
+
+    detail = ""
     if " - " in (topic or ""):
         raw_detail = (topic or "").split(" - ", 1)[1].strip()
-        # Extract tech tags like [Python, DuckDB, Power BI]
-        tech_match = re.search(r"\[([^\]]+)\]", raw_detail)
-        if tech_match:
-            tech_tags = [t.strip() for t in tech_match.group(1).split(",") if t.strip()]
         detail = re.sub(r"\s*\[[^\]]+\]\s*$", "", raw_detail).strip()
 
-    # Pull the first concrete verb phrase from the description to anchor the question
-    # e.g. "Built a system to collect, clean, and analyze Sensex market data using Python and DuckDB"
-    # -> ask about "collect/analyze" or the first named tool
-    first_tech = tech_tags[0] if tech_tags else ""
-
-    if detail and first_tech:
-        return f"What was your actual role in building this -- what part of it did you own?"
     if detail:
-        return "What part of that did you personally build or own?"
-    return "Where have you actually used this in a real project or workflow?"
+        # Grounded entry: name the topic + remind them what it was, then ask a
+        # gentle surface question. Mirrors topic-1's "what problem / what you built".
+        # Trim the detail so the spoken question stays short.
+        short_detail = detail.split(";")[0].split(".")[0].strip()
+        if len(short_detail.split()) > 18:
+            short_detail = " ".join(short_detail.split()[:18])
+        return (
+            f"Let's move to your {title} -- the one where you {short_detail[0].lower()}{short_detail[1:]}. "
+            f"What was your role there, and what did you actually build?"
+        )
+
+    # Skill topic or no detail: keep it simple and grounded.
+    return f"Let's move to {title}. Where have you actually used it, and what did you build with it?"
 
 
 
@@ -1915,10 +1924,12 @@ async def entrypoint(ctx: JobContext):
                         "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
                         "DECISION: MOVE_ON\n"
                         f"TOPIC YOU ARE LEAVING: {_old_topic_title}\n"
-                        f"NEW ACTIVE TOPIC: {_active_topic}\n"
+                        f"NEW ACTIVE TOPIC: {_new_topic_title}\n"
+                        f"FULL CONTEXT OF NEW TOPIC: {_active_topic}\n"
                         f"NEXT QUESTION TO ASK VERBATIM: {_next_question}\n"
                         f"YOUR ONLY JOB THIS TURN: Say ONE short acknowledgement (max 5 words), "
-                        f"then ask the verbatim question about {_new_topic_title}.\n"
+                        f"then ask the verbatim question. The question already names the new topic "
+                        f"('{_new_topic_title}') so the candidate clearly knows we have switched.\n"
                         "ACKNOWLEDGEMENT RULES:\n"
                         "  - Use ONLY short natural phrases: 'Got it.', 'Okay.', 'Fair enough.', "
                         "'Makes sense.', 'Alright.', 'Understood.', 'Right.', 'I see.'\n"
@@ -1926,10 +1937,9 @@ async def entrypoint(ctx: JobContext):
                         "said they don't remember; 'Got it.' for a short answer).\n"
                         "  - NEVER say 'Thanks for sharing', 'Thanks for clarifying', 'Thank you for "
                         "explaining', 'Thanks for that', or any variant of those phrases.\n"
-                        "  - NEVER name the topic you are leaving in your acknowledgement.\n"
-                        "  - NEVER say 'Let's switch to...', 'Moving on to...', or 'Shifting to...'.\n"
-                        "HARD RULE: Do NOT ask any follow-up about the previous topic. "
-                        "Do NOT reference it by name or content.\n"
+                        f"  - NEVER name or reference the OLD topic ('{_old_topic_title}') -- it is closed.\n"
+                        "HARD RULE: Ask ONLY the verbatim question about the NEW topic. "
+                        "Do NOT ask a follow-up about the previous topic. Do NOT blend the two.\n"
                         "DO NOT wrap up, say goodbye, or add any closing phrase."
                     )
                     # CRITICAL: Update _last_question_topic NOW (before LLM fires) so eval sees the NEW topic
@@ -2001,6 +2011,25 @@ async def entrypoint(ctx: JobContext):
                             "  - 'I'd love to hear more than that -- what specifically did you do?'"
                         ) if _is_short else ""
 
+                        # How many turns deep are we on THIS topic? Early turns must stay at the
+                        # surface (what they built / what problem it solved) before diving into
+                        # mechanics. Jumping to 'walk me through the data syncing step-by-step' on
+                        # turn 1 of a topic is what made topic 2 feel abrupt and confusing.
+                        _topic_follow_ups = int((_new_topic_state_dict or {}).get("follow_up_turns", 0) or 0)
+                        _is_early_on_topic = _topic_follow_ups <= 1
+
+                        _depth_guard = (
+                            "\nTOPIC DEPTH: EARLY -- this is one of the FIRST questions on this topic.\n"
+                            "  -> Stay at the SURFACE first: what they personally built, what problem it solved,\n"
+                            "     or what their role was. Establish the WHAT before the HOW.\n"
+                            "  -> Do NOT jump straight into deep step-by-step mechanics "
+                            "('walk me through the data syncing/automation step-by-step'). That comes later.\n"
+                            "  -> Anchor to a concrete detail from TOPIC CONTEXT so they know exactly what you mean."
+                        ) if _is_early_on_topic else (
+                            "\nTOPIC DEPTH: ESTABLISHED -- they've set the WHAT, now you can go deeper "
+                            "into mechanics, decisions, or tradeoffs."
+                        )
+
                         _directive = (
                             "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
                             f"DECISION: PROBE ({_probe_family.upper()})\n"
@@ -2008,6 +2037,7 @@ async def entrypoint(ctx: JobContext):
                             f"TOPIC CONTEXT: {_active_topic}\n"
                             "  ^ Use specific details from this (tools, systems, tech) to make your question "
                             "concrete -- do NOT ask generically about 'the project'.\n"
+                            f"{_depth_guard}\n"
                             f"ANGLE: {_probe_goal}\n"
                             f"HOW TO ASK: {_probe_style}\n"
                             f"LAST QUESTION YOU ASKED: \"{_prev_q}\"\n"
