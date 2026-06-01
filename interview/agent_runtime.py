@@ -252,14 +252,28 @@ def _order_interview_topics(
 
 
 def _build_move_on_question(topic: str) -> str:
+    """Build a specific opening question for a new topic using its description details."""
     detail = ""
-    if " - " in (topic or ""):
-        detail = (topic or "").split(" - ", 1)[1].strip()
-        detail = re.sub(r"\s*\[[^\]]+\]\s*$", "", detail).strip()
+    tech_tags: list[str] = []
 
+    if " - " in (topic or ""):
+        raw_detail = (topic or "").split(" - ", 1)[1].strip()
+        # Extract tech tags like [Python, DuckDB, Power BI]
+        tech_match = re.search(r"\[([^\]]+)\]", raw_detail)
+        if tech_match:
+            tech_tags = [t.strip() for t in tech_match.group(1).split(",") if t.strip()]
+        detail = re.sub(r"\s*\[[^\]]+\]\s*$", "", raw_detail).strip()
+
+    # Pull the first concrete verb phrase from the description to anchor the question
+    # e.g. "Built a system to collect, clean, and analyze Sensex market data using Python and DuckDB"
+    # -> ask about "collect/analyze" or the first named tool
+    first_tech = tech_tags[0] if tech_tags else ""
+
+    if detail and first_tech:
+        return f"What was your actual role in building this -- what part of it did you own?"
     if detail:
         return "What part of that did you personally build or own?"
-    return "Where have you actually used it in a project or workflow?"
+    return "Where have you actually used this in a real project or workflow?"
 
 
 
@@ -902,6 +916,7 @@ async def entrypoint(ctx: JobContext):
     interview_directive_cached = build_interview_directive(
         band=session_context.candidate_band,
         resume_brief=session_context.resume_brief,
+        jd_skills=_jd_skills or [],
         custom_questions=_interview_questions or None,
     )
 
@@ -910,8 +925,7 @@ async def entrypoint(ctx: JobContext):
 
     # Build consolidated context message
     _projects_str = " | ".join([str(p).split(" - ")[0].strip() for p in (_rb.projects or [])][:4]) or "none"
-    _work_str = " | ".join([str(w).split(" - ")[0].strip() for w in (_rb.work_history or [])][:3]) or "none"
-    _internships_str = " | ".join([str(x).split(" - ")[0].strip() for x in (_rb.internships or [])][:2]) or "none"
+    _work_str = " | ".join([str(w).split(" - ")[0].strip() for w in (_rb.work_history or [])][:5]) or "none"
     _education_str = " | ".join([str(e).split(" - ")[0].strip() for e in (_rb.education or [])][:2]) or "none"
     _skills_str = ", ".join([str(s).strip() for s in (_rb.skills or [])][:6])
 
@@ -939,7 +953,6 @@ async def entrypoint(ctx: JobContext):
         f"  Skills: {_skills_str}\n"
         f"  Projects: {_projects_str}\n"
         f"  Work History: {_work_str}\n"
-        f"  Internships: {_internships_str}\n"
         f"  Education: {_education_str}\n"
         f"\n"
         f"INTERVIEW PLAN: 20 min covering resume ownership, JD skills, situational, behavioural. "
@@ -1939,17 +1952,20 @@ async def entrypoint(ctx: JobContext):
                     _prev_q = (payload.get("question") or "").strip()
                     _prev_a = (payload.get("answer") or "").strip()
                     _prev_a_gist = " ".join(_prev_a.split()[:20])
+
+                    # Detect "can't remember / didn't build it" responses -- don't probe deeper, redirect
+                    _cant_remember_markers = (
+                        "don't remember", "dont remember", "can't remember", "cannot remember",
+                        "not sure", "i forgot", "long time ago", "old project", "not really",
+                        "didn't build", "did not build", "i wasn't", "i was not",
+                    )
+                    _is_cant_remember = any(m in _prev_a.lower() for m in _cant_remember_markers)
+
                     _is_short = (
                         float(_qr.get("overall", 5.0)) <= 0.5
                         and float(_qr.get("depth", 5.0)) == 0.0
                         and len(_prev_a.split()) < 8
                     )
-                    _short_nudge = (
-                        "\nCANDIDATE GAVE A VERY SHORT ANSWER -- push back warmly but directly.\n"
-                        "Don't just re-ask. React like a real interviewer who expected more:\n"
-                        "  - 'That's a start -- can you give me a bit more to work with?'\n"
-                        "  - 'I'd love to hear more than that -- what specifically did you do?'"
-                    ) if _is_short else ""
 
                     # Memory block: last 5 discussed entries so LLM doesn't re-ask
                     _memory = "\n".join(_discussed_log[-5:])
@@ -1957,21 +1973,52 @@ async def entrypoint(ctx: JobContext):
                         f"\n[INTERVIEW MEMORY -- DO NOT RE-ASK THESE]\n{_memory}\n"
                     ) if _memory else ""
 
-                    _directive = (
-                        "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
-                        f"DECISION: PROBE ({_probe_family.upper()})\n"
-                        f"BAND: {payload.get('band', 'mid').upper()}\n"
-                        f"ANGLE: {_probe_goal}\n"
-                        f"HOW TO ASK: {_probe_style}\n"
-                        f"LAST QUESTION YOU ASKED: \"{_prev_q}\"\n"
-                        f"CANDIDATE SAID: \"{_prev_a_gist}{'...' if len(_prev_a.split()) > 20 else ''}\"\n"
-                        "DO NOT ask the same question again. DO NOT rephrase it.\n"
-                        "Pick the most natural angle from ANGLE/HOW TO ASK based on what they actually said.\n"
-                        "ONE question only. Sound natural.\n"
-                        "DO NOT wrap up or say goodbye -- the interview is still in progress."
-                        f"{_short_nudge}"
-                        f"{_memory_block}"
-                    )
+                    if _is_cant_remember:
+                        # Redirect to something they CAN answer -- don't dwell on the gap
+                        _directive = (
+                            "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
+                            f"DECISION: PROBE (REDIRECT)\n"
+                            f"TOPIC CONTEXT: {_active_topic}\n"
+                            f"CANDIDATE SAID: \"{_prev_a_gist}{'...' if len(_prev_a.split()) > 20 else ''}\"\n"
+                            "CANDIDATE SAID THEY DON'T REMEMBER OR DIDN'T BUILD IT.\n"
+                            "DO NOT push them to remember. DO NOT dwell on the gap.\n"
+                            "Instead, pick ONE of these redirects based on context:\n"
+                            "  -> If they said they don't remember details: ask what they DO remember -- "
+                            "even one small thing they built or tried\n"
+                            "  -> If they said they didn't build it: ask what their actual role was then, "
+                            "or what they were working on at that time instead\n"
+                            "  -> If the topic has a specific tool/tech in it: ask if they've ever used "
+                            "that tool in any context, even outside this project\n"
+                            "Acknowledge with one word ('Okay.' / 'Fair enough.' / 'Got it.') then redirect.\n"
+                            "ONE question. Keep it light -- don't make them feel judged."
+                            f"{_memory_block}"
+                        )
+                    else:
+                        _short_nudge = (
+                            "\nCANDIDATE GAVE A VERY SHORT ANSWER -- push back warmly but directly.\n"
+                            "Don't just re-ask. React like a real interviewer who expected more:\n"
+                            "  - 'That's a start -- can you give me a bit more to work with?'\n"
+                            "  - 'I'd love to hear more than that -- what specifically did you do?'"
+                        ) if _is_short else ""
+
+                        _directive = (
+                            "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
+                            f"DECISION: PROBE ({_probe_family.upper()})\n"
+                            f"BAND: {payload.get('band', 'mid').upper()}\n"
+                            f"TOPIC CONTEXT: {_active_topic}\n"
+                            "  ^ Use specific details from this (tools, systems, tech) to make your question "
+                            "concrete -- do NOT ask generically about 'the project'.\n"
+                            f"ANGLE: {_probe_goal}\n"
+                            f"HOW TO ASK: {_probe_style}\n"
+                            f"LAST QUESTION YOU ASKED: \"{_prev_q}\"\n"
+                            f"CANDIDATE SAID: \"{_prev_a_gist}{'...' if len(_prev_a.split()) > 20 else ''}\"\n"
+                            "DO NOT ask the same question again. DO NOT rephrase it.\n"
+                            "Pick the most natural angle from ANGLE/HOW TO ASK based on what they actually said.\n"
+                            "ONE question only. Sound natural.\n"
+                            "DO NOT wrap up or say goodbye -- the interview is still in progress."
+                            f"{_short_nudge}"
+                            f"{_memory_block}"
+                        )
                     remove_system_messages_multi(chat_ctx, ("[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT"))
                     chat_ctx.add_message(role="system", content=_directive)
                     logger.info(

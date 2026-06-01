@@ -58,9 +58,19 @@ class _ResumeContextParser:
         projects = self._extract_projects()
         education = self._extract_education()
         hobbies = self._extract_hobbies()
-        work_history = self._extract_work_history()
-        internships = self._extract_internships()
-        experiences = _extract_text_items(projects + work_history + internships)
+        work_history_raw = self._extract_work_history()
+        internships_raw = self._extract_internships()
+        # Internships are merged into work_history -- no separate bucket.
+        # Dedup by short title so a role that appears in both lists isn't doubled.
+        _seen_wh: set[str] = set()
+        work_history: list[str] = []
+        for entry in work_history_raw + internships_raw:
+            _key = entry.split(" - ")[0].strip().lower()
+            if _key and _key not in _seen_wh:
+                _seen_wh.add(_key)
+                work_history.append(entry)
+        internships: list[str] = []   # kept for schema compat -- always empty now
+        experiences = _extract_text_items(projects + work_history)
         ownership_risks = self._build_ownership_risks()
 
         return ResumeContext(

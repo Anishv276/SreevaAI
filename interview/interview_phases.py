@@ -29,24 +29,28 @@ def build_warmup_directive() -> str:
         "\n"
         "STRICT RULES:\n"
         "  - Do NOT ask anything about their resume, skills, projects, or experience.\n"
-        "  - Do NOT say more than two short sentences total.\n"
-        "  - Do NOT use filler phrases: 'Absolutely', 'Great', 'Thanks for sharing', 'Happy to chat'.\n"
-        "  - Do NOT copy any example -- generate your own words every time.\n"
+        "  - Two sentences MAX. Not three. Not a paragraph.\n"
+        "  - Do NOT use: 'Absolutely', 'Great', 'Thanks for sharing', 'Happy to chat', 'Sounds good'.\n"
+        "  - Do NOT copy any example below -- generate your own every time.\n"
         "\n"
         "YOUR ONLY JOB THIS TURN:\n"
-        "  Say one brief human reaction to what they just said (one sentence, warm, specific to them),\n"
-        "  then ask ONE yes/no readiness check to confirm they are ready to begin.\n"
+        "  1. One short human reaction tied to what they literally just said.\n"
+        "  2. One direct closed question to confirm they're ready to start.\n"
         "\n"
-        "The reaction must be grounded in what the candidate actually said -- if they said they're tired,\n"
-        "acknowledge that; if they sound upbeat, match it; if they said something specific, react to it.\n"
-        "Do not invent context they didn't give you.\n"
+        "HOW TO REACT (pick what fits what they said):\n"
+        "  - If they said they're good/fine/ready -> something like 'Good to hear.' or 'Same here.' "
+        "or 'Nice, let's make it count.' -- one beat, then move.\n"
+        "  - If they said they're tired/busy -> something like 'I hear you -- let's keep it moving then.' "
+        "or 'Fair enough, we'll make this quick.'\n"
+        "  - If they said something specific (e.g. 'just finished a meeting') -> react to THAT specifically.\n"
+        "  - If it was just small talk -> match the energy briefly, don't over-explain.\n"
         "\n"
-        "The readiness check must be a simple, direct question -- one sentence, closed-ended.\n"
-        "Ask it as if you are about to start something real, not fill time.\n"
-        "The readiness check must NOT mention any project, resume item, skill, company, tool, or role-specific topic.\n"
-        "Good shape: 'Are you ready to begin?' Bad shape: 'Are you ready to discuss your project?'\n"
+        "READINESS CHECK:\n"
+        "  Ask it like you're about to start something real -- direct and simple.\n"
+        "  Good: 'Ready to get into it?' / 'Shall we start?' / 'Want to jump in?'\n"
+        "  Bad: 'Are you ready to discuss your background?' / 'Ready to talk about your experience?'\n"
         "\n"
-        "WAIT for the candidate to confirm before starting the interview."
+        "WAIT for them to confirm before starting the interview."
     )
 
 
@@ -70,6 +74,7 @@ def build_interview_directive(
     *,
     band: str,
     resume_brief: _BriefType,
+    jd_skills: list[str] | None = None,
     custom_questions: list[str] | None = None,
 ) -> str:
     """
@@ -77,8 +82,8 @@ def build_interview_directive(
 
     Priority order:
       1. Resume anchor project -- open here, probe personal ownership
-      2. Other resume projects, work history, internships
-      3. JD must-have skills not already surfaced from resume discussions
+      2. Other resume projects, work history
+      3. Resume skills + JD skills -- probe real usage depth
       4. Situational question (at least 1, woven naturally)
       5. Behavioral question (at least 1, woven naturally)
       6. Custom recruiter questions (mandatory, woven in anytime)
@@ -158,6 +163,27 @@ def build_interview_directive(
 
     cq_block = _build_custom_questions_block(custom_questions)
 
+    # Skills block -- resume skills + JD skills shown explicitly so the LLM
+    # knows what to probe for and doesn't skip them in favour of only projects.
+    _resume_skills = [str(s).strip() for s in (getattr(resume_brief, "skills", None) or resume_brief.get("skills", [])) if str(s).strip()]
+    _jd_skill_list = [str(s).strip() for s in (jd_skills or []) if str(s).strip()]
+    _all_skills = list(dict.fromkeys(_resume_skills + _jd_skill_list))  # dedup, preserve order
+    if _all_skills:
+        _resume_part = ", ".join(_resume_skills) if _resume_skills else "none listed"
+        _jd_part = ", ".join(_jd_skill_list) if _jd_skill_list else "none listed"
+        skills_block = (
+            f"\nSKILLS TO COVER:\n"
+            f"  Resume skills: {_resume_part}\n"
+            f"  JD must-have skills: {_jd_part}\n"
+            f"  -> After covering all resume projects, probe these skills directly (Phase 2).\n"
+            f"  -> Ask about real usage: a specific project or task where they used it, "
+            f"not just 'do you know X'.\n"
+            f"  -> If a skill already came up naturally in a project story, mark it covered -- "
+            f"don't ask again.\n"
+        )
+    else:
+        skills_block = ""
+
     # Band-aware coverage goals and mandatory quota.
     # Research basis: as seniority increases, interviews shift from breadth -> depth.
     # Fresher: cover many topics lightly (5-6), understand how they think.
@@ -172,18 +198,27 @@ def build_interview_directive(
     coverage_goals, mandatory_quota, how_to_move_extra = {
         "fresher": (
             (
-                "  1) Start with the anchor project. Ask what they personally built and why.\n"
-                "  2) Cover ALL resume projects and internships -- breadth matters here.\n"
-                "  3) Probe JD skills as time allows -- keep going until time is up."
+                "  PHASE 1 -- PROJECTS (start here, cover all):\n"
+                "    - Open with the anchor project. 2-3 follow-ups, then move on.\n"
+                "    - Cover every other resume project in order. 2-3 follow-ups each.\n"
+                "    - If they don't remember or didn't build it -- one redirect, then move on immediately.\n"
+                "  PHASE 2 -- SKILLS (after projects):\n"
+                "    - Probe resume skills and JD skills listed in SKILLS TO COVER above.\n"
+                "    - Ask about real usage: 'Where have you actually used X?' not 'Do you know X?'\n"
+                "    - Skip any skill that already came up naturally during a project discussion.\n"
+                "  PHASE 3 -- WORK HISTORY (after skills, if time remains):\n"
+                "    - Cover work history roles. Ask what they actually owned day-to-day.\n"
+                "    - Keep it brief -- 1-2 follow-ups per role."
             ),
             (
-                "  ☐ Anchor project + as many other resume items as time allows.\n"
-                "  ☐ JD skills -- probe as many as time allows, no fixed minimum."
+                "  ☐ All resume projects covered (anchor first, then the rest).\n"
+                "  ☐ Resume skills + JD skills probed for real usage.\n"
+                "  ☐ Work history touched if time allows."
             ),
-            "  -> BREADTH FIRST -- cover more topics with 2-3 follow-ups each. Move on when you have signal.\n"
+            "  -> BREADTH FIRST -- 2-3 follow-ups per topic. Move on when you have signal.\n"
             "  -> Accept incomplete answers -- they're learning. Note gaps, don't dwell.\n"
-            "  -> If one area runs dry, immediately move to the next: skills, learning, aspirations, projects.\n"
-            "  -> If they say they don't know -- acknowledge briefly, move on. Never dwell on a gap.\n",
+            "  -> If they don't know or don't remember -- one redirect, then move immediately.\n"
+            "  -> Follow the phase order: projects → skills → work history.\n",
         ),
         "mid": (
             (
@@ -252,6 +287,7 @@ def build_interview_directive(
         f"{mandatory_quota}\n\n"
         f"OPENING MOVE: {opening}\n\n"
         f"YOUR INSTINCT FOR THIS CANDIDATE ({band.upper()}):\n{band_instinct}\n"
+        f"{skills_block}"
         f"{cq_block}\n"
         f"HOW TO MOVE:\n"
         f"  -> Always follow the [NEXT_TURN_DIRECTIVE] when present -- it tells you exactly what to do next.\n"
