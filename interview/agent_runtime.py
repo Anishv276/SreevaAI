@@ -1893,6 +1893,7 @@ async def entrypoint(ctx: JobContext):
                         "DO NOT wrap up, say goodbye, or ask questions for me."
                     )
                     # CRITICAL: Update _last_question_topic NOW (before LLM fires) so eval sees the NEW topic
+                    nonlocal _last_question_topic
                     _last_question_topic = _topic_short_title(_active_topic or "")
 
                     remove_system_messages_multi(chat_ctx, ("[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT"))
