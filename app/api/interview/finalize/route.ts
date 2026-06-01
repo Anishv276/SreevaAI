@@ -232,6 +232,10 @@ export async function POST(req: Request) {
       recordingCompletedAt,
       recordingDurationSec: finalDuration ?? recordingDurationSec,
     });
+    const interviewAfterPersist = await prisma.interview.findUnique({
+      where: { applicationId },
+      select: { completedAt: true },
+    });
 
     // Duration: use client-sent value, else compute from startedAt
     let resolvedDuration = finalDuration;
@@ -279,7 +283,7 @@ export async function POST(req: Request) {
           if (recordingSettings.recordingEnabled) {
             await scheduleRecordingRetentionDeletion({
               applicationId,
-              completedAt: recordingCompletedAt || new Date(),
+              completedAt: interviewAfterPersist?.completedAt || recordingCompletedAt || new Date(),
               retentionDays: recordingSettings.recordingRetentionDays,
               recordingUrl: recordingUrlForPersist,
             }).catch((error) => {
@@ -406,7 +410,7 @@ export async function POST(req: Request) {
   try {
       const job = await interviewFinalizationQueue.add(
         "finalize-interview",
-        { applicationId, recordingUrl: recordingUrlForPersist, transcript: finalTranscript, interviewStatus: finalInterviewStatus, appStatus },
+        { applicationId, recordingUrl, transcript: finalTranscript, interviewStatus: finalInterviewStatus, appStatus },
         {
         attempts: 3,
         backoff: { type: "exponential", delay: 1000 },

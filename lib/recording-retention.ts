@@ -58,7 +58,7 @@ export function extractRecordingKey(params: {
 }
 
 export async function getOrgRecordingSettings(orgId: string) {
-  const org = await prisma.organization.findUnique({
+  const org = await (prisma as any).organization.findUnique({
     where: { id: orgId },
     select: {
       recordingEnabled: true,
@@ -101,11 +101,11 @@ export async function deleteRecordingObjectWithRetry(params: {
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
       await deleteObjectStrict(bucket, key);
-      return { success: true, attempts: attempt, bucket, key };
+      return { success: true, attempts: attempt, bucket, key, lastError: null as string | null };
     } catch (error) {
       lastError = error;
       if (isIgnorableDeleteError(error)) {
-        return { success: true, attempts: attempt, bucket, key };
+        return { success: true, attempts: attempt, bucket, key, lastError: null as string | null };
       }
       if (attempt < attempts && baseDelayMs > 0) {
         await sleep(baseDelayMs * (2 ** (attempt - 1)));
@@ -142,6 +142,7 @@ export async function deleteRecordingAsset(params: {
       attempts: 0,
       bucket: params.bucket || getInterviewRecordingBucket(),
       key: null as string | null,
+      lastError: null as string | null,
     };
   }
 
@@ -168,6 +169,12 @@ export async function scheduleRecordingRetentionDeletion(params: {
 
   const delay = Math.max(0, dueAt.getTime() - Date.now());
   const jobId = getRecordingRetentionJobId(params.applicationId);
+  const normalizedRetentionDays = normalizeRecordingRetentionDays(params.retentionDays);
+
+  const existingJob = await recordingRetentionQueue.getJob(jobId).catch(() => null);
+  if (existingJob) {
+    await existingJob.remove().catch(() => {});
+  }
 
   await recordingRetentionQueue.add(
     RECORDING_RETENTION_DELETE_JOB,
@@ -177,13 +184,30 @@ export async function scheduleRecordingRetentionDeletion(params: {
       recordingUrl: params.recordingUrl || null,
       recordingKey: params.recordingKey || null,
       recordingManifest: params.recordingManifest || null,
-      retentionDays: normalizeRecordingRetentionDays(params.retentionDays),
+      retentionDays: normalizedRetentionDays,
     },
     {
       jobId,
       delay,
     }
   );
+
+  await (prisma as any).interview.update({
+    where: { applicationId: params.applicationId },
+    data: {
+      recordingRetentionDays: normalizedRetentionDays,
+      recordingRetentionDueAt: dueAt,
+      recordingCleanupStatus: "PENDING",
+      recordingCleanupAttempts: 0,
+      recordingCleanupLastError: null,
+      recordingDeletedAt: null,
+    },
+  }).catch((error: unknown) => {
+    console.warn(
+      `[RETENTION] Failed to persist retention metadata for ${params.applicationId}:`,
+      error
+    );
+  });
 
   return { scheduled: true, dueAt };
 }

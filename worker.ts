@@ -257,6 +257,7 @@ async function processInterviewStartJob(job: any) {
 }
 
 async function processRecordingRetentionDeleteJob(job: any) {
+  const prismaAny = prisma as any;
   const {
     applicationId,
     recordingUrl,
@@ -268,7 +269,7 @@ async function processRecordingRetentionDeleteJob(job: any) {
     throw new Error("Missing applicationId in delete-recording-asset job");
   }
 
-  const interviewRow = await prisma.interview.findUnique({
+  const interviewRow = await prismaAny.interview.findUnique({
     where: { applicationId },
     select: {
       interviewRecordingUrl: true,
@@ -301,7 +302,7 @@ async function processRecordingRetentionDeleteJob(job: any) {
   }
 
   const attempt = Math.max(1, Number(job.attemptsMade || 0) + 1);
-  await prisma.interview.update({
+  await prismaAny.interview.update({
     where: { applicationId },
     data: {
       recordingCleanupStatus: "PROCESSING",
@@ -321,7 +322,7 @@ async function processRecordingRetentionDeleteJob(job: any) {
 
   if (!deleteResult.success) {
     const lastError = deleteResult.lastError || "Failed to delete recording asset from Cloudflare R2";
-    await prisma.interview.update({
+    await prismaAny.interview.update({
       where: { applicationId },
       data: {
         recordingCleanupStatus: "FAILED",
@@ -334,7 +335,7 @@ async function processRecordingRetentionDeleteJob(job: any) {
   }
 
   const deletedAt = new Date();
-  await prisma.interview.update({
+  await prismaAny.interview.update({
     where: { applicationId },
     data: {
       interviewRecordingUrl: null,
@@ -1654,6 +1655,7 @@ if (isQueueEnabled("interview-finalization")) {
           ? await getOrgRecordingSettings(policyOrgId)
           : { recordingEnabled: true, recordingRetentionDays: 30 };
         const shouldStoreRecording = Boolean(recordingUrl) && recordingSettings.recordingEnabled;
+        const recordingDisabled = Boolean(recordingUrl && !recordingSettings.recordingEnabled);
         const recordingUrlToPersist = shouldStoreRecording ? recordingUrl : undefined;
         if (recordingUrl && !recordingSettings.recordingEnabled) {
           await deleteRecordingAsset({
@@ -1679,6 +1681,21 @@ if (isQueueEnabled("interview-finalization")) {
         if (recordingUrlToPersist) {
           updateData.interviewRecordingUrl = recordingUrlToPersist;
           updateData.interviewRecordedAt = new Date();
+        } else if (recordingDisabled) {
+          updateData.interviewRecordingUrl = null;
+          updateData.interviewRecordedAt = null;
+          updateData.recordingStatus = null;
+          updateData.recordingMimeType = null;
+          updateData.recordingStartedAt = null;
+          updateData.recordingCompletedAt = null;
+          updateData.recordingDurationSec = null;
+          updateData.recordingManifest = null;
+          updateData.recordingRetentionDays = null;
+          updateData.recordingRetentionDueAt = null;
+          updateData.recordingCleanupStatus = "COMPLETED";
+          updateData.recordingCleanupAttempts = 1;
+          updateData.recordingCleanupLastError = null;
+          updateData.recordingDeletedAt = new Date();
         }
         if (incomingTranscript && incomingTranscript.length >= existingTranscript.length) {
           updateData.interviewTranscript = incomingTranscript;
@@ -1713,6 +1730,47 @@ if (isQueueEnabled("interview-finalization")) {
             recordingUrl: recordingUrlToPersist,
             transcript,
             interviewStatus,
+          });
+        }
+
+        if (recordingDisabled) {
+          await prisma.$executeRawUnsafe(
+            `
+            UPDATE "Interview"
+            SET
+              "interviewRecordingUrl" = NULL,
+              "interviewRecordedAt" = NULL,
+              "recordingStatus" = NULL,
+              "recordingMimeType" = NULL,
+              "recordingStartedAt" = NULL,
+              "recordingCompletedAt" = NULL,
+              "recordingDurationSec" = NULL,
+              "recordingManifest" = NULL,
+              "recordingRetentionDays" = NULL,
+              "recordingRetentionDueAt" = NULL,
+              "recordingCleanupStatus" = 'COMPLETED',
+              "recordingCleanupAttempts" = GREATEST(COALESCE("recordingCleanupAttempts", 0), 1),
+              "recordingCleanupLastError" = NULL,
+              "recordingDeletedAt" = COALESCE("recordingDeletedAt", NOW()),
+              "updatedAt" = NOW()
+            WHERE "applicationId" = $1
+            `,
+            applicationId
+          ).catch(() => {});
+        }
+
+        if (recordingUrlToPersist && interviewStatus === "COMPLETED") {
+          const persistedInterview = await prisma.interview.findUnique({
+            where: { applicationId },
+            select: { completedAt: true },
+          });
+          await scheduleRecordingRetentionDeletion({
+            applicationId,
+            completedAt: persistedInterview?.completedAt || new Date(),
+            retentionDays: recordingSettings.recordingRetentionDays,
+            recordingUrl: recordingUrlToPersist,
+          }).catch((error) => {
+            console.warn(`[RETENTION] Failed to schedule cleanup for ${applicationId}:`, error);
           });
         }
 
