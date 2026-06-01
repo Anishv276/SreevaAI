@@ -1892,6 +1892,9 @@ async def entrypoint(ctx: JobContext):
                         "Do NOT reference it. Acknowledge in one sentence max, then ask the verbatim question.\n"
                         "DO NOT wrap up, say goodbye, or ask questions for me."
                     )
+                    # CRITICAL: Update _last_question_topic NOW (before LLM fires) so eval sees the NEW topic
+                    _last_question_topic = _topic_short_title(_active_topic or "")
+
                     remove_system_messages_multi(chat_ctx, ("[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT"))
                     chat_ctx.add_message(role="system", content=_directive)
                     chat_ctx.add_message(role="system", content=(
