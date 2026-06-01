@@ -223,8 +223,8 @@ export default function NewOrgPage() {
     plan: DEFAULT_ORG_PLAN,
     maxActiveDrives: "Unlimited",
     interviewQuotaTotal: "100",
-    recordingEnabled: true,
-    recordingRetentionDays: "30",
+    recordingEnabled: false,
+    recordingRetentionDays: "",
     proctoringSignals: getProctoringSignalsForPlan(DEFAULT_ORG_PLAN),
     adminName: "",
     adminEmail: "",
@@ -432,8 +432,8 @@ export default function NewOrgPage() {
           adminPassword: form.adminPassword,
           maxActiveDrives: form.maxActiveDrives,
           interviewQuotaTotal: Number(form.interviewQuotaTotal || 0),
-          recordingEnabled: form.recordingEnabled,
-          recordingRetentionDays: Number(form.recordingRetentionDays || 30),
+          recordingEnabled: form.recordingEnabled ? true : null,
+          recordingRetentionDays: form.recordingEnabled ? Number(form.recordingRetentionDays) : null,
           proctoringSignals: form.proctoringSignals,
           voiceId: form.voiceId || DEFAULT_VOICE_ID,
           allowedVoices: form.allowedVoices.length > 0 ? form.allowedVoices : [form.voiceId || DEFAULT_VOICE_ID],
@@ -711,7 +711,7 @@ export default function NewOrgPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => updateForm({ recordingEnabled: false })}
+                  onClick={() => updateForm({ recordingEnabled: false, recordingRetentionDays: "" })}
                   className={cn(
                     "rounded-xl px-4 py-2 text-[11px] font-black uppercase tracking-widest transition",
                     !form.recordingEnabled ? "bg-white text-rose-600 shadow-sm" : "text-slate-400 hover:text-slate-700"

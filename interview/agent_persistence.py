@@ -28,12 +28,11 @@ from urllib.parse import parse_qsl, urlencode, urlunparse, urlparse
 
 # LangChain / LangGraph
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import PydanticOutputParser, StrOutputParser
+from langchain_core.output_parsers import PydanticOutputParser
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, END
 
 from livekit.agents.metrics import AgentSessionUsage
-from openai import AsyncOpenAI
 
 from behavioral_analysis import synthesize_behavioral_report
 from interview.agent_utils import _coerce_jsonish, build_interview_turns, truncate_to_tokens
@@ -461,7 +460,7 @@ def _normalize_stt_model_name(model_name: str) -> str:
 def _estimate_openai_cost(model_name: str, input_tokens: int, cached_tokens: int, output_tokens: int) -> float:
     rates = _OPENAI_MODEL_RATES.get(_normalize_openai_model(model_name))
     if not rates:
-        return 0.0
+        raise ValueError(f"Missing OpenAI pricing for model {model_name!r}")
     input_tokens  = max(0, int(input_tokens  or 0))
     output_tokens = max(0, int(output_tokens or 0))
     cached_tokens = max(0, min(int(cached_tokens or 0), input_tokens))
@@ -514,8 +513,10 @@ def summarize_session_usage(session_usage: AgentSessionUsage | None) -> dict[str
         if not kind:
             continue
         seen_kinds.add(kind)
-        provider  = str(getattr(item, "provider", "") or "unknown")
-        model     = str(getattr(item, "model", "")    or "unknown")
+        provider  = str(getattr(item, "provider", "") or "").strip().upper()
+        model     = str(getattr(item, "model", "")    or "").strip()
+        if not provider or not model:
+            raise ValueError(f"Cannot summarize {kind} usage without provider and model")
         model_key = f"{provider}:{model}"
         bucket    = summary[kind]
         bucket["sessions"] = 1
@@ -534,9 +535,77 @@ def summarize_session_usage(session_usage: AgentSessionUsage | None) -> dict[str
     return summary
 
 
+def _replace_component_usage_from_plugin_metrics(
+    session_summary: dict[str, Any],
+    *,
+    tts_provider: Optional[str] = None,
+    tts_model: Optional[str] = None,
+    tts_characters: int = 0,
+    tts_audio_seconds: float = 0.0,
+    stt_provider: Optional[str] = None,
+    stt_model: Optional[str] = None,
+    stt_audio_seconds: float = 0.0,
+) -> dict[str, Any]:
+    """Use LiveKit per-plugin metrics as the source of truth for STT/TTS usage."""
+    summary = session_summary
+    if int(tts_characters or 0) > 0:
+        provider = str(tts_provider or "").strip().upper()
+        model = str(tts_model or "").strip()
+        if not provider or not model:
+            raise ValueError("Cannot record TTS usage without provider and model")
+        key = f"{provider}:{model}"
+        summary["tts"] = {
+            "sessions": 1,
+            "totals": {
+                "inputTokens": 0,
+                "outputTokens": 0,
+                "charactersCount": int(tts_characters),
+                "audioDuration": float(tts_audio_seconds or 0.0),
+            },
+            "byModel": {
+                key: {
+                    "provider": provider,
+                    "model": model,
+                    "sessions": 1,
+                    "inputTokens": 0,
+                    "outputTokens": 0,
+                    "charactersCount": int(tts_characters),
+                    "audioDuration": float(tts_audio_seconds or 0.0),
+                }
+            },
+        }
+
+    if float(stt_audio_seconds or 0.0) > 0:
+        provider = str(stt_provider or "").strip().upper()
+        model = str(stt_model or "").strip()
+        if not provider or not model:
+            raise ValueError("Cannot record STT usage without provider and model")
+        key = f"{provider}:{model}"
+        summary["stt"] = {
+            "sessions": 1,
+            "totals": {
+                "inputTokens": 0,
+                "outputTokens": 0,
+                "audioDuration": float(stt_audio_seconds),
+            },
+            "byModel": {
+                key: {
+                    "provider": provider,
+                    "model": model,
+                    "sessions": 1,
+                    "inputTokens": 0,
+                    "outputTokens": 0,
+                    "audioDuration": float(stt_audio_seconds),
+                }
+            },
+        }
+    return summary
+
+
 def _merge_llm_into_bucket(bucket: _FeatureBilling, llm_totals: dict, llm_by_model: dict) -> None:
     """Merge LLM usage from a session into a feature bucket using O(1) hash lookups."""
-    if not llm_by_model and not llm_totals:
+    has_llm_totals = any(int(llm_totals.get(key, 0) or 0) > 0 for key in ("inputTokens", "inputCachedTokens", "outputTokens", "sessionDuration"))
+    if not llm_by_model and not has_llm_totals:
         return
     bucket.runs          += 1
     bucket.inputTokens   += int(llm_totals.get("inputTokens",    0) or 0)
@@ -546,7 +615,10 @@ def _merge_llm_into_bucket(bucket: _FeatureBilling, llm_totals: dict, llm_by_mod
     session_cost = 0.0
     for model_key, raw in llm_by_model.items():
         row       = _coerce_jsonish(raw)
-        model_name = str(row.get("model", "") or "unknown").strip()
+        provider  = str(row.get("provider", "") or "").strip().upper()
+        model_name = str(row.get("model", "") or "").strip()
+        if not provider or not model_name:
+            raise ValueError("Cannot merge OpenAI billing without provider and model")
         input_t   = int(row.get("inputTokens",    0) or 0)
         cached_t  = int(row.get("inputCachedTokens", 0) or 0)
         output_t  = int(row.get("outputTokens",   0) or 0)
@@ -555,7 +627,7 @@ def _merge_llm_into_bucket(bucket: _FeatureBilling, llm_totals: dict, llm_by_mod
         session_cost += cost
         mb = bucket.byModel.setdefault(
             model_key,
-            _ModelBilling(provider=row.get("provider", "unknown"), model=model_name),
+            _ModelBilling(provider=provider, model=model_name),
         )
         mb.runs += 1; mb.inputTokens += input_t; mb.cachedInputTokens += cached_t
         mb.outputTokens += output_t; mb.sessionDuration += session_dur; mb.costUsd += cost
@@ -566,35 +638,27 @@ def _merge_tts_into_bucket(
     bucket: _FeatureBilling,
     tts_by_model: dict,
     tts_total_chars: int,
-    default_provider: str,
-    default_model: str,
+    _provider_hint: str,
+    _model_hint: str,
 ) -> None:
     session_chars, session_cost = 0, 0.0
+    if tts_total_chars > 0 and not tts_by_model:
+        raise ValueError("Cannot merge TTS usage without per-model source data")
     for _, raw in tts_by_model.items():
         row      = _coerce_jsonish(raw)
-        provider = str(row.get("provider", "") or default_provider).strip().upper()
-        model    = str(row.get("model",    "") or default_model).strip()
-        if provider not in _PROVIDER_REGISTRY and default_provider in _PROVIDER_REGISTRY:
-            provider = default_provider
-        if not model or model == "unknown":
-            model = default_model
+        provider = str(row.get("provider", "") or "").strip().upper()
+        model    = str(row.get("model",    "") or "").strip()
+        if not provider or not model:
+            raise ValueError("Cannot merge TTS usage without provider and model")
         chars = int(row.get("charactersCount", 0) or row.get("inputTokens", 0) or 0)
         if chars <= 0:
             continue
         session_chars += chars
         cost = _estimate_tts_cost_usd(provider, model, chars)
         session_cost += cost
-        key = f"{(provider or 'unknown').lower()}:{_normalize_tts_model_name(model) or 'unknown'}"
-        mb  = bucket.ttsByModel.setdefault(key, _ModelBilling(provider=provider or "UNKNOWN", model=model or "unknown"))
+        key = f"{provider.lower()}:{_normalize_tts_model_name(model)}"
+        mb  = bucket.ttsByModel.setdefault(key, _ModelBilling(provider=provider, model=model))
         mb.runs += 1; mb.characters += chars; mb.costUsd += cost
-
-    if session_chars == 0 and tts_total_chars > 0:
-        session_chars = tts_total_chars
-        cost = _estimate_tts_cost_usd(default_provider or "UNKNOWN", default_model or "unknown", tts_total_chars)
-        session_cost += cost
-        key  = f"{(default_provider or 'unknown').lower()}:{_normalize_tts_model_name(default_model) or 'unknown'}"
-        mb   = bucket.ttsByModel.setdefault(key, _ModelBilling(provider=default_provider or "UNKNOWN", model=default_model or "unknown"))
-        mb.runs += 1; mb.characters += tts_total_chars; mb.costUsd += cost
 
     if session_chars > 0:
         bucket.ttsRuns += 1
@@ -606,35 +670,27 @@ def _merge_stt_into_bucket(
     bucket: _FeatureBilling,
     stt_by_model: dict,
     stt_total_seconds: float,
-    default_provider: str,
-    default_model: str,
+    _provider_hint: str,
+    _model_hint: str,
 ) -> None:
     session_secs, session_cost = 0.0, 0.0
+    if stt_total_seconds > 0 and not stt_by_model:
+        raise ValueError("Cannot merge STT usage without per-model source data")
     for _, raw in stt_by_model.items():
         row      = _coerce_jsonish(raw)
-        provider = str(row.get("provider", "") or default_provider).strip().upper()
-        model    = str(row.get("model",    "") or default_model).strip()
-        if provider not in _PROVIDER_REGISTRY and default_provider in _PROVIDER_REGISTRY:
-            provider = default_provider
-        if not model or model == "unknown":
-            model = default_model
+        provider = str(row.get("provider", "") or "").strip().upper()
+        model    = str(row.get("model",    "") or "").strip()
+        if not provider or not model:
+            raise ValueError("Cannot merge STT usage without provider and model")
         secs = float(row.get("audioDuration", 0) or 0.0)
         if secs <= 0:
             continue
         session_secs += secs
         cost = _estimate_stt_cost_usd(provider, model, secs)
         session_cost += cost
-        key = f"{(provider or 'unknown').lower()}:{_normalize_stt_model_name(model) or 'unknown'}"
-        mb  = bucket.sttByModel.setdefault(key, _ModelBilling(provider=provider or "UNKNOWN", model=model or "unknown"))
+        key = f"{provider.lower()}:{_normalize_stt_model_name(model)}"
+        mb  = bucket.sttByModel.setdefault(key, _ModelBilling(provider=provider, model=model))
         mb.runs += 1; mb.audioSeconds += secs; mb.costUsd += cost
-
-    if session_secs == 0 and stt_total_seconds > 0:
-        session_secs = stt_total_seconds
-        cost = _estimate_stt_cost_usd(default_provider or "UNKNOWN", default_model or "unknown", stt_total_seconds)
-        session_cost += cost
-        key  = f"{(default_provider or 'unknown').lower()}:{_normalize_stt_model_name(default_model) or 'unknown'}"
-        mb   = bucket.sttByModel.setdefault(key, _ModelBilling(provider=default_provider or "UNKNOWN", model=default_model or "unknown"))
-        mb.runs += 1; mb.audioSeconds += stt_total_seconds; mb.costUsd += cost
 
     if session_secs > 0:
         bucket.sttRuns        += 1
@@ -667,7 +723,10 @@ def merge_feature_billing(
     tts_total_chars   = int(tts_totals.get("charactersCount", 0) or tts_totals.get("inputTokens", 0) or 0)
     stt_total_seconds = float(stt_totals.get("audioDuration", 0) or 0.0)
 
-    llm_has_usage = bool(llm_by_model) or bool(llm_totals)
+    llm_has_usage = bool(llm_by_model) or any(
+        int(llm_totals.get(key, 0) or 0) > 0
+        for key in ("inputTokens", "inputCachedTokens", "outputTokens", "sessionDuration")
+    )
     tts_has_usage = bool(tts_by_model) or tts_total_chars > 0
     stt_has_usage = bool(stt_by_model) or stt_total_seconds > 0
 
@@ -744,6 +803,7 @@ async def flush_pending_manual_billing(org_id: Optional[str]) -> None:
         logger.info(f"[USAGE] Flushed {len(pending)} manual billing entries for {org_id}")
     except Exception as e:
         logger.error(f"[USAGE] Failed to flush manual billing for {org_id}: {e}")
+        raise
 
 
 async def persist_org_usage_metrics(
@@ -753,10 +813,24 @@ async def persist_org_usage_metrics(
     tts_model: Optional[str] = None,
     stt_provider: Optional[str] = None,
     stt_model: Optional[str] = None,
+    plugin_tts_characters: int = 0,
+    plugin_tts_audio_seconds: float = 0.0,
+    plugin_stt_audio_seconds: float = 0.0,
 ) -> None:
-    if not org_id or not DATABASE_URL or session_usage is None:
+    has_plugin_usage = bool(plugin_tts_characters or plugin_tts_audio_seconds or plugin_stt_audio_seconds)
+    if not org_id or not DATABASE_URL or (session_usage is None and not has_plugin_usage):
         return
     session_summary = summarize_session_usage(session_usage)
+    session_summary = _replace_component_usage_from_plugin_metrics(
+        session_summary,
+        tts_provider=tts_provider,
+        tts_model=tts_model,
+        tts_characters=plugin_tts_characters,
+        tts_audio_seconds=plugin_tts_audio_seconds,
+        stt_provider=stt_provider,
+        stt_model=stt_model,
+        stt_audio_seconds=plugin_stt_audio_seconds,
+    )
     if not any(bucket.get("sessions") for bucket in session_summary.values()):
         return
     try:
@@ -786,9 +860,13 @@ async def persist_org_usage_metrics(
                         existing_totals[pub] = existing_totals.get(pub, 0) + kind_summary.get("totals", {}).get(pub, 0)
                     existing_by_model = existing_bucket.setdefault("byModel", {})
                     for model_key, model_summary in kind_summary.get("byModel", {}).items():
+                        provider = str(model_summary.get("provider", "") or "").strip().upper()
+                        model = str(model_summary.get("model", "") or "").strip()
+                        if not provider or not model:
+                            raise ValueError(f"Cannot merge livekit usage for {kind} without provider and model")
                         cur = _coerce_jsonish(existing_by_model.get(model_key)) or {
-                            "provider": model_summary.get("provider", "unknown"),
-                            "model":    model_summary.get("model",    "unknown"),
+                            "provider": provider,
+                            "model":    model,
                             "sessions": 0,
                             **{pub: 0 for _, pub in _USAGE_BUCKET_FIELDS[kind]},
                         }
@@ -819,6 +897,7 @@ async def persist_org_usage_metrics(
         )
     except Exception as e:
         logger.error(f"[USAGE] Failed to save org usage metrics for {org_id}: {e}")
+        raise
 
 
 async def persist_interview_billing_snapshot(
@@ -833,10 +912,23 @@ async def persist_interview_billing_snapshot(
     tts_model: Optional[str] = None,
     stt_provider: Optional[str] = None,
     stt_model: Optional[str] = None,
+    plugin_tts_characters: int = 0,
+    plugin_tts_audio_seconds: float = 0.0,
+    plugin_stt_audio_seconds: float = 0.0,
 ) -> None:
     if not app_id or not DATABASE_URL:
         return
     session_summary  = summarize_session_usage(session_usage)
+    session_summary = _replace_component_usage_from_plugin_metrics(
+        session_summary,
+        tts_provider=tts_provider,
+        tts_model=tts_model,
+        tts_characters=plugin_tts_characters,
+        tts_audio_seconds=plugin_tts_audio_seconds,
+        stt_provider=stt_provider,
+        stt_model=stt_model,
+        stt_audio_seconds=plugin_stt_audio_seconds,
+    )
     has_session_usage = any(bucket.get("sessions") for bucket in session_summary.values())
     has_manual_usage  = bool(org_id and _PENDING_MANUAL_BILLING.get(org_id))
     if not has_session_usage and not has_manual_usage and not duration_seconds:
@@ -853,7 +945,9 @@ async def persist_interview_billing_snapshot(
         for feature, usage in _PENDING_MANUAL_BILLING.get(org_id, []):
             if feature != "interview":
                 continue
-            model_name   = str(usage.get("model", "unknown") or "unknown")
+            model_name   = str(usage.get("model", "") or "").strip()
+            if not model_name:
+                raise ValueError("Cannot merge interview billing without model")
             input_tokens  = int(usage.get("inputTokens",    0) or 0)
             cached_tokens = int(usage.get("cachedInputTokens", 0) or 0)
             output_tokens = int(usage.get("outputTokens",   0) or 0)
@@ -903,18 +997,24 @@ async def persist_interview_billing_snapshot(
         pool = await DatabasePool.get()
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
-                'SELECT i.id FROM "Interview" i JOIN "Application" a ON a.id = i."applicationId" WHERE a.id = $1 LIMIT 1',
+                'SELECT i.id, COALESCE(i."billingSnapshot", \'{}\'::jsonb) AS "billingSnapshot" FROM "Interview" i JOIN "Application" a ON a.id = i."applicationId" WHERE a.id = $1 LIMIT 1',
                 app_id,
             )
             if not row:
                 return
+            existing_snapshot = _coerce_jsonish(row["billingSnapshot"])
+            persisted_snapshot = {**existing_snapshot, **snapshot}
+            if existing_snapshot.get("billedAt") is not None:
+                persisted_snapshot["billedAt"] = existing_snapshot.get("billedAt")
+            persisted_snapshot["costSource"] = "exact"
             await conn.execute(
                 'UPDATE "Interview" SET "billingSnapshot" = $1::jsonb, "updatedAt" = NOW() WHERE "applicationId" = $2',
-                json.dumps(snapshot), app_id,
+                json.dumps(persisted_snapshot), app_id,
             )
         logger.info(f"[USAGE] Saved interview billing snapshot for {app_id}")
     except Exception as e:
         logger.error(f"[USAGE] Failed to save interview billing snapshot for {app_id}: {e}")
+        raise
 
 
 def _build_jd_from_extracted(extracted_json: str | None) -> str:
@@ -1394,11 +1494,33 @@ def _build_qa_block(idx: int, score: dict) -> dict:
 
 def _extract_openai_completion_usage(completion: Any) -> dict[str, Any]:
     usage           = getattr(completion, "usage", None)
-    prompt_tokens   = int(getattr(usage, "prompt_tokens",     0) or 0)
-    completion_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+    usage_metadata_raw = getattr(completion, "usage_metadata", None) or {}
+    usage_metadata  = usage_metadata_raw if isinstance(usage_metadata_raw, dict) else {}
+    response_metadata = getattr(completion, "response_metadata", None) or {}
+    token_usage = response_metadata.get("token_usage") if isinstance(response_metadata, dict) else None
+    prompt_tokens   = int(
+        getattr(usage, "prompt_tokens", 0)
+        or (token_usage or {}).get("prompt_tokens", 0)
+        or usage_metadata.get("input_tokens", 0)
+        or 0
+    )
+    completion_tokens = int(
+        getattr(usage, "completion_tokens", 0)
+        or (token_usage or {}).get("completion_tokens", 0)
+        or usage_metadata.get("output_tokens", 0)
+        or 0
+    )
     prompt_details  = getattr(usage, "prompt_tokens_details", None)
-    cached_tokens   = int(getattr(prompt_details, "cached_tokens", 0) or 0)
-    model_name      = str(getattr(completion, "model", "") or LLM_MODEL)
+    cached_tokens   = int(
+        getattr(prompt_details, "cached_tokens", 0)
+        or ((token_usage or {}).get("prompt_tokens_details") or {}).get("cached_tokens", 0)
+        or ((usage_metadata.get("input_token_details") or {}).get("cache_read", 0))
+        or 0
+    )
+    model_name      = str(
+        getattr(completion, "model", "")
+        or (response_metadata.get("model_name") if isinstance(response_metadata, dict) else "")
+    )
     return {
         "model":           model_name,
         "inputTokens":     prompt_tokens,
@@ -1990,9 +2112,9 @@ async def generate_interview_summary(
         )
 
         llm   = ChatOpenAI(model=llm_model, temperature=0.1, max_tokens=600)
-        chain = _SUMMARY_PROMPT | llm | StrOutputParser()
+        chain = _SUMMARY_PROMPT | llm
 
-        summary_text = await asyncio.wait_for(
+        summary_msg = await asyncio.wait_for(
             chain.ainvoke({
                 "job_title":     job_title,
                 "context_block": context_block,
@@ -2000,19 +2122,9 @@ async def generate_interview_summary(
             }),
             timeout=30.0,
         )
+        await persist_org_manual_billing_usage(org_id, "interviewReport", _extract_openai_completion_usage(summary_msg))
 
-        # Track billing via raw OpenAI for usage extraction
-        client = AsyncOpenAI()
-        billing_completion = await client.chat.completions.create(
-            model=llm_model, temperature=0.1, max_tokens=1,
-            messages=[{"role": "user", "content": "x"}],
-        )
-        await persist_org_manual_billing_usage(
-            org_id, "interviewReport",
-            _extract_openai_completion_usage(billing_completion),
-        )
-
-        summary_text = (summary_text or "").strip()
+        summary_text = (getattr(summary_msg, "content", "") or "").strip()
         if not summary_text:
             logger.warning(f"[SUMMARY] Empty summary generated for {app_id}; skipping save")
             return
@@ -2040,7 +2152,9 @@ def merge_manual_billing_usage(existing: dict[str, Any], feature: str, usage: di
     _VALID = {"interview", "resumeExtraction", "jdExtraction", "chatbot", "interviewReport", "resumeReport"}
     if feature not in _VALID:
         feature = "interview"
-    model_name = str(usage.get("model", "unknown") or "unknown")
+    model_name = str(usage.get("model", "") or "").strip()
+    if not model_name:
+        raise ValueError(f"Cannot merge manual billing for {feature} without model")
     session_summary = {
         "llm": {
             "sessions": 1,

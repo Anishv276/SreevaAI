@@ -53,16 +53,18 @@ export async function GET(request: Request) {
         const snapshot = (row.billingSnapshot && typeof row.billingSnapshot === "object" ? row.billingSnapshot : {}) as Record<string, unknown>;
         const durationSec = Number(snapshot.durationSec ?? row.interviewDuration ?? row.recordingDurationSec ?? 0);
         const date = (row.completedAt ?? row.updatedAt).toISOString();
-        const llmCostUsd = Number(snapshot.llmCostUsd ?? 0);
-        const ttsCostUsd = Number(snapshot.ttsCostUsd ?? 0);
-        const sttCostUsd = Number(snapshot.sttCostUsd ?? 0);
-        const totalCostUsd = Number(snapshot.totalCostUsd ?? (llmCostUsd + ttsCostUsd + sttCostUsd));
         const hasExactBreakdown =
           String(snapshot.costSource || "").toLowerCase() === "exact" ||
           snapshot.llmCostUsd !== undefined ||
           snapshot.ttsCostUsd !== undefined ||
           snapshot.sttCostUsd !== undefined;
         const hasBillingSnapshot = hasExactBreakdown;
+        const llmCostUsd = hasBillingSnapshot ? Number(snapshot.llmCostUsd ?? 0) : null;
+        const ttsCostUsd = hasBillingSnapshot ? Number(snapshot.ttsCostUsd ?? 0) : null;
+        const sttCostUsd = hasBillingSnapshot ? Number(snapshot.sttCostUsd ?? 0) : null;
+        const totalCostUsd = hasBillingSnapshot
+          ? Number(snapshot.totalCostUsd ?? (Number(llmCostUsd || 0) + Number(ttsCostUsd || 0) + Number(sttCostUsd || 0)))
+          : null;
 
         return {
           id: row.id,

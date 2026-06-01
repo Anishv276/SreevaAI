@@ -287,6 +287,7 @@ RULES:
 
     const content = response.choices[0].message.content;
     if (!content) throw new Error("Empty response from OpenAI");
+    if (!response.model) throw new Error("Missing model in OpenAI interview report response");
 
     const data = JSON.parse(content);
     if (!data._meta) data._meta = { is_fallback: false, generated_at: new Date().toISOString() };
@@ -301,7 +302,7 @@ RULES:
     return {
       data,
       usage: {
-        model: response.model || "gpt-5.4-mini",
+        model: response.model,
         inputTokens: response.usage?.prompt_tokens || 0,
         outputTokens: response.usage?.completion_tokens || 0,
         cachedInputTokens: (response.usage as any)?.prompt_tokens_details?.cached_tokens || 0,

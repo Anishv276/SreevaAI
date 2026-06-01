@@ -55,8 +55,11 @@ export async function GET(
                         await recordOrgBillingUsage({
                             orgId,
                             feature: "jdExtraction",
-                            usage: result.usage,
-                        }).catch(() => {});
+                            usage: {
+                                ...result.usage,
+                                eventId: `jd-extraction:${jobId}`,
+                            },
+                        });
 
                         try {
                             await job.updateData({

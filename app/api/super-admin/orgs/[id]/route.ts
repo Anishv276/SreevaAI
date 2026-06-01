@@ -10,7 +10,7 @@ import { normalizeOrgAiConfig } from "@/lib/ai-provider-config";
 import { ORG_STATUS_CONTROL_MANUAL, ORG_STATUS_CONTROL_QUOTA, getEffectiveOrgStatus, normalizeOrgStatusControl, syncOrgStatusWithInterviewQuota } from "@/lib/credits";
 import { normalizeOrgLimitInput } from "@/lib/org-limits";
 import { normalizeEmail } from "@/lib/email";
-import { DEFAULT_RECORDING_RETENTION_DAYS, normalizeRecordingRetentionDays } from "@/lib/recording-retention";
+import { normalizeRecordingRetentionDays } from "@/lib/recording-retention";
 
 // GET /api/super-admin/orgs/[id] - fetch org for editing
 export async function GET(
@@ -201,12 +201,28 @@ export async function PATCH(
         if (logoUrl !== undefined) updateData.logoUrl = logoUrl;
         if (slug !== undefined) updateData.slug = slug;
         if (location !== undefined) updateData.location = location;
-        if (recordingEnabled !== undefined) updateData.recordingEnabled = Boolean(recordingEnabled);
-        if (recordingRetentionDays !== undefined) {
-            updateData.recordingRetentionDays = normalizeRecordingRetentionDays(
-                recordingRetentionDays ?? DEFAULT_RECORDING_RETENTION_DAYS,
-                DEFAULT_RECORDING_RETENTION_DAYS
+        const currentRecordingRetentionDays = normalizeRecordingRetentionDays(existingOrg.recordingRetentionDays);
+        const currentRecordingEnabled =
+            existingOrg.recordingEnabled === true && currentRecordingRetentionDays !== null;
+        const recordingEnabledProvided = recordingEnabled !== undefined;
+        const recordingRetentionProvided = recordingRetentionDays !== undefined;
+        const nextRecordingEnabled = recordingEnabledProvided
+            ? recordingEnabled === true || recordingEnabled === "true"
+            : currentRecordingEnabled;
+        const nextRecordingRetentionDays = recordingRetentionProvided
+            ? normalizeRecordingRetentionDays(recordingRetentionDays)
+            : currentRecordingRetentionDays;
+
+        if ((recordingEnabledProvided || recordingRetentionProvided) && nextRecordingEnabled && nextRecordingRetentionDays === null) {
+            return NextResponse.json(
+                { error: "Recording retention days are required when recording is enabled" },
+                { status: 400 }
             );
+        }
+
+        if (recordingEnabledProvided || recordingRetentionProvided) {
+            updateData.recordingEnabled = nextRecordingEnabled ? true : null;
+            updateData.recordingRetentionDays = nextRecordingEnabled ? nextRecordingRetentionDays : null;
         }
         if (shouldUpdateInterviewQuotaTotal) {
             updateData.interviewQuotaTotal = parsedInterviewQuotaTotal;

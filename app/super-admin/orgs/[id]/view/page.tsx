@@ -160,7 +160,7 @@ type BillingFeatureMetrics = {
 
 };
 
-const FEATURE_MODEL_FALLBACK: Record<string, string> = {
+const FEATURE_MODEL_DISPLAY_MAP: Record<string, string> = {
     interview: "gpt-4.1-mini",
     resumeExtraction: "gpt-5.4-mini",
     jdExtraction: "gpt-5.4-mini",
@@ -169,7 +169,16 @@ const FEATURE_MODEL_FALLBACK: Record<string, string> = {
     interviewReport: "gpt-5.4-mini",
 };
 
+const cleanName = (n: string) => {
+    const base = n.includes(':') ? n.split(':')[1] : n;
+    const cleaned = base.replace(/-\d{4}-\d{2}-\d{2}$/, '');
+    return cleaned.trim();
+};
 
+const isUnknownLabel = (value: string) => {
+    const normalized = cleanName(String(value || "")).toLowerCase();
+    return !normalized || normalized === "unknown" || normalized === "no recorded model";
+};
 
 export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: string }> }) {
 
@@ -253,14 +262,29 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
 
             .map((k) => k.split(":").slice(1).join(":") || k)
 
-            .filter(Boolean);
+            .map((n) => cleanName(n))
+            .filter((n) => Boolean(n) && !isUnknownLabel(n));
 
         if (names.length) return names.join(", ");
-
         const configured = (fallback || "").trim();
-
         return configured || "-";
 
+    };
+    const formatProviderNames = (models?: Record<string, unknown>) => {
+        const providers = Object.values(models || {})
+            .map((entry) => entry && typeof entry === "object" ? String((entry as Record<string, unknown>).provider || "") : "")
+            .map((p) => String(p || "").trim())
+            .filter((p) => Boolean(p) && p.toLowerCase() !== "unknown");
+        return providers.length ? Array.from(new Set(providers)).join(", ") : "-";
+    };
+
+    const getConfiguredTtsVoices = () => {
+        const ids = Array.isArray(org?.allowedVoices) && org.allowedVoices.length > 0
+            ? org.allowedVoices
+            : org?.voiceId ? [org.voiceId] : [];
+        return ids
+            .map((id) => ALL_VOICES.find((v) => v.id === id))
+            .filter(Boolean) as typeof ALL_VOICES;
     };
 
     const fmt = (usd: number) => {
@@ -989,24 +1013,31 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
 
                                     : null;
 
-                                const analysisModelNames = formatModelNames(
+                                const analysisModelNames = FEATURE_MODEL_DISPLAY_MAP[section.key] || formatModelNames(
                                     billing?.byModel,
-                                    FEATURE_MODEL_FALLBACK[section.key] || "gpt-4o-mini"
+                                    FEATURE_MODEL_DISPLAY_MAP[section.key] || null
                                 );
 
-                                const orgVoice = section.key === "interview" ? (() => {
-                                    const ids = Array.isArray(org?.allowedVoices) && org!.allowedVoices!.length > 0
-                                        ? org!.allowedVoices!
-                                        : org?.voiceId ? [org.voiceId] : [];
-                                    return ALL_VOICES.find(v => ids.includes(v.id)) ?? null;
-                                })() : null;
-
+                                const configuredTtsVoices = getConfiguredTtsVoices();
                                 const ttsModels = section.key === "interview"
-                                    ? formatModelNames(billing?.ttsByModel, orgVoice?.model || "")
+                                    ? (() => {
+                                        const recorded = formatModelNames(billing?.ttsByModel);
+                                        if (recorded !== "-") return recorded;
+                                        const configured = configuredTtsVoices.map((v) => cleanName(v.model)).filter(Boolean);
+                                        return configured.length ? configured.join(", ") : "-";
+                                    })()
+                                    : null;
+                                const ttsProviders = section.key === "interview"
+                                    ? (() => {
+                                        const recorded = formatProviderNames(billing?.ttsByModel);
+                                        if (recorded !== "-") return recorded;
+                                        const configured = configuredTtsVoices.map((v) => v.provider).filter(Boolean);
+                                        return configured.length ? Array.from(new Set(configured)).join(", ") : "-";
+                                    })()
                                     : null;
 
                                 const sttModels = section.key === "interview"
-                                    ? formatModelNames(billing?.sttByModel, org?.deepgramModel || "nova-3-general")
+                                    ? formatModelNames(billing?.sttByModel)
                                     : null;
 
                                 return (
@@ -1083,7 +1114,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
 
                                             <div className="mt-1 text-xs font-bold text-gray-500 uppercase tracking-wider">
 
-                                                TTS ({orgVoice?.provider ?? ""}): <span className="text-gray-900">{ttsModels}</span>
+                                                TTS ({ttsProviders}): <span className="text-gray-900">{ttsModels}</span>
 
                                             </div>
 

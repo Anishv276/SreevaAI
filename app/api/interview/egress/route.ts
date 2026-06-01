@@ -454,8 +454,9 @@ export async function POST(req: Request) {
                         mimeType: "video/mp4",
                     },
                     {
-                        attempts: 5,
-                        backoff: { type: "exponential", delay: 2000 },
+                        attempts: 6,
+                        delay: 15000,
+                        backoff: { type: "exponential", delay: 5000 },
                         removeOnComplete: true,
                         removeOnFail: { count: 20 },
                     }

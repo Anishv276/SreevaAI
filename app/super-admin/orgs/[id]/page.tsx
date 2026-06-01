@@ -84,8 +84,8 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
         location: "", adminName: "", adminEmail: "", adminPassword: "",
         voiceId: "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
         allowedVoices: [] as string[],
-        recordingEnabled: true,
-        recordingRetentionDays: "30",
+        recordingEnabled: false,
+        recordingRetentionDays: "",
     });
 
     const stopCurrentPreview = () => {
@@ -179,8 +179,8 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                     adminPassword: "",
                     voiceId: data.voiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
                     allowedVoices: Array.isArray(data.allowedVoices) ? data.allowedVoices : [],
-                    recordingEnabled: Boolean(data.recordingEnabled ?? true),
-                    recordingRetentionDays: String(Math.max(1, Number(data.recordingRetentionDays ?? 30) || 30)),
+                    recordingEnabled: data.recordingEnabled === true && data.recordingRetentionDays != null,
+                    recordingRetentionDays: data.recordingRetentionDays == null ? "" : String(data.recordingRetentionDays),
 
                 });
                 setBillingSnapshot({
@@ -210,6 +210,8 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                 method: "PATCH", headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     ...form,
+                    recordingEnabled: form.recordingEnabled ? true : null,
+                    recordingRetentionDays: form.recordingEnabled ? Number(form.recordingRetentionDays) : null,
                     interviewQuotaTotal: Math.max(0, Number(interviewQuotaTotalInput) || 0),
                     interviewQuotaTopUp: Math.max(0, Number(interviewTopUpInput) || 0),
                 }),
@@ -418,7 +420,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                                     </button>
                                     <button
                                         type="button"
-                                        onClick={() => setForm(p => ({ ...p, recordingEnabled: false }))}
+                                        onClick={() => setForm(p => ({ ...p, recordingEnabled: false, recordingRetentionDays: "" }))}
                                         className={cn(
                                             "rounded-xl px-4 py-2 text-[11px] font-black uppercase tracking-widest transition",
                                             !form.recordingEnabled ? "bg-white text-rose-600 shadow-sm" : "text-gray-400 hover:text-gray-700"

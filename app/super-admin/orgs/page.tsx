@@ -9,7 +9,6 @@ import {
     Search,
     Eye,
     Loader2,
-    Layers,
     Globe,
     Trash2,
     Sparkles,
@@ -24,6 +23,7 @@ import {
     Radio,
     Building2,
     Zap,
+    Layers,
     Download,
     CheckSquare,
     Check,
@@ -103,10 +103,10 @@ type InterviewHistoryRow = {
     candidate: string;
     role: string;
     durationSec: number;
-    llmCostUsd: number;
-    ttsCostUsd: number;
-    sttCostUsd: number;
-    totalCostUsd: number;
+    llmCostUsd: number | null;
+    ttsCostUsd: number | null;
+    sttCostUsd: number | null;
+    totalCostUsd: number | null;
     status: string;
     date: string;
     hasBillingSnapshot: boolean;
@@ -227,7 +227,7 @@ export default function OrgsPage() {
         }
         return `$${usd.toFixed(2)}`;
     };
-    const fmtHistory = (usd: number) => fmt(Number(usd || 0));
+    const fmtHistory = (usd: number | null | undefined) => usd == null ? "-" : fmt(Number(usd || 0));
     const metricSections: { key: BillingFeatureKey; label: string }[] = [
         { key: "resumeExtraction", label: "LLM - Resume" },
         { key: "chatbot", label: "LLM - Chatbot" },
@@ -236,8 +236,7 @@ export default function OrgsPage() {
         { key: "resumeReport", label: "LLM - Resume Report" },
         { key: "interviewReport", label: "LLM - Interview Report" },
     ];
-    // Authoritative model per feature — matches what each API route actually uses
-    const FEATURE_MODEL_MAP: Record<string, string> = {
+    const FEATURE_MODEL_DISPLAY_MAP: Record<BillingFeatureKey, string> = {
         resumeExtraction: "gpt-5.4-mini",
         jdExtraction: "gpt-5.4-mini",
         chatbot: "gpt-4o-mini",
@@ -263,15 +262,36 @@ export default function OrgsPage() {
         // Strip provider prefix (e.g. "openai:gpt-4o" -> "gpt-4o")
         const base = n.includes(':') ? n.split(':')[1] : n;
         // Strip date version suffix (e.g. "gpt-4o-mini-2024-07-18" -> "gpt-4o-mini")
-        return base.replace(/-\d{4}-\d{2}-\d{2}$/, '');
+        const cleaned = base.replace(/-\d{4}-\d{2}-\d{2}$/, '');
+        return cleaned.trim();
     };
-    const getVoicesForOrg = (org: Org) => {
+    const isUnknownLabel = (value: string) => {
+        const normalized = cleanName(String(value || "")).toLowerCase();
+        return !normalized || normalized === "unknown" || normalized === "no recorded model";
+    };
+    const displayLlmModel = (feature: BillingFeatureMetrics, key: BillingFeatureKey) => {
+        return [FEATURE_MODEL_DISPLAY_MAP[key]];
+    };
+    const unique = (values: string[]) => Array.from(new Set(values.filter(Boolean)));
+    const getRecordedModels = (models?: Record<string, any>) => {
+        return unique(Object.entries(models || {}).map(([key, value]) => {
+            const model = value && typeof value === "object" ? String(value.model || "") : "";
+            return cleanName(model || key);
+        })).filter((model) => !isUnknownLabel(model));
+    };
+    const getRecordedProviders = (models?: Record<string, any>) => {
+        return unique(Object.values(models || {}).map((value) => (
+            value && typeof value === "object" ? String(value.provider || "") : ""
+        ))).filter(Boolean);
+    };
+    const getConfiguredTtsVoices = (org: Org) => {
         const ids = Array.isArray(org.allowedVoices) && org.allowedVoices.length > 0
             ? org.allowedVoices
             : org.voiceId ? [org.voiceId] : [];
-        return ids.map(id => ALL_VOICES.find(v => v.id === id)).filter(Boolean) as typeof ALL_VOICES;
+        return ids
+            .map((id) => ALL_VOICES.find((v) => v.id === id))
+            .filter(Boolean) as typeof ALL_VOICES;
     };
-    const getSetupSttModel = (org: Org) => org.deepgramModel ?? 'nova-3-general';
     const getUsageSummary = (usageMetrics?: Record<string, unknown> | null) => {
         if (!usageMetrics || typeof usageMetrics !== "object") return fmt(0);
         const cost = getOrgTotalBillingCost({ usageMetrics } as any);
@@ -575,9 +595,9 @@ export default function OrgsPage() {
                                                         <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Client Controls</p>
                                                     </div>
                                                     <DropdownMenuItem className="cursor-pointer rounded-lg px-2.5 py-2 text-gray-600 hover:bg-gray-50 font-bold text-[10px] transition-all flex items-center gap-2.5 group" onClick={() => openMetricsOrg(org)}>
-                                                            <Layers className="h-3.5 w-3.5 text-gray-400 group-hover:text-orange-500 transition-colors" />
-                                                            VIEW USAGE
-                                                        </DropdownMenuItem>
+                                                        <Layers className="h-3.5 w-3.5 text-gray-400 group-hover:text-orange-500 transition-colors" />
+                                                        VIEW USAGE
+                                                    </DropdownMenuItem>
                                                         <Link href={`/super-admin/orgs/${org.id}`} className="block w-full">
                                                             <DropdownMenuItem className="cursor-pointer rounded-lg px-2.5 py-2 text-gray-600 hover:bg-gray-50 font-bold text-[10px] transition-all flex items-center gap-2.5 group">
                                                                 <Edit2 className="h-3.5 w-3.5 text-gray-400 group-hover:text-orange-500 transition-colors" />
@@ -760,8 +780,6 @@ export default function OrgsPage() {
                                 const synthDash = getDash(synthCost);
                                 const sttDash = getDash(sttCost);
                                 const totalTokens = Number(feature.inputTokens || 0) + Number(feature.outputTokens || 0);
-                                const setupLlm = FEATURE_MODEL_MAP.interview;
-                                const setupStt = getSetupSttModel(metricsOrg);
                                 return (
                                     <div className="flex flex-col gap-12">
                                         {/* LLM Section */}
@@ -774,7 +792,7 @@ export default function OrgsPage() {
                                                 {metricSections.map((section) => {
                                                     const feature = getBillingFeature(metricsOrg, section.key);
                                                     const totalTokens = Number(feature.inputTokens || 0) + Number(feature.outputTokens || 0);
-                                                    const setupModel = FEATURE_MODEL_MAP[section.key];
+                                                    const recordedModels = displayLlmModel(feature, section.key);
                                                     return (
                                                         <div key={section.key} className="bg-white border border-gray-200 rounded-[18px] p-6 hover:border-orange-200 hover:shadow-lg transition-all duration-300">
                                                         <div className="flex flex-col gap-4">
@@ -783,9 +801,11 @@ export default function OrgsPage() {
                                                                     <div className="h-2 w-2 rounded-full bg-emerald-500" />
                                                                 </div>
                                                                 <div className="flex flex-wrap gap-2 min-h-[28px]">
-                                                                    <div className="text-[10px] font-[700] text-emerald-700 bg-emerald-50 px-2 py-1 rounded-md border border-emerald-100 uppercase tracking-wide">
-                                                                        {cleanName(setupModel)}
-                                                                    </div>
+                                                                    {recordedModels.map((model) => (
+                                                                        <div key={model} className="text-[10px] font-[700] text-emerald-700 bg-emerald-50 px-2 py-1 rounded-md border border-emerald-100 uppercase tracking-wide">
+                                                                            {model}
+                                                                        </div>
+                                                                    ))}
                                                                 </div>
                                                             </div>
                                                                 <div className="mt-6 mb-5">
@@ -843,15 +863,18 @@ export default function OrgsPage() {
                                                     </div>
                                                     <div className="flex flex-wrap gap-2 pt-6 border-t border-gray-100">
                                                         {(() => {
-                                                            const voices = getVoicesForOrg(metricsOrg);
-                                                            if (!voices.length) return <span className="text-[10px] font-bold text-gray-500 italic bg-gray-50 px-3 py-1.5 rounded-md border border-gray-200 border-dashed">NO TTS</span>;
-                                                            const providers = [...new Set(voices.map(v => v.provider))];
+                                                            const recordedModels = unique(metricSections.flatMap((section) => getRecordedModels(getBillingFeature(metricsOrg, section.key).ttsByModel)));
+                                                            const recordedProviders = unique(metricSections.flatMap((section) => getRecordedProviders(getBillingFeature(metricsOrg, section.key).ttsByModel)));
+                                                            const configuredTtsVoices = getConfiguredTtsVoices(metricsOrg);
+                                                            const displayModels = recordedModels.length ? recordedModels : configuredTtsVoices.map((v) => cleanName(v.model));
+                                                            const displayProviders = recordedProviders.length ? recordedProviders : configuredTtsVoices.map((v) => v.provider);
+                                                            if (!displayModels.length && !displayProviders.length) return <span className="text-[10px] font-bold text-gray-500 italic bg-gray-50 px-3 py-1.5 rounded-md border border-gray-200 border-dashed">NO TTS CONFIGURED</span>;
                                                             return (
                                                                 <>
-                                                                    {providers.map(p => (
+                                                                    {displayProviders.map(p => (
                                                                         <span key={p} className="px-3 py-1.5 bg-gray-50 text-gray-500 text-[10px] font-[700] rounded-md border border-gray-200 uppercase tracking-wide">{p}</span>
                                                                     ))}
-                                                                    {[...new Set(voices.map(v => v.model))].map(m => (
+                                                                    {displayModels.map(m => (
                                                                         <span key={m} className="px-3 py-1.5 bg-blue-50 text-blue-700 text-[10px] font-[700] rounded-md border border-blue-100 uppercase tracking-wide">{cleanName(m)}</span>
                                                                     ))}
                                                                 </>
@@ -880,18 +903,23 @@ export default function OrgsPage() {
                                                     </div>
                                                     <div className="flex flex-wrap gap-2 pt-6 border-t border-gray-100">
                                                         {(() => {
-                                                            const sttModel = getSetupSttModel(metricsOrg);
-                                                            return sttModel ? (
+                                                            const models = unique(metricSections.flatMap((section) => getRecordedModels(getBillingFeature(metricsOrg, section.key).sttByModel)));
+                                                            const providers = unique(metricSections.flatMap((section) => getRecordedProviders(getBillingFeature(metricsOrg, section.key).sttByModel)));
+                                                            return models.length || providers.length ? (
                                                                 <>
-                                                                    <span className="px-3 py-1.5 bg-orange-50 text-orange-700 text-[10px] font-[700] rounded-md border border-orange-100 uppercase tracking-wide">
-                                                                        {cleanName(sttModel)}
-                                                                    </span>
-                                                                    <span className="px-3 py-1.5 bg-gray-50 text-gray-500 text-[10px] font-[700] rounded-md border border-gray-200 uppercase tracking-wide">
-                                                                        DEEPGRAM
-                                                                    </span>
+                                                                    {models.map((model) => (
+                                                                        <span key={model} className="px-3 py-1.5 bg-orange-50 text-orange-700 text-[10px] font-[700] rounded-md border border-orange-100 uppercase tracking-wide">
+                                                                            {model}
+                                                                        </span>
+                                                                    ))}
+                                                                    {providers.map((provider) => (
+                                                                        <span key={provider} className="px-3 py-1.5 bg-gray-50 text-gray-500 text-[10px] font-[700] rounded-md border border-gray-200 uppercase tracking-wide">
+                                                                            {provider}
+                                                                        </span>
+                                                                    ))}
                                                                 </>
                                                             ) : (
-                                                                <span className="text-[10px] font-bold text-gray-500 italic bg-gray-50 px-3 py-1.5 rounded-md border border-gray-200 border-dashed">NO STT</span>
+                                                                <span className="text-[10px] font-bold text-gray-500 italic bg-gray-50 px-3 py-1.5 rounded-md border border-gray-200 border-dashed">NO RECORDED STT</span>
                                                             );
                                                         })()}
                                                     </div>
@@ -997,22 +1025,27 @@ export default function OrgsPage() {
                                                     <div>
                                                         <div className="text-[10px] font-[800] uppercase tracking-[0.2em] text-gray-500 mb-3 hover:text-[#10B981] transition-colors">LLM</div>
                                                         <div className="flex flex-wrap gap-2">
-                                                            <span className="px-3 py-1 bg-[#10B981]/10 text-[#10B981] text-[10px] font-[700] rounded-md border border-[#10B981]/20 uppercase tracking-wide">
-                                                                {cleanName(setupLlm)}
-                                                            </span>
+                                                            {displayLlmModel(feature, "interview").map((model) => (
+                                                                <span key={model} className="px-3 py-1 bg-[#10B981]/10 text-[#10B981] text-[10px] font-[700] rounded-md border border-[#10B981]/20 uppercase tracking-wide">
+                                                                    {model}
+                                                                </span>
+                                                            ))}
                                                         </div>
                                                     </div>
                                                     <div>
                                                         <div className="text-[10px] font-[800] uppercase tracking-[0.2em] text-gray-500 mb-3 hover:text-[#3B82F6] transition-colors">TTS</div>
                                                         <div className="flex flex-wrap gap-2">
                                                             {(() => {
-                                                                const voices = getVoicesForOrg(metricsOrg);
-                                                                if (!voices.length) return <span className="text-[10px] font-[700] text-gray-500 italic">NO TTS</span>;
-                                                                const providers = [...new Set(voices.map(v => v.provider))];
+                                                                const recordedModels = getRecordedModels(feature.ttsByModel);
+                                                                const recordedProviders = getRecordedProviders(feature.ttsByModel);
+                                                                const configuredTtsVoices = getConfiguredTtsVoices(metricsOrg);
+                                                                const models = recordedModels.length ? recordedModels : configuredTtsVoices.map((v) => cleanName(v.model));
+                                                                const providers = recordedProviders.length ? recordedProviders : configuredTtsVoices.map((v) => v.provider);
+                                                                if (!models.length && !providers.length) return <span className="text-[10px] font-[700] text-gray-500 italic">NO TTS CONFIGURED</span>;
                                                                 return (
                                                                     <>
-                                                                        {[...new Set(voices.map(v => v.model))].map(m => (
-                                                                            <span key={m} className="px-3 py-1 bg-[#3B82F6]/10 text-[#3B82F6] text-[10px] font-[700] rounded-md border border-[#3B82F6]/20 uppercase tracking-wide">{cleanName(m)}</span>
+                                                                        {models.map(m => (
+                                                                            <span key={m} className="px-3 py-1 bg-[#3B82F6]/10 text-[#3B82F6] text-[10px] font-[700] rounded-md border border-[#3B82F6]/20 uppercase tracking-wide">{m}</span>
                                                                         ))}
                                                                         {providers.map(p => (
                                                                             <span key={p} className="px-3 py-1 bg-gray-50 text-gray-500 text-[10px] font-[700] rounded-md border border-gray-200 uppercase tracking-wide">{p}</span>
@@ -1026,12 +1059,23 @@ export default function OrgsPage() {
                                                         <div className="text-[10px] font-[800] uppercase tracking-[0.2em] text-gray-500 mb-3 hover:text-[#F97316] transition-colors">STT</div>
                                                         <div className="flex flex-wrap gap-2">
                                                             {(() => {
-                                                                return setupStt ? (
-                                                                    <span className="px-3 py-1 bg-[#F97316]/10 text-[#F97316] text-[10px] font-[700] rounded-md border border-[#F97316]/20 uppercase tracking-wide">
-                                                                        {cleanName(setupStt)}
-                                                                    </span>
+                                                                const models = getRecordedModels(feature.sttByModel);
+                                                                const providers = getRecordedProviders(feature.sttByModel);
+                                                                return models.length || providers.length ? (
+                                                                    <>
+                                                                        {models.map((model) => (
+                                                                            <span key={model} className="px-3 py-1 bg-[#F97316]/10 text-[#F97316] text-[10px] font-[700] rounded-md border border-[#F97316]/20 uppercase tracking-wide">
+                                                                                {model}
+                                                                            </span>
+                                                                        ))}
+                                                                        {providers.map((provider) => (
+                                                                            <span key={provider} className="px-3 py-1 bg-gray-50 text-gray-500 text-[10px] font-[700] rounded-md border border-gray-200 uppercase tracking-wide">
+                                                                                {provider}
+                                                                            </span>
+                                                                        ))}
+                                                                    </>
                                                                 ) : (
-                                                                    <span className="text-[10px] font-[700] text-gray-500 italic">NO STT</span>
+                                                                    <span className="text-[10px] font-[700] text-gray-500 italic">NO RECORDED STT</span>
                                                                 );
                                                             })()}
                                                         </div>

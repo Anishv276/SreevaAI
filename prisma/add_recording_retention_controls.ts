@@ -8,8 +8,22 @@ async function main() {
   try {
     await prisma.$executeRawUnsafe(`
       ALTER TABLE "Organization"
-      ADD COLUMN IF NOT EXISTS "recordingEnabled" BOOLEAN NOT NULL DEFAULT TRUE,
-      ADD COLUMN IF NOT EXISTS "recordingRetentionDays" INTEGER NOT NULL DEFAULT 30;
+      ADD COLUMN IF NOT EXISTS "recordingEnabled" BOOLEAN,
+      ADD COLUMN IF NOT EXISTS "recordingRetentionDays" INTEGER;
+    `);
+
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "Organization"
+      ALTER COLUMN "recordingEnabled" DROP DEFAULT,
+      ALTER COLUMN "recordingEnabled" DROP NOT NULL,
+      ALTER COLUMN "recordingRetentionDays" DROP DEFAULT,
+      ALTER COLUMN "recordingRetentionDays" DROP NOT NULL;
+    `);
+
+    await prisma.$executeRawUnsafe(`
+      UPDATE "Organization"
+      SET "recordingEnabled" = NULL,
+          "recordingRetentionDays" = NULL;
     `);
     console.log('Ensured Organization recording controls.');
 
@@ -17,10 +31,22 @@ async function main() {
       ALTER TABLE "Interview"
       ADD COLUMN IF NOT EXISTS "recordingRetentionDays" INTEGER,
       ADD COLUMN IF NOT EXISTS "recordingRetentionDueAt" TIMESTAMP,
-      ADD COLUMN IF NOT EXISTS "recordingCleanupStatus" TEXT NOT NULL DEFAULT 'PENDING',
-      ADD COLUMN IF NOT EXISTS "recordingCleanupAttempts" INTEGER NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS "recordingCleanupStatus" TEXT,
+      ADD COLUMN IF NOT EXISTS "recordingCleanupAttempts" INTEGER,
       ADD COLUMN IF NOT EXISTS "recordingCleanupLastError" TEXT,
-      ADD COLUMN IF NOT EXISTS "recordingDeletedAt" TIMESTAMP;
+      ADD COLUMN IF NOT EXISTS "recordingDeletedAt" TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS "recordingStatus" TEXT,
+      ADD COLUMN IF NOT EXISTS "recordingManifest" JSONB;
+    `);
+
+    await prisma.$executeRawUnsafe(`
+      ALTER TABLE "Interview"
+      ALTER COLUMN "recordingStatus" DROP DEFAULT,
+      ALTER COLUMN "recordingManifest" DROP DEFAULT,
+      ALTER COLUMN "recordingCleanupStatus" DROP DEFAULT,
+      ALTER COLUMN "recordingCleanupStatus" DROP NOT NULL,
+      ALTER COLUMN "recordingCleanupAttempts" DROP DEFAULT,
+      ALTER COLUMN "recordingCleanupAttempts" DROP NOT NULL;
     `);
     console.log('Ensured Interview recording retention fields.');
 

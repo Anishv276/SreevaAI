@@ -7,7 +7,7 @@ import { writeFile, unlink } from 'fs/promises';
 import { prisma } from './lib/prisma';
 import redisConnection from './lib/redis';
 import * as dotenv from 'dotenv';
-import { putObject, getObjectBuffer, listObjects } from "./lib/s3";
+import { putObject, getObjectBuffer, headObjectStrict } from "./lib/s3";
 import { generateId } from "./lib/ids";
 import { isInterviewTokenRequired } from "./lib/interview-access";
 import { appendCandidateActivity } from "./lib/candidate-activity";
@@ -495,13 +495,16 @@ async function processDriveResumeBatchJob(job: any) {
       await prisma.drive.update({
         where: { id: driveId },
         data: { extractedDetails: JSON.stringify(structuredJd) },
-      }).catch(() => {});
+        }).catch(() => {});
       if ((extracted.usage?.inputTokens || extracted.usage?.outputTokens)) {
         await recordOrgBillingUsage({
           orgId,
           feature: "jdExtraction",
-          usage: extracted.usage,
-        }).catch(() => {});
+          usage: {
+            ...extracted.usage,
+            eventId: `resume-batch-jd:${batchId}:${driveId}`,
+          },
+        });
       }
     }
   }
@@ -589,12 +592,13 @@ async function processDriveResumeBatchJob(job: any) {
                 orgId,
                 feature: "resumeExtraction",
                 usage: {
-                model: extracted.usage.model || batchExtractModel,
+                  model: extracted.usage.model,
                   inputTokens: extracted.usage.inputTokens || 0,
                   outputTokens: extracted.usage.outputTokens || 0,
                   cachedInputTokens: extracted.usage.cachedInputTokens || 0,
+                  eventId: `resume-extraction:${candidate.id}`,
                 },
-              }).catch(() => {});
+              });
             }
           }
 
@@ -695,12 +699,13 @@ async function processDriveResumeBatchJob(job: any) {
               orgId,
               feature: "resumeReport",
               usage: {
-                  model: scoreResult.usage.model || batchReportModel,
+                model: scoreResult.usage.model,
                 inputTokens: scoreResult.usage.inputTokens || 0,
                 outputTokens: scoreResult.usage.outputTokens || 0,
                 cachedInputTokens: scoreResult.usage.cachedInputTokens || 0,
+                eventId: `resume-report:${candidate.id}`,
               },
-            }).catch(() => {});
+            });
           }
         } catch (error: any) {
           const failPayload = JSON.stringify({
@@ -994,12 +999,13 @@ async function processResumeFileExtractJob(job: any) {
         orgId,
         feature: "resumeExtraction",
         usage: {
-          model: extracted.usage.model || orgOpenAIModel,
+          model: extracted.usage.model,
           inputTokens: extracted.usage.inputTokens || 0,
           outputTokens: extracted.usage.outputTokens || 0,
           cachedInputTokens: extracted.usage.cachedInputTokens || 0,
+          eventId: `resume-file-extraction:${job.id}`,
         },
-      }).catch(() => {});
+      });
     }
 
     console.log(`[RESUME-WORKER] File extraction job ${job.id} completed`);
@@ -1653,7 +1659,7 @@ if (isQueueEnabled("interview-finalization")) {
         const policyOrgId = String(appForPolicy?.drive?.orgId || "");
         const recordingSettings = policyOrgId
           ? await getOrgRecordingSettings(policyOrgId)
-          : { recordingEnabled: true, recordingRetentionDays: 30 };
+          : { recordingEnabled: false, recordingRetentionDays: null };
         const shouldStoreRecording = Boolean(recordingUrl) && recordingSettings.recordingEnabled;
         const recordingDisabled = Boolean(recordingUrl && !recordingSettings.recordingEnabled);
         const recordingUrlToPersist = shouldStoreRecording ? recordingUrl : undefined;
@@ -1956,8 +1962,11 @@ if (isQueueEnabled("interview-finalization")) {
             await recordOrgBillingUsage({
               orgId: app.drive.orgId,
               feature: "interviewReport",
-              usage: reportUsage,
-            }).catch(console.error);
+              usage: {
+                ...reportUsage,
+                eventId: `interview-report:${applicationId}`,
+              },
+            });
           }
 
           try {
@@ -2076,7 +2085,7 @@ if (isQueueEnabled("interview-recording")) {
       const orgId = String(application?.drive?.orgId || "");
       const recordingSettings = orgId
         ? await getOrgRecordingSettings(orgId)
-        : { recordingEnabled: true, recordingRetentionDays: 30 };
+          : { recordingEnabled: false, recordingRetentionDays: null };
 
       const interviewRow = await prisma.interview.findUnique({
         where: { applicationId },
@@ -2101,11 +2110,11 @@ if (isQueueEnabled("interview-recording")) {
       }
 
       if (resolvedKey) {
-        const objects = await listObjects(bucket, resolvedKey);
-        const objectExists = objects.some((item) => item.key === resolvedKey);
-        if (!objectExists) {
+        try {
+          await headObjectStrict(bucket, resolvedKey);
+        } catch (probeError) {
           throw new Error(
-            `[RECORDING_WORKER] Egress output not available yet for ${applicationId}: ${resolvedKey}`
+            `[RECORDING_WORKER] Egress output not available yet for ${applicationId} in bucket ${bucket}: ${resolvedKey}`
           );
         }
       }

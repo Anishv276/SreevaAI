@@ -11,8 +11,8 @@ model Organization {
   name                 String
   slug                 String      @unique
   logoUrl              String?
-  recordingEnabled     Boolean     @default(true)
-  recordingRetentionDays Int        @default(30)
+  recordingEnabled     Boolean?
+  recordingRetentionDays Int?
   plan                 String      @default("STARTER")
   maxActiveDrives      String      @default("Unlimited")
   proctoringSignals    Json?       @default("{\"tab_switch\":true,\"camera_disabled\":true,\"microphone_disabled\":true,\"connection_lost\":true,\"duplicate_ip\":true,\"face_absence\":true,\"multiple_faces\":true,\"identity_mismatch\":true,\"ownership_ambiguity\":true,\"example_evasion\":true,\"latency_mismatch\":true,\"resume_claim_mismatch\":true,\"ownership_clarified\":true,\"example_given\":true,\"strong_under_pressure\":true,\"follow_up_collapse\":true}")
@@ -161,18 +161,18 @@ model Interview {
   behavioralSignalsAnalysis Json?    @default("{}")
   interviewTurns        Json?       @default("[]")
   questionByQuestionAnalysis Json?  @default("[]")
-  recordingStatus       String?     @default("NOT_STARTED")
+  recordingStatus       String?
   recordingMimeType     String?
   recordingStartedAt    DateTime?
   recordingCompletedAt  DateTime?
   recordingDurationSec  Int?
   recordingRetentionDays Int?
   recordingRetentionDueAt DateTime?
-  recordingCleanupStatus String      @default("PENDING")
-  recordingCleanupAttempts Int       @default(0)
+  recordingCleanupStatus String?
+  recordingCleanupAttempts Int?
   recordingCleanupLastError String?
   recordingDeletedAt    DateTime?
-  recordingManifest     Json?       @default("{}")
+  recordingManifest     Json?
   billingSnapshot       Json?       @default("{}")
   linkStatus            String      @default("ACTIVE")
   application           Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)

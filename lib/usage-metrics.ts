@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 
 export type BillingFeature =
   | "interview"
@@ -35,12 +35,16 @@ type FeatureModelMetrics = {
 
 type TtsModelMetrics = {
   runs: number;
+  provider?: string;
+  model?: string;
   characters: number;
   costUsd: number;
 };
 
 type SttModelMetrics = {
   runs: number;
+  provider?: string;
+  model?: string;
   audioSeconds: number;
   costUsd: number;
 };
@@ -144,10 +148,14 @@ function normalizeModelName(model: string | undefined | null) {
 
 function getRate(model: string | undefined | null): ModelCostRate {
   const key = normalizeModelName(model);
-  return MODEL_RATES[key] || MODEL_RATES["gpt-4o-mini"];
+  const rate = MODEL_RATES[key];
+  if (!key || !rate) {
+    throw new Error(`[usage-metrics] Missing pricing for OpenAI model "${model || ""}"`);
+  }
+  return rate;
 }
 
-export function estimateOpenAICost(opts: {
+export function calculateOpenAICost(opts: {
   model?: string | null;
   inputTokens?: number;
   outputTokens?: number;
@@ -180,11 +188,35 @@ export function usageFromOpenAICompletion(completion: {
   const cachedTokens = completion.usage?.prompt_tokens_details?.cached_tokens ?? 0;
 
   return {
-    model: completion.model ?? "gpt-4o-mini",
+    model: completion.model ?? null,
     inputTokens: promptTokens,
     outputTokens: completionTokens,
     cachedInputTokens: cachedTokens,
   };
+}
+
+function hasBillableUsage(usage: {
+  inputTokens?: number;
+  outputTokens?: number;
+  cachedInputTokens?: number;
+  costUsd?: number;
+  ttsCharacters?: number;
+  ttsCostUsd?: number;
+  sttAudioSeconds?: number;
+  sttCostUsd?: number;
+  sessionDuration?: number;
+}) {
+  return (
+    Number(usage.inputTokens || 0) > 0 ||
+    Number(usage.outputTokens || 0) > 0 ||
+    Number(usage.cachedInputTokens || 0) > 0 ||
+    Number(usage.costUsd || 0) > 0 ||
+    Number(usage.ttsCharacters || 0) > 0 ||
+    Number(usage.ttsCostUsd || 0) > 0 ||
+    Number(usage.sttAudioSeconds || 0) > 0 ||
+    Number(usage.sttCostUsd || 0) > 0 ||
+    Number(usage.sessionDuration || 0) > 0
+  );
 }
 
 export function mergeBillingFeature(
@@ -199,23 +231,41 @@ export function mergeBillingFeature(
     costUsd?: number;
     ttsRuns?: number;
     ttsCharacters?: number;
-    ttsCostUsd?: number;
-    sttRuns?: number;
-    sttAudioSeconds?: number;
-    sttCostUsd?: number;
+  ttsCostUsd?: number;
+  ttsProvider?: string | null;
+  ttsModel?: string | null;
+  sttRuns?: number;
+  sttAudioSeconds?: number;
+  sttCostUsd?: number;
+  sttProvider?: string | null;
+  sttModel?: string | null;
+  eventId?: string | null;
+  recordedAt?: string | null;
   },
 ) {
   const bucket = billing[feature];
-  const modelKey = normalizeModelName(usage.model) || "unknown";
+  const modelKey = normalizeModelName(usage.model);
   const hasProvidedCost = typeof usage.costUsd === "number" && Number.isFinite(usage.costUsd);
-  const costUsd = hasProvidedCost ? Number(usage.costUsd) : estimateOpenAICost(usage);
+  const hasTokenUsage =
+    (usage.inputTokens ?? 0) > 0 ||
+    (usage.outputTokens ?? 0) > 0 ||
+    (usage.cachedInputTokens ?? 0) > 0;
+  const costUsd = hasProvidedCost ? Number(usage.costUsd) : (hasTokenUsage ? calculateOpenAICost(usage) : 0);
+  const hasLlmUsage =
+    hasTokenUsage ||
+    costUsd > 0;
+  if (hasLlmUsage && !modelKey) {
+    throw new Error(`[usage-metrics] Missing OpenAI model for org billing feature=${feature}`);
+  }
 
-  bucket.runs += 1;
-  bucket.inputTokens += usage.inputTokens ?? 0;
-  bucket.cachedInputTokens += usage.cachedInputTokens ?? 0;
-  bucket.outputTokens += usage.outputTokens ?? 0;
+  if (hasLlmUsage) {
+    bucket.runs += 1;
+    bucket.inputTokens += usage.inputTokens ?? 0;
+    bucket.cachedInputTokens += usage.cachedInputTokens ?? 0;
+    bucket.outputTokens += usage.outputTokens ?? 0;
+    bucket.costUsd += costUsd;
+  }
   bucket.sessionDuration += usage.sessionDuration ?? 0;
-  bucket.costUsd += costUsd;
   bucket.ttsRuns += usage.ttsRuns ?? 0;
   bucket.ttsCharacters += usage.ttsCharacters ?? 0;
   bucket.ttsCostUsd += usage.ttsCostUsd ?? 0;
@@ -223,27 +273,61 @@ export function mergeBillingFeature(
   bucket.sttAudioSeconds += usage.sttAudioSeconds ?? 0;
   bucket.sttCostUsd += usage.sttCostUsd ?? 0;
 
-  if (!bucket.byModel[modelKey]) {
-    bucket.byModel[modelKey] = {
-      runs: 0,
-      inputTokens: 0,
-      cachedInputTokens: 0,
-      outputTokens: 0,
-      sessionDuration: 0,
-      costUsd: 0,
-    };
+  if ((usage.ttsRuns ?? 0) > 0 || (usage.ttsCharacters ?? 0) > 0 || (usage.ttsCostUsd ?? 0) > 0) {
+    const provider = String(usage.ttsProvider || "").trim().toUpperCase();
+    const model = String(usage.ttsModel || "").trim();
+    if (!provider || !model) {
+      throw new Error(`[usage-metrics] Missing TTS provider/model for org billing feature=${feature}`);
+    }
+    const key = `${provider.toLowerCase()}:${model.toLowerCase()}`;
+    if (!bucket.ttsByModel[key]) {
+      bucket.ttsByModel[key] = { runs: 0, provider, model, characters: 0, costUsd: 0 };
+    }
+    const ttsBucket = bucket.ttsByModel[key]!;
+    ttsBucket.runs += usage.ttsRuns ?? 0;
+    ttsBucket.characters += usage.ttsCharacters ?? 0;
+    ttsBucket.costUsd += usage.ttsCostUsd ?? 0;
   }
 
-  const modelBucket = bucket.byModel[modelKey]!;
-  modelBucket.runs += 1;
-  modelBucket.inputTokens += usage.inputTokens ?? 0;
-  modelBucket.cachedInputTokens += usage.cachedInputTokens ?? 0;
-  modelBucket.outputTokens += usage.outputTokens ?? 0;
-  modelBucket.sessionDuration += usage.sessionDuration ?? 0;
-  modelBucket.costUsd += costUsd;
+  if ((usage.sttRuns ?? 0) > 0 || (usage.sttAudioSeconds ?? 0) > 0 || (usage.sttCostUsd ?? 0) > 0) {
+    const provider = String(usage.sttProvider || "").trim().toUpperCase();
+    const model = String(usage.sttModel || "").trim();
+    if (!provider || !model) {
+      throw new Error(`[usage-metrics] Missing STT provider/model for org billing feature=${feature}`);
+    }
+    const key = `${provider.toLowerCase()}:${model.toLowerCase()}`;
+    if (!bucket.sttByModel[key]) {
+      bucket.sttByModel[key] = { runs: 0, provider, model, audioSeconds: 0, costUsd: 0 };
+    }
+    const sttBucket = bucket.sttByModel[key]!;
+    sttBucket.runs += usage.sttRuns ?? 0;
+    sttBucket.audioSeconds += usage.sttAudioSeconds ?? 0;
+    sttBucket.costUsd += usage.sttCostUsd ?? 0;
+  }
 
-  // Always update lastModel so we know the most recently used model
-  bucket.lastModel = modelKey;
+  if (hasLlmUsage) {
+    if (!bucket.byModel[modelKey]) {
+      bucket.byModel[modelKey] = {
+        runs: 0,
+        inputTokens: 0,
+        cachedInputTokens: 0,
+        outputTokens: 0,
+        sessionDuration: 0,
+        costUsd: 0,
+      };
+    }
+
+    const modelBucket = bucket.byModel[modelKey]!;
+    modelBucket.runs += 1;
+    modelBucket.inputTokens += usage.inputTokens ?? 0;
+    modelBucket.cachedInputTokens += usage.cachedInputTokens ?? 0;
+    modelBucket.outputTokens += usage.outputTokens ?? 0;
+    modelBucket.sessionDuration += usage.sessionDuration ?? 0;
+    modelBucket.costUsd += costUsd;
+
+    // Always update lastModel so we know the most recently used model
+    bucket.lastModel = modelKey;
+  }
 
   return billing;
 }
@@ -292,37 +376,81 @@ export async function recordOrgBillingUsage(opts: {
     ttsRuns?: number;
     ttsCharacters?: number;
     ttsCostUsd?: number;
+    ttsProvider?: string | null;
+    ttsModel?: string | null;
     sttRuns?: number;
     sttAudioSeconds?: number;
     sttCostUsd?: number;
+    sttProvider?: string | null;
+    sttModel?: string | null;
+    eventId?: string | null;
+    recordedAt?: string | null;
   };
 }) {
   const { orgId, feature, usage } = opts;
-  const org = (await (prisma.organization as any).findUnique({
-    where: { id: orgId },
-    select: { usageMetrics: true },
-  })) as any;
+  if (!hasBillableUsage(usage)) {
+    throw new Error(`[usage-metrics] Refusing to record empty billing usage for org=${orgId} feature=${feature}`);
+  }
+  await prisma.$transaction(async (tx) => {
+    const rows = await tx.$queryRaw<Array<{ usageMetrics: unknown }>>(
+      Prisma.sql`
+        SELECT "usageMetrics"
+        FROM "Organization"
+        WHERE id = ${orgId}
+        FOR UPDATE
+      `
+    );
+    const org = rows[0];
+    if (!org) return;
 
-  if (!org) return;
+    const existingUsage =
+      org.usageMetrics && typeof org.usageMetrics === "object"
+        ? (org.usageMetrics as Record<string, unknown>)
+        : {};
+    const existingEvents = Array.isArray((existingUsage as any).recentBillingEvents)
+      ? ((existingUsage as any).recentBillingEvents as Array<Record<string, unknown>>)
+      : [];
+    if (usage.eventId && existingEvents.some((event) => event?.id === usage.eventId)) {
+      return;
+    }
+    const billing = coerceBillingMetrics(existingUsage.billing);
+    mergeBillingFeature(billing, feature, usage);
 
-  const existingUsage =
-    org.usageMetrics && typeof org.usageMetrics === "object"
-      ? (org.usageMetrics as Record<string, unknown>)
-      : {};
-  const billing = coerceBillingMetrics(existingUsage.billing);
-  mergeBillingFeature(billing, feature, usage);
+    const recentEvents = [...existingEvents];
+    if (usage.eventId) {
+      recentEvents.unshift({
+        id: usage.eventId,
+        feature,
+        model: usage.model ?? null,
+        ttsModel: usage.ttsModel ?? null,
+        sttModel: usage.sttModel ?? null,
+        inputTokens: usage.inputTokens ?? 0,
+        outputTokens: usage.outputTokens ?? 0,
+        cachedInputTokens: usage.cachedInputTokens ?? 0,
+        costUsd: usage.costUsd ?? 0,
+        ttsCharacters: usage.ttsCharacters ?? 0,
+        ttsCostUsd: usage.ttsCostUsd ?? 0,
+        sttAudioSeconds: usage.sttAudioSeconds ?? 0,
+        sttCostUsd: usage.sttCostUsd ?? 0,
+        recordedAt: usage.recordedAt ?? new Date().toISOString(),
+      });
+    }
 
-  const updatedUsage: Record<string, unknown> = {
-    ...existingUsage,
-    billing,
-    updatedAt: new Date().toISOString(),
-  };
+    const updatedUsage: Record<string, unknown> = {
+      ...existingUsage,
+      billing,
+      ...(recentEvents.length ? { recentBillingEvents: recentEvents.slice(0, 100) } : {}),
+      updatedAt: new Date().toISOString(),
+    };
 
-  await (prisma.organization as any).update({
-    where: { id: orgId },
-    data: {
-      usageMetrics: updatedUsage as Prisma.InputJsonValue,
-    },
+    await tx.$executeRaw(
+      Prisma.sql`
+        UPDATE "Organization"
+        SET "usageMetrics" = ${JSON.stringify(updatedUsage)}::jsonb,
+            "updatedAt" = NOW()
+        WHERE id = ${orgId}
+      `
+    );
   });
 }
 

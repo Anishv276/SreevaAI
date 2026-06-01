@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, GetObjectCommand, ListObjectsV2Command, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand, ListObjectsV2Command, DeleteObjectCommand } from "@aws-sdk/client-s3";
 
 let _r2Client: S3Client | null = null;
 
@@ -159,6 +159,14 @@ export const getObjectBuffer = async (bucket: string, key: string): Promise<Buff
     throw new Error(`R2 object has no body: ${bucket}/${key}`);
   }
   return streamToBuffer(response.Body as NodeJS.ReadableStream);
+};
+
+export const headObjectStrict = async (bucket: string, key: string) => {
+  const command = new HeadObjectCommand({
+    Bucket: bucket,
+    Key: key.startsWith("/") ? key.slice(1) : key,
+  });
+  await getR2Client().send(command);
 };
 
 export type ListedObject = {

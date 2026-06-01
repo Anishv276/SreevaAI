@@ -1,10 +1,37 @@
 import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { recordOrgBillingUsage } from "@/lib/usage-metrics";
+import { isInterviewTokenRequired } from "@/lib/interview-access";
+
+const DEEPGRAM_VERIFY_MODEL = "nova-3";
+const DEEPGRAM_NOVA3_MONO_USD_PER_MIN = 0.0048;
+
+async function getBillingOrgId(applicationId: string, interviewToken: string) {
+    if (!applicationId) return null;
+
+    const app = await prisma.application.findUnique({
+        where: { id: applicationId },
+        select: {
+            drive: { select: { orgId: true } },
+            interview: { select: { accessToken: true } },
+        },
+    });
+
+    if (!app?.drive?.orgId) return null;
+    if (isInterviewTokenRequired() && app.interview?.accessToken !== interviewToken) {
+        return null;
+    }
+
+    return app.drive.orgId;
+}
 
 export async function POST(req: NextRequest) {
     try {
         const formData = await req.formData();
         const audio = formData.get("audio") as Blob | null;
         const targetPhrase = (formData.get("targetPhrase") as string | null) ?? "";
+        const applicationId = (formData.get("applicationId") as string | null)?.trim() ?? "";
+        const interviewToken = (formData.get("interviewToken") as string | null)?.trim() ?? "";
 
         if (!audio || !targetPhrase) {
             return NextResponse.json({ error: "Missing audio or targetPhrase" }, { status: 400 });
@@ -53,6 +80,25 @@ export async function POST(req: NextRequest) {
 
         const data = await response.json();
         console.log("[verify-speech] Deepgram raw:", JSON.stringify(data).slice(0, 300));
+        const durationSeconds = Math.max(0, Number(data?.metadata?.duration || 0));
+        if (applicationId && durationSeconds > 0) {
+            const orgId = await getBillingOrgId(applicationId, interviewToken).catch(() => null);
+            if (orgId) {
+                await recordOrgBillingUsage({
+                    orgId,
+                    feature: "interview",
+                    usage: {
+                        model: "verify-speech",
+                        sttRuns: 1,
+                        sttProvider: "DEEPGRAM",
+                        sttModel: DEEPGRAM_VERIFY_MODEL,
+                        sttAudioSeconds: durationSeconds,
+                        sttCostUsd: (durationSeconds / 60) * DEEPGRAM_NOVA3_MONO_USD_PER_MIN,
+                        eventId: `verify-speech:${applicationId}:${data?.metadata?.request_id || Date.now()}`,
+                    },
+                });
+            }
+        }
 
         const transcript: string = data?.results?.channels?.[0]?.alternatives?.[0]?.transcript ?? "";
 

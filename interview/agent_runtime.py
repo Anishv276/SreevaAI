@@ -1012,6 +1012,36 @@ async def entrypoint(ctx: JobContext):
         model=org_tts_model,
         voice_id=voice_id,
     )
+    plugin_tts_characters = 0
+    plugin_tts_audio_seconds = 0.0
+    plugin_stt_audio_seconds = 0.0
+
+    def _on_tts_metrics_collected(metrics) -> None:
+        nonlocal plugin_tts_characters, plugin_tts_audio_seconds
+        chars = int(getattr(metrics, "characters_count", 0) or 0)
+        audio_seconds = float(getattr(metrics, "audio_duration", 0.0) or 0.0)
+        if chars > 0:
+            plugin_tts_characters += chars
+        if audio_seconds > 0:
+            plugin_tts_audio_seconds += audio_seconds
+
+    def _on_stt_metrics_collected(metrics) -> None:
+        nonlocal plugin_stt_audio_seconds
+        audio_seconds = float(getattr(metrics, "audio_duration", 0.0) or 0.0)
+        if audio_seconds > 0:
+            plugin_stt_audio_seconds += audio_seconds
+
+    for _plugin, _handler, _label in (
+        (tts_plugin, _on_tts_metrics_collected, "TTS"),
+        (stt_plugin, _on_stt_metrics_collected, "STT"),
+    ):
+        try:
+            on_method = getattr(_plugin, "on", None)
+            if callable(on_method):
+                on_method("metrics_collected", _handler)
+        except Exception as e:
+            logger.warning("[USAGE] Failed to attach %s metrics hook: %s", _label, e)
+
     async def _warm_greeting_tts(plugin) -> None:
         warmup_method = getattr(plugin, "warmup", None)
         if callable(warmup_method):
@@ -2923,6 +2953,9 @@ async def entrypoint(ctx: JobContext):
         tts_model=org_tts_model,
         stt_provider="DEEPGRAM",
         stt_model=org_deepgram_model,
+        plugin_tts_characters=plugin_tts_characters,
+        plugin_tts_audio_seconds=plugin_tts_audio_seconds,
+        plugin_stt_audio_seconds=plugin_stt_audio_seconds,
     )
     # Ã°Å¸Â¤- AI Scorecard (NEW)
     if session_start_time:
@@ -2982,9 +3015,13 @@ async def entrypoint(ctx: JobContext):
             tts_model=org_tts_model,
             stt_provider="DEEPGRAM",
             stt_model=org_deepgram_model,
+            plugin_tts_characters=plugin_tts_characters,
+            plugin_tts_audio_seconds=plugin_tts_audio_seconds,
+            plugin_stt_audio_seconds=plugin_stt_audio_seconds,
         )
     except Exception as e:
         logger.error(f"[USAGE] Failed to persist interview billing snapshot for {app_id}: {e}")
+        raise
     # Queue accumulated eval LLM usage (gpt-4.1-mini per-turn calls) so they are
     # included in the billing snapshot written by flush_pending_manual_billing below.
     for _eval_usage in _eval_llm_usages_accumulated:

@@ -631,6 +631,8 @@ export function HardwareCheck({
             const formData = new FormData();
             formData.append("audio", audioBlob, "mic-check.webm");
             formData.append("targetPhrase", verifiedPhraseRef.current);
+            formData.append("applicationId", applicationId);
+            formData.append("interviewToken", interviewToken);
 
             const controller = new AbortController();
             timeoutId = window.setTimeout(() => controller.abort(), 8000);
@@ -659,7 +661,7 @@ export function HardwareCheck({
             autoVerifyInProgressRef.current = false;
             setIsRecording(false);
         }
-    }, [clearMicTimers]);
+    }, [applicationId, clearMicTimers, interviewToken]);
 
     useEffect(() => {
         sendToDeepgramRef.current = sendToDeepgram;

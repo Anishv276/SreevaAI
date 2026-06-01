@@ -6,7 +6,6 @@ export const RECORDING_RETENTION_QUEUE = "recording-retention-cleanup";
 export const RECORDING_RETENTION_SWEEP_JOB = "recording-retention-sweep";
 export const RECORDING_RETENTION_DELETE_JOB = "delete-recording-asset";
 export const RECORDING_RETENTION_JOB_PREFIX = "recording-retention";
-export const DEFAULT_RECORDING_RETENTION_DAYS = 30;
 
 type JsonRecord = Record<string, any>;
 
@@ -21,9 +20,10 @@ function parseJsonSafe<T = JsonRecord>(raw: unknown, fallback: T): T {
   }
 }
 
-export function normalizeRecordingRetentionDays(raw: unknown, fallback = DEFAULT_RECORDING_RETENTION_DAYS) {
+export function normalizeRecordingRetentionDays(raw: unknown): number | null {
+  if (raw === undefined || raw === null || raw === "") return null;
   const value = Number(raw);
-  if (!Number.isFinite(value)) return Math.max(1, Math.round(fallback));
+  if (!Number.isFinite(value)) return null;
   return Math.max(1, Math.round(value));
 }
 
@@ -31,6 +31,7 @@ export function computeRecordingRetentionDueAt(completedAt: Date | string | null
   const base = completedAt instanceof Date ? completedAt : completedAt ? new Date(completedAt) : null;
   if (!base || !Number.isFinite(base.getTime())) return null;
   const days = normalizeRecordingRetentionDays(retentionDays);
+  if (days === null) return null;
   return new Date(base.getTime() + days * 24 * 60 * 60 * 1000);
 }
 
@@ -66,9 +67,12 @@ export async function getOrgRecordingSettings(orgId: string) {
     },
   });
 
+  const recordingRetentionDays = normalizeRecordingRetentionDays(org?.recordingRetentionDays);
+  const recordingEnabled = org?.recordingEnabled === true && recordingRetentionDays !== null;
+
   return {
-    recordingEnabled: org?.recordingEnabled ?? true,
-    recordingRetentionDays: normalizeRecordingRetentionDays(org?.recordingRetentionDays, DEFAULT_RECORDING_RETENTION_DAYS),
+    recordingEnabled,
+    recordingRetentionDays,
   };
 }
 
@@ -170,6 +174,9 @@ export async function scheduleRecordingRetentionDeletion(params: {
   const delay = Math.max(0, dueAt.getTime() - Date.now());
   const jobId = getRecordingRetentionJobId(params.applicationId);
   const normalizedRetentionDays = normalizeRecordingRetentionDays(params.retentionDays);
+  if (normalizedRetentionDays === null) {
+    return { scheduled: false, dueAt: null as Date | null };
+  }
 
   const existingJob = await recordingRetentionQueue.getJob(jobId).catch(() => null);
   if (existingJob) {

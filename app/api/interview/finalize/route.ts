@@ -10,7 +10,6 @@ import {
   deductInterviewQuota,
   incrementOrgCreditsUsed,
 } from "@/lib/credits";
-import { recordOrgBillingUsage } from "@/lib/usage-metrics";
 import { getOrgRecordingSettings, scheduleRecordingRetentionDeletion } from "@/lib/recording-retention";
 
 export const runtime = "nodejs";
@@ -177,7 +176,6 @@ export async function POST(req: Request) {
       appStatus,
       duration,
       snapshots,
-      billing,
       recordingCompletedAt,
       recordingDurationSec
     } = result.data;
@@ -197,7 +195,7 @@ export async function POST(req: Request) {
     const interviewTurns = finalTranscript ? buildInterviewTurns(finalTranscript) : [];
     const finalDuration = typeof duration === 'number' ? duration : (duration ? parseInt(String(duration)) : null);
     let recordingUrlForPersist = recordingUrl;
-    let recordingSettingsForOrg: { recordingEnabled: boolean; recordingRetentionDays: number } | null = null;
+    let recordingSettingsForOrg: { recordingEnabled: boolean; recordingRetentionDays: number | null } | null = null;
     try {
       const appForRecordingPolicy = await prisma.application.findUnique({
         where: { id: applicationId },
@@ -218,6 +216,8 @@ export async function POST(req: Request) {
       }
     } catch (policyError) {
       console.warn("[RETENTION] Failed to resolve recording policy for finalize route:", policyError);
+      recordingSettingsForOrg = { recordingEnabled: false, recordingRetentionDays: null };
+      recordingUrlForPersist = undefined;
     }
 
     console.log(`[FINALIZE] ${applicationId} | status=${finalInterviewStatus} | duration=${finalDuration}s`);
@@ -232,6 +232,31 @@ export async function POST(req: Request) {
       recordingCompletedAt,
       recordingDurationSec: finalDuration ?? recordingDurationSec,
     });
+    if (recordingSettingsForOrg && !recordingSettingsForOrg.recordingEnabled) {
+      await prisma.$executeRawUnsafe(
+        `
+        UPDATE "Interview"
+        SET
+          "interviewRecordingUrl" = NULL,
+          "interviewRecordedAt" = NULL,
+          "recordingStatus" = NULL,
+          "recordingMimeType" = NULL,
+          "recordingStartedAt" = NULL,
+          "recordingCompletedAt" = NULL,
+          "recordingDurationSec" = NULL,
+          "recordingManifest" = NULL,
+          "recordingRetentionDays" = NULL,
+          "recordingRetentionDueAt" = NULL,
+          "recordingCleanupStatus" = NULL,
+          "recordingCleanupAttempts" = NULL,
+          "recordingCleanupLastError" = NULL,
+          "recordingDeletedAt" = NULL,
+          "updatedAt" = NOW()
+        WHERE "applicationId" = $1
+        `,
+        applicationId
+      ).catch(() => {});
+    }
     const interviewAfterPersist = await prisma.interview.findUnique({
       where: { applicationId },
       select: { completedAt: true },
@@ -280,7 +305,7 @@ export async function POST(req: Request) {
 
         if (recordingUrlForPersist && orgId) {
           const recordingSettings = recordingSettingsForOrg || await getOrgRecordingSettings(orgId);
-          if (recordingSettings.recordingEnabled) {
+          if (recordingSettings.recordingEnabled && recordingSettings.recordingRetentionDays !== null) {
             await scheduleRecordingRetentionDeletion({
               applicationId,
               completedAt: interviewAfterPersist?.completedAt || recordingCompletedAt || new Date(),
@@ -289,6 +314,10 @@ export async function POST(req: Request) {
             }).catch((error) => {
               console.warn(`[RETENTION] Failed to schedule cleanup for ${applicationId}:`, error);
             });
+          } else if (recordingSettings.recordingEnabled) {
+            console.warn(
+              `[RETENTION] Recording is enabled for ${applicationId}, but no retention days are configured.`
+            );
           }
         }
 
@@ -303,32 +332,6 @@ export async function POST(req: Request) {
               : {};
           const durationSec = Math.max(0, Number(resolvedDuration ?? 0));
           const creditsUsed = roundCredits(durationSec / 60);
-          const llmModel = String(billing?.llmModel ?? existingSnapshot.llmModel ?? "unknown").trim();
-          const ttsModel = String(billing?.ttsModel ?? existingSnapshot.ttsModel ?? "unknown").trim();
-          const sttModel = String(billing?.sttModel ?? existingSnapshot.sttModel ?? "unknown").trim();
-          const inputTokens = Math.max(0, Number(billing?.inputTokens ?? existingSnapshot.inputTokens ?? 0));
-          const outputTokens = Math.max(0, Number(billing?.outputTokens ?? existingSnapshot.outputTokens ?? 0));
-          const cachedInputTokens = Math.max(0, Number(billing?.cachedInputTokens ?? existingSnapshot.cachedInputTokens ?? 0));
-          const llmCostUsd = Math.max(0, Number(billing?.llmCostUsd ?? existingSnapshot.llmCostUsd ?? 0));
-          const ttsCharacters = Math.max(0, Number(billing?.ttsCharacters ?? existingSnapshot.ttsCharacters ?? 0));
-          const ttsCostUsd = Math.max(0, Number(billing?.ttsCostUsd ?? existingSnapshot.ttsCostUsd ?? 0));
-          const sttAudioSeconds = Math.max(0, Number(billing?.sttAudioSeconds ?? existingSnapshot.sttAudioSeconds ?? 0));
-          const sttCostUsd = Math.max(0, Number(billing?.sttCostUsd ?? existingSnapshot.sttCostUsd ?? 0));
-          const hasExactCostBreakdown =
-            existingSnapshot.llmCostUsd !== undefined ||
-            existingSnapshot.ttsCostUsd !== undefined ||
-            existingSnapshot.sttCostUsd !== undefined ||
-            billing?.llmCostUsd !== undefined ||
-            billing?.ttsCostUsd !== undefined ||
-            billing?.sttCostUsd !== undefined;
-          const totalCostUsd = Math.max(
-            0,
-            Number(
-              billing?.totalCostUsd
-                ?? existingSnapshot.totalCostUsd
-                ?? (llmCostUsd + ttsCostUsd + sttCostUsd)
-            )
-          );
           const billingSnapshotPayload = {
             ...existingSnapshot,
             durationSec,
@@ -336,19 +339,6 @@ export async function POST(req: Request) {
             interviewName: `${appForOrg?.fullName || "Unknown Candidate"} - ${appForOrg?.drive?.title || appForOrg?.drive?.role || "Interview"}`,
             candidateName: appForOrg?.fullName || "Unknown Candidate",
             jobTitle: appForOrg?.drive?.role || appForOrg?.drive?.title || "Unknown Role",
-            llmModel,
-            ttsModel,
-            sttModel,
-            inputTokens,
-            outputTokens,
-            cachedInputTokens,
-            ttsCharacters,
-            sttAudioSeconds,
-            llmCostUsd,
-            ttsCostUsd,
-            sttCostUsd,
-            totalCostUsd,
-            costSource: hasExactCostBreakdown ? "exact" : "missing",
             billedAt: Math.floor(Date.now() / 1000),
           };
           // Atomically mark the interview as billed — returns the row only if not already billed.
@@ -372,27 +362,6 @@ export async function POST(req: Request) {
                 await incrementOrgCreditsUsed(orgId, creditsDelta);
               }
             }
-            // Record interview runtime usage once per completed interview.
-            await recordOrgBillingUsage({
-              orgId,
-              feature: "interview",
-              usage: {
-                model: llmModel,
-                inputTokens,
-                outputTokens,
-                cachedInputTokens,
-                sessionDuration: Number.isFinite(dur) ? dur : 0,
-                costUsd: llmCostUsd,
-                ttsRuns: ttsCharacters > 0 ? 1 : 0,
-                ttsCharacters,
-                ttsCostUsd,
-                sttRuns: sttAudioSeconds > 0 ? 1 : 0,
-                sttAudioSeconds,
-                sttCostUsd,
-              },
-            }).catch((usageError) => {
-              console.error("[FINALIZE] Interview usage recording failed:", usageError);
-            });
             console.log(`[FINALIZE] Billing deducted for ${applicationId} org=${orgId} dur=${resolvedDuration}s`);
           } else {
             console.log(`[FINALIZE] Billing already deducted for ${applicationId} — skipping`);
