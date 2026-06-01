@@ -518,7 +518,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             }
         } catch { }
         try {
-            room.disconnect();
+            void room.disconnect(true).catch(() => { });
         } catch { }
         lkRoomRef.current = null;
     }, []);
@@ -1852,9 +1852,6 @@ function InterviewRoomContent({
                 window.setTimeout(resolve, stopTimeoutMs);
             }),
         ]);
-        try {
-            lkRoom?.disconnect();
-        } catch (_) { }
         onFinish(reason);
     }, [lkRoom, onFinalizing, onFinish, stopServerRecording]);
     useEffect(() => {
