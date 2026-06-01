@@ -18,32 +18,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import re
 from typing import Any, Optional
 
 logger = logging.getLogger("interview-agent")
 
 EVAL_LLM_MODEL   = "gpt-4.1-mini"
 EVAL_TEMPERATURE = 0.0
-
-_UNABLE_TO_ANSWER_RE = re.compile(
-    r"\b("
-    r"i\s+(?:do\s+not|don't|dont)\s+know|"
-    r"no\s+idea|"
-    r"not\s+sure|"
-    r"(?:can't|cant|cannot)\s+answer|"
-    r"i\s+(?:did\s+not|didn't|didnt)\s+(?:do|work|build|use|handle)\b|"
-    r"i\s+have\s+not\s+(?:done|worked|built|used|handled)\b|"
-    r"nothing\b"
-    r")",
-    re.IGNORECASE,
-)
-
-
-def _candidate_cannot_answer(text: str) -> bool:
-    """Detect explicit no-answer/refusal turns before generic short-answer handling."""
-    return bool(_UNABLE_TO_ANSWER_RE.search(str(text or "").strip()))
-
 
 async def evaluate_answer(
     candidate_answer: str,
@@ -85,24 +65,7 @@ async def evaluate_answer(
             "reason": "empty answer",
         }
 
-    # Very short answers can't demonstrate depth -- hard-cap scores, still ask for routing
     word_count = len(candidate_answer.strip().split())
-    if _candidate_cannot_answer(candidate_answer):
-        return {
-            "clarity": 1, "depth": 0, "specificity": 0, "grounding": 0,
-            "overall": 0.2,
-            "action": "MOVE_ON", "probe_mode": None,
-            "reason": "candidate cannot answer",
-        }
-
-    if word_count < 5:
-        clarity = 1 if word_count > 0 else 0
-        return {
-            "clarity": clarity, "depth": 0, "specificity": 0, "grounding": 0,
-            "overall": clarity * 0.20,
-            "action": "PROBE", "probe_mode": "ownership",
-            "reason": "answer too short to evaluate",
-        }
 
     # Use last 6 lines (3 Q&A pairs) -- enough for LLM to see follow-up context
     # without pulling in old-topic lines that cause the LLM to conflate answers.
@@ -145,11 +108,13 @@ async def evaluate_answer(
     }.get(candidate_band, "Probe for real ownership and specific decisions.")
 
     try:
-        completion = await asyncio.wait_for(
+        # Stream to get first token in ~50-100ms instead of waiting for full response
+        stream = await asyncio.wait_for(
             client.chat.completions.create(
                 model=llm_model,
                 temperature=EVAL_TEMPERATURE,
-                max_tokens=320,
+                max_tokens=150,
+                stream=True,
                 messages=[
                     {
                         "role": "system",
@@ -240,16 +205,23 @@ async def evaluate_answer(
                 ],
                 response_format={"type": "json_object"},
             ),
-            timeout=6.0,  # raised from 4s -- richer prompt + json_object mode needs more room
+            timeout=15.0,  # Streaming timeout is much shorter (first token in <5s)
         )
 
-        raw = completion.choices[0].message.content or "{}"
-        _usage = getattr(completion, "usage", None)
+        # Collect streamed chunks and capture final usage
+        raw = ""
+        _usage = None
+        async for chunk in stream:
+            if chunk.choices and chunk.choices[0].delta.content:
+                raw += chunk.choices[0].delta.content
+            if chunk.usage:
+                _usage = chunk.usage
+
         _eval_llm_usage = {
             "model": llm_model,
-            "inputTokens": int(getattr(_usage, "prompt_tokens", 0) or 0),
-            "outputTokens": int(getattr(_usage, "completion_tokens", 0) or 0),
-            "cachedInputTokens": int(getattr(getattr(_usage, "prompt_tokens_details", None), "cached_tokens", 0) or 0),
+            "inputTokens": int(getattr(_usage, "prompt_tokens", 0) or 0) if _usage else 0,
+            "outputTokens": int(getattr(_usage, "completion_tokens", 0) or 0) if _usage else 0,
+            "cachedInputTokens": int(getattr(getattr(_usage, "prompt_tokens_details", None), "cached_tokens", 0) or 0) if _usage else 0,
         }
         data: dict[str, Any] = json.loads(raw)
 
@@ -314,22 +286,11 @@ async def evaluate_answer(
         }
 
     except asyncio.TimeoutError:
-        logger.warning("[EVAL] ⏰ evaluate_answer timed out (6s) -- returning surface fallback")
-        return {
-            "clarity": 1, "depth": 1, "specificity": 1, "grounding": 1,
-            "overall": 1.0,
-            "action": "PROBE", "probe_mode": "ownership",
-            "reason": "eval timeout",
-            "is_timeout": True,
-        }
+        logger.error("[EVAL] evaluate_answer timed out (30s)")
+        raise
     except Exception as e:
         logger.error("[EVAL] [X] evaluate_answer failed: %s", e, exc_info=True)
-        return {
-            "clarity": 0, "depth": 0, "specificity": 0, "grounding": 0,
-            "overall": 0.0,
-            "action": "PROBE", "probe_mode": "ownership",
-            "reason": "eval error",
-        }
+        raise
 
 
 def notify_sync_engine(app_id: str, turn: int, action: str) -> None:

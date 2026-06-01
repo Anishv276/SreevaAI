@@ -56,7 +56,7 @@ async def _tts_acronym_transform(text_stream):
 
 _TTS_PHONETIC_FIXES = [
     # Remove em/en dashes that cause TTS to pause-split surrounding words
-    (re.compile(r"\s*[---]\s*"), ", "),
+    (re.compile(r"\s*-{2,}\s*"), ", "),
     # Remove soft-hyphen / mid-word hyphen the LLM inserts (e.g. "respon-sibilities")
     # Only strip hyphens that are surrounded by letters -- keep valid compounds like "well-known"
     # by replacing letter-hyphen-letter with the letters joined directly.

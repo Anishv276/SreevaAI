@@ -505,8 +505,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         setShouldConnect(false);
         const room = lkRoomRef.current;
         if (!room) return;
-        const cameraTrack = room.localParticipant.getTrackPublication(Track.Source.Camera)?.track ?? null;
-        const microphoneTrack = room.localParticipant.getTrackPublication(Track.Source.Microphone)?.track ?? null;
         try {
             void room.localParticipant.setCameraEnabled(false).catch(() => { });
         } catch { }
@@ -514,14 +512,15 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             void room.localParticipant.setMicrophoneEnabled(false).catch(() => { });
         } catch { }
         try {
-            cameraTrack?.stop();
-        } catch { }
-        try {
-            microphoneTrack?.stop();
+            for (const publication of room.localParticipant.trackPublications.values()) {
+                publication.track?.mediaStreamTrack.stop();
+                publication.track?.stop();
+            }
         } catch { }
         try {
             room.disconnect();
         } catch { }
+        lkRoomRef.current = null;
     }, []);
     const beginFinalizingInterview = useCallback(() => {
         stopInterviewMedia();
@@ -1090,7 +1089,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             {/* Interview room - outside AnimatePresence intentionally.
                 It pre-renders as soon as the launching phase has prepared a token
                 and controls its own visibility via opacity/z-index/pointer-events. */}
-            {token && serverUrl && phase !== "completed" && (
+            {token && serverUrl && phase !== "completed" && phase !== "finalizing" && (
                 <div
                     key="interview-room"
                     className={cn(
@@ -1853,10 +1852,10 @@ function InterviewRoomContent({
                 window.setTimeout(resolve, stopTimeoutMs);
             }),
         ]);
-        setTimeout(() => {
-            try { lkRoom?.disconnect(); } catch (_) { }
-            onFinish(reason);
-        }, 1200);
+        try {
+            lkRoom?.disconnect();
+        } catch (_) { }
+        onFinish(reason);
     }, [lkRoom, onFinalizing, onFinish, stopServerRecording]);
     useEffect(() => {
         if (isInterviewActive) return;

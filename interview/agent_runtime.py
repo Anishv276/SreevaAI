@@ -252,15 +252,14 @@ def _order_interview_topics(
 
 
 def _build_move_on_question(topic: str) -> str:
-    title = (topic or "").split(" - ")[0].strip() or "the next area"
     detail = ""
     if " - " in (topic or ""):
         detail = (topic or "").split(" - ", 1)[1].strip()
         detail = re.sub(r"\s*\[[^\]]+\]\s*$", "", detail).strip()
 
     if detail:
-        return f"Let's switch to {title}. What part of that did you personally build or own?"
-    return f"Let's switch to {title}. Where have you actually used it in a project or workflow?"
+        return "What part of that did you personally build or own?"
+    return "Where have you actually used it in a project or workflow?"
 
 
 
@@ -350,11 +349,12 @@ class InterviewAgent(Agent):
             logger.critical("[LLM_GATE] CRITICAL: timed out (5s) -- eval_task=%s (likely stalled); escalating", pending_state)
             if _must_wait_for_eval:
                 self._waiting_for_eval = False
+                # Use the mutable _chat_ctx -- self.chat_ctx is a read-only view.
                 remove_system_messages_multi(
-                    self.chat_ctx,
+                    self._chat_ctx,
                     ("[NEXT_TURN_DIRECTIVE", "[RECENT_CONTEXT"),
                 )
-                self.chat_ctx.add_message(
+                self._chat_ctx.add_message(
                     role="system",
                     content=(
                         "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
@@ -365,7 +365,12 @@ class InterviewAgent(Agent):
                     ),
                 )
 
-        effective_ctx = self.chat_ctx
+        # Generate from the agent's LIVE mutable context (self._chat_ctx) -- this is the
+        # same object the eval task injects NEXT_TURN_DIRECTIVE / TOPIC_LOCK into, and the
+        # object LiveKit itself copies from when building a reply. self.chat_ctx (the public
+        # property) is a READ-ONLY wrapper whose .items raises on mutation, so we must use
+        # _chat_ctx directly for both the MOVE_ON strip below and the generation call.
+        effective_ctx = self._chat_ctx
 
         # MOVE_ON guard: if a MOVE_ON directive is present, strip ALL user+assistant
         # messages from context before the LLM generates. This prevents the candidate's
@@ -1061,6 +1066,20 @@ async def entrypoint(ctx: JobContext):
         latest_session_usage = event.usage
         # Intentionally keep usage collection silent to avoid terminal spam.
     agent = InterviewAgent(instructions=system_prompt, chat_ctx=chat_ctx)
+    # CRITICAL: Agent.__init__ does `self._chat_ctx = chat_ctx.copy(...)`, creating a
+    # SEPARATE ChatContext (new items list) from the local `chat_ctx` above. LiveKit
+    # generates every reply from `agent._chat_ctx` (see AgentActivity: it does
+    # `self._agent.chat_ctx.copy()` before calling llm_node). If we keep injecting
+    # NEXT_TURN_DIRECTIVE / TOPIC_LOCK / MOVE_ON into the local `chat_ctx`, those
+    # messages land in an ORPHANED object the LLM never reads -- which is exactly why
+    # MOVE_ON decisions were computed correctly but never reached the question the LLM
+    # asked. Re-bind `chat_ctx` to the live context so all downstream injections
+    # (closure + on_conversation_item_added handler) target what LiveKit actually
+    # generates from. NOTE: this stays valid because this agent never calls
+    # update_chat_ctx()/update_tools()/update_instructions() (the only paths that would
+    # reassign agent._chat_ctx). If that ever changes, switch to resolving
+    # agent._chat_ctx at each injection site instead of aliasing here.
+    chat_ctx = agent._chat_ctx
     participant: Optional[Any] = None
     disconnect_event = asyncio.Event()
     interview_finished_event = asyncio.Event()
@@ -1877,20 +1896,28 @@ async def entrypoint(ctx: JobContext):
                             logger.info("[AGENT] MOVE_ON history wipe: dropped %d msg(s)", _before - len(_ctx_items))
 
                     # Build MOVE_ON directive -- agent writes it, not eval
-                    _move_goal = (
-                        f"Acknowledge briefly and move to: {_active_topic}. "
-                        f"Ask this exact next question: \"{_next_question}\" "
-                        "Do NOT ask a follow-up on the previous topic."
-                    )
+                    _old_topic_title = _topic_short_title(_old_topic or "")
+                    _new_topic_title = _topic_short_title(_active_topic or "")
                     _directive = (
                         "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
                         "DECISION: MOVE_ON\n"
+                        f"TOPIC YOU ARE LEAVING: {_old_topic_title}\n"
                         f"NEW ACTIVE TOPIC: {_active_topic}\n"
                         f"NEXT QUESTION TO ASK VERBATIM: {_next_question}\n"
-                        f"YOUR ONLY JOB THIS TURN: {_move_goal}\n"
+                        f"YOUR ONLY JOB THIS TURN: Say ONE short acknowledgement (max 5 words), "
+                        f"then ask the verbatim question about {_new_topic_title}.\n"
+                        "ACKNOWLEDGEMENT RULES:\n"
+                        "  - Use ONLY short natural phrases: 'Got it.', 'Okay.', 'Fair enough.', "
+                        "'Makes sense.', 'Alright.', 'Understood.', 'Right.', 'I see.'\n"
+                        "  - Choose based on what the candidate just said (e.g. 'Fair enough.' if they "
+                        "said they don't remember; 'Got it.' for a short answer).\n"
+                        "  - NEVER say 'Thanks for sharing', 'Thanks for clarifying', 'Thank you for "
+                        "explaining', 'Thanks for that', or any variant of those phrases.\n"
+                        "  - NEVER name the topic you are leaving in your acknowledgement.\n"
+                        "  - NEVER say 'Let's switch to...', 'Moving on to...', or 'Shifting to...'.\n"
                         "HARD RULE: Do NOT ask any follow-up about the previous topic. "
-                        "Do NOT reference it. Acknowledge in one sentence max, then ask the verbatim question.\n"
-                        "DO NOT wrap up, say goodbye, or ask questions for me."
+                        "Do NOT reference it by name or content.\n"
+                        "DO NOT wrap up, say goodbye, or add any closing phrase."
                     )
                     # CRITICAL: Update _last_question_topic NOW (before LLM fires) so eval sees the NEW topic
                     nonlocal _last_question_topic

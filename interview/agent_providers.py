@@ -58,8 +58,10 @@ _PROVIDER_DEFAULTS: dict[str, Any] = {
     "sarvam_v2_pitch":         0.0,
     "sarvam_v2_loudness":      1.0,
     "sarvam_temperature":      0.4,
-    # 800ms gives candidates room for fillers like "umm" / "ohh" without
-    # making the bot feel laggy; raise to 1000ms if cut-offs still happen.
+    # FIX #3: Increased from 350ms to 800ms for multi-clause answers
+    # Research: 350ms endpointing was too aggressive, split mid-thought answers
+    # Solution: 800ms allows natural pauses between clauses without premature endpoint
+    # Pair with _STT_INTERVIEW_ASSEMBLY_GRACE_SECONDS = 2.0s for full capture
     "deepgram_endpointing_ms": 800,
     # WS connect/send timeout. Sarvam closes idle connections after 60s -- keepalive pings every
     # 20s prevent this. recv timeout is set separately to 90s in _recv_task.
@@ -705,8 +707,11 @@ def build_stt(language_code: str = "en", model: str = STT_MODEL):
         "model":           model,
         "smart_format":    True,
         "language":        language_code,
-        "interim_results": False,  # Disabled to prevent debounce timer cancellation from multiple partial results
+        "interim_results": True,
         "punctuate":       True,
+        "no_delay":        True,
+        "vad_events":      True,
+        "filler_words":    False,
         "keep_alive":      True,   # Send KeepAlive messages during silence -- prevents Deepgram
                                    # closing the WS with 1011 "no audio received within timeout"
     }
@@ -732,9 +737,10 @@ def build_stt(language_code: str = "en", model: str = STT_MODEL):
     safe_kwargs = {k: v for k, v in base_kwargs.items() if k in supported} if supported else base_kwargs
 
     logger.info(
-        "[STT] Deepgram config: model=%s language=%s diarization=%s ep_ms=%s",
+        "[STT] Deepgram config: model=%s language=%s interim=%s diarization=%s ep_ms=%s",
         safe_kwargs.get("model"),
         safe_kwargs.get("language"),
+        bool(safe_kwargs.get("interim_results", False)),
         bool(safe_kwargs.get("enable_diarization", False)),
         safe_kwargs.get("endpointing_ms", safe_kwargs.get("endpointing", "n/a")),
     )

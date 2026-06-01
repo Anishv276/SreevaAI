@@ -7,7 +7,7 @@ Refactor additions (all non-breaking):
   - EvalGraphState TypedDict: typed state for the LangGraph state machine
   - Five LangGraph nodes: llm_evaluate, detect_signals, filter_signals,
     build_decision, handle_error -- each does exactly one thing
-  - Conditional edge: llm_evaluate -> handle_error on exception (agent never stalls)
+  - Conditional edge: llm_evaluate -> handle_error on exception (reported to runtime)
   - eval_graph: compiled LangGraph StateGraph (compiled once at module level)
   - run_turn_evaluation: thin wrapper that invokes eval_graph.ainvoke() when
     LangGraph is available, falls back to the original sequential await chain
@@ -179,39 +179,20 @@ async def _node_build_decision(state: EvalGraphState) -> dict:
         return {"turn_decision": td}
     except Exception as exc:
         logger.error("[EVAL_GRAPH] node_build_decision failed: %s", exc, exc_info=True)
-        return {"turn_decision": _safe_default_turn_decision(), "error": f"build_decision: {exc}"}
+        return {"turn_decision": None, "error": f"build_decision: {exc}"}
 
 
 async def _node_handle_error(state: EvalGraphState) -> dict:
-    """Error recovery node -- returns a safe neutral TurnDecision.
-
-    Agent never gets stuck: any unhandled exception in node_llm_evaluate
-    routes here and produces a MOVE_ON decision with neutral scores so the
-    interview continues naturally.
-    """
-    logger.warning(
-        "[EVAL_GRAPH] Entering error recovery -- error=%s. Returning safe default.",
+    """Error reporting node -- preserve the failure for the runtime recovery path."""
+    logger.error(
+        "[EVAL_GRAPH] Evaluation failed -- error=%s",
         state.get("error"),
     )
     return {
-        "turn_decision": _safe_default_turn_decision(),
+        "turn_decision": None,
         "signal_events": [],
+        "error": state.get("error") or "eval_graph_error",
     }
-
-
-def _safe_default_turn_decision() -> dict:
-    """Error-recovery TurnDecision -- low scores, PROBE so no topic is abandoned on failure."""
-    low = {"clarity": 1.0, "depth": 1.0, "specificity": 1.0,
-           "grounding": 1.0, "fluency": 1.0, "confidence": 1.0, "is_timeout": True}
-    return build_turn_decision(
-        quality=low,
-        signals=build_signal_flags([]),
-        signal_events=[],
-        trust=compute_trust_delta(signal_events=[], quality=low),
-        action="PROBE",
-        mode="ownership",
-        next_goal="",
-    )
 
 
 # ===========================================================================
@@ -250,6 +231,21 @@ def _build_eval_graph():
     graph.add_edge("handle_error",   END)
 
     return graph.compile()
+
+
+def _safe_default_turn_decision() -> dict:
+    """Error-recovery TurnDecision -- low scores, PROBE so no topic is abandoned on failure."""
+    low = {"clarity": 1.0, "depth": 1.0, "specificity": 1.0,
+           "grounding": 1.0, "fluency": 1.0, "confidence": 1.0, "is_timeout": True}
+    return build_turn_decision(
+        quality=low,
+        signals=build_signal_flags([]),
+        signal_events=[],
+        trust=compute_trust_delta(signal_events=[], quality=low),
+        action="PROBE",
+        mode="ownership",
+        next_goal="",
+    )
 
 
 # Compiled once at import time -- reused across all evaluation calls
@@ -316,7 +312,11 @@ async def run_turn_evaluation(
             "error":          None,
         }
         final_state = await eval_graph.ainvoke(initial_state)
-        td = final_state.get("turn_decision") or _safe_default_turn_decision()
+        if final_state.get("error"):
+            raise RuntimeError(str(final_state["error"]))
+        td = final_state.get("turn_decision")
+        if not td:
+            raise RuntimeError("eval graph completed without a turn decision")
         return td, ""
 
     # -- Fallback: original sequential await chain ---------------------------

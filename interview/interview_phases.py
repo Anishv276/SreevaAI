@@ -43,6 +43,8 @@ def build_warmup_directive() -> str:
         "\n"
         "The readiness check must be a simple, direct question -- one sentence, closed-ended.\n"
         "Ask it as if you are about to start something real, not fill time.\n"
+        "The readiness check must NOT mention any project, resume item, skill, company, tool, or role-specific topic.\n"
+        "Good shape: 'Are you ready to begin?' Bad shape: 'Are you ready to discuss your project?'\n"
         "\n"
         "WAIT for the candidate to confirm before starting the interview."
     )

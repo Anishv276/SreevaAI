@@ -93,12 +93,6 @@ class SignalRule(TypedDict):
         Optional[SignalEvent],
     ]
 
-class ShortUtteranceClassification(TypedDict):
-    response_class: str
-    evidence: str
-    token_count: int
-
-
 # ===========================================================================
 # Pydantic Models -- dot-access + validation wrappers (alongside TypedDicts)
 # ===========================================================================
@@ -214,33 +208,6 @@ _COMPRESSION_REQUEST_PHRASES = {
     "what was the process", "what was the logic",
     "what were you responsible", "what exactly did you", "what specifically did you",
 }
-
-_SHORT_UTTERANCE_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
-    "connection_check": (
-        re.compile(r"^\s*(?:can you hear me|hear me|hello|you there|are you there)\s*$", re.IGNORECASE),
-        re.compile(r"^\s*hear me\??\s*$", re.IGNORECASE),
-    ),
-    "acknowledgment": (
-        re.compile(r"^\s*(?:okay|ok|yes|yep|yeah|i see|got it|sure|right|mmhmm|mhm|of course|sure thing|absolutely)\s*$", re.IGNORECASE),
-    ),
-    "answer_start": (
-        re.compile(r"^\s*(?:so basically|yeah so|so|well|um so|i think|i guess|i believe|maybe|probably|sort of|kind of|let me think|i'm thinking|thinking)\b", re.IGNORECASE),
-    ),
-    "refusal": (
-        re.compile(r"^\s*(?:i don't know|not sure|no idea|not really|can't say|cannot say)\s*$", re.IGNORECASE),
-    ),
-    "clarification_question": (
-        re.compile(r"\b(?:what do you mean|could you repeat|can you repeat|what did you mean|could you clarify|can you clarify|sorry what|pardon|repeat that|say that again|rephrase)\b", re.IGNORECASE),
-        re.compile(r"^\s*(?:sorry\?|what\?|huh\?|pardon\?)\s*$", re.IGNORECASE),
-        re.compile(r"\bi forgot\b|\bi don'?t remember\b|\bi can'?t remember\b|\bi lost (the|my) thread\b", re.IGNORECASE),
-    ),
-    "explicit_redirect": (
-        re.compile(r"\bdon'?t ask (about|anything about|me about)\b", re.IGNORECASE),
-        re.compile(r"\bask (me )?(about )?(my )?(work|skills?|experience|history|background)\b", re.IGNORECASE),
-        re.compile(r"\b(skip|move on|next (question|topic))\b", re.IGNORECASE),
-    ),
-}
-
 
 # ===========================================================================
 # Builder helper -- unchanged
@@ -873,31 +840,6 @@ class SignalEvaluator:
 # ===========================================================================
 # Public facade endpoints -- all signatures unchanged
 # ===========================================================================
-
-def classify_short_utterance(utterance: str) -> Optional[ShortUtteranceClassification]:
-    text = re.sub(r"\s+", " ", (utterance or "").strip())
-    if not text:
-        return None
-    tokens = [t for t in re.split(r"\s+", text) if t]
-    normalized = re.sub(r"[^\w\s']", " ", text.lower())
-    normalized = re.sub(r"\s+", " ", normalized).strip()
-    for response_class, patterns in _SHORT_UTTERANCE_PATTERNS.items():
-        if any(pattern.search(normalized) for pattern in patterns):
-            return ShortUtteranceClassification(
-                response_class=response_class,
-                evidence=text,
-                token_count=len(tokens),
-            )
-    if len(tokens) <= 3:
-        return None
-    if len(tokens) >= 5:
-        return None
-    return ShortUtteranceClassification(
-        response_class="genuine_short_answer",
-        evidence=text,
-        token_count=len(tokens),
-    )
-
 
 def _legacy_detection_context(
     *,

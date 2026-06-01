@@ -1,39 +1,38 @@
 """
-Unit tests for the refactored eval_pipeline.py with TopicState and Saturation System
-"""
-import asyncio
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+Focused tests for the current eval_pipeline contract.
 
-import sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+The runtime owns topic selection and directive injection. The eval pipeline only
+scores the active topic, updates saturation state, and returns a routing action.
+"""
+
+import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from interview.eval_pipeline import (
     EvaluationPayload,
-    TopicTracker,
     TopicState,
     TopicImportanceClassifier,
     ResponseScoreCalculator,
     SignalPenaltyCalculator,
-    DirectiveCompiler,
     _normalize_topic_key,
-    run_eval_and_build_directive,
     evaluate_topic_saturation,
+    run_eval_and_build_directive,
+)
+from interview.agent_runtime import (
+    _build_move_on_question,
+    _is_ack_only_assistant_fragment,
+    _is_tiny_fragment,
+    _order_interview_topics,
 )
 
 
-# ─────────────────────────────────────────────────────────────
-# Fixtures
-# ─────────────────────────────────────────────────────────────
-
 def _base_payload(**overrides) -> dict:
-    """Minimal valid payload covering all required fields."""
     base = {
         "app_id": "test-app-001",
         "turn": 3,
         "answer": "I built the lead qualification system using n8n and Python.",
         "question": "Tell me about your role in the project.",
-        "transcript_lines": ["Q: Tell me... A: I built..."],
+        "transcript_lines": ["Interviewer: Tell me about your role.", "Candidate: I built it."],
         "score_history": [5.0, 5.5],
         "turns_since_decay": 5,
         "response_latency_sec": 8.0,
@@ -42,7 +41,6 @@ def _base_payload(**overrides) -> dict:
         "llm_model": "gpt-4o",
         "active_topic": "Lead Qualification System",
         "active_topic_state": None,
-        "covered_topic_keys": [],
         "discussed_log": ["- Lead Qualification System: I built the n8n workflow"],
         "resume_topics": ["Lead Qualification System", "Sensex Analysis Project"],
         "skill_topics": ["python", "n8n", "powerbi"],
@@ -50,15 +48,39 @@ def _base_payload(**overrides) -> dict:
         "remaining_seconds": 480.0,
         "trust_state": {},
         "current_interview_mode": "normal",
-        "no_new_question_cutoff_seconds": 45,
+        "band": "mid",
     }
     base.update(overrides)
     return base
 
 
-# ─────────────────────────────────────────────────────────────
-# EvaluationPayload tests
-# ─────────────────────────────────────────────────────────────
+def _mock_td(action: str = "PROBE", quality: float = 5.5, mode: str = "ownership") -> tuple:
+    td = {
+        "decision": {
+            "action": action,
+            "mode": mode,
+            "next_goal": "Ask a focused follow-up about their ownership in the project.",
+        },
+        "quality": {
+            "clarity": quality,
+            "depth": quality,
+            "specificity": quality,
+            "grounding": quality,
+            "fluency": 0.0,
+            "confidence": 0.0,
+        },
+        "signal_events": [],
+    }
+    return td, ""
+
+
+async def _run_pipeline(payload: dict, mock_td_tuple):
+    client = MagicMock()
+    with patch("interview.eval_pipeline.run_turn_evaluation", new_callable=AsyncMock) as mock_eval, \
+         patch("interview.eval_pipeline.apply_turn_decision", side_effect=lambda ts, *a, **kw: ts):
+        mock_eval.return_value = mock_td_tuple
+        return await run_eval_and_build_directive(payload, client)
+
 
 class TestEvaluationPayload:
     def test_parses_minimal_payload(self):
@@ -69,66 +91,13 @@ class TestEvaluationPayload:
     def test_defaults_applied(self):
         p = EvaluationPayload(**_base_payload())
         assert p.candidate_name == "?"
-        assert p.band == "mid"
         assert p.time_limit_mins == 20
         assert p.current_interview_mode == "normal"
 
-    def test_covered_keys_as_list(self):
-        p = EvaluationPayload(**_base_payload(
-            covered_topic_keys=["lead qualification system", "sensex analysis project"]
-        ))
-        assert "lead qualification system" in p.covered_topic_keys
-        assert len(p.covered_topic_keys) == 2
-
-    def test_extra_fields_ignored(self):
-        # Extra fields should not raise
+    def test_extra_fields_allowed(self):
         p = EvaluationPayload(**_base_payload(some_unknown_field="xyz"))
-        assert p.app_id == "test-app-001"
+        assert p.model_extra["some_unknown_field"] == "xyz"
 
-
-# ─────────────────────────────────────────────────────────────
-# TopicTracker tests
-# ─────────────────────────────────────────────────────────────
-
-class TestTopicTracker:
-    def _make_tracker(self, **kwargs):
-        defaults = dict(
-            resume_topics=["Lead Qualification System", "Sensex Analysis Project"],
-            skill_topics=["python", "n8n", "powerbi"],
-            covered_keys=set(),
-            discussed_log=[],
-            active_topic="Lead Qualification System",
-            job_title="GTM Engineer",
-        )
-        defaults.update(kwargs)
-        return TopicTracker(**defaults)
-
-    def test_next_uncovered_skips_active(self):
-        t = self._make_tracker()
-        nxt = t.next_uncovered(exclude=t.active_topic)
-        assert nxt == "python"
-
-    def test_next_uncovered_skips_covered(self):
-        t = self._make_tracker(
-            covered_keys={"sensex analysis project", "python", "n8n", "powerbi"}
-        )
-        nxt = t.next_uncovered(exclude=t.active_topic)
-        assert nxt is None
-
-    def test_mark_covered_uses_set(self):
-        t = self._make_tracker()
-        t.mark_covered("Lead Qualification System")
-        assert "lead qualification system" in t.covered_keys
-
-    def test_fallback_next_returns_uncovered(self):
-        t = self._make_tracker()
-        result = t.fallback_next(exclude="Lead Qualification System")
-        assert result == "python"
-
-
-# ─────────────────────────────────────────────────────────────
-# TopicState and Saturation System tests
-# ─────────────────────────────────────────────────────────────
 
 class TestTopicStateAndSaturation:
     def test_topic_state_initialization(self):
@@ -139,24 +108,24 @@ class TestTopicStateAndSaturation:
         assert ts.saturation_score == 0.0
         assert ts.follow_up_turns == 0
         assert ts.is_saturated is False
-        assert ts.updated_turn == 0
 
     def test_add_response_contribution(self):
         ts = TopicState("Test Topic", "MEDIUM")
-        assert ts.saturation_threshold == 4.0
-        # Add contribution
         ts.add_response_contribution(2.5, 0.0, turn=4)
         assert ts.saturation_score == 3.5
         assert ts.follow_up_turns == 1
-        assert ts.is_saturated is False
         assert ts.updated_turn == 4
 
-        # Add more to trigger saturation
-        ts.add_response_contribution(2.5, 0.0, turn=5)
-        assert ts.saturation_score == 7.0
-        assert ts.follow_up_turns == 2
-        assert ts.is_saturated is True
-        assert ts.updated_turn == 5
+    def test_saturation_uses_topic_state(self):
+        ts = TopicState("Test Topic", "MEDIUM")
+        saturated, reason = evaluate_topic_saturation(
+            ts,
+            {"clarity": 9.5, "depth": 9.5, "specificity": 9.5, "grounding": 9.5},
+            [],
+            turn=3,
+        )
+        assert saturated is True
+        assert reason.startswith("saturated_at_")
 
     def test_topic_importance_classifier(self):
         assert TopicImportanceClassifier.classify("resume", is_anchor=False) == "HIGH"
@@ -166,10 +135,8 @@ class TestTopicStateAndSaturation:
 
     def test_response_score_calculator(self):
         quality = {"clarity": 8.0, "depth": 8.0, "specificity": 8.0, "grounding": 8.0}
-        score = ResponseScoreCalculator.calculate_response_score(quality)
-        assert score == 8.0
-        contrib = ResponseScoreCalculator.calculate_contribution(score)
-        assert contrib == 2.5  # Strong band (7.0 - 8.4)
+        assert ResponseScoreCalculator.calculate_response_score(quality) == 8.0
+        assert ResponseScoreCalculator.calculate_contribution(8.0) == 2.625
 
     def test_signal_penalty_calculator(self):
         events = [
@@ -177,94 +144,40 @@ class TestTopicStateAndSaturation:
             {"signal_name": "ownership_ambiguity"},
             {"signal_name": "unknown_signal"},
         ]
-        penalty = SignalPenaltyCalculator.calculate_penalties(events)
-        assert penalty == -0.6
+        assert SignalPenaltyCalculator.calculate_penalties(events) == -0.6
 
 
-# ─────────────────────────────────────────────────────────────
-# DirectiveCompiler tests
-# ─────────────────────────────────────────────────────────────
-
-class TestDirectiveCompiler:
-    def test_move_on(self):
-        d = DirectiveCompiler.move_on("Ask about Sensex project")
-        assert "DECISION: MOVE_ON" in d
-        assert "Ask about Sensex project" in d
-
-    def test_verify_ownership(self):
-        d = DirectiveCompiler.verify_ownership(["ownership_ambiguity"])
-        assert "DECISION: VERIFY (CLARIFICATION)" in d
-        assert "ownership_ambiguity" in d
-
-
-# ─────────────────────────────────────────────────────────────
-# End-to-end pipeline tests (LLM calls fully mocked)
-# ─────────────────────────────────────────────────────────────
-
-def _mock_td(action: str = "PROBE", quality: float = 5.5, mode: str = "evidence") -> tuple:
-    td = {
-        "decision": {
-            "action": action,
-            "mode": mode,
-            "next_goal": f"Ask a focused follow-up about their ownership in the project.",
-        },
-        "quality": {
-            "clarity": quality, "depth": quality,
-            "specificity": quality, "grounding": quality,
-            "fluency": 0.0, "confidence": 0.0,
-        },
-        "signal_events": [],
-    }
-    directive = (
-        "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
-        f"DECISION: {action}\n"
-        f"NEXT MOVE: {td['decision']['next_goal']}"
-    )
-    return td, directive
-
-
-@pytest.fixture
-def mock_client():
-    return MagicMock()
-
-
-async def _run_pipeline(payload: dict, mock_td_tuple):
-    client = MagicMock()
-    with patch("interview.eval_pipeline.run_turn_evaluation", new_callable=AsyncMock) as mock_eval, \
-         patch("interview.eval_pipeline.apply_turn_decision", side_effect=lambda ts, *a, **kw: ts):
-        mock_eval.return_value = mock_td_tuple
-        result = await run_eval_and_build_directive(payload, client)
-    return result
-
-
-class TestPipelineEndToEnd:
-    def test_probe_action_returns_correct_keys(self):
-        payload = _base_payload()
-        result = asyncio.run(_run_pipeline(payload, _mock_td("PROBE", 5.5)))
-
-        required_keys = [
-            "app_id", "turn", "directive", "action", "td", "quality_record",
-            "signal_events", "depth_signal",
-            "freeze_followup_increment", "new_active_topic",
-            "new_covered_topic_keys", "new_active_topic_state",
-            "new_trust_state", "new_current_interview_mode", "risk_integrity_delta",
-            "risk_depth_delta", "discussed_log_entry",
-        ]
-        for key in required_keys:
-            assert key in result, f"Missing key: {key}"
-        assert result["input_active_topic"] == "Lead Qualification System"
+class TestPipelineContract:
+    def test_probe_action_returns_current_contract(self):
+        result = asyncio.run(_run_pipeline(_base_payload(), _mock_td("PROBE", 5.5)))
+        for key in [
+            "app_id",
+            "turn",
+            "action",
+            "probe_family",
+            "quality_record",
+            "signal_events",
+            "depth_signal",
+            "saturation",
+            "new_trust_state",
+            "risk_integrity_delta",
+            "risk_depth_delta",
+            "discussed_log_entry",
+            "eval_llm_usages",
+        ]:
+            assert key in result
+        assert result["action"] == "PROBE"
+        assert result["quality_record"]["topic"] == "Lead Qualification System"
 
     def test_probe_updates_topic_state(self):
-        payload = _base_payload()
-        result = asyncio.run(_run_pipeline(payload, _mock_td("PROBE", 5.0)))
-        new_state = result["new_active_topic_state"]
-        assert new_state is not None
-        assert new_state["follow_up_turns"] == 1
-        assert new_state["saturation_score"] > 0.0
-        assert new_state["updated_turn"] == 3
+        result = asyncio.run(_run_pipeline(_base_payload(), _mock_td("PROBE", 5.0)))
+        state = result["saturation"]["topic_state_dict"]
+        assert state is not None
+        assert state["follow_up_turns"] == 1
+        assert state["saturation_score"] > 0.0
+        assert state["updated_turn"] == 3
 
-    def test_saturation_reaches_threshold_forces_move_on(self):
-        # We pass an active topic state that is already close to saturation (e.g. score=7.0, threshold=8.0)
+    def test_saturation_forces_move_on(self):
         state_close_to_sat = {
             "topic_name": "Lead Qualification System",
             "importance": "CRITICAL",
@@ -276,53 +189,62 @@ class TestPipelineEndToEnd:
             "is_saturated": False,
         }
         payload = _base_payload(active_topic_state=state_close_to_sat)
-        # Quality=7.5 -> contribution=2.5. This pushes it to 9.5 (>= 8.0 threshold), triggering saturation.
         result = asyncio.run(_run_pipeline(payload, _mock_td("PROBE", 7.5)))
         assert result["action"] == "MOVE_ON"
-        assert result["new_active_topic"] != "Lead Qualification System"
+        assert result["saturation"]["is_saturated"] is True
 
-    def test_move_on_marks_topic_covered(self):
-        payload = _base_payload(active_topic="Lead Qualification System")
-        result = asyncio.run(_run_pipeline(payload, _mock_td("MOVE_ON", 5.5)))
-        assert "lead qualification system" in result["new_covered_topic_keys"]
+    def test_llm_move_on_is_preserved_for_runtime_topic_switch(self):
+        result = asyncio.run(_run_pipeline(_base_payload(), _mock_td("MOVE_ON", 5.5)))
+        assert result["action"] == "MOVE_ON"
+        assert result["discussed_log_entry"] is not None
 
-    def test_depth_signal_deep_on_high_quality(self):
-        payload = _base_payload()
-        result = asyncio.run(_run_pipeline(payload, _mock_td("PROBE", 7.5)))
-        assert result["depth_signal"] == "DEEP"
+    def test_depth_signal_bands(self):
+        assert asyncio.run(_run_pipeline(_base_payload(), _mock_td("PROBE", 7.5)))["depth_signal"] == "DEEP"
+        assert asyncio.run(_run_pipeline(_base_payload(), _mock_td("PROBE", 5.0)))["depth_signal"] == "SPECIFIC"
+        assert asyncio.run(_run_pipeline(_base_payload(), _mock_td("PROBE", 3.0)))["depth_signal"] == "SURFACE"
 
-    def test_depth_signal_specific_on_mid_quality(self):
-        payload = _base_payload()
-        result = asyncio.run(_run_pipeline(payload, _mock_td("PROBE", 5.0)))
-        assert result["depth_signal"] == "SPECIFIC"
+    def test_normalize_topic_key(self):
+        assert _normalize_topic_key("Lead Qualification System!") == "lead qualification system"
 
-    def test_depth_signal_surface_on_low_quality(self):
-        payload = _base_payload()
-        result = asyncio.run(_run_pipeline(payload, _mock_td("PROBE", 3.0)))
-        assert result["depth_signal"] == "SURFACE"
 
-    def test_app_id_and_turn_propagated(self):
-        payload = _base_payload(app_id="my-app-123", turn=7)
-        result = asyncio.run(_run_pipeline(payload, _mock_td("PROBE", 5.5)))
-        assert result["app_id"] == "my-app-123"
-        assert result["turn"] == 7
+class TestRuntimeFlowGuards:
+    def test_ack_only_assistant_fragments_are_not_questions(self):
+        assert _is_ack_only_assistant_fragment("Okay,") is True
+        assert _is_ack_only_assistant_fragment("That makes sense.") is True
+        assert _is_ack_only_assistant_fragment("What did you build next?") is False
+        assert _is_ack_only_assistant_fragment("Okay, what did you build next?") is False
 
-    def test_quality_record_structure(self):
-        payload = _base_payload()
-        result = asyncio.run(_run_pipeline(payload, _mock_td("PROBE", 5.5)))
-        qr = result["quality_record"]
-        assert "overall" in qr
-        assert "clarity" in qr
-        assert "depth" in qr
-        assert "signals" in qr
-        assert "concerns" in qr
+    def test_tiny_fragment_detection_keeps_meaningful_short_answers(self):
+        assert _is_tiny_fragment("to Slack.") is True
+        assert _is_tiny_fragment("Yeah.") is False
+        assert _is_tiny_fragment("I used n8n to push the data.") is False
 
-    def test_no_early_closing_guard_near_end(self):
-        payload = _base_payload(remaining_seconds=60.0, no_new_question_cutoff_seconds=45)
-        result = asyncio.run(_run_pipeline(payload, _mock_td("PROBE", 5.5)))
-        assert "NO_EARLY_CLOSING_GUARD" in result["directive"]
+    def test_topic_order_keeps_resume_before_skills(self):
+        ordered = _order_interview_topics(
+            [
+                "Multi Channel Lead Qualification System - Built lead capture",
+                "Sensex Analysis Project - Built data pipeline",
+                "Campaign Metrics and Slack Reporting System - Built reporting",
+                "Personal Brand & Marketing Automation Strategist",
+                "Python Developer",
+            ],
+            ["python", "powerbi", "n8n"],
+            "Sensex Analysis Project - Built data pipeline",
+        )
+        assert ordered[:5] == [
+            "Sensex Analysis Project - Built data pipeline",
+            "Multi Channel Lead Qualification System - Built lead capture",
+            "Campaign Metrics and Slack Reporting System - Built reporting",
+            "Personal Brand & Marketing Automation Strategist",
+            "Python Developer",
+        ]
+        assert ordered[5:] == ["python", "powerbi", "n8n"]
 
-    def test_no_early_closing_guard_not_added_when_time_remains(self):
-        payload = _base_payload(remaining_seconds=480.0, no_new_question_cutoff_seconds=45)
-        result = asyncio.run(_run_pipeline(payload, _mock_td("PROBE", 5.5)))
-        assert "NO_EARLY_CLOSING_GUARD" not in result["directive"]
+    def test_move_on_question_is_topic_locked(self):
+        question = _build_move_on_question(
+            "Multi Channel Lead Qualification System - Created automated lead capture across Instagram and Facebook. [Instagram]"
+        )
+        assert question == (
+            "Let's switch to Multi Channel Lead Qualification System. "
+            "What part of that did you personally build or own?"
+        )

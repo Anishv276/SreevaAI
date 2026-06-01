@@ -22,12 +22,8 @@ from openai import AsyncOpenAI
 _NO_NEW_QUESTION_CUTOFF_SECONDS: int = 45
 
 from interview.turn_evaluator import run_turn_evaluation
-from interview.turn_decision import classify_short_utterance
 from interview.trust_engine import apply_turn_decision
-from interview.agent_scoring import (
-    evaluate_answer,
-    _candidate_cannot_answer,
-)
+from interview.agent_scoring import evaluate_answer
 from interview.agent_runtime_support import EVAL_LLM_MODEL
 
 logger = logging.getLogger("interview-agent")
@@ -326,61 +322,8 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     """
     p = EvaluationPayload(**payload)
 
-    # -- Utterance classification: clarification or redirect ------------------
-    _utterance_cls = classify_short_utterance(p.answer)
-    _is_clarification = (
-        _utterance_cls is not None
-        and _utterance_cls["response_class"] in ("clarification_question", "connection_check")
-    )
-    _is_redirect = (
-        _utterance_cls is not None
-        and _utterance_cls["response_class"] == "explicit_redirect"
-    )
-    _cannot_answer = _candidate_cannot_answer(p.answer)
-
-    # Early exits -- agent will handle these without scoring
-    if _is_clarification:
-        logger.info("[EVAL] turn=%d | clarification/connection detected -- REPHRASE", p.turn)
-        return {
-            "action": "REPHRASE",
-            "is_clarification": True,
-            "is_redirect": False,
-            "candidate_cannot_answer": False,
-            "probe_family": None,
-            "probe_goal": None,
-            "probe_style": None,
-            "quality_record": None,
-            "signal_events": [],
-            "depth_signal": "SURFACE",
-            "saturation": {"score": 0, "threshold": 0, "follow_up_turns": 0,
-                           "is_saturated": False, "weak_exit": False, "topic_state_dict": None},
-            "new_trust_state": dict(p.trust_state),
-            "risk_integrity_delta": 0,
-            "risk_depth_delta": 0,
-            "discussed_log_entry": None,
-        }
-
-    if _is_redirect:
-        logger.info("[EVAL] turn=%d | explicit redirect -- MOVE_ON immediately", p.turn)
-        return {
-            "action": "MOVE_ON",
-            "is_clarification": False,
-            "is_redirect": True,
-            "candidate_cannot_answer": False,
-            "probe_family": None,
-            "probe_goal": None,
-            "probe_style": None,
-            "quality_record": None,
-            "signal_events": [],
-            "depth_signal": "SURFACE",
-            "saturation": {"score": 0, "threshold": 0, "follow_up_turns": 0,
-                           "is_saturated": False, "weak_exit": False, "topic_state_dict": None},
-            "new_trust_state": dict(p.trust_state),
-            "risk_integrity_delta": 0,
-            "risk_depth_delta": 0,
-            "discussed_log_entry": None,
-            "freeze_followup_increment": True,
-        }
+    # Every non-empty candidate answer follows the same LLM-driven path.
+    # No local short-utterance, clarification, redirect, or cannot-answer router.
 
     # -- Initialize/restore TopicState for current topic ----------------------
     current_topic_state: Optional[TopicState] = None
@@ -459,9 +402,9 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     )
 
     try:
-        _eval_result = await asyncio.wait_for(_eval_coro, timeout=8.0)
+        _eval_result = await asyncio.wait_for(_eval_coro, timeout=12.0)
     except asyncio.TimeoutError:
-        logger.warning("[EVAL] turn=%d | scoring call timed out (>8s) -- returning None, agent uses fallback", p.turn)
+        logger.error("[EVAL] turn=%d | scoring call timed out (>12s) -- returning None for explicit recovery", p.turn)
         return None
     except Exception as _ex:
         logger.error("[EVAL] turn=%d | scoring call failed: %s -- returning None", p.turn, _ex, exc_info=True)
@@ -530,7 +473,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     )
 
     # -- Decision -------------------------------------------------------------
-    # Priority: depth_decay > weak_exit > saturated > cannot_answer > llm_judge > PROBE
+    # Priority: depth_decay > weak_exit > saturated > llm_judge > PROBE
     if depth_decay_fired:
         action = "MOVE_ON"
         logger.info("[DECISION] [OK] MOVE_ON reason=depth_decay turn=%d", p.turn)
@@ -543,9 +486,6 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         action = "MOVE_ON"
         logger.info("[DECISION] [OK] MOVE_ON reason=saturated (score=%.1f>=%.1f) turn=%d",
                     current_topic_state.saturation_score, current_topic_state.saturation_threshold, p.turn)
-    elif _cannot_answer:
-        action = "MOVE_ON"
-        logger.info("[DECISION] [OK] MOVE_ON reason=candidate_cannot_answer turn=%d", p.turn)
     elif action == "MOVE_ON":
         logger.info("[DECISION] [OK] MOVE_ON reason=llm_judge turn=%d", p.turn)
     else:
@@ -553,8 +493,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
 
     # -- Probe family resolution (only matters for PROBE) ---------------------
     probe_family = None
-    probe_goal = None
-    probe_style = None
+    # FIX #2: Agent computes goal/style, not eval
 
     if action == "PROBE":
         from interview.probe_strategy import _PROBE_FAMILIES, _SIGNAL_TO_FAMILY, _MODE_ALIASES, get_probe_goal, get_probe_style
@@ -571,8 +510,9 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
             return "ownership"
 
         probe_family = _resolve_probe_family()
-        probe_goal = get_probe_goal(probe_family)
-        probe_style = get_probe_style(probe_family)
+        # FIX #2: Agent computes probe_goal and probe_style from family
+        # Removed: probe_goal = get_probe_goal(probe_family)
+        # Removed: probe_style = get_probe_style(probe_family)
 
         pct_sat = 100 * min(1.0, current_topic_state.saturation_score / current_topic_state.saturation_threshold) \
                   if current_topic_state else 0
@@ -633,14 +573,13 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
 
     return {
         # Decision
-        "action": action,                  # PROBE | MOVE_ON | REPHRASE
-        "is_clarification": False,
-        "is_redirect": False,
-        "candidate_cannot_answer": _cannot_answer,
-        # Probe details (agent uses these to build directive)
+        "action": action,                  # PROBE | MOVE_ON
+        # Probe family only (agent computes goal/style from family)
         "probe_family": probe_family,
-        "probe_goal": probe_goal,
-        "probe_style": probe_style,
+        # FIX #2: Removed probe_goal and probe_style
+        # Rationale: Eval's job is to classify the probe family (depth, ownership, etc.)
+        # Agent's job is to compute goal/style from family (separation of concerns)
+        # This lets each component evolve independently
         # Scores
         "quality_record": quality_record,
         "signal_events": signal_events,

@@ -6,7 +6,6 @@ from turn_decision import (
     _detect_resume_claim_mismatch_event,
     _detect_follow_up_collapse_event,
     _detect_latency_mismatch_event,
-    classify_short_utterance,
     _detect_depth_decay_event,
     _score_question_complexity,
     _detect_complexity_latency_mismatch_event,
@@ -99,24 +98,6 @@ def test_detect_latency_mismatch():
     assert ev is not None
     assert ev["signal_name"] == "latency_mismatch"
     assert ev["score_delta"] == -0.10
-
-def test_classify_short_utterance():
-    assert classify_short_utterance("") is None
-    c_check = classify_short_utterance("can you hear me?")
-    assert c_check is not None
-    assert c_check["response_class"] == "connection_check"
-
-    ack = classify_short_utterance("okay")
-    assert ack is not None
-    assert ack["response_class"] == "acknowledgment"
-
-    refusal = classify_short_utterance("i don't know")
-    assert refusal is not None
-    assert refusal["response_class"] == "refusal"
-
-    genuine = classify_short_utterance("genuine short answer here")
-    assert genuine is not None
-    assert genuine["response_class"] == "genuine_short_answer"
 
 def test_detect_depth_decay():
     ev = _detect_depth_decay_event(
