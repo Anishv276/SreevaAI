@@ -16,7 +16,7 @@ services:
     environment:
       LIVEKIT_URL: "wss://lk.sreevaai.com"
       NEXT_PUBLIC_LIVEKIT_URL: "wss://lk.sreevaai.com"
-      REDIS_URL: "redis://redis:6379"
+      # REDIS_URL comes from .env (external Redis at 31.97.60.216:32768)
     restart: always
     dns:
       - 8.8.8.8
@@ -28,9 +28,6 @@ services:
       - "traefik.http.routers.hr-app.tls=true"
       - "traefik.http.routers.hr-app.tls.certresolver=mytlschallenge"
       - "traefik.http.services.hr-app.loadbalancer.server.port=3000"
-    depends_on:
-      redis:
-        condition: service_healthy
 
   # Background Worker (Handles Scoring & Emails)
   hr-worker:
@@ -44,12 +41,9 @@ services:
     environment:
       LIVEKIT_URL: "wss://lk.sreevaai.com"
       NEXT_PUBLIC_LIVEKIT_URL: "wss://lk.sreevaai.com"
-      REDIS_URL: "redis://redis:6379"
+      # REDIS_URL comes from .env (external Redis at 31.97.60.216:32768)
       WORKER_QUEUES: "resume-processing,invitation-delivery-queue,interview-start,interview-finalization,interview-snapshots,interview-recording,recording-retention-cleanup,jd-upload,jd-extraction,backup-queue"
     restart: always
-    depends_on:
-      redis:
-        condition: service_healthy
     networks:
       - traefik-proxy
     dns:
@@ -68,14 +62,11 @@ services:
       - .env
     environment:
       LIVEKIT_URL: "ws://livekit:7880"
-      REDIS_URL: "redis://redis:6379"
+      # REDIS_URL comes from .env (external Redis at 31.97.60.216:32768)
     restart: always
     dns:
       - 8.8.8.8
       - 8.8.4.4
-    depends_on:
-      redis:
-        condition: service_healthy
 
   # LiveKit Server (Self-Hosted)
   # Full config is supplied inline from .env via LIVEKIT_CONFIG (no hardcoded secrets, no mounted file).
@@ -103,8 +94,10 @@ services:
         keys:
           ${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}
         redis:
-          # Internal redis container runs without auth — no username/password.
-          address: "redis:6379"
+          # External production Redis (same instance the app/worker use via .env).
+          address: "${LIVEKIT_REDIS_ADDRESS}"
+          username: "${LIVEKIT_REDIS_USERNAME}"
+          password: "${LIVEKIT_REDIS_PASSWORD}"
         logging:
           level: debug
     ports:
@@ -119,22 +112,6 @@ services:
       - "traefik.http.routers.livekit.tls.certresolver=mytlschallenge"
       - "traefik.http.services.livekit.loadbalancer.server.port=7880"
 
-  # Redis (Required by LiveKit)
-  redis:
-    image: redis:7-alpine
-    container_name: redis
-    command: redis-server --save 20 1 --loglevel warning --maxmemory-policy noeviction --appendonly yes
-    networks:
-      - traefik-proxy
-    restart: always
-    volumes:
-      - redis-data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   # LiveKit Egress (Requires Redis & LiveKit Server)
   # Config is supplied inline from .env via EGRESS_CONFIG_BODY (no hardcoded secrets, no mounted file).
   # Redis must match the LiveKit server above so egress receives jobs.
@@ -148,8 +125,10 @@ services:
         api_secret: "${LIVEKIT_API_SECRET}"
         ws_url: "ws://livekit:7880"
         redis:
-          # Internal redis container runs without auth — no username/password.
-          address: "redis:6379"
+          # External production Redis (same instance the app/worker use via .env).
+          address: "${LIVEKIT_REDIS_ADDRESS}"
+          username: "${LIVEKIT_REDIS_USERNAME}"
+          password: "${LIVEKIT_REDIS_PASSWORD}"
         # This host has 2 CPUs; egress defaults assume 4 and log
         # "not enough cpu for some egress types". Lower the per-job CPU
         # cost so room/track egress is accepted on a 2-CPU box.
@@ -161,14 +140,9 @@ services:
     networks:
       - traefik-proxy
     depends_on:
-      redis:
-        condition: service_healthy
       livekit:
         condition: service_started
 
 networks:
   traefik-proxy:
     external: true
-
-volumes:
-  redis-data:
