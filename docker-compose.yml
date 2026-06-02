@@ -16,6 +16,7 @@ services:
     environment:
       LIVEKIT_URL: "wss://lk.sreevaai.com"
       NEXT_PUBLIC_LIVEKIT_URL: "wss://lk.sreevaai.com"
+      REDIS_URL: "redis://redis:6379"
     restart: always
     dns:
       - 8.8.8.8
@@ -42,6 +43,7 @@ services:
     environment:
       LIVEKIT_URL: "wss://lk.sreevaai.com"
       NEXT_PUBLIC_LIVEKIT_URL: "wss://lk.sreevaai.com"
+      REDIS_URL: "redis://redis:6379"
       WORKER_QUEUES: "resume-processing,invitation-delivery-queue,interview-finalization,interview-snapshots,interview-recording,recording-retention-cleanup,jd-upload,jd-extraction,backup-queue"
     restart: always
     depends_on:
@@ -64,6 +66,7 @@ services:
       - .env
     environment:
       LIVEKIT_URL: "ws://livekit:7880"
+      REDIS_URL: "redis://redis:6379"
     restart: always
     dns:
       - 8.8.8.8
@@ -97,7 +100,7 @@ services:
         keys:
           ${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}
         redis:
-          address: "${LIVEKIT_REDIS_ADDRESS}"
+          address: "redis:6379"
           username: "${LIVEKIT_REDIS_USERNAME}"
           password: "${LIVEKIT_REDIS_PASSWORD}"
         logging:
@@ -121,8 +124,6 @@ services:
     command: redis-server --save 20 1 --loglevel warning --maxmemory-policy noeviction
     networks:
       - traefik-proxy
-    ports:
-      - "6379:6379"
     restart: always
 
   # LiveKit Egress (Requires Redis & LiveKit Server)
@@ -138,7 +139,7 @@ services:
         api_secret: "${LIVEKIT_API_SECRET}"
         ws_url: "ws://livekit:7880"
         redis:
-          address: "${LIVEKIT_REDIS_ADDRESS}"
+          address: "redis:6379"
           username: "${LIVEKIT_REDIS_USERNAME}"
           password: "${LIVEKIT_REDIS_PASSWORD}"
     networks:
