@@ -14,3 +14,7 @@ yarn-error.log*
 .idea
 .DS_Store
 scratch
+__pycache__
+*.pyc
+.venv
+.pytest_cache
