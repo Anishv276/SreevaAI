@@ -475,7 +475,7 @@ export function buildSreevaAIInterviewViewModel(i: {
   communicationStatus: string;
   signalTimeline: { elapsed_sec: number; signal_name: string; signal_layer: string; evidence: string; score_delta: number; turn: number; recruiter_visible: boolean }[];
   proctoringEventsFull?: { time: string; eventType: string; reason: string; severity: string; elapsedSeconds: number }[];
-  answerScoresParsed?: { question: string; answer: string; depth: number; clarity: number; fluency: number; confidence: number; overall: number; signals: string[] }[];
+  answerScoresParsed?: { question: string; answer: string; depth: number; clarity: number; specificity: number; grounding: number; overall: number; signals: string[] }[];
   // New schema fields (from redesigned agent_persistence.py report)
   integrityScore?: number;
   integrityBand?: string;

@@ -72,18 +72,36 @@ services:
       - redis
 
   # LiveKit Server (Self-Hosted)
+  # Full config is supplied inline from .env via LIVEKIT_CONFIG_BODY (no hardcoded secrets, no mounted file).
+  # Secrets (keys + redis) come from .env; static infra values (ports, log level) are fixed here.
+  # Redis must match the egress service below so egress receives jobs.
   livekit:
     image: livekit/livekit-server:latest
     container_name: livekit
     restart: always
-    command: --config /etc/livekit.yaml
     networks:
       - traefik-proxy
     dns:
       - 8.8.8.8
       - 8.8.4.4
-    volumes:
-      - ./livekit.yaml:/etc/livekit.yaml:ro
+    environment:
+      LIVEKIT_CONFIG_BODY: |
+        port: 7880
+        bind_addresses:
+          - ""
+        rtc:
+          tcp_port: 7881
+          port_range_start: 5000
+          port_range_end: 5100
+          use_external_ip: true
+        keys:
+          ${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}
+        redis:
+          address: "${LIVEKIT_REDIS_ADDRESS}"
+          username: "${LIVEKIT_REDIS_USERNAME}"
+          password: "${LIVEKIT_REDIS_PASSWORD}"
+        logging:
+          level: debug
     ports:
       - "5000-5100:5000-5100/udp"
       - "7880:7880"
@@ -108,14 +126,21 @@ services:
     restart: always
 
   # LiveKit Egress (Requires Redis & LiveKit Server)
+  # Config is supplied inline from .env via EGRESS_CONFIG_BODY (no hardcoded secrets, no mounted file).
+  # Redis must match the LiveKit server above so egress receives jobs.
   livekit-egress:
     image: livekit/egress:latest
     container_name: livekit-egress
     restart: always
     environment:
-      - EGRESS_CONFIG_FILE=/etc/egress.yaml
-    volumes:
-      - ./egress.yaml:/etc/egress.yaml:ro
+      EGRESS_CONFIG_BODY: |
+        api_key: "${LIVEKIT_API_KEY}"
+        api_secret: "${LIVEKIT_API_SECRET}"
+        ws_url: "ws://livekit:7880"
+        redis:
+          address: "${LIVEKIT_REDIS_ADDRESS}"
+          username: "${LIVEKIT_REDIS_USERNAME}"
+          password: "${LIVEKIT_REDIS_PASSWORD}"
     networks:
       - traefik-proxy
     depends_on:
