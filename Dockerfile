@@ -18,6 +18,6 @@ COPY . .
 # Pre-download AI model files for plugins (turn-detector, etc.)
 RUN python -m livekit.agents download-files
 
-# Start the agent and eval worker in production mode
+# Start the agent in production mode
 COPY supervisord.conf /app/supervisord.conf
 CMD ["supervisord", "-c", "/app/supervisord.conf"]
