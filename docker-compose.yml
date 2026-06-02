@@ -71,27 +71,6 @@ services:
     depends_on:
       - redis
 
-  # Python Eval Worker — off-critical-path LLM evaluation (Redis BLPOP)
-  eval-worker:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: Eval-worker
-    command: python -m interview.eval_worker
-    env_file:
-      - .env
-    environment:
-      LIVEKIT_URL: "wss://lk.sreevaai.com"
-    restart: always
-    depends_on:
-      - redis
-    networks:
-      - traefik-proxy
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
-
-
   # LiveKit Server (Self-Hosted)
   livekit:
     image: livekit/livekit-server:latest
