@@ -36,7 +36,7 @@ services:
       context: .
       dockerfile: Dockerfile.frontend
     container_name: Normal-worker
-    command: npm run worker
+    command: ["npm", "exec", "--", "tsx", "worker.ts"]
     env_file:
       - .env
     environment:
@@ -63,7 +63,7 @@ services:
     env_file:
       - .env
     environment:
-      LIVEKIT_URL: "wss://lk.sreevaai.com"
+      LIVEKIT_URL: "ws://livekit:7880"
     restart: always
     dns:
       - 8.8.8.8
@@ -72,7 +72,7 @@ services:
       - redis
 
   # LiveKit Server (Self-Hosted)
-  # Full config is supplied inline from .env via LIVEKIT_CONFIG_BODY (no hardcoded secrets, no mounted file).
+  # Full config is supplied inline from .env via LIVEKIT_CONFIG (no hardcoded secrets, no mounted file).
   # Secrets (keys + redis) come from .env; static infra values (ports, log level) are fixed here.
   # Redis must match the egress service below so egress receives jobs.
   livekit:
@@ -85,7 +85,7 @@ services:
       - 8.8.8.8
       - 8.8.4.4
     environment:
-      LIVEKIT_CONFIG_BODY: |
+      LIVEKIT_CONFIG: |
         port: 7880
         bind_addresses:
           - ""
