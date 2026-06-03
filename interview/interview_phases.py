@@ -101,14 +101,16 @@ def build_interview_directive(
 
     if anchor_type == "project":
         # Pre-select one angle so the LLM can't default to the same opener every session.
-        # All angles are about the anchor -- they vary HOW we enter it, not WHAT we ask about.
+        # FIRST-QUESTION RULE: stay gentle and surface-level. The opener must invite
+        # the candidate to explain WHAT the project is and what they personally built.
+        # Reflective / hard questions ("what would you redo", "trickiest decision") are
+        # reserved for the CLOSING PROBE on a project -- not the opener.
         _project_angles = [
-            f"Ask what problem {anchor_name} was built to solve and what made that problem worth solving.",
-            f"Pick one specific detail from this context and ask about it directly: {anchor_detail}",
-            f"Ask what they would do differently if they rebuilt {anchor_name} from scratch today.",
-            f"Ask how they knew {anchor_name} was actually working -- what did success look like in practice.",
-            f"Ask what the first thing they built for {anchor_name} was and how it evolved from there.",
-            f"Ask what the trickiest decision they made while building {anchor_name} was.",
+            f"Ask them to walk you through {anchor_name} -- what it is and what they built.",
+            f"Ask what problem {anchor_name} was built to solve.",
+            f"Pick one specific detail from this context and ask them to explain it: {anchor_detail}",
+            f"Ask what the first thing they built for {anchor_name} was and how it took shape from there.",
+            f"Ask what their role on {anchor_name} was and what part they personally built.",
         ]
         _chosen_angle = random.choice(_project_angles)
         opening = (
