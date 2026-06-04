@@ -352,7 +352,7 @@ section { position: relative; }
   font-size: clamp(48px, 8vw, 124px);
   line-height: 0.95;
   letter-spacing: -0.025em;
-  margin: 0 auto 56px;
+  margin: 0 auto 18px;
   max-width: 18ch;
   text-wrap: pretty;
   text-align: center;
@@ -360,31 +360,14 @@ section { position: relative; }
 .hero-title .ital { font-size: inherit; line-height: inherit; }
 .hero-title .rfx { color: rgba(28,27,27,.4); font-style: italic; }
 
-.hero-scroll {
-  display: inline-flex; align-items: center; gap: 14px;
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
+.hero-subline {
+  max-width: 34rem;
+  margin: 0 auto 42px;
+  text-align: center;
+  font-size: clamp(17px, 1.5vw, 22px);
+  line-height: 1.55;
   color: var(--muted);
-}
-.hero-scroll-line {
-  position: relative;
-  width: 72px; height: 1px;
-  background: var(--line);
-  overflow: hidden;
-}
-.hero-scroll-line::after {
-  content: "";
-  position: absolute; inset: 0;
-  background: var(--primary);
-  transform-origin: left;
-  animation: scrollHint 2.4s var(--ease) infinite;
-}
-@keyframes scrollHint {
-  0% { transform: translateX(-100%) scaleX(.4); }
-  50% { transform: translateX(0%) scaleX(1); }
-  100% { transform: translateX(100%) scaleX(.4); }
+  letter-spacing: -0.01em;
 }
 
 .hero-bottom {
@@ -704,11 +687,16 @@ section { position: relative; }
   border-top: 1px solid var(--line);
   background: var(--bg);
 }
+.stats .shell {
+  max-width: none;
+  padding-inline: 0;
+}
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0;
   border-bottom: 1px solid var(--line);
+  padding-inline: clamp(42px, 4vw, 64px) clamp(22px, 2.5vw, 36px);
   padding-bottom: 48px;
 }
 @media (max-width: 800px) { .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 32px 0; } }
@@ -718,9 +706,10 @@ section { position: relative; }
   border-right: 1px solid var(--line);
   display: flex; flex-direction: column; gap: 8px;
 }
-.stat:first-child { padding-left: 0; }
+.stat:first-child { padding-left: clamp(18px, 1.5vw, 28px); }
 .stat:last-child { border-right: 0; padding-right: 0; }
 @media (max-width: 800px) {
+  .stat:first-child { padding-left: 0; }
   .stat:nth-child(2n) { border-right: 0; }
   .stat:nth-child(2n+1) { padding-left: 0; }
 }
