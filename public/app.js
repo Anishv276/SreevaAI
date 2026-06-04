@@ -6,6 +6,25 @@
   const isCoarse = matchMedia('(hover: none), (pointer: coarse)').matches;
 
   /* -----------------------------------------------------
+     Smooth scroll without hash in URL
+     Intercepts all [data-scroll] links and scrolls to the
+     target section via scrollIntoView, then wipes the hash
+     from the address bar using history.replaceState so the
+     URL stays clean (no /#platform appended).
+  ----------------------------------------------------- */
+  document.addEventListener('click', (e) => {
+    const link = e.target.closest('[data-scroll]');
+    if (!link) return;
+    const target = link.dataset.scroll;
+    const el = target === 'top' ? document.body : document.getElementById(target);
+    if (!el) return;
+    e.preventDefault();
+    el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth' });
+    // Remove hash from URL without triggering a navigation
+    history.replaceState(null, '', window.location.pathname);
+  });
+
+  /* -----------------------------------------------------
      Magnetic buttons
   ----------------------------------------------------- */
   if (!isCoarse && !reduce) {
@@ -275,34 +294,14 @@
   }
 
   /* -----------------------------------------------------
-     FAQ
+     FAQ — content is in static HTML for SEO crawlability.
+     This block only wires up the accordion behaviour.
   ----------------------------------------------------- */
-  const faqs = [
-    { q: "What is Sreeva AI?", a: "An AI interviewer that conducts first-round interviews automatically — it reads the resume, asks role-relevant questions, adapts based on answers, and hands you a hiring recommendation with evidence." },
-    { q: "Is it really AI or just pre-recorded questions?", a: "It's a live AI conversation. Questions change based on what the candidate says. No scripts, no fixed flow." },
-    { q: "Can I customize the interview for my role?", a: "Yes. Every interview is built from your JD. You can also add specific questions you want asked." },
-    { q: "How does it detect cheating?", a: "Sreeva monitors 12+ behavioural signals — not just tab switching. The adaptive follow-ups themselves expose candidates who can't back up their answers." },
-    { q: "Will candidates be comfortable with an AI interview?", a: "Most prefer it. No scheduling pressure, no judgment, interview on their own time and timezone." },
-    { q: "Does the AI make the final hiring decision?", a: "No. Sreeva gives you a structured recommendation with evidence. Your team makes the final call." },
-    { q: "How long does setup take?", a: "Under ten minutes. Upload your JD, invite candidates, done." },
-    { q: "What about data privacy and compliance?", a: "GDPR and India DPDP ready. SOC 2 in flight. Recordings are encrypted at rest and retention is configurable per plan." },
-  ];
   const faqWrap = document.getElementById('faqWrap');
   if (faqWrap) {
-    faqs.forEach((f, i) => {
-      const item = document.createElement('div');
-      item.className = 'faq-item';
-      item.setAttribute('data-reveal', '');
-      item.innerHTML = `
-        <button class="faq-q" aria-expanded="false">
-          <span class="qn"><span class="n">${String(i+1).padStart(2,'0')}</span><span class="qt">${f.q}</span></span>
-          <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-        </button>
-        <div class="faq-a"><div class="faq-a-inner">${f.a}</div></div>
-      `;
-      faqWrap.appendChild(item);
-      revealIO.observe(item);
-    });
+    // Register pre-rendered items with the reveal observer
+    faqWrap.querySelectorAll('.faq-item').forEach((item) => revealIO.observe(item));
+
     faqWrap.addEventListener('click', (e) => {
       const btn = e.target.closest('.faq-q');
       if (!btn) return;
@@ -312,7 +311,7 @@
       btn.setAttribute('aria-expanded', String(open));
       if (open) {
         ans.style.maxHeight = ans.scrollHeight + 'px';
-        // Close siblings (optional)
+        // Close siblings
         item.parentElement.querySelectorAll('.faq-item.open').forEach((sib) => {
           if (sib !== item) {
             sib.classList.remove('open');
@@ -328,37 +327,8 @@
 
   /* -----------------------------------------------------
      Detail comparison table (pricing)
+     Content is now in static HTML for SEO crawlability.
+     No JS injection needed.
   ----------------------------------------------------- */
-  const featureComparison = [
-    ["Active Jobs",                 "1",       "5",        "10+",       "Unlimited"],
-    ["Interviewer Voices",          "3",       "10+",      "20+",       "Unlimited"],
-    ["Ask Sreeva AI",               "—",       "Yes",      "Yes",       "Yes"],
-    ["Adaptive AI Interview",       "Yes",     "Yes",      "Yes",       "Yes"],
-    ["Resume + JD Based Questions", "Yes",     "Yes",      "Yes",       "Yes"],
-    ["Smart Follow-ups",            "Yes",     "Yes",      "Yes",       "Yes"],
-    ["AI Interview Report",         "Yes",     "Yes",      "Yes",       "Yes"],
-    ["Pre-qualifying Questions",    "Yes",     "Yes",      "Yes",       "Yes"],
-    ["AI Proctoring",               "—",       "Basic",    "Advanced",  "Advanced"],
-    ["Multilingual",                "—",       "Yes",      "Yes",       "Yes"],
-    ["Recording Storage",           "7 days",  "14 days",  "30 days",   "Custom"],
-    ["Support",                     "Email",   "Priority", "Priority",  "Dedicated"],
-  ];
-  const detailBody = document.getElementById('detailBody');
-  const cellVal = (v) => v === 'Yes'
-    ? `<span class="ck-i" aria-label="Yes"></span>`
-    : v === '—' ? `<span class="dash">—</span>` : v;
-  if (detailBody) {
-    featureComparison.forEach((row) => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td class="feat">${row[0]}</td>
-        <td class="c">${cellVal(row[1])}</td>
-        <td class="c hl">${cellVal(row[2])}</td>
-        <td class="c">${cellVal(row[3])}</td>
-        <td class="c">${cellVal(row[4])}</td>
-      `;
-      detailBody.appendChild(tr);
-    });
-  }
 
 })();

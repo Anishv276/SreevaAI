@@ -1,7 +1,12 @@
+import type { Metadata } from "next";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Suspense } from "react";
 import { getSession, isAdminRole, isSuperAdminRole } from "@/lib/auth";
 import { redirect } from "next/navigation";
+
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+};
 import { cn } from "@/lib/utils";
 import { OnboardingRedirect } from "@/components/admin/onboarding-redirect";
 import { RecruiterAssistant } from "@/components/admin/RecruiterAssistant";

@@ -17,9 +17,12 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Sreeva AI - AI-Powered Recruitment Platform",
+  title: {
+    default: "Sreeva AI - AI-Powered Recruitment Platform",
+    template: "%s | Sreeva AI",
+  },
   description: "Automate your hiring process with AI-driven screening and interviews using adaptive intelligence.",
-  keywords: ["AI Recruitment", "AI Interviewer", "Candidate Screening", "HR Automation", "Adaptive AI", "Sreeva AI"],
+  keywords: ["AI Recruitment", "AI Interviewer", "Candidate Screening", "HR Automation", "Adaptive AI", "Sreeva AI", "technical interview automation", "automated hiring"],
   authors: [{ name: "Sreeva AI Team" }],
   metadataBase: new URL("https://www.sreevaai.com"),
   icons: {
@@ -27,20 +30,18 @@ export const metadata: Metadata = {
     shortcut: "/icon.png",
     apple: "/icon.png",
   },
-  alternates: {
-    canonical: "/",
-  },
+  // No root canonical — each page declares its own via page-level metadata
   openGraph: {
     title: "Sreeva AI - AI-Powered Recruitment Platform",
-    description: "Automate your hiring process with AI-driven screening and interviews.",
+    description: "Automate your hiring process with AI-driven screening and interviews using adaptive intelligence.",
     url: "https://www.sreevaai.com",
     siteName: "Sreeva AI",
     images: [
       {
-        url: "/Logo.png",
-        width: 800,
-        height: 600,
-        alt: "Sreeva AI Logo",
+        url: "/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "Sreeva AI — adaptive AI interviewer for first-round hiring",
       },
     ],
     locale: "en_US",
@@ -49,8 +50,19 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "Sreeva AI - AI-Powered Recruitment Platform",
-    description: "Automate your hiring process with AI-driven screening and interviews.",
-    images: ["/Logo.png"],
+    description: "Automate your hiring process with AI-driven screening and interviews using adaptive intelligence.",
+    images: [{ url: "/og-image.png", alt: "Sreeva AI — adaptive AI interviewer for first-round hiring" }],
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
   },
 };
 
@@ -82,9 +94,9 @@ export default function RootLayout({
         <ClarityAnalytics />
         <AuthProvider>
           <Suspense fallback={
-            <div className="min-h-screen flex flex-col items-center justify-center bg-white">
+            <div className="min-h-screen flex flex-col items-center justify-center bg-white" aria-label="Loading Sreeva AI">
               <img src="/Logo.png" alt="Sreeva AI" className="h-16 w-16 mb-4 animate-pulse" />
-              <h1 className="text-2xl font-bold text-slate-900">Sreeva AI - Intelligent Recruitment Platform</h1>
+              <p className="text-2xl font-bold text-slate-900" aria-hidden="true">Sreeva AI</p>
               <p className="text-slate-500 mt-2 animate-pulse">Setting up your AI-powered interview environment...</p>
             </div>
           }>

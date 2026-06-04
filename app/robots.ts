@@ -5,7 +5,7 @@ export default function robots(): MetadataRoute.Robots {
     rules: {
       userAgent: '*',
       allow: '/',
-      disallow: ['/admin/', '/super-admin/', '/api/'],
+      disallow: ['/admin/', '/super-admin/', '/api/', '/interview/', '/login/forgot-password'],
     },
     sitemap: 'https://www.sreevaai.com/sitemap.xml',
   }

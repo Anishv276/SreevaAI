@@ -1,26 +1,26 @@
 import { MetadataRoute } from 'next'
- 
+
 export default function sitemap(): MetadataRoute.Sitemap {
   const baseUrl = 'https://www.sreevaai.com'
-  
+
   return [
     {
       url: baseUrl,
-      lastModified: new Date(),
-      changeFrequency: 'weekly',
+      lastModified: new Date('2026-06-04'),
+      changeFrequency: 'monthly',
       priority: 1,
     },
     {
       url: `${baseUrl}/privacy`,
-      lastModified: new Date(),
-      changeFrequency: 'monthly',
-      priority: 0.3,
+      lastModified: new Date('2026-04-26'),
+      changeFrequency: 'yearly',
+      priority: 0.2,
     },
     {
       url: `${baseUrl}/terms`,
-      lastModified: new Date(),
-      changeFrequency: 'monthly',
-      priority: 0.3,
+      lastModified: new Date('2026-04-26'),
+      changeFrequency: 'yearly',
+      priority: 0.2,
     },
   ]
 }
