@@ -89,7 +89,7 @@ from livekit.agents.metrics import AgentSessionUsage
 from livekit.agents.voice import room_io
 from livekit.agents.voice.turn import EndpointingOptions, InterruptionOptions
 from interview.trust_engine import finalize_trust_state
-from interview.session_state import init_trust_state
+from interview.session_state import ALWAYS_ON_PROCTORING_SIGNALS, init_trust_state
 from interview.recruiter_summary import build_recruiter_summary
 from interview.prompt_layers import (
     build_voice_layer_prompt,
@@ -597,13 +597,19 @@ def prewarm(proc: JobProcess):
 
 class _EvalSignalToggles(BaseModel):
     """Validated signal enable/disable flags. All default ON. Coerces any truthy DB value.
-    Orgs can explicitly set a signal to false to disable it; absent = enabled."""
+    Orgs can explicitly set a signal to false to disable a TOGGLABLE signal.
+    Always-on signals (see ALWAYS_ON_PROCTORING_SIGNALS) are force-set to true
+    by _extract_evaluation_signal_toggles regardless of input -- the field
+    defaults below only apply when a togglable key is absent from the input."""
+    # Togglable signals -- honor the input value, default to True when absent.
+    latency_mismatch: bool = True
+    complexity_latency_mismatch: bool = True
+    # Always-on signals -- defaults provided so model construction works
+    # without these keys; runtime override forces them to True regardless of input.
     ownership_ambiguity: bool = True
     example_evasion: bool = True
-    latency_mismatch: bool = True
     resume_claim_mismatch: bool = True
     follow_up_collapse: bool = True
-    complexity_latency_mismatch: bool = True
     depth_decay: bool = True
 
     @field_validator("*", mode="before")
@@ -619,7 +625,13 @@ class _EvalSignalToggles(BaseModel):
 
 
 def _extract_evaluation_signal_toggles(raw_signals: Any) -> dict[str, bool]:
-    """Parse DB proctoringSignals JSON into a validated bool dict. All keys default OFF."""
+    """Parse DB proctoringSignals JSON into a validated bool dict.
+
+    Togglable signals (latency_mismatch, complexity_latency_mismatch) honor the
+    stored boolean. Always-on signals (see ALWAYS_ON_PROCTORING_SIGNALS) are
+    force-set to true regardless of input -- this is the write-time guarantee
+    that mirrors the TS-layer `normalizeProctoringSignals` override.
+    """
     parsed: dict[str, Any] = {}
     if isinstance(raw_signals, dict):
         parsed = raw_signals
@@ -630,7 +642,13 @@ def _extract_evaluation_signal_toggles(raw_signals: Any) -> dict[str, bool]:
                 parsed = maybe
         except Exception:
             pass
-    return _EvalSignalToggles(**parsed).model_dump()
+    result = _EvalSignalToggles(**parsed).model_dump()
+    # Force always-on signals to True regardless of what the DB said. Defends
+    # against stale rows, manual SQL tampering, or any code path that writes
+    # the JSON without going through normalizeProctoringSignals on the TS side.
+    for key in ALWAYS_ON_PROCTORING_SIGNALS:
+        result[key] = True
+    return result
 
 
 class InterviewContext(BaseModel):

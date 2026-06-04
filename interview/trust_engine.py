@@ -38,6 +38,7 @@ from interview.session_state import (
     QualityBand,
     TrendLabel,
     init_trust_state,
+    is_always_on_signal,
     INTEGRITY_BAND,
     QUALITY_BAND,
 )
@@ -233,7 +234,16 @@ _TREND_RULES: tuple[TrendRule, ...] = (
 # ===========================================================================
 
 def _is_toggle_enabled(toggles: Optional[dict[str, Any]], key: str) -> bool:
-    """Return True iff the named toggle is enabled (default: True when absent)."""
+    """Return True iff the named toggle is enabled (default: True when absent).
+
+    Always-on signals (see ALWAYS_ON_PROCTORING_SIGNALS in session_state.py)
+    bypass the toggle check entirely -- they MUST fire regardless of whether
+    the org's stored JSON has them set to false. Mirrors the TS-layer
+    isProctoringSignalEnabled override.
+    """
+    # Hard override: always-on signals fire regardless of toggle state.
+    if is_always_on_signal(key):
+        return True
     if not toggles:
         return True
     raw_value = toggles.get(key)

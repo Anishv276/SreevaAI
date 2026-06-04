@@ -241,10 +241,24 @@ class TestRuntimeFlowGuards:
         assert ordered[5:] == ["python", "powerbi", "n8n"]
 
     def test_move_on_question_is_topic_locked(self):
-        question = _build_move_on_question(
-            "Multi Channel Lead Qualification System - Created automated lead capture across Instagram and Facebook. [Instagram]"
-        )
-        assert question == (
-            "Let's switch to Multi Channel Lead Qualification System. "
-            "What part of that did you personally build or own?"
-        )
+        """The MOVE_ON opener must:
+          - name the new topic so the candidate knows we have switched,
+          - stay short (no resume-description read-aloud),
+          - NOT mention any other (previous) topic.
+        The exact phrasing is one of several randomized templates, so we
+        test contract properties rather than an exact string match. Run
+        multiple iterations so any single random pick failing would be
+        caught.
+        """
+        topic = "Multi Channel Lead Qualification System - Created automated lead capture across Instagram and Facebook. [Instagram]"
+        for _ in range(20):  # exercise all template variants
+            question = _build_move_on_question(topic)
+            # New topic name must appear.
+            assert "Multi Channel Lead Qualification System" in question
+            # The verbose resume description tail must NOT be read aloud.
+            assert "Created automated lead capture" not in question
+            assert "Instagram and Facebook" not in question
+            # Must end with terminal punctuation (some templates use ? others .).
+            assert question.strip()[-1] in {"?", "."}
+            # Reasonably short (spoken delivery, not corporate boilerplate).
+            assert len(question.split()) <= 25

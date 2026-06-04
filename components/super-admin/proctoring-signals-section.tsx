@@ -2,6 +2,7 @@
 
 import { Activity } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ALWAYS_ON_PROCTORING_SIGNALS, isAlwaysOnSignal } from "@/lib/proctoring-signals";
 
 type SignalKey =
   | "tab_switch"
@@ -19,9 +20,15 @@ type SignalKey =
   | "example_given"
   | "strong_under_pressure"
   | "follow_up_collapse"
-  | "duplicate_ip"
   | "depth_decay"
   | "complexity_latency_mismatch";
+
+// Sanity guard: every key in ALWAYS_ON_PROCTORING_SIGNALS must be a SignalKey.
+// If a future refactor adds a new always-on signal without updating SignalKey,
+// this `satisfies` check will fail compilation -- catching the drift at build
+// time instead of silently rendering an unlocked checkbox.
+const _ALWAYS_ON_KEYS_TYPECHECK = ALWAYS_ON_PROCTORING_SIGNALS satisfies readonly SignalKey[];
+void _ALWAYS_ON_KEYS_TYPECHECK;
 
 type ProctoringSignals = Record<SignalKey, boolean>;
 
@@ -38,7 +45,6 @@ const SIGNAL_GROUPS: Group[] = [
     items: [
       { key: "tab_switch", label: "Tab Switch" },
       { key: "connection_lost", label: "Connection Lost" },
-      { key: "duplicate_ip", label: "Duplicate IP" },
     ],
   },
   {
@@ -111,35 +117,46 @@ export function ProctoringSignalsSection({
 
       {disabled && (
         <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-medium text-gray-600">
-          Starter keeps all proctoring signals off. Switch to a higher plan to manage the signal groups below.
+          Starter includes the 8 behavioral signals required for fair scoring (Ownership, Example, Pressure). Switch to a higher plan to enable browser, device, and identity checks below.
         </div>
       )}
 
-      <div className={disabled ? "space-y-5 opacity-70" : "space-y-5"}>
-        {SIGNAL_GROUPS.map((group) => (
-          <div key={group.title} className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm">
-            <div className="mb-4">
-              <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-gray-900">{group.title}</h3>
-              <p className="mt-1 text-xs font-medium text-gray-500">{group.description}</p>
-            </div>
+      <div className="space-y-5">
+        {SIGNAL_GROUPS.map((group) => {
+          // Hide always-on signals from the super-admin UI entirely. They are
+          // enforced by the backend regardless of UI state, so showing them
+          // (locked or otherwise) just clutters the view.
+          const visibleItems = group.items.filter((item) => !isAlwaysOnSignal(item.key));
 
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {group.items.map((signal) => (
-                <label
-                  key={signal.key}
-                  className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-gray-50/70 px-4 py-3 shadow-sm transition-colors hover:border-gray-300 hover:bg-white"
-                >
-                  <Checkbox
-                    checked={Boolean(signals[signal.key])}
-                    disabled={disabled}
-                    onCheckedChange={(checked) => onChange(signal.key, Boolean(checked))}
-                  />
-                  <span className="text-sm font-medium text-gray-800">{signal.label}</span>
-                </label>
-              ))}
+          // If a group has no togglable items left (every item is always-on),
+          // hide the whole group card.
+          if (visibleItems.length === 0) return null;
+
+          return (
+            <div key={group.title} className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm">
+              <div className="mb-4">
+                <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-gray-900">{group.title}</h3>
+                <p className="mt-1 text-xs font-medium text-gray-500">{group.description}</p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {visibleItems.map((signal) => (
+                  <label
+                    key={signal.key}
+                    className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-gray-50/70 px-4 py-3 shadow-sm transition-colors hover:border-gray-300 hover:bg-white"
+                  >
+                    <Checkbox
+                      checked={Boolean(signals[signal.key])}
+                      disabled={disabled}
+                      onCheckedChange={(checked) => onChange(signal.key, Boolean(checked))}
+                    />
+                    <span className="text-sm font-medium text-gray-800">{signal.label}</span>
+                  </label>
+                ))}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </section>
   );
