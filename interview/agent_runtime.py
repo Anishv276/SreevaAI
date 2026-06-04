@@ -1,5 +1,6 @@
 import asyncio
 import json
+import random
 import time
 import asyncpg
 from typing import Optional, Any
@@ -251,44 +252,67 @@ def _order_interview_topics(
     return deduped
 
 
-def _build_move_on_question(topic: str, source: str = "resume_project") -> str:
-    """Build a GENTLE, GROUNDED opening question for a new topic.
+# Short, varied openers for new projects / work-history topics. The full
+# resume description is NEVER read aloud -- the LLM still receives the full
+# context via the MOVE_ON directive's "FULL CONTEXT OF NEW TOPIC" line and the
+# TOPIC_LOCK system message, so it can ground its follow-ups -- but the
+# spoken opener stays short and conversational.
+_PROJECT_OPENERS: list[str] = [
+    "Let's talk about your {title} project. What was your role, and what did you actually build?",
+    "Tell me about {title} -- what did you work on there?",
+    "Moving on to {title}. What was your part in it, and what did you build?",
+    "I'd like to hear about {title}. What did you build, and what was your role?",
+    "Next up: {title}. Walk me through what you built there.",
+]
 
-    `source` controls phrasing (Bug-2 fix):
-      - "resume_project": full "Title - Description [tech]" -- name the project,
-        remind them what it was, ask what they built. (Unchanged behaviour.)
-      - "resume_skill":   skill the candidate lists on their resume -- anchor the
-        question to that claim ("you mentioned X on your resume...").
-      - "jd_skill":       skill required by the JD but NOT claimed on the resume --
-        ask whether they have it, do not assume they do.
+
+def _sanitize_topic_title_for_speech(title: str) -> str:
+    """Clean a topic title for spoken delivery.
+
+    - Strip trailing parenthetical fragments and acronym tails like
+      "(MLSC), GRIET" so the agent says "Tech Lead" not "Tech Lead microsoft
+      Learn Student Club (MLSC), GRIET".
+    - Collapse internal whitespace.
     """
-    title = (topic or "").split(" - ")[0].strip() or "your next project"
+    if not title:
+        return ""
+    # Drop everything after the first comma (work-history rows like
+    # "Tech Lead - microsoft Learn Student Club (MLSC), GRIET" pollute speech)
+    cleaned = title.split(",", 1)[0]
+    # Remove any parenthetical chunks.
+    cleaned = re.sub(r"\s*\([^)]*\)\s*", " ", cleaned)
+    # Collapse whitespace.
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
 
-    detail = ""
-    if " - " in (topic or ""):
-        raw_detail = (topic or "").split(" - ", 1)[1].strip()
-        detail = re.sub(r"\s*\[[^\]]+\]\s*$", "", raw_detail).strip()
 
-    if source == "resume_project" and detail:
-        # Grounded entry for projects / work history: name the topic + remind them
-        # what it was, then ask a gentle surface question.
-        short_detail = detail.split(";")[0].split(".")[0].strip()
-        if len(short_detail.split()) > 18:
-            short_detail = " ".join(short_detail.split()[:18])
-        return (
-            f"Let's move to your {title} -- the one where you {short_detail[0].lower()}{short_detail[1:]}. "
-            f"What was your role there, and what did you actually build?"
-        )
+def _build_move_on_question(topic: str, source: str = "resume_project") -> str:
+    """Build a SHORT, conversational opening question for a new topic.
+
+    `source` controls phrasing:
+      - "resume_project": short opener with the project name only -- no
+        verbose resume description read aloud. The LLM still gets full project
+        context via the system directive; this string is what the candidate
+        HEARS.
+      - "resume_skill":   skill the candidate lists on their resume -- anchor
+        to that claim.
+      - "jd_skill":       skill required by the JD but NOT claimed on the
+        resume -- ask whether they have it, do not assume they do.
+    """
+    raw_title = (topic or "").split(" - ")[0].strip()
+    title = _sanitize_topic_title_for_speech(raw_title) or "your next project"
+
+    if source == "resume_project":
+        template = random.choice(_PROJECT_OPENERS)
+        return template.format(title=title)
 
     if source == "resume_skill":
-        # Candidate claims this skill on their resume -- anchor to that claim.
         return (
             f"You mentioned {title} on your resume. "
             f"Which project did you use it on, and what did you build with it?"
         )
 
     if source == "jd_skill":
-        # JD requires this skill but the resume does not claim it -- ask, don't assume.
         return (
             f"The role calls for {title}. "
             f"Have you worked with {title} before? If yes, where -- and what did you build?"
@@ -1186,6 +1210,10 @@ async def entrypoint(ctx: JobContext):
     _custom_q_reminder_fired: bool = False
     _custom_q_final_reminder_fired: bool = False
     _covered_topic_keys: set[str] = set()        # all topics already covered across the interview
+    # Topics whose CLOSING / reflection question has already been asked. One-shot per topic.
+    # Read inside the PROBE directive builder to avoid asking the reflection question twice
+    # on the same project.
+    _topic_closing_fired: set[str] = set()
     _user_turn_chain: Optional[asyncio.Task[Any]] = None  # serialize user-turn processing
     _processed_user_turns: set[int] = set()      # turns whose STT was already flushed; drops late Deepgram finals
     _last_user_turn_flushed_at: float = 0.0
@@ -2371,10 +2399,12 @@ async def entrypoint(ctx: JobContext):
                         # How many turns deep are we on THIS topic? Three tiers:
                         #   EARLY      -- ≤1 follow-up:        stay surface (WHAT, role, problem).
                         #   ESTABLISHED -- ≥2 follow-ups:       can go into mechanics / tradeoffs.
-                        #   CLOSING    -- resume project, ≥3 follow-ups, sat ≥80% of threshold:
-                        #                 the LAST question on this project before MOVE_ON.
-                        #                 Fire a reflective angle (what they'd redo, trickiest
-                        #                 decision, how they measured success) to surface judgment.
+                        #   CLOSING    -- resume project, ≥2 follow-ups, sat ≥60% of threshold,
+                        #                 not already fired on this topic:
+                        #                 the LAST probe on this project before MOVE_ON.
+                        #                 FORCE the reflection family so the question is about
+                        #                 judgment / learning / "what would you change?", not yet
+                        #                 another ownership probe. One-shot per topic.
                         _topic_follow_ups = int((_new_topic_state_dict or {}).get("follow_up_turns", 0) or 0)
                         _is_early_on_topic = _topic_follow_ups <= 1
 
@@ -2388,20 +2418,40 @@ async def entrypoint(ctx: JobContext):
                         _depth_sat_ratio = (_depth_sat_score / _depth_sat_thresh) if _depth_sat_thresh > 0 else 0.0
                         _is_closing_on_project = (
                             _depth_is_resume_project
-                            and _topic_follow_ups >= 3
-                            and _depth_sat_ratio >= 0.8
+                            and _topic_follow_ups >= 2
+                            and _depth_sat_ratio >= 0.6
+                            and _depth_topic_key_lc not in _topic_closing_fired
                         )
 
                         if _is_closing_on_project:
+                            # Force reflection family + record one-shot marker so this topic
+                            # cannot get a second CLOSING probe.
+                            try:
+                                async with _session_state_lock:
+                                    _topic_closing_fired.add(_depth_topic_key_lc)
+                                _probe_family = "reflection"
+                                _probe_goal = get_probe_goal("reflection")
+                                _probe_style = get_probe_style("reflection")
+                                logger.info(
+                                    "[AGENT] turn=%d | CLOSING tier fired for project %r -- forcing reflection family",
+                                    turn_snapshot, _depth_topic_key_lc,
+                                )
+                            except Exception as _closing_err:
+                                logger.warning(
+                                    "[AGENT] turn=%d | CLOSING tier setup failed (falling back to depth guard): %s",
+                                    turn_snapshot, _closing_err,
+                                )
                             _depth_guard = (
-                                "\nTOPIC DEPTH: CLOSING -- this is the LAST question on this project before moving on.\n"
+                                "\nTOPIC DEPTH: CLOSING -- this is the LAST probe on this project before MOVE_ON.\n"
                                 "  -> Ask ONE reflective question to surface judgment, learning, or self-awareness.\n"
-                                "     Pick whichever fits most naturally from what they have already said:\n"
-                                "       * What they would do differently if they rebuilt this project from scratch today.\n"
-                                "       * What the trickiest decision was while building it -- and how they made it.\n"
-                                "       * How they would measure whether the project was actually successful.\n"
+                                "     Pick whichever fits most naturally given what they have already said:\n"
+                                "       * If you rebuilt this project today, what would you change and why?\n"
+                                "       * Looking back, is there one decision you would make differently?\n"
+                                "       * What did this project teach you that you did not expect going in?\n"
                                 "  -> Anchor the chosen question to a SPECIFIC tool, choice, or detail they\n"
-                                "     mentioned earlier in this topic, so it feels grounded, not generic."
+                                "     mentioned earlier in this topic, so it feels grounded, not generic.\n"
+                                "  -> Do NOT ask another 'what was your role / what part did you build' question --\n"
+                                "     that family is closed for this topic."
                             )
                         elif _is_early_on_topic:
                             _depth_guard = (

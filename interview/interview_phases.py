@@ -14,12 +14,33 @@ from typing import Any
 _BriefType = Any
 
 
+# Lightweight, human-feeling greeting templates.
+# - No project/role/anchor reference -- keeps the opener generic so it never
+#   makes the candidate feel "researched" before the interview even starts.
+# - Multiple variants prevent every session sounding identical.
+# - Two short sentences max -- spoken delivery, not corporate boilerplate.
+_GREETING_VARIANTS: list[str] = [
+    "Hey {name}, thanks for jumping on. I'm {ai_name}. How's your day been so far?",
+    "Hi {name}, nice to meet you. I'm {ai_name}. How are you doing today?",
+    "Hi {name}, good to have you. I'm {ai_name}. How's everything on your end?",
+    "Hey {name}, thanks for making the time. I'm {ai_name}. How's your day shaping up?",
+    "Hi {name}, glad we could connect. I'm {ai_name}. How are things going today?",
+    "Hey {name}, great to meet you. I'm {ai_name}. How's the day treating you?",
+]
+
+
 def build_greeting_text(candidate_name: str, ai_name: str, job_title: str) -> str:
-    return (
-        f"Hi {candidate_name}, really glad we could connect today. I'm {ai_name}, "
-        f"and I've been looking forward to our conversation about the {job_title} role. "
-        f"How are you doing? Hope the day's been good to you."
-    )
+    """Build a short, varied, human-feeling greeting.
+
+    `job_title` is intentionally unused; we keep it in the signature for
+    backwards compatibility with the existing call site. The greeting stays
+    role-agnostic so the opener does not sound rehearsed.
+    """
+    # Sanitize inputs so a missing/empty name doesn't render "Hi , ..."
+    name = (candidate_name or "").strip().split()[0] if candidate_name else "there"
+    ai = (ai_name or "").strip() or "your interviewer"
+    template = random.choice(_GREETING_VARIANTS)
+    return template.format(name=name, ai_name=ai)
 
 
 def build_warmup_directive() -> str:
