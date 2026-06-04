@@ -1,5 +1,6 @@
 import asyncio
 import json
+import random
 import time
 import asyncpg
 from typing import Optional, Any
@@ -88,7 +89,7 @@ from livekit.agents.metrics import AgentSessionUsage
 from livekit.agents.voice import room_io
 from livekit.agents.voice.turn import EndpointingOptions, InterruptionOptions
 from interview.trust_engine import finalize_trust_state
-from interview.session_state import init_trust_state
+from interview.session_state import ALWAYS_ON_PROCTORING_SIGNALS, init_trust_state
 from interview.recruiter_summary import build_recruiter_summary
 from interview.prompt_layers import (
     build_voice_layer_prompt,
@@ -251,38 +252,74 @@ def _order_interview_topics(
     return deduped
 
 
-def _build_move_on_question(topic: str) -> str:
-    """Build a GENTLE, GROUNDED opening question for a new topic.
+# Short, varied openers for new projects / work-history topics. The full
+# resume description is NEVER read aloud -- the LLM still receives the full
+# context via the MOVE_ON directive's "FULL CONTEXT OF NEW TOPIC" line and the
+# TOPIC_LOCK system message, so it can ground its follow-ups -- but the
+# spoken opener stays short and conversational.
+_PROJECT_OPENERS: list[str] = [
+    "Let's talk about your {title} project. What was your role, and what did you actually build?",
+    "Tell me about {title} -- what did you work on there?",
+    "Moving on to {title}. What was your part in it, and what did you build?",
+    "I'd like to hear about {title}. What did you build, and what was your role?",
+    "Next up: {title}. Walk me through what you built there.",
+]
 
-    The first question on a new topic must work exactly like the topic-1 opener:
-      1. Name the topic so the candidate knows we've switched.
-      2. Anchor to a concrete detail (what it does / a named tool) so it's specific.
-      3. Stay at the SURFACE -- ask what they built / what problem it solved.
-         Deep mechanics ('walk me through the data syncing step-by-step') come LATER
-         via probes, never as the entry question -- that's what made topic 2 feel
-         abrupt and disorienting.
+
+def _sanitize_topic_title_for_speech(title: str) -> str:
+    """Clean a topic title for spoken delivery.
+
+    - Strip trailing parenthetical fragments and acronym tails like
+      "(MLSC), GRIET" so the agent says "Tech Lead" not "Tech Lead microsoft
+      Learn Student Club (MLSC), GRIET".
+    - Collapse internal whitespace.
     """
-    title = (topic or "").split(" - ")[0].strip() or "your next project"
+    if not title:
+        return ""
+    # Drop everything after the first comma (work-history rows like
+    # "Tech Lead - microsoft Learn Student Club (MLSC), GRIET" pollute speech)
+    cleaned = title.split(",", 1)[0]
+    # Remove any parenthetical chunks.
+    cleaned = re.sub(r"\s*\([^)]*\)\s*", " ", cleaned)
+    # Collapse whitespace.
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
 
-    detail = ""
-    if " - " in (topic or ""):
-        raw_detail = (topic or "").split(" - ", 1)[1].strip()
-        detail = re.sub(r"\s*\[[^\]]+\]\s*$", "", raw_detail).strip()
 
-    if detail:
-        # Grounded entry: name the topic + remind them what it was, then ask a
-        # gentle surface question. Mirrors topic-1's "what problem / what you built".
-        # Trim the detail so the spoken question stays short.
-        short_detail = detail.split(";")[0].split(".")[0].strip()
-        if len(short_detail.split()) > 18:
-            short_detail = " ".join(short_detail.split()[:18])
+def _build_move_on_question(topic: str, source: str = "resume_project") -> str:
+    """Build a SHORT, conversational opening question for a new topic.
+
+    `source` controls phrasing:
+      - "resume_project": short opener with the project name only -- no
+        verbose resume description read aloud. The LLM still gets full project
+        context via the system directive; this string is what the candidate
+        HEARS.
+      - "resume_skill":   skill the candidate lists on their resume -- anchor
+        to that claim.
+      - "jd_skill":       skill required by the JD but NOT claimed on the
+        resume -- ask whether they have it, do not assume they do.
+    """
+    raw_title = (topic or "").split(" - ")[0].strip()
+    title = _sanitize_topic_title_for_speech(raw_title) or "your next project"
+
+    if source == "resume_project":
+        template = random.choice(_PROJECT_OPENERS)
+        return template.format(title=title)
+
+    if source == "resume_skill":
         return (
-            f"Let's move to your {title} -- the one where you {short_detail[0].lower()}{short_detail[1:]}. "
-            f"What was your role there, and what did you actually build?"
+            f"You mentioned {title} on your resume. "
+            f"Which project did you use it on, and what did you build with it?"
         )
 
-    # Skill topic or no detail: keep it simple and grounded.
-    return f"Let's move to {title}. Where have you actually used it, and what did you build with it?"
+    if source == "jd_skill":
+        return (
+            f"The role calls for {title}. "
+            f"Have you worked with {title} before? If yes, where -- and what did you build?"
+        )
+
+    # Fallback (unknown source, or skill with no detail).
+    return f"Let's talk about {title}. Where have you used it, and what did you build with it?"
 
 
 
@@ -296,6 +333,11 @@ class InterviewAgent(Agent):
         # llm_node waits on this before generating the real interview question.
         self._directive_ready: asyncio.Event = asyncio.Event()
         self._directive_ready.set()  # starts set -- no blocking until first candidate answer
+        # ONE-SHOT flag set when a MOVE_ON opener is queued but not yet spoken.
+        # On the very next eval cycle, we skip eval (so the queued opener can fire
+        # cleanly without being overwritten by a stale PROBE) and clear the flag.
+        # After that single skip, normal eval resumes.
+        self._move_on_opener_pending: bool = False
 
     @staticmethod
     def _latest_system_message_with_marker(
@@ -555,13 +597,19 @@ def prewarm(proc: JobProcess):
 
 class _EvalSignalToggles(BaseModel):
     """Validated signal enable/disable flags. All default ON. Coerces any truthy DB value.
-    Orgs can explicitly set a signal to false to disable it; absent = enabled."""
+    Orgs can explicitly set a signal to false to disable a TOGGLABLE signal.
+    Always-on signals (see ALWAYS_ON_PROCTORING_SIGNALS) are force-set to true
+    by _extract_evaluation_signal_toggles regardless of input -- the field
+    defaults below only apply when a togglable key is absent from the input."""
+    # Togglable signals -- honor the input value, default to True when absent.
+    latency_mismatch: bool = True
+    complexity_latency_mismatch: bool = True
+    # Always-on signals -- defaults provided so model construction works
+    # without these keys; runtime override forces them to True regardless of input.
     ownership_ambiguity: bool = True
     example_evasion: bool = True
-    latency_mismatch: bool = True
     resume_claim_mismatch: bool = True
     follow_up_collapse: bool = True
-    complexity_latency_mismatch: bool = True
     depth_decay: bool = True
 
     @field_validator("*", mode="before")
@@ -577,7 +625,13 @@ class _EvalSignalToggles(BaseModel):
 
 
 def _extract_evaluation_signal_toggles(raw_signals: Any) -> dict[str, bool]:
-    """Parse DB proctoringSignals JSON into a validated bool dict. All keys default OFF."""
+    """Parse DB proctoringSignals JSON into a validated bool dict.
+
+    Togglable signals (latency_mismatch, complexity_latency_mismatch) honor the
+    stored boolean. Always-on signals (see ALWAYS_ON_PROCTORING_SIGNALS) are
+    force-set to true regardless of input -- this is the write-time guarantee
+    that mirrors the TS-layer `normalizeProctoringSignals` override.
+    """
     parsed: dict[str, Any] = {}
     if isinstance(raw_signals, dict):
         parsed = raw_signals
@@ -588,7 +642,13 @@ def _extract_evaluation_signal_toggles(raw_signals: Any) -> dict[str, bool]:
                 parsed = maybe
         except Exception:
             pass
-    return _EvalSignalToggles(**parsed).model_dump()
+    result = _EvalSignalToggles(**parsed).model_dump()
+    # Force always-on signals to True regardless of what the DB said. Defends
+    # against stale rows, manual SQL tampering, or any code path that writes
+    # the JSON without going through normalizeProctoringSignals on the TS side.
+    for key in ALWAYS_ON_PROCTORING_SIGNALS:
+        result[key] = True
+    return result
 
 
 class InterviewContext(BaseModel):
@@ -1168,6 +1228,10 @@ async def entrypoint(ctx: JobContext):
     _custom_q_reminder_fired: bool = False
     _custom_q_final_reminder_fired: bool = False
     _covered_topic_keys: set[str] = set()        # all topics already covered across the interview
+    # Topics whose CLOSING / reflection question has already been asked. One-shot per topic.
+    # Read inside the PROBE directive builder to avoid asking the reflection question twice
+    # on the same project.
+    _topic_closing_fired: set[str] = set()
     _user_turn_chain: Optional[asyncio.Task[Any]] = None  # serialize user-turn processing
     _processed_user_turns: set[int] = set()      # turns whose STT was already flushed; drops late Deepgram finals
     _last_user_turn_flushed_at: float = 0.0
@@ -1183,7 +1247,7 @@ async def entrypoint(ctx: JobContext):
     # The agent owns topic selection -- eval only scores the current topic.
     # resume_topics and skill_topics are built once from session_context here
     # and reused every turn in the inline eval payload and topic selection.
-    def _build_topic_pools() -> tuple[list[str], list[str]]:
+    def _build_topic_pools() -> tuple[list[str], list[str], dict[str, str]]:
         """
         Build resume topic pool (full context strings) and skill topic pool (short names).
 
@@ -1213,18 +1277,51 @@ async def entrypoint(ctx: JobContext):
             if short_key and short_key not in seen_r:
                 seen_r.add(short_key); unique_r.append(t)
 
-        # Skills: single word is sufficient context
-        _jd = [str(s).strip() for s in (_jd_skills or []) if str(s).strip()]
-        _rs = [str(s).strip() for s in list(rb.skills or []) if str(s).strip()]
-        seen_s: set[str] = set()
-        unique_s: list[str] = []
-        for s in (_jd + _rs):
-            k = s.lower()
-            if k and k not in seen_s:
-                seen_s.add(k); unique_s.append(s)
-        return unique_r[:_cap_r], unique_s[:_cap_s]
+        # Skills: single word is sufficient context.
+        # Bug-2 fix: keep resume skills and JD-only skills separate so the agent can
+        # phrase the question differently (claimed-on-resume vs required-by-JD-but-unclaimed).
+        # Also filter out sentence-style JD "requirements" that aren't real skills
+        # (e.g. "build AI/ML projects with measurable outcomes").
+        def _is_real_skill_token(s: str) -> bool:
+            words = s.split()
+            if len(words) > 3:
+                return False
+            bad_verbs = {"build", "demonstrate", "design", "develop", "deliver", "drive", "own", "lead"}
+            return not any(w.lower() in bad_verbs for w in words)
 
-    _resume_topics_pool, _skill_topics_pool = _build_topic_pools()
+        _rs_raw = [str(s).strip() for s in list(rb.skills or []) if str(s).strip()]
+        _jd_raw = [
+            str(s).strip() for s in (_jd_skills or [])
+            if str(s).strip() and _is_real_skill_token(str(s).strip())
+        ]
+
+        _rs_keys = {s.lower() for s in _rs_raw}
+
+        unique_resume_skills: list[str] = []
+        seen_rs: set[str] = set()
+        for s in _rs_raw:
+            k = s.lower()
+            if k and k not in seen_rs:
+                seen_rs.add(k); unique_resume_skills.append(s)
+
+        unique_jd_only_skills: list[str] = []
+        seen_jd: set[str] = set()
+        for s in _jd_raw:
+            k = s.lower()
+            if k and k not in _rs_keys and k not in seen_jd:
+                seen_jd.add(k); unique_jd_only_skills.append(s)
+
+        # Flat combined pool (resume first, then JD-only) preserves existing call sites.
+        unique_s = (unique_resume_skills + unique_jd_only_skills)[:_cap_s]
+        # Side-table: skill short-key -> source ("resume_skill" or "jd_skill").
+        # Read by the MOVE_ON branch to pick the right question phrasing.
+        source_by_key = {
+            s.lower(): ("resume_skill" if s.lower() in _rs_keys else "jd_skill")
+            for s in unique_s
+        }
+        return unique_r[:_cap_r], unique_s, source_by_key
+
+    _resume_topics_pool, _skill_topics_pool, _skill_source_by_key = _build_topic_pools()
 
     # Initialize _active_topic with the FULL context string (not short title).
     # This allows the LLM to have complete project/role context for grounded questions.
@@ -1255,16 +1352,16 @@ async def entrypoint(ctx: JobContext):
         return _topic_short_key_for_ordering(topic)
 
     def _next_uncovered_topic(exclude: Optional[str] = None) -> Optional[str]:
-        """Return the next uncovered topic (full context string) the agent should ask about."""
+        """Return the next uncovered topic (full context string) the agent should ask about.
+
+        Bug-1 fix: when every topic is already covered, return None instead of looping
+        back to a covered topic. The MOVE_ON caller now switches to a wrap-up directive
+        in that case rather than re-introducing a finished project.
+        """
         excluded_key = _topic_short_key(exclude or "")
         for t in _ordered_topics():
             k = _topic_short_key(t)
             if k and k != excluded_key and k not in _covered_topic_keys:
-                return t
-        # All covered -- pick any that isn't current
-        for t in _ordered_topics():
-            k = _topic_short_key(t)
-            if k and k != excluded_key:
                 return t
         return None
 
@@ -1815,6 +1912,28 @@ async def entrypoint(ctx: JobContext):
                     agent._directive_ready.set()
                     return
 
+                # MOVE_ON race guard (Option 1, one-shot flag):
+                # If the previous turn fired MOVE_ON, the agent set
+                # _move_on_opener_pending=True. The queued MOVE_ON opener will be
+                # spoken on the NEXT LLM invocation. The candidate's current
+                # answer is still about the PREVIOUS topic, so we must NOT run a
+                # fresh eval on this turn -- doing so would (a) score that answer
+                # against the wrong topic and (b) overwrite the queued MOVE_ON
+                # opener with a PROBE directive, so the candidate never hears the
+                # gentle "Let's move to ..." opener.
+                # Skip eval ONCE, clear the flag, release the gate. Next turn's
+                # eval runs normally.
+                if agent._move_on_opener_pending:
+                    logger.info(
+                        "[EVAL] turn=%d skipped -- MOVE_ON opener queued but not yet spoken; "
+                        "letting LLM deliver opener before scoring next answer",
+                        turn_snapshot,
+                    )
+                    agent._move_on_opener_pending = False
+                    agent._waiting_for_eval = False
+                    agent._directive_ready.set()
+                    return
+
                 # Turn 3: strip warmup context so directive is first interview message
                 if turn_snapshot == 3:
                     logger.info("[EVAL] turn=3 | clearing warmup context")
@@ -1923,39 +2042,281 @@ async def entrypoint(ctx: JobContext):
                 # -- Persist state mutations (scores, trust, risk, log) --------
                 await _apply_eval_result(_eval_result_inline, result_turn=turn_snapshot)
 
+                # -- Auto-cover resume skills demonstrated in a project answer --
+                # When the candidate answers about a project (e.g. Sentimental News
+                # Analysis) and naturally mentions a resume skill (e.g. "Python"),
+                # mark that skill covered so the agent doesn't ask it again as a
+                # standalone skill topic later. Only fires when:
+                #   - current topic is a resume_project (not a skill topic),
+                #   - the answer scored at least surface-level (clarity+depth >= 4),
+                #   - the skill is a RESUME skill (jd_skill stays uncovered so the
+                #     agent still verifies it via the jd_skill opener),
+                #   - the skill key is at least 3 chars (avoids spurious matches on
+                #     ultra-short tokens like "c" from "C++"),
+                #   - the skill appears as a word in the answer (multi-word skills
+                #     like "power bi" / "scikit learn" match via \s+ tolerant regex).
+                try:
+                    _qr_safe = _qr if isinstance(_qr, dict) else {}
+                    _cur_topic_key = _topic_short_key(_active_topic or "").lower()
+                    _is_project_topic = (
+                        bool(_active_topic) and _cur_topic_key not in _skill_source_by_key
+                    )
+                    _answer_clarity = float(_qr_safe.get("clarity", 0.0) or 0.0)
+                    _answer_depth = float(_qr_safe.get("depth", 0.0) or 0.0)
+                    _answer_substantive = (_answer_clarity + _answer_depth) >= 4.0
+                    _answer_lc = (payload.get("answer") or "").lower().strip()
+
+                    if _is_project_topic and _answer_substantive and _answer_lc:
+                        _newly_auto_covered: list[str] = []
+                        async with _session_state_lock:
+                            for _skill in _skill_topics_pool:
+                                _skill_key = _topic_short_key(_skill).lower().strip()
+                                # Skip empty keys and ultra-short keys (false-positive risk).
+                                if len(_skill_key) < 3:
+                                    continue
+                                if _skill_source_by_key.get(_skill_key) != "resume_skill":
+                                    continue
+                                if _skill_key in _covered_topic_keys:
+                                    continue
+                                # Build a regex that:
+                                #  - is word-bounded so "react" won't catch "interact",
+                                #  - tolerates extra whitespace between tokens so the
+                                #    key "power bi" matches "power  bi", "Power BI" etc.
+                                _tokens = [re.escape(t) for t in _skill_key.split() if t]
+                                if not _tokens:
+                                    continue
+                                _pattern = r"\b" + r"\s+".join(_tokens) + r"\b"
+                                try:
+                                    if re.search(_pattern, _answer_lc):
+                                        _covered_topic_keys.add(_skill_key)
+                                        _newly_auto_covered.append(_skill_key)
+                                except re.error as _re_err:
+                                    logger.debug(
+                                        "[AGENT] auto-cover regex skipped for %r: %s",
+                                        _skill_key, _re_err,
+                                    )
+                                    continue
+                        if _newly_auto_covered:
+                            logger.info(
+                                "[AGENT] turn=%d | auto-covered skills from project answer on %r: %s",
+                                turn_snapshot, _cur_topic_key, _newly_auto_covered,
+                            )
+                except Exception as _auto_cov_err:
+                    logger.warning(
+                        "[AGENT] turn=%d | skill auto-cover failed: %s",
+                        turn_snapshot, _auto_cov_err,
+                    )
+
+                # -- Bug-2 follow-up: jd_skill disclaim override ----------------
+                # If the current topic is a JD-only skill (one the candidate does NOT
+                # claim on their resume) AND the candidate just disclaimed it outright
+                # ("never used", "no experience", "don't know"), there is nothing to
+                # probe -- force MOVE_ON so we pivot immediately instead of grilling
+                # the candidate for multiple turns on a skill they don't have.
+                if _action == "PROBE":
+                    _active_topic_key_lc = _topic_short_key(_active_topic or "").lower()
+                    _active_topic_src = _skill_source_by_key.get(
+                        _active_topic_key_lc, "resume_project"
+                    )
+                    if _active_topic_src == "jd_skill":
+                        _answer_text_lc = (payload.get("answer") or "").lower()
+                        _disclaim_markers = (
+                            "never worked", "never used", "haven't worked", "havent worked",
+                            "haven't used", "havent used", "no experience", "no idea",
+                            "don't know", "dont know", "haven't done", "havent done",
+                        )
+                        if any(m in _answer_text_lc for m in _disclaim_markers):
+                            logger.info(
+                                "[AGENT] turn=%d | jd_skill=%r disclaimed by candidate -- overriding PROBE -> MOVE_ON",
+                                turn_snapshot, _active_topic_key_lc,
+                            )
+                            _action = "MOVE_ON"
+
                 # -- Agent decides: PROBE or MOVE_ON ---------------------------
                 if _action == "MOVE_ON":
                     # -- Agent picks the next topic ----------------------------
                     _old_topic = _active_topic
                     _mark_topic_covered(_old_topic)
+
+                    # Production hardening of Fix 2: when a resume project closes,
+                    # auto-cover every resume_skill listed in that project's [tech]
+                    # bracket. Catches the common case where a candidate exercised a
+                    # skill in a project but did not say its literal name aloud
+                    # (e.g. project tagged [Python, BeautifulSoup] but candidate only
+                    # said "BeautifulSoup" -- we shouldn't ask Python again).
+                    try:
+                        _old_topic_str = (_old_topic or "")
+                        _old_topic_key_lc = _topic_short_key(_old_topic_str).lower()
+                        _old_was_project = (
+                            bool(_old_topic_str)
+                            and _old_topic_key_lc not in _skill_source_by_key
+                        )
+                        if _old_was_project:
+                            # Extract every "[...]" segment from the topic string and
+                            # split each on commas/semicolons -- projects can have
+                            # multiple bracketed sections in unusual resumes.
+                            _tech_bracket_chunks = re.findall(r"\[([^\]]+)\]", _old_topic_str)
+                            _tech_tokens_raw: list[str] = []
+                            for _chunk in _tech_bracket_chunks:
+                                for _tok in re.split(r"[;,]", _chunk):
+                                    _tok = _tok.strip()
+                                    if _tok:
+                                        _tech_tokens_raw.append(_tok)
+                            if _tech_tokens_raw:
+                                _tech_keys = {
+                                    _topic_short_key(t).lower().strip()
+                                    for t in _tech_tokens_raw
+                                }
+                                _tech_keys.discard("")
+                                _newly_covered_from_tags: list[str] = []
+                                async with _session_state_lock:
+                                    for _skill in _skill_topics_pool:
+                                        _skill_key = _topic_short_key(_skill).lower().strip()
+                                        if len(_skill_key) < 3:
+                                            continue
+                                        if _skill_source_by_key.get(_skill_key) != "resume_skill":
+                                            continue
+                                        if _skill_key in _covered_topic_keys:
+                                            continue
+                                        if _skill_key in _tech_keys:
+                                            _covered_topic_keys.add(_skill_key)
+                                            _newly_covered_from_tags.append(_skill_key)
+                                if _newly_covered_from_tags:
+                                    logger.info(
+                                        "[AGENT] turn=%d | auto-covered skills from [tech] tags of project %r: %s",
+                                        turn_snapshot, _old_topic_key_lc, _newly_covered_from_tags,
+                                    )
+                    except Exception as _tag_cov_err:
+                        logger.warning(
+                            "[AGENT] turn=%d | tech-tag auto-cover failed: %s",
+                            turn_snapshot, _tag_cov_err,
+                        )
+
                     _next_topic = _next_uncovered_topic(exclude=_old_topic)
 
+                    # Bug-1 fix (Change G): if everything is covered, do not loop
+                    # back to a finished topic -- inject a wrap-up directive instead.
+                    if _next_topic is None:
+                        logger.info(
+                            "[AGENT] turn=%d | MOVE_ON requested but all topics covered -- switching to wrap-up",
+                            turn_snapshot,
+                        )
+                        _covered_list = "\n".join(
+                            f"  - {k}" for k in sorted(_covered_topic_keys)
+                        ) or "  (none)"
+                        _directive = (
+                            "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
+                            "DECISION: WRAP_UP\n"
+                            "All planned interview topics have already been covered.\n"
+                            "[INTERVIEW MEMORY -- ALREADY COVERED, DO NOT RE-OPEN]\n"
+                            f"{_covered_list}\n"
+                            "Ask ONE final reflective question (e.g. 'Of everything we've discussed, "
+                            "what are you most proud of?' or 'Anything you wish I'd asked about?'), "
+                            "or begin to gracefully wind the conversation down.\n"
+                            "HARD RULE: Do NOT re-open any topic in the INTERVIEW MEMORY list above. "
+                            "Do NOT say 'Let's move to ...' about a covered topic."
+                        )
+                        remove_system_messages_multi(chat_ctx, ("[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT"))
+                        chat_ctx.add_message(role="system", content=_directive)
+                        logger.info("[AGENT] turn=%d | WRAP_UP directive injected", turn_snapshot)
+                        logger.info("[EVAL] turn=%d | releasing LLM gate -- Ishita will speak now", turn_snapshot)
+                        agent._waiting_for_eval = False
+                        agent._directive_ready.set()
+                        return
+
                     async with _session_state_lock:
-                        _active_topic = _next_topic or _old_topic
+                        _active_topic = _next_topic
 
                     logger.info(
                         "[AGENT] turn=%d | DECISION=MOVE_ON | TOPIC SWITCH: %r -> %r",
                         turn_snapshot, _old_topic, _active_topic,
                     )
-                    _next_question = _build_move_on_question(_active_topic or "")
 
-                    # Wipe conversation history so LLM opens new topic cleanly
-                    _ctx_items = getattr(chat_ctx, "items", None)
-                    if _ctx_items is not None:
-                        _before = len(_ctx_items)
-                        _ctx_items[:] = [m for m in list(_ctx_items) if getattr(m, "role", "") == "system"]
-                        if _before != len(_ctx_items):
-                            logger.info("[AGENT] MOVE_ON history wipe: dropped %d msg(s)", _before - len(_ctx_items))
+                    # Bug-2 fix (Change C): determine source so the question is phrased correctly.
+                    _topic_key_lc = _topic_short_key(_active_topic or "").lower()
+                    if _topic_key_lc in _skill_source_by_key:
+                        _src = _skill_source_by_key[_topic_key_lc]
+                    else:
+                        _src = "resume_project"
+                    _next_question = _build_move_on_question(_active_topic or "", source=_src)
+
+                    # Bug-1 fix (Change D): do NOT wipe chat history. The LLM needs the
+                    # full conversation to avoid re-asking covered ground and to
+                    # cross-reference projects the candidate already discussed.
 
                     # Build MOVE_ON directive -- agent writes it, not eval
                     _old_topic_title = _topic_short_title(_old_topic or "")
                     _new_topic_title = _topic_short_title(_active_topic or "")
+
+                    # Bug-1 fix (Change E): inject interview memory + cross-reference rule
+                    # so the LLM knows what's already been covered and how to handle it
+                    # if the candidate cites a covered project as evidence for this skill.
+                    _covered_list = "\n".join(
+                        f"  - {k}" for k in sorted(_covered_topic_keys) if k
+                    )
+                    _recent_discussed = "\n".join(f"  {e}" for e in _discussed_log[-6:])
+                    _memory_block = ""
+                    if _covered_list or _recent_discussed:
+                        _recent_section = (
+                            "Recent turns:\n" + _recent_discussed
+                        ) if _recent_discussed else ""
+                        _memory_block = (
+                            "\n[INTERVIEW MEMORY -- ALREADY COVERED, DO NOT RE-OPEN]\n"
+                            f"{_covered_list or '  (none yet)'}\n"
+                            f"{_recent_section}\n"
+                        )
+
+                    # Cross-reference rule -- different phrasing depending on whether the
+                    # NEW topic is a resume_skill (fair to probe depth) or jd_skill
+                    # (don't quiz on theory; stay applied).
+                    if _src == "resume_skill":
+                        _cross_ref_rule = (
+                            "\n[CROSS-REFERENCE RULE -- candidate may cite a covered project]\n"
+                            "If the candidate cites a project already in INTERVIEW MEMORY as evidence "
+                            f"for {_new_topic_title}, treat that project as KNOWN CONTEXT -- do NOT "
+                            "re-introduce it ('Let's move to ...'), do NOT ask what they built in it, "
+                            "and do NOT ask their role in it (already covered).\n"
+                            f"They CLAIM {_new_topic_title} on their resume, so probe SKILL-LEVEL depth.\n"
+                            "Pick ONE category and generate the equivalent question for the CURRENT skill:\n"
+                            f"  a) Mechanic / concept  -- how a core feature of {_new_topic_title} works\n"
+                            f"  b) Pitfall awareness   -- a common mistake or gotcha with {_new_topic_title}\n"
+                            f"  c) Tradeoff            -- when to use {_new_topic_title} vs an alternative, or when NOT to\n"
+                            f"  d) Hands-on debugging  -- how they'd debug a typical {_new_topic_title} problem\n"
+                            f"  e) Internals           -- what {_new_topic_title} does under the hood\n"
+                            "Calibrate to band: FRESHER -> (a)(b)(d); MID/SENIOR -> (c)(e).\n"
+                            "The question must be answerable WITHOUT re-explaining the project. It tests\n"
+                            "whether they actually know the skill, not just that they used it once.\n"
+                            "NEVER ask a question whose answer is already in INTERVIEW MEMORY."
+                        )
+                    elif _src == "jd_skill":
+                        _cross_ref_rule = (
+                            "\n[CROSS-REFERENCE RULE -- JD-only skill, candidate does NOT claim it on resume]\n"
+                            "The candidate does NOT list this skill on their resume. The opener already asks\n"
+                            "whether they've worked with it. Based on their answer:\n"
+                            "  - If they say NO / never used it: acknowledge briefly and let the next MOVE_ON\n"
+                            "    pivot away. Do NOT push, do NOT quiz on theory.\n"
+                            "  - If they say YES and cite a project (possibly one already in INTERVIEW MEMORY):\n"
+                            "    stay APPLIED, not theoretical. Ask only what they actually did with it:\n"
+                            f"      * 'What specifically did you use {_new_topic_title} for in that project?'\n"
+                            "      * 'Did you build it from scratch or follow a tutorial?'\n"
+                            "      * 'What worked, what didn't?'\n"
+                            "    DO NOT ask about internals, mechanics, or theory -- they make no expertise\n"
+                            "    claim, so trivia-style questions are unfair."
+                        )
+                    else:
+                        _cross_ref_rule = (
+                            "\n[CROSS-REFERENCE RULE]\n"
+                            "If the candidate cites a project already in INTERVIEW MEMORY, do NOT re-open it. "
+                            "Probe the NEW angle of the current topic instead."
+                        )
+
                     _directive = (
                         "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
                         "DECISION: MOVE_ON\n"
                         f"TOPIC YOU ARE LEAVING: {_old_topic_title}\n"
                         f"NEW ACTIVE TOPIC: {_new_topic_title}\n"
                         f"FULL CONTEXT OF NEW TOPIC: {_active_topic}\n"
+                        f"TOPIC SOURCE: {_src}\n"
                         f"NEXT QUESTION TO ASK VERBATIM: {_next_question}\n"
                         f"YOUR ONLY JOB THIS TURN: Say ONE short acknowledgement (max 5 words), "
                         f"then ask the verbatim question. The question already names the new topic "
@@ -1971,6 +2332,8 @@ async def entrypoint(ctx: JobContext):
                         "HARD RULE: Ask ONLY the verbatim question about the NEW topic. "
                         "Do NOT ask a follow-up about the previous topic. Do NOT blend the two.\n"
                         "DO NOT wrap up, say goodbye, or add any closing phrase."
+                        f"{_memory_block}"
+                        f"{_cross_ref_rule}"
                     )
                     # CRITICAL: Update _last_question_topic NOW (before LLM fires) so eval sees the NEW topic
                     nonlocal _last_question_topic
@@ -1985,6 +2348,10 @@ async def entrypoint(ctx: JobContext):
                         f"ASK THIS QUESTION VERBATIM: {_next_question}\n"
                         "Do not mention tools, projects, or details from the previous topic."
                     ))
+                    # One-shot guard: tell the next eval cycle to skip itself so
+                    # the queued MOVE_ON opener can be spoken first, before any
+                    # PROBE directive overwrites it.
+                    agent._move_on_opener_pending = True
                     logger.info("[AGENT] turn=%d | MOVE_ON directive injected | new_topic=%r", turn_snapshot, _active_topic)
 
                 else:
@@ -1993,11 +2360,17 @@ async def entrypoint(ctx: JobContext):
                     _prev_a = (payload.get("answer") or "").strip()
                     _prev_a_gist = " ".join(_prev_a.split()[:20])
 
-                    # Detect "can't remember / didn't build it" responses -- don't probe deeper, redirect
+                    # Detect "can't remember / didn't build it / no claim" responses --
+                    # don't probe deeper, redirect (resume topics) or move on (jd_skill).
                     _cant_remember_markers = (
+                        # memory-loss phrases
                         "don't remember", "dont remember", "can't remember", "cannot remember",
                         "not sure", "i forgot", "long time ago", "old project", "not really",
                         "didn't build", "did not build", "i wasn't", "i was not",
+                        # "no claim" phrases -- candidate disowns the skill/topic entirely
+                        "never worked", "never used", "haven't worked", "havent worked",
+                        "haven't used", "havent used", "don't know", "dont know", "no idea",
+                        "haven't done", "havent done", "no experience",
                     )
                     _is_cant_remember = any(m in _prev_a.lower() for m in _cant_remember_markers)
 
@@ -2041,24 +2414,77 @@ async def entrypoint(ctx: JobContext):
                             "  - 'I'd love to hear more than that -- what specifically did you do?'"
                         ) if _is_short else ""
 
-                        # How many turns deep are we on THIS topic? Early turns must stay at the
-                        # surface (what they built / what problem it solved) before diving into
-                        # mechanics. Jumping to 'walk me through the data syncing step-by-step' on
-                        # turn 1 of a topic is what made topic 2 feel abrupt and confusing.
+                        # How many turns deep are we on THIS topic? Three tiers:
+                        #   EARLY      -- ≤1 follow-up:        stay surface (WHAT, role, problem).
+                        #   ESTABLISHED -- ≥2 follow-ups:       can go into mechanics / tradeoffs.
+                        #   CLOSING    -- resume project, ≥2 follow-ups, sat ≥60% of threshold,
+                        #                 not already fired on this topic:
+                        #                 the LAST probe on this project before MOVE_ON.
+                        #                 FORCE the reflection family so the question is about
+                        #                 judgment / learning / "what would you change?", not yet
+                        #                 another ownership probe. One-shot per topic.
                         _topic_follow_ups = int((_new_topic_state_dict or {}).get("follow_up_turns", 0) or 0)
                         _is_early_on_topic = _topic_follow_ups <= 1
 
-                        _depth_guard = (
-                            "\nTOPIC DEPTH: EARLY -- this is one of the FIRST questions on this topic.\n"
-                            "  -> Stay at the SURFACE first: what they personally built, what problem it solved,\n"
-                            "     or what their role was. Establish the WHAT before the HOW.\n"
-                            "  -> Do NOT jump straight into deep step-by-step mechanics "
-                            "('walk me through the data syncing/automation step-by-step'). That comes later.\n"
-                            "  -> Anchor to a concrete detail from TOPIC CONTEXT so they know exactly what you mean."
-                        ) if _is_early_on_topic else (
-                            "\nTOPIC DEPTH: ESTABLISHED -- they've set the WHAT, now you can go deeper "
-                            "into mechanics, decisions, or tradeoffs."
+                        _depth_topic_key_lc = _topic_short_key(_active_topic or "").lower()
+                        _depth_is_resume_project = (
+                            bool(_active_topic)
+                            and _depth_topic_key_lc not in _skill_source_by_key
                         )
+                        _depth_sat_score = float((_new_topic_state_dict or {}).get("saturation_score", 0.0) or 0.0)
+                        _depth_sat_thresh = float((_new_topic_state_dict or {}).get("saturation_threshold", 0.0) or 0.0)
+                        _depth_sat_ratio = (_depth_sat_score / _depth_sat_thresh) if _depth_sat_thresh > 0 else 0.0
+                        _is_closing_on_project = (
+                            _depth_is_resume_project
+                            and _topic_follow_ups >= 2
+                            and _depth_sat_ratio >= 0.6
+                            and _depth_topic_key_lc not in _topic_closing_fired
+                        )
+
+                        if _is_closing_on_project:
+                            # Force reflection family + record one-shot marker so this topic
+                            # cannot get a second CLOSING probe.
+                            try:
+                                async with _session_state_lock:
+                                    _topic_closing_fired.add(_depth_topic_key_lc)
+                                _probe_family = "reflection"
+                                _probe_goal = get_probe_goal("reflection")
+                                _probe_style = get_probe_style("reflection")
+                                logger.info(
+                                    "[AGENT] turn=%d | CLOSING tier fired for project %r -- forcing reflection family",
+                                    turn_snapshot, _depth_topic_key_lc,
+                                )
+                            except Exception as _closing_err:
+                                logger.warning(
+                                    "[AGENT] turn=%d | CLOSING tier setup failed (falling back to depth guard): %s",
+                                    turn_snapshot, _closing_err,
+                                )
+                            _depth_guard = (
+                                "\nTOPIC DEPTH: CLOSING -- this is the LAST probe on this project before MOVE_ON.\n"
+                                "  -> Ask ONE reflective question to surface judgment, learning, or self-awareness.\n"
+                                "     Pick whichever fits most naturally given what they have already said:\n"
+                                "       * If you rebuilt this project today, what would you change and why?\n"
+                                "       * Looking back, is there one decision you would make differently?\n"
+                                "       * What did this project teach you that you did not expect going in?\n"
+                                "  -> Anchor the chosen question to a SPECIFIC tool, choice, or detail they\n"
+                                "     mentioned earlier in this topic, so it feels grounded, not generic.\n"
+                                "  -> Do NOT ask another 'what was your role / what part did you build' question --\n"
+                                "     that family is closed for this topic."
+                            )
+                        elif _is_early_on_topic:
+                            _depth_guard = (
+                                "\nTOPIC DEPTH: EARLY -- this is one of the FIRST questions on this topic.\n"
+                                "  -> Stay at the SURFACE first: what they personally built, what problem it solved,\n"
+                                "     or what their role was. Establish the WHAT before the HOW.\n"
+                                "  -> Do NOT jump straight into deep step-by-step mechanics "
+                                "('walk me through the data syncing/automation step-by-step'). That comes later.\n"
+                                "  -> Anchor to a concrete detail from TOPIC CONTEXT so they know exactly what you mean."
+                            )
+                        else:
+                            _depth_guard = (
+                                "\nTOPIC DEPTH: ESTABLISHED -- they've set the WHAT, now you can go deeper "
+                                "into mechanics, decisions, or tradeoffs."
+                            )
 
                         _directive = (
                             "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"

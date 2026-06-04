@@ -4,7 +4,6 @@ export type ProctoringEventType =
   | "camera_disabled"
   | "microphone_disabled"
   | "connection_lost"
-  | "duplicate_ip"
   | "tab_switch"
   | "face_absence"
   | "multiple_faces"
@@ -37,8 +36,6 @@ const EVENT_ALIASES: Record<string, ProctoringEventType> = {
   microphoneDisabled: "microphone_disabled",
   connection_lost: "connection_lost",
   connectionLost: "connection_lost",
-  duplicate_ip: "duplicate_ip",
-  duplicateIp: "duplicate_ip",
   tab_switch: "tab_switch",
   tabSwitch: "tab_switch",
   face_absence: "face_absence",
@@ -73,7 +70,6 @@ export const PROCTORING_SEVERITY_BY_TYPE: Record<ProctoringEventType, Proctoring
   camera_disabled: "high",
   microphone_disabled: "medium",
   connection_lost: "medium",
-  duplicate_ip: "high",
   tab_switch: "medium",
   face_absence: "high",
   multiple_faces: "high",
@@ -94,7 +90,6 @@ export const PROCTORING_EVENT_ORDER: ProctoringEventType[] = [
   "camera_disabled",
   "microphone_disabled",
   "connection_lost",
-  "duplicate_ip",
   "tab_switch",
   "face_absence",
   "multiple_faces",

@@ -26,10 +26,6 @@ const EVENT_MAP: Record<string, string> = {
     identity_mismatch:      "identity_mismatch",
     identityMismatch:       "identity_mismatch",
     IDENTITY_MISMATCH:      "identity_mismatch",
-    // Network / session signals
-    DUPLICATE_IP:           "duplicate_ip",
-    duplicate_ip:           "duplicate_ip",
-    duplicateIp:            "duplicate_ip",
     // Hardware heartbeat signals (HardwareHeartbeat.tsx)
     camera_disabled:        "camera_disabled",
     cameraDisabled:         "camera_disabled",
@@ -110,7 +106,6 @@ export async function GET(req: NextRequest) {
         const total = interviews.length;
 
         // Counters per violation type
-        // duplicate_ip is split into three sub-types sourced from event metadata
         const violationCounts: Record<string, { incidents: number; candidateIds: Set<string>; durations: number[]; highCount: number }> = {};
 
         const flaggedSet = new Set<string>();   // interview IDs with HIGH severity events
@@ -135,19 +130,7 @@ export async function GET(req: NextRequest) {
                 // Skip metadata-only events (ip_registered = fingerprint bookkeeping)
                 if (baseCategory === "__skip__") continue;
 
-                // For duplicate_ip, map to sub-tier category based on stored collisionType
-                let category = baseCategory;
-                if (baseCategory === "duplicate_ip") {
-                    const ct = (ev.metadata as any)?.collisionType as string | undefined;
-                    if (ct === "simultaneous_device_match") {
-                        category = "duplicate_ip_simultaneous";
-                    } else if (ct === "sequential_device_reuse") {
-                        category = "duplicate_ip_sequential";
-                    } else {
-                        // shared_network_only or legacy events without collisionType
-                        category = "duplicate_ip_network";
-                    }
-                }
+                const category = baseCategory;
 
                 if (!violationCounts[category]) {
                     violationCounts[category] = { incidents: 0, candidateIds: new Set(), durations: [], highCount: 0 };
@@ -184,10 +167,6 @@ export async function GET(req: NextRequest) {
             "camera_disabled",
             "microphone_disabled",
             "tab_switch",
-            // Smart Collusion Detection - three tiers
-            "duplicate_ip_simultaneous",
-            "duplicate_ip_sequential",
-            "duplicate_ip_network",
             "connection_lost",
         ];
         const LABELS: Record<string, { title: string; abbr: string; getDesc: (v: typeof violationCounts[string]) => string }> = {
@@ -200,16 +179,12 @@ export async function GET(req: NextRequest) {
             camera_disabled:            { title: "Camera disabled mid-session",          abbr: "CD", getDesc: v => `${v.incidents} camera disable events` },
             microphone_disabled:        { title: "Microphone disabled mid-session",      abbr: "MD", getDesc: v => `${v.incidents} mic disable events` },
             tab_switch:                 { title: "Tab switching / App switching",       abbr: "TS", getDesc: v => `${v.incidents} switch events recorded` },
-            // Smart Collusion - 3 tiers
-            duplicate_ip_simultaneous:  { title: "🔴 Simultaneous Device Match",        abbr: "SC", getDesc: v => `${v.incidents} HIGH-risk: same device, same time` },
-            duplicate_ip_sequential:    { title: "🟡 Sequential Device Reuse",           abbr: "SR", getDesc: v => `${v.incidents} MEDIUM-risk: same device, different session` },
-            duplicate_ip_network:       { title: "🟢 Shared Network Only",               abbr: "SN", getDesc: v => `${v.incidents} LOW-risk: campus/office shared IP` },
             connection_lost:            { title: "Connection drops",                   abbr: "CL", getDesc: v => `${v.incidents} connection loss events` },
         };
 
         // Severity determination per category using event data
-        const HIGH_SEVERITY_KEYS   = new Set(["face_absence", "multiple_faces", "identity_mismatch", "camera_disabled", "duplicate_ip_simultaneous"]);
-        const MEDIUM_SEVERITY_KEYS = new Set(["tab_switch", "microphone_disabled", "connection_lost", "duplicate_ip_sequential"]);
+        const HIGH_SEVERITY_KEYS   = new Set(["face_absence", "multiple_faces", "identity_mismatch", "camera_disabled"]);
+        const MEDIUM_SEVERITY_KEYS = new Set(["tab_switch", "microphone_disabled", "connection_lost"]);
 
         const violations = ORDER
             .filter((k: string) => violationCounts[k as keyof typeof violationCounts] && LABELS[k as keyof typeof LABELS])

@@ -34,10 +34,13 @@ logger = logging.getLogger("interview-agent")
 # ---------------------------------------------------------------------------
 _BAND_SATURATION: dict[str, dict[str, dict]] = {
     "fresher": {
-        "CRITICAL": {"threshold": 5.0, "base_credit": 1.0},
-        "HIGH":     {"threshold": 4.0, "base_credit": 1.0},
-        "MEDIUM":   {"threshold": 3.0, "base_credit": 1.2},
-        "LOW":      {"threshold": 2.5, "base_credit": 1.4},
+        # Resume projects are the strongest signal we have for a fresher.
+        # Skills also get more turns so the agent can probe past one-line claims
+        # ("I used Python") to real usage. LOW stays quick.
+        "CRITICAL": {"threshold": 5.5, "base_credit": 1.0},   # anchor project (was 6.0 -- too many turns drifted into hard validation/metrics probing)
+        "HIGH":     {"threshold": 5.0, "base_credit": 1.0},   # other resume projects/work (was 4.0)
+        "MEDIUM":   {"threshold": 5.0, "base_credit": 1.2},   # skills (was 3.0)
+        "LOW":      {"threshold": 2.5, "base_credit": 1.4},   # unchanged
     },
     "mid": {
         "CRITICAL": {"threshold": 7.0, "base_credit": 0.8},

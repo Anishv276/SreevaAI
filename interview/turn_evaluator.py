@@ -21,6 +21,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional, TypedDict
 
+from interview.session_state import is_always_on_signal
 from interview.turn_decision import (
     TurnDecision,
     detect_signal_events,
@@ -48,9 +49,17 @@ except ImportError:  # pragma: no cover
 def _is_signal_enabled(signal_toggles: Optional[dict[str, Any]], signal_name: str) -> bool:
     """Return True iff the named signal is enabled (default: True when absent).
 
-    Replaces the 8-line if/elif type-check chain that was duplicated between
-    turn_evaluator.py and trust_engine.py. Now a one-liner via dict.get().
+    Always-on signals (see ALWAYS_ON_PROCTORING_SIGNALS in session_state.py)
+    bypass the toggle check entirely -- they MUST fire regardless of whether
+    the org's stored JSON has them set to false. This mirrors the TS-layer
+    isProctoringSignalEnabled override.
+
+    For togglable signals, default to True when the key is absent and honor
+    any explicit truthy/falsy value otherwise.
     """
+    # Hard override: always-on signals fire regardless of toggle state.
+    if is_always_on_signal(signal_name):
+        return True
     if not signal_toggles:
         return True
     raw = signal_toggles.get(signal_name)

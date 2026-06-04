@@ -32,6 +32,43 @@ from pydantic import BaseModel, Field, field_validator
 
 
 # ---------------------------------------------------------------------------
+# Always-on proctoring signals (Python mirror of lib/proctoring-signals.ts).
+#
+# These behavioral signals MUST fire regardless of an org's stored toggle
+# value. They are the signals an interview cannot be scored fairly without:
+# ownership, example/evidence, pressure/reasoning.
+#
+# Mirrors `ALWAYS_ON_PROCTORING_SIGNALS` in lib/proctoring-signals.ts. Keep
+# the two lists in sync -- if you add a signal here, add it there too. The
+# TS-side `verify-proctoring-signals.ts` covers the TS layer; the Python
+# test in tests/test_signal_toggles.py covers this layer.
+# ---------------------------------------------------------------------------
+
+ALWAYS_ON_PROCTORING_SIGNALS: frozenset[str] = frozenset({
+    # Ownership and Claim Checks
+    "ownership_ambiguity",
+    "ownership_clarified",
+    "resume_claim_mismatch",
+    # Example and Evidence
+    "example_evasion",
+    "example_given",
+    # Pressure and Reasoning
+    "strong_under_pressure",
+    "follow_up_collapse",
+    "depth_decay",
+})
+
+
+def is_always_on_signal(signal_name: str) -> bool:
+    """Return True iff the named signal is in the always-on set.
+
+    Always-on signals fire regardless of org toggles. Used by gating helpers
+    in turn_evaluator and trust_engine to short-circuit suppression checks.
+    """
+    return signal_name in ALWAYS_ON_PROCTORING_SIGNALS
+
+
+# ---------------------------------------------------------------------------
 # Band Enums -- str-Enum so existing `== "high"` comparisons still work
 # ---------------------------------------------------------------------------
 

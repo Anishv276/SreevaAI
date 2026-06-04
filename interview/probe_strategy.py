@@ -177,6 +177,36 @@ _PROBE_FAMILIES: dict[str, dict] = {
         ),
     },
 
+    # -- 6. REFLECTION -- last question on a project; surface judgment/learning
+    # Only fired when the agent's CLOSING tier explicitly forces this family
+    # (resume project, follow_ups >= N, sat >= ~60%, not yet fired on this topic).
+    # Never picked by signal routing or rotation.
+    "reflection": {
+        "goals": [
+            (
+                "This is the CLOSING question on this project -- surface judgment, learning, "
+                "or self-awareness. Pick whichever feels most natural given what they have said:\n"
+                "  -> If you had to rebuild this project today, what would you change and why?\n"
+                "  -> Looking back, is there one decision you would make differently?\n"
+                "  -> What did this project teach you that you did not expect going in?\n"
+                "ONE question. Anchor to a specific detail they already mentioned so it does not "
+                "feel like a generic template."
+            ),
+            (
+                "This is the CLOSING question on this project -- invite honest self-assessment. "
+                "Pick whichever fits best:\n"
+                "  -> What part of this project are you most proud of, and why?\n"
+                "  -> Where do you think it falls short -- what would not survive real-world use?\n"
+                "  -> If a more senior engineer reviewed your work, what would they push back on?\n"
+                "ONE question. Tone: warm, genuinely curious -- not stress-testing."
+            ),
+        ],
+        "style": (
+            "Warm, reflective. You are inviting them to step back and evaluate their own work, "
+            "not interrogating. Example: 'If you rebuilt this today, what would you change first?'"
+        ),
+    },
+
     # -- Sentinel: move on ----------------------------------------------------
     "normal": {
         "goals": ["Topic sufficiently covered. Move to the next uncovered area from your interview plan."],
