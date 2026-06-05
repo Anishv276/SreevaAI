@@ -4,7 +4,7 @@ Consumed by evaluate_answer_and_decide() in agent.py via turn_evaluator.py.
 
 Refactor additions (all non-breaking):
   - Pydantic models: QualityScoresModel, SignalEventModel, DecisionOutputModel,
-    TrustDeltaModel -- runtime validation + dot-access alongside TypedDicts.
+    -- runtime validation + dot-access alongside TypedDicts.
   - DetectionContext: migrated to Pydantic BaseModel (same attrs, same creation sites).
   - CollapseRule dataclass: replaces nested if/elif in FollowUpCollapseDetector.
   - QuestionComplexityScorer: OOP wrapper with class-level LRU cache.
@@ -55,10 +55,6 @@ class SignalFlags(TypedDict):
     example_given: bool
     strong_under_pressure: bool      # [BUG FIX] was missing from original TypedDict
 
-class TrustDelta(TypedDict):
-    delta: float
-    reason: str
-
 class DecisionOutput(TypedDict):
     action: str         # "MOVE_ON" | "PROBE" | "VERIFY"
     mode: str
@@ -68,7 +64,6 @@ class TurnDecision(TypedDict):
     quality: QualityScores
     signals: SignalFlags
     signal_events: list[SignalEvent]
-    trust: TrustDelta
     decision: DecisionOutput
 
 class SignalEvent(TypedDict):
@@ -161,17 +156,6 @@ class DecisionOutputModel(BaseModel):
     def _normalize_action(cls, v: Any) -> str:
         s = str(v or "MOVE_ON").strip().upper()
         return s if s in ("MOVE_ON", "PROBE", "VERIFY") else "MOVE_ON"
-
-
-class TrustDeltaModel(BaseModel):
-    delta: float = Field(default=0.0, ge=-1.0, le=1.0)
-    reason: str = Field(default="no strong signals")
-    model_config = {"extra": "ignore"}
-
-    @field_validator("delta", mode="before")
-    @classmethod
-    def _clamp_delta(cls, v: Any) -> float:
-        return max(-1.0, min(1.0, float(v or 0.0)))
 
 
 # ===========================================================================
@@ -1067,31 +1051,10 @@ def build_signal_flags(signal_events: list[SignalEvent]) -> SignalFlags:
     )
 
 
-def compute_trust_delta(signal_events: list[SignalEvent], quality: QualityScores) -> TrustDelta:
-    delta = 0.0
-    reasons = []
-    for event in signal_events:
-        event_delta = float(event.get("score_delta", 0.0))
-        delta += event_delta
-        if event_delta < 0:
-            reasons.append(f"{event['signal_name']} on {event['trust_bucket_affected']}")
-    avg_quality = (quality["clarity"] + quality["depth"] + quality["specificity"] + quality["grounding"]) / 4.0
-    if avg_quality >= 7.5:
-        delta += 0.2
-        reasons.append("high-quality detailed answer")
-    elif avg_quality <= 3.0:
-        delta -= 0.1
-        reasons.append("low-quality surface answer")
-    delta = max(-1.0, min(1.0, delta))
-    reason = "; ".join(reasons) if reasons else "no strong signals"
-    return TrustDelta(delta=round(delta, 2), reason=reason)
-
-
 def build_turn_decision(
     quality: dict,
     signals: SignalFlags,
     signal_events: list[SignalEvent],
-    trust: TrustDelta,
     action: str,
     mode: str,
     next_goal: str,
@@ -1107,6 +1070,5 @@ def build_turn_decision(
         ),
         signals=signals,
         signal_events=signal_events,
-        trust=trust,
         decision=DecisionOutput(action=action, mode=mode, next_goal=next_goal),
     )

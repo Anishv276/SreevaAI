@@ -227,21 +227,26 @@ def get_probe_style(family: str) -> str:
     return fam.get("style", "")
 
 
-_SIGNAL_TO_FAMILY = [
-    # Integrity signals -- highest priority
-    ("follow_up_collapse",          "authenticity"),   # First answer strong, follow-up collapsed -> probe real memory
-    ("resume_claim_mismatch",       "clarification"),  # Resume vs answer mismatch -> surface it
-
-    # Ownership / depth signals
-    ("ownership_ambiguity",         "ownership"),      # Heavy "we", unclear personal role
-    ("example_evasion",             "ownership"),      # Claimed ownership, no specifics on HOW
-
-    # Authenticity signals
-    ("latency_mismatch",            "authenticity"),   # Answer compressed -> probe memory not script
-    ("complexity_latency_mismatch", "authenticity"),   # Hard Q answered instantly -> probe real memory
-
-    # Fatigue -- move on
-    ("depth_decay",                 "normal"),         # Quality declining cross-topic -> move on
+# Signal-to-probe-family routing table. Ordered by priority -- when multiple
+# signals fire on the same turn, the first match in this list wins.
+#
+# Priority rationale:
+#   follow_up_collapse     -- most serious: first answer was strong but follow-up
+#                             collapsed, suggests the first answer was rehearsed.
+#   resume_claim_mismatch  -- inconsistency between resume and answer, surface it.
+#   complexity/latency     -- suspicious timing, test real memory.
+#   ownership_ambiguity    -- heavy "we" language, find personal contribution.
+#   example_evasion        -- dodged example with theory, test real experience.
+#   depth_decay (mild)     -- quality dipping, one pressure probe before giving up.
+_SIGNAL_TO_FAMILY: list[tuple[str, str]] = [
+    ("follow_up_collapse",          "authenticity"),
+    ("resume_claim_mismatch",       "clarification"),
+    ("complexity_latency_mismatch", "authenticity"),
+    ("latency_mismatch",            "authenticity"),
+    ("ownership_ambiguity",         "ownership"),
+    ("example_evasion",             "authenticity"),
+    ("depth_decay",                 "pressure"),
+    ("depth_decay_mild_pressure",   "pressure"),
 ]
 
 

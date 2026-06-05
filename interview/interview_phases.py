@@ -20,12 +20,10 @@ _BriefType = Any
 # - Multiple variants prevent every session sounding identical.
 # - Two short sentences max -- spoken delivery, not corporate boilerplate.
 _GREETING_VARIANTS: list[str] = [
-    "Hey {name}, thanks for jumping on. I'm {ai_name}. How's your day been so far?",
-    "Hi {name}, nice to meet you. I'm {ai_name}. How are you doing today?",
-    "Hi {name}, good to have you. I'm {ai_name}. How's everything on your end?",
-    "Hey {name}, thanks for making the time. I'm {ai_name}. How's your day shaping up?",
-    "Hi {name}, glad we could connect. I'm {ai_name}. How are things going today?",
-    "Hey {name}, great to meet you. I'm {ai_name}. How's the day treating you?",
+    "Hi {name}, I'm {ai_name}. Thanks for joining today. How are you doing?",
+    "Hi {name}, I'm {ai_name}. Good to have you here. How are you doing today?",
+    "Hello {name}, I'm {ai_name}. Hope you're doing well. How has your day been?",
+    "Hi {name}, I'm {ai_name}. Thanks for making the time. How are you doing?",
 ]
 
 
@@ -43,7 +41,8 @@ def build_greeting_text(candidate_name: str, ai_name: str, job_title: str) -> st
     return template.format(name=name, ai_name=ai)
 
 
-def build_warmup_directive() -> str:
+def build_warmup_directive(job_title: str = "") -> str:
+    role_line = f"the {job_title} role" if job_title else "the role"
     return (
         "[DO NOT SAY ALOUD -- INTERNAL INTERVIEWER INSTRUCTION]\n"
         "[WARMUP PHASE -- DO NOT START THE INTERVIEW YET]\n"
@@ -51,27 +50,35 @@ def build_warmup_directive() -> str:
         "STRICT RULES:\n"
         "  - Do NOT ask anything about their resume, skills, projects, or experience.\n"
         "  - Two sentences MAX. Not three. Not a paragraph.\n"
-        "  - Do NOT use: 'Absolutely', 'Great', 'Thanks for sharing', 'Happy to chat', 'Sounds good'.\n"
-        "  - Do NOT copy any example below -- generate your own every time.\n"
+        "  - Do NOT use: 'Absolutely', 'Great', 'Thanks for sharing', 'Happy to chat', 'Sounds good', 'Certainly'.\n"
+        "  - Do NOT copy the examples below word for word -- use them as a guide only.\n"
         "\n"
         "YOUR ONLY JOB THIS TURN:\n"
-        "  1. One short human reaction tied to what they literally just said.\n"
-        "  2. One direct closed question to confirm they're ready to start.\n"
+        f"  1. One short professional reaction tied to what they literally just said.\n"
+        f"  2. Mention you'll be conducting their interview for {role_line} today.\n"
+        f"  3. Ask if they are ready to begin -- direct and simple.\n"
         "\n"
-        "HOW TO REACT (pick what fits what they said):\n"
-        "  - If they said they're good/fine/ready -> something like 'Good to hear.' or 'Same here.' "
-        "or 'Nice, let's make it count.' -- one beat, then move.\n"
-        "  - If they said they're tired/busy -> something like 'I hear you -- let's keep it moving then.' "
-        "or 'Fair enough, we'll make this quick.'\n"
-        "  - If they said something specific (e.g. 'just finished a meeting') -> react to THAT specifically.\n"
-        "  - If it was just small talk -> match the energy briefly, don't over-explain.\n"
+        "HOW TO REACT based on what they said:\n"
         "\n"
-        "READINESS CHECK:\n"
-        "  Ask it like you're about to start something real -- direct and simple.\n"
-        "  Good: 'Ready to get into it?' / 'Shall we start?' / 'Want to jump in?'\n"
-        "  Bad: 'Are you ready to discuss your background?' / 'Ready to talk about your experience?'\n"
+        f"  IF they said they're doing well / good / fine:\n"
+        f"    -> 'Good to hear. So I'll be conducting your interview for {role_line} today. Are you ready to begin?'\n"
         "\n"
-        "WAIT for them to confirm before starting the interview."
+        f"  IF they asked 'how about you?' or 'how are you?' back:\n"
+        f"    -> 'Packed with interviews today — it's been a good day though. So I'll be conducting your interview for {role_line}. Are you ready to begin?'\n"
+        "\n"
+        f"  IF they said they're a bit nervous:\n"
+        f"    -> 'That's completely understandable. So I'll be conducting your interview for {role_line} today — just a conversation. Are you ready to begin?'\n"
+        "\n"
+        f"  IF they said they just got off a meeting / had a busy day:\n"
+        f"    -> 'Sounds like a full day. So I'll be conducting your interview for {role_line} today. Are you ready to begin?'\n"
+        "\n"
+        "  IF they gave a one-word answer or were vague:\n"
+        f"    -> React briefly in one word or short phrase, then go straight to the role mention and readiness check.\n"
+        "\n"
+        "TONE: Professional and warm. Not overly friendly. Not stiff.\n"
+        "      Speak like a recruiter from a good company -- confident, polite, gets to the point.\n"
+        "\n"
+        "WAIT for them to confirm they are ready before starting the interview."
     )
 
 

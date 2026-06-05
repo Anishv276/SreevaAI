@@ -34,10 +34,7 @@ from interview.session_state import (
     TrustState,
     SlidingWindow,
     OrderedSet,
-    IntegrityBand,
-    QualityBand,
     TrendLabel,
-    init_trust_state,
     is_always_on_signal,
     INTEGRITY_BAND,
     QUALITY_BAND,
@@ -90,7 +87,7 @@ _TURN_DELTAS = {
 # ---------------------------------------------------------------------------
 _PROCTOR_DELTAS = {
     "tab_switch":          -0.03,
-    "face_absent":         -0.03,
+    "face_absence":        -0.03,
     "multiple_faces":      -0.15,
     "answer_depth_surface":-0.02,
 }
@@ -199,6 +196,7 @@ _RECOVERY_RULES: tuple[RecoveryRule, ...] = (
         toggle_key="strong_under_pressure",
         delta_key="strong_under_pressure",
         recovery_label="strong_under_pressure",
+        prev_signal="follow_up_collapse",   # only fires after a prior collapse/pressure signal
         last_action_eq="PROBE",
         min_overall=6.5,
     ),

@@ -1,8 +1,9 @@
 "use client";
 
 import { Activity } from "lucide-react";
-import { Checkbox } from "@/components/ui/checkbox";
-import { ALWAYS_ON_PROCTORING_SIGNALS, isAlwaysOnSignal } from "@/lib/proctoring-signals";
+import { Switch } from "@/components/ui/switch";
+import { cn } from "@/lib/utils";
+import { ALWAYS_ON_PROCTORING_SIGNALS } from "@/lib/proctoring-signals";
 
 type SignalKey =
   | "tab_switch"
@@ -32,65 +33,67 @@ void _ALWAYS_ON_KEYS_TYPECHECK;
 
 type ProctoringSignals = Record<SignalKey, boolean>;
 
-type Group = {
-  title: string;
+type SignalRow = {
+  key: SignalKey;
+  label: string;
+  group: string;
   description: string;
-  items: Array<{ key: SignalKey; label: string }>;
 };
 
-const SIGNAL_GROUPS: Group[] = [
+const SIGNAL_ROWS: SignalRow[] = [
   {
-    title: "Browser and Session",
-    description: "Signals that show the candidate is leaving the test or switching environments.",
-    items: [
-      { key: "tab_switch", label: "Tab Switch" },
-      { key: "connection_lost", label: "Connection Lost" },
-    ],
+    key: "tab_switch",
+    label: "Tab Switch",
+    group: "Browser and Session",
+    description: "Leaving the assessment tab or switching away from the interview.",
   },
   {
-    title: "Device and Access",
-    description: "Signals that indicate the camera, microphone, or device setup is not usable.",
-    items: [
-      { key: "camera_disabled", label: "Camera Disabled" },
-      { key: "microphone_disabled", label: "Microphone Disabled" },
-    ],
+    key: "connection_lost",
+    label: "Connection Lost",
+    group: "Browser and Session",
+    description: "The session drops connection long enough to matter.",
   },
   {
-    title: "Face and Identity",
-    description: "Signals used to verify the right person is present and behaving normally on camera.",
-    items: [
-      { key: "face_absence", label: "Face Absence" },
-      { key: "multiple_faces", label: "Multiple Faces" },
-      { key: "identity_mismatch", label: "Identity Mismatch" },
-    ],
+    key: "camera_disabled",
+    label: "Camera Disabled",
+    group: "Device and Access",
+    description: "The camera is turned off or blocked during the session.",
   },
   {
-    title: "Ownership and Claim Checks",
-    description: "Signals that question whether the candidate owns the resume or the response being discussed.",
-    items: [
-      { key: "ownership_ambiguity", label: "Ownership Ambiguity" },
-      { key: "ownership_clarified", label: "Ownership Clarified" },
-      { key: "resume_claim_mismatch", label: "Resume Claim Mismatch" },
-    ],
+    key: "microphone_disabled",
+    label: "Microphone Disabled",
+    group: "Device and Access",
+    description: "The microphone is muted or unavailable when it should be active.",
   },
   {
-    title: "Example and Evidence",
-    description: "Signals that verify the candidate can back up claims with concrete examples.",
-    items: [
-      { key: "example_evasion", label: "Example Evasion" },
-      { key: "example_given", label: "Example Given" },
-      { key: "latency_mismatch", label: "Latency Mismatch" },
-    ],
+    key: "face_absence",
+    label: "Face Absence",
+    group: "Face and Identity",
+    description: "No face is visible in the frame for a meaningful stretch.",
   },
   {
-    title: "Pressure and Reasoning",
-    description: "Signals that reveal depth, consistency, and resilience under follow-up questioning.",
-    items: [
-      { key: "strong_under_pressure", label: "Strong Under Pressure" },
-      { key: "follow_up_collapse", label: "Follow-Up Collapse" },
-      { key: "depth_decay", label: "Depth Decay" },
-      { key: "complexity_latency_mismatch", label: "Complexity Latency Mismatch" },
-    ],
+    key: "multiple_faces",
+    label: "Multiple Faces",
+    group: "Face and Identity",
+    description: "More than one face is detected in the camera view.",
+  },
+  {
+    key: "identity_mismatch",
+    label: "Identity Mismatch",
+    group: "Face and Identity",
+    description: "The person on camera does not match the expected identity.",
+  },
+  {
+    key: "latency_mismatch",
+    label: "Latency Mismatch",
+    group: "Reasoning and Timing",
+    description: "The answer latency does not match the complexity of the question.",
+  },
+  {
+    key: "complexity_latency_mismatch",
+    label: "Complexity Latency Mismatch",
+    group: "Reasoning and Timing",
+    description: "The timing of the response looks off for the complexity of the topic.",
   },
 ];
 
@@ -106,57 +109,69 @@ export function ProctoringSignalsSection({
   return (
     <section className="space-y-6 font-sans">
       <div className="flex items-center gap-3">
-        <div className="h-8 w-8 rounded-lg bg-emerald-500 flex items-center justify-center text-white shadow-md shadow-emerald-100">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500 text-white shadow-md shadow-emerald-100">
           <Activity className="h-4 w-4" />
         </div>
         <div>
           <h2 className="text-lg font-semibold text-gray-900 tracking-tight">Behavioral and Proctoring Infrastructure</h2>
-          <p className="text-sm font-medium text-gray-500">Grouped by what the signal is trying to detect, so it is easier to classify and review.</p>
+          <p className="text-sm font-medium text-gray-500">All signals in one place. Green toggles mean enabled, and required signals stay locked on.</p>
         </div>
       </div>
 
       {disabled && (
         <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-medium text-gray-600">
-          Starter includes the 8 behavioral signals required for fair scoring (Ownership, Example, Pressure). Switch to a higher plan to enable browser, device, and identity checks below.
+          Starter keeps these plan-controlled proctoring signals locked. Upgrade the plan to enable the browser, device, face, and timing checks below.
         </div>
       )}
 
-      <div className="space-y-5">
-        {SIGNAL_GROUPS.map((group) => {
-          // Hide always-on signals from the super-admin UI entirely. They are
-          // enforced by the backend regardless of UI state, so showing them
-          // (locked or otherwise) just clutters the view.
-          const visibleItems = group.items.filter((item) => !isAlwaysOnSignal(item.key));
-
-          // If a group has no togglable items left (every item is always-on),
-          // hide the whole group card.
-          if (visibleItems.length === 0) return null;
-
-          return (
-            <div key={group.title} className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm">
-              <div className="mb-4">
-                <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-gray-900">{group.title}</h3>
-                <p className="mt-1 text-xs font-medium text-gray-500">{group.description}</p>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {visibleItems.map((signal) => (
-                  <label
-                    key={signal.key}
-                    className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-gray-50/70 px-4 py-3 shadow-sm transition-colors hover:border-gray-300 hover:bg-white"
-                  >
-                    <Checkbox
-                      checked={Boolean(signals[signal.key])}
-                      disabled={disabled}
-                      onCheckedChange={(checked) => onChange(signal.key, Boolean(checked))}
-                    />
-                    <span className="text-sm font-medium text-gray-800">{signal.label}</span>
-                  </label>
-                ))}
-              </div>
+      <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+        <div className="border-b border-gray-100 px-5 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-gray-900">Signal toggles</p>
+              <p className="mt-0.5 text-xs font-medium text-gray-500">One row per signal, with the toggle aligned on the right.</p>
             </div>
-          );
-        })}
+            <span className="rounded-full bg-emerald-50 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-700">
+              Green = on
+            </span>
+          </div>
+        </div>
+
+        <div className="divide-y divide-gray-100">
+          {SIGNAL_ROWS.map((signal) => {
+            return (
+              <div key={signal.key} className="flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0 space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-semibold text-gray-900">{signal.label}</span>
+                    <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-gray-600">
+                      {signal.group}
+                    </span>
+                  </div>
+                  <p className="text-xs font-medium leading-5 text-gray-500">{signal.description}</p>
+                </div>
+
+                <div className="flex items-center gap-3 sm:shrink-0">
+                  {disabled ? (
+                    <span className="rounded-full bg-gray-100 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-gray-500">
+                      Locked by plan
+                    </span>
+                  ) : null}
+                  <Switch
+                    checked={Boolean(signals[signal.key])}
+                    disabled={disabled}
+                    onCheckedChange={(next) => onChange(signal.key, Boolean(next))}
+                    className={cn(
+                      "data-[state=checked]:bg-emerald-500 data-[state=unchecked]:bg-gray-200",
+                      "data-[state=checked]:border-emerald-500 data-[state=unchecked]:border-gray-200",
+                      "focus-visible:ring-emerald-500/30"
+                    )}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </section>
   );

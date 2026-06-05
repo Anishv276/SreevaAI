@@ -8,8 +8,10 @@ Mirrors scripts/verify-proctoring-signals.ts. Ensures:
   3. _is_signal_enabled() in turn_evaluator forces always-on signals to True
      regardless of input toggles, and honors togglable signals.
   4. _is_toggle_enabled() in trust_engine does the same.
-  5. _extract_evaluation_signal_toggles() in agent_runtime force-sets all
-     always-on signals to True even when the input JSON tries to disable them.
+  5. _extract_evaluation_signal_toggles() in agent_runtime returns ONLY the
+     9 plan-gated signal keys. Always-on signals are intentionally absent from
+     the dict -- they are never toggled and the gating functions hard-override
+     them to True via is_always_on_signal() before the dict is consulted.
 
 Run:  python3 -m pytest tests/test_signal_toggles.py -v
 """
@@ -38,10 +40,21 @@ EXPECTED_ALWAYS_ON = {
     "depth_decay",
 }
 
-# Togglable signals that the Python layer can suppress when the org's JSON
-# explicitly sets them to false. (Browser/device/face signals are handled
-# entirely on the TS side and don't appear in the Python toggle map.)
-PYTHON_TOGGLABLE = {"latency_mismatch", "complexity_latency_mismatch"}
+# Plan-gated signals whose DB value the Python layer honors.
+# behavioral: latency_mismatch, complexity_latency_mismatch
+# environmental: tab_switch, camera_disabled, microphone_disabled,
+#                connection_lost, face_absence, multiple_faces, identity_mismatch
+PYTHON_TOGGLABLE = {
+    "latency_mismatch",
+    "complexity_latency_mismatch",
+    "tab_switch",
+    "camera_disabled",
+    "microphone_disabled",
+    "connection_lost",
+    "face_absence",
+    "multiple_faces",
+    "identity_mismatch",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -165,15 +178,14 @@ class TestIsToggleEnabled:
 
 class TestExtractEvaluationSignalToggles:
     """
-    _extract_evaluation_signal_toggles is the Python entry point that reads
-    the org's stored proctoringSignals JSON. After this function returns, the
-    8 always-on signals must be True regardless of input.
+    _extract_evaluation_signal_toggles returns ONLY the 9 plan-gated signal
+    keys. Always-on signals are intentionally absent -- they have no toggle
+    and always run. The gating functions (_is_signal_enabled, _is_toggle_enabled)
+    hard-override them to True via is_always_on_signal() before consulting
+    the dict, so their absence here is safe and by design.
     """
 
     def _extract(self, raw):
-        # Import here to avoid loading the heavy agent_runtime module unless
-        # this test class actually runs (it pulls in livekit, openai, etc.).
-        # If those modules aren't installed in the test env, we skip cleanly.
         try:
             from interview.agent_runtime import _extract_evaluation_signal_toggles
         except ImportError as e:
@@ -181,45 +193,56 @@ class TestExtractEvaluationSignalToggles:
         return _extract_evaluation_signal_toggles(raw)
 
     @pytest.mark.parametrize("signal", sorted(EXPECTED_ALWAYS_ON))
-    def test_always_on_forced_true_when_input_says_false_dict(self, signal):
-        hostile_input = {s: False for s in EXPECTED_ALWAYS_ON | PYTHON_TOGGLABLE}
-        result = self._extract(hostile_input)
-        assert result[signal] is True
+    def test_always_on_absent_from_dict(self, signal):
+        """Always-on signals must NOT be in the returned dict -- they are never toggled."""
+        result = self._extract({s: False for s in EXPECTED_ALWAYS_ON | PYTHON_TOGGLABLE})
+        assert signal not in result, (
+            f"'{signal}' should be absent from the toggle dict; "
+            "it is always-on and must never be suppressed via a toggle flag"
+        )
 
     @pytest.mark.parametrize("signal", sorted(EXPECTED_ALWAYS_ON))
-    def test_always_on_forced_true_when_input_says_false_json_string(self, signal):
-        hostile_json = json.dumps({s: False for s in EXPECTED_ALWAYS_ON | PYTHON_TOGGLABLE})
-        result = self._extract(hostile_json)
-        assert result[signal] is True
+    def test_always_on_still_enabled_via_gating_function(self, signal):
+        """Even though the key is absent, _is_signal_enabled must return True for always-on signals."""
+        result = self._extract({s: False for s in EXPECTED_ALWAYS_ON | PYTHON_TOGGLABLE})
+        assert _is_signal_enabled(result, signal) is True, (
+            f"_is_signal_enabled returned False for always-on signal '{signal}'"
+        )
 
-    @pytest.mark.parametrize("signal", sorted(EXPECTED_ALWAYS_ON))
-    def test_always_on_forced_true_when_input_omits_them(self, signal):
-        # Stale row missing every always-on key.
-        result = self._extract({"latency_mismatch": True})
-        assert result[signal] is True
-
-    @pytest.mark.parametrize("signal", sorted(EXPECTED_ALWAYS_ON))
-    def test_always_on_forced_true_when_input_is_none(self, signal):
+    def test_dict_contains_exactly_plan_gated_keys(self):
+        """Returned dict has exactly the 9 plan-gated keys -- no more, no less."""
         result = self._extract(None)
-        assert result[signal] is True
+        assert set(result.keys()) == PYTHON_TOGGLABLE
 
-    @pytest.mark.parametrize("signal", sorted(EXPECTED_ALWAYS_ON))
-    def test_always_on_forced_true_when_input_is_garbage(self, signal):
-        # Non-dict, non-JSON input.
-        result = self._extract("not a json object")
-        assert result[signal] is True
+    @pytest.mark.parametrize("signal", sorted(PYTHON_TOGGLABLE))
+    def test_plan_gated_defaults_false_when_absent(self, signal):
+        """Plan-gated signals default to False when not in the DB row (new org default)."""
+        result = self._extract(None)
+        assert result[signal] is False
 
-    def test_togglable_preserved_when_input_says_false(self):
-        hostile_input = {s: False for s in EXPECTED_ALWAYS_ON | PYTHON_TOGGLABLE}
+    @pytest.mark.parametrize("signal", sorted(PYTHON_TOGGLABLE))
+    def test_plan_gated_honors_false_from_db(self, signal):
+        hostile_input = {s: False for s in PYTHON_TOGGLABLE}
         result = self._extract(hostile_input)
-        for s in PYTHON_TOGGLABLE:
-            assert result[s] is False
+        assert result[signal] is False
 
-    def test_togglable_preserved_when_input_says_true(self):
+    @pytest.mark.parametrize("signal", sorted(PYTHON_TOGGLABLE))
+    def test_plan_gated_honors_true_from_db(self, signal):
         input_dict = {s: True for s in PYTHON_TOGGLABLE}
         result = self._extract(input_dict)
+        assert result[signal] is True
+
+    def test_plan_gated_honors_json_string_input(self):
+        """DB rows come back as JSON strings in some query paths."""
+        input_json = json.dumps({s: True for s in PYTHON_TOGGLABLE})
+        result = self._extract(input_json)
         for s in PYTHON_TOGGLABLE:
             assert result[s] is True
+
+    def test_garbage_input_defaults_all_plan_gated_to_false(self):
+        result = self._extract("not a json object")
+        for s in PYTHON_TOGGLABLE:
+            assert result[s] is False
 
 
 # ---------------------------------------------------------------------------
@@ -229,9 +252,14 @@ class TestExtractEvaluationSignalToggles:
 class TestEndToEnd:
     def test_hostile_db_row_cannot_disable_always_on(self):
         """
-        Simulate the worst case: a DB row where every always-on signal has
-        been manually set to false via raw SQL. The Python read+gate pipeline
-        must still treat all 8 as enabled.
+        Simulate the worst case: a DB row where every signal has been manually
+        set to false via raw SQL. The Python read+gate pipeline must still
+        treat all 8 always-on signals as enabled.
+
+        Contract:
+          - Always-on keys are ABSENT from the toggle dict (they have no toggle).
+          - Gating functions return True for always-on signals regardless.
+          - Plan-gated signals set to False in DB remain False in the dict.
         """
         try:
             from interview.agent_runtime import _extract_evaluation_signal_toggles
@@ -240,19 +268,28 @@ class TestEndToEnd:
 
         hostile_db_value = {s: False for s in EXPECTED_ALWAYS_ON | PYTHON_TOGGLABLE}
 
-        # Step 1: read+normalize.
+        # Step 1: read+normalize — always-on keys are absent, plan-gated are False.
         toggles = _extract_evaluation_signal_toggles(hostile_db_value)
 
-        # Step 2: every gating function honors always-on regardless of toggles.
+        assert set(toggles.keys()) == PYTHON_TOGGLABLE, (
+            f"Toggle dict should contain only plan-gated keys. Got: {set(toggles.keys())}"
+        )
+
+        # Step 2: gating functions must return True for always-on signals
+        # even though the keys are absent from the dict.
         for signal in EXPECTED_ALWAYS_ON:
             assert _is_signal_enabled(toggles, signal) is True, (
-                f"turn_evaluator suppressed always-on signal {signal}"
+                f"turn_evaluator suppressed always-on signal '{signal}'"
             )
             assert _is_toggle_enabled(toggles, signal) is True, (
-                f"trust_engine suppressed always-on signal {signal}"
+                f"trust_engine suppressed always-on signal '{signal}'"
             )
 
-        # Togglable signals stay suppressed when admin disables them.
+        # Step 3: plan-gated signals stay suppressed when admin disables them.
         for signal in PYTHON_TOGGLABLE:
-            assert _is_signal_enabled(toggles, signal) is False
-            assert _is_toggle_enabled(toggles, signal) is False
+            assert _is_signal_enabled(toggles, signal) is False, (
+                f"turn_evaluator should suppress disabled plan-gated signal '{signal}'"
+            )
+            assert _is_toggle_enabled(toggles, signal) is False, (
+                f"trust_engine should suppress disabled plan-gated signal '{signal}'"
+            )

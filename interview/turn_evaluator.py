@@ -26,7 +26,6 @@ from interview.turn_decision import (
     TurnDecision,
     detect_signal_events,
     build_signal_flags,
-    compute_trust_delta,
     build_turn_decision,
 )
 
@@ -180,7 +179,6 @@ async def _node_build_decision(state: EvalGraphState) -> dict:
             quality=raw,
             signals=build_signal_flags(events),
             signal_events=events,
-            trust=compute_trust_delta(signal_events=events, quality=raw),
             action=raw.get("action", "MOVE_ON"),
             mode=raw.get("probe_mode") or "normal",
             next_goal=raw.get("next_goal", ""),
@@ -250,7 +248,6 @@ def _safe_default_turn_decision() -> dict:
         quality=low,
         signals=build_signal_flags([]),
         signal_events=[],
-        trust=compute_trust_delta(signal_events=[], quality=low),
         action="PROBE",
         mode="ownership",
         next_goal="",
@@ -363,7 +360,6 @@ async def run_turn_evaluation(
         quality=result,
         signals=build_signal_flags(signal_events),
         signal_events=signal_events,
-        trust=compute_trust_delta(signal_events=signal_events, quality=result),
         action=result.get("action", "MOVE_ON"),
         mode=result.get("probe_mode") or "normal",
         next_goal=result.get("next_goal", ""),

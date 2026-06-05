@@ -15,7 +15,7 @@ model Organization {
   recordingRetentionDays Int?
   plan                 String      @default("STARTER")
   maxActiveDrives      String      @default("Unlimited")
-  proctoringSignals    Json?       @default("{\"tab_switch\":true,\"camera_disabled\":true,\"microphone_disabled\":true,\"connection_lost\":true,\"face_absence\":true,\"multiple_faces\":true,\"identity_mismatch\":true,\"ownership_ambiguity\":true,\"example_evasion\":true,\"latency_mismatch\":true,\"resume_claim_mismatch\":true,\"ownership_clarified\":true,\"example_given\":true,\"strong_under_pressure\":true,\"follow_up_collapse\":true}")
+  proctoringSignals    Json?       @default("{\"tab_switch\":false,\"camera_disabled\":false,\"microphone_disabled\":false,\"connection_lost\":false,\"face_absence\":false,\"multiple_faces\":false,\"identity_mismatch\":false,\"latency_mismatch\":false,\"complexity_latency_mismatch\":false}")
   status               String      @default("ACTIVE")
   createdAt            DateTime    @default(now())
   updatedAt            DateTime    @updatedAt

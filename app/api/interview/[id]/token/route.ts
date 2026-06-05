@@ -5,6 +5,7 @@ import { isInterviewTokenRequired } from "@/lib/interview-access";
 import {
     FIXED_INTERVIEW_DURATION_MINUTES,
 } from "@/lib/drive-limits";
+import { normalizeProctoringSignals } from "@/lib/proctoring-signals";
 
 const JOIN_WINDOW_MS = 5 * 60 * 1000;
 
@@ -36,7 +37,13 @@ export async function POST(
         const application = await prismaAny.application.findUnique({
             where: { id: applicationId },
             include: {
-                drive: true,
+                drive: {
+                    include: {
+                        organization: {
+                            select: { proctoringSignals: true },
+                        },
+                    },
+                },
             },
         });
 
@@ -177,12 +184,17 @@ export async function POST(
             canSubscribe: true,
         });
 
+        const proctoringSignals = normalizeProctoringSignals(
+            application.drive?.organization?.proctoringSignals
+        );
+
         return NextResponse.json({
             token: await at.toJwt(),
             url: serverUrl,
             duration: durationSeconds,
             roleLabel: application.drive?.role || application.drive?.title || "Interview",
             candidateName: application.fullName,
+            proctoringSignals,
         });
     } catch (error) {
         console.error("LiveKit token error:", error);

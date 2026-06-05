@@ -22,7 +22,6 @@ from openai import AsyncOpenAI
 _NO_NEW_QUESTION_CUTOFF_SECONDS: int = 45
 
 from interview.turn_evaluator import run_turn_evaluation
-from interview.trust_engine import apply_turn_decision
 from interview.agent_scoring import evaluate_answer
 from interview.agent_runtime_support import EVAL_LLM_MODEL
 
@@ -164,34 +163,20 @@ class TopicImportanceClassifier:
         return "LOW"
 
 
-class ResponseScoreCalculator:
-    WEIGHTS = {
-        "clarity": 0.20,
-        "depth": 0.35,
-        "specificity": 0.30,
-        "grounding": 0.15,
-    }
+def _weighted_score(quality: dict) -> float:
+    """Single weighted aggregate of the 4 LLM scores. Used for both saturation
+    contribution and depth_signal classification."""
+    return (
+        quality.get("clarity", 0.0) * 0.20
+        + quality.get("depth", 0.0) * 0.35
+        + quality.get("specificity", 0.0) * 0.30
+        + quality.get("grounding", 0.0) * 0.15
+    )
 
-    CONTRIBUTION_BANDS = [
-        (8.5, 3.5),
-        (7.0, 2.5),
-        (5.5, 1.5),
-        (4.0, 0.5),
-        (0.0, 0.0),
-    ]
 
-    @staticmethod
-    def calculate_response_score(quality: dict) -> float:
-        return (
-            quality.get("clarity", 0.0) * ResponseScoreCalculator.WEIGHTS["clarity"]
-            + quality.get("depth", 0.0) * ResponseScoreCalculator.WEIGHTS["depth"]
-            + quality.get("specificity", 0.0) * ResponseScoreCalculator.WEIGHTS["specificity"]
-            + quality.get("grounding", 0.0) * ResponseScoreCalculator.WEIGHTS["grounding"]
-        )
-
-    @staticmethod
-    def calculate_contribution(response_score: float) -> float:
-        return min(3.5, max(0.0, (response_score - 2.0) / 8.0 * 3.5))
+def _score_to_contribution(weighted: float) -> float:
+    """Map a weighted score (0-10) to a saturation contribution (0-3.5)."""
+    return min(3.5, max(0.0, (weighted - 2.0) / 8.0 * 3.5))
 
 
 class SignalPenaltyCalculator:
@@ -245,7 +230,6 @@ class EvaluationPayload(BaseModel):
     discussed_log: List[str] = Field(default_factory=list)
     job_title: str = "the role"
     remaining_seconds: float = 999.0
-    trust_state: Dict[str, Any] = Field(default_factory=dict)
     current_interview_mode: str = "normal"
     candidate_name: str = "?"
     band: str = "mid"
@@ -270,8 +254,8 @@ def evaluate_topic_saturation(
     if not topic_state:
         return False, "no_topic"
 
-    response_score = ResponseScoreCalculator.calculate_response_score(quality_scores)
-    contribution = 0.0 if skip_quality_contribution else ResponseScoreCalculator.calculate_contribution(response_score)
+    weighted = _weighted_score(quality_scores)
+    contribution = 0.0 if skip_quality_contribution else _score_to_contribution(weighted)
 
     signal_modifier = SignalPenaltyCalculator.calculate_penalties(signal_events)
     if signal_modifier < 0:
@@ -285,8 +269,8 @@ def evaluate_topic_saturation(
     topic_state.add_response_contribution(final_contribution, 0.0, turn=turn)
 
     logger.info(
-        "[SAT_CALC] topic=%s | response_score=%.2f contribution=%.2f signal_modifier=%+.2f final_contribution=%.2f",
-        topic_state.topic_name, response_score, contribution, signal_modifier, final_contribution,
+        "[SAT_CALC] topic=%s | weighted=%.2f contribution=%.2f signal_modifier=%+.2f final_contribution=%.2f",
+        topic_state.topic_name, weighted, contribution, signal_modifier, final_contribution,
     )
     logger.info(
         "[SAT_CALC] base_credit=%.1f | score: %.1f -> %.1f (delta=+%.1f) | follow_ups: %d -> %d",
@@ -418,11 +402,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     action: str = td["decision"]["action"]
     signal_events = td.get("signal_events", [])
 
-    _weighted_quality = ResponseScoreCalculator.calculate_response_score(td["quality"])
-    quality_avg = (
-        td["quality"]["clarity"] + td["quality"]["depth"]
-        + td["quality"]["specificity"] + td["quality"]["grounding"]
-    ) / 4.0
+    _weighted_quality = _weighted_score(td["quality"])
 
     depth_signal = "SURFACE"
     if _weighted_quality >= 7.0:
@@ -432,24 +412,23 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
 
     _all_signal_names = [ev.get("signal_name", "?") for ev in signal_events if ev.get("signal_name")]
     logger.info(
-        "[QUALITY] turn=%d | clarity=%.1f depth=%.1f specificity=%.1f grounding=%.1f | avg=%.2f weighted=%.2f depth_signal=%s",
+        "[QUALITY] turn=%d | clarity=%.1f depth=%.1f specificity=%.1f grounding=%.1f | weighted=%.2f depth_signal=%s",
         p.turn,
         td["quality"]["clarity"], td["quality"]["depth"],
         td["quality"]["specificity"], td["quality"]["grounding"],
-        quality_avg, _weighted_quality, depth_signal,
+        _weighted_quality, depth_signal,
     )
     logger.info(
-        "[EVAL] turn=%d action=%s probe_mode=%s quality_avg=%.2f signals=[%s]",
+        "[EVAL] turn=%d action=%s probe_mode=%s weighted=%.2f signals=[%s]",
         p.turn, action, td["decision"].get("mode", "?"),
-        quality_avg, ", ".join(_all_signal_names) if _all_signal_names else "none",
+        _weighted_quality, ", ".join(_all_signal_names) if _all_signal_names else "none",
     )
     for _ev in signal_events:
         if _ev.get("signal_name"):
             logger.info(
-                "[SIGNAL] name=%-28s layer=%-20s confidence=%.2f delta=%+.2f turn=%d",
+                "[SIGNAL] name=%-28s layer=%-20s confidence=%.2f turn=%d",
                 _ev.get("signal_name", "?"), _ev.get("signal_layer", "?"),
-                float(_ev.get("confidence", 0.5) or 0.5),
-                float(_ev.get("score_delta", 0) or 0), p.turn,
+                float(_ev.get("confidence", 0.5) or 0.5), p.turn,
             )
 
     # -- Saturation calculation ------------------------------------------------
@@ -472,14 +451,22 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         (current_topic_state.topic_name if current_topic_state else "?"),
         saturation_status,
         ", ".join(signal_fired_names) if signal_fired_names else "none",
-        " | depth_decay->MOVE_ON" if depth_decay_fired else "",
+        " | depth_decay->MOVE_ON(severe)" if (depth_decay_fired and "severe" in str(
+            next((ev.get("evidence","") for ev in signal_events if ev.get("signal_name")=="depth_decay"), ""))) else
+        " | depth_decay->PROBE(mild)" if depth_decay_fired else "",
     )
 
     # -- Decision -------------------------------------------------------------
-    # Priority: depth_decay > weak_exit > saturated > llm_judge > PROBE
+    # Priority: depth_decay(severe) > weak_exit > saturated > llm_judge >
+    #           depth_decay(mild=pressure probe) > PROBE
+    depth_decay_severity = None
     if depth_decay_fired:
+        _dd_ev = next((ev for ev in signal_events if ev.get("signal_name") == "depth_decay"), {})
+        depth_decay_severity = "severe" if "severe" in str(_dd_ev.get("evidence", "")) else "mild"
+
+    if depth_decay_fired and depth_decay_severity == "severe":
         action = "MOVE_ON"
-        logger.info("[DECISION] [OK] MOVE_ON reason=depth_decay turn=%d", p.turn)
+        logger.info("[DECISION] [OK] MOVE_ON reason=depth_decay(severe) turn=%d", p.turn)
     elif _weak_exit:
         action = "MOVE_ON"
         logger.info("[DECISION] [OK] MOVE_ON reason=weak_exit (turns=%d score=%.1f<min=%.1f) turn=%d",
@@ -491,6 +478,13 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
                     current_topic_state.saturation_score, current_topic_state.saturation_threshold, p.turn)
     elif action == "MOVE_ON":
         logger.info("[DECISION] [OK] MOVE_ON reason=llm_judge turn=%d", p.turn)
+    elif depth_decay_fired and depth_decay_severity == "mild":
+        # Mild decay: quality is dipping but not collapsed. Try one pressure
+        # probe before giving up -- the candidate may recover. If they don't,
+        # depth_decay will fire again next turn (after cooldown) as severe.
+        action = "PROBE"
+        signal_fired_names = list(signal_fired_names) + ["depth_decay_mild_pressure"]
+        logger.info("[DECISION] PROBE reason=depth_decay(mild)->pressure turn=%d", p.turn)
     else:
         action = "PROBE"
 
@@ -502,9 +496,13 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         from interview.probe_strategy import _PROBE_FAMILIES, _SIGNAL_TO_FAMILY, _MODE_ALIASES, get_probe_goal, get_probe_style
 
         def _resolve_probe_family() -> str:
+            # First match in _SIGNAL_TO_FAMILY wins -- the table is ordered by
+            # priority so the most serious signal drives the probe when multiple
+            # fire on the same turn.
             for sig_name, sig_family in _SIGNAL_TO_FAMILY:
-                if sig_name in signal_fired_names and sig_family != "normal":
+                if sig_name in signal_fired_names:
                     return sig_family
+            # No signal fired -- fall back to LLM's own probe_mode suggestion.
             llm_mode = str(td["decision"].get("mode") or "").strip().lower()
             if llm_mode in _PROBE_FAMILIES:
                 return llm_mode
@@ -524,24 +522,6 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
             probe_family, ", ".join(signal_fired_names) or "none", pct_sat, p.turn,
         )
 
-    # -- Trust state update ----------------------------------------------------
-    new_trust_state = apply_turn_decision(
-        dict(p.trust_state), td, behavioral_toggles=p.signal_toggles,
-    )
-
-    risk_integrity_delta = 0
-    risk_depth_delta = 0
-    for event in signal_events:
-        event_delta = float(event.get("score_delta", 0.0) or 0.0)
-        legacy_delta = int(round(max(0.0, -event_delta) * 100))
-        if legacy_delta:
-            if event.get("signal_layer") == "hard_integrity":
-                risk_integrity_delta += legacy_delta
-            else:
-                risk_depth_delta += legacy_delta
-    if depth_signal == "SURFACE":
-        risk_depth_delta += 3
-
     # -- Discussed log entry (on MOVE_ON) -------------------------------------
     discussed_log_entry: Optional[str] = None
     if action == "MOVE_ON" and p.question and p.answer:
@@ -560,7 +540,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         "grounding": td["quality"]["grounding"],
         "overall": _weighted_quality,
         "signals": [ev["signal_name"] for ev in signal_events if ev.get("signal_name")],
-        "concerns": [ev["signal_name"] for ev in signal_events if ev.get("score_delta", 0.0) < 0],
+        "concerns": [ev["signal_name"] for ev in signal_events if not ev.get("recoverable", True)],
         "topic": p.active_topic or "general",
         "topic_saturation_score": current_topic_state.saturation_score if current_topic_state else 0.0,
         "topic_saturation_threshold": current_topic_state.saturation_threshold if current_topic_state else 0.0,
@@ -568,7 +548,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
 
     logger.info(
         "[RESULT] turn=%d action=%s quality=%.2f/%s signals=[%s] sat=%.1f/%.1f",
-        p.turn, action, quality_avg, depth_signal,
+        p.turn, action, _weighted_quality, depth_signal,
         ", ".join(_all_signal_names) or "none",
         current_topic_state.saturation_score if current_topic_state else 0,
         current_topic_state.saturation_threshold if current_topic_state else 0,
@@ -597,10 +577,6 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
             "depth_decay": depth_decay_fired,
             "topic_state_dict": current_topic_state.to_dict() if current_topic_state else None,
         },
-        # Trust / risk
-        "new_trust_state": new_trust_state,
-        "risk_integrity_delta": risk_integrity_delta,
-        "risk_depth_delta": risk_depth_delta,
         "discussed_log_entry": discussed_log_entry,
         # LLM usage for billing
         "eval_llm_usages": list(_captured_eval_usage),

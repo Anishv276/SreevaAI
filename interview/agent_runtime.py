@@ -71,7 +71,6 @@ from interview.agent_runtime_support import (
     VOICE_REGISTRY,
     FIXED_INTERVIEW_DURATION_MINUTES,
     STT_MODEL,
-    compose_risk_score,
     logger,
     reset_log_context,
     set_log_context,
@@ -89,7 +88,7 @@ from livekit.agents.metrics import AgentSessionUsage
 from livekit.agents.voice import room_io
 from livekit.agents.voice.turn import EndpointingOptions, InterruptionOptions
 from interview.trust_engine import finalize_trust_state
-from interview.session_state import ALWAYS_ON_PROCTORING_SIGNALS, init_trust_state
+from interview.session_state import init_trust_state
 from interview.recruiter_summary import build_recruiter_summary
 from interview.prompt_layers import (
     build_voice_layer_prompt,
@@ -596,21 +595,25 @@ def prewarm(proc: JobProcess):
 
 
 class _EvalSignalToggles(BaseModel):
-    """Validated signal enable/disable flags. All default ON. Coerces any truthy DB value.
-    Orgs can explicitly set a signal to false to disable a TOGGLABLE signal.
-    Always-on signals (see ALWAYS_ON_PROCTORING_SIGNALS) are force-set to true
-    by _extract_evaluation_signal_toggles regardless of input -- the field
-    defaults below only apply when a togglable key is absent from the input."""
-    # Togglable signals -- honor the input value, default to True when absent.
-    latency_mismatch: bool = True
-    complexity_latency_mismatch: bool = True
-    # Always-on signals -- defaults provided so model construction works
-    # without these keys; runtime override forces them to True regardless of input.
-    ownership_ambiguity: bool = True
-    example_evasion: bool = True
-    resume_claim_mismatch: bool = True
-    follow_up_collapse: bool = True
-    depth_decay: bool = True
+    """Toggle flags for plan-gated signals only.
+
+    Always-on signals (ownership_ambiguity, ownership_clarified, example_evasion,
+    example_given, resume_claim_mismatch, follow_up_collapse, strong_under_pressure,
+    depth_decay) are NOT listed here — they have no toggle and always run.
+
+    Plan-gated signals default to False when absent from the DB row.
+    """
+    # Plan-gated behavioral signals
+    latency_mismatch: bool = False
+    complexity_latency_mismatch: bool = False
+    # Plan-gated environmental signals (Python awareness mirrors frontend gating)
+    tab_switch: bool = False
+    camera_disabled: bool = False
+    microphone_disabled: bool = False
+    connection_lost: bool = False
+    face_absence: bool = False
+    multiple_faces: bool = False
+    identity_mismatch: bool = False
 
     @field_validator("*", mode="before")
     @classmethod
@@ -625,12 +628,10 @@ class _EvalSignalToggles(BaseModel):
 
 
 def _extract_evaluation_signal_toggles(raw_signals: Any) -> dict[str, bool]:
-    """Parse DB proctoringSignals JSON into a validated bool dict.
+    """Parse DB proctoringSignals JSON into a toggle dict for plan-gated signals only.
 
-    Togglable signals (latency_mismatch, complexity_latency_mismatch) honor the
-    stored boolean. Always-on signals (see ALWAYS_ON_PROCTORING_SIGNALS) are
-    force-set to true regardless of input -- this is the write-time guarantee
-    that mirrors the TS-layer `normalizeProctoringSignals` override.
+    Returns only the 9 plan-gated signal flags. Always-on signals are not in
+    this dict — they are never toggled and run unconditionally in the evaluator.
     """
     parsed: dict[str, Any] = {}
     if isinstance(raw_signals, dict):
@@ -642,13 +643,7 @@ def _extract_evaluation_signal_toggles(raw_signals: Any) -> dict[str, bool]:
                 parsed = maybe
         except Exception:
             pass
-    result = _EvalSignalToggles(**parsed).model_dump()
-    # Force always-on signals to True regardless of what the DB said. Defends
-    # against stale rows, manual SQL tampering, or any code path that writes
-    # the JSON without going through normalizeProctoringSignals on the TS side.
-    for key in ALWAYS_ON_PROCTORING_SIGNALS:
-        result[key] = True
-    return result
+    return _EvalSignalToggles(**parsed).model_dump()
 
 
 class InterviewContext(BaseModel):
@@ -1053,7 +1048,7 @@ async def entrypoint(ctx: JobContext):
     )
     chat_ctx = llm.ChatContext()
     chat_ctx.add_message(role="system", content=system_prompt)
-    warmup_directive = build_warmup_directive()
+    warmup_directive = build_warmup_directive(job_title=job_title)
     chat_ctx.add_message(role="system", content=warmup_directive)
     chat_ctx.add_message(role="system", content=interview_directive_cached)
     logger.info("[FLOW] System prompt ready  greeting  warmup  interview")
@@ -1202,11 +1197,7 @@ async def entrypoint(ctx: JobContext):
     _final_no_new_question_guard = False
     _time_guard_active = False          # True when <= 20s remain -- blocks eval + signals
     _candidate_turn_since_last_assistant = True
-    environment_risk = 0     # browser-side proctoring signals
-    integrity_risk = 0       # integrity-related proctoring signals
-    depth_risk = 0           # surface answers / compression failures
-    suspicion_score = 0      # composite risk score used only for mode switching
-    current_interview_mode = "normal"  # normal / pressure / verification / deep
+    current_interview_mode = "normal"  # normal / deep / pressure
     proctoring_events: list = []       # timeline of risk signals for final report
     # Note: browser-side proctoring (face, tab, hardware) is recorded directly
     # to the DB via /api/interview/proctoring. The agent does NOT process these
@@ -1378,12 +1369,6 @@ async def entrypoint(ctx: JobContext):
     # Accumulated per-turn eval LLM usage records (gpt-4.1-mini calls). Applied to
     # billing snapshot at session end so eval costs are tracked per org.
     _eval_llm_usages_accumulated: list[dict] = []
-
-    def refresh_composite_risk() -> int:
-        nonlocal suspicion_score
-        suspicion_score = compose_risk_score(integrity_risk, depth_risk)
-        return suspicion_score
-
     async def _publish_launch_prereqs_ready() -> None:
         """Notify frontend that launch prerequisites are complete."""
         nonlocal launch_prereqs_signal_sent
@@ -1433,11 +1418,6 @@ async def entrypoint(ctx: JobContext):
             "role_category": session_context.candidate_band,
             "candidate_band": session_context.candidate_band,
             "total_turns": turn_count,
-            "suspicion_score": suspicion_score,
-            "environment_risk": environment_risk,
-            "integrity_risk": integrity_risk,
-            "depth_risk": depth_risk,
-            "composite_risk": suspicion_score,
             "current_mode": current_interview_mode,
             "exit_reason": exit_reason,
             "events": proctoring_events,
@@ -1554,7 +1534,9 @@ async def entrypoint(ctx: JobContext):
         result_turn: int,
     ) -> bool:
         """Persist eval state mutations. Agent already owns topic/directive decisions."""
-        nonlocal answer_scores, integrity_risk, depth_risk,             _last_applied_eval_turn, _discussed_log, _topic_score_histories,             _trust_state, _last_depth_decay_turn, _eval_llm_usages_accumulated,             current_interview_mode
+        nonlocal answer_scores, _last_applied_eval_turn, _discussed_log, \
+            _topic_score_histories, _last_depth_decay_turn, \
+            _eval_llm_usages_accumulated, current_interview_mode
 
         if result_turn <= _last_applied_eval_turn:
             logger.debug(
@@ -1563,26 +1545,21 @@ async def entrypoint(ctx: JobContext):
             )
             return False
 
-        quality_record = result.get("quality_record")
-        risk_integrity_delta = int(result.get("risk_integrity_delta", 0) or 0)
-        risk_depth_delta     = int(result.get("risk_depth_delta", 0) or 0)
-        discussed_log_entry  = result.get("discussed_log_entry")
+        quality_record      = result.get("quality_record")
+        discussed_log_entry = result.get("discussed_log_entry")
 
-        # depth_signal -> interview mode escalation
+        # depth_signal -> interview mode escalation (DEEP answer unlocks deep mode)
         depth_signal = result.get("depth_signal", "SURFACE")
         if depth_signal == "DEEP" and current_interview_mode == "normal":
             current_interview_mode = "deep"
 
+        # signal_events -> check for collapse/pressure to escalate to pressure mode
+        signal_events = result.get("signal_events") or []
+        fired_names = {ev.get("signal_name") for ev in signal_events if ev.get("signal_name")}
+        if "follow_up_collapse" in fired_names and current_interview_mode in ("normal", "deep"):
+            current_interview_mode = "pressure"
+
         async with _session_state_lock:
-            if risk_integrity_delta or risk_depth_delta:
-                integrity_risk = min(100, integrity_risk + risk_integrity_delta)
-                depth_risk = min(100, depth_risk + risk_depth_delta)
-            refresh_composite_risk()
-
-            new_trust_state = result.get("new_trust_state")
-            if new_trust_state:
-                _trust_state = new_trust_state
-
             saturation = result.get("saturation") or {}
             if saturation.get("depth_decay"):
                 _last_depth_decay_turn = result_turn
@@ -1618,12 +1595,11 @@ async def entrypoint(ctx: JobContext):
         role: str,
         turn_snapshot: int,
     ) -> None:
-        nonlocal suspicion_score, proctoring_events, _last_interviewer_question, \
+        nonlocal proctoring_events, _last_interviewer_question, \
             current_interview_mode, answer_scores, \
             _trust_state, greeting_delivered_at, \
             warmup_complete, _last_depth_decay_turn, \
             _active_topic, _covered_topic_keys, _topic_states, \
-            integrity_risk, depth_risk, \
             _last_applied_eval_turn, _discussed_log, _topic_score_histories, \
             _resume_topics_pool, _skill_topics_pool, _awaiting_first_interview_question
         try:
@@ -1891,7 +1867,6 @@ async def entrypoint(ctx: JobContext):
                         "discussed_log": list(_discussed_log[-8:]),
                         "job_title": job_title,
                         "remaining_seconds": float(_remaining_total_seconds_now()),
-                        "trust_state": dict(_trust_state),
                         "current_interview_mode": current_interview_mode,
                         "band": session_context.candidate_band,
                         "ai_question_this_turn": (_last_interviewer_question or "").strip(),
@@ -1983,9 +1958,6 @@ async def entrypoint(ctx: JobContext):
                         "signal_events": [
                             {"signal_name": "eval_error", "severity": "critical"}
                         ],
-                        "new_trust_state": _trust_state,  # Preserve existing trust
-                        "risk_integrity_delta": 0,
-                        "risk_depth_delta": 0,
                         "discussed_log_entry": None,
                     }
                     logger.info("[EVAL] turn=%d | agent-level fallback constructed: action=PROBE saturation=0.0/5.0", turn_snapshot)
