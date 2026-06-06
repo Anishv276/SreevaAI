@@ -58,11 +58,17 @@ _PROVIDER_DEFAULTS: dict[str, Any] = {
     "sarvam_v2_pitch":         0.0,
     "sarvam_v2_loudness":      1.0,
     "sarvam_temperature":      0.4,
-    # FIX #3: Increased from 350ms to 800ms for multi-clause answers
-    # Research: 350ms endpointing was too aggressive, split mid-thought answers
-    # Solution: 800ms allows natural pauses between clauses without premature endpoint
-    # Pair with _STT_INTERVIEW_ASSEMBLY_GRACE_SECONDS = 2.0s for full capture
-    "deepgram_endpointing_ms": 800,
+    # Endpointing: how long Deepgram waits after last detected word before sending
+    # speech_final=true. 1200ms gives slow/pausing speakers (non-native English)
+    # enough room to continue a thought without the system cutting them off.
+    # Pair with utterance_end_ms below for belt-and-suspenders utterance detection.
+    "deepgram_endpointing_ms": 1200,
+    # utterance_end_ms: Deepgram sends an UtteranceEnd event after this many ms of
+    # silence following the last finalized word. This is a second signal on top of
+    # endpointing -- catches cases where endpointing fires but more speech follows.
+    # 1500ms matches our STT assembly grace window (3s) / 2 so we get the event
+    # well before our hard cap fires.
+    "deepgram_utterance_end_ms": 1500,
     # WS connect/send timeout. Sarvam closes idle connections after 60s -- keepalive pings every
     # 20s prevent this. recv timeout is set separately to 90s in _recv_task.
     "sarvam_ws_timeout_sec":   25,
@@ -734,15 +740,24 @@ def build_stt(language_code: str = "en", model: str = STT_MODEL):
     elif "endpointing" in supported:
         base_kwargs["endpointing"] = ep_ms
 
+    # utterance_end_ms: secondary utterance-completion signal from Deepgram.
+    # Fires after N ms of silence following the last finalized word, giving us
+    # a server-side "the candidate has stopped speaking" event independent of
+    # LiveKit's VAD. Requires interim_results=True (already set above).
+    utt_ms = str(_PROVIDER_DEFAULTS["deepgram_utterance_end_ms"])
+    if "utterance_end_ms" in supported:
+        base_kwargs["utterance_end_ms"] = utt_ms
+
     safe_kwargs = {k: v for k, v in base_kwargs.items() if k in supported} if supported else base_kwargs
 
     logger.info(
-        "[STT] Deepgram config: model=%s language=%s interim=%s diarization=%s ep_ms=%s",
+        "[STT] Deepgram config: model=%s language=%s interim=%s diarization=%s ep_ms=%s utt_end_ms=%s",
         safe_kwargs.get("model"),
         safe_kwargs.get("language"),
         bool(safe_kwargs.get("interim_results", False)),
         bool(safe_kwargs.get("enable_diarization", False)),
         safe_kwargs.get("endpointing_ms", safe_kwargs.get("endpointing", "n/a")),
+        safe_kwargs.get("utterance_end_ms", "n/a"),
     )
     return deepgram.STT(**safe_kwargs)
 

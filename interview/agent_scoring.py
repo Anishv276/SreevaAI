@@ -65,6 +65,34 @@ async def evaluate_answer(
             "reason": "empty answer",
         }
 
+    # Explicit denial / zero-information utterance -- short-circuit scoring.
+    # Feeding these to the LLM causes clarity=10 for grammatically clean denials
+    # ("No. I don't remember anything.") which inflates saturation by ~36%.
+    # Any utterance that is ONLY a denial with no content scores 0 across all dims.
+    _denial_patterns = (
+        r"^(no\.?\s*)?(i\s+)?(don'?t|do not|can'?t|cannot)\s+(remember|recall|know)\s*(anything|it|that|this)?\s*[.!?]*$",
+        r"^(no\.?\s*)?(i\s+)?(didn'?t|did not)\s+(do|work on|build|make|create)\s*(it|that|this|anything)?\s*[.!?]*$",
+        r"^(no\.?\s*)?(i\s+)?(never|haven'?t|have not|hadn'?t|had not)\s+(used|worked|done|tried)\s*(it|that|this)?\s*[.!?]*$",
+        r"^(i\s+)?don'?t\s+know\s*[.!?]*$",
+        r"^(no\.?\s*){1,3}[.!?]*$",
+    )
+    import re as _re_scoring
+    _answer_stripped = candidate_answer.strip().lower()
+    if (
+        len(candidate_answer.split()) <= 10
+        and any(_re_scoring.match(p, _answer_stripped) for p in _denial_patterns)
+    ):
+        logger.info(
+            "[EVAL] short-circuit: denial/null utterance detected (%r) -- returning zero scores",
+            candidate_answer[:60],
+        )
+        return {
+            "clarity": 0, "depth": 0, "specificity": 0, "grounding": 0,
+            "overall": 0.0,
+            "action": "MOVE_ON", "probe_mode": None,
+            "reason": "explicit denial / no information provided",
+        }
+
     word_count = len(candidate_answer.strip().split())
 
     # Use last 6 lines (3 Q&A pairs) -- enough for LLM to see follow-up context

@@ -496,7 +496,7 @@ function CreateDriveForm() {
                 className={cn(isAnalyzing && !formData.deadline && "opacity-95")}
               />
               <p className="text-[11px] text-gray-400 font-medium">
-                Candidates can apply until this deadline. Interview mode is managed by Super Admin at org level.
+                Candidates can attend until this deadline.
               </p>
             </div>
             {isAnalyzing && (

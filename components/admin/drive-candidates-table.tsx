@@ -129,39 +129,6 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [pageSize]);
 
-    useEffect(() => {
-        let timer: NodeJS.Timeout;
-        const hasProcessing = candidates.some((c: any) => normalizeStatusKey(c.resumeStatus || c.status) === "processing");
-        if (hasProcessing && isDriveViewReady) {
-            timer = setInterval(() => {
-                let startDate: string | undefined;
-                let endDate: string | undefined;
-                if (timeline.type === "today") {
-                    startDate = new Date().toISOString().split("T")[0];
-                    endDate = startDate;
-                } else if (timeline.type === "week") {
-                    const date = new Date();
-                    date.setDate(date.getDate() - 7);
-                    startDate = date.toISOString().split("T")[0];
-                } else if (timeline.type === "month") {
-                    const date = new Date();
-                    date.setMonth(date.getMonth() - 1);
-                    startDate = date.toISOString().split("T")[0];
-                } else if (timeline.type === "custom") {
-                    startDate = timeline.from;
-                    endDate = timeline.to;
-                }
-                void fetchCandidates(
-                    pagination.page, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, 
-                    startDate, endDate, searchTerm, scoreSort,
-                    { force: true, background: true }
-                );
-            }, 3000);
-        }
-        return () => clearInterval(timer);
-    }, [candidates, isDriveViewReady, pagination.page, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, timeline, searchTerm, scoreSort, fetchCandidates]);
-
-
     const handlePageChange = (newPage: number) => {
         if (newPage < 1 || newPage > pagination.totalPages) return;
         let startDate: string | undefined;

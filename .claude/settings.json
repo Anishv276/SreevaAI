@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c ' *)",
+      "Bash(node -e ' *)",
+      "Bash(python -m py_compile interview/agent_profile_context.py)",
+      "Bash(python -m py_compile interview/interview_phases.py)"
+    ]
+  }
+}

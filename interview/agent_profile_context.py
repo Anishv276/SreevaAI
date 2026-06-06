@@ -550,6 +550,11 @@ def build_merged_interview_brief(
     # -- Opening Anchor --------------------------------------------------------
     out.append("\n-- OPENING ANCHOR -------------------------------------------")
     out.append(f"  [{anchor_type.upper()}] {anchor_item}")
+    out.append(
+        "  ^ This is WHERE you open the interview. Ask about this first.\n"
+        "  ^ Use the full context in PROJECTS / WORK HISTORY below to make your question\n"
+        "    specific -- name the company, the tool, or the project detail."
+    )
 
     # -- Projects -------------------------------------------------------------
     raw_projects = _as_list(_deep_get(raw_resume, "projects")) or []
@@ -582,14 +587,53 @@ def build_merged_interview_brief(
 
     # -- Skills ----------------------------------------------------------------
     out.append("\n-- SKILLS ---------------------------------------------------")
-    if claimed_skills:
-        out.append("  Claimed  : " + " | ".join(item["name"] for item in claimed_skills))
-    if missing_skills:
-        out.append("  Missing  : " + " | ".join(item["name"] for item in missing_skills))
-    if not claimed_skills and not missing_skills and resume_context.skills:
-        out.append("  Skills   : " + " | ".join(resume_context.skills))
+    if resume_context.skills:
+        out.append("  On resume: " + " | ".join(resume_context.skills[:8]))
     if jd_nice:
-        out.append("  Nice-to-have: " + " | ".join(item["name"] for item in jd_nice))
+        out.append("  Nice-to-have (JD): " + " | ".join(item["name"] for item in jd_nice))
+
+    # -- Grounding Rule --------------------------------------------------------
+    # Single rule block — data is already above in WORK HISTORY / PROJECTS.
+    # This just tells the agent HOW to use that data when forming questions.
+    out.append("\n-- GROUNDING RULE -------------------------------------------")
+    out.append(
+        "  Always name the company + role OR project name when asking.\n"
+        "  WRONG: 'You mentioned Python on your resume -- tell me about it.'\n"
+        "  RIGHT: 'You worked as Python Developer at [Company] -- what did you build there?'\n"
+        "  RIGHT: 'Tell me about [Project Name] -- what problem did it solve?'"
+    )
+
+    # -- Skill → where it was used (compact, no re-rendering) -----------------
+    _skill_context_pairs: list[str] = []
+    for sk_item in claimed_skills[:5]:
+        sk_name = sk_item["name"]
+        _ctx_found = ""
+        for proj in raw_projects[:4]:
+            if isinstance(proj, dict):
+                _pt_names = [str(t).lower() for t in _extract_text_items(proj.get("technologies"), ("skill", "tool", "name", "value"))]
+                if any(sk_name.lower() in t or t in sk_name.lower() for t in _pt_names):
+                    _ctx_found = f"project: {_first_text(proj.get('name'), proj.get('title')) or '?'}"
+                    break
+        if not _ctx_found:
+            for role in raw_work[:3]:
+                if isinstance(role, dict):
+                    _rtext = " ".join([str(role.get("role", "")), str(role.get("company", "")), str(role.get("description", ""))]).lower()
+                    if sk_name.lower() in _rtext:
+                        _co = _first_text(role.get("company"), role.get("organization")) or "?"
+                        _ti = _first_text(role.get("role"), role.get("title")) or "?"
+                        _ctx_found = f"role: {_ti} at {_co}"
+                        break
+        _skill_context_pairs.append(
+            f"    {sk_name}: {_ctx_found or 'resume claim -- ask where they used it'}"
+        )
+    if _skill_context_pairs:
+        out.append("  Skill context (where to anchor the question):")
+        out.extend(_skill_context_pairs)
+
+    if missing_skills:
+        out.append("  JD gaps (not on resume -- probe as gap, not as claim):")
+        for sk in missing_skills[:4]:
+            out.append(f"    {sk['name']}")
 
     # -- Custom Questions -------------------------------------------------------
     cqs = [str(q).strip() for q in (custom_questions or []) if str(q).strip()]

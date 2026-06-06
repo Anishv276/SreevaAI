@@ -1528,7 +1528,6 @@ if (isQueueEnabled("backup-queue")) {
             id: true,
             title: true,
             role: true,
-            department: true,
             type: true,
             screeningThreshold: true,
             creatorId: true,

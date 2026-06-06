@@ -101,12 +101,6 @@ const CandidatesContext = createContext<CandidatesContextType | undefined>(undef
 const DEFAULT_LIMIT = 10;
 const FETCH_REUSE_WINDOW_MS = 4000;
 const STREAM_REFRESH_DEBOUNCE_MS = 1200;
-const PROCESSING_POLL_INTERVAL_MS = 5000;
-
-function isActivelyProcessing(c: { status: string; screeningProgress?: number | null }): boolean {
-    const s = (c.status || '').toLowerCase();
-    return s === 'processing' || s === 'waiting' || (s === 'pending' && (c.screeningProgress ?? 0) === 0);
-}
 
 export function CandidatesProvider({ children }: { children: React.ReactNode }) {
     const [candidates, setCandidates] = useState<Candidate[]>([]);
@@ -138,7 +132,6 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
     const eventSourceRef = useRef<EventSource | null>(null);
     const paginationRef = useRef<Pagination>(pagination);
     const refreshTimerRef = useRef<number | null>(null);
-    const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const hasFetchedAdminDataRef = useRef(false);
     const lastFetchRef = useRef<{ key: string; at: number } | null>(null);
     const inFlightRequestsRef = useRef<Map<string, Promise<void>>>(new Map());
@@ -473,43 +466,6 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
             refreshTimerRef.current = null;
         }
     }, [isCandidatesRoute]);
-
-    // SMART POLLING: Auto-refresh every 5s when any candidate is actively processing.
-    useEffect(() => {
-        const hasProcessing = candidates.some(isActivelyProcessing);
-        if (hasProcessing && isCandidatesRoute) {
-            if (!pollingIntervalRef.current) {
-                pollingIntervalRef.current = setInterval(() => {
-                    const lastParams = lastFetchParamsRef.current;
-                    const current = paginationRef.current;
-                    void fetchCandidatesInternal(
-                        lastParams?.page ?? current.page,
-                        lastParams?.limit ?? current.limit,
-                        lastParams?.driveId,
-                        lastParams?.resumeStatus,
-                        lastParams?.interviewStatus,
-                        lastParams?.hiringStatus,
-                        lastParams?.startDate,
-                        lastParams?.endDate,
-                        lastParams?.search,
-                        lastParams?.sort ?? 'default',
-                        { force: true, background: true }
-                    );
-                }, PROCESSING_POLL_INTERVAL_MS);
-            }
-        } else {
-            if (pollingIntervalRef.current) {
-                clearInterval(pollingIntervalRef.current);
-                pollingIntervalRef.current = null;
-            }
-        }
-        return () => {
-            if (pollingIntervalRef.current) {
-                clearInterval(pollingIntervalRef.current);
-                pollingIntervalRef.current = null;
-            }
-        };
-    }, [candidates, isCandidatesRoute, fetchCandidatesInternal]);
 
     useEffect(() => {
         return () => {

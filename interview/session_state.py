@@ -48,7 +48,7 @@ ALWAYS_ON_PROCTORING_SIGNALS: frozenset[str] = frozenset({
     # Ownership and Claim Checks
     "ownership_ambiguity",
     "ownership_clarified",
-    "resume_claim_mismatch",
+    "weak_technical_hedge",
     # Example and Evidence
     "example_evasion",
     "example_given",

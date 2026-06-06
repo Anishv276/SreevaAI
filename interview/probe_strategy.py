@@ -215,11 +215,18 @@ _PROBE_FAMILIES: dict[str, dict] = {
 }
 
 
-def get_probe_goal(family: str) -> str:
-    """Return a randomly selected goal string for the given probe family."""
+def get_probe_goal(family: str, rotation_index: int = 0) -> str:
+    """Return a goal string for the given probe family.
+
+    H5 fix: accepts an explicit rotation_index so the agent advances through
+    the goal list deterministically (one step per PROBE turn) instead of
+    picking randomly each turn.  The agent reads probe_rotation_index from
+    TopicState and passes it here, then increments and persists the new index.
+    Falls back to index 0 when called without an explicit index.
+    """
     fam = _PROBE_FAMILIES.get(family, _PROBE_FAMILIES["normal"])
     goals = fam.get("goals", [fam.get("goal", "Probe the candidate.")])
-    return random.choice(goals)
+    return goals[rotation_index % len(goals)]
 
 
 def get_probe_style(family: str) -> str:
@@ -233,14 +240,14 @@ def get_probe_style(family: str) -> str:
 # Priority rationale:
 #   follow_up_collapse     -- most serious: first answer was strong but follow-up
 #                             collapsed, suggests the first answer was rehearsed.
-#   resume_claim_mismatch  -- inconsistency between resume and answer, surface it.
+#   weak_technical_hedge  -- inconsistency between resume and answer, surface it.
 #   complexity/latency     -- suspicious timing, test real memory.
 #   ownership_ambiguity    -- heavy "we" language, find personal contribution.
 #   example_evasion        -- dodged example with theory, test real experience.
 #   depth_decay (mild)     -- quality dipping, one pressure probe before giving up.
 _SIGNAL_TO_FAMILY: list[tuple[str, str]] = [
     ("follow_up_collapse",          "authenticity"),
-    ("resume_claim_mismatch",       "clarification"),
+    ("weak_technical_hedge",       "clarification"),
     ("complexity_latency_mismatch", "authenticity"),
     ("latency_mismatch",            "authenticity"),
     ("ownership_ambiguity",         "ownership"),

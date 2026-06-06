@@ -101,7 +101,11 @@ class TopicState:
 
     def add_response_contribution(self, response_score: float, signal_penalties: float = 0.0, turn: Optional[int] = None) -> None:
         quality_contribution = max(0.0, response_score + signal_penalties)
-        total = self.base_turn_credit + quality_contribution
+        # Base credit is only awarded when the candidate provided substantive content.
+        # A denial, repeat request, or zero-score answer contributes 0 base credit
+        # so that saturation cannot inflate purely from turn count on null answers.
+        effective_base = self.base_turn_credit if quality_contribution > 0.0 else 0.0
+        total = effective_base + quality_contribution
         self.saturation_score += total
         self.follow_up_turns += 1
         self.is_saturated = self.saturation_score >= self.saturation_threshold
@@ -184,7 +188,7 @@ class SignalPenaltyCalculator:
         "follow_up_collapse": -0.3,
         "example_evasion": -0.3,
         "ownership_ambiguity": -0.3,
-        "resume_claim_mismatch": -0.3,
+        "weak_technical_hedge": -0.3,
         "latency_mismatch": -0.3,
         "complexity_latency_mismatch": -0.3,
         "strong_under_pressure": +0.5,
@@ -235,6 +239,8 @@ class EvaluationPayload(BaseModel):
     band: str = "mid"
     time_limit_mins: int = 20
     topic_score_history: List[float] = Field(default_factory=list)
+    # H2 fix: per-topic depth scores (separate from overall) for follow_up_collapse
+    topic_depth_history: List[float] = Field(default_factory=list)
     # The actual question Ishita asked -- used for context in scoring
     ai_question_this_turn: str = ""
 
@@ -354,8 +360,25 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     )
 
     # -- Run scoring ----------------------------------------------------------
-    _follow_up_count = current_topic_state.follow_up_turns if current_topic_state else 0
-    _topic_depth_scores = [float(r) for r in p.topic_score_history if isinstance(r, (int, float))]
+    # H1 fix: follow_up_turns is the count BEFORE this answer's contribution is
+    # added (add_response_contribution runs after run_turn_evaluation returns).
+    # Detectors that require topic_follow_up_count >= 1 (follow_up_collapse,
+    # strong_under_pressure) would miss the first real follow-up turn.
+    # Pass count + 1 so detectors see the post-contribution value.
+    _follow_up_count = (current_topic_state.follow_up_turns + 1) if current_topic_state else 0
+    # H2 fix: prior_depth_scores must be depth sub-scores, not overall scores.
+    # topic_depth_history carries per-topic depth values written by _apply_eval_result.
+    _topic_depth_scores = [float(r) for r in p.topic_depth_history if isinstance(r, (int, float))]
+    # L4 fix: derive collapse_stage from how many times follow_up_collapse has
+    # already fired on this topic (stored in TopicState.signals_fired).
+    # Stage 0 = first collapse; stage >= 1 = escalated (increases confidence,
+    # sets recoverable=False in FollowUpCollapseDetector).
+    _collapse_stage = 0
+    if current_topic_state:
+        _collapse_stage = sum(
+            1 for s in (current_topic_state.signals_fired or [])
+            if s == "follow_up_collapse"
+        )
 
     _captured_eval_usage: list[dict] = []
 
@@ -368,6 +391,12 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
 
     _topic_importance = current_topic_state.importance if current_topic_state else "HIGH"
 
+    # C2 fix: session_score_history must be the session-wide quality history from
+    # _trust_state.score_history (populated after C1 fix), NOT the per-topic list.
+    # depth_decay needs >= 4 turns of cross-topic data to detect session-level decay;
+    # per-topic history resets each topic and never accumulates enough entries.
+    _session_score_history = [float(r) for r in p.score_history if isinstance(r, (int, float))]
+
     _eval_coro = run_turn_evaluation(
         candidate_answer=p.answer,
         last_question=p.question,
@@ -377,11 +406,12 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         llm_model=p.llm_model,
         evaluate_answer_fn=_evaluate_answer_capturing,
         signal_toggles=p.signal_toggles,
-        session_score_history=p.topic_score_history,
+        session_score_history=_session_score_history,
         turns_since_last_decay=p.turns_since_decay,
         response_latency_sec=p.response_latency_sec,
         topic_follow_up_count=_follow_up_count,
         prior_depth_scores=_topic_depth_scores,
+        collapse_stage=_collapse_stage,
         candidate_band=p.band,
         active_topic=p.active_topic or "",
         topic_importance=_topic_importance,
@@ -434,6 +464,11 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     # -- Saturation calculation ------------------------------------------------
     signal_fired_names = [ev.get("signal_name", "") for ev in signal_events]
     depth_decay_fired = any(ev.get("signal_name") == "depth_decay" for ev in signal_events)
+
+    # L4 fix: record follow_up_collapse fires in TopicState.signals_fired so
+    # the next turn can derive collapse_stage from the count.
+    if current_topic_state and any(n == "follow_up_collapse" for n in signal_fired_names):
+        current_topic_state.signals_fired.append("follow_up_collapse")
 
     is_saturated, saturation_status = evaluate_topic_saturation(
         current_topic_state,

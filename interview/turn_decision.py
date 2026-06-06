@@ -46,7 +46,7 @@ class QualityScores(TypedDict):
 class SignalFlags(TypedDict):
     ownership_ambiguity: bool
     example_evasion: bool
-    resume_claim_mismatch: bool
+    weak_technical_hedge: bool
     latency_mismatch: bool
     follow_up_collapse: bool
     depth_decay: bool
@@ -169,6 +169,23 @@ _THEORY_PHRASES = {
     "you should", "one would", "the idea is", "ideally", "the approach is",
     "you can", "the way to", "it depends",
 }
+
+# C3/C4 fix: shared regex used by BOTH ExampleEvasionDetector and
+# ExampleGivenDetector so their "has specifics" threshold is identical and
+# the two signals can never fire simultaneously.  Covers temporal markers
+# (original narrow set) PLUS technical specificity tokens so answers
+# containing named tools, modules, or actions are not penalised.
+_SPECIFICS_RE = re.compile(
+    r"\b("
+    r"at |in |during |when|year|ago|\d+"        # temporal / numeric
+    r"|using|with|via|built|wrote|implemented"   # action specificity
+    r"|deployed|configured|designed|created"
+    r"|project|client|company|system|database"   # entity names
+    r"|api|service|module|class|function|script"
+    r"|pipeline|repo|endpoint|schema|table"
+    r")\b",
+    re.IGNORECASE,
+)
 _EXAMPLE_REQUEST_PHRASES = {
     "give me an example", "can you give", "tell me about a time",
     "walk me through", "specific example", "real example", "describe a time",
@@ -324,6 +341,12 @@ class BaseDetector(ABC):
 
 class OwnershipAmbiguityDetector(BaseDetector):
     _SHORT_EVASION_THRESHOLD = 12
+    # M5 fix: separate the "counts as we-language" tokens from the "triggers
+    # short-evasion" tokens.  Previously both sets overlapped (_WE_TOKENS
+    # contains "team"/"they"/"everyone") making the we_count < 2 guard
+    # contradict the any() check.  Now: short-evasion only fires on neutral
+    # topic/project/personal words that carry no pronoun count weight.
+    _SHORT_EVASION_TRIGGER_WORDS = frozenset({"personal", "project", "built", "developed"})
 
     def detect(self, ctx: DetectionContext) -> Optional[SignalEvent]:
         tokens = ctx.answer.lower().split()
@@ -331,11 +354,14 @@ class OwnershipAmbiguityDetector(BaseDetector):
         we_count = sum(1 for t in clean if t in _WE_TOKENS)
         i_count = sum(1 for t in clean if t in _I_TOKENS)
         classic_hit = we_count >= 2 and i_count <= 1
+        # M5 fix: short-evasion trigger set no longer overlaps with _WE_TOKENS.
+        # Fires on very short answers that name a project/personal context but
+        # claim zero personal ownership (no "I/me/my" AND no team pronoun).
         short_evasion_hit = (
             len(clean) <= self._SHORT_EVASION_THRESHOLD
             and i_count == 0
-            and we_count < 2
-            and any(w in clean for w in ("personal", "project", "team", "we", "our", "us", "they", "everyone"))
+            and we_count == 0
+            and any(w in clean for w in self._SHORT_EVASION_TRIGGER_WORDS)
         )
         if not (classic_hit or short_evasion_hit):
             return None
@@ -365,10 +391,25 @@ class ExampleEvasionDetector(BaseDetector):
             return None
         a_lower = ctx.answer.lower()
         answer_is_theoretical = any(p in a_lower for p in _THEORY_PHRASES)
-        has_specifics = bool(re.search(r"\b(at |in |during |when|year|ago|\d+)\b", a_lower))
+        # C3 fix: use the shared _SPECIFICS_RE which covers technical tokens
+        # (tool names, action verbs, entity types) in addition to temporal /
+        # numeric markers.  Previously only dates/numbers counted, causing
+        # the signal to fire on substantive technical answers.
+        has_specifics = bool(_SPECIFICS_RE.search(a_lower))
         word_count = len(ctx.answer.split())
         is_too_short = word_count <= 15 and not has_specifics
-        if not (answer_is_theoretical or not has_specifics or is_too_short):
+        # Evasion fires only when the answer is genuinely thin:
+        #   - clearly theoretical language used, OR
+        #   - very short (<=15 words) with no specific detail
+        # An answer that is NOT theoretical AND has specifics → no signal.
+        if not (answer_is_theoretical or is_too_short):
+            return None
+        # C4 fix: mutual exclusion — if ExampleGivenDetector would fire on
+        # this same answer (concrete, substantive, non-theoretical), suppress
+        # evasion to prevent contradictory signals on the same turn.
+        is_concrete = not answer_is_theoretical
+        is_substantive = word_count >= 25
+        if has_specifics and is_concrete and is_substantive:
             return None
         if is_too_short and not answer_is_theoretical:
             confidence = 0.70
@@ -387,7 +428,15 @@ class ExampleEvasionDetector(BaseDetector):
         )
 
 
-class ResumeClaimMismatchDetector(BaseDetector):
+class WeakTechnicalHedgeDetector(BaseDetector):
+    """Detects hedging language ('I've worked with', 'I'm familiar with') combined
+    with weak depth — indicates resume-padding rather than real experience.
+
+    H3 fix: renamed from ResumeClaimMismatchDetector.  The original name implied
+    a comparison against actual resume data (which was never done).  The signal
+    fires on hedging language + low depth, so 'weak_technical_hedge' is accurate.
+    """
+
     def detect(self, ctx: DetectionContext) -> Optional[SignalEvent]:
         q_lower = ctx.last_question.lower()
         if not any(p in q_lower for p in _EXAMPLE_REQUEST_PHRASES | _COMPRESSION_REQUEST_PHRASES):
@@ -395,14 +444,15 @@ class ResumeClaimMismatchDetector(BaseDetector):
         a_lower = ctx.answer.lower()
         if not any(p in a_lower for p in _RESUME_LIKE_PHRASES):
             return None
-        has_specifics = bool(re.search(r"\b(at |in |during |when|year|ago|\d+)\b", a_lower))
+        # C3 fix: use shared _SPECIFICS_RE for consistent specificity detection.
+        has_specifics = bool(_SPECIFICS_RE.search(a_lower))
         if has_specifics and ctx.current_depth >= 5.5:
             return None
         return _build_signal_event(
-            signal_name="resume_claim_mismatch",
+            signal_name="weak_technical_hedge",
             signal_layer="behavioral_confidence",
             confidence=0.72 if not has_specifics else 0.62,
-            evidence="resume-like claim with weak grounding or missing concrete evidence",
+            evidence="hedging language ('I've worked with', 'familiar with') without concrete grounding",
             trust_bucket_affected="behavioral_confidence",
             score_delta=-0.12,
             probe_mode="evidence",
@@ -547,27 +597,16 @@ _CLM_MIN_WORDS = 20
 # ===========================================================================
 
 class QuestionComplexityScorer:
-    """OOP wrapper with class-level LRU cache for question complexity scoring.
+    """Complexity classifier for interview questions.
 
-    Repeated question strings (same probe template used many turns) are scored
-    once and memoized -- avoids redundant phrase-set scanning on every turn.
-    Cache evicts oldest entry when it reaches _CACHE_SIZE.
+    M6 fix: replaced the hand-rolled class-level dict cache (not thread-safe
+    under concurrent evals from multiple simultaneous interviews) with
+    functools.lru_cache on the static compute method.  lru_cache uses an
+    internal lock and is safe for concurrent access from multiple threads.
     """
 
-    _CACHE_SIZE: ClassVar[int] = 256
-    _cache: ClassVar[dict[str, str]] = {}
-
-    @classmethod
-    def score(cls, question: str) -> str:
-        if question in cls._cache:
-            return cls._cache[question]
-        result = cls._compute(question)
-        if len(cls._cache) >= cls._CACHE_SIZE:
-            cls._cache.pop(next(iter(cls._cache)))  # evict oldest (Python 3.7+ dict order)
-        cls._cache[question] = result
-        return result
-
     @staticmethod
+    @__import__("functools").lru_cache(maxsize=256)
     def _compute(question: str) -> str:
         q = question.lower()
         word_count = len(q.split())
@@ -580,8 +619,12 @@ class QuestionComplexityScorer:
         return "moderate"
 
     @classmethod
+    def score(cls, question: str) -> str:
+        return cls._compute(question)
+
+    @classmethod
     def clear_cache(cls) -> None:
-        cls._cache.clear()
+        cls._compute.cache_clear()
 
 
 def _score_question_complexity(question: str) -> str:
@@ -644,8 +687,11 @@ class OwnershipClarifiedDetector(BaseDetector):
             "i owned", "i designed", "i built", "i decided", "i led", "i managed",
             "i personally", "my responsibility", "my role", "i specifically"
         ])
-        has_specifics = bool(re.search(r"\b(specific|personal|i|my|me|myself)\b", a_lower))
-        if has_personal and has_ownership and has_specifics:
+        # M4 fix: removed dead condition 3 (`has_specifics`). Any answer that
+        # satisfies has_ownership already contains "i", "my", or "i specifically",
+        # so the old `re.search(r"\b(specific|personal|i|my|me|myself)\b")` was
+        # always True when has_ownership was True — it added zero filtering.
+        if has_personal and has_ownership:
             return _build_signal_event(
                 signal_name="ownership_clarified",
                 signal_layer="behavioral_confidence",
@@ -663,7 +709,10 @@ class OwnershipClarifiedDetector(BaseDetector):
 class ExampleGivenDetector(BaseDetector):
     def detect(self, ctx: DetectionContext) -> Optional[SignalEvent]:
         a_lower = ctx.answer.lower()
-        has_specifics = bool(re.search(r"\b(at |in |during |when|year|ago|\d+|project|client|company|system|database|api)\b", a_lower))
+        # C4 fix: use the same _SPECIFICS_RE as ExampleEvasionDetector so the
+        # two signals share one definition of "has specifics" and can never
+        # both fire on the same answer.
+        has_specifics = bool(_SPECIFICS_RE.search(a_lower))
         is_concrete = not any(p in a_lower for p in [
             "typically", "usually", "generally", "you should", "you could",
             "ideally", "theoretically", "in theory"
@@ -733,7 +782,7 @@ class SignalEvaluator:
     _DETECTORS: ClassVar[dict[str, BaseDetector]] = {
         "ownership_ambiguity":          OwnershipAmbiguityDetector(),
         "example_evasion":              ExampleEvasionDetector(),
-        "resume_claim_mismatch":        ResumeClaimMismatchDetector(),
+        "weak_technical_hedge":         WeakTechnicalHedgeDetector(),
         "follow_up_collapse":           FollowUpCollapseDetector(),
         "latency_mismatch":             LatencyMismatchDetector(),
         "depth_decay":                  DepthDecayDetector(),
@@ -904,14 +953,14 @@ def _detect_example_evasion_event(
     ))
 
 
-def _detect_resume_claim_mismatch_event(
+def _detect_weak_technical_hedge_event(
     answer: str,
     last_question: str,
     current_depth: float,
     prior_depth_scores: Optional[list[float]] = None,
     topic_follow_up_count: int = 0,
 ) -> Optional[SignalEvent]:
-    return ResumeClaimMismatchDetector().detect(_legacy_detection_context(
+    return WeakTechnicalHedgeDetector().detect(_legacy_detection_context(
         answer=answer,
         last_question=last_question,
         current_depth=current_depth,
@@ -1040,7 +1089,7 @@ def build_signal_flags(signal_events: list[SignalEvent]) -> SignalFlags:
     return SignalFlags(
         ownership_ambiguity="ownership_ambiguity" in names,
         example_evasion="example_evasion" in names,
-        resume_claim_mismatch="resume_claim_mismatch" in names,
+        weak_technical_hedge="weak_technical_hedge" in names,
         latency_mismatch="latency_mismatch" in names,
         follow_up_collapse="follow_up_collapse" in names,
         depth_decay="depth_decay" in names,

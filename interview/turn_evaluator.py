@@ -97,6 +97,7 @@ class EvalGraphState(TypedDict):
     response_latency_sec: Optional[float]
     topic_follow_up_count: int
     prior_depth_scores: Optional[list]
+    collapse_stage: int
     candidate_band: str
     active_topic: str
     topic_importance: str
@@ -149,7 +150,7 @@ async def _node_detect_signals(state: EvalGraphState) -> dict:
             current_depth=float(state["raw_quality"].get("depth", 5.0)),
             prior_depth_scores=state["prior_depth_scores"] or [],
             topic_follow_up_count=state["topic_follow_up_count"],
-            collapse_stage=0,
+            collapse_stage=state.get("collapse_stage", 0),
             session_score_history=state["session_score_history"],
             turns_since_last_decay=state["turns_since_last_decay"],
             response_latency_sec=state["response_latency_sec"],
@@ -277,6 +278,7 @@ async def run_turn_evaluation(
     response_latency_sec: Optional[float] = None,
     topic_follow_up_count: int = 0,
     prior_depth_scores: Optional[list[float]] = None,
+    collapse_stage: int = 0,
     candidate_band: str = "mid",
     active_topic: str = "",
     topic_importance: str = "HIGH",
@@ -307,6 +309,7 @@ async def run_turn_evaluation(
             "response_latency_sec":  response_latency_sec,
             "topic_follow_up_count": topic_follow_up_count,
             "prior_depth_scores":    prior_depth_scores,
+            "collapse_stage":        collapse_stage,
             "candidate_band":        candidate_band,
             "active_topic":          active_topic,
             "topic_importance":      topic_importance,
@@ -346,7 +349,7 @@ async def run_turn_evaluation(
         current_depth=float(result.get("depth", 5.0)),
         prior_depth_scores=prior_depth_scores or [],
         topic_follow_up_count=topic_follow_up_count,
-        collapse_stage=0,
+        collapse_stage=collapse_stage,
         session_score_history=session_score_history,
         turns_since_last_decay=turns_since_last_decay,
         response_latency_sec=response_latency_sec,

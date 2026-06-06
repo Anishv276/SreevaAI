@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import json
 import random
 import time
@@ -87,7 +87,7 @@ from livekit.agents import (
 from livekit.agents.metrics import AgentSessionUsage
 from livekit.agents.voice import room_io
 from livekit.agents.voice.turn import EndpointingOptions, InterruptionOptions
-from interview.trust_engine import finalize_trust_state
+from interview.trust_engine import finalize_trust_state, apply_turn_decision
 from interview.session_state import init_trust_state
 from interview.recruiter_summary import build_recruiter_summary
 from interview.prompt_layers import (
@@ -598,7 +598,7 @@ class _EvalSignalToggles(BaseModel):
     """Toggle flags for plan-gated signals only.
 
     Always-on signals (ownership_ambiguity, ownership_clarified, example_evasion,
-    example_given, resume_claim_mismatch, follow_up_collapse, strong_under_pressure,
+    example_given, weak_technical_hedge, follow_up_collapse, strong_under_pressure,
     depth_decay) are NOT listed here — they have no toggle and always run.
 
     Plan-gated signals default to False when absent from the DB row.
@@ -1210,7 +1210,8 @@ async def entrypoint(ctx: JobContext):
     answer_scores: list[dict] = []    # log of all answer quality scores for final DB save
     _active_topic: Optional[str] = None  # full context string for LLM; initialized after topic pools built
     _topic_states: dict[str, dict] = {}        # TopicState serialized per topic for saturation tracking
-    _topic_score_histories: dict[str, list] = {}  # per-topic quality score history for collapse/latency detection
+    _topic_score_histories: dict[str, list] = {}   # per-topic overall score history (for latency detection)
+    _topic_depth_histories: dict[str, list] = {}   # H2 fix: per-topic depth scores for follow_up_collapse
     _last_depth_decay_turn: int = -999           # turn when depth_decay last fired; -999 = never
     _last_applied_eval_turn: int = 0             # monotonic guard against stale eval results
     _question_asked_at: float = 0.0
@@ -1223,9 +1224,14 @@ async def entrypoint(ctx: JobContext):
     # Read inside the PROBE directive builder to avoid asking the reflection question twice
     # on the same project.
     _topic_closing_fired: set[str] = set()
+    _denied_topics: set[str] = set()           # topics where candidate said "I don't remember / didn't do it"
+    _asked_questions_log: list[str] = []       # last 6 questions asked verbatim, for duplicate prevention
+    _reflection_probe_count: int = 0           # session-wide count of reflection probes used
+    _skill_denial_count: int = 0               # consecutive skill denials counter
     _user_turn_chain: Optional[asyncio.Task[Any]] = None  # serialize user-turn processing
     _processed_user_turns: set[int] = set()      # turns whose STT was already flushed; drops late Deepgram finals
     _last_user_turn_flushed_at: float = 0.0
+    _move_on_transition_at: float = 0.0          # monotonic timestamp of last MOVE_ON; used to suppress tail audio
     _first_interview_question_asked: bool = False  # True after first post-warmup AI question fires
     _awaiting_first_interview_question: bool = False  # warmup confirmed; next assistant turn must open interview
     # Running log of topics already covered  injected into every directive so the AI
@@ -1523,11 +1529,13 @@ async def entrypoint(ctx: JobContext):
     # LiveKit/VAD owns end-of-turn. Keep only a small post-turn assembly grace
     # so adjacent final chunks from Deepgram are folded into the same answer.
     _STT_WARMUP_ASSEMBLY_GRACE_SECONDS = 0.25
-    _STT_INTERVIEW_ASSEMBLY_GRACE_SECONDS = 2.0  # FIX #3: Increased from 0.75s to 2.0s
-    # Rationale: Multi-clause answers need time to collect all fragments
-    # Research: Deepgram VAD + 0.75s grace was too aggressive, split answers mid-thought
-    # Solution: Longer grace period lets agent collect full utterance before finalizing turn
+    _STT_INTERVIEW_ASSEMBLY_GRACE_SECONDS = 3.0  # Sliding: reset on each fragment, cap at _STT_MAX_ASSEMBLY_SECONDS
+    # 3s per-fragment silence window handles slow/pausing speakers (non-native English).
+    # Timer resets on every new Deepgram final, so a multi-clause answer with natural
+    # pauses waits 3s of silence after the LAST fragment before flushing.
+    _STT_MAX_ASSEMBLY_SECONDS = 8.0   # Hard cap: flush regardless after 8s total assembly time
     _STT_TINY_FRAGMENT_RECOVERY_SECONDS = 1.5
+    _stt_turn_started_at: dict[int, float] = {}  # tracks when assembly for each turn began
     async def _apply_eval_result(
         result: dict[str, Any],
         *,
@@ -1536,7 +1544,7 @@ async def entrypoint(ctx: JobContext):
         """Persist eval state mutations. Agent already owns topic/directive decisions."""
         nonlocal answer_scores, _last_applied_eval_turn, _discussed_log, \
             _topic_score_histories, _last_depth_decay_turn, \
-            _eval_llm_usages_accumulated, current_interview_mode
+            _eval_llm_usages_accumulated, current_interview_mode, _trust_state
 
         if result_turn <= _last_applied_eval_turn:
             logger.debug(
@@ -1573,6 +1581,22 @@ async def entrypoint(ctx: JobContext):
 
             if quality_record:
                 answer_scores.append(quality_record)
+                # C1 fix: apply per-turn trust update so trust_score accumulates
+                # correctly across the session.  Must run inside the lock so the
+                # mutable _trust_state dict is never accessed from two coroutines
+                # simultaneously (the same lock guards all session-state writes).
+                _signal_events_for_trust = result.get("signal_events") or []
+                _td_for_trust = {
+                    "quality": quality_record,
+                    "signals": {ev.get("signal_name"): True for ev in _signal_events_for_trust},
+                    "signal_events": _signal_events_for_trust,
+                    "decision": {"action": result.get("action", "PROBE")},
+                }
+                _trust_state = apply_turn_decision(
+                    _trust_state,
+                    _td_for_trust,
+                    behavioral_toggles=evaluation_signal_toggles,
+                )
                 topic_key = re.sub(
                     r"[^a-z0-9]+", " ",
                     str(quality_record.get("topic") or _active_topic or "").lower(),
@@ -1580,6 +1604,11 @@ async def entrypoint(ctx: JobContext):
                 if topic_key and not quality_record.get("is_timeout"):
                     _topic_score_histories.setdefault(topic_key, []).append(
                         float(quality_record.get("overall", 0) or 0)
+                    )
+                    # H2 fix: separate depth history so follow_up_collapse
+                    # compares current depth vs prior depth, not prior overall.
+                    _topic_depth_histories.setdefault(topic_key, []).append(
+                        float(quality_record.get("depth", 0) or 0)
                     )
                 spawn_background_task(
                     persist_answer_scores(app_id, list(answer_scores)),
@@ -1601,7 +1630,9 @@ async def entrypoint(ctx: JobContext):
             warmup_complete, _last_depth_decay_turn, \
             _active_topic, _covered_topic_keys, _topic_states, \
             _last_applied_eval_turn, _discussed_log, _topic_score_histories, \
-            _resume_topics_pool, _skill_topics_pool, _awaiting_first_interview_question
+            _resume_topics_pool, _skill_topics_pool, _awaiting_first_interview_question, \
+            _denied_topics, _asked_questions_log, _reflection_probe_count, _skill_denial_count, \
+            _move_on_transition_at
         try:
             if not content or role != "user":
                 return
@@ -1785,6 +1816,72 @@ async def entrypoint(ctx: JobContext):
                 )
             )
             logger.info("[EVAL_GATE] turn=%d -> %s", turn_snapshot, _gate_reason)
+
+            # -- PRE-EVAL UTTERANCE CLASSIFIER ------------------------------------
+            # Detect meta-communications before routing to the normal eval pipeline.
+            # Repeat requests → repeat the last question (skip eval, no turn credit).
+            # Explicit denials → force all scores to 0, track denied topic.
+            _answer_lc_pre = answer_snap.lower().strip()
+            _is_repeat_request = (
+                _can_eval_turn
+                and any(m in _answer_lc_pre for m in (
+                    "can you repeat", "could you repeat", "repeat that", "repeat the question",
+                    "say that again", "say again", "didn't get you", "didn't get that",
+                    "didn't hear", "didn't catch", "pardon", "come again",
+                    "what did you say", "what was the question", "what are you asking",
+                ))
+                and len(answer_snap.split()) < 12
+            )
+            _is_explicit_denial = (
+                _can_eval_turn
+                and any(m in _answer_lc_pre for m in (
+                    "i don't remember", "i dont remember", "i can't remember",
+                    "i cannot remember", "no. i don't remember", "no i don't remember",
+                    "don't remember anything", "dont remember anything",
+                    "i didn't do", "i did not do", "i didn't work", "i did not work",
+                    "i don't know", "i dont know", "no idea",
+                    "i didn't mention", "i did not mention",
+                ))
+                and len(answer_snap.split()) < 15
+            )
+
+            if _is_repeat_request:
+                logger.info(
+                    "[UTTERANCE_CLASS] turn=%d -> REPEAT_REQUEST (%r) -- injecting repeat directive",
+                    turn_snapshot, answer_snap[:60],
+                )
+                _repeat_directive = (
+                    "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
+                    "DECISION: REPEAT_QUESTION\n"
+                    "The candidate asked you to repeat or did not hear the question.\n"
+                    f"Rephrase your last question more simply. Last question was:\n"
+                    f"\"{_last_interviewer_question}\"\n"
+                    "DO NOT score this as an answer. DO NOT probe deeper. "
+                    "Just restate the question in simpler words. ONE sentence."
+                )
+                remove_system_messages_multi(chat_ctx, ("[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT"))
+                chat_ctx.add_message(role="system", content=_repeat_directive)
+                logger.info("[EVAL] turn=%d | releasing LLM gate -- repeat question directive injected", turn_snapshot)
+                agent._waiting_for_eval = False
+                agent._directive_ready.set()
+                return
+
+            if _is_explicit_denial and _can_eval_turn:
+                _denial_topic_key = _topic_short_key(_active_topic or "").lower()
+                _denial_is_skill = _denial_topic_key in {
+                    _topic_short_key(s).lower() for s in _skill_topics_pool
+                }
+                async with _session_state_lock:
+                    _denied_topics.add(_denial_topic_key)
+                    if _denial_is_skill:
+                        _skill_denial_count += 1
+                logger.info(
+                    "[UTTERANCE_CLASS] turn=%d -> EXPLICIT_DENIAL for topic=%r (skill=%s, denial_streak=%d)",
+                    turn_snapshot, _denial_topic_key, _denial_is_skill, _skill_denial_count,
+                )
+                # Fall through to eval; eval_pipeline sees zero-content answer and
+                # scores it correctly. Denied-topic registry blocks closing re-use.
+
             if _can_eval_turn:
                 score_history_snap = list(_trust_state.get("score_history", []))
                 turns_since_decay_snap = (
@@ -1844,6 +1941,9 @@ async def entrypoint(ctx: JobContext):
                     )
                     _topic_key_now = re.sub(r"[^a-z0-9]+", " ", (_scoring_topic or "").lower()).strip()
                     _topic_score_history_snap = list(_topic_score_histories.get(_topic_key_now, []))
+                    # H2 fix: pass depth scores as prior_depth_scores so
+                    # follow_up_collapse compares depth-to-depth, not depth-to-overall.
+                    _topic_depth_history_snap = list(_topic_depth_histories.get(_topic_key_now, []))
 
                     return {
                         "app_id": app_id,
@@ -1853,6 +1953,7 @@ async def entrypoint(ctx: JobContext):
                         "transcript_lines": lines[-12:],
                         "score_history": score_history,
                         "topic_score_history": _topic_score_history_snap,
+                        "topic_depth_history": _topic_depth_history_snap,
                         "turns_since_decay": turns_since_decay,
                         "response_latency_sec": response_latency,
                         "signal_toggles": dict(evaluation_signal_toggles),
@@ -1967,12 +2068,16 @@ async def entrypoint(ctx: JobContext):
                 # -- Unpack eval result ----------------------------------------
                 _action_from_eval = str(_eval_result_inline.get("action", "PROBE")).upper()
                 _probe_family = _eval_result_inline.get("probe_family") or "ownership"
-                # FIX #2: Agent always computes goal/style from family (never from eval)
-                _probe_goal   = get_probe_goal(_probe_family)
+                _saturation   = _eval_result_inline.get("saturation") or {}
+                # H5 fix: read rotation index from TopicState and advance it so
+                # consecutive PROBE turns on the same topic cycle through different
+                # goal angles instead of random-picking each time.
+                _new_topic_state_dict_pre = _saturation.get("topic_state_dict") if _eval_result_inline.get("saturation") else None
+                _rotation_idx = int((_new_topic_state_dict_pre or {}).get("probe_rotation_index", 0) or 0)
+                _probe_goal   = get_probe_goal(_probe_family, rotation_index=_rotation_idx)
                 _probe_style  = get_probe_style(_probe_family)
                 _qr           = _eval_result_inline.get("quality_record") or {}
                 _signals      = [e.get("signal_name") for e in (_eval_result_inline.get("signal_events") or []) if e.get("signal_name")]
-                _saturation   = _eval_result_inline.get("saturation") or {}
                 _sat_after    = _saturation.get("score", 0.0)
                 _sat_thresh   = _saturation.get("threshold", 0.0)
                 _is_saturated = _saturation.get("is_saturated", False)
@@ -2014,6 +2119,15 @@ async def entrypoint(ctx: JobContext):
                 # -- Persist state mutations (scores, trust, risk, log) --------
                 await _apply_eval_result(_eval_result_inline, result_turn=turn_snapshot)
 
+                # Reset skill-denial streak when candidate gives a substantive answer
+                _weighted_this_turn = float((_qr or {}).get("overall", 0.0) or 0.0)
+                if _weighted_this_turn >= 1.5 and _skill_denial_count > 0:
+                    logger.info(
+                        "[UTTERANCE_CLASS] turn=%d | substantive answer (weighted=%.2f) -- resetting skill_denial_count",
+                        turn_snapshot, _weighted_this_turn,
+                    )
+                    _skill_denial_count = 0
+
                 # -- Auto-cover resume skills demonstrated in a project answer --
                 # When the candidate answers about a project (e.g. Sentimental News
                 # Analysis) and naturally mentions a resume skill (e.g. "Python"),
@@ -2044,7 +2158,7 @@ async def entrypoint(ctx: JobContext):
                             for _skill in _skill_topics_pool:
                                 _skill_key = _topic_short_key(_skill).lower().strip()
                                 # Skip empty keys and ultra-short keys (false-positive risk).
-                                if len(_skill_key) < 3:
+                                if len(_skill_key) <= 2:
                                     continue
                                 if _skill_source_by_key.get(_skill_key) != "resume_skill":
                                     continue
@@ -2059,7 +2173,25 @@ async def entrypoint(ctx: JobContext):
                                     continue
                                 _pattern = r"\b" + r"\s+".join(_tokens) + r"\b"
                                 try:
-                                    if re.search(_pattern, _answer_lc):
+                                    _match = re.search(_pattern, _answer_lc)
+                                    # M3 fix: require at least one adjacent technical
+                                    # context token so non-technical phrases like
+                                    # "go ahead", "react to feedback", "python-related"
+                                    # don't auto-cover a skill.  A match is accepted only
+                                    # when the skill word appears near a technical verb or
+                                    # noun within ±6 words.
+                                    _TECH_CONTEXT_RE = re.compile(
+                                        r"\b(built|used|wrote|implemented|deployed|configured"
+                                        r"|using|worked|integrated|developed|created"
+                                        r"|api|module|library|framework|tool|stack"
+                                        r"|project|service|system|database|backend|frontend)\b",
+                                        re.IGNORECASE,
+                                    )
+                                    if _match:
+                                        _start = max(0, _match.start() - 40)
+                                        _end   = min(len(_answer_lc), _match.end() + 40)
+                                        _has_tech_ctx = bool(_TECH_CONTEXT_RE.search(_answer_lc[_start:_end]))
+                                    if _match and _has_tech_ctx:
                                         _covered_topic_keys.add(_skill_key)
                                         _newly_auto_covered.append(_skill_key)
                                 except re.error as _re_err:
@@ -2123,7 +2255,26 @@ async def entrypoint(ctx: JobContext):
                             bool(_old_topic_str)
                             and _old_topic_key_lc not in _skill_source_by_key
                         )
-                        if _old_was_project:
+                        # Only auto-credit skills if the project produced substantive content.
+                        # A denied/zero-memory topic (clarity+depth near 0) must not silently
+                        # mark skills as covered -- the candidate never demonstrated them.
+                        _old_topic_sat_dict = _topic_states.get(_topic_short_key(_old_topic_str))
+                        _old_topic_best_weighted = 0.0
+                        if isinstance(_old_topic_sat_dict, dict):
+                            _old_topic_best_weighted = float(_old_topic_sat_dict.get("saturation_score", 0.0) or 0.0)
+                        _old_topic_denied = _topic_short_key(_old_topic_str).lower() in _denied_topics
+                        _auto_credit_allowed = (
+                            not _old_topic_denied
+                            and _old_topic_best_weighted >= 1.5
+                        )
+                        if _old_was_project and not _auto_credit_allowed:
+                            logger.info(
+                                "[AGENT] turn=%d | auto-cover SKIPPED for project %r "
+                                "(denied=%s, sat=%.1f < 1.5) -- skills not credited",
+                                turn_snapshot, _old_topic_key_lc, _old_topic_denied, _old_topic_best_weighted,
+                            )
+
+                        if _old_was_project and _auto_credit_allowed:
                             # Extract every "[...]" segment from the topic string and
                             # split each on commas/semicolons -- projects can have
                             # multiple bracketed sections in unusual resumes.
@@ -2144,7 +2295,7 @@ async def entrypoint(ctx: JobContext):
                                 async with _session_state_lock:
                                     for _skill in _skill_topics_pool:
                                         _skill_key = _topic_short_key(_skill).lower().strip()
-                                        if len(_skill_key) < 3:
+                                        if len(_skill_key) <= 2:
                                             continue
                                         if _skill_source_by_key.get(_skill_key) != "resume_skill":
                                             continue
@@ -2176,15 +2327,21 @@ async def entrypoint(ctx: JobContext):
                         _covered_list = "\n".join(
                             f"  - {k}" for k in sorted(_covered_topic_keys)
                         ) or "  (none)"
+                        _denied_list = "\n".join(
+                            f"  - {k}" for k in sorted(_denied_topics)
+                        ) or "  (none)"
                         _directive = (
                             "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
                             "DECISION: WRAP_UP\n"
                             "All planned interview topics have already been covered.\n"
                             "[INTERVIEW MEMORY -- ALREADY COVERED, DO NOT RE-OPEN]\n"
                             f"{_covered_list}\n"
-                            "Ask ONE final reflective question (e.g. 'Of everything we've discussed, "
-                            "what are you most proud of?' or 'Anything you wish I'd asked about?'), "
-                            "or begin to gracefully wind the conversation down.\n"
+                            "[DENIED / ZERO-MEMORY TOPICS -- DO NOT REFERENCE IN CLOSING]\n"
+                            f"{_denied_list}\n"
+                            "The candidate explicitly said they don't remember or didn't work on the "
+                            "denied topics above. Do NOT bring them up in the closing question.\n"
+                            "Ask ONE final open question such as 'Of everything we've discussed, "
+                            "what are you most proud of?' or 'Anything you wish I'd asked about?'\n"
                             "HARD RULE: Do NOT re-open any topic in the INTERVIEW MEMORY list above. "
                             "Do NOT say 'Let's move to ...' about a covered topic."
                         )
@@ -2324,27 +2481,30 @@ async def entrypoint(ctx: JobContext):
                     # the queued MOVE_ON opener can be spoken first, before any
                     # PROBE directive overwrites it.
                     agent._move_on_opener_pending = True
+                    _move_on_transition_at = time.monotonic()
                     logger.info("[AGENT] turn=%d | MOVE_ON directive injected | new_topic=%r", turn_snapshot, _active_topic)
 
                 else:
                     # -- PROBE -- agent builds the probe directive --------------
                     _prev_q = (payload.get("question") or "").strip()
                     _prev_a = (payload.get("answer") or "").strip()
-                    _prev_a_gist = " ".join(_prev_a.split()[:20])
+                    _prev_a_gist = " ".join(_prev_a.split()[:40])
 
-                    # Detect "can't remember / didn't build it / no claim" responses --
-                    # don't probe deeper, redirect (resume topics) or move on (jd_skill).
+                    # Detect "can't remember / didn't build it" responses that need redirect.
+                    # Note: hard denials ("I don't remember anything", "I didn't mention X")
+                    # are already caught by the pre-eval classifier above and tagged in
+                    # _denied_topics. This check catches softer / mid-answer memory gaps
+                    # that still warrant a redirect rather than a depth probe.
                     _cant_remember_markers = (
-                        # memory-loss phrases
-                        "don't remember", "dont remember", "can't remember", "cannot remember",
                         "not sure", "i forgot", "long time ago", "old project", "not really",
                         "didn't build", "did not build", "i wasn't", "i was not",
-                        # "no claim" phrases -- candidate disowns the skill/topic entirely
                         "never worked", "never used", "haven't worked", "havent worked",
-                        "haven't used", "havent used", "don't know", "dont know", "no idea",
-                        "haven't done", "havent done", "no experience",
+                        "haven't used", "havent used", "haven't done", "havent done",
+                        "no experience",
                     )
-                    _is_cant_remember = any(m in _prev_a.lower() for m in _cant_remember_markers)
+                    # Also treat a topic already in _denied_topics as cant-remember
+                    _active_topic_denied = _topic_short_key(_active_topic or "").lower() in _denied_topics
+                    _is_cant_remember = _active_topic_denied or any(m in _prev_a.lower() for m in _cant_remember_markers)
 
                     _is_short = (
                         float(_qr.get("overall", 5.0)) <= 0.5
@@ -2358,13 +2518,35 @@ async def entrypoint(ctx: JobContext):
                         f"\n[INTERVIEW MEMORY -- DO NOT RE-ASK THESE]\n{_memory}\n"
                     ) if _memory else ""
 
+                    # Duplicate question prevention: inject last 6 questions so LLM
+                    # never generates a question it already asked, even after context strips.
+                    _recent_questions_block = ""
+                    if _asked_questions_log:
+                        _ql = "\n".join(f"  - {q}" for q in _asked_questions_log[-6:])
+                        _recent_questions_block = (
+                            f"\n[QUESTIONS ALREADY ASKED -- DO NOT REPEAT OR CLOSELY REPHRASE ANY OF THESE]\n"
+                            f"{_ql}\n"
+                        )
+
+                    # Skill-denial saturation: after 3+ consecutive denials on skills,
+                    # switch to a single wrap-up summary question instead of more battery.
+                    _skill_denial_summary = ""
+                    if _skill_denial_count >= 3:
+                        _skill_denial_summary = (
+                            "\n[SKILL DENIAL PATTERN DETECTED]\n"
+                            f"The candidate has denied {_skill_denial_count} consecutive skill questions.\n"
+                            "DO NOT ask another 'You mentioned X on your resume' question.\n"
+                            "Instead ask ONE open question: 'Of the skills on your resume, which one "
+                            "are you most confident in, and why?' -- then accept whatever they say and move on.\n"
+                        )
+
                     if _is_cant_remember:
                         # Redirect to something they CAN answer -- don't dwell on the gap
                         _directive = (
                             "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
                             f"DECISION: PROBE (REDIRECT)\n"
                             f"TOPIC CONTEXT: {_active_topic}\n"
-                            f"CANDIDATE SAID: \"{_prev_a_gist}{'...' if len(_prev_a.split()) > 20 else ''}\"\n"
+                            f"CANDIDATE SAID: \"{_prev_a_gist}{'...' if len(_prev_a.split()) > 40 else ''}\"\n"
                             "CANDIDATE SAID THEY DON'T REMEMBER OR DIDN'T BUILD IT.\n"
                             "DO NOT push them to remember. DO NOT dwell on the gap.\n"
                             "Instead, pick ONE of these redirects based on context:\n"
@@ -2406,11 +2588,14 @@ async def entrypoint(ctx: JobContext):
                         _depth_sat_score = float((_new_topic_state_dict or {}).get("saturation_score", 0.0) or 0.0)
                         _depth_sat_thresh = float((_new_topic_state_dict or {}).get("saturation_threshold", 0.0) or 0.0)
                         _depth_sat_ratio = (_depth_sat_score / _depth_sat_thresh) if _depth_sat_thresh > 0 else 0.0
+                        # Cap reflection probes session-wide at 2 to prevent the same
+                        # "what would you change?" question from dominating every project.
                         _is_closing_on_project = (
                             _depth_is_resume_project
                             and _topic_follow_ups >= 2
                             and _depth_sat_ratio >= 0.6
                             and _depth_topic_key_lc not in _topic_closing_fired
+                            and _reflection_probe_count < 2
                         )
 
                         if _is_closing_on_project:
@@ -2419,12 +2604,13 @@ async def entrypoint(ctx: JobContext):
                             try:
                                 async with _session_state_lock:
                                     _topic_closing_fired.add(_depth_topic_key_lc)
+                                    _reflection_probe_count += 1
                                 _probe_family = "reflection"
                                 _probe_goal = get_probe_goal("reflection")
                                 _probe_style = get_probe_style("reflection")
                                 logger.info(
-                                    "[AGENT] turn=%d | CLOSING tier fired for project %r -- forcing reflection family",
-                                    turn_snapshot, _depth_topic_key_lc,
+                                    "[AGENT] turn=%d | CLOSING tier fired for project %r -- forcing reflection family (session_reflection_count=%d)",
+                                    turn_snapshot, _depth_topic_key_lc, _reflection_probe_count,
                                 )
                             except Exception as _closing_err:
                                 logger.warning(
@@ -2469,19 +2655,27 @@ async def entrypoint(ctx: JobContext):
                             f"ANGLE: {_probe_goal}\n"
                             f"HOW TO ASK: {_probe_style}\n"
                             f"LAST QUESTION YOU ASKED: \"{_prev_q}\"\n"
-                            f"CANDIDATE SAID: \"{_prev_a_gist}{'...' if len(_prev_a.split()) > 20 else ''}\"\n"
+                            f"CANDIDATE SAID: \"{_prev_a_gist}{'...' if len(_prev_a.split()) > 40 else ''}\"\n"
                             "DO NOT ask the same question again. DO NOT rephrase it.\n"
                             "Pick the most natural angle from ANGLE/HOW TO ASK based on what they actually said.\n"
                             "ONE question only. Sound natural.\n"
                             "DO NOT wrap up or say goodbye -- the interview is still in progress."
                             f"{_short_nudge}"
                             f"{_memory_block}"
+                            f"{_recent_questions_block}"
+                            f"{_skill_denial_summary}"
                         )
                     remove_system_messages_multi(chat_ctx, ("[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT"))
                     chat_ctx.add_message(role="system", content=_directive)
+                    # H5 fix: advance probe_rotation_index in the stored TopicState so
+                    # the next PROBE on this topic uses the next goal angle.
+                    if _scoring_topic_log and _scoring_topic_log != "?":
+                        _ts_for_rotation = _topic_states.get(_scoring_topic_log)
+                        if isinstance(_ts_for_rotation, dict):
+                            _ts_for_rotation["probe_rotation_index"] = _rotation_idx + 1
                     logger.info(
-                        "[EVAL] turn=%d | DECISION=PROBE(%s) | STAYING ON: %r | sat=%.1f/%.1f",
-                        turn_snapshot, _probe_family, _scoring_topic_log, _sat_after, _sat_thresh,
+                        "[EVAL] turn=%d | DECISION=PROBE(%s) goal_idx=%d | STAYING ON: %r | sat=%.1f/%.1f",
+                        turn_snapshot, _probe_family, _rotation_idx, _scoring_topic_log, _sat_after, _sat_thresh,
                     )
                     logger.debug("[EVAL] turn=%d | directive=%r", turn_snapshot, _directive[:200])
 
@@ -2553,9 +2747,43 @@ async def entrypoint(ctx: JobContext):
                             _last_interviewer_question = _fallback_q.group(1).strip()
                         else:
                             _last_interviewer_question = _q_text[:200]
-                    # Store the SHORT TITLE only (eval uses this for saturation tracking and state lookup)
-                    _last_question_topic = _topic_short_title(_active_topic or "")
+                    # H4 fix: validate the LLM actually asked about the expected topic
+                    # before committing _last_question_topic.  If the LLM ignored its
+                    # MOVE_ON directive and asked about a different topic, scoring the
+                    # answer against the wrong topic would silently corrupt saturation
+                    # state.  Check that the expected topic's short title appears
+                    # somewhere in the question text; fall back to a generic "general"
+                    # label so eval still runs but doesn't advance the wrong topic state.
+                    _expected_topic_title = _topic_short_title(_active_topic or "")
+                    _q_lower_check = _last_interviewer_question.lower()
+                    _expected_key = re.sub(r"[^a-z0-9]+", " ", _expected_topic_title.lower()).strip()
+                    # TOPIC_GUARD: allow pronoun-based follow-ups on the active topic.
+                    # Only flag genuine drift -- when the LLM mentions a DIFFERENT topic's
+                    # key terms, not when it uses "that project" / "your system" as pronouns.
+                    _topic_confirmed = (
+                        not _expected_key                       # nothing to check yet
+                        or _expected_key in _q_lower_check      # topic title in question
+                        or not _first_interview_question_asked  # opening question, always accept
+                        or _last_question_topic == _expected_topic_title  # pronoun follow-up on same topic
+                    )
+                    if _topic_confirmed:
+                        _last_question_topic = _expected_topic_title
+                    else:
+                        # LLM went off-script: keep prior topic assignment rather than
+                        # advancing to the wrong topic.  Log so it's visible in traces.
+                        logger.warning(
+                            "[TOPIC_GUARD] LLM drifted off expected topic %r -- "
+                            "keeping _last_question_topic=%r (question=%r)",
+                            _expected_topic_title, _last_question_topic,
+                            _last_interviewer_question[:80],
+                        )
                     logger.debug("[QUESTION_TRACK] turn=%d last_q=%r topic=%r", turn_count, _last_interviewer_question[:60], _last_question_topic)
+
+                    # Track asked questions for duplicate prevention (keep last 6)
+                    if _last_interviewer_question and _first_interview_question_asked:
+                        _asked_questions_log.append(_last_interviewer_question[:120])
+                        if len(_asked_questions_log) > 6:
+                            _asked_questions_log.pop(0)
                     # First interview question just fired -- seal the opening move so the LLM
                     # cannot re-ask it. The base system prompt says "Open by asking about X"
                     # which conflicts with PROBE directives on subsequent turns. This message
@@ -2614,7 +2842,7 @@ async def entrypoint(ctx: JobContext):
                     agent._waiting_for_eval = True
                     agent._directive_ready.clear()
                     logger.info("[LLM_GATE] Pre-cleared after interview question delivery")
-                logger.info("âœ... TURN %d | phase=%s", turn_count, "interview" if warmup_complete else "warmup")
+                logger.info("TURN %d | phase=%s", turn_count, "interview" if warmup_complete else "warmup")
                 # Note: Transcript and answer_scores are now persisted after EVERY eval turn (async).
                 # See _process_user_conversation_item() for per-turn async persistence.
                 # This periodic save is kept as a safety net for orphaned records in edge cases.
@@ -2653,9 +2881,26 @@ async def entrypoint(ctx: JobContext):
                 if turn_count in _processed_user_turns or turn_count in _processing_user_turns:
                     logger.debug("[STT_BUFFER] turn=%d already processed -- dropping late fragment '%s'", turn_count, content[:60])
                     return
+
+                # Suppress tail-audio bleed after a MOVE_ON transition.
+                # When the agent starts speaking the MOVE_ON opener, the candidate's
+                # residual audio from the previous turn can arrive as a new STT fragment
+                # and contaminate the first word(s) of the next answer. Drop tiny
+                # fragments that arrive within 400ms of a MOVE_ON firing.
+                _since_move_on = time.monotonic() - _move_on_transition_at
+                if (
+                    _move_on_transition_at > 0
+                    and _since_move_on < 0.4
+                    and len(content.split()) <= 3
+                ):
+                    logger.debug(
+                        "[STT_BUFFER] turn=%d suppressing tail-audio fragment after MOVE_ON (%.0fms ago): %r",
+                        turn_count, _since_move_on * 1000, content[:40],
+                    )
+                    return
+
                 # llm_node clears _directive_ready at its own entry for interview turns,
                 # so no clear needed here -- avoids the race where llm_node fired before clear.
-
 
                 # Buffer the fragment
                 if turn_count not in _stt_fragment_buffer:
@@ -2690,6 +2935,7 @@ async def entrypoint(ctx: JobContext):
                     # Get consolidated content from buffer
                     all_fragments = _stt_fragment_buffer.pop(_turn, [])
                     _stt_completion_timers.pop(_turn, None)
+                    _stt_turn_started_at.pop(_turn, None)
                     consolidated_content = " ".join(f.strip() for f in all_fragments if f.strip())
 
                     # Very short non-answer fragments can be late tails of the
@@ -2735,10 +2981,19 @@ async def entrypoint(ctx: JobContext):
                     if _is_tiny_fragment(consolidated_so_far):
                         debounce_seconds = _STT_TINY_FRAGMENT_RECOVERY_SECONDS
 
+                # Track when this turn's assembly began (for hard cap)
+                if turn_count not in _stt_turn_started_at:
+                    _stt_turn_started_at[turn_count] = time.monotonic()
+
                 async def _timeout_handler(_turn=turn_count, _delay=debounce_seconds):
                     nonlocal _user_turn_chain
                     try:
-                        await asyncio.sleep(_delay)
+                        # Clamp sleep to hard cap: never wait longer than _STT_MAX_ASSEMBLY_SECONDS
+                        # total from when the first fragment arrived for this turn.
+                        _elapsed = time.monotonic() - _stt_turn_started_at.get(_turn, time.monotonic())
+                        _remaining_cap = max(0.0, _STT_MAX_ASSEMBLY_SECONDS - _elapsed)
+                        _actual_delay = min(_delay, _remaining_cap) if _remaining_cap > 0 else 0.0
+                        await asyncio.sleep(_actual_delay)
                         if _turn not in _stt_fragment_buffer or not _stt_fragment_buffer[_turn]:
                             return
                         _reason = "tiny_fragment_recovery" if _is_tiny_fragment(" ".join(_stt_fragment_buffer.get(_turn, []))) else "turn_assembly_grace"
@@ -3427,8 +3682,11 @@ async def entrypoint(ctx: JobContext):
     await flush_pending_manual_billing(org_id)
     # Sync with dashboard: Application COMPLETED
     if finished_task.done():
-        # Ã¢Å¡Â¡ Trigger Pinecone Sync immediately (status already updated in EARLY_STATUS_UPDATE)
-        notify_sync_engine(app_id, turn=turn_count, action="session_end")
+        # L1 fix: wrap in try/except so a sync failure never crashes session teardown.
+        try:
+            notify_sync_engine(app_id, turn=turn_count, action="session_end")
+        except Exception as _sync_err:
+            logger.warning("[SYNC] notify_sync_engine failed (non-fatal): %s", _sync_err)
     # Cancel any leftover fire-and-forget work so job teardown is instant.
     if background_tasks:
         logger.debug(f"[SHUTDOWN] Cancelling {len(background_tasks)} background task(s)")

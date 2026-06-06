@@ -60,23 +60,28 @@ def build_warmup_directive(job_title: str = "") -> str:
         "\n"
         "HOW TO REACT based on what they said:\n"
         "\n"
-        f"  IF they said they're doing well / good / fine:\n"
+        f"  IF they said they're doing well / good / fine / great:\n"
         f"    -> 'Good to hear. So I'll be conducting your interview for {role_line} today. Are you ready to begin?'\n"
         "\n"
-        f"  IF they asked 'how about you?' or 'how are you?' back:\n"
-        f"    -> 'Packed with interviews today — it's been a good day though. So I'll be conducting your interview for {role_line}. Are you ready to begin?'\n"
+        f"  IF they asked 'how about you?' or 'how are you doing?' back at you:\n"
+        f"    CRITICAL: You are an AI, so respond humanly but briefly. Do NOT ignore the question.\n"
+        f"    -> 'Packed with interviews today — it's been a good day. So I'll be conducting your interview for {role_line}. Are you ready to begin?'\n"
+        f"    -> OR: 'Doing well, thanks for asking. Ready to get started on your interview for {role_line}. Are you good to go?'\n"
+        f"    DO NOT just skip their question and pivot — acknowledge it in one clause first.\n"
         "\n"
-        f"  IF they said they're a bit nervous:\n"
-        f"    -> 'That's completely understandable. So I'll be conducting your interview for {role_line} today — just a conversation. Are you ready to begin?'\n"
+        f"  IF they said they're a bit nervous / anxious:\n"
+        f"    -> 'That's completely understandable — just think of this as a conversation. So I'll be conducting your interview for {role_line} today. Ready to begin?'\n"
         "\n"
-        f"  IF they said they just got off a meeting / had a busy day:\n"
-        f"    -> 'Sounds like a full day. So I'll be conducting your interview for {role_line} today. Are you ready to begin?'\n"
+        f"  IF they said they just got off a meeting / had a busy day / tired:\n"
+        f"    -> 'Sounds like a full day. Let's make this worth it then. I'll be conducting your interview for {role_line}. Are you ready to go?'\n"
         "\n"
-        "  IF they gave a one-word answer or were vague:\n"
+        f"  IF they gave a one-word answer or were vague (e.g. 'yeah', 'fine', 'okay'):\n"
         f"    -> React briefly in one word or short phrase, then go straight to the role mention and readiness check.\n"
+        f"    -> Example: 'Good. So I'll be conducting your interview for {role_line} today. Ready to begin?'\n"
         "\n"
         "TONE: Professional and warm. Not overly friendly. Not stiff.\n"
-        "      Speak like a recruiter from a good company -- confident, polite, gets to the point.\n"
+        "      Speak like a recruiter from a good company — confident, polite, gets to the point.\n"
+        "      This is small talk before work — keep it under 2 sentences.\n"
         "\n"
         "WAIT for them to confirm they are ready before starting the interview."
     )
@@ -197,17 +202,31 @@ def build_interview_directive(
     # knows what to probe for and doesn't skip them in favour of only projects.
     _resume_skills = [str(s).strip() for s in (getattr(resume_brief, "skills", None) or resume_brief.get("skills", [])) if str(s).strip()]
     _jd_skill_list = [str(s).strip() for s in (jd_skills or []) if str(s).strip()]
-    _all_skills = list(dict.fromkeys(_resume_skills + _jd_skill_list))  # dedup, preserve order
-    if _all_skills:
+
+    # Work history for grounding skill questions — pull from resume_brief
+    _work_history = []
+    if hasattr(resume_brief, "work_history"):
+        _work_history = [str(w).strip() for w in (resume_brief.work_history or []) if str(w).strip()]
+    if _resume_skills or _jd_skill_list:
         _resume_part = ", ".join(_resume_skills) if _resume_skills else "none listed"
         _jd_part = ", ".join(_jd_skill_list) if _jd_skill_list else "none listed"
+        _work_ctx = ""
+        if _work_history:
+            _work_ctx = (
+                f"\n  Work context: {' | '.join(_work_history[:3])}\n"
+                f"  -> When asking about a skill, GROUND it: say which company/role you're asking about.\n"
+                f"     Example: 'You worked as Python Developer at [Company] -- what did you build there?'\n"
+                f"     NOT: 'You mentioned Python on your resume -- tell me about it.'\n"
+            )
         skills_block = (
             f"\nSKILLS TO COVER:\n"
             f"  Resume skills: {_resume_part}\n"
             f"  JD must-have skills: {_jd_part}\n"
+            f"{_work_ctx}"
             f"  -> After covering all resume projects, probe these skills directly (Phase 2).\n"
-            f"  -> Ask about real usage: a specific project or task where they used it, "
-            f"not just 'do you know X'.\n"
+            f"  -> Ask about real usage grounded in a specific role or project, NOT generic 'do you know X?'.\n"
+            f"  -> If the candidate denies a skill that is on their resume: ask once 'can you help me understand\n"
+            f"     what you meant by listing it?' -- then move on. Do NOT keep asking about it.\n"
             f"  -> If a skill already came up naturally in a project story, mark it covered -- "
             f"don't ask again.\n"
         )

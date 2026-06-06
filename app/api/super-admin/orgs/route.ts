@@ -319,10 +319,19 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: passwordError }, { status: 400 });
         }
 
-        // Check slug uniqueness
-        const existing = await prisma.organization.findUnique({ where: { slug } });
+        const normalizedSlug = String(slug || "")
+            .trim()
+            .toLowerCase()
+            .replace(/\s+/g, "-");
+
+        if (!normalizedSlug) {
+            return NextResponse.json({ error: "slug is required" }, { status: 400 });
+        }
+
+        // Check slug uniqueness against the exact value that will be stored.
+        const existing = await prisma.organization.findUnique({ where: { slug: normalizedSlug } });
         if (existing) {
-            return NextResponse.json({ error: "Slug already taken. Choose another." }, { status: 409 });
+            return NextResponse.json({ error: `Slug "${normalizedSlug}" is already taken. Choose another.` }, { status: 409 });
         }
 
         const hashedPassword = await bcrypt.hash(adminPassword, 10);
@@ -348,7 +357,7 @@ export async function POST(request: Request) {
             // Build org data explicitly to ensure exclusivity
             const orgData: any = {
                 name: orgName,
-                slug: slug.toLowerCase().replace(/\s+/g, "-"),
+                slug: normalizedSlug,
                 plan: normalizedPlan,
                 maxActiveDrives:
                     maxActiveDrives !== undefined && maxActiveDrives !== null && String(maxActiveDrives).trim() !== ""
@@ -413,7 +422,17 @@ export async function POST(request: Request) {
     } catch (error: any) {
         console.error("Error creating org:", error);
         if (error.code === "P2002") {
-            return NextResponse.json({ error: "Email or slug already exists" }, { status: 409 });
+            const target = Array.isArray(error.meta?.target) ? error.meta.target.map(String) : [];
+            if (target.includes("slug")) {
+                return NextResponse.json({ error: "Slug already exists. Choose another." }, { status: 409 });
+            }
+            if (target.includes("email")) {
+                return NextResponse.json({ error: "Email already exists. Choose another one." }, { status: 409 });
+            }
+            if (target.includes("id")) {
+                return NextResponse.json({ error: "A generated organization ID collided. Retry the request." }, { status: 409 });
+            }
+            return NextResponse.json({ error: "A unique field already exists. Check slug and email." }, { status: 409 });
         }
         return NextResponse.json({ error: "Failed to create organization" }, { status: 500 });
     }
