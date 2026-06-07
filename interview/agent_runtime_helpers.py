@@ -76,6 +76,40 @@ def _apply_tts_phonetic_fixes(text: str) -> str:
     return text
 
 
+def _enforce_single_question(text: str) -> str:
+    """Keep at most ONE question in the spoken output.
+
+    Generic, last-line-of-defense enforcement of the one-question-per-turn rule
+    (works for any role/resume/JD). The agent occasionally emits a compound turn
+    like a short reaction + TWO questions ("What did you build? And what was your
+    role?"). We keep everything up to and including the FIRST '?', and drop any
+    further question sentences that follow it.
+
+    A single question that merely contains the word "and" (one '?') is left
+    untouched -- we split on question marks, not on "and".
+    """
+    if not text:
+        return text
+    # Count question marks. 0 or 1 -> nothing to trim.
+    first_q = text.find("?")
+    if first_q == -1:
+        return text
+    head = text[: first_q + 1]
+    tail = text[first_q + 1:].strip()
+    if not tail:
+        return text
+    # If the tail contains another question, drop the tail entirely (it is a
+    # second question). If the tail is only a trailing statement with no '?',
+    # keep it -- it's a closing remark, not a second question.
+    if "?" in tail:
+        logger.debug(
+            "[SINGLE_Q] Trimmed compound output to first question. Dropped tail: %r",
+            tail[:120],
+        )
+        return head.strip()
+    return text
+
+
 async def _single_question_transform(text_stream):
     """
     TTS text transform: buffers the full LLM output, strips internal directives
@@ -85,6 +119,7 @@ async def _single_question_transform(text_stream):
     async for chunk in text_stream:
         buffer += chunk
     result = sanitize_candidate_facing_text(buffer)
+    result = _enforce_single_question(result)
     result = _apply_tts_phonetic_fixes(result)
     if result:
         logger.debug(f"[TTS_FINAL] Text sent to TTS: {result[:300]!r}")
@@ -99,8 +134,8 @@ async def _single_question_transform(text_stream):
         # read), so the next pipeline_reply turn will pick it up correctly.
         # We suppress output here (don't speak garbage) and let the routing timeout
         # path trigger a clean second LLM call with the directive already in context.
-        logger.warning(
-            "[SINGLE_Q] Transform yielded empty after directive sanitization; suppressing output."
+        logger.debug(
+            "[SINGLE_Q] Transform yielded empty after directive sanitization; suppressing output (expected during STT fragment assembly)."
         )
 def _build_recent_context_block(
     transcript_lines: list[str],

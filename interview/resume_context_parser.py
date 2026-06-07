@@ -148,11 +148,17 @@ class _ResumeContextParser:
             name = _first_text(project.get("name"), project.get("title"))
             description = _first_text(project.get("description"), project.get("summary"))
             technologies = _extract_text_items(project.get("technologies"), ("skill", "tool", "name", "value"))
+            company = _first_text(project.get("company"), project.get("associated_company"), project.get("employer"))
             parts = [name, description]
             compact = " - ".join(part for part in parts if part)
             if technologies:
                 compact = f"{compact} [{_join_items(technologies, 3)}]" if compact else _join_items(technologies, 3)
+            # Tag standalone projects so downstream never links them to an employer
             if compact:
+                if company:
+                    compact = f"{compact} (at {company})"
+                else:
+                    compact = f"{compact} [standalone]"
                 projects.append(compact)
         return projects
 

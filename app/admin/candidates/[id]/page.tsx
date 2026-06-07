@@ -141,18 +141,12 @@ const interviewReportData: any = (() => {
         const interview = candidate?.interview as any;
         return {
             ...parsed,
-            cognitive_insights: (() => {
-                const cog = interview?.cognitiveInsights ?? parsed?.cognitive_insights;
-                if (!cog) return {};
-                return typeof cog === "string" ? JSON.parse(cog) : cog;
-            })(),
-            behavioral_analysis: (() => {
-                const bsa = interview?.behavioralSignalsAnalysis ?? parsed?.behavioral_analysis;
-                if (!bsa) return {};
-                return typeof bsa === "string" ? JSON.parse(bsa) : bsa;
+            signal_analysis: (() => {
+                const sa = interview?.signalAnalysis ?? interview?.behavioralSignalsAnalysis ?? parsed?.signal_analysis ?? parsed?.behavioral_analysis;
+                if (!sa) return {};
+                return typeof sa === "string" ? JSON.parse(sa) : sa;
             })(),
             integrity_signals: interview?.integritySignals ?? [],
-            behavior_signals: interview?.behaviorSignals ?? {},
         };
     } catch {
         return {};
@@ -161,163 +155,75 @@ const interviewReportData: any = (() => {
 
 const interviewRecordingUrl = candidate?.interview?.interviewRecordingUrl || "";
 const interviewTranscript = candidate?.interview?.interviewTranscript || "";
-const interviewAiSummary = candidate?.interview?.aiSummary || "";
-const interviewTurns = (() => {
-    const raw = candidate?.interview?.interviewTurns || [];
-    if (Array.isArray(raw)) return raw;
-    if (typeof raw === "string") {
-        try {
-            const parsed = JSON.parse(raw);
-            return Array.isArray(parsed) ? parsed : [];
-        } catch {
-            return [];
-        }
-    }
-    return [];
+const interviewSummaryData: any = (() => {
+    const raw = (candidate?.interview as any)?.interviewSummary;
+    if (!raw) return {};
+    try { return typeof raw === "string" ? JSON.parse(raw) : raw; } catch { return {}; }
 })();
 
-const turnTimes = (() => {
-    const times = new Map<number, number>();
-    if (!interviewTranscript) return times;
-    const lines = interviewTranscript.split("\n");
-    let currentTurn = 0;
-    for (const line of lines) {
-        const match = line.match(/^(Interviewer|Candidate)\[(\d+)\]:/);
-        if (match) {
-            const timeSec = parseInt(match[2], 10);
-            if (match[1] === "Interviewer") {
-                currentTurn++;
-                times.set(currentTurn, timeSec);
-            } else if (match[1] === "Candidate") {
-                if (currentTurn > 0 && !times.has(currentTurn)) {
-                    times.set(currentTurn, timeSec);
-                }
-            }
-        }
-    }
-    return times;
-})();
 
-// -- Signal timeline from behaviorSignals.checkpoint_events + events (proctoring) --
-const signalTimeline = (() => {
-    const raw = candidate?.interview?.behaviorSignals;
-    const pr = typeof raw === "string" ? (() => { try { return JSON.parse(raw); } catch { return {}; } })() : (raw || {});
-    const checkpointEvents: any[] = Array.isArray(pr?.checkpoint_events) ? pr.checkpoint_events : [];
-    const procEvents: any[] = Array.isArray(pr?.events) ? pr.events : [];
-    const events: any[] = [...checkpointEvents, ...procEvents];
-    return events
-        .filter((e: any) => e?.recruiter_visible !== false && (e?.signal_name || e?.event))
-        .map((e: any) => {
-            let elapsed = e?.elapsed_sec ?? e?.elapsed_seconds ?? e?.elapsedSeconds;
-            if (typeof elapsed !== "number" || isNaN(elapsed)) {
-                const parsedElapsed = parseFloat(String(elapsed));
-                if (!isNaN(parsedElapsed)) {
-                    elapsed = parsedElapsed;
-                } else if (typeof e?.turn === "number" && e?.turn > 0) {
-                    elapsed = turnTimes.get(e.turn) ?? (e.turn * 30);
-                } else {
-                    elapsed = 0;
-                }
-            }
-            return {
-                elapsed_sec: Number(elapsed),
-                signal_name: String(e.signal_name || e.event || "signal"),
-                signal_layer: String(e.signal_layer || e.risk_bucket || ""),
-                evidence: String(e.evidence || ""),
-                score_delta: Number(e.score_delta ?? e.trust_delta ?? 0),
-                turn: Number(e.turn || 0),
-                recruiter_visible: true,
-            };
-        });
-})();
+const isFallbackReport = !interviewReportData?.dimensions;
 
-const isFallbackReport = interviewReportData?._meta?.is_fallback === true;
+// -- 5-dimension scores --------------------------------------------------------
+const _dims: { name: string; score: number; evidence: string }[] =
+    Array.isArray(interviewReportData?.dimensions) ? interviewReportData.dimensions : [];
+const _dimByName = (name: string) => _dims.find((d) => d.name.toLowerCase().includes(name.toLowerCase()))?.score ?? 0;
 
-// -- Score Breakdown: 5-category new schema with legacy fallbacks ---------------
-const _scores = interviewReportData?.scores || {};
 const interviewReportScores = {
-    overall:                Number(_scores.overall ?? _scores.combined_score ?? 0),
-    engagement:             Number(_scores.engagement ?? 0),
-    demonstrated_knowledge: Number(_scores.demonstrated_knowledge ?? _scores.technical ?? _scores.technical_score ?? 0),
-    role_fit:               Number(_scores.role_fit ?? interviewReportData?.role_fit ?? 0),
-    problem_solving:        Number(_scores.problem_solving ?? 0),
-    // Legacy aliases
-    technical:              Number(_scores.technical ?? _scores.demonstrated_knowledge ?? 0),
-    technical_score:        Number(_scores.technical_score ?? _scores.technical ?? 0),
-    combined_score:         Number(_scores.combined_score ?? _scores.overall ?? 0),
-    communication_score:    Number(interviewReportData?.communication?.overall ?? candidate?.interview?.communicationScore ?? 0),
+    overall:               Number(interviewReportData?.overall ?? 0),
+    engagement:            Number(interviewReportData?.engagement ?? 0),
+    communication:         _dimByName("communication"),
+    domain_knowledge:      _dimByName("domain"),
+    role_fit:              _dimByName("role fit"),
+    problem_solving:       _dimByName("problem"),
+    ownership_credibility: _dimByName("ownership"),
+    dimensions:            _dims,
 };
 
-// -- Communication: 4 sub-scores from full transcript analysis -----------------
-const _comm = interviewReportData?.communication || {};
+// -- Communication: from dimensions evidence -----------------------------------
 const interviewReportCommunication = {
-    overall:    Number(_comm.overall ?? candidate?.interview?.communicationScore ?? 0),
-    clarity:    Number(_comm.clarity ?? 0),
-    fluency:    Number(_comm.fluency ?? 0),
-    grammar:    Number(_comm.grammar ?? 0),
-    confidence: Number(_comm.confidence ?? 0),
-    summary:    String(_comm.summary ?? ""),
-    pronunciation: Number(_comm.pronunciation ?? _comm.fluency ?? 0),
+    overall:       interviewReportScores.communication,
+    clarity:       interviewReportScores.communication,
+    fluency:       interviewReportScores.communication,
+    grammar:       interviewReportScores.communication,
+    confidence:    interviewReportScores.communication,
+    summary:       _dims.find((d) => d.name.toLowerCase().includes("communication"))?.evidence ?? "",
+    pronunciation: interviewReportScores.communication,
 };
 
-// -- Integrity: deterministic score from signal weights ------------------------
+// -- Integrity -----------------------------------------------------------------
 const _integrity = interviewReportData?.integrity || {};
 const integrityScore = Number(_integrity.score ?? 100);
 const integrityBand  = String(_integrity.band ?? "HIGH");
 
-// -- Skills Evaluated: topic list (no keywords) --------------------------------
+// -- Skills --------------------------------------------------------------------
 const skillsEvaluated: string[] = Array.isArray(interviewReportData?.skills_evaluated)
     ? interviewReportData.skills_evaluated.filter((s: any) => typeof s === "string" && s.trim())
     : [];
 
-// -- Skill Ratings: topic-level array ------------------------------------------
 const skillRatingsList: any[] = Array.isArray(interviewReportData?.skill_ratings)
-    ? interviewReportData.skill_ratings
-    : [];
+    ? interviewReportData.skill_ratings : [];
 
-// -- Q&A blocks: filter warmup from interview-only qa_blocks -------------------
-const qaBlocksInterview: any[] = Array.isArray(interviewReportData?.qa_blocks)
-    ? interviewReportData.qa_blocks.filter((b: any) => !b?.is_warmup)
-    : [];
-const qaBlocksAll: any[] = Array.isArray(interviewReportData?.qa_blocks_all)
-    ? interviewReportData.qa_blocks_all
-    : [];
-
-const interviewReportCognitiveInsights = interviewReportData?.cognitive_insights || {};
-const interviewReportBehavioralAnalysis = interviewReportData?.behavioral_analysis || {};
+const interviewReportBehavioralAnalysis = {
+    ...(interviewReportData?.signal_analysis || {}),
+    strengths_observed: interviewSummaryData?.strengths || [],
+    concerns_noted:     interviewSummaryData?.concerns  || [],
+};
 const interviewReportVerdict = interviewReportData?.verdict || {};
-const interviewReportRecording = interviewReportData?.recording || {};
 
-    // -- interviewReportSkills: built from new skill_ratings (topic-level, 1-10 score)
-    const interviewReportSkills: any[] = (() => {
-        if (skillRatingsList.length > 0) {
-            return skillRatingsList
-                .filter((r: any) => r?.topic && typeof r.topic === "string")
-                .map((r: any) => ({
-                    skill:            String(r.topic).trim(),
-                    name:             String(r.topic).trim(),
-                    score:            String(r.score) + "/10",
-                    status:           String(r.status || "NOT TESTED"),
-                    what_they_showed: String(r.evidence || "").trim(),
-                    what_was_missing: String(r.gaps || "").trim(),
-                }));
-        }
-        // Fallback: legacy skills_proof array from old schema
-        const legacyProof = Array.isArray(interviewReportData?.skills_proof)
-            ? interviewReportData.skills_proof : [];
-        return legacyProof
-            .filter((item: any) => String(item?.skill || item?.name || "").trim().length > 2)
-            .map((item: any) => ({
-                skill:            String(item?.skill || item?.name || "").trim(),
-                name:             String(item?.skill || item?.name || "").trim(),
-                score:            String(item?.score || "N/A"),
-                status:           String(item?.status || "NOT TESTED"),
-                what_they_showed: String(item?.what_they_showed || item?.evidence || "").trim(),
-                what_was_missing: String(item?.what_was_missing || "").trim(),
-            }));
-    })();
+    // -- interviewReportSkills: from skill_ratings (skill key, 1-10 score) ------
+    const interviewReportSkills: any[] = skillRatingsList
+        .filter((r: any) => r?.skill && typeof r.skill === "string")
+        .map((r: any) => ({
+            skill:            String(r.skill).trim(),
+            name:             String(r.skill).trim(),
+            score:            String(r.score) + "/10",
+            status:           String(r.status || "NOT TESTED"),
+            what_they_showed: String(r.evidence || "").trim(),
+            what_was_missing: String(r.gaps || "").trim(),
+        }));
 
-    const interviewReportSummary = interviewReportData?.verdict?.summary || interviewReportRecording.summary || interviewAiSummary || "";
+    const interviewReportSummary = interviewSummaryData?.decision_note || interviewSummaryData?.summary || "";
     const interviewStatusNormalized = String(candidate?.interview?.status || candidate?.interviewStatus || "").trim().toUpperCase();
     const interviewIsFinished =
         interviewStatusNormalized === "COMPLETED" ||
@@ -349,9 +255,28 @@ const interviewReportRecording = interviewReportData?.recording || {};
         return acc;
     }, []);
 
-    // Full proctoring event list for detailed signal display (time + evidence per event)
+    // Parse org-enabled proctoring signal keys (from super-admin config)
+    const enabledProctoringSignals: Set<string> = (() => {
+        const raw = adminOrg?.proctoringSignals;
+        if (!raw) return new Set<string>();
+        try {
+            const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+            return new Set(
+                Object.entries(parsed as Record<string, boolean>)
+                    .filter(([, enabled]) => enabled)
+                    .map(([key]) => key)
+            );
+        } catch { return new Set<string>(); }
+    })();
+
+    // Full proctoring event list — filtered to org-enabled signals only
     const proctoringEventsFull: { time: string; eventType: string; reason: string; severity: string; elapsedSeconds: number }[] =
-        rawProctoringEvents.map((ev: any) => {
+        rawProctoringEvents
+        .filter((ev: any) => {
+            const key = String(ev?.eventType || ev?.type || ev?.signal_name || "");
+            return !key || enabledProctoringSignals.size === 0 || enabledProctoringSignals.has(key);
+        })
+        .map((ev: any) => {
             const elapsed = Number(ev?.metadata?.elapsedSeconds ?? ev?.elapsedSeconds ?? 0);
             const mins = Math.floor(elapsed / 60);
             const secs = elapsed % 60;
@@ -363,6 +288,23 @@ const interviewReportRecording = interviewReportData?.recording || {};
                 elapsedSeconds: elapsed,
             };
         });
+
+    const signalTimeline = rawProctoringEvents
+        .filter((e: any) => e?.signal_name || e?.eventType || e?.event)
+        .map((e: any) => {
+            const elapsed = Number(e?.metadata?.elapsedSeconds ?? e?.elapsedSeconds ?? e?.elapsed_sec ?? 0);
+            return {
+                elapsed_sec:      elapsed,
+                signal_name:      String(e.signal_name || e.eventType || e.event || "signal"),
+                signal_layer:     String(e.signal_layer || e.risk_bucket || ""),
+                evidence:         String(e.evidence || ""),
+                score_delta:      Number(e.score_delta ?? e.trust_delta ?? 0),
+                turn:             Number(e.turn || 0),
+                recruiter_visible: true,
+            };
+        })
+        // Show only org-enabled proctoring signals — exclude behavioral/evaluation signals
+        .filter((e) => enabledProctoringSignals.size === 0 || enabledProctoringSignals.has(e.signal_name));
 
     // ── Parse answerScores — stored as JSON string in DB ──
     const answerScoresParsed: { question: string; answer: string; depth: number; clarity: number; specificity: number; grounding: number; overall: number; signals: string[] }[] = (() => {
@@ -376,80 +318,64 @@ const interviewReportRecording = interviewReportData?.recording || {};
         const allAnswers: any[] = Array.isArray(parsed?.allAnswers) ? parsed.allAnswers : Array.isArray(parsed) ? parsed : [];
         return allAnswers
             .filter((score: any) => {
-                // Drop warmup placeholders, empty turns, and turns with no real answer
                 if (score?.is_warmup) return false;
-                const ans = String(score?.answer || "").trim();
+                const ans = String(score?.candidate_answer || score?.answer || "").trim();
                 if (!ans || ans === "?") return false;
                 const overall = Number(score?.overall ?? 0);
                 if (overall <= 0) return false;
                 return true;
             })
-            .map((score: any) => ({
-                question: String(score?.question || "").trim(),
-                answer: String(score?.answer || "").trim(),
-                depth:       Number(score?.depth       ?? 0),
-                clarity:     Number(score?.clarity     ?? 0),
-                specificity: Number(score?.specificity ?? 0),
-                grounding:   Number(score?.grounding   ?? 0),
-                overall:     Number(score?.overall     ?? 0),
-                signals: Array.isArray(score?.signals) ? score.signals.filter(Boolean) : [],
-            }));
+            .map((score: any) => {
+                const sb = score?.score_breakdown || {};
+                return {
+                    turn:        Number(score?.turn ?? 0),
+                    question:    String(score?.ai_question    || score?.question || "").trim(),
+                    answer:      String(score?.candidate_answer || score?.answer || "").trim(),
+                    topic:       String(score?.topic || "").trim(),
+                    depth:       Number(sb.depth       ?? score?.depth       ?? 0),
+                    clarity:     Number(sb.clarity     ?? score?.clarity     ?? 0),
+                    specificity: Number(sb.fluency     ?? score?.specificity ?? 0),
+                    grounding:   Number(sb.confidence  ?? score?.grounding   ?? 0),
+                    overall:     Number(score?.overall ?? 0),
+                    signals:     Array.isArray(score?.signals) ? score.signals.filter(Boolean) : [],
+                    score_breakdown: sb,
+                };
+            });
     })();
 
-    const interviewSessionRows = Array.isArray(interviewTurns)
-        ? interviewTurns.map((turn: any, i: number) => ({
-            q: Number(turn?.turn || i + 1),
-            question: String(turn?.question || turn?.title || "").trim(),
-            answer: String(turn?.answer || turn?.reasoning || "").trim(),
-            score: String(turn?.score || "--"),
-            reasoning: String(turn?.reasoning || turn?.analysis_reasoning || "").trim(),
-        }))
-        : [];
+    const interviewSessionRows = answerScoresParsed.map((score: any, i: number) => ({
+        q: Number(score?.turn || i + 1),
+        question: String(score?.ai_question || score?.question || "").trim(),
+        answer: String(score?.candidate_answer || score?.answer || "").trim(),
+        score: String(score?.overall ? `${Math.round(score.overall)}/10` : "--"),
+        reasoning: "",
+    }));
 
-    // ── QA blocks — use AI blocks with full question/answer_summary from new schema ──
-    const aiQaBlocks = Array.isArray(interviewReportData?.qa_blocks_all)
-        ? interviewReportData.qa_blocks_all
-        : Array.isArray(interviewReportData?.qa_blocks)
-            ? interviewReportData.qa_blocks
-            : [];
-    const interviewQaRows = (() => {
-        const maxLen = Math.max(aiQaBlocks.length, interviewTurns.length, answerScoresParsed.length);
-        const findByTurn = (items: any[], turnNumber: number) => items.find((item: any) => Number(item?.turn) === turnNumber || Number(item?.q) === turnNumber) || null;
-        return Array.from({ length: maxLen }, (_, idx) => {
-            const turnNumber = idx + 1;
-            const block = aiQaBlocks[idx] || findByTurn(aiQaBlocks, turnNumber) || {};
-            const matchedTurn = interviewTurns[idx] || findByTurn(interviewTurns, turnNumber) || null;
-            const liveScore = answerScoresParsed[idx] || null;
-            const scoreText = String(block?.score || (liveScore ? `${Math.round(liveScore.overall || 0)}/10` : "--"));
-            return {
-                q: Number(block?.q || turnNumber),
-                question: String(block?.question || matchedTurn?.question || block?.title || liveScore?.question || `Question ${turnNumber}`).trim(),
-                answer: String(block?.answer_summary || block?.answer || matchedTurn?.answer || liveScore?.answer || "").trim(),
-                score: scoreText,
-                reasoning: String(block?.verdict || block?.reasoning || matchedTurn?.reasoning || "").trim(),
-                score_breakdown: block?.score_breakdown ?? matchedTurn?.score_breakdown ?? (liveScore ? {
-                    clarity:              liveScore.clarity      ?? 0,
-                    depth:                liveScore.depth        ?? 0,
-                    technical_accuracy:   liveScore.specificity  ?? 0,
-                    practical_application:liveScore.grounding    ?? 0,
-                } : null),
-                tags: Array.isArray(block?.tags) ? block.tags : Array.isArray(liveScore?.signals) ? liveScore.signals : [],
-                confidence: String(block?.confidence || ""),
-            };
-        });
-    })();
+    const interviewQaRows = answerScoresParsed.map((score: any, idx: number) => ({
+        q: Number(score?.turn || idx + 1),
+        question: String(score?.ai_question || score?.question || `Question ${idx + 1}`).trim(),
+        answer: String(score?.candidate_answer || score?.answer || "").trim(),
+        score: score?.overall ? `${Math.round(score.overall)}/10` : "--",
+        reasoning: "",
+        score_breakdown: score?.score_breakdown ? {
+            clarity:               score.score_breakdown.clarity   ?? 0,
+            depth:                 score.score_breakdown.depth     ?? 0,
+            technical_accuracy:    score.score_breakdown.fluency   ?? 0,
+            practical_application: score.score_breakdown.confidence ?? 0,
+        } : null,
+        tags: Array.isArray(score?.signals) ? score.signals : [],
+        confidence: "",
+    }));
 
     const wordCount = interviewTranscript ? interviewTranscript.split(/\s+/).filter(Boolean).length : 0;
 
-    // ── interviewScore: combined_score is 0-100 from the enriched report ──
     const interviewScore = (() => {
-        const aiCombined = Number(interviewReportScores.combined_score);
-        if (Number.isFinite(aiCombined) && aiCombined > 0) return Math.max(0, Math.min(100, Math.round(aiCombined)));
-        // Fall back: average qa_blocks scores scaled to 0-100
-        if (aiQaBlocks.length > 0) {
-            const nums = aiQaBlocks
-                .map((b: any) => parseFloat(String(b?.score || "").replace(/[^\d.]/g, "")))
-                .filter((n: number) => Number.isFinite(n));
+        const overall = Number(interviewReportScores.overall);
+        if (Number.isFinite(overall) && overall > 0) return Math.max(0, Math.min(100, Math.round(overall)));
+        if (answerScoresParsed.length > 0) {
+            const nums = answerScoresParsed
+                .map((s: any) => Number(s?.overall || 0))
+                .filter((n: number) => Number.isFinite(n) && n > 0);
             if (nums.length > 0) {
                 const avg = nums.reduce((a: number, b: number) => a + b, 0) / nums.length;
                 return Math.max(0, Math.min(100, Math.round(avg <= 10 ? avg * 10 : avg)));
@@ -476,19 +402,10 @@ const interviewReportRecording = interviewReportData?.recording || {};
             : null;
 
     const communicationStatus = (() => {
-        const commData = interviewReportData?.communication || {};
-        const commValues = [commData.pronunciation, commData.grammar, commData.fluency, commData.confidence]
-            .map(Number).filter((n) => Number.isFinite(n) && n > 0);
-        if (commValues.length > 0) {
-            const avg = commValues.reduce((a, b) => a + b, 0) / commValues.length;
-            if (avg >= 70) return "Strong";
-            if (avg >= 45) return "Average";
-            return "Limited";
-        }
-        const aiCommScore = Number(interviewReportScores.communication_score);
-        if (Number.isFinite(aiCommScore) && aiCommScore > 0) {
-            if (aiCommScore >= 70) return "Strong";
-            if (aiCommScore >= 45) return "Average";
+        const commScore = interviewReportScores.communication;
+        if (commScore > 0) {
+            if (commScore >= 70) return "Strong";
+            if (commScore >= 45) return "Average";
             return "Limited";
         }
         if (!interviewTranscript) return "Pending";
@@ -851,9 +768,8 @@ const interviewReportRecording = interviewReportData?.recording || {};
                     mounted,
                     displayAvatar: candidatePhotoSrc,
                     interviewReportScores,
-                    interviewReportRecording,
+
                     interviewReportCommunication,
-                    interviewReportCognitiveInsights,
                     interviewReportBehavioralAnalysis,
                     interviewReportVerdict,
                     isFallbackReport,
@@ -861,7 +777,7 @@ const interviewReportRecording = interviewReportData?.recording || {};
                     interviewSessionRows,
                     interviewQaRows,
                     interviewReportSummary,
-                    interviewAiSummary,
+                    interviewAiSummary: interviewSummaryData?.summary || "",
                     interviewTranscript,
                     proctoringVerdictSummary,
                     groupedProctoringSignals,
@@ -880,8 +796,7 @@ const interviewReportRecording = interviewReportData?.recording || {};
                     integrityBand,
                     skillsEvaluated,
                     skillRatingsList,
-                    qaBlocksInterview,
-                    qaBlocksAll,
+
                 })}
             />
 

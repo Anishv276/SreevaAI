@@ -83,6 +83,13 @@ class TopicState:
         self.is_saturated = False
         self.opened_at_turn = 0
 
+        # Dry-topic exit: count consecutive low-yield answers on this topic.
+        # A real interviewer abandons a dead topic fast instead of re-asking. When
+        # this hits the band cap, eval forces MOVE_ON regardless of the LLM judge.
+        self.consecutive_low_yield = 0
+        # Fresher: bail after 2 weak turns (breadth-first). Others: 3.
+        self.dry_topic_cap = 2 if band == "fresher" else 3
+
         self.progress_check_turns = 3
         self.progress_check_pct = {
             "fresher":    {"CRITICAL": 0.75, "HIGH": 0.80, "MEDIUM": 0.90, "LOW": 0.90},
@@ -109,8 +116,20 @@ class TopicState:
         self.saturation_score += total
         self.follow_up_turns += 1
         self.is_saturated = self.saturation_score >= self.saturation_threshold
+        # Track consecutive low-yield turns for the dry-topic exit. A turn is
+        # "low-yield" when the candidate added almost nothing (denial, blank, or a
+        # vague one-liner). Any substantive answer resets the streak.
+        if quality_contribution <= 0.5:
+            self.consecutive_low_yield += 1
+        else:
+            self.consecutive_low_yield = 0
         if turn is not None:
             self.updated_turn = turn
+
+    def is_dry_topic(self) -> bool:
+        """True when the topic has gone dry -- consecutive low-yield answers hit the
+        band cap. Forces MOVE_ON so the agent stops re-asking a dead topic."""
+        return self.consecutive_low_yield >= self.dry_topic_cap
 
     def to_dict(self) -> dict:
         return {
@@ -127,6 +146,8 @@ class TopicState:
             "signals_fired": self.signals_fired,
             "is_saturated": self.is_saturated,
             "updated_turn": self.updated_turn,
+            "consecutive_low_yield": self.consecutive_low_yield,
+            "dry_topic_cap": self.dry_topic_cap,
         }
 
     @classmethod
@@ -144,6 +165,9 @@ class TopicState:
         obj.is_saturated       = bool(state_dict.get("is_saturated", False))
         obj.signals_fired      = list(state_dict.get("signals_fired", []) or [])
         obj.opened_at_turn     = int(state_dict.get("opened_at_turn", 0) or 0)
+        obj.consecutive_low_yield = int(state_dict.get("consecutive_low_yield", 0) or 0)
+        if "dry_topic_cap" in state_dict:
+            obj.dry_topic_cap  = int(state_dict["dry_topic_cap"])
         if "saturation_threshold" in state_dict:
             obj.saturation_threshold = float(state_dict["saturation_threshold"])
         if "base_turn_credit" in state_dict:
@@ -418,14 +442,32 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         job_title=p.job_title,
     )
 
+    # Outer wrapper timeout (10s) sits between the inner LLM call (8s) and the
+    # agent's LLM gate (12s) -- strictly increasing so the inner call always gets
+    # to finish or self-recover before any outer guard fires.
+    # RECOVERY OWNED BY EVAL: evaluate_answer never raises (it returns low-confidence
+    # recovery scores on timeout/failure), so run_turn_evaluation completes normally.
+    # This wrapper exists only as a last-resort guard; on the rare path where it
+    # fires we still build a REAL result (low scores, PROBE) so the agent -- which
+    # has no fallback -- always receives a usable, topic-advancing decision.
     try:
-        _eval_result = await asyncio.wait_for(_eval_coro, timeout=12.0)
-    except asyncio.TimeoutError:
-        logger.error("[EVAL] turn=%d | scoring call timed out (>12s) -- returning None for explicit recovery", p.turn)
-        return None
-    except Exception as _ex:
-        logger.error("[EVAL] turn=%d | scoring call failed: %s -- returning None", p.turn, _ex, exc_info=True)
-        return None
+        _eval_result = await asyncio.wait_for(_eval_coro, timeout=10.0)
+    except (asyncio.TimeoutError, Exception) as _ex:
+        logger.error(
+            "[EVAL] turn=%d | turn evaluation %s (%s) -- eval-owned recovery decision",
+            p.turn, "timed out (>10s)" if isinstance(_ex, asyncio.TimeoutError) else "failed", _ex,
+        )
+        _recovery_quality = {"clarity": 2.0, "depth": 1.0, "specificity": 1.0, "grounding": 1.0}
+        from interview.turn_decision import build_turn_decision, build_signal_flags
+        _recovery_td = build_turn_decision(
+            quality=_recovery_quality,
+            signals=build_signal_flags([]),
+            signal_events=[],
+            action="PROBE",
+            mode="clarification",
+            next_goal="",
+        )
+        _eval_result = (_recovery_td, "")
 
     td, _ = _eval_result  # directive string from run_turn_evaluation is discarded -- agent builds its own
 
@@ -479,6 +521,10 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     )
 
     _weak_exit = current_topic_state is not None and current_topic_state.is_weak_candidate_exit()
+    # Dry-topic exit: candidate has given consecutive low-yield answers up to the
+    # band cap (fresher 2 / others 3). A real interviewer moves on instead of
+    # re-asking a dead topic. This is deterministic -- independent of the LLM judge.
+    _dry_topic = current_topic_state is not None and current_topic_state.is_dry_topic()
 
     logger.info(
         "[SATURATION] turn=%d | topic=%s | %s | signals=[%s]%s",
@@ -502,6 +548,10 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     if depth_decay_fired and depth_decay_severity == "severe":
         action = "MOVE_ON"
         logger.info("[DECISION] [OK] MOVE_ON reason=depth_decay(severe) turn=%d", p.turn)
+    elif _dry_topic:
+        action = "MOVE_ON"
+        logger.info("[DECISION] [OK] MOVE_ON reason=dry_topic (consecutive_low_yield=%d>=cap=%d) turn=%d",
+                    current_topic_state.consecutive_low_yield, current_topic_state.dry_topic_cap, p.turn)
     elif _weak_exit:
         action = "MOVE_ON"
         logger.info("[DECISION] [OK] MOVE_ON reason=weak_exit (turns=%d score=%.1f<min=%.1f) turn=%d",
@@ -609,6 +659,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
             "follow_up_turns": current_topic_state.follow_up_turns if current_topic_state else 0,
             "is_saturated": is_saturated,
             "weak_exit": _weak_exit,
+            "dry_topic": _dry_topic,
             "depth_decay": depth_decay_fired,
             "topic_state_dict": current_topic_state.to_dict() if current_topic_state else None,
         },

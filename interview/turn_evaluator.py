@@ -241,21 +241,11 @@ def _build_eval_graph():
     return graph.compile()
 
 
-def _safe_default_turn_decision() -> dict:
-    """Error-recovery TurnDecision -- low scores, PROBE so no topic is abandoned on failure."""
-    low = {"clarity": 1.0, "depth": 1.0, "specificity": 1.0,
-           "grounding": 1.0, "fluency": 1.0, "confidence": 1.0, "is_timeout": True}
-    return build_turn_decision(
-        quality=low,
-        signals=build_signal_flags([]),
-        signal_events=[],
-        action="PROBE",
-        mode="ownership",
-        next_goal="",
-    )
-
-
 # Compiled once at import time -- reused across all evaluation calls
+# NOTE: there is intentionally NO local error-recovery default here. Recovery is
+# owned by eval (agent_scoring.evaluate_answer returns low-confidence scores on
+# failure; eval_pipeline builds a recovery decision as a last resort). The agent
+# has no fallback path -- it depends only on eval's return.
 eval_graph = _build_eval_graph()
 
 

@@ -15,7 +15,6 @@ import { getPythonExecutable } from "./lib/python-exec";
 import { extractJDFromText } from "./lib/openai";
 import { parseDriveScreeningSettings } from "./lib/screening-criteria";
 import { recordOrgBillingUsage } from "./lib/usage-metrics";
-import { generateInterviewReport, computeEnrichedInterviewScore } from "./lib/interview-analysis";
 import { syncCandidateCorpusToPinecone } from "./lib/pinecone";
 import { buildInterviewLink } from "./lib/interview-links";
 import { Prisma } from "@prisma/client";
@@ -25,26 +24,49 @@ import {
   deleteRecordingAsset,
   extractRecordingKey,
   getOrgRecordingSettings,
-  getRecordingRetentionJobId,
-  RECORDING_RETENTION_DELETE_JOB,
   RECORDING_RETENTION_SWEEP_JOB,
   scheduleRecordingRetentionDeletion,
 } from "./lib/recording-retention";
-// Load environment variables
-dotenv.config();
-console.log('DEBUG: REDIS_URL length:', process.env.REDIS_URL?.length || 0);
+import { mergeRecordingState, normalizeRecordingState, parseJsonRecord } from "./lib/recording-state";
+// Load environment variables without dotenv's startup banner.
+dotenv.config({ quiet: true } as any);
 // â”€â”€â”€ Silence BullMQ's built-in eviction-policy warning â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // BullMQ internally logs "IMPORTANT! Eviction policy is volatile-lru" on every
 // queue/worker connection check. We handle this ourselves, so we suppress it.
 const _origLog = console.log.bind(console);
 console.log = (...args: any[]) => {
-  if (typeof args[0] === 'string' && args[0].includes('IMPORTANT! Eviction policy')) return;
+  const first = typeof args[0] === 'string' ? args[0] : "";
+  if (first.includes('IMPORTANT! Eviction policy')) return;
   _origLog(...args);
 };
 const _origWarn = console.warn.bind(console);
 console.warn = (...args: any[]) => {
-  if (typeof args[0] === 'string' && args[0].includes('IMPORTANT! Eviction policy')) return;
+  const first = typeof args[0] === 'string' ? args[0] : "";
+  if (first.includes('IMPORTANT! Eviction policy')) return;
+  if (first.includes('Running queue cleanup to free memory')) return;
+  if (first.includes('Could not set Redis eviction policy')) {
+    const detail = String(args[0]).split(':').slice(1).join(':').trim();
+    _origWarn(`[Worker] Could not set Redis eviction policy${detail ? `: ${detail}` : ""}`);
+    return;
+  }
+  if (first.includes('Cron registration skipped')) {
+    _origWarn("[Worker] Cron registration skipped because Redis is near its memory limit.");
+    return;
+  }
   _origWarn(...args);
+};
+const _origError = console.error.bind(console);
+console.error = (...args: any[]) => {
+  const first = typeof args[0] === 'string' ? args[0] : "";
+  if (first.includes('Failed to register backup job')) {
+    _origError("[Worker] Failed to register backup job:", ...args.slice(1));
+    return;
+  }
+  if (first.includes('Failed to register recording retention sweep')) {
+    _origError("[Worker] Failed to register recording retention sweep:", ...args.slice(1));
+    return;
+  }
+  _origError(...args);
 };
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 if (!process.env.REDIS_URL) {
@@ -256,184 +278,153 @@ async function processInterviewStartJob(job: any) {
   };
 }
 
-async function processRecordingRetentionDeleteJob(job: any) {
-  const prismaAny = prisma as any;
-  const {
-    applicationId,
-    recordingUrl,
-    recordingKey,
-    recordingManifest,
-  } = job.data || {};
-
-  if (!applicationId) {
-    throw new Error("Missing applicationId in delete-recording-asset job");
-  }
-
-  const interviewRow = await prismaAny.interview.findUnique({
-    where: { applicationId },
-    select: {
-      interviewRecordingUrl: true,
-      recordingManifest: true,
-      recordingDeletedAt: true,
-      recordingCleanupStatus: true,
-      recordingCleanupAttempts: true,
-      recordingCleanupLastError: true,
-    },
-  });
-
-  if (!interviewRow) {
-    console.warn(`[RETENTION] Interview ${applicationId} no longer exists. Skipping.`);
-    return { skipped: true, reason: "missing_interview", applicationId };
-  }
-
-  const cleanupStatus = String(interviewRow.recordingCleanupStatus || "").toUpperCase();
-  if (interviewRow.recordingDeletedAt || cleanupStatus === "COMPLETED") {
-    console.log(`[RETENTION] Recording already deleted for ${applicationId}. Skipping duplicate job.`);
-    return { success: true, alreadyDeleted: true, applicationId };
-  }
-
-  const effectiveKey = extractRecordingKey({
-    recordingUrl: recordingUrl || interviewRow.interviewRecordingUrl,
-    recordingKey: recordingKey || null,
-    recordingManifest: recordingManifest || interviewRow.recordingManifest,
-  });
-  if (!effectiveKey) {
-    throw new Error(`[RETENTION] Missing recording key/url for ${applicationId}`);
-  }
-
-  const attempt = Math.max(1, Number(job.attemptsMade || 0) + 1);
-  await prismaAny.interview.update({
-    where: { applicationId },
-    data: {
-      recordingCleanupStatus: "PROCESSING",
-      recordingCleanupAttempts: attempt,
-      recordingCleanupLastError: null,
-    },
-  }).catch(() => {});
-
-  const deleteResult = await deleteRecordingAsset({
-    recordingUrl: recordingUrl || interviewRow.interviewRecordingUrl,
-    recordingKey: effectiveKey,
-    recordingManifest: recordingManifest || interviewRow.recordingManifest,
-    bucket: process.env.R2_INTERVIEW_BUCKET || "interview",
-    attempts: 2,
-    baseDelayMs: 1000,
-  });
-
-  if (!deleteResult.success) {
-    const lastError = deleteResult.lastError || "Failed to delete recording asset from Cloudflare R2";
-    await prismaAny.interview.update({
-      where: { applicationId },
-      data: {
-        recordingCleanupStatus: "FAILED",
-        recordingCleanupAttempts: attempt,
-        recordingCleanupLastError: lastError,
-      },
-    }).catch(() => {});
-    console.error(`[RETENTION] Failed to delete recording for ${applicationId}: ${lastError}`);
-    throw new Error(lastError);
-  }
-
-  const deletedAt = new Date();
-  await prismaAny.interview.update({
-    where: { applicationId },
-    data: {
-      interviewRecordingUrl: null,
-      interviewRecordedAt: null,
-      recordingStatus: null,
-      recordingMimeType: null,
-      recordingStartedAt: null,
-      recordingCompletedAt: null,
-      recordingDurationSec: null,
-      recordingManifest: null,
-      recordingRetentionDays: null,
-      recordingRetentionDueAt: null,
-      recordingCleanupStatus: "COMPLETED",
-      recordingCleanupAttempts: attempt,
-      recordingCleanupLastError: null,
-      recordingDeletedAt: deletedAt,
-    },
-  });
-
-  console.log(`[RETENTION] Deleted recording for ${applicationId} after ${attempt} attempt(s).`);
-  return {
-    success: true,
-    applicationId,
-    attempts: attempt,
-    deletedAt: deletedAt.toISOString(),
-  };
-}
-
 async function processRecordingRetentionSweepJob(job: any) {
-  console.log("[RETENTION] Sweep started.");
   const rows = await prisma.$queryRaw<Array<{
     applicationId: string;
-    interviewRecordingUrl: string | null;
-    recordingManifest: unknown;
-    recordingRetentionDays: number | null;
-    recordingRetentionDueAt: Date | null;
-    recordingCleanupStatus: string | null;
-    recordingCleanupAttempts: number | null;
+    recording: unknown;
   }>>(
     Prisma.sql`
       SELECT
         i."applicationId",
-        i."interviewRecordingUrl",
-        i."recordingManifest",
-        i."recordingRetentionDays",
-        i."recordingRetentionDueAt",
-        i."recordingCleanupStatus",
-        i."recordingCleanupAttempts"
+        i."recording"
       FROM "Interview" i
       JOIN "Application" a ON a.id = i."applicationId"
       JOIN "Drive" d ON d.id = a."driveId"
       JOIN "Organization" o ON o.id = d."orgId"
-      WHERE i."interviewRecordingUrl" IS NOT NULL
-        AND i."recordingDeletedAt" IS NULL
+      WHERE COALESCE(
+          NULLIF(i."recording"->>'url', ''),
+          NULLIF(i."recording"->'manifest'->>'recordingUrl', '')
+        ) IS NOT NULL
+        AND COALESCE(i."recording"->'retention'->>'deletedAt', '') = ''
         AND (
-          (i."recordingRetentionDueAt" IS NOT NULL AND i."recordingRetentionDueAt" <= NOW())
+          (NULLIF(i."recording"->'retention'->>'dueAt', '')::timestamp IS NOT NULL
+            AND NULLIF(i."recording"->'retention'->>'dueAt', '')::timestamp <= NOW())
           OR (
-            i."recordingRetentionDueAt" IS NULL
-            AND i."recordingCompletedAt" IS NOT NULL
-            AND i."recordingCompletedAt" + (
-              GREATEST(COALESCE(i."recordingRetentionDays", o."recordingRetentionDays"), 1) * INTERVAL '1 day'
+            NULLIF(i."recording"->'retention'->>'dueAt', '') IS NULL
+            AND COALESCE(
+              NULLIF(i."recording"->>'completedAt', '')::timestamp,
+              NULLIF(i."recording"->>'recordedAt', '')::timestamp,
+              CASE
+                WHEN NULLIF(i."recording"->>'startedAt', '') IS NOT NULL
+                  AND NULLIF(i."recording"->>'durationSec', '') IS NOT NULL
+                THEN NULLIF(i."recording"->>'startedAt', '')::timestamp
+                  + (NULLIF(i."recording"->>'durationSec', '')::integer * INTERVAL '1 second')
+                ELSE NULL
+              END,
+              NULLIF(i."recording"->'manifest'->>'startedAt', '')::timestamp,
+              i."completedAt"
+            ) + (
+              GREATEST(COALESCE(NULLIF(i."recording"->'retention'->>'days', '')::integer, o."recordingRetentionDays"), 1) * INTERVAL '1 day'
             ) <= NOW()
           )
         )
-      ORDER BY COALESCE(i."recordingRetentionDueAt", i."recordingCompletedAt", i."updatedAt") ASC
+      ORDER BY COALESCE(
+        NULLIF(i."recording"->'retention'->>'dueAt', '')::timestamp,
+        NULLIF(i."recording"->>'completedAt', '')::timestamp,
+        NULLIF(i."recording"->>'recordedAt', '')::timestamp,
+        CASE
+          WHEN NULLIF(i."recording"->>'startedAt', '') IS NOT NULL
+            AND NULLIF(i."recording"->>'durationSec', '') IS NOT NULL
+          THEN NULLIF(i."recording"->>'startedAt', '')::timestamp
+            + (NULLIF(i."recording"->>'durationSec', '')::integer * INTERVAL '1 second')
+          ELSE NULL
+        END,
+        NULLIF(i."recording"->'manifest'->>'startedAt', '')::timestamp,
+        i."completedAt",
+        i."updatedAt"
+      ) ASC
       LIMIT 100
     `
   );
 
-  let enqueued = 0;
+  let deleted = 0;
+  let failed = 0;
   for (const row of rows) {
-    const cleanupStatus = String(row.recordingCleanupStatus || "").toUpperCase();
-    const jobId =
-      cleanupStatus === "FAILED"
-        ? `${getRecordingRetentionJobId(row.applicationId)}:retry:${Math.max(1, Number(row.recordingCleanupAttempts || 0))}`
-        : getRecordingRetentionJobId(row.applicationId);
-    const payload = {
-      applicationId: row.applicationId,
-      recordingUrl: row.interviewRecordingUrl || null,
-      recordingManifest: row.recordingManifest || null,
-      retentionDays: row.recordingRetentionDays || null,
-      dueAt: row.recordingRetentionDueAt ? row.recordingRetentionDueAt.toISOString() : null,
-    };
-    await recordingRetentionQueue.add(
-      RECORDING_RETENTION_DELETE_JOB,
-      payload,
-      {
-        jobId,
-        delay: 0,
-      }
-    );
-    enqueued += 1;
+    const recordingState = normalizeRecordingState(row.recording);
+    const attempt = Math.max(1, Number(recordingState.retention?.cleanupAttempts || 0) + 1);
+    const manifestRecord = parseJsonRecord(recordingState.manifest);
+    const recordingUrl = String(recordingState.url || manifestRecord.recordingUrl || "").trim() || null;
+    const recordingManifest = recordingState.manifest;
+    const recordingKey = extractRecordingKey({
+      recordingUrl,
+      recordingManifest,
+      recording: row.recording,
+    });
+
+    await (prisma as any).interview.update({
+      where: { applicationId: row.applicationId },
+      data: {
+        recording: mergeRecordingState(row.recording, {
+          retention: {
+            cleanupStatus: "PROCESSING",
+            cleanupAttempts: attempt,
+            cleanupLastError: null,
+          },
+        }),
+      },
+    }).catch(() => {});
+
+    const deleteResult = await deleteRecordingAsset({
+      recordingUrl,
+      recordingKey,
+      recordingManifest,
+      recording: row.recording,
+      bucket: process.env.R2_INTERVIEW_BUCKET || "interview",
+      attempts: 2,
+      baseDelayMs: 1000,
+    });
+
+    if (!deleteResult.success) {
+      const lastError = deleteResult.lastError || "Failed to delete recording asset from Cloudflare R2";
+      failed += 1;
+      await (prisma as any).interview.update({
+        where: { applicationId: row.applicationId },
+        data: {
+          recording: mergeRecordingState(row.recording, {
+            retention: {
+              cleanupStatus: "FAILED",
+              cleanupAttempts: attempt,
+              cleanupLastError: lastError,
+            },
+          }),
+        },
+      }).catch(() => {});
+      console.error(`[RETENTION] Sweep failed to delete recording for ${row.applicationId}: ${lastError}`);
+      continue;
+    }
+
+    const deletedAt = new Date();
+    deleted += 1;
+    await (prisma as any).interview.update({
+      where: { applicationId: row.applicationId },
+      data: {
+        recording: mergeRecordingState(row.recording, {
+          status: "DELETED",
+          url: null,
+          key: recordingKey || deleteResult.key || null,
+          manifest: {
+            ...manifestRecord,
+            recordingUrl: null,
+            lastStatus: "DELETED",
+          },
+          retention: {
+            cleanupStatus: "COMPLETED",
+            cleanupAttempts: attempt,
+            cleanupLastError: null,
+            deletedAt: deletedAt.toISOString(),
+          },
+        }),
+      },
+    });
   }
 
-  console.log(`[RETENTION] Sweep enqueued ${enqueued} expired recording deletion job(s).`);
+  if (deleted > 0 || failed > 0) {
+    console.log(`[RETENTION] Sweep deleted ${deleted} expired recording(s), failed ${failed}.`);
+  }
   return {
     success: true,
-    enqueued,
+    deleted,
+    failed,
   };
 }
 
@@ -793,24 +784,30 @@ async function persistInterviewUpdateRaw(params: {
   const fallbackId = generateId("int", "fallback");
   const existingInterview = await prisma.interview.findUnique({
     where: { applicationId },
-    select: { interviewTranscript: true },
+    select: { interviewTranscript: true, recording: true },
   });
   const existingTranscript = String(existingInterview?.interviewTranscript || "").trim();
   const incomingTranscript = String(transcript || "").trim();
   const transcriptToPersist = incomingTranscript && incomingTranscript.length >= existingTranscript.length
     ? incomingTranscript
     : existingTranscript;
+  const recordingToPersist = recordingUrl
+    ? mergeRecordingState((existingInterview as any)?.recording, {
+        status: interviewStatus === "COMPLETED" ? "COMPLETED" : "IN_PROGRESS",
+        url: recordingUrl,
+        recordedAt: now.toISOString(),
+      })
+    : null;
   await prisma.$executeRawUnsafe(
     `
-    INSERT INTO "Interview" ("id", "applicationId", "accessToken", status, "interviewRecordingUrl", "interviewRecordedAt", "interviewTranscript", "completedAt", "createdAt", "updatedAt")
-    VALUES ($6::text, $1::text, $7::text, COALESCE($2::text, 'IN_PROGRESS'), $3::text, CASE WHEN $3::text IS NOT NULL THEN $5::timestamp ELSE NULL END, $4::text, CASE WHEN $2::text = 'COMPLETED' THEN $5::timestamp ELSE NULL END, $5::timestamp, $5::timestamp)
+    INSERT INTO "Interview" ("id", "applicationId", "accessToken", status, "interviewTranscript", "recording", "completedAt", "createdAt", "updatedAt")
+    VALUES ($6::text, $1::text, $7::text, COALESCE($2::text, 'IN_PROGRESS'), $4::text, COALESCE($8::jsonb, '{}'::jsonb), CASE WHEN $2::text = 'COMPLETED' THEN $5::timestamp ELSE NULL END, $5::timestamp, $5::timestamp)
     ON CONFLICT ("applicationId")
     DO UPDATE SET
       status = COALESCE($2::text, "Interview".status),
       "accessToken" = COALESCE("Interview"."accessToken", EXCLUDED."accessToken"),
-      "interviewRecordingUrl" = COALESCE($3::text, "Interview"."interviewRecordingUrl"),
-      "interviewRecordedAt" = CASE WHEN $3::text IS NOT NULL THEN $5::timestamp ELSE "Interview"."interviewRecordedAt" END,
       "interviewTranscript" = COALESCE($4::text, "Interview"."interviewTranscript"),
+      "recording" = CASE WHEN $3::text IS NOT NULL THEN $8::jsonb ELSE "Interview"."recording" END,
       "completedAt" = CASE WHEN $2::text = 'COMPLETED' THEN $5::timestamp ELSE "Interview"."completedAt" END,
       "updatedAt" = $5::timestamp
     `,
@@ -820,7 +817,8 @@ async function persistInterviewUpdateRaw(params: {
     transcriptToPersist || null,
     now,
     fallbackId,
-    crypto.randomUUID()
+    crypto.randomUUID(),
+    recordingToPersist ? JSON.stringify(recordingToPersist) : null
   );
 }
 
@@ -846,7 +844,6 @@ async function waitForInterviewTranscript(
   }
   return "";
 }
-console.log("Worker started: Awaiting jobs...");
 const managedWorkers: Worker[] = [];
 let backupQueue: Queue | null = null;
 let shutdownInProgress = false;
@@ -1463,12 +1460,8 @@ if (isQueueEnabled("recording-retention-cleanup")) {
         return await processRecordingRetentionSweepJob(job);
       }
 
-      if (job.name !== RECORDING_RETENTION_DELETE_JOB) {
-        console.warn(`[RETENTION] Skipping unsupported job name: ${job.name}`);
-        return { skipped: true, reason: "unsupported_job_name" };
-      }
-
-      return await processRecordingRetentionDeleteJob(job);
+      console.warn(`[RETENTION] Skipping unsupported job name: ${job.name}`);
+      return { skipped: true, reason: "unsupported_job_name" };
     },
     {
       connection: redisConnection,
@@ -1622,11 +1615,12 @@ if (isQueueEnabled("recording-retention-cleanup")) {
       {},
       {
         repeat: {
-          pattern: "*/15 * * * *",
+          pattern: "0 9 * * *",
+          tz: "Asia/Kolkata",
         },
       }
     );
-    console.log("[Worker] Registered recurring recording retention sweep job.");
+    console.log("[Worker] Registered daily 9am recording retention sweep job.");
   };
 }
 /**
@@ -1677,30 +1671,30 @@ if (isQueueEnabled("interview-finalization")) {
         }
 
         const updateData: any = { updatedAt: new Date() };
-        const existingInterview = await prisma.interview.findUnique({
+        const existingInterview = await (prisma as any).interview.findUnique({
           where: { applicationId },
-          select: { interviewTranscript: true },
+          select: { interviewTranscript: true, recording: true },
         });
         const existingTranscript = String(existingInterview?.interviewTranscript || "").trim();
         const incomingTranscript = String(transcript || "").trim();
         if (recordingUrlToPersist) {
-          updateData.interviewRecordingUrl = recordingUrlToPersist;
-          updateData.interviewRecordedAt = new Date();
+          updateData.recording = mergeRecordingState((existingInterview as any)?.recording, {
+            status: interviewStatus === "COMPLETED" ? "COMPLETED" : "IN_PROGRESS",
+            url: recordingUrlToPersist,
+            recordedAt: new Date().toISOString(),
+          });
         } else if (recordingDisabled) {
-          updateData.interviewRecordingUrl = null;
-          updateData.interviewRecordedAt = null;
-          updateData.recordingStatus = null;
-          updateData.recordingMimeType = null;
-          updateData.recordingStartedAt = null;
-          updateData.recordingCompletedAt = null;
-          updateData.recordingDurationSec = null;
-          updateData.recordingManifest = null;
-          updateData.recordingRetentionDays = null;
-          updateData.recordingRetentionDueAt = null;
-          updateData.recordingCleanupStatus = "COMPLETED";
-          updateData.recordingCleanupAttempts = 1;
-          updateData.recordingCleanupLastError = null;
-          updateData.recordingDeletedAt = new Date();
+          const deletedAt = new Date();
+          updateData.recording = mergeRecordingState((existingInterview as any)?.recording, {
+            status: "DISABLED",
+            url: null,
+            retention: {
+              cleanupStatus: "COMPLETED",
+              cleanupAttempts: 1,
+              cleanupLastError: null,
+              deletedAt: deletedAt.toISOString(),
+            },
+          });
         }
         if (incomingTranscript && incomingTranscript.length >= existingTranscript.length) {
           updateData.interviewTranscript = incomingTranscript;
@@ -1739,29 +1733,7 @@ if (isQueueEnabled("interview-finalization")) {
         }
 
         if (recordingDisabled) {
-          await prisma.$executeRawUnsafe(
-            `
-            UPDATE "Interview"
-            SET
-              "interviewRecordingUrl" = NULL,
-              "interviewRecordedAt" = NULL,
-              "recordingStatus" = NULL,
-              "recordingMimeType" = NULL,
-              "recordingStartedAt" = NULL,
-              "recordingCompletedAt" = NULL,
-              "recordingDurationSec" = NULL,
-              "recordingManifest" = NULL,
-              "recordingRetentionDays" = NULL,
-              "recordingRetentionDueAt" = NULL,
-              "recordingCleanupStatus" = 'COMPLETED',
-              "recordingCleanupAttempts" = GREATEST(COALESCE("recordingCleanupAttempts", 0), 1),
-              "recordingCleanupLastError" = NULL,
-              "recordingDeletedAt" = COALESCE("recordingDeletedAt", NOW()),
-              "updatedAt" = NOW()
-            WHERE "applicationId" = $1
-            `,
-            applicationId
-          ).catch(() => {});
+          console.log(`[FINALIZE] Recording disabled for ${applicationId}; stored disabled state in recording JSON.`);
         }
 
         if (recordingUrlToPersist && interviewStatus === "COMPLETED") {
@@ -1888,84 +1860,10 @@ if (isQueueEnabled("interview-finalization")) {
             return { success: true };
           }
 
+          // Report is generated by the Python agent (agent_persistence.py) as a background
+          // task at session end. If it already exists, sync the corpus to Pinecone and done.
           if (existingInterviewReport) {
-            console.log(`[REPORT] Report already exists for ${applicationId}, skipping generation.`);
-            return { success: true };
-          }
-
-          const driveRows = await prisma.$queryRawUnsafe<Array<{ extractedDetails: string | null }>>(
-            `SELECT "extractedDetails" FROM "Drive" WHERE id = $1 LIMIT 1`,
-            app.drive?.id
-          );
-          const driveDetails = driveRows?.[0]?.extractedDetails
-            ? (() => { try { return JSON.parse(driveRows[0].extractedDetails!); } catch { return {}; } })()
-            : {};
-          const jdText = [app.drive?.title || "", JSON.stringify(driveDetails)].filter(Boolean).join("\n\n");
-          const durationSeconds = app.interview?.interviewDuration ?? 0;
-          const proctoringEvents = Array.isArray(app.interview?.integritySignals)
-            ? (app.interview?.integritySignals as any[])
-            : [];
-
-          console.log(`[REPORT] Generating AI report for ${applicationId} (transcript length: ${finalTranscript.length})`);
-
-          const { data: report, usage: reportUsage } = await generateInterviewReport({
-            transcript: finalTranscript,
-            resumeText,
-            jdText,
-            role: app.drive?.title || "Interview Role",
-            candidateName: app.fullName || "Candidate",
-            durationSeconds,
-            proctoringEvents,
-            orgId: app.drive?.orgId || undefined,
-          });
-
-          // Enrich scores: recompute combined_score from all signals before persisting
-          if (!(report as any)?._meta?.is_fallback) {
-            const enriched = computeEnrichedInterviewScore(report as any);
-            (report as any).scores = {
-              ...(report as any).scores,
-              ...enriched,
-            };
-            console.log(`[REPORT] Enriched combined_score=${enriched.combined_score} (tech=${enriched.technical_score}, comm=${enriched.communication_score}, beh=${enriched.behavioral_score}, cog=${enriched.cognitive_score}, integ=${enriched.integrity_score})`);
-          }
-
-          // Strip dedicated-column fields out of the skillRatings blob to avoid duplication.
-          // cognitive_insights, behavioral_analysis, and communication_score each have their
-          // own columns — storing them again inside the JSON blob wastes space and causes
-          // stale-read confusion when the columns are updated independently later.
-          const { cognitive_insights: _ci, behavioral_analysis: _ba, ...skillRatingsPayload } = report as any;
-          const communicationScoreVal: number | null = (report as any)?.scores?.communication_score ?? (report as any)?.communication_score ?? null;
-          const cognitiveInsightsVal = _ci ?? null;
-          const behavioralSignalsVal = _ba ?? null;
-
-          // Persist skillRatings + dedicated columns + aiSummary
-          await prisma.$executeRawUnsafe(
-            `UPDATE "Interview"
-             SET "skillRatings" = $1::jsonb,
-                 "communicationScore" = $2,
-                 "cognitiveInsights" = $3::jsonb,
-                 "behavioralSignalsAnalysis" = $4::jsonb,
-                 "aiSummary" = COALESCE($5::text, "Interview"."aiSummary"),
-                 "updatedAt" = NOW()
-             WHERE "applicationId" = $6`,
-            JSON.stringify(skillRatingsPayload),
-            communicationScoreVal,
-            JSON.stringify(cognitiveInsightsVal ?? {}),
-            JSON.stringify(behavioralSignalsVal ?? {}),
-            (report as any)?.recording?.summary || (report as any)?.verdict?.summary || null,
-            applicationId
-          );
-
-          // Record billing usage
-          if (app.drive?.orgId && reportUsage) {
-            await recordOrgBillingUsage({
-              orgId: app.drive.orgId,
-              feature: "interviewReport",
-              usage: {
-                ...reportUsage,
-                eventId: `interview-report:${applicationId}`,
-              },
-            });
+            console.log(`[REPORT] Report already exists for ${applicationId}; syncing corpus.`);
           }
 
           try {
@@ -1981,26 +1879,10 @@ if (isQueueEnabled("interview-finalization")) {
               aiScore: app.aiScore ?? 0,
               createdAt: createdAtIso,
               documents: [
-                {
-                  type: "resume",
-                  text: app.resumeText,
-                  createdAt: createdAtIso,
-                },
-                {
-                  type: "resume_report",
-                  text: app.aiReport,
-                  createdAt: resumeReportCreatedAtIso,
-                },
-                {
-                  type: "interview_transcript",
-                  text: finalTranscript,
-                  createdAt: interviewCreatedAtIso,
-                },
-                {
-                  type: "interview_report",
-                  text: report,
-                  createdAt: interviewCreatedAtIso,
-                },
+                { type: "resume",               text: app.resumeText,           createdAt: createdAtIso },
+                { type: "resume_report",         text: app.aiReport,             createdAt: resumeReportCreatedAtIso },
+                { type: "interview_transcript",  text: finalTranscript,          createdAt: interviewCreatedAtIso },
+                ...(existingInterviewReport ? [{ type: "interview_report" as const, text: existingInterviewReport, createdAt: interviewCreatedAtIso }] : []),
               ],
             });
             console.log(
@@ -2011,10 +1893,10 @@ if (isQueueEnabled("interview-finalization")) {
               console.warn(`[SYNC WARN] Pinecone sync had ${syncResult.failedCount} document failure(s) for ${applicationId}`);
             }
           } catch (syncError) {
-            console.error(`[SYNC ERROR] Failed to sync final interview report for ${applicationId}:`, syncError);
+            console.error(`[SYNC ERROR] Failed to sync interview corpus for ${applicationId}:`, syncError);
           }
 
-          console.log(`[REPORT] Successfully generated and persisted report for ${applicationId}`);
+          console.log(`[REPORT] Interview finalization complete for ${applicationId}`);
         } catch (reportError) {
           // Report failure must NOT fail the job — transcript/recording is already safe
           console.error(`[REPORT] Failed to generate report for ${applicationId}:`, reportError);
@@ -2074,9 +1956,12 @@ if (isQueueEnabled("interview-recording")) {
       const application = await prisma.application.findUnique({
         where: { id: applicationId },
         select: {
+          fullName: true,
           drive: {
             select: {
               orgId: true,
+              title: true,
+              role: true,
             },
           },
         },
@@ -2086,21 +1971,20 @@ if (isQueueEnabled("interview-recording")) {
         ? await getOrgRecordingSettings(orgId)
           : { recordingEnabled: false, recordingRetentionDays: null };
 
-      const interviewRow = await prisma.interview.findUnique({
+      const interviewRow = await (prisma as any).interview.findUnique({
         where: { applicationId },
         select: {
-          recordingManifest: true,
-          recordingStartedAt: true,
-          interviewRecordingUrl: true,
+          recording: true,
         },
       });
 
-      const manifest = parseJsonSafe<Record<string, any>>(interviewRow?.recordingManifest, {});
-      const resolvedKey = String(recordingKey || manifest.recordingKey || "").trim();
+      const existingRecording = normalizeRecordingState((interviewRow as any)?.recording);
+      const manifest = parseJsonRecord(existingRecording.manifest);
+      const resolvedKey = String(recordingKey || existingRecording.key || manifest.recordingKey || "").trim();
       const resolvedUrl = String(
         recordingUrl
+          || existingRecording.url
           || manifest.recordingUrl
-          || interviewRow?.interviewRecordingUrl
           || (resolvedKey && publicBase ? `${publicBase}/${resolvedKey}` : "")
       ).trim();
 
@@ -2124,7 +2008,7 @@ if (isQueueEnabled("interview-recording")) {
       const startedAt =
         (startedFromPayload && Number.isFinite(startedFromPayload.getTime()) ? startedFromPayload : null)
         || (startedFromManifest && Number.isFinite(startedFromManifest.getTime()) ? startedFromManifest : null)
-        || interviewRow?.recordingStartedAt
+        || (existingRecording.startedAt ? new Date(existingRecording.startedAt) : null)
         || null;
       const durationSec =
         startedAt && Number.isFinite(startedAt.getTime())
@@ -2162,7 +2046,6 @@ if (isQueueEnabled("interview-recording")) {
         }
       }
 
-      const recordingStatusToPersist = shouldStoreRecording ? "COMPLETED" : "ABORTED";
       const recordingUrlToPersist = shouldStoreRecording ? (resolvedUrl || null) : null;
       const recordingRetentionDaysToPersist = shouldStoreRecording ? retentionDays : null;
       const recordingRetentionDueAtToPersist = shouldStoreRecording ? retentionDueAt : null;
@@ -2170,38 +2053,39 @@ if (isQueueEnabled("interview-recording")) {
       const recordingCleanupAttemptsToPersist = shouldStoreRecording ? 0 : 1;
       const recordingCleanupLastErrorToPersist = null;
       const recordingDeletedAtToPersist = shouldStoreRecording ? null : completedAt;
-      const recordingManifestToPersist = shouldStoreRecording ? JSON.stringify(nextManifest) : null;
+      const recordingName = [application?.fullName, application?.drive?.title || application?.drive?.role]
+        .filter(Boolean)
+        .join(" ") || applicationId;
+      const recordingToPersist = mergeRecordingState((interviewRow as any)?.recording, {
+        name: recordingName,
+        mode: "livekit_egress",
+        status: shouldStoreRecording ? "COMPLETED" : "ABORTED",
+        mimeType,
+        url: recordingUrlToPersist,
+        key: resolvedKey || null,
+        egressId: String(egressId || nextManifest.egressId || "").trim() || null,
+        completedAt: completedAt.toISOString(),
+        recordedAt: recordingUrlToPersist ? completedAt.toISOString() : null,
+        durationSec,
+        manifest: shouldStoreRecording ? nextManifest : null,
+        retention: {
+          days: recordingRetentionDaysToPersist,
+          dueAt: recordingRetentionDueAtToPersist ? recordingRetentionDueAtToPersist.toISOString() : null,
+          cleanupStatus: recordingCleanupStatusToPersist,
+          cleanupAttempts: recordingCleanupAttemptsToPersist,
+          cleanupLastError: recordingCleanupLastErrorToPersist,
+          deletedAt: recordingDeletedAtToPersist ? recordingDeletedAtToPersist.toISOString() : null,
+        },
+      });
 
       await prisma.$executeRawUnsafe(
         `UPDATE "Interview"
-         SET "recordingStatus" = $1::text,
-             "recordingMimeType" = COALESCE($1::text, "recordingMimeType"),
-             "recordingCompletedAt" = $2::timestamp,
-             "recordingDurationSec" = CASE WHEN $3::integer IS NOT NULL THEN $3::integer ELSE "recordingDurationSec" END,
-             "interviewDuration" = CASE WHEN $3::integer IS NOT NULL THEN $3::integer ELSE "interviewDuration" END,
-             "interviewRecordingUrl" = $4::text,
-             "interviewRecordedAt" = CASE WHEN $4::text IS NOT NULL THEN $2::timestamp ELSE NULL END,
-             "recordingRetentionDays" = $6::integer,
-             "recordingRetentionDueAt" = $7::timestamp,
-             "recordingCleanupStatus" = $8::text,
-             "recordingCleanupAttempts" = $9::integer,
-             "recordingCleanupLastError" = $10::text,
-             "recordingDeletedAt" = $11::timestamp,
-             "recordingManifest" = $5::jsonb,
+         SET "interviewDuration" = CASE WHEN $1::integer IS NOT NULL THEN $1::integer ELSE "interviewDuration" END,
+             "recording" = $2::jsonb,
              "updatedAt" = NOW()
-         WHERE "applicationId" = $12::text`,
-        recordingStatusToPersist,
-        mimeType,
-        completedAt,
+         WHERE "applicationId" = $3::text`,
         durationSec,
-        recordingUrlToPersist,
-        recordingManifestToPersist,
-        retentionDays,
-        retentionDueAt,
-        recordingCleanupStatusToPersist,
-        recordingCleanupAttemptsToPersist,
-        recordingCleanupLastErrorToPersist,
-        recordingDeletedAtToPersist,
+        JSON.stringify(recordingToPersist),
         applicationId
       );
 
@@ -2493,7 +2377,7 @@ if (isQueueEnabled("jd-extraction")) {
     console.log(`[FATAL] JD Extraction Job ${job?.id} failed: ${err.message}`);
   });
 }
-console.log("🚀 Workers are running and listening for jobs...");
+console.log("[Worker] Started. Listening for enabled queues.");
 /**
  * ðŸ§¹ REDIS QUEUE PURGE
  * Aggressively cleans all BullMQ queue data on startup.
@@ -2509,7 +2393,7 @@ const ALL_QUEUE_NAMES = [
   "recording-retention-cleanup",
 ];
 async function purgeAllQueues() {
-  console.log("[Worker] 🧹 Cleaning Redis queues to free memory...");
+  console.log("[Worker] Cleaning Redis queues to free memory...");
   try {
     let cursor = "0";
     let deletedCount = 0;
@@ -2524,23 +2408,23 @@ async function purgeAllQueues() {
       }
     } while (cursor !== "0");
     if (deletedCount > 0) {
-      console.log(`  ✅ Deleted ${deletedCount} orphaned BullMQ key(s).`);
+      console.log(`[Worker] Deleted ${deletedCount} orphaned BullMQ key(s).`);
     } else {
-      console.log(`  ✅ Redis queues are clean.`);
+      console.log("[Worker] Redis queues are clean.");
     }
   } catch (err: any) {
-    console.warn(`  ⚠️ Could not purge keys: ${err.message}`);
+    console.warn(`[Worker] Could not purge Redis keys: ${err.message}`);
   }
   // Report memory after cleanup
   const { usedMemory, maxMemory } = await getRedisMemoryStatus();
   if (usedMemory && maxMemory && maxMemory > 0) {
     const pct = Math.round((usedMemory / maxMemory) * 100);
     console.log(
-      `[Worker] 📊 Redis after cleanup: ${formatBytes(usedMemory)} / ${formatBytes(maxMemory)} (${pct}%)`
+      `[Worker] Redis after cleanup: ${formatBytes(usedMemory)} / ${formatBytes(maxMemory)} (${pct}%)`
     );
     if (pct >= 90) {
       console.warn(
-        `[Worker] ⚠️ Redis still at ${pct}% after cleanup — consider upgrading your Redis plan.`
+        `[Worker] Redis still at ${pct}% after cleanup; consider upgrading your Redis plan.`
       );
     }
   }
@@ -2551,12 +2435,10 @@ async function purgeAllQueues() {
  */
 async function initializeWorkerMetadata() {
   try {
-    console.log("[Worker] Checking Redis configuration...");
     // Attempt to set eviction policy to noeviction for BullMQ stability
     // Note: Many managed providers (like Redis Cloud free) block this command
     try {
       await redisConnection.config('SET', 'maxmemory-policy', 'noeviction');
-      console.log("  ✅ Redis eviction policy set to 'noeviction'");
     } catch (configErr: any) {
       console.warn(`  âš ï¸  Could not set Redis eviction policy (provider restricted): ${configErr.message}`);
       console.warn("  â„¹ï¸  Running queue cleanup to free memory instead...");
@@ -2567,23 +2449,18 @@ async function initializeWorkerMetadata() {
       console.warn("  âš ï¸  Cron registration skipped because Redis is still near its memory limit.");
       return;
     }
-    console.log("[Worker] Registering recurring daily backup job...");
     if (setupCronJobs) {
       try {
         await setupCronJobs();
-        console.log("  ??? Daily backup job registered successfully.");
       } catch (cronErr: any) {
         console.error("  ?? ?? Failed to register backup job (Redis memory may be full):", cronErr.message);
-        console.warn("  ??????????  Continuing worker initialization. Background scoring will still function.");
       }
     }
     if (setupRetentionCronJobs) {
       try {
         await setupRetentionCronJobs();
-        console.log("  ??? Recording retention sweep registered successfully.");
       } catch (cronErr: any) {
         console.error("  ?? ?? Failed to register recording retention sweep:", cronErr.message);
-        console.warn("  ??????????  Continuing worker initialization. Background scoring will still function.");
       }
     }
   } catch (err: any) {

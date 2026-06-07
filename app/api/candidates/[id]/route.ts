@@ -4,6 +4,7 @@ import { getSession } from "@/lib/auth";
 import { deleteCandidateEmbeddings } from "@/lib/pinecone";
 import { deleteUrlTargets } from "@/lib/delete-utils";
 import { appendCandidateActivity } from "@/lib/candidate-activity";
+import { getRecordingDurationSec, getRecordingMimeType, getRecordingUrl } from "@/lib/recording-state";
 
 export async function GET(
     request: Request,
@@ -46,29 +47,20 @@ export async function GET(
                         status: true,
                         startedAt: true,
                         completedAt: true,
-                        interviewRecordingUrl: true,
                         interviewTranscript: true,
-                        interviewRecordedAt: true,
                         interviewDuration: true,
-                        aiSummary: true,
+                        interviewSummary: true,
                         candidateFeedback: true,
                         candidateRating: true,
                         createdAt: true,
                         updatedAt: true,
                         inviteSentAt: true,
                         skillRatings: true,
-                        communicationScore: true,
-                        cognitiveInsights: true,
-                        behaviorSignals: true,
-                        behavioralSignalsAnalysis: true,
-                        interviewTurns: true,
+                        signalAnalysis: true,
+
                         questionByQuestionAnalysis: true,
                         integritySignals: true,
-                        recordingStatus: true,
-                        recordingMimeType: true,
-                        recordingStartedAt: true,
-                        recordingCompletedAt: true,
-                        recordingDurationSec: true,
+                        recording: true,
                         snapshots: true,
                     }
                 } as any
@@ -77,6 +69,17 @@ export async function GET(
 
         if (!candidate) {
             return NextResponse.json({ error: "Candidate not found" }, { status: 404 });
+        }
+        if (candidate.interview?.recording) {
+            candidate.interview.interviewRecordingUrl = getRecordingUrl(
+                candidate.interview.recording
+            );
+            candidate.interview.recordingDurationSec = getRecordingDurationSec(
+                candidate.interview.recording
+            );
+            candidate.interview.recordingMimeType = getRecordingMimeType(
+                candidate.interview.recording
+            );
         }
 
         const candidateOrgId = candidate.drive?.orgId || null;
@@ -123,9 +126,9 @@ export async function DELETE(
                 resumeUrl: true,
                 interview: {
                     select: {
-                        interviewRecordingUrl: true,
+                        recording: true,
                         snapshots: true
-                    }
+                    } as any
                 }
             }
         });
@@ -138,8 +141,12 @@ export async function DELETE(
         try {
             const urls: string[] = [];
             if (candidate.resumeUrl) urls.push(candidate.resumeUrl);
-            if (candidate.interview?.interviewRecordingUrl) urls.push(candidate.interview.interviewRecordingUrl);
-            if (candidate.interview?.snapshots?.length) urls.push(...candidate.interview.snapshots);
+            const interview = candidate.interview as any;
+            const recordingUrl = getRecordingUrl(
+                interview?.recording
+            );
+            if (recordingUrl) urls.push(recordingUrl);
+            if (interview?.snapshots?.length) urls.push(...interview.snapshots);
             await deleteUrlTargets(urls);
         } catch (storageErr) {
             console.error("[DELETE_SINGLE_CANDIDATE_STORAGE_ERROR]:", storageErr);

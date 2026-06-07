@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { getRecordingUrl, normalizeRecordingState } from "@/lib/recording-state";
 
 function buildSearchClause(query: string): Prisma.InterviewWhereInput {
     return {
@@ -123,11 +124,9 @@ export async function GET(request: Request) {
                     updatedAt: true,
                     createdAt: true,
                     interviewDuration: true,
-                    interviewRecordingUrl: true,
+                    recording: true,
                     candidateFeedback: true,
                     candidateRating: true,
-                    recordingStatus: true,
-                    recordingCompletedAt: true,
                     application: {
                         select: {
                             id: true,
@@ -151,15 +150,25 @@ export async function GET(request: Request) {
                             },
                         },
                     },
-                },
+                } as any,
             }),
             prisma.interview.count({ where: notesWhere }),
             prisma.interview.count({ where: ratingWhere }),
             prisma.interview.count({ where: todayWhere }),
         ]);
 
+        const normalizedFeedbacks = feedbacks.map((feedback: any) => {
+            const recording = normalizeRecordingState(feedback.recording);
+            return {
+                ...feedback,
+                interviewRecordingUrl: getRecordingUrl(recording),
+                recordingStatus: recording.status || null,
+                recordingCompletedAt: recording.completedAt || null,
+            };
+        });
+
         return NextResponse.json({
-            feedbacks,
+            feedbacks: normalizedFeedbacks,
             pagination: {
                 total,
                 page,

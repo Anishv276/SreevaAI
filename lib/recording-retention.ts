@@ -1,11 +1,15 @@
 import { prisma } from "@/lib/prisma";
-import { recordingRetentionQueue } from "@/lib/queue";
 import { deleteObjectStrict, getKeyFromUrl } from "@/lib/s3";
+import {
+  isoOrNull,
+  mergeRecordingState,
+  normalizeRecordingState,
+  parseJsonRecord,
+  type RecordingState,
+} from "@/lib/recording-state";
 
 export const RECORDING_RETENTION_QUEUE = "recording-retention-cleanup";
 export const RECORDING_RETENTION_SWEEP_JOB = "recording-retention-sweep";
-export const RECORDING_RETENTION_DELETE_JOB = "delete-recording-asset";
-export const RECORDING_RETENTION_JOB_PREFIX = "recording-retention";
 
 type JsonRecord = Record<string, any>;
 
@@ -35,10 +39,6 @@ export function computeRecordingRetentionDueAt(completedAt: Date | string | null
   return new Date(base.getTime() + days * 24 * 60 * 60 * 1000);
 }
 
-export function getRecordingRetentionJobId(applicationId: string) {
-  return `${RECORDING_RETENTION_JOB_PREFIX}:${applicationId}`;
-}
-
 export function getInterviewRecordingBucket() {
   return process.env.R2_INTERVIEW_BUCKET || "interview";
 }
@@ -47,13 +47,23 @@ export function extractRecordingKey(params: {
   recordingUrl?: string | null;
   recordingKey?: string | null;
   recordingManifest?: unknown;
+  recording?: unknown;
 }) {
   const manifest = parseJsonSafe<JsonRecord>(params.recordingManifest, {});
-  const manifestKey = String(params.recordingKey || manifest.recordingKey || "").trim();
+  const recording = normalizeRecordingState(params.recording);
+  const recordingManifest = parseJsonRecord(recording.manifest);
+  const manifestKey = String(
+    params.recordingKey
+    || recording.key
+    || manifest.recordingKey
+    || recordingManifest.recordingKey
+    || ""
+  ).trim();
   if (manifestKey) return manifestKey;
 
   const manifestUrl = String(manifest.recordingUrl || "").trim();
-  const url = String(params.recordingUrl || manifestUrl).trim();
+  const recordingUrl = String(recording.url || recordingManifest.recordingUrl || "").trim();
+  const url = String(params.recordingUrl || recordingUrl || manifestUrl).trim();
   if (!url) return null;
   return getKeyFromUrl(url);
 }
@@ -130,6 +140,7 @@ export async function deleteRecordingAsset(params: {
   recordingUrl?: string | null;
   recordingKey?: string | null;
   recordingManifest?: unknown;
+  recording?: unknown;
   bucket?: string;
   attempts?: number;
   baseDelayMs?: number;
@@ -138,6 +149,7 @@ export async function deleteRecordingAsset(params: {
     recordingUrl: params.recordingUrl,
     recordingKey: params.recordingKey,
     recordingManifest: params.recordingManifest,
+    recording: params.recording,
   });
 
   if (!key) {
@@ -162,6 +174,7 @@ export async function scheduleRecordingRetentionDeletion(params: {
   applicationId: string;
   completedAt: Date | string | null | undefined;
   retentionDays: unknown;
+  recordingName?: string | null;
   recordingUrl?: string | null;
   recordingKey?: string | null;
   recordingManifest?: unknown;
@@ -171,43 +184,37 @@ export async function scheduleRecordingRetentionDeletion(params: {
     return { scheduled: false, dueAt: null as Date | null };
   }
 
-  const delay = Math.max(0, dueAt.getTime() - Date.now());
-  const jobId = getRecordingRetentionJobId(params.applicationId);
   const normalizedRetentionDays = normalizeRecordingRetentionDays(params.retentionDays);
   if (normalizedRetentionDays === null) {
     return { scheduled: false, dueAt: null as Date | null };
   }
 
-  const existingJob = await recordingRetentionQueue.getJob(jobId).catch(() => null);
-  if (existingJob) {
-    await existingJob.remove().catch(() => {});
-  }
-
-  await recordingRetentionQueue.add(
-    RECORDING_RETENTION_DELETE_JOB,
-    {
-      applicationId: params.applicationId,
+  const interview = await (prisma as any).interview.findUnique({
+    where: { applicationId: params.applicationId },
+    select: { recording: true },
+  }).catch(() => null);
+  const manifest = parseJsonRecord(params.recordingManifest);
+  const recordingPatch: RecordingState = {
+    ...(params.recordingName ? { name: params.recordingName } : {}),
+    ...(params.recordingUrl ? { url: params.recordingUrl } : {}),
+    ...(params.recordingKey ? { key: params.recordingKey } : {}),
+    ...(Object.keys(manifest).length ? { manifest } : {}),
+    completedAt: isoOrNull(params.completedAt),
+    retention: {
+      days: normalizedRetentionDays,
       dueAt: dueAt.toISOString(),
-      recordingUrl: params.recordingUrl || null,
-      recordingKey: params.recordingKey || null,
-      recordingManifest: params.recordingManifest || null,
-      retentionDays: normalizedRetentionDays,
+      cleanupStatus: "PENDING",
+      cleanupAttempts: 0,
+      cleanupLastError: null,
+      deletedAt: null,
     },
-    {
-      jobId,
-      delay,
-    }
-  );
+  };
+  const nextRecording = mergeRecordingState(interview?.recording, recordingPatch);
 
   await (prisma as any).interview.update({
     where: { applicationId: params.applicationId },
     data: {
-      recordingRetentionDays: normalizedRetentionDays,
-      recordingRetentionDueAt: dueAt,
-      recordingCleanupStatus: "PENDING",
-      recordingCleanupAttempts: 0,
-      recordingCleanupLastError: null,
-      recordingDeletedAt: null,
+      recording: nextRecording,
     },
   }).catch((error: unknown) => {
     console.warn(
@@ -216,5 +223,5 @@ export async function scheduleRecordingRetentionDeletion(params: {
     );
   });
 
-  return { scheduled: true, dueAt };
+  return { scheduled: false, stored: true, dueAt };
 }

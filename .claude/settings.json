@@ -4,7 +4,15 @@
       "Bash(python -c ' *)",
       "Bash(node -e ' *)",
       "Bash(python -m py_compile interview/agent_profile_context.py)",
-      "Bash(python -m py_compile interview/interview_phases.py)"
+      "Bash(python -m py_compile interview/interview_phases.py)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('interview/agent_runtime.py', encoding='utf-8-sig'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Read(//c/Users/vamsi/.claude/projects/c--Users-vamsi-OneDrive-Desktop-HR-updates/f4dc9e91-a3ab-4d0e-8b53-485c73332808/tool-results/**)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('interview/agent_profile_context.py', encoding='utf-8-sig'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\vamsi\\\\OneDrive\\\\Desktop\\\\HR-updates\" -Exclude \".venv\" | Select-Object Name, @{Name=\"IsDirectory\";Expression={$_.PSIsContainer}})",
+      "Bash(python find_broken.py)",
+      "Bash(rm find_broken.py)",
+      "Bash(python -m py_compile interview/agent_scoring.py interview/eval_pipeline.py interview/agent_runtime.py interview/probe_strategy.py interview/agent_runtime_helpers.py)",
+      "Bash(python -m py_compile interview/agent_runtime.py interview/probe_strategy.py interview/eval_pipeline.py interview/agent_scoring.py interview/agent_runtime_helpers.py)"
     ]
   }
 }

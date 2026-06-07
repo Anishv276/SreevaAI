@@ -1,155 +1,36 @@
-AI
-0:05
-Hi Vamsi, I'm Ishitha. Thanks for making the time. How are you doing?
-
-Candidate
-0:12
-Yeah. I'm doing great. How about you?
-
-AI
-0:21
-Good to hear. So I'll be conducting your interview for the GTM Engineer (Fresher) role today. Are you ready to begin?
-
-Candidate
-0:26
-I'm ready to begin. How about you?
-
-AI
-0:36
-Tell me about the Multi Channel Lead Qualification System you built — what problem were you solving and what exactly did you create?
-
-Candidate
-0:52
-That was personal project where I built this for client. So where unified sources, like multiple sources, then
-
-AI
-1:12
-I’m a bit unclear on how the AI fits in with the lead qualification system you mentioned. Could you walk me through the process step by step from when a lead comes in from Instagram or Facebook?
-
-Candidate
-1:29
-Okay. I use for this. So whenever if in Instagram come, if Instagram get a lead or message, then our AI that message, and it will we will train our AI to behave like a client.
-
-AI
-1:58
-That’s interesting. Thinking back to the very start, what was the first thing you personally built or set up when you began this project using n8n and AI?
-
-Candidate
-2:13
-So I built everything Maybe see. First, I built Gmail API. So then I come coming to this email.
-
-AI
-2:20
-Understood. Tell me about Sensex Analysis Project -- what did you work on there?
-
-Candidate
-2:52
-Since six, I built everything on own. That was literally, it's very different thing. From getting from Yahoo Finance. And Yahoo Finance is just module where you can get census data from getting from there and storing it DagDB and then visualize showing visualization in Power BI. That is what I built.
-
-AI
-3:03
-Okay. Can you explain how you used DuckDB for storing and processing the Sensex data in your project?
-
-Candidate
-3:10
-I used SQL alchemy for this.
-
-AI
-3:19
-When you chose SQLAlchemy for interacting with DuckDB, what alternatives did you consider, and why did you settle on that combination?
-
-Candidate
-3:38
-Ragdivi has it is very I mean, you know, what I say, it is very simple compared to writing queries. SQL alchemy can be written directly from code. So and also it has very lightweight
-
-AI
-3:50
-Looking back at your choice to use SQLAlchemy with DuckDB, is there one decision you would make differently if you rebuilt this project today?
-
-Candidate
-3:57
-No. I use SQL Alcapy for sure.
-
-AI
-4:05
-Got it. Tell me about Campaign Metrics and Slack Reporting System -- what did you work on there?
-
-Candidate
-4:36
-Mostly, thing is it is very easy. Like, whatever the campaign let's take example. Everyone will be sending campaigns, but they don't have clear idea how many replies have been sent, how many sorry. How many replies? How many emails they sent? They don't have a clear idea. So what our agent does, it will
-
-AI
-4:48
-Understood. Can you explain how you automated the data flow into Slack for real-time campaign tracking?
-
-Candidate
-4:56
-I use for this.
-
-AI
-5:07
-That’s a start—can you give me a bit more to work with? Specifically, what steps did you take within n8n to pull campaign data and push it into Slack?
-
-Candidate
-5:20
-Okay. So what exactly, do you want me to explain?
-
-AI
-5:34
-Take me back to the moment you set up that Slack automation for live campaign data—what was happening right before, and did the workflow perform as you expected once it went live?
-
-Candidate
-5:53
-Okay. So let's do one thing. I will explain you the workflow. So I'll use instantly and heyreach
-
-AI
-6:09
-Got it. Next up: Personal Brand & Marketing Automation Strategist. Walk me through what you built there.
-
-Candidate
-6:13
-So then our agent
-
-AI
-6:25
-Okay. Could you please continue explaining what your role involved as a Personal Brand & Marketing Automation Strategist?
-
-Candidate
-6:39
-I use it to handle the team. I use it to build a much automation. So use it to forecast personal brand strategies to write content and
-
-AI
-6:52
-I lost the thread a bit—can you walk me through how you used automation to forecast personal brand strategies and write content, starting from the tools or systems you set up?
-
-Candidate
-7:02
-I set up I did everything using chat
-
-AI
-7:15
-Thinking about using ChatGPT for your automation, can you tell me about one specific time when you set it up to handle content writing or strategy forecasting? What happened right after you launched that setup?
-
-Candidate
-7:34
-No. Like, it's not Chargegbt automation. I use Chargegbt together the what do you mean? Gather the data. Sorry. To gather the data and write content.
-
-AI
-7:41
-Got it. Next up: Python Developer. Walk me through what you built there.
-
-Candidate
-7:52
-Python developer, I worked. You know where I worked?
-
-AI
-7:57
-Okay. Next up: Python Developer. Walk me through what you built there.
-
-Candidate
-8:06
-I didn't build anything there.
-
-AI
-8:15
-Got it. You mentioned python on your resume. Which project did you use it on, and what did you build with it?
+Interviewer[5]: Hi Vamsi, I'm Ishitha. How are you doing?
+Candidate[10]: I'm doing great. How about you?
+Interviewer[17]: Good. So I'll be conducting your interview for the GTM Engineer (Fresher) role today. Ready to begin?
+Candidate[21]: Yeah.
+Interviewer[34]: Can you walk me through how you built the lead qualification logic that triggered booking reminders in the Multi Channel Lead Qualification System? What was your specific role in designing that logic?
+Candidate[66]: So that I built for client who is an astrologer, who is who are because of a lot of I mean, DMs. So what we did is we set up an automation using eight Then what it does, it will gather all the messages, like, whatever the DMCT then it will give that to open ALLM, and it
+Interviewer[83]: I’m a bit lost on the process—could you start from the beginning and explain step-by-step how the system captures and qualifies leads from Instagram and Facebook?
+Candidate[103]: So first, it will take the Analyze whether the message is really important or just passed. Then it will give it to LLM. LLM will gather all the details.
+Interviewer[117]: When you say “previous chart,” could you clarify what that refers to in this context and how it’s used in the lead qualification process?
+Candidate[128]: Okay. So previous short means
+Interviewer[146]: Got it. When you were building the Sensex Analysis Project, how did you decide to use DuckDB for processing the market data instead of other database options?
+Candidate[165]: Why I use DuckDB is because, you know, DuckDB has very simple things. Not lot of queries. We don't need queries. It's just pushing out from code. That's why I used that.
+Interviewer[173]: Makes sense. How did you handle data cleaning in your Sensex analysis pipeline using Python before storing it in DuckDB?
+Candidate[180]: No. I didn't use any cleaning methods.
+Interviewer[189]: Without data cleaning, how did you ensure the accuracy or reliability of the Sensex market data you analyzed and visualized?
+Candidate[201]: That was personal project. So I don't know that effective stuff.
+Interviewer[212]: Understood, personal projects can be a learning ground. What was the volume or frequency of the Sensex data you worked with during this project?
+Interviewer[234]: I asked about how often you collected or updated the Sensex data in your project. Could you share that?
+Candidate[246]: No. I didn't use that one. It's just a project. Not any that important.
+Interviewer[255]: Thanks for clarifying. What motivated you to choose Sensex data for your personal project?
+Candidate[273]: Okay. So no. It was the mental one where that shows me. I mean, told me to build this project. So I built this.
+Interviewer[281]: Alright. How did you set up the automation to sync CRM and outbound tool data into Slack for daily campaign tracking?
+Candidate[292]: Okay. So that
+Interviewer[304]: That’s a start, but can you walk me through exactly what you did to get the data from the CRM and outbound tool into Slack? I’d like to understand your process step by step.
+Candidate[350]: Okay. So I used the heyreach and instantly. So for heyreach, we use for LinkedIn campaigns, then in we use for email campaigns. So team manager told me, I need a clear metrics of what is being sent, how many being sent, how many be not being sent. How many are not being replied and everything, then what I did so I thought to create an automation where everything will be shown in Slack. So then I used I used the heyreach API and instantly API. Then I gathered all the EPA part and then I used for automation. Then I it will be stored in Google Sheets. Every 09:00, we'll set up a cron job where all the metrics will be given to Slack.
+Interviewer[365]: I want to make sure I follow clearly — can you walk me through the steps you took in n8n to pull data from the Heyreach and Instantly APIs and then push those metrics into Google Sheets before sending them to Slack?
+Candidate[378]: Oh, there is no steps. We will just push just pull the data and we'll push to Google Sheets. That's it.
+Interviewer[386]: Understood. How did you handle errors or failed data pulls in that automation process?
+Candidate[402]: Oh, you set up error handling where error comes, then it will trigger to another channel in Slack. So where it will give more name on everything.
+Interviewer[415]: Okay. What was the biggest challenge you faced integrating leads from Instagram, Facebook, and your website into the Multi Channel Lead Qualification System at Social Rises?
+Candidate[430]: No. I didn't work. At social rises. I that was not project in multichannel lead call That was personal project. How are you saying that as social rises?
+Interviewer[442]: Got it, thanks for clarifying. I lost the thread a bit — can you walk me through that personal project from the start and explain what you built and why?
+Candidate[448]: No. I forgot.
+Interviewer[456]: No worries. Let’s move on—can you tell me what you learned from working on that personal project?
+Candidate[467]: No. I forgot.
+Interviewer[478]: Understood. Can you recall any part of the process you used to qualify leads across those channels?

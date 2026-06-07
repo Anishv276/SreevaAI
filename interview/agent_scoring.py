@@ -245,7 +245,7 @@ async def evaluate_answer(
                 ],
                 response_format={"type": "json_object"},
             ),
-            timeout=15.0,  # Streaming timeout is much shorter (first token in <5s)
+            timeout=8.0,  # Inner LLM call. MUST be < eval wrapper (10s) < LLM gate (12s).
         )
 
         # Collect streamed chunks and capture final usage
@@ -325,12 +325,26 @@ async def evaluate_answer(
             "_llm_usage": _eval_llm_usage,
         }
 
-    except asyncio.TimeoutError:
-        logger.error("[EVAL] evaluate_answer timed out (30s)")
-        raise
-    except Exception as e:
-        logger.error("[EVAL] [X] evaluate_answer failed: %s", e, exc_info=True)
-        raise
+    except (asyncio.TimeoutError, Exception) as e:
+        # RECOVERY OWNED BY EVAL -- never raise to the agent.
+        # The agent depends ONLY on eval's return value; it has no fallback path.
+        # On a slow/failed LLM call we return a REAL low-confidence scored result so
+        # the topic still advances (and saturates out via the dry-topic exit) instead
+        # of zeroing progress and looping forever on the same question.
+        _is_timeout = isinstance(e, asyncio.TimeoutError)
+        logger.error(
+            "[EVAL] evaluate_answer %s (%s) -- returning low-confidence recovery scores",
+            "timed out" if _is_timeout else "failed", e,
+        )
+        return {
+            "clarity": 2.0, "depth": 1.0, "specificity": 1.0, "grounding": 1.0,
+            "overall": 1.3,
+            # PROBE once with a clarification angle; if it keeps failing or the
+            # answer stays thin, the dry-topic exit forces MOVE_ON.
+            "action": "PROBE", "probe_mode": "clarification",
+            "reason": "eval recovery (llm slow/unavailable)",
+            "is_eval_recovery": True,
+        }
 
 
 def notify_sync_engine(app_id: str, turn: int, action: str) -> None:

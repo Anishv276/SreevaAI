@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { deleteOrgEmbeddings } from "@/lib/pinecone";
 import { deleteUrlTargets } from "@/lib/delete-utils";
+import { getRecordingUrl } from "@/lib/recording-state";
 import { DEFAULT_ORG_PLAN, isOrgPlan, normalizeOrgPlan } from "@/lib/org-plans";
 import { normalizeProctoringSignals } from "@/lib/proctoring-signals";
 import { normalizeOrgAiConfig } from "@/lib/ai-provider-config";
@@ -425,7 +426,7 @@ export async function DELETE(
         // 4. Get all interviews and recordings
         const interviews = await prisma.interview.findMany({
             where: { applicationId: { in: appIds } },
-            select: { interviewRecordingUrl: true, snapshots: true }
+            select: { recording: true, snapshots: true } as any
         });
 
         // -- STEP 2: EXTERNAL ASSET CLEANUP (R2 & PINECONE) -------------------
@@ -439,9 +440,12 @@ export async function DELETE(
             if (app.resumeUrl) fileUrlsToDelete.push(app.resumeUrl);
         });
         interviews.forEach(intv => {
-            if (intv.interviewRecordingUrl) fileUrlsToDelete.push(intv.interviewRecordingUrl);
-            if (intv.snapshots && Array.isArray(intv.snapshots)) {
-                fileUrlsToDelete.push(...intv.snapshots);
+            const interview = intv as any;
+            const recordingUrl = getRecordingUrl(interview.recording);
+            if (recordingUrl) fileUrlsToDelete.push(recordingUrl);
+            const snapshots = interview.snapshots;
+            if (snapshots && Array.isArray(snapshots)) {
+                fileUrlsToDelete.push(...snapshots);
             }
         });
 

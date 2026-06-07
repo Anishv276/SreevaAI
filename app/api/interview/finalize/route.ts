@@ -11,6 +11,7 @@ import {
   incrementOrgCreditsUsed,
 } from "@/lib/credits";
 import { getOrgRecordingSettings, scheduleRecordingRetentionDeletion } from "@/lib/recording-retention";
+import { mergeRecordingState, type RecordingState } from "@/lib/recording-state";
 
 export const runtime = "nodejs";
 
@@ -19,97 +20,21 @@ function roundCredits(value: number) {
   return Math.round(value * 100) / 100;
 }
 
-function buildInterviewTurns(transcript: string): Array<{
-  turn: number;
-  question: string;
-  answer: string;
-  questionSpeaker: "Interviewer";
-  answerSpeaker: "Candidate" | null;
-}> {
-  const lines = (transcript || "").split(/\r?\n/);
-  const blocks: Array<{ speaker: "Interviewer" | "Candidate"; text: string }> = [];
-
-  const pushBlock = (speaker: "Interviewer" | "Candidate", text: string) => {
-    const cleaned = text.trim();
-    if (!cleaned) return;
-    const last = blocks[blocks.length - 1];
-    if (last && last.speaker === speaker) {
-      last.text = `${last.text} ${cleaned}`.trim();
-      return;
-    }
-    blocks.push({ speaker, text: cleaned });
-  };
-
-  for (const rawLine of lines) {
-    const line = rawLine.trim();
-    if (!line) continue;
-    if (line.toLowerCase().startsWith("interviewer:")) {
-      pushBlock("Interviewer", line.slice("Interviewer:".length));
-    } else if (line.toLowerCase().startsWith("candidate:")) {
-      pushBlock("Candidate", line.slice("Candidate:".length));
-    } else {
-      pushBlock("Interviewer", line);
-    }
-  }
-
-  const turns: Array<{
-    turn: number;
-    question: string;
-    answer: string;
-    questionSpeaker: "Interviewer";
-    answerSpeaker: "Candidate" | null;
-  }> = [];
-  let currentQuestion = "";
-  let currentAnswerParts: string[] = [];
-  let turnIndex = 0;
-
-  const flush = () => {
-    const question = currentQuestion.trim();
-    const answer = currentAnswerParts.join(" ").trim();
-    if (!question && !answer) return;
-    turnIndex += 1;
-    turns.push({
-      turn: turnIndex,
-      question,
-      answer,
-      questionSpeaker: "Interviewer",
-      answerSpeaker: answer ? "Candidate" : null,
-    });
-    currentQuestion = "";
-    currentAnswerParts = [];
-  };
-
-  for (const block of blocks) {
-    if (block.speaker === "Interviewer") {
-      if (currentQuestion || currentAnswerParts.length) flush();
-      currentQuestion = block.text;
-    } else {
-      if (!currentQuestion) currentQuestion = "";
-      currentAnswerParts.push(block.text);
-    }
-  }
-
-  if (currentQuestion || currentAnswerParts.length) flush();
-  return turns;
-}
-
 
 async function persistInterviewUpdateRaw(params: {
   applicationId: string;
   recordingUrl?: string;
   transcript?: string;
   interviewStatus?: string;
-  interviewTurns?: unknown;
   snapshots?: string[];
   recordingCompletedAt?: Date;
   recordingDurationSec?: number;
 }) {
   const { 
-    applicationId, 
-    recordingUrl, 
-    transcript, 
-    interviewStatus, 
-    interviewTurns,
+    applicationId,
+    recordingUrl,
+    transcript,
+    interviewStatus,
     snapshots,
     recordingCompletedAt,
     recordingDurationSec 
@@ -118,25 +43,35 @@ async function persistInterviewUpdateRaw(params: {
 
   const app = await prisma.application.findUnique({
     where: { id: applicationId },
-    select: { fullName: true }
+    select: { fullName: true, drive: { select: { title: true, role: true } } }
   });
+  const existingInterview = await (prisma as any).interview.findUnique({
+    where: { applicationId },
+    select: { recording: true },
+  }).catch(() => null);
   const interviewId = generateId("int", app?.fullName || applicationId);
   const accessToken = crypto.randomUUID();
+  const completedAtIso = recordingCompletedAt?.toISOString() || null;
+  const recordingPatch: RecordingState = recordingUrl ? {
+    name: [app?.fullName, app?.drive?.title || app?.drive?.role].filter(Boolean).join(" - ") || applicationId,
+    status: finalStatus === "COMPLETED" ? "COMPLETED" : "IN_PROGRESS",
+    url: recordingUrl,
+    recordedAt: completedAtIso || new Date().toISOString(),
+    completedAt: completedAtIso,
+    durationSec: recordingDurationSec || null,
+  } : {};
+  const nextRecording = mergeRecordingState(existingInterview?.recording, recordingPatch);
 
   await prisma.$executeRawUnsafe(
     `
-    INSERT INTO "Interview" (id, "applicationId", "accessToken", status, "interviewRecordingUrl", "interviewRecordedAt", "interviewTranscript", "interviewTurns", "snapshots", "recordingCompletedAt", "recordingDurationSec", "completedAt", "createdAt", "updatedAt")
-    VALUES ($1, $2, $3, COALESCE($4::text, 'IN_PROGRESS'), $5, CASE WHEN $5::text IS NOT NULL THEN NOW() ELSE NULL END, $6, COALESCE($7::jsonb, '[]'::jsonb), $8, $9, $10, CASE WHEN COALESCE($4::text, 'IN_PROGRESS') = 'COMPLETED' THEN NOW() ELSE NULL END, NOW(), NOW())
+    INSERT INTO "Interview" (id, "applicationId", "accessToken", status, "interviewTranscript", "snapshots", "recording", "completedAt", "createdAt", "updatedAt")
+    VALUES ($1, $2, $3, COALESCE($4::text, 'IN_PROGRESS'), $6, $7, COALESCE($8::jsonb, '{}'::jsonb), CASE WHEN COALESCE($4::text, 'IN_PROGRESS') = 'COMPLETED' THEN NOW() ELSE NULL END, NOW(), NOW())
     ON CONFLICT ("applicationId")
     DO UPDATE SET
       status = COALESCE($4::text, "Interview".status),
-      "interviewRecordingUrl" = COALESCE($5::text, "Interview"."interviewRecordingUrl"),
-      "interviewRecordedAt" = CASE WHEN $5::text IS NOT NULL THEN NOW() ELSE "Interview"."interviewRecordedAt" END,
       "interviewTranscript" = COALESCE($6::text, "Interview"."interviewTranscript"),
-      "interviewTurns" = COALESCE($7::jsonb, "Interview"."interviewTurns"),
-      "snapshots" = COALESCE($8, "Interview"."snapshots"),
-      "recordingCompletedAt" = COALESCE($9, "Interview"."recordingCompletedAt"),
-      "recordingDurationSec" = COALESCE($10, "Interview"."recordingDurationSec"),
+      "snapshots" = COALESCE($7, "Interview"."snapshots"),
+      "recording" = CASE WHEN $5::text IS NOT NULL THEN $8::jsonb ELSE "Interview"."recording" END,
       "completedAt" = CASE WHEN COALESCE($4::text, "Interview".status) = 'COMPLETED' THEN NOW() ELSE "Interview"."completedAt" END,
       "updatedAt" = NOW()
     `,
@@ -146,10 +81,8 @@ async function persistInterviewUpdateRaw(params: {
     finalStatus,
     recordingUrl || null,
     transcript || null,
-    JSON.stringify(interviewTurns ?? []),
     snapshots || [],
-    recordingCompletedAt || null,
-    recordingDurationSec || null
+    JSON.stringify(nextRecording)
   );
 }
 
@@ -192,7 +125,6 @@ export async function POST(req: Request) {
     }
     const transcriptRaw = transcript;
     const finalTranscript = transcriptRaw?.trim();
-    const interviewTurns = finalTranscript ? buildInterviewTurns(finalTranscript) : [];
     const finalDuration = typeof duration === 'number' ? duration : (duration ? parseInt(String(duration)) : null);
     let recordingUrlForPersist = recordingUrl;
     let recordingSettingsForOrg: { recordingEnabled: boolean; recordingRetentionDays: number | null } | null = null;
@@ -227,7 +159,6 @@ export async function POST(req: Request) {
       recordingUrl: recordingUrlForPersist,
       transcript: finalTranscript,
       interviewStatus: finalInterviewStatus,
-      interviewTurns,
       snapshots,
       recordingCompletedAt,
       recordingDurationSec: finalDuration ?? recordingDurationSec,
@@ -237,20 +168,7 @@ export async function POST(req: Request) {
         `
         UPDATE "Interview"
         SET
-          "interviewRecordingUrl" = NULL,
-          "interviewRecordedAt" = NULL,
-          "recordingStatus" = NULL,
-          "recordingMimeType" = NULL,
-          "recordingStartedAt" = NULL,
-          "recordingCompletedAt" = NULL,
-          "recordingDurationSec" = NULL,
-          "recordingManifest" = NULL,
-          "recordingRetentionDays" = NULL,
-          "recordingRetentionDueAt" = NULL,
-          "recordingCleanupStatus" = NULL,
-          "recordingCleanupAttempts" = NULL,
-          "recordingCleanupLastError" = NULL,
-          "recordingDeletedAt" = NULL,
+          "recording" = jsonb_set(COALESCE("recording", '{}'::jsonb), '{status}', '"DISABLED"'::jsonb, true),
           "updatedAt" = NOW()
         WHERE "applicationId" = $1
         `,

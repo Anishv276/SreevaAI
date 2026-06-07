@@ -4,6 +4,7 @@ import { bulkDeleteCandidatesSchema } from "@/lib/validation";
 import { getSession } from "@/lib/auth";
 import { deleteCandidateEmbeddings } from "@/lib/pinecone";
 import { deleteUrlTargets } from "@/lib/delete-utils";
+import { getRecordingUrl } from "@/lib/recording-state";
 
 /**
  * GET handler to fetch and filter candidates for a specific drive.
@@ -283,9 +284,9 @@ export async function DELETE(request: Request) {
                     resumeUrl: true,
                     interview: {
                         select: {
-                            interviewRecordingUrl: true,
+                            recording: true,
                             snapshots: true
-                        }
+                        } as any
                     }
                 }
             });
@@ -293,8 +294,12 @@ export async function DELETE(request: Request) {
             const urls: string[] = [];
             for (const cand of candidatesToCleanup) {
                 if (cand.resumeUrl) urls.push(cand.resumeUrl);
-                if (cand.interview?.interviewRecordingUrl) urls.push(cand.interview.interviewRecordingUrl);
-                if (cand.interview?.snapshots?.length) urls.push(...cand.interview.snapshots);
+                const interview = cand.interview as any;
+                const recordingUrl = getRecordingUrl(
+                    interview?.recording
+                );
+                if (recordingUrl) urls.push(recordingUrl);
+                if (interview?.snapshots?.length) urls.push(...interview.snapshots);
             }
             await deleteUrlTargets(urls);
         } catch (storageErr) {

@@ -1,574 +1,191 @@
 """
-Behavioral analysis module - synthesizes proctoring signals, communication patterns,
-and consistency checks into narrative behavioral insights for HR decision-making.
-Core principle: Report WHAT HAPPENED with specific evidence, not raw metrics.
+Signal analysis via LLM — feeds every signal, Q&A score, and transcript into a
+single prompt and returns 4-5 plain-language analysis points for the HR team.
 """
+from __future__ import annotations
+
+import json
+import logging
+import os
 from typing import Any
 
+logger = logging.getLogger(__name__)
 
-def extract_engagement_signals(
+_SIGNAL_ANALYSIS_SYSTEM = """You are a senior HR analyst writing a post-interview signal analysis for a hiring team.
+
+You will receive the full picture of what happened during the interview:
+- Every question asked and the candidate's answer with scores (clarity, depth, specificity, grounding, 0-10)
+- Every behavioral signal that fired (ownership language, evasion, follow-up collapse, etc.) with turn numbers
+- Proctoring events (tab switches, camera issues, face detection, etc.)
+- Factual inconsistencies detected during the interview
+- Session duration and participation stats
+
+Write 4 to 5 analysis points. Each point is 2-3 sentences. Together they give the HR team a complete picture of what this candidate was actually like during the evaluation.
+
+Rules:
+- Write like a smart colleague briefing the hiring manager — direct, specific, no corporate fluff
+- Each point must be grounded in actual evidence from the data (specific topic, specific question content, specific signal)
+- NEVER say "turn 3" or "turn 7" — always reference by topic or question content e.g. "when asked about data pipelines" or "during the system design question"
+- Cover what matters: how they spoke, how deep their answers were, whether they owned their experience, any integrity flags, how they handled pressure
+- If something looked suspicious (tab switch before a suspiciously good answer, identity flag, inconsistency), say it plainly
+- If they were genuinely strong, say that too with the evidence
+- Do NOT use section headers or labels — just the points as a plain array of strings
+- Do NOT mention score numbers or metric names — describe what you observed in plain language
+
+Output ONLY a JSON array of 4-5 strings. No keys, no object wrapper, just the array.
+Example shape: ["Point one here.", "Point two here.", "Point three here.", "Point four here."]"""
+
+
+def _build_prompt(
     transcript_lines: list[str],
+    answer_scores: list[dict],
     total_duration_sec: int,
-    answer_scores: list[dict],
-) -> list[str]:
-    signals = []
-    candidate_turns = sum(1 for line in transcript_lines if line.startswith("Candidate:"))
-    total_turns = len([line for line in transcript_lines if ":" in line])
-
-    if candidate_turns < total_turns * 0.3:
-        signals.append(
-            "Candidate spoke significantly less than the interviewer — possible disengagement, "
-            "language barrier, or reluctance to elaborate on responses"
-        )
-    elif candidate_turns > total_turns * 0.6:
-        signals.append("Candidate spoke consistently throughout, responding to every question with substantive answers")
-
-    if len(answer_scores) >= 5:
-        mid = max(1, len(answer_scores) // 2)
-        early_scores = answer_scores[:mid]
-        late_scores = answer_scores[mid:]
-        early_avg = sum(s.get("overall", 5) for s in early_scores) / len(early_scores)
-        late_avg = sum(s.get("overall", 5) for s in late_scores) / len(late_scores)
-        if late_avg < early_avg - 2:
-            signals.append(
-                f"Answer quality dropped noticeably in the second half of the interview — "
-                f"earlier answers were stronger and more specific, later answers became shorter and vaguer. "
-                f"Possible fatigue, depleted preparation, or discomfort with harder topics"
-            )
-        elif late_avg > early_avg + 1.5:
-            signals.append(
-                "Candidate warmed up as the interview progressed — later answers were more "
-                "detailed and confident than the opening responses"
-            )
-
-    if total_duration_sec < 300:
-        signals.append(
-            f"Interview lasted only {total_duration_sec // 60} minutes — insufficient time to fully "
-            f"evaluate depth, so all signals below should be read as preliminary"
-        )
-    elif total_duration_sec > 1800:
-        signals.append(
-            f"Full {total_duration_sec // 60}-minute interview completed — comprehensive evaluation window"
-        )
-
-    asked_questions = sum(1 for line in transcript_lines if "?" in line and line.startswith("Interviewer:"))
-    if asked_questions < 5:
-        signals.append(
-            f"Only {asked_questions} questions were asked — limited topic coverage means some skill "
-            f"areas remain unverified"
-        )
-    else:
-        signals.append(
-            f"{asked_questions} questions asked across multiple topic areas — broad skill coverage achieved"
-        )
-
-    return signals
-
-
-def extract_consistency_signals(
-    transcript_lines: list[str],  # noqa: ARG001
-    inconsistencies_found: list[dict],
-) -> list[str]:
-    signals = []
-    if inconsistencies_found:
-        for inconsistency in inconsistencies_found[:3]:
-            old_val = inconsistency.get("old_value", "N/A")
-            new_val = inconsistency.get("new_value", "N/A")
-            claim_type = str(inconsistency.get("type", "unknown")).replace("_", " ")
-            signals.append(
-                f"Inconsistency in {claim_type}: earlier said '{old_val}', later said '{new_val}' — "
-                f"recruiter should probe this directly before making a hiring decision"
-            )
-    else:
-        signals.append(
-            "No factual inconsistencies detected — statements about experience, tenure, and "
-            "technical claims remained consistent throughout the interview"
-        )
-    return signals
-
-
-def extract_communication_patterns(answer_scores: list[dict]) -> list[str]:
-    signals = []
-    if not answer_scores:
-        return signals
-
-    clarity_scores = [s.get("clarity", 5) for s in answer_scores]
-    avg_clarity = sum(clarity_scores) / len(clarity_scores)
-    min_clarity = min(clarity_scores)
-    max_clarity = max(clarity_scores)
-
-    if avg_clarity < 4:
-        signals.append(
-            "Communication was consistently hard to follow — answers were frequently fragmented, "
-            "grammatically unclear, or structured in a way that made it difficult to extract the key point"
-        )
-    elif max_clarity - min_clarity > 4:
-        signals.append(
-            f"Communication quality was uneven — answers on familiar topics were clear and structured, "
-            f"but responses on weaker topics became vague and difficult to follow. "
-            f"Strongest clarity on questions the candidate was comfortable with"
-        )
-    else:
-        signals.append(
-            "Communication style was consistent throughout — structured responses, clear sentence construction, "
-            "and answers that stayed on topic"
-        )
-
-    vague_count = sum(1 for s in answer_scores if "vague" in s.get("concerns", []))
-    if vague_count > len(answer_scores) * 0.5:
-        signals.append(
-            f"More than half of all answers used vague or generic language — candidate avoided specific "
-            f"numbers, project names, or concrete outcomes. This pattern across {vague_count} answers "
-            f"suggests surface-level familiarity rather than hands-on depth"
-        )
-
-    rehearsed_count = sum(1 for s in answer_scores if "rehearsed" in s.get("concerns", []))
-    if rehearsed_count > 2:
-        signals.append(
-            f"Multiple answers sounded pre-prepared — polished delivery but thin follow-up depth. "
-            f"When probed beyond the initial answer, responses became noticeably less confident"
-        )
-
-    return signals
-
-
-def extract_confidence_indicators(answer_scores: list[dict]) -> list[str]:
-    signals = []
-    if not answer_scores:
-        return signals
-
-    high_quality = sum(1 for s in answer_scores if s.get("overall", 0) >= 7)
-    low_quality = sum(1 for s in answer_scores if s.get("overall", 0) <= 3)
-    has_ownership = sum(1 for s in answer_scores if "has_ownership" in s.get("signals", []))
-
-    if high_quality >= len(answer_scores) * 0.6 and has_ownership >= 3:
-        signals.append(
-            f"Strong genuine confidence — candidate gave high-quality answers on {high_quality} of "
-            f"{len(answer_scores)} questions and consistently used first-person ownership language "
-            f"('I built', 'I decided', 'I was responsible for') across {has_ownership} responses"
-        )
-    elif high_quality >= len(answer_scores) * 0.6:
-        signals.append(
-            f"Confident delivery on {high_quality} of {len(answer_scores)} questions — "
-            f"answers were detailed and direct, though personal ownership was not always explicit"
-        )
-
-    if low_quality >= 2:
-        signals.append(
-            f"Overconfidence detected in {low_quality} answers — candidate delivered these with certainty "
-            f"but the content was thin, vague, or technically inaccurate. "
-            f"This gap between confident tone and weak substance is a red flag for senior roles"
-        )
-
-    return signals
-
-
-def extract_integrity_flags(
     proctoring_events: list[dict],
-    answer_scores: list[dict],
-    inconsistencies: list[dict],
-) -> list[str]:
-    signals = []
-
-    if not proctoring_events and not inconsistencies:
-        signals.append(
-            "No integrity concerns detected — proctoring data shows no anomalies and interview "
-            "statements were consistent with resume claims"
-        )
-        return signals
-
-    tab_switch_events = [e for e in proctoring_events if "tab" in str(e.get("event", "")).lower()]
-    if tab_switch_events and answer_scores:
-        weak_answer_count = sum(1 for s in answer_scores if s.get("overall", 0) < 4)
-        if weak_answer_count >= 2 and len(tab_switch_events) >= 3:
-            signals.append(
-                f"Pattern of concern: {len(tab_switch_events)} tab switches occurred, and "
-                f"{weak_answer_count} answers immediately following were unusually thin — "
-                f"the timing suggests possible external reference lookup, not genuine recall"
-            )
-
-    if inconsistencies:
-        signals.append(
-            f"{len(inconsistencies)} factual inconsistency detected in the interview — "
-            f"see Consistency section for specifics. Requires direct recruiter follow-up before advancing"
-        )
-
-    incomplete_count = sum(1 for s in answer_scores if "incomplete" in s.get("concerns", []))
-    if incomplete_count >= 2:
-        signals.append(
-            f"{incomplete_count} answers trailed off or were left incomplete — "
-            f"candidate appeared to avoid or abandon specific topics. Review the transcript "
-            f"for which topics triggered this pattern"
-        )
-
-    return signals
-
-
-def extract_strengths_observed(answer_scores: list[dict], consistency_clean: bool) -> list[str]:
-    strengths = []
-
-    strong_answers = [s for s in answer_scores if s.get("overall", 0) >= 7]
-    if strong_answers:
-        topics = [s.get("topic", "") for s in strong_answers if s.get("topic")]
-        if topics:
-            strengths.append(
-                f"Demonstrated strong, specific knowledge on: {', '.join(topics[:3])} — "
-                f"answers on these topics included concrete details and clear ownership"
-            )
-        else:
-            strengths.append(
-                f"Delivered {len(strong_answers)} high-quality answers with concrete specifics and clear reasoning"
-            )
-
-    high_ownership = [s for s in answer_scores if "has_ownership" in s.get("signals", [])]
-    if high_ownership:
-        strengths.append(
-            f"Used clear first-person ownership language consistently — "
-            f"'I built', 'I led', 'I decided' appeared across {len(high_ownership)} responses, "
-            f"indicating genuine hands-on involvement rather than observer-level familiarity"
-        )
-
-    if consistency_clean:
-        strengths.append(
-            "All factual claims remained consistent — no inconsistencies between resume, early answers, "
-            "and later responses. Suggests honest, well-grounded self-presentation"
-        )
-
-    recovery_answers = [s for s in answer_scores if "recovery" in s.get("signals", [])]
-    if recovery_answers:
-        strengths.append(
-            f"Recovered well under follow-up pressure — when probed on {len(recovery_answers)} answers, "
-            f"candidate provided additional depth rather than deflecting"
-        )
-
-    if not strengths:
-        strengths.append("No notable standout strengths detected in this session — evaluation was limited or answers were consistently generic")
-
-    return strengths
-
-
-def extract_concerns_noted(
-    answer_scores: list[dict],
     inconsistencies_found: list[dict],
-    communication_signals: list[str],
-) -> list[str]:
-    concerns = []
+) -> str:
+    parts: list[str] = []
 
-    low_answers = [s for s in answer_scores if s.get("overall", 0) <= 3]
-    if low_answers:
-        topics = [s.get("topic", "") for s in low_answers if s.get("topic")]
-        if topics:
-            concerns.append(
-                f"Significant knowledge gaps on: {', '.join(topics[:3])} — "
-                f"answers were vague, incorrect, or too thin to demonstrate real experience in these areas"
-            )
-        else:
-            concerns.append(
-                f"{len(low_answers)} answers scored very low — content was either factually weak, "
-                f"too generic, or failed to address what was actually asked"
-            )
+    # Session metadata
+    mins = total_duration_sec // 60
+    candidate_turns = sum(1 for l in transcript_lines if l.startswith("Candidate:"))
+    ai_turns = sum(1 for l in transcript_lines if l.startswith("Interviewer:") or l.startswith("AI:"))
+    parts.append(
+        f"SESSION\nDuration: {mins} min | Candidate turns: {candidate_turns} | "
+        f"Interviewer turns: {ai_turns} | Scored answers: {len([s for s in answer_scores if not s.get('is_warmup')])}"
+    )
 
+    # Proctoring events
+    if proctoring_events:
+        grouped: dict[str, list[dict]] = {}
+        for ev in proctoring_events:
+            name = ev.get("signal_name") or ev.get("eventType") or ev.get("event") or "unknown"
+            grouped.setdefault(name, []).append(ev)
+        lines = []
+        # Build a turn->topic lookup from answer_scores
+        turn_to_topic = {s.get("turn"): s.get("topic", "") for s in answer_scores if s.get("turn") and s.get("topic")}
+        for name, evs in grouped.items():
+            turns = sorted({e.get("turn", 0) for e in evs if e.get("turn")})
+            topics = [turn_to_topic[t] for t in turns if t in turn_to_topic]
+            topic_str = ", ".join(f'"{t}"' for t in topics[:3]) if topics else ""
+            evidence = "; ".join(e.get("evidence", "") for e in evs[:2] if e.get("evidence"))
+            location = f"during {topic_str}" if topic_str else f"at turns {turns}"
+            lines.append(f"  {name} x{len(evs)} {location}" + (f" — {evidence}" if evidence else ""))
+        parts.append("PROCTORING EVENTS\n" + "\n".join(lines))
+    else:
+        parts.append("PROCTORING EVENTS\nNone.")
+
+    # Inconsistencies
     if inconsistencies_found:
-        types = [str(c.get("type", "")).replace("_", " ") for c in inconsistencies_found]
-        concerns.append(
-            f"Unresolved inconsistency in {', '.join(set(types[:2]))} — "
-            f"candidate gave conflicting information that was not satisfactorily clarified when probed"
-        )
+        lines = []
+        for inc in inconsistencies_found[:4]:
+            c_type = str(inc.get("type") or inc.get("inconsistency_type") or "claim").replace("_", " ")
+            old_v = inc.get("old_value", "earlier statement")
+            new_v = inc.get("new_value", "later statement")
+            resolved = inc.get("status") == "resolved" or inc.get("resolved", False)
+            lines.append(f"  {c_type}: '{old_v}' → '{new_v}' ({'resolved' if resolved else 'UNRESOLVED'})")
+        parts.append("INCONSISTENCIES\n" + "\n".join(lines))
+    else:
+        parts.append("INCONSISTENCIES\nNone detected.")
 
-    vague_pattern = any("vague" in s.lower() or "half" in s.lower() for s in communication_signals)
-    if vague_pattern:
-        concerns.append(
-            "Persistent avoidance of specifics — across multiple questions, candidate gave general answers "
-            "without concrete numbers, project names, timelines, or outcomes. "
-            "Unable to verify depth of claimed experience from interview alone"
-        )
+    # Behavioral signals summary
+    behavioral: list[str] = []
+    for s in answer_scores:
+        topic = s.get('topic') or f"question about {str(s.get('question',''))[:60]}"
+        for sig in s.get("signals", []):
+            behavioral.append(f"  [{topic}] — {sig} (score: {s.get('overall','?')}/10)")
+        for concern in s.get("concerns", []):
+            behavioral.append(f"  [{topic}] — concern: {concern}")
+    if behavioral:
+        parts.append("BEHAVIORAL SIGNALS\n" + "\n".join(behavioral))
 
-    evasion_count = sum(1 for s in answer_scores if "evasion" in s.get("concerns", []))
-    if evasion_count >= 2:
-        concerns.append(
-            f"Evasion pattern on {evasion_count} questions — when asked for specifics, "
-            f"candidate pivoted to general statements or changed the subject"
-        )
-
-    if not concerns:
-        concerns.append("No major concerns identified — candidate stayed on topic, answered directly, and avoided evasion")
-
-    return concerns
-
-
-async def extract_proctoring_signals(
-    proctoring_events: list[dict],
-) -> tuple[list[dict[str, Any]], list[dict]]:
-    """
-    Extract all visible signals + hidden signals when cumulative count >= 2 or confidence >= 0.85.
-    Returns (signal_dicts, llm_usages) — llm_usages contains one entry per LLM call made.
-    """
-    if not proctoring_events:
-        return [], []
-
-    signal_groups: dict[str, list[dict]] = {}
-    for event in proctoring_events:
-        sig_name = event.get("signal_name", "unknown")
-        if sig_name not in signal_groups:
-            signal_groups[sig_name] = []
-        signal_groups[sig_name].append(event)
-
-    result = []
-    llm_usages: list[dict] = []
-    for sig_name, events in signal_groups.items():
-        if not events:
+    # Q&A with scores
+    qa_lines = []
+    for s in answer_scores:
+        if s.get("is_warmup"):
             continue
-        is_visible = events[0].get("recruiter_visible", True)
-        event_count = len(events)
-        should_include = (
-            is_visible or
-            event_count >= 2 or
-            (events[0].get("confidence", 0) >= 0.85)
+        qa_lines.append(
+            f"  Topic: {s.get('topic','?')} | overall {s.get('overall','?')}/10\n"
+            f"    Q: {str(s.get('question',''))[:180]}\n"
+            f"    A: {str(s.get('answer',''))[:280]}\n"
+            f"    clarity={s.get('clarity','?')} depth={s.get('depth','?')} "
+            f"specificity={s.get('specificity','?')} grounding={s.get('grounding','?')}"
         )
-        if not should_include:
-            continue
+    if qa_lines:
+        parts.append("QUESTION & ANSWER SCORES\n" + "\n".join(qa_lines))
 
-        highest_confidence = max(e.get("confidence", 0) for e in events)
-        turn_numbers = sorted(set(e.get("turn", 0) for e in events if e.get("turn")))
+    # Transcript tail
+    if transcript_lines:
+        full = "\n".join(transcript_lines)
+        excerpt = full[-3000:] if len(full) > 3000 else full
+        parts.append(f"TRANSCRIPT (recent portion)\n{excerpt}")
 
-        interpretation, sig_usage = await _interpret_hidden_signal(sig_name, events)
-        if sig_usage:
-            llm_usages.append(sig_usage)
-
-        evidence_parts = [e.get("evidence", "") for e in events[:3] if e.get("evidence")]
-        combined_evidence = "; ".join(evidence_parts) if evidence_parts else ""
-
-        result.append({
-            "signal": sig_name,
-            "turns": turn_numbers,
-            "confidence": round(highest_confidence, 2),
-            "evidence": combined_evidence,
-            "interpretation": interpretation,
-            "visible": is_visible,
-            "count": event_count,
-        })
-
-    return result, llm_usages
+    return "\n\n".join(parts)
 
 
-async def _interpret_hidden_signal(signal_name: str, events: list[dict]) -> tuple[str, dict | None]:
-    if signal_name in (
-        "ownership_ambiguity", "example_evasion", "resume_claim_mismatch",
-        "follow_up_collapse", "latency_mismatch", "ownership_clarified", "example_given",
-        "inconsistency", "inconsistency_resolved", "complexity_latency_mismatch",
-    ) and events:
-        try:
-            from openai import AsyncOpenAI
-            evidence_list = [e.get("evidence", "") for e in events if e.get("evidence")]
-            evidence_text = "; ".join(evidence_list) if evidence_list else f"signal {signal_name} detected"
-            client = AsyncOpenAI()
-
-            signal_descriptions = {
-                "ownership_ambiguity": "Candidate used 'we/our/team' without personal ownership claims",
-                "example_evasion": "Candidate was asked for a concrete example but gave a theoretical answer instead",
-                "resume_claim_mismatch": "Candidate listed resume-like claims without concrete project details or hands-on evidence",
-                "follow_up_collapse": "Candidate gave a detailed first answer but lost depth sharply when probed further",
-                "latency_mismatch": "Follow-up answer was unnaturally compressed after a detail-seeking question",
-                "ownership_clarified": "Candidate clarified personal ownership using explicit 'I' language after initial ambiguity",
-                "example_given": "Candidate provided a concrete specific example after initially giving a theoretical answer",
-            }
-
-            if signal_name == "inconsistency":
-                latest = events[-1]
-                old_v = latest.get("old_value") or latest.get("evidence", "earlier claim")
-                new_v = latest.get("new_value") or "a conflicting statement"
-                c_type = str(latest.get("inconsistency_type", "") or "").replace("_", " ")
-                repeat = sum(1 for e in events if e.get("status") == "repeated")
-                signal_desc = (
-                    f"Candidate contradicted a prior claim about {c_type or 'a key fact'}: "
-                    f"earlier said '{old_v}', then said '{new_v}'"
-                    + (f". This inconsistency repeated {repeat} time(s)" if repeat else "")
-                )
-            elif signal_name == "inconsistency_resolved":
-                latest = events[-1]
-                c_type = str(latest.get("inconsistency_type", "") or "").replace("_", " ")
-                signal_desc = (
-                    f"Candidate clarified and resolved a inconsistency about {c_type or 'a prior claim'} "
-                    "convincingly when probed"
-                )
-            elif signal_name == "complexity_latency_mismatch":
-                latest = events[-1]
-                signal_desc = (
-                    f"Suspicious answer timing: {latest.get('evidence', 'timing anomaly detected')}. "
-                    "Complex question answered instantly (pre-written answer) OR simple question took too long (looking things up)."
-                )
-            else:
-                signal_desc = signal_descriptions.get(signal_name, f"Signal: {signal_name}")
-
-            response = await client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are an HR analyst writing recruiter-facing signal interpretations. "
-                            "Write 1-2 sentences explaining what this behavioral signal means for the hiring decision. "
-                            "Be specific. Reference the evidence. Do not use vague words like 'may indicate' without backing it up. "
-                            "Format: '[What happened] — [What this means for hiring]'"
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": f"Signal: {signal_desc}\nEvidence from interview: {evidence_text}",
-                    },
-                ],
-                temperature=0.4,
-                max_tokens=80,
-            )
-            _usage = getattr(response, "usage", None)
-            _signal_llm_usage: dict | None = {
-                "model": "gpt-4o-mini",
-                "inputTokens": int(getattr(_usage, "prompt_tokens", 0) or 0),
-                "outputTokens": int(getattr(_usage, "completion_tokens", 0) or 0),
-                "cachedInputTokens": int(getattr(getattr(_usage, "prompt_tokens_details", None), "cached_tokens", 0) or 0),
-            }
-            return response.choices[0].message.content.strip(), _signal_llm_usage
-        except Exception:
-            pass
-
-    interpretations = {
-        "example_evasion": (
-            "When asked for concrete examples, candidate redirected to theoretical statements. "
-            "Real experience produces specific examples — this pattern suggests surface-level familiarity."
-        ),
-        "latency_mismatch": (
-            "Answer timing was inconsistent with question complexity. "
-            "Unusually fast answers on hard questions suggest pre-written responses, not genuine recall."
-        ),
-        "ownership_ambiguity": (
-            "Candidate consistently used 'we' and 'our' without clarifying personal contribution. "
-            "Unclear whether candidate led the work or observed it from the team."
-        ),
-        "complexity_latency_mismatch": (
-            "Complex question answered instantly (suggests pre-written answer) or simple question took too long (suggests looking things up). "
-            "Either pattern is a flag for AI-assisted or externally referenced responses."
-        ),
-        "resume_claim_mismatch": (
-            "Candidate cited resume items without being able to back them up with concrete details. "
-            "Listed technologies or projects could not be verified through interview answers."
-        ),
-        "inconsistency": (
-            "Candidate made conflicting statements about a verifiable fact. "
-            "Recruiter must probe this directly — may indicate inflated claims or poor recall."
-        ),
-        "inconsistency_resolved": (
-            "Candidate clarified a prior inconsistency convincingly when probed. "
-            "Inconsistency is considered resolved — no further follow-up needed on this specific point."
-        ),
-        "depth_decay": (
-            "Answer quality declined as the interview progressed — early answers were stronger and more specific. "
-            "Later answers became thinner, suggesting rehearsed preparation that ran out."
-        ),
-        "follow_up_collapse": (
-            "Strong first answer but candidate could not sustain depth when probed further. "
-            "Suggests the initial answer was rehearsed rather than drawn from genuine experience."
-        ),
-        "strong_under_pressure": (
-            "Candidate maintained or improved answer quality when probed harder. "
-            "This is a positive signal — genuine knowledge holds up under pressure."
-        ),
-    }
-    return interpretations.get(
-        signal_name,
-        f"Signal '{signal_name}' detected — pattern suggests a potential gap between claimed and demonstrated knowledge."
-    ), None
-
-
-async def synthesize_behavioral_report(
+async def generate_signal_analysis(
     transcript_lines: list[str],
     answer_scores: list[dict],
     total_duration_sec: int,
     proctoring_events: list[dict],
     inconsistencies_found: list[dict],
 ) -> tuple[dict[str, Any], list[dict]]:
-    """Returns (report_dict, llm_usages) where llm_usages lists any LLM calls made."""
-    engagement = extract_engagement_signals(transcript_lines, total_duration_sec, answer_scores)
-    consistency = extract_consistency_signals(transcript_lines, inconsistencies_found)
-    communication = extract_communication_patterns(answer_scores)
-    confidence = extract_confidence_indicators(answer_scores)
-    integrity = extract_integrity_flags(proctoring_events, answer_scores, inconsistencies_found)
-    consistency_clean = not bool(inconsistencies_found)
-    strengths = extract_strengths_observed(answer_scores, consistency_clean)
-    concerns = extract_concerns_noted(answer_scores, inconsistencies_found, communication)
-    hidden_signals, behavioral_llm_usages = await extract_proctoring_signals(proctoring_events)
+    """
+    Returns (signal_analysis_dict, llm_usages).
+    signal_analysis_dict: { "points": list[str] }
+    """
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        logger.warning("[SIGNAL_ANALYSIS] Skipping: missing OPENAI_API_KEY")
+        return {"points": []}, []
 
-    report: dict[str, Any] = {
-        "summary": _generate_behavioral_summary(engagement, consistency, communication, integrity, answer_scores),
-        "engagement_signals": engagement,
-        "consistency_signals": consistency,
-        "communication_patterns": communication,
-        "confidence_indicators": confidence,
-        "integrity_flags": integrity,
-        "strengths_observed": strengths,
-        "concerns_noted": concerns,
-    }
+    prompt_content = _build_prompt(
+        transcript_lines, answer_scores, total_duration_sec,
+        proctoring_events, inconsistencies_found,
+    )
 
-    if hidden_signals:
-        report["proctoring_signals_detected"] = hidden_signals
+    try:
+        from openai import AsyncOpenAI
+        client = AsyncOpenAI(api_key=api_key)
 
-    return report, behavioral_llm_usages
+        response = await client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[
+                {"role": "system", "content": _SIGNAL_ANALYSIS_SYSTEM},
+                {"role": "user",   "content": prompt_content},
+            ],
+            temperature=0.3,
+            max_tokens=800,
+        )
 
+        usage = getattr(response, "usage", None)
+        llm_usage = {
+            "model": "gpt-4.1-mini",
+            "inputTokens":       int(getattr(usage, "prompt_tokens", 0) or 0),
+            "outputTokens":      int(getattr(usage, "completion_tokens", 0) or 0),
+            "cachedInputTokens": int(getattr(
+                getattr(usage, "prompt_tokens_details", None), "cached_tokens", 0
+            ) or 0),
+        }
 
-def _generate_behavioral_summary(
-    engagement: list[str],
-    consistency: list[str],  # noqa: ARG001
-    communication: list[str],
-    integrity: list[str],
-    answer_scores: list[dict],
-) -> str:
-    parts = []
-
-    # Engagement
-    if any("dropped" in s or "second half" in s for s in engagement):
-        parts.append("started strong but faded in the second half of the interview")
-    elif any("warmed up" in s for s in engagement):
-        parts.append("grew more confident and detailed as the interview progressed")
-    elif any("significantly less" in s for s in engagement):
-        parts.append("showed limited engagement and gave brief responses throughout")
-    else:
-        parts.append("maintained consistent participation throughout the session")
-
-    # Answer quality
-    if answer_scores:
-        avg_score = sum(s.get("overall", 5) for s in answer_scores) / len(answer_scores)
-        strong = sum(1 for s in answer_scores if s.get("overall", 0) >= 7)
-        weak = sum(1 for s in answer_scores if s.get("overall", 0) <= 3)
-        if avg_score >= 7:
-            parts.append(f"answer quality was consistently strong across {len(answer_scores)} questions")
-        elif avg_score >= 5:
-            if strong > weak:
-                parts.append(f"delivered a mix of strong and weaker answers — more hits than misses across {len(answer_scores)} questions")
+        raw_text = (response.choices[0].message.content or "").strip()
+        # Parse — the model returns a plain JSON array
+        try:
+            parsed = json.loads(raw_text)
+            if isinstance(parsed, list):
+                points = [str(p).strip() for p in parsed if p]
+            elif isinstance(parsed, dict) and parsed:
+                # Fallback: model returned an object, flatten values
+                points = [str(v).strip() for v in parsed.values() if v]
             else:
-                parts.append(f"struggled to demonstrate depth on most topics — {weak} of {len(answer_scores)} answers lacked substance")
-        else:
-            parts.append(f"answer quality was poor overall — thin responses and avoidance of specifics throughout")
+                points = []
+        except Exception:
+            # Last resort: split on newlines if JSON parse fails
+            points = [l.strip().lstrip("-•").strip() for l in raw_text.splitlines() if len(l.strip()) > 20]
 
-    # Communication
-    if any("hard to follow" in s or "fragmented" in s for s in communication):
-        parts.append("communication was frequently unclear and hard to follow")
-    elif any("uneven" in s for s in communication):
-        parts.append("communication was clearer on comfortable topics and broke down on harder ones")
+        result = {"points": points[:5]}
+        logger.info(f"[SIGNAL_ANALYSIS] {len(result['points'])} points, tokens={llm_usage['inputTokens']}+{llm_usage['outputTokens']}")
+        return result, [llm_usage]
 
-    # Integrity
-    if any("inconsistency" in s.lower() for s in integrity) and not any("no integrity" in s.lower() for s in integrity):
-        parts.append("factual inconsistencies were detected that require recruiter follow-up before a decision")
-    elif any("concern" in s.lower() or "evasion" in s.lower() for s in integrity):
-        parts.append("some behavioral patterns warrant closer review")
-
-    if not parts:
-        return "Candidate completed the interview with consistent participation and no major concerns detected."
-
-    summary = "Candidate " + parts[0]
-    if len(parts) > 1:
-        summary += f", and {parts[1]}"
-    if len(parts) > 2:
-        summary += f". Additionally: {parts[2]}"
-    if len(parts) > 3:
-        summary += f" {parts[3]}"
-    summary += "."
-    return summary
+    except Exception as e:
+        logger.error(f"[SIGNAL_ANALYSIS] LLM call failed: {e}", exc_info=True)
+        return {"points": []}, []

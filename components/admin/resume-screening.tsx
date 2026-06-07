@@ -251,7 +251,7 @@ function UploadModal({
             const res = await fetch(`/api/drives/${driveId}/resume-screening`, { method: "POST", body: fd });
             if (!res.ok) throw new Error((await res.json()).error || "Upload failed");
             await res.json();
-            toast.success("Upload successful! Resumes now appear in the table while the worker processes them.");
+            toast.success("Upload successful! Resumes have been added and will be processed shortly.");
             reset();
             onComplete();
         } catch (err) {

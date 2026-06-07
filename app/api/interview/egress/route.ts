@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
 import { interviewRecordingQueue } from "@/lib/queue";
 import { getOrgRecordingSettings } from "@/lib/recording-retention";
+import { mergeRecordingState, normalizeRecordingState, parseJsonRecord, type RecordingState } from "@/lib/recording-state";
 
 export const runtime = "nodejs";
 
@@ -68,6 +69,10 @@ function buildCandidateRoleFolder(fullName?: string | null, roleTitle?: string |
         .toLowerCase();
 }
 
+function buildRecordingName(fullName?: string | null, roleTitle?: string | null, fallbackId?: string) {
+    return [fullName, roleTitle].filter(Boolean).join(" - ") || fallbackId || "Interview recording";
+}
+
 function buildPublicInterviewUrl(recordingKey: string): string {
     const base = cleanEnv(process.env.NEXT_PUBLIC_R2_INTERVIEW_URL);
     if (!base) return "";
@@ -109,9 +114,10 @@ async function authenticateInterview(applicationId: string, interviewToken: stri
 async function getInterviewManifest(applicationId: string): Promise<EgressManifest> {
     const row = await prisma.interview.findUnique({
         where: { applicationId },
-        select: { recordingManifest: true },
+        select: { recording: true },
     });
-    return normalizeManifest(row?.recordingManifest);
+    const recording = normalizeRecordingState((row as any)?.recording);
+    return normalizeManifest(recording.manifest);
 }
 
 async function persistRecordingState(params: {
@@ -123,6 +129,8 @@ async function persistRecordingState(params: {
     manifest?: EgressManifest;
     recordingUrl?: string | null;
     durationSec?: number | null;
+    recordingName?: string | null;
+    recordingKey?: string | null;
 }) {
     const {
         applicationId,
@@ -133,35 +141,45 @@ async function persistRecordingState(params: {
         manifest = {},
         recordingUrl = null,
         durationSec = null,
+        recordingName = null,
+        recordingKey = null,
     } = params;
 
-    const currentManifest = await getInterviewManifest(applicationId).catch(() => ({} as EgressManifest));
+    const currentRow = await prisma.interview.findUnique({
+        where: { applicationId },
+        select: { recording: true },
+    }).catch(() => null);
+    const currentManifest = normalizeManifest(
+        normalizeRecordingState((currentRow as any)?.recording).manifest
+    );
     const nextManifest = {
         ...currentManifest,
         ...manifest,
         lastStatus: status,
     };
+    const nextRecording = mergeRecordingState((currentRow as any)?.recording, {
+        ...(recordingName ? { name: recordingName } : {}),
+        mode: nextManifest.mode || "livekit_egress",
+        status,
+        mimeType,
+        url: recordingUrl || undefined,
+        key: recordingKey || String(nextManifest.recordingKey || "").trim() || undefined,
+        egressId: String(nextManifest.egressId || "").trim() || undefined,
+        roomName: String(nextManifest.roomName || "").trim() || undefined,
+        startedAt: startedAt ? startedAt.toISOString() : undefined,
+        completedAt: completedAt ? completedAt.toISOString() : undefined,
+        recordedAt: completedAt && recordingUrl ? completedAt.toISOString() : undefined,
+        durationSec,
+        manifest: parseJsonRecord(nextManifest),
+    } as RecordingState);
 
     await prisma.$executeRawUnsafe(
         `UPDATE "Interview"
-         SET "recordingStatus" = $1::text,
-             "recordingMimeType" = COALESCE($2::text, "recordingMimeType"),
-             "recordingStartedAt" = COALESCE("recordingStartedAt", $3::timestamp),
-             "recordingCompletedAt" = CASE WHEN $4::timestamp IS NOT NULL THEN $4::timestamp ELSE "recordingCompletedAt" END,
-             "recordingDurationSec" = CASE WHEN $5::integer IS NOT NULL THEN $5::integer ELSE "recordingDurationSec" END,
-             "interviewRecordingUrl" = COALESCE($6::text, "interviewRecordingUrl"),
-             "interviewRecordedAt" = CASE WHEN $4::timestamp IS NOT NULL THEN $4::timestamp ELSE "interviewRecordedAt" END,
-             "recordingManifest" = $7::jsonb,
+         SET "recording" = $2::jsonb,
              "updatedAt" = NOW()
-         WHERE "applicationId" = $8::text`,
-        status,
-        mimeType,
-        startedAt,
-        completedAt,
-        durationSec,
-        recordingUrl,
-        JSON.stringify(nextManifest),
-        applicationId
+         WHERE "applicationId" = $1::text`,
+        applicationId,
+        JSON.stringify(nextRecording)
     );
 }
 
@@ -268,6 +286,11 @@ export async function POST(req: Request) {
                 application?.drive?.title,
                 applicationId
             );
+            const recordingName = buildRecordingName(
+                application?.fullName,
+                application?.drive?.title,
+                applicationId
+            );
             const orgId = String(application?.drive?.orgId || "");
             if (orgId) {
                 const recordingSettings = await getOrgRecordingSettings(orgId);
@@ -292,6 +315,7 @@ export async function POST(req: Request) {
                     status: statusToLabel(active.status),
                     mimeType: "video/mp4",
                     startedAt: new Date(),
+                    recordingName,
                     manifest: {
                         mode: "livekit_egress",
                         roomName,
@@ -345,6 +369,8 @@ export async function POST(req: Request) {
                     mimeType: "video/mp4",
                     startedAt,
                     recordingUrl: recordingUrl || null,
+                    recordingKey,
+                    recordingName,
                     manifest: {
                         mode: "livekit_egress",
                         roomName,
@@ -374,6 +400,8 @@ export async function POST(req: Request) {
                 await persistRecordingState({
                     applicationId,
                     status: "FAILED",
+                    recordingName,
+                    recordingKey,
                     manifest: {
                         mode: "livekit_egress",
                         roomName,
@@ -404,6 +432,7 @@ export async function POST(req: Request) {
                 status: "ABORTED",
                 completedAt: now,
                 mimeType: "video/mp4",
+                recordingKey: recordingKey || null,
                 manifest: {
                     ...manifest,
                     stopRequestedAt: now.toISOString(),
@@ -429,6 +458,7 @@ export async function POST(req: Request) {
                 completedAt: statusLabel === "COMPLETE" ? now : null,
                 mimeType: "video/mp4",
                 recordingUrl: recordingUrl || null,
+                recordingKey: recordingKey || null,
                 durationSec: startedAt ? Math.max(1, Math.round((now.getTime() - startedAt.getTime()) / 1000)) : null,
                 manifest: {
                     ...manifest,
@@ -485,6 +515,7 @@ export async function POST(req: Request) {
                 completedAt: now,
                 mimeType: "video/mp4",
                 recordingUrl: recordingUrl || null,
+                recordingKey: recordingKey || null,
                 manifest: {
                     ...manifest,
                     stopRequestedAt: now.toISOString(),

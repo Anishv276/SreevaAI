@@ -33,7 +33,7 @@ export async function GET(request: Request) {
         i.id,
         i.status,
         i."interviewDuration",
-        i."recordingDurationSec",
+        NULLIF(i."recording"->>'durationSec', '')::integer AS "recordingDurationSec",
         i."completedAt",
         i."updatedAt",
         a."fullName",

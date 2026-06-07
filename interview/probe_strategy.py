@@ -215,6 +215,193 @@ _PROBE_FAMILIES: dict[str, dict] = {
 }
 
 
+_CANT_REMEMBER_MARKERS: tuple[str, ...] = (
+    "not sure", "i forgot", "long time ago", "old project", "not really",
+    "didn't build", "did not build", "i wasn't", "i was not",
+    "never worked", "never used", "haven't worked", "havent worked",
+    "haven't used", "havent used", "haven't done", "havent done",
+    "no experience",
+)
+
+_DEPTH_GUARDS: dict[str, str] = {
+    "closing": (
+        "\nTOPIC DEPTH: CLOSING -- this is the LAST probe on this project before MOVE_ON.\n"
+        "  -> Ask ONE reflective question to surface judgment, learning, or self-awareness.\n"
+        "     Pick whichever fits most naturally given what they have already said:\n"
+        "       * If you rebuilt this project today, what would you change and why?\n"
+        "       * Looking back, is there one decision you would make differently?\n"
+        "       * What did this project teach you that you did not expect going in?\n"
+        "  -> Anchor to a SPECIFIC tool, choice, or detail they mentioned earlier -- not generic.\n"
+        "  -> Do NOT ask another 'what was your role / what part did you build' question."
+    ),
+    "early": (
+        "\nTOPIC DEPTH: EARLY -- this is one of the FIRST questions on this topic.\n"
+        "  -> Stay at the SURFACE first: what they personally built, what problem it solved,\n"
+        "     or what their role was. Establish the WHAT before the HOW.\n"
+        "  -> Do NOT jump into deep mechanics or step-by-step walkthroughs yet.\n"
+        "  -> Anchor to a concrete detail from TOPIC CONTEXT so they know exactly what you mean."
+    ),
+    "established_fresher": (
+        "\nTOPIC DEPTH: ESTABLISHED (FRESHER BAND).\n"
+        "  -> Probe HOW they built it: what did they actually do step by step?\n"
+        "  -> Ask about WHAT HAPPENED: what worked, what broke, what surprised them.\n"
+        "  -> Do NOT ask about tradeoffs, alternatives considered, or architectural decisions.\n"
+        "     Frame tool choices as curiosity: 'Why did you pick X?' not 'What alternatives did you consider?'\n"
+        "  -> Ownership is the goal: what was SPECIFICALLY theirs?"
+    ),
+    "established": (
+        "\nTOPIC DEPTH: ESTABLISHED -- they've set the WHAT, now go deeper "
+        "into mechanics, decisions, or tradeoffs."
+    ),
+}
+
+
+def build_probe_directive(
+    *,
+    probe_family: str,
+    rotation_index: int,
+    band: str,
+    active_topic: str,
+    prev_question: str,
+    prev_answer: str,
+    topic_follow_ups: int,
+    is_closing_tier: bool,
+    topic_denied: bool,
+    overall_score: float,
+    depth_score: float,
+    discussed_log: list[str],
+    asked_questions_log: list[str],
+    skill_denial_count: int,
+    covered_topics: list[str] | None = None,
+) -> tuple[str, str]:
+    """Build the complete PROBE [NEXT_TURN_DIRECTIVE] string.
+
+    Returns (directive_string, effective_family) tuple.
+    Called from agent_runtime.py.
+    """
+    prev_a_gist = " ".join(prev_answer.split()[:40])
+    is_cant_remember = topic_denied or any(m in prev_answer.lower() for m in _CANT_REMEMBER_MARKERS)
+    is_short = overall_score <= 0.5 and depth_score == 0.0 and len(prev_answer.split()) < 8
+
+    memory = "\n".join(discussed_log[-5:])
+    memory_block = f"\n[INTERVIEW MEMORY -- DO NOT RE-ASK THESE]\n{memory}\n" if memory else ""
+
+    # Compact list of topics already finished -- keeps the LLM from drifting back
+    # into something covered earlier (a major source of repeated questions).
+    covered_block = ""
+    _covered = [c for c in (covered_topics or []) if c]
+    if _covered:
+        _cov = "\n".join(f"  - {c}" for c in _covered[-10:])
+        covered_block = (
+            f"\n[ALREADY COVERED -- DO NOT RE-OPEN OR ASK ABOUT THESE AGAIN]\n{_cov}\n"
+        )
+
+    # Attribution guard -- a STANDALONE project must never be tied to an employer.
+    # This is the per-turn enforcement of the PROJECT-vs-WORK rule (the static system
+    # prompt alone was not enough: across a long context the LLM fused a [standalone]
+    # project with a nearby company, e.g. asking "...at Social Rises" about a personal
+    # project). Re-assert it on every probe turn while that topic is active.
+    attribution_block = ""
+    if "[standalone]" in (active_topic or "").lower():
+        attribution_block = (
+            "\n[ATTRIBUTION GUARD -- CRITICAL]\n"
+            "This topic is a STANDALONE / personal project. It is NOT linked to any company.\n"
+            "NEVER attach an employer name to it (no '...at <Company>').\n"
+            "Ask about the project on its own terms.\n"
+        )
+
+    recent_q_block = ""
+    if asked_questions_log:
+        ql = "\n".join(f"  - {q}" for q in asked_questions_log[-6:])
+        recent_q_block = (
+            f"\n[QUESTIONS ALREADY ASKED -- DO NOT REPEAT OR CLOSELY REPHRASE ANY OF THESE]\n{ql}\n"
+        )
+
+    skill_denial_block = ""
+    if skill_denial_count >= 3:
+        skill_denial_block = (
+            "\n[SKILL DENIAL PATTERN DETECTED]\n"
+            f"The candidate has denied {skill_denial_count} consecutive skill questions.\n"
+            "DO NOT ask another 'You mentioned X on your resume' question.\n"
+            "Instead ask ONE open question: 'Of the skills on your resume, which one "
+            "are you most confident in, and why?' -- then accept whatever they say and move on.\n"
+        )
+
+    if is_cant_remember:
+        return (
+            "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
+            "DECISION: PROBE (REDIRECT)\n"
+            f"TOPIC CONTEXT: {active_topic}\n"
+            f"CANDIDATE SAID: \"{prev_a_gist}{'...' if len(prev_answer.split()) > 40 else ''}\"\n"
+            "CANDIDATE SAID THEY DON'T REMEMBER OR DIDN'T BUILD IT.\n"
+            "DO NOT push them to remember. DO NOT dwell on the gap.\n"
+            "Instead, pick ONE of these redirects based on context:\n"
+            "  -> If they don't remember details: ask what they DO remember -- even one small thing\n"
+            "  -> If they didn't build it: ask what their actual role was, or what they worked on instead\n"
+            "  -> If the topic has a specific tool/tech: ask if they've ever used it in any context\n"
+            "Acknowledge with one word ('Okay.' / 'Fair enough.' / 'Got it.') then redirect.\n"
+            "ONE question. Keep it light -- don't make them feel judged."
+            f"{attribution_block}"
+            f"{memory_block}"
+            f"{covered_block}",
+            "redirect",
+        )
+
+    short_nudge = (
+        "\nCANDIDATE GAVE A VERY SHORT ANSWER -- push back warmly but directly.\n"
+        "Don't just re-ask. React like a real interviewer who expected more:\n"
+        "  - 'That's a start -- can you give me a bit more to work with?'\n"
+        "  - 'I'd love to hear more than that -- what specifically did you do?'"
+    ) if is_short else ""
+
+    is_early = topic_follow_ups <= 1
+    if is_closing_tier:
+        depth_guard = _DEPTH_GUARDS["closing"]
+        effective_family = "reflection"
+    elif is_early:
+        depth_guard = _DEPTH_GUARDS["early"]
+        effective_family = probe_family
+    elif band == "fresher":
+        depth_guard = _DEPTH_GUARDS["established_fresher"]
+        effective_family = probe_family
+    else:
+        depth_guard = _DEPTH_GUARDS["established"]
+        effective_family = probe_family
+
+    # For fresher band at established tier, depth-family goals contain tradeoff/alternatives
+    # angles which the depth_guard explicitly bans. Reroute to ownership goals instead,
+    # which focus on HOW they built it -- consistent with the guard.
+    if depth_guard is _DEPTH_GUARDS["established_fresher"] and effective_family == "depth":
+        effective_family = "ownership"
+
+    goal = get_probe_goal(effective_family, rotation_index)
+    style = get_probe_style(effective_family)
+
+    return (
+        "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
+        f"DECISION: PROBE ({effective_family.upper()})\n"
+        f"BAND: {band.upper()}\n"
+        f"TOPIC CONTEXT: {active_topic}\n"
+        "  ^ Use specific details from this (tools, systems, tech) to make your question "
+        "concrete -- do NOT ask generically about 'the project'.\n"
+        f"{depth_guard}\n"
+        f"ANGLE: {goal}\n"
+        f"HOW TO ASK: {style}\n"
+        f"LAST QUESTION YOU ASKED: \"{prev_question}\"\n"
+        f"CANDIDATE SAID: \"{prev_a_gist}{'...' if len(prev_answer.split()) > 40 else ''}\"\n"
+        "DO NOT ask the same question again. DO NOT rephrase it.\n"
+        "Pick the most natural angle from ANGLE/HOW TO ASK based on what they actually said.\n"
+        "ONE question only. Sound natural.\n"
+        "DO NOT wrap up or say goodbye -- the interview is still in progress."
+        f"{attribution_block}"
+        f"{short_nudge}"
+        f"{memory_block}"
+        f"{covered_block}"
+        f"{recent_q_block}"
+        f"{skill_denial_block}"
+    ), effective_family
+
+
 def get_probe_goal(family: str, rotation_index: int = 0) -> str:
     """Return a goal string for the given probe family.
 

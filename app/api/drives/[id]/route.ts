@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { updateDriveSchema } from "@/lib/validation";
 import { deleteDriveEmbeddings } from "@/lib/pinecone";
 import { deleteUrlTargets } from "@/lib/delete-utils";
+import { getRecordingUrl } from "@/lib/recording-state";
 import { normalizeDriveAiConfig } from "@/lib/ai-provider-config";
 import { safeJsonParse } from "@/lib/utils";
 import { getSession } from "@/lib/auth";
@@ -303,9 +304,9 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
 
                             interview: {
                                 select: {
-                                    interviewRecordingUrl: true,
+                                    recording: true,
                                     snapshots: true
-                                }
+                                } as any
                             }
                         }
                     }
@@ -317,8 +318,10 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
                 if (driveWithApps.jdPreviewUrl) urls.push(driveWithApps.jdPreviewUrl);
                 for (const app of driveWithApps.applications) {
                     if (app.resumeUrl) urls.push(app.resumeUrl);
-                    if (app.interview?.interviewRecordingUrl) urls.push(app.interview.interviewRecordingUrl);
-                    if (app.interview?.snapshots?.length) urls.push(...app.interview.snapshots);
+                    const interview = app.interview as any;
+                    const recordingUrl = getRecordingUrl(interview?.recording);
+                    if (recordingUrl) urls.push(recordingUrl);
+                    if (interview?.snapshots?.length) urls.push(...interview.snapshots);
                 }
                 await deleteUrlTargets(urls);
             }

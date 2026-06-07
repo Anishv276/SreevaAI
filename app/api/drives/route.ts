@@ -6,6 +6,7 @@ import { sanitizeObject } from "@/lib/utils";
 import { generateId } from "@/lib/ids";
 import { deleteUrlTargets } from "@/lib/delete-utils";
 import { deleteDriveEmbeddings } from "@/lib/pinecone";
+import { getRecordingUrl } from "@/lib/recording-state";
 import { getOrgBillingStatus } from "@/lib/credits";
 import { isDriveCreationLocked } from "@/lib/drive-limits";
 import { normalizeDriveAiConfig } from "@/lib/ai-provider-config";
@@ -295,9 +296,9 @@ export async function DELETE(request: Request) {
                             resumeUrl: true,
                             interview: {
                                 select: {
-                                    interviewRecordingUrl: true,
+                                    recording: true,
                                     snapshots: true
-                                }
+                                } as any
                             }
                         }
                     }
@@ -310,8 +311,10 @@ export async function DELETE(request: Request) {
                 for (const app of drive.applications) {
                     if (app.resumeUrl) urls.push(app.resumeUrl);
 
-                    if (app.interview?.interviewRecordingUrl) urls.push(app.interview.interviewRecordingUrl);
-                    if (app.interview?.snapshots?.length) urls.push(...app.interview.snapshots);
+                    const interview = app.interview as any;
+                    const recordingUrl = getRecordingUrl(interview?.recording);
+                    if (recordingUrl) urls.push(recordingUrl);
+                    if (interview?.snapshots?.length) urls.push(...interview.snapshots);
                 }
             }
             await deleteUrlTargets(urls);

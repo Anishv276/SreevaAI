@@ -34,8 +34,8 @@ from langgraph.graph import StateGraph, END
 
 from livekit.agents.metrics import AgentSessionUsage
 
-from behavioral_analysis import synthesize_behavioral_report
-from interview.agent_utils import _coerce_jsonish, build_interview_turns, truncate_to_tokens
+from behavioral_analysis import generate_signal_analysis
+from interview.agent_utils import _coerce_jsonish, truncate_to_tokens
 from interview.agent_runtime_support import (
     DATABASE_URL,
     FIXED_INTERVIEW_DURATION_MINUTES,
@@ -174,17 +174,11 @@ class SkillRating(BaseModel):
             return 5
 
 
-class LLMScoresResponse(BaseModel):
-    demonstrated_knowledge: int = Field(default=0, ge=0, le=100)
-    role_fit:               int = Field(default=0, ge=0, le=100)
-    problem_solving:        int = Field(default=0, ge=0, le=100)
-    skills_evaluated:       list[str] = Field(default_factory=list)
-    skill_ratings:          list[SkillRating] = Field(default_factory=list)
-    strengths:              list[str] = Field(default_factory=list)
-    concerns:               list[str] = Field(default_factory=list)
-    decision_note:          str = ""
+class LLMEvalDimension(BaseModel):
+    score:    int = Field(default=0, ge=0, le=100)
+    evidence: str = ""
 
-    @field_validator("demonstrated_knowledge", "role_fit", "problem_solving", mode="before")
+    @field_validator("score", mode="before")
     @classmethod
     def _clamp(cls, v: Any) -> int:
         try:
@@ -193,59 +187,41 @@ class LLMScoresResponse(BaseModel):
             return 0
 
 
-class LLMCommResponse(BaseModel):
-    clarity:    int = Field(default=50, ge=0, le=100)
-    fluency:    int = Field(default=50, ge=0, le=100)
-    grammar:    int = Field(default=50, ge=0, le=100)
-    confidence: int = Field(default=50, ge=0, le=100)
-    summary:    str = ""
+class LLMEvalResponse(BaseModel):
+    communication:         LLMEvalDimension = Field(default_factory=LLMEvalDimension)
+    domain_knowledge:      LLMEvalDimension = Field(default_factory=LLMEvalDimension)
+    role_fit:              LLMEvalDimension = Field(default_factory=LLMEvalDimension)
+    problem_solving:       LLMEvalDimension = Field(default_factory=LLMEvalDimension)
+    ownership_credibility: LLMEvalDimension = Field(default_factory=LLMEvalDimension)
+    strengths:             list[str] = Field(default_factory=list)
+    concerns:              list[str] = Field(default_factory=list)
+    decision_note:         str = ""
 
-    @field_validator("clarity", "fluency", "grammar", "confidence", mode="before")
+
+class LLMSkillEntry(BaseModel):
+    skill:    str = ""
+    score:    int = Field(default=5, ge=1, le=10)
+    status:   Literal["PROVED", "PARTIAL", "NOT_PROVED"] = "PARTIAL"
+    evidence: str = ""
+    gaps:     str = ""
+
+    @field_validator("score", mode="before")
     @classmethod
     def _clamp(cls, v: Any) -> int:
         try:
-            return max(0, min(100, int(round(float(v)))))
+            return max(1, min(10, int(round(float(v)))))
         except (TypeError, ValueError):
-            return 50
+            return 5
 
-    @property
-    def overall(self) -> int:
-        return int(round((self.clarity + self.fluency + self.grammar + self.confidence) / 4))
-
-
-_COG_INT_FIELDS = frozenset({
-    "clarity", "depth_of_knowledge", "problem_solving",
-    "logical_thinking", "adaptability", "confidence",
-})
-
-class LLMCognitiveResponse(BaseModel):
-    clarity:                   int = Field(default=0, ge=0, le=100)
-    clarity_earned:            str = "Unable to evaluate."
-    clarity_missed:            str = "Unable to evaluate."
-    depth_of_knowledge:        int = Field(default=0, ge=0, le=100)
-    depth_earned:              str = "Unable to evaluate."
-    depth_missed:              str = "Unable to evaluate."
-    problem_solving:           int = Field(default=0, ge=0, le=100)
-    problem_solving_earned:    str = "Unable to evaluate."
-    problem_solving_missed:    str = "Unable to evaluate."
-    logical_thinking:          int = Field(default=0, ge=0, le=100)
-    logical_thinking_earned:   str = "Unable to evaluate."
-    logical_thinking_missed:   str = "Unable to evaluate."
-    adaptability:              int = Field(default=0, ge=0, le=100)
-    adaptability_earned:       str = "Unable to evaluate."
-    adaptability_missed:       str = "Unable to evaluate."
-    confidence:                int = Field(default=0, ge=0, le=100)
-    confidence_earned:         str = "Unable to evaluate."
-    confidence_missed:         str = "Unable to evaluate."
-    summary:                   str = "Cognitive evaluation requires manual review."
-
-    @field_validator(*list(_COG_INT_FIELDS), mode="before")
+    @field_validator("status", mode="before")
     @classmethod
-    def _clamp(cls, v: Any) -> int:
-        try:
-            return max(0, min(100, int(round(float(v)))))
-        except (TypeError, ValueError):
-            return 0
+    def _norm(cls, v: Any) -> str:
+        s = str(v or "").upper()
+        return s if s in {"PROVED", "PARTIAL", "NOT_PROVED"} else "PARTIAL"
+
+
+class LLMSkillsResponse(BaseModel):
+    skills: list[LLMSkillEntry] = Field(default_factory=list)
 
 
 # -- Billing Models (unchanged from existing Pydantic classes) -----------------
@@ -302,18 +278,14 @@ class ReportState(TypedDict, total=False):
     proctoring_data:  dict | None
     org_id:           str | None
     llm_model:        str
-    jd_must_have_skills: list[str] | None
+    jd_json:          dict | None
     # Computed by nodes
     integrity_result: dict
-    engagement_score: int
     transcript_text:  str
-    full_transcript:  str
-    topic_summary:    str
     signal_context:   str
-    jd_skills_text:   str
-    comm_result:      LLMCommResponse
-    scores_result:    LLMScoresResponse
-    cognitive_result: LLMCognitiveResponse
+    jd_context:       str
+    eval_result:      LLMEvalResponse
+    skills_result:    LLMSkillsResponse
     # Final outputs
     scores_context:   dict | None
 
@@ -346,7 +318,7 @@ _ELEVENLABS_TTS_USD_PER_M: dict[str, float] = {
 _ELEVENLABS_TTS_DEFAULT = float(os.environ.get("ELEVENLABS_TTS_USD_PER_MILLION_CHARS", "100.0"))
 _SARVAM_STT_INR_PER_HOUR: dict[str, float] = {"saaras:v3": 30.0}
 _DEEPGRAM_STT_USD_PER_MIN: dict[str, float] = {
-    "nova-3": 0.0048, "nova-3-general": 0.0048, "nova-3-multilingual": 0.0058,
+    "nova-3": 0.0048, "nova-3-multilingual": 0.0058,
     "nova-2": 0.0043, "nova-2-general": 0.0043,
     "flux": 0.0065, "flux-multilingual": 0.0078,
 }
@@ -1051,7 +1023,7 @@ async def get_interview_context(app_id: str) -> dict:
            d.location AS "driveLocation", d."interviewLanguage", d."interviewQuestions",
            COALESCE(d."voiceId", o."voiceId") AS "voiceId",
            COALESCE(d."aiName", 'Ishitha') AS "aiName", o.name AS "orgName", o.location AS "orgLocation",
-           o."deepgramModel", NULL AS "llmModel", NULL AS "llmTemperature", o."proctoringSignals",
+           o."deepgramModel", o."proctoringSignals",
            ev.provider AS "voiceProvider", ev.model AS "voiceModel",
            i.status AS "interviewStatus"
     FROM "Application" a
@@ -1090,8 +1062,6 @@ async def get_interview_context(app_id: str) -> dict:
                 "voiceModel":         row["voiceModel"],
                 "aiName":             row["aiName"],
                 "deepgramModel":      row["deepgramModel"],
-                "llmModel":           row["llmModel"],
-                "llmTemperature":     row["llmTemperature"],
                 "proctoringSignals":  row["proctoringSignals"],
                 "interviewQuestions": row["interviewQuestions"],
                 "interviewStatus":    row["interviewStatus"],
@@ -1128,10 +1098,9 @@ async def persist_transcript(
     if not DATABASE_URL:
         logger.warning("[TRANSCRIPT] No DATABASE_URL - skipping save")
         return
-    full_text       = "\n".join(transcript_lines) if transcript_lines else ""
-    duration        = int(time.time() - start_time) if start_time else 0
-    interview_turns = build_interview_turns(transcript_lines)
-    proctor_report  = None
+    full_text      = "\n".join(transcript_lines) if transcript_lines else ""
+    duration       = int(time.time() - start_time) if start_time else 0
+    proctor_report = None
     if proctoring_data:
         proctor_report = {
             "events":         proctoring_data.get("events", []),
@@ -1145,26 +1114,24 @@ async def persist_transcript(
                     """UPDATE "Interview" SET
                          "interviewTranscript" = $1,
                          "interviewDuration"   = $2,
-                         "interviewTurns"      = $3,
                          "updatedAt"           = NOW()
-                       WHERE "applicationId" = $4""",
-                    full_text, duration, json.dumps(interview_turns), app_id,
+                       WHERE "applicationId" = $3""",
+                    full_text, duration, app_id,
                 )
-                logger.info(f"[TRANSCRIPT] Partial save {len(transcript_lines)} lines, {duration}s, {len(interview_turns)} turn(s) for {app_id}")
+                logger.info(f"[TRANSCRIPT] Partial save {len(transcript_lines)} lines, {duration}s for {app_id}")
             else:
                 await conn.execute(
                     """UPDATE "Interview" SET
                          "interviewTranscript" = $1,
                          "interviewDuration"   = $2,
                          status                = $3,
-                         "behaviorSignals"    = COALESCE("behaviorSignals", '{}'::jsonb) || COALESCE($4::jsonb, '{}'::jsonb),
-                         "interviewTurns"      = $5,
+                         "integritySignals"    = $4,
                          "completedAt"         = NOW(),
                          "updatedAt"           = NOW()
-                       WHERE "applicationId" = $6""",
+                       WHERE "applicationId" = $5""",
                     full_text, duration, final_status,
-                    json.dumps(proctor_report) if proctor_report else None,
-                    json.dumps(interview_turns), app_id,
+                    json.dumps(proctor_report.get("events", []) if proctor_report else []),
+                    app_id,
                 )
                 logger.info(f"[TRANSCRIPT] Final save {len(transcript_lines)} lines, {duration}s, status={final_status} for {app_id}")
     except Exception as e:
@@ -1235,26 +1202,6 @@ async def persist_answer_scores(app_id: str, answer_scores: list[dict]) -> None:
     await persist_question_by_question_analysis(app_id, answer_scores)
 
 
-async def persist_skill_ratings(app_id: str, skill_ratings: dict[str, dict]) -> None:
-    """Compatibility shim: runtime calls this at shutdown to merge raw skill ratings."""
-    if not app_id or not DATABASE_URL or not skill_ratings:
-        return
-    try:
-        pool = await DatabasePool.get()
-        async with pool.acquire() as conn:
-            await conn.execute(
-                """UPDATE "Interview"
-                   SET "skillRatings" =
-                       COALESCE("skillRatings", '{}'::jsonb)
-                       || jsonb_build_object('skill_ratings', $1::jsonb),
-                       "updatedAt" = NOW()
-                   WHERE "applicationId" = $2""",
-                json.dumps(skill_ratings), app_id,
-            )
-        logger.info(f"[SKILL_RATINGS] Saved {len(skill_ratings)} skill rating(s) for {app_id}")
-    except Exception as e:
-        logger.error(f"[SKILL_RATINGS] Failed to persist skill ratings for {app_id}: {e}")
-
 
 async def deduct_interview_billing(app_id: str, duration_seconds: Optional[float] = None) -> None:
     """Atomically deduct one interview quota slot. Idempotent via billingSnapshot.billedAt guard."""
@@ -1264,7 +1211,9 @@ async def deduct_interview_billing(app_id: str, duration_seconds: Optional[float
         pool = await DatabasePool.get()
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
-                """SELECT d."orgId", i."interviewDuration", i."recordingDurationSec"
+                """SELECT d."orgId",
+                          i."interviewDuration",
+                          NULLIF(i."recording"->>'durationSec', '')::float AS "recordingDurationSec"
                    FROM "Interview" i
                    JOIN "Application" a ON a.id = i."applicationId"
                    JOIN "Drive" d ON d.id = a."driveId"
@@ -1343,7 +1292,14 @@ async def update_interview_status(app_id: str, duration_seconds: Optional[float]
             if duration_seconds:
                 await conn.execute(
                     """UPDATE "Interview"
-                       SET "recordingDurationSec" = $1, "interviewDuration" = $2, "updatedAt" = NOW()
+                       SET "recording" = jsonb_set(
+                             COALESCE("recording", '{}'::jsonb),
+                             '{durationSec}',
+                             to_jsonb($1::integer),
+                             true
+                           ),
+                           "interviewDuration" = $2,
+                           "updatedAt" = NOW()
                        WHERE "applicationId" = $3""",
                     int(duration_seconds), int(duration_seconds), app_id,
                 )
@@ -1422,36 +1378,6 @@ def _compute_integrity_score(
     band  = "HIGH" if final >= 80 else "MODERATE" if final >= 55 else "LOW"
     return {"score": final, "band": band, "signals_used": fired, "methodology": "signal_weighted_deterministic"}
 
-
-def _compute_engagement_score(transcript_lines: list, answer_scores: list) -> int:
-    """Engagement score 0-100: participation ratio + answer completeness + consistency trend."""
-    if not transcript_lines and not answer_scores:
-        return 0
-
-    candidate_turns   = sum(1 for l in transcript_lines if l.strip().lower().startswith("candidate:"))
-    interviewer_turns = sum(1 for l in transcript_lines if l.strip().lower().startswith("interviewer:"))
-    total             = candidate_turns + interviewer_turns
-    if total > 0:
-        ratio = candidate_turns / total
-        participation_pts = 40 if ratio >= 0.35 else int(40 * ratio / 0.35) if ratio >= 0.20 else 10
-    else:
-        participation_pts = 0
-
-    if answer_scores:
-        non_empty         = sum(1 for s in answer_scores if (s.get("overall") or 0) > 0.5)
-        completeness_pts  = int(30 * non_empty / len(answer_scores))
-    else:
-        completeness_pts = 0
-
-    consistency_pts = 30
-    if len(answer_scores) >= 6:
-        mid        = len(answer_scores) // 2
-        early_avg  = sum(s.get("overall", 5) for s in answer_scores[:mid]) / mid
-        late_avg   = sum(s.get("overall", 5) for s in answer_scores[mid:]) / (len(answer_scores) - mid)
-        drop       = early_avg - late_avg
-        consistency_pts = 5 if drop > 3.0 else 15 if drop > 1.5 else 30
-
-    return min(100, participation_pts + completeness_pts + consistency_pts)
 
 
 def _filter_skills_evaluated(raw_skills: list[str]) -> list[str]:
@@ -1533,156 +1459,107 @@ def _extract_openai_completion_usage(completion: Any) -> dict[str, Any]:
 # LAYER 5B -- LangChain Prompt Templates + Chains
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# -- Communication Analysis ----------------------------------------------------
+# -- Unified 5-Dimension Evaluation Prompt ------------------------------------
 
-_COMM_SYSTEM = """You are evaluating a candidate's communication quality across their entire interview.
-Role: {job_title}
+_EVAL_SYSTEM = """You are evaluating a completed interview for the '{job_title}' role.
+{jd_context}
 
-Analyze ONLY the Candidate lines in the transcript.
-Score each dimension 0-100 based on the FULL interview.
-
-clarity (0-100): Are answers logically structured and easy to follow?
-  0-20: Fragmented, very hard to parse
-  21-50: Some structure but frequently jumps around
-  51-75: Clear structure, mostly logical flow
-  76-100: Precise, concise, logically tight throughout
-
-fluency (0-100): Is the language natural, well-paced, confident?
-  0-20: Frequent long pauses, repetition, or speech breakdown
-  21-50: Some hesitation but generally followable
-  51-75: Mostly fluent with minor disfluencies
-  76-100: Natural and confident delivery throughout
-
-grammar (0-100): Is the English grammatically correct?
-  0-20: Many errors affecting comprehension
-  21-50: Noticeable errors but meaning usually clear
-  51-75: Mostly correct with minor errors
-  76-100: Grammatically clean throughout
-
-confidence (0-100): Does the candidate speak with conviction and directness?
-  0-20: Heavy hedging, very tentative
-  21-50: Some directness but avoids committing
-  51-75: Generally direct with some hedging
-  76-100: Clear, direct, owns answers throughout
-
-summary: 1-2 sentences summarizing communication quality for a recruiter.
-
-Output ONLY valid JSON: {{"clarity":0-100,"fluency":0-100,"grammar":0-100,"confidence":0-100,"summary":"..."}}"""
-
-_COMM_PROMPT = ChatPromptTemplate.from_messages([
-    ("system", _COMM_SYSTEM),
-    ("human", "Interview transcript:\n{transcript}"),
-])
-
-
-# -- Scores + Skills -----------------------------------------------------------
-
-_SCORES_SYSTEM = """You are analyzing a completed interview for the '{job_title}' role.
-{jd_skills_text}
-
-PRE-COMPUTED SCORES (use as context):
+PRE-COMPUTED CONTEXT (use as background — do NOT simply echo these numbers):
   Integrity: {integrity_score}/100 ({integrity_band})
-  Engagement: {engagement_score}/100
-  Communication: clarity={comm_clarity} fluency={comm_fluency} grammar={comm_grammar} confidence={comm_confidence}
-  Behavioral signals detected: {signal_context}
+  Behavioral signals: {signal_context}
 
-PER-TOPIC QUALITY SUMMARY:
-{topic_summary}
+Score each of these 5 HR dimensions 0-100. For each, write 1 concise evidence sentence.
+Be accurate and honest. Do NOT inflate. If the candidate was poor, reflect that.
 
-Be accurate and honest. Do NOT inflate scores or invent strengths.
-If the candidate refused to answer or gave one-word answers, reflect that truthfully.
+1. communication (0-100): Clarity, fluency, grammar, confidence across the full interview.
+   0-20: Very hard to follow  21-50: Hesitant/unclear  51-75: Adequate  76-100: Clear, fluent, confident
 
-Output ONLY valid JSON with EXACTLY these fields:
+2. domain_knowledge (0-100): Depth of knowledge and real hands-on experience in the evaluated topics.
+   0-20: Refused/unable  21-40: Minimal  41-60: Surface-level  61-80: Concrete examples  81-100: Deep evidence-rich
 
-"demonstrated_knowledge" (0-100): Knowledge depth across evaluated topics.
-  0-20: Refused/unable to answer most  21-40: Minimal knowledge
-  41-60: Surface-level  61-80: Clear capability with concrete examples  81-100: Deep evidence-rich
+3. role_fit (0-100): How well demonstrated skills and background match JD requirements.
+   0-20: No relevant fit  21-40: Very weak  41-60: Partial fit  61-80: Good fit  81-100: Excellent fit
 
-"role_fit" (0-100): Fit for this specific role vs JD requirements.
-  0-20: No relevant experience  21-40: Very weak  41-60: Partial fit with gaps  61-80: Good fit  81-100: Excellent fit
+4. problem_solving (0-100): Structured reasoning, handling follow-up pressure, tradeoff thinking.
+   0-20: No reasoning  21-40: Facts only  41-60: Some structure  61-80: Logical approach  81-100: Sophisticated
 
-"problem_solving" (0-100): Reasoning through problems and explaining tradeoffs.
-  0-20: No reasoning  21-40: Facts only  41-60: Some structured thinking  61-80: Clear logical approach  81-100: Sophisticated reasoning
+5. ownership_credibility (0-100): Owns their experience, direct answers, consistent resume-interview alignment, no evasion.
+   0-20: Vague/evasive  21-40: Often hedged  41-60: Mixed  61-80: Mostly owns it  81-100: Fully credible, direct
 
-"skills_evaluated": List 2-8 MAJOR EVALUATION TOPICS only.
-  RULES: Topics must be DOMAIN/AREA names -- NOT tools, products, libraries, or APIs.
-  GOOD: 'Lead Qualification Strategy', 'Marketing Automation', 'Data Analysis'
-  BAD: 'Google Sheets', 'Instagram API', 'Python', 'n8n', 'Zapier', 'Excel'
-  Single-word tool names are NEVER valid topics.
-
-"skill_ratings": Array of {{topic, score(1-10), status(PROVED|PARTIAL|NOT_PROVED), evidence(1 sentence), gaps(1 sentence)}}.
-  One entry per skills_evaluated topic. Same topic names.
-
-"strengths": Array of 2-4 real strengths (ONE sentence each). Empty array if none genuine.
+"strengths": Array of 2-4 real strengths (ONE sentence each). Empty if none genuine.
 "concerns": Array of 2-4 concerns (ONE sentence each). Be explicit if candidate refused.
-"decision_note": An extremely detailed, descriptive, and highly professional executive hiring decision narrative (150-250 words) written for senior stakeholders. 
-  RULES:
-  - Start with a clear verdict: STRONG HIRE, HIRE, MAYBE, or REJECT.
-  - Explain comprehensively and descriptively WHY the client should or should not hire this candidate, drawing from the entire interview (communication, depth of knowledge, actual hands-on project ownership vs. vague claims, integrity signals, and behavior under follow-up pressure).
-  - Do NOT list metrics or scores (do NOT say 'tech score is 80'). 
-  - Instead, paint a highly personalized and compelling picture of the candidate's actual competence, reasoning ability, real-world experience, and premium value they bring.
-  - Cite specific technical evidence observed in the transcript to prove your claims.
-  - If recommending to hire, clearly outline the exact premium value they bring. If not recommending, explain the exact risks, gaps in their depth, evasion of details, or integrity flags that justify the decision.
+"decision_note": 150-250 word executive hiring decision narrative for senior stakeholders.
+  Start with: STRONG HIRE, HIRE, MAYBE, or REJECT.
+  Explain WHY with specific evidence from the interview. No scores or metrics.
 
-OUTPUT: {{"demonstrated_knowledge":0,"role_fit":0,"problem_solving":0,"skills_evaluated":[],"skill_ratings":[],"strengths":[],"concerns":[],"decision_note":""}}"""
+OUTPUT ONLY valid JSON (no markdown, no extra text):
+{{"communication":{{"score":0,"evidence":""}},"domain_knowledge":{{"score":0,"evidence":""}},"role_fit":{{"score":0,"evidence":""}},"problem_solving":{{"score":0,"evidence":""}},"ownership_credibility":{{"score":0,"evidence":""}},"strengths":[],"concerns":[],"decision_note":""}}"""
 
-_SCORES_PROMPT = ChatPromptTemplate.from_messages([
-    ("system", _SCORES_SYSTEM),
+_EVAL_PROMPT = ChatPromptTemplate.from_messages([
+    ("system", _EVAL_SYSTEM),
     ("human", "Interview Transcript for '{job_title}':\n{transcript}"),
 ])
 
 
-# -- Cognitive Insights --------------------------------------------------------
+# -- Per-question skill extraction --------------------------------------------
 
-_COGNITIVE_SYSTEM = """You are evaluating a candidate's cognitive patterns across their entire interview for '{job_title}'.
-Analyze the FULL transcript -- not individual answers in isolation.
-Every dimension must be scored using EVIDENCE from the transcript.
-*_earned and *_missed fields must cite a SPECIFIC transcript moment.
+_SKILLS_SYSTEM = """You are extracting skills being tested in an interview for the '{job_title}' role.
 
-Score each dimension 0-100:
-  clarity: Logical structure and ease of following responses
-  depth_of_knowledge: How deeply they explained WHY/HOW
-  problem_solving: Reasoning, breaking down problems, handling follow-up pressure
-  logical_thinking: Consistency of reasoning, coherent conclusions
-  adaptability: Response when redirected, probed harder, or asked unfamiliar questions
-  confidence: Directness, conviction, ownership of claims throughout
+You will receive each question the AI interviewer asked, paired with the candidate's answer and its pre-scored quality dimensions (clarity, depth, specificity, grounding — each 0-10).
 
-For each dimension provide *_earned and *_missed (1-2 sentences each citing specific moment).
-summary: 2-3 sentence synthesis of overall cognitive profile.
+Your job: for each AI question, identify the ONE primary skill or domain area being tested, then score how well the candidate demonstrated it.
 
-If a dimension cannot be assessed, set score to 0 and write 'Unable to evaluate.'
+RULES for skill naming:
+- Name the DOMAIN or COMPETENCY being tested by the question — not the tool or product mentioned.
+- GOOD: "Lead Qualification", "System Design", "Campaign Strategy", "Data Analysis", "Stakeholder Communication"
+- BAD: "Python", "Salesforce", "Excel", "n8n", "Google Ads" — these are tools, not skills
+- If a question tests general communication or soft skill, name it concisely: "Structured Communication", "Ownership Mindset"
+- Deduplicate: if two questions test the same skill, merge them (return one entry with the higher score)
+- Skip warmup questions (intro, tell me about yourself)
+- Maximum 8 skills total
 
-Output ONLY valid JSON: {{"clarity":0,"clarity_earned":"","clarity_missed":"","depth_of_knowledge":0,"depth_earned":"","depth_missed":"","problem_solving":0,"problem_solving_earned":"","problem_solving_missed":"","logical_thinking":0,"logical_thinking_earned":"","logical_thinking_missed":"","adaptability":0,"adaptability_earned":"","adaptability_missed":"","confidence":0,"confidence_earned":"","confidence_missed":"","summary":""}}"""
+For scoring (1-10):
+- Use the pre-scored dimensions as your primary signal: avg(clarity, depth, specificity, grounding) mapped to 1-10
+- Adjust up if the answer showed genuine hands-on ownership (specific project, real numbers, named decisions)
+- Adjust down if the answer was vague, refused, or clearly fabricated
+- evidence: 1 sentence citing what the candidate actually said or did
+- gaps: 1 sentence on what was missing or weak (write "None" if score >= 8)
+- status: PROVED (score 7-10), PARTIAL (score 4-6), NOT_PROVED (score 1-3)
 
-_COGNITIVE_PROMPT = ChatPromptTemplate.from_messages([
-    ("system", _COGNITIVE_SYSTEM),
-    ("human", "Full Interview Transcript for '{job_title}':\n{transcript}"),
+OUTPUT ONLY valid JSON:
+{{"skills":[{{"skill":"","score":5,"status":"PARTIAL","evidence":"","gaps":""}}]}}"""
+
+_SKILLS_PROMPT = ChatPromptTemplate.from_messages([
+    ("system", _SKILLS_SYSTEM),
+    ("human", "{qa_block}"),
 ])
+
+
 
 
 # -- Summary Prompt ------------------------------------------------------------
 
-_SUMMARY_SYSTEM = """You are a senior talent partner writing a confidential post-interview evaluation for the hiring team.
+_SUMMARY_SYSTEM = """You are a senior talent partner writing a confidential post-interview note for the hiring team.
 
-{context_block}
+Context:
+  Role: {job_title}
+  Skills tested: {skills_str}
+  Integrity: {integrity_band}
+  Behavioral signals: {signal_summary}
 
-Using the full interview transcript AND the evaluation context above, write 4 bullet points.
-Each bullet is ONE clear sentence. Use plain, professional language. Reference specific evidence.
+Read the full interview transcript and write exactly 4 bullet points. Each bullet is ONE clear sentence in plain, professional language. Base everything on what actually happened in the transcript.
 
-Bullet 1 -- Role readiness: State clearly whether this candidate demonstrated strong, moderate, weak, or no fit for the {job_title} role. Reference the evaluation context and a specific moment from the interview.
-
-Bullet 2 -- Strongest demonstrated area: Name the ONE domain where they showed the most depth. Cite a specific answer or topic. If they showed nothing, say so directly.
-
-Bullet 3 -- Communication and engagement: Describe how they participated -- fluency, directness, consistency. Was quality improving, declining, or flat?
-
-Bullet 4 -- Key hiring decision flag: The single most important insight -- a risk, standout strength, or integrity concern. If integrity is LOW, mention it explicitly.
+- Bullet 1 — Role readiness: Did the candidate demonstrate strong, moderate, weak, or no fit? Name a specific moment from the transcript as evidence.
+- Bullet 2 — Strongest area: The ONE domain where they showed the most genuine depth. Cite what they actually said. If nothing stood out, say so directly.
+- Bullet 3 — Communication: How did they engage — fluent, hesitant, direct, evasive? Was quality improving, declining, or flat across the interview?
+- Bullet 4 — Hiring flag: The single most important signal — a standout strength, a clear gap, or an integrity concern. If integrity is LOW or CRITICAL, name it explicitly.
 
 RULES:
-- Do NOT soften negative findings. If the interview was poor, say so professionally.
-- Do NOT invent positives not in the transcript or evaluation context.
-- Do NOT use JSON. Do not include raw numbers or scores.
+- Do NOT include any numbers, scores, or percentages.
+- Do NOT soften negative findings. If the interview was poor, say so.
+- Do NOT invent positives not visible in the transcript.
 - Never use gender-biased language.
-- Each bullet must start with a dash (-)."""
+- Each bullet starts with a dash (-)."""
 
 _SUMMARY_PROMPT = ChatPromptTemplate.from_messages([
     ("system", _SUMMARY_SYSTEM),
@@ -1695,234 +1572,183 @@ _SUMMARY_PROMPT = ChatPromptTemplate.from_messages([
 # ═══════════════════════════════════════════════════════════════════════════════
 
 async def _node_deterministic_signals(state: ReportState) -> dict:
-    """Node 1 (sync): Compute integrity + engagement scores deterministically."""
+    """Node 1 (sync): Compute integrity score + signal context deterministically."""
     proctoring_data  = state.get("proctoring_data") or {}
     transcript_lines = state.get("transcript_lines", [])
-    interview_scores = state.get("interview_scores", [])
 
-    all_signal_events = proctoring_data.get("checkpoint_events", [])
     proctoring_events = proctoring_data.get("events", [])
     inconsistencies   = proctoring_data.get("inconsistencies", [])
 
-    integrity_result  = _compute_integrity_score(all_signal_events, proctoring_events, inconsistencies)
-    engagement_score  = _compute_engagement_score(transcript_lines, interview_scores)
-
-    # Build topic summary for LLM context (O(n) dict accumulation)
-    topic_scores: dict[str, list[float]] = {}
-    for s in interview_scores:
-        topic = str(s.get("topic") or "").strip()
-        if topic:
-            topic_scores.setdefault(topic, []).append(float(s.get("overall") or 0))
-    topic_summary = "\n".join(
-        f"  - {t}: avg {sum(v)/len(v):.1f}/10 over {len(v)} question(s)"
-        for t, v in topic_scores.items()
-    ) if topic_scores else "  - No topic-level data available"
+    integrity_result = _compute_integrity_score(proctoring_events, [], inconsistencies)
 
     sig_counts = Counter(
-        str(evt.get("signal_name") or evt.get("signal") or "").strip()
-        for evt in all_signal_events
-        if evt.get("signal_name") or evt.get("signal")
+        str(evt.get("signal_name") or evt.get("signal") or evt.get("event") or "").strip()
+        for evt in proctoring_events
+        if evt.get("signal_name") or evt.get("signal") or evt.get("event")
     )
     signal_context = ", ".join(f"{k}x{v}" for k, v in sig_counts.items()) if sig_counts else "none"
 
-    jd_skills = state.get("jd_must_have_skills") or []
-    jd_skills_text = (
-        "JD must-have skills: " + ", ".join(jd_skills[:10])
-        if jd_skills else "No JD skills provided -- assess based on role title only."
-    )
+    jd_json = state.get("jd_json") or {}
+    if jd_json:
+        jd_context = "JOB DESCRIPTION:\n" + json.dumps(jd_json, ensure_ascii=False)[:2000]
+    else:
+        jd_context = "No JD provided — assess based on role title only."
 
-    # Prepare transcript slices
-    lines_to_use     = transcript_lines[4:] if len(transcript_lines) > 4 else transcript_lines
-    transcript_text  = truncate_to_tokens("\n".join(lines_to_use), 3500)
-    full_transcript  = truncate_to_tokens("\n".join(lines_to_use), 4000)
+    lines_to_use    = transcript_lines[4:] if len(transcript_lines) > 4 else transcript_lines
+    transcript_text = truncate_to_tokens("\n".join(lines_to_use), 3500)
 
-    logger.info(
-        f"[REPORT] Signals computed: app={state['app_id']} "
-        f"integrity={integrity_result['score']} engagement={engagement_score}"
-    )
+    logger.info(f"[REPORT] Signals computed: app={state['app_id']} integrity={integrity_result['score']}")
 
     return {
         "integrity_result": integrity_result,
-        "engagement_score": engagement_score,
-        "topic_summary":    topic_summary,
         "signal_context":   signal_context,
-        "jd_skills_text":   jd_skills_text,
+        "jd_context":       jd_context,
         "transcript_text":  transcript_text,
-        "full_transcript":  full_transcript,
     }
 
 
-async def _node_parallel_llm_calls(state: ReportState) -> dict:
-    """Node 2 (async): Run Communication + Scores + Cognitive LLM calls in parallel."""
+def _build_qa_block_for_skills(idx: int, s: dict) -> dict:
+    """Return a minimal Q&A dict suitable for the skills prompt."""
+    sb = s.get("score_breakdown") or {}
+    return {
+        "n":         idx,
+        "question":  s.get("ai_question", ""),
+        "answer":    s.get("candidate_answer", ""),
+        "clarity":   sb.get("clarity",    s.get("clarity",    0)),
+        "depth":     sb.get("depth",      s.get("depth",      0)),
+        "specificity": sb.get("fluency",  s.get("specificity", 0)),
+        "grounding": sb.get("confidence", s.get("grounding",  0)),
+        "is_warmup": s.get("is_warmup", False),
+    }
+
+
+async def _node_eval_llm_call(state: ReportState) -> dict:
+    """Node 2 (async): Run eval + skills LLM calls in parallel."""
     llm_model        = state.get("llm_model", LLM_MODEL)
     job_title        = state.get("job_title", "")
     org_id           = state.get("org_id")
     integrity_result = state["integrity_result"]
-    engagement_score = state["engagement_score"]
+    all_scores       = state.get("all_scores", [])
 
     llm = ChatOpenAI(model=llm_model, temperature=0.0)
 
-    # Build chain callables
-    comm_chain    = _COMM_PROMPT   | llm
-    scores_chain  = _SCORES_PROMPT | llm
-    cognitive_chain = _COGNITIVE_PROMPT | llm
-
-    comm_input = {
-        "job_title":  job_title,
-        "transcript": state["full_transcript"],
-    }
-    scores_input = {
+    # ── Eval call ──────────────────────────────────────────────────────────────
+    eval_chain = _EVAL_PROMPT | llm
+    eval_input = {
         "job_title":       job_title,
-        "jd_skills_text":  state["jd_skills_text"],
+        "jd_context":      state["jd_context"],
         "integrity_score": integrity_result["score"],
         "integrity_band":  integrity_result["band"],
-        "engagement_score":engagement_score,
-        "comm_clarity":    50,  # will be updated after comm result
-        "comm_fluency":    50,
-        "comm_grammar":    50,
-        "comm_confidence": 50,
         "signal_context":  state["signal_context"],
-        "topic_summary":   state["topic_summary"],
         "transcript":      state["transcript_text"],
     }
-    cognitive_input = {
-        "job_title":  job_title,
-        "transcript": state["full_transcript"],
-    }
 
-    # Run all 3 in parallel
-    comm_msg, scores_msg, cognitive_msg = await asyncio.gather(
-        comm_chain.ainvoke(comm_input),
-        scores_chain.ainvoke(scores_input),
-        cognitive_chain.ainvoke(cognitive_input),
+    # ── Skills call ────────────────────────────────────────────────────────────
+    skills_chain = _SKILLS_PROMPT | llm
+    qa_items = [
+        _build_qa_block_for_skills(i + 1, s)
+        for i, s in enumerate(all_scores)
+        if not s.get("is_warmup", False) and s.get("ai_question", "").strip()
+    ]
+    qa_block_text = "\n".join(
+        f"Q{q['n']}: {q['question']}\n"
+        f"A: {q['answer']}\n"
+        f"[clarity={q['clarity']} depth={q['depth']} specificity={q['specificity']} grounding={q['grounding']}]"
+        for q in qa_items
+    ) or "No interview questions found."
+
+    skills_input = {"job_title": job_title, "qa_block": qa_block_text}
+
+    # ── Run both in parallel ───────────────────────────────────────────────────
+    eval_msg, skills_msg = await asyncio.gather(
+        asyncio.wait_for(eval_chain.ainvoke(eval_input),   timeout=45.0),
+        asyncio.wait_for(skills_chain.ainvoke(skills_input), timeout=45.0),
     )
 
-    # Parse Communication
-    try:
-        comm_raw  = json.loads(comm_msg.content or "{}")
-        comm_result = LLMCommResponse.model_validate(comm_raw)
-    except Exception:
-        comm_result = LLMCommResponse()
-
-    # Track usage for billing
-    for msg, feature in [(comm_msg, "interviewReport"), (scores_msg, "interviewReport"), (cognitive_msg, "interviewReport")]:
-        usage = _extract_openai_completion_usage(msg)
-        if org_id:
-            await persist_org_manual_billing_usage(org_id, feature, usage)
-
-    # Re-run scores with real comm values (needed for accurate prompt context)
-    # Note: since comm is fast and scores need it for context, re-invoke scores with real values
-    scores_input_final = {**scores_input,
-        "comm_clarity":    comm_result.clarity,
-        "comm_fluency":    comm_result.fluency,
-        "comm_grammar":    comm_result.grammar,
-        "comm_confidence": comm_result.confidence,
-    }
-    scores_msg_final = await asyncio.wait_for(
-        scores_chain.ainvoke(scores_input_final),
-        timeout=30.0,
-    )
     if org_id:
-        await persist_org_manual_billing_usage(org_id, "interviewReport", _extract_openai_completion_usage(scores_msg_final))
+        await persist_org_manual_billing_usage(org_id, "interviewReport", _extract_openai_completion_usage(eval_msg))
+        await persist_org_manual_billing_usage(org_id, "interviewReport", _extract_openai_completion_usage(skills_msg))
 
-    # Parse Scores
     try:
-        scores_result = LLMScoresResponse.model_validate(json.loads(scores_msg_final.content or "{}"))
+        eval_result = LLMEvalResponse.model_validate(json.loads(eval_msg.content or "{}"))
     except Exception:
-        scores_result = LLMScoresResponse()
+        eval_result = LLMEvalResponse()
 
-    # Parse Cognitive
     try:
-        cognitive_result = LLMCognitiveResponse.model_validate(json.loads(cognitive_msg.content or "{}"))
+        skills_result = LLMSkillsResponse.model_validate(json.loads(skills_msg.content or "{}"))
     except Exception:
-        cognitive_result = LLMCognitiveResponse()
+        skills_result = LLMSkillsResponse()
 
     logger.info(
-        f"[REPORT] LLM calls complete: app={state['app_id']} "
-        f"comm={comm_result.overall} dk={scores_result.demonstrated_knowledge} "
-        f"fit={scores_result.role_fit} cog_ps={cognitive_result.problem_solving}"
+        f"[REPORT] Eval complete: app={state['app_id']} "
+        f"comm={eval_result.communication.score} dk={eval_result.domain_knowledge.score} "
+        f"fit={eval_result.role_fit.score} ps={eval_result.problem_solving.score} "
+        f"own={eval_result.ownership_credibility.score} skills={len(skills_result.skills)}"
     )
 
-    return {
-        "comm_result":     comm_result,
-        "scores_result":   scores_result,
-        "cognitive_result":cognitive_result,
-    }
+    return {"eval_result": eval_result, "skills_result": skills_result}
 
 
 async def _node_assemble_and_persist(state: ReportState) -> dict:
     """Node 3 (async): Assemble final blob and write to DB."""
-    app_id            = state["app_id"]
-    org_id            = state.get("org_id")
-    proctoring_data   = state.get("proctoring_data") or {}
-    all_scores        = state.get("all_scores", [])
-    interview_scores  = state.get("interview_scores", [])
+    app_id           = state["app_id"]
+    org_id           = state.get("org_id")
+    proctoring_data  = state.get("proctoring_data") or {}
+    interview_scores = state.get("interview_scores", [])
+    engagement_score = state.get("engagement_score", 0)
 
-    comm_result      = state["comm_result"]
-    scores_result    = state["scores_result"]
-    cognitive_result = state["cognitive_result"]
+    eval_result      = state["eval_result"]
+    skills_result    = state.get("skills_result") or LLMSkillsResponse()
     integrity_result = state["integrity_result"]
-    engagement_score = state["engagement_score"]
 
-    # Behavioral analysis
-    behavioral_report, behavioral_llm_usages = await synthesize_behavioral_report(
+    # Signal analysis (parallel with this node's work is handled upstream by gather)
+    signal_analysis, signal_llm_usages = await generate_signal_analysis(
         transcript_lines=state.get("transcript_lines", []),
         answer_scores=interview_scores,
         total_duration_sec=int(proctoring_data.get("session_duration", 0)),
         proctoring_events=proctoring_data.get("events", []),
         inconsistencies_found=proctoring_data.get("inconsistencies", []),
     )
-    for _bu in behavioral_llm_usages:
+    for _bu in signal_llm_usages:
         await persist_org_manual_billing_usage(org_id, "interviewReport", _bu)
 
-    # Compute overall score (weighted formula)
-    dk             = scores_result.demonstrated_knowledge
-    fit            = scores_result.role_fit
-    ps             = scores_result.problem_solving
-    cog_ps         = cognitive_result.problem_solving or ps
-    overall_score  = max(0, min(100, int(round(dk * 0.35 + fit * 0.30 + engagement_score * 0.20 + ps * 0.15))))
+    # Extract dimension scores
+    comm  = eval_result.communication.score
+    dk    = eval_result.domain_knowledge.score
+    fit   = eval_result.role_fit.score
+    ps    = eval_result.problem_solving.score
+    own   = eval_result.ownership_credibility.score
 
-    # Filter skills
-    skills_evaluated = _filter_skills_evaluated(scores_result.skills_evaluated)
+    # Overall score: weighted average of all 5 dimensions
+    overall_score = max(0, min(100, int(round(
+        comm * 0.20 + dk * 0.25 + fit * 0.20 + ps * 0.20 + own * 0.15
+    ))))
 
-    # Build Q&A blocks (all turns + interview-only)
-    qa_blocks_all       = [_build_qa_block(i + 1, s) for i, s in enumerate(all_scores)]
-    qa_blocks_interview = [b for b in qa_blocks_all if not b["is_warmup"]]
-
-    # Skill ratings -- validate and deduplicate via Pydantic models
+    # Skill ratings from per-question LLM extraction
     skill_ratings_list = [
         {
-            "topic":    r.topic,
+            "skill":    r.skill,
             "score":    r.score,
             "status":   r.status,
             "evidence": r.evidence,
             "gaps":     r.gaps,
         }
-        for r in scores_result.skill_ratings
-        if r.topic
+        for r in skills_result.skills
+        if r.skill
     ]
+    skills_evaluated = [r["skill"] for r in skill_ratings_list]
 
-    # Final skillRatings blob (new schema, preserving legacy aliases)
+    # Final skillRatings blob
     skill_ratings_report = {
-        "scores": {
-            "overall":                overall_score,
-            "engagement":             engagement_score,
-            "demonstrated_knowledge": dk,
-            "role_fit":               fit,
-            "problem_solving":        cog_ps,
-            # Legacy aliases
-            "technical":       dk,
-            "technical_score": dk,
-            "combined_score":  overall_score,
-        },
-        "communication": {
-            "overall":    comm_result.overall,
-            "clarity":    comm_result.clarity,
-            "fluency":    comm_result.fluency,
-            "grammar":    comm_result.grammar,
-            "confidence": comm_result.confidence,
-            "summary":    comm_result.summary,
-        },
+        "dimensions": [
+            {"name": "Communication",          "score": comm, "evidence": eval_result.communication.evidence},
+            {"name": "Domain Knowledge",       "score": dk,   "evidence": eval_result.domain_knowledge.evidence},
+            {"name": "Role Fit",               "score": fit,  "evidence": eval_result.role_fit.evidence},
+            {"name": "Problem Solving",        "score": ps,   "evidence": eval_result.problem_solving.evidence},
+            {"name": "Ownership & Credibility","score": own,  "evidence": eval_result.ownership_credibility.evidence},
+        ],
+        "overall":          overall_score,
+        "engagement":       engagement_score,
         "integrity": {
             "score":        integrity_result["score"],
             "band":         integrity_result["band"],
@@ -1931,35 +1757,12 @@ async def _node_assemble_and_persist(state: ReportState) -> dict:
         },
         "skills_evaluated": skills_evaluated,
         "skill_ratings":    skill_ratings_list,
-        "strengths":        scores_result.strengths,
-        "concerns":         scores_result.concerns,
-        "decision_note":    scores_result.decision_note,
-        "verdict": {
-            "summary":          scores_result.decision_note or (
-                f"Overall: {overall_score}/100. "
-                f"Demonstrated knowledge: {dk}/100. "
-                f"Role fit: {fit}/100. "
-                f"Communication: {comm_result.overall}/100. "
-                f"Integrity: {integrity_result['score']}/100 ({integrity_result['band']}). "
-                f"{len(skills_evaluated)} topic(s) evaluated. "
-                f"{str(behavioral_report.get('summary', '')).strip()}"
-            )
-        },
-        "qa_blocks":     qa_blocks_interview,
-        "qa_blocks_all": qa_blocks_all,
-        # Legacy aliases
-        "technical_score": dk,
-        "role_fit":        fit,
-        "skills_proof": [
-            {
-                "skill":            r["topic"],
-                "status":           r["status"],
-                "score":            f"{r['score']}/10",
-                "what_they_showed": r["evidence"],
-                "what_was_missing": r["gaps"],
-            }
-            for r in skill_ratings_list
-        ],
+    }
+
+    interview_summary_report = {
+        "strengths":    eval_result.strengths,
+        "concerns":     eval_result.concerns,
+        "decision_note": eval_result.decision_note,
     }
 
     # Write to DB
@@ -1968,36 +1771,35 @@ async def _node_assemble_and_persist(state: ReportState) -> dict:
         async with pool.acquire() as conn:
             await conn.execute(
                 """UPDATE "Interview"
-                   SET "skillRatings"             = $1,
-                       "communicationScore"       = $2,
-                       "cognitiveInsights"        = $3,
-                       "behavioralSignalsAnalysis" = $4
-                   WHERE "applicationId" = $5""",
+                   SET "skillRatings"      = $1,
+                       "signalAnalysis"    = $2,
+                       "interviewSummary"  = $3
+                   WHERE "applicationId" = $4""",
                 json.dumps(skill_ratings_report),
-                comm_result.overall,
-                json.dumps(cognitive_result.model_dump()),
-                json.dumps(behavioral_report),
+                json.dumps(signal_analysis),
+                json.dumps(interview_summary_report),
                 app_id,
             )
         logger.info(
             f"[REPORT] Generated report for {app_id}: "
-            f"overall={overall_score} knowledge={dk} fit={fit} "
-            f"comm={comm_result.overall} integrity={integrity_result['score']} "
-            f"topics={len(skills_evaluated)} qa_turns={len(qa_blocks_interview)}"
+            f"overall={overall_score} comm={comm} dk={dk} fit={fit} "
+            f"ps={ps} own={own} integrity={integrity_result['score']} "
+            f"topics={len(skills_evaluated)}"
         )
     except Exception as e:
         logger.error(f"[REPORT] DB write failed for {app_id}: {e}", exc_info=True)
 
     scores_context = {
-        "overall":                overall_score,
-        "engagement":             engagement_score,
-        "demonstrated_knowledge": dk,
-        "role_fit":               fit,
-        "problem_solving":        cog_ps,
-        "integrity_score":        integrity_result["score"],
-        "integrity_band":         integrity_result["band"],
-        "skills_evaluated":       skills_evaluated,
-        "signal_summary":         state.get("signal_context", "none"),
+        "overall":            overall_score,
+        "communication":      comm,
+        "domain_knowledge":   dk,
+        "role_fit":           fit,
+        "problem_solving":    ps,
+        "ownership_credibility": own,
+        "integrity_score":    integrity_result["score"],
+        "integrity_band":     integrity_result["band"],
+        "skills_evaluated":   skills_evaluated,
+        "signal_summary":     state.get("signal_context", "none"),
     }
     return {"scores_context": scores_context}
 
@@ -2007,7 +1809,7 @@ async def _node_assemble_and_persist(state: ReportState) -> dict:
 def _build_report_graph() -> Any:
     builder = StateGraph(ReportState)
     builder.add_node("signals",   _node_deterministic_signals)
-    builder.add_node("llm_calls", _node_parallel_llm_calls)
+    builder.add_node("llm_calls", _node_eval_llm_call)
     builder.add_node("assemble",  _node_assemble_and_persist)
     builder.set_entry_point("signals")
     builder.add_edge("signals",   "llm_calls")
@@ -2031,7 +1833,7 @@ async def generate_interview_report(
     proctoring_data: Optional[dict] = None,
     org_id: Optional[str] = None,
     llm_model: str = LLM_MODEL,
-    jd_must_have_skills: Optional[list] = None,
+    jd_json: Optional[dict] = None,
 ) -> Optional[dict]:
     """Generate the complete structured interview report via LangGraph pipeline.
 
@@ -2055,7 +1857,7 @@ async def generate_interview_report(
         "proctoring_data":   proctoring_data,
         "org_id":            org_id,
         "llm_model":         llm_model,
-        "jd_must_have_skills": jd_must_have_skills,
+        "jd_json":           jd_json,
     }
 
     try:
@@ -2090,37 +1892,22 @@ async def generate_interview_summary(
         summary_transcript = truncate_to_tokens("\n".join(lines_to_use), 3000)
 
         ctx            = scores_context or {}
-        overall        = ctx.get("overall", 0)
-        role_fit       = ctx.get("role_fit", 0)
-        knowledge      = ctx.get("demonstrated_knowledge", 0)
-        engagement     = ctx.get("engagement", 0)
-        integrity      = ctx.get("integrity_score", 100)
         integrity_band = ctx.get("integrity_band", "HIGH")
         skills_str     = ", ".join(ctx.get("skills_evaluated", [])) or "not determined"
         signal_summary = ctx.get("signal_summary", "No signals flagged")
 
-        context_block = (
-            f"EVALUATION CONTEXT:\n"
-            f"  Role: {job_title}\n"
-            f"  Overall score: {overall}/100\n"
-            f"  Demonstrated knowledge: {knowledge}/100\n"
-            f"  Role fit: {role_fit}/100\n"
-            f"  Engagement: {engagement}/100\n"
-            f"  Integrity: {integrity}/100 ({integrity_band})\n"
-            f"  Topics evaluated: {skills_str}\n"
-            f"  Behavioral signals: {signal_summary}\n"
-        )
-
-        llm   = ChatOpenAI(model=llm_model, temperature=0.1, max_tokens=600)
+        llm   = ChatOpenAI(model=llm_model, temperature=0.1, max_tokens=400)
         chain = _SUMMARY_PROMPT | llm
 
         summary_msg = await asyncio.wait_for(
             chain.ainvoke({
                 "job_title":     job_title,
-                "context_block": context_block,
+                "skills_str":    skills_str,
+                "integrity_band": integrity_band,
+                "signal_summary": signal_summary,
                 "transcript":    summary_transcript,
             }),
-            timeout=30.0,
+            timeout=60.0,
         )
         await persist_org_manual_billing_usage(org_id, "interviewReport", _extract_openai_completion_usage(summary_msg))
 
@@ -2132,8 +1919,11 @@ async def generate_interview_summary(
         pool = await DatabasePool.get()
         async with pool.acquire() as conn:
             await conn.execute(
-                'UPDATE "Interview" SET "aiSummary" = $1 WHERE "applicationId" = $2',
-                summary_text, app_id,
+                """UPDATE "Interview"
+                   SET "interviewSummary" = COALESCE("interviewSummary", '{}') || $1::jsonb
+                   WHERE "applicationId" = $2""",
+                json.dumps({"summary": summary_text}),
+                app_id,
             )
         logger.info(f"[SUMMARY] Generated candidate insights for {app_id}")
 

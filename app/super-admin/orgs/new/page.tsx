@@ -231,7 +231,7 @@ export default function NewOrgPage() {
     adminPassword: "",
     voiceId: DEFAULT_VOICE_ID,
     allowedVoices: [DEFAULT_VOICE_ID],
-    deepgramModel: "nova-3-general",
+    deepgramModel: "nova-3",
   }));
 
   const primaryVoiceId = form.voiceId || form.allowedVoices[0] || DEFAULT_VOICE_ID;
@@ -366,7 +366,6 @@ export default function NewOrgPage() {
     return () => {
       stopCurrentPreview();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const makeSlug = (value: string) => {
@@ -663,7 +662,7 @@ export default function NewOrgPage() {
                 value={form.deepgramModel}
                 onChange={(value) => updateForm({ deepgramModel: value })}
                 options={[
-                  { value: "nova-3-general", label: "Nova-3 (Latest)" },
+                  { value: "nova-3", label: "Nova-3 (Latest)" },
                   { value: "nova-2-general", label: "Nova-2 (Legacy)" },
                 ]}
               />

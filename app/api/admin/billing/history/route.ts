@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession, isAdminRole, isSuperAdminRole } from "@/lib/auth";
+import { getRecordingDurationSec } from "@/lib/recording-state";
 
 function normalizeStatus(value?: string | null) {
   const v = String(value || "").trim().toLowerCase().replace(/[_\s]+/g, "-");
@@ -37,7 +38,7 @@ export async function GET(request: Request) {
         updatedAt: true,
         completedAt: true,
         interviewDuration: true,
-        recordingDurationSec: true,
+        recording: true,
         application: {
           select: {
             fullName: true,
@@ -51,7 +52,7 @@ export async function GET(request: Request) {
 
     const rows = interviews
       .map((row) => {
-        const durationSec = Number(row.interviewDuration ?? row.recordingDurationSec ?? 0);
+        const durationSec = Number(row.interviewDuration ?? getRecordingDurationSec(row.recording) ?? 0);
         const date = (row.completedAt ?? row.updatedAt).toISOString();
         return {
           id: row.id,

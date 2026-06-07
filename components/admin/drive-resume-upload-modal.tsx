@@ -85,7 +85,7 @@ export function DriveResumeUploadModal({
             }
 
             await res.json().catch(() => null);
-            toast.success("Upload successful! The table will update while the worker processes resumes.");
+            toast.success("Upload successful! Resumes have been added and will be processed shortly.");
             onUploaded?.();
             reset();
             onOpenChange(false);

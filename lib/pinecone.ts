@@ -92,10 +92,11 @@ function serializeInterviewReport(r: Record<string, unknown>): string {
 
     const n = (v: unknown) => (v != null ? String(v) : "");
     const scoreBlock = (r.scores && typeof r.scores === "object") ? (r.scores as Record<string, unknown>) : undefined;
-    const communicationScore = r.communicationScore ?? r.communication_score ?? scoreBlock?.communication ?? null;
-    const cognitiveInsights = (r.cognitiveInsights ?? r.cognitive_insights ?? r.cognitive) as Record<string, unknown> | undefined;
-    const behavioralSignals = (r.behaviorSignals ?? r.behavior_signals ?? r.proctoringReport) as Record<string, unknown> | undefined;
-    const behavioralSignalsAnalysis = (r.behavioralSignalsAnalysis ?? r.behavioral_signals_analysis ?? r.behavioral_analysis) as Record<string, unknown> | undefined;
+    const dims: any[] = Array.isArray(r.dimensions) ? r.dimensions : [];
+    const dimScore = (kw: string) => dims.find((d: any) => d?.name?.toLowerCase?.().includes(kw))?.score ?? null;
+    const communicationScore = dimScore("communication") ?? r.communication_score ?? scoreBlock?.communication ?? null;
+    
+    const signalAnalysis = (r.signalAnalysis ?? r.behavioralSignalsAnalysis ?? r.behavioral_signals_analysis ?? r.behavioral_analysis) as Record<string, unknown> | undefined;
     const questionByQuestionAnalysis = Array.isArray(r.questionByQuestionAnalysis)
         ? r.questionByQuestionAnalysis as any[]
         : Array.isArray(r.question_by_question_analysis)
@@ -134,19 +135,8 @@ function serializeInterviewReport(r: Record<string, unknown>): string {
         lines.push(`COMMUNICATION: pronunciation=${n(comm.pronunciation)}/100, grammar=${n(comm.grammar)}/100, fluency=${n(comm.fluency)}/100, confidence=${n(comm.confidence)}/100. ${n(comm.summary)}`);
     }
 
-    // Cognitive insights
-    const cog = cognitiveInsights;
-    if (cog) {
-        if (cog.clarity != null || cog.depth_of_knowledge != null || cog.problem_solving != null || cog.logical_thinking != null || cog.adaptability != null || cog.confidence != null) {
-            lines.push(
-                `COGNITIVE: clarity=${n(cog.clarity)}/100, depth_of_knowledge=${n(cog.depth_of_knowledge)}/100, problem_solving=${n(cog.problem_solving)}/100, logical_thinking=${n(cog.logical_thinking)}/100, adaptability=${n(cog.adaptability)}/100, confidence=${n(cog.confidence)}/100`
-            );
-        }
-        if (cog.summary) lines.push(`COGNITIVE SUMMARY: ${n(cog.summary)}`);
-    }
-
-    // Behavioral analysis
-    const beh = behavioralSignalsAnalysis;
+    // Signal analysis
+    const beh = signalAnalysis;
     if (beh) {
         if ((beh as any).overview) lines.push(`BEHAVIORAL OVERVIEW: ${n((beh as any).overview)}`);
         if ((beh as any).summary) lines.push(`BEHAVIORAL SUMMARY: ${n((beh as any).summary)}`);
@@ -155,14 +145,6 @@ function serializeInterviewReport(r: Record<string, unknown>): string {
         if (Array.isArray((beh as any).integrity_flags)) lines.push(`INTEGRITY FLAGS: ${((beh as any).integrity_flags as any[]).join("; ")}`);
         if (Array.isArray((beh as any).proctoring_signals_detected)) {
             lines.push(`PROCTORING SIGNALS: ${((beh as any).proctoring_signals_detected as any[]).map((s) => s.signal ?? s).join("; ")}`);
-        }
-    }
-
-    // Raw behavior / integrity signals
-    if (behavioralSignals) {
-        const events = Array.isArray((behavioralSignals as any).events) ? (behavioralSignals as any).events as any[] : [];
-        if (events.length) {
-            lines.push(`BEHAVIOR SIGNALS: ${events.slice(0, 10).map((e) => e.eventType ?? e.signal_name ?? e.event ?? "signal").join("; ")}`);
         }
     }
 

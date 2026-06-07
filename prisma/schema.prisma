@@ -26,7 +26,7 @@ model Organization {
   onboardingComplete   Boolean     @default(false)
   voiceId              String?     @default("9626c31c-bec5-4cca-baa8-f8ba9e84c8bc")
   allowedVoices        String[]    @default([])
-  deepgramModel        String?     @default("nova-3-general")
+  deepgramModel        String?     @default("nova-3")
   interviewQuotaTotal  Int         @default(0)
   interviewQuotaUsed   Int         @default(0)
   creditsUsed          Float       @default(0)
@@ -143,43 +143,25 @@ model Interview {
   status                String      @default("PENDING")
   startedAt             DateTime?
   completedAt           DateTime?
-  interviewRecordingUrl String?
   interviewTranscript   String?
-  interviewRecordedAt   DateTime?
   createdAt             DateTime    @default(now())
   updatedAt             DateTime    @updatedAt  
   interviewDuration     Int?
-  aiSummary             String?
   snapshots             String[]    @default([])
   candidateFeedback     String?
   candidateRating       Json?
   integritySignals      Json?       @default("[]")
   skillRatings          Json?       @default("{}")
-  communicationScore    Int?
-  cognitiveInsights     Json?       @default("{}")
-  behaviorSignals       Json?       @default("{}")
-  behavioralSignalsAnalysis Json?    @default("{}")
-  interviewTurns        Json?       @default("[]")
+  interviewSummary      Json?       @default("{}")
+  signalAnalysis        Json?       @default("{}")
   questionByQuestionAnalysis Json?  @default("[]")
-  recordingStatus       String?
-  recordingMimeType     String?
-  recordingStartedAt    DateTime?
-  recordingCompletedAt  DateTime?
-  recordingDurationSec  Int?
-  recordingRetentionDays Int?
-  recordingRetentionDueAt DateTime?
-  recordingCleanupStatus String?
-  recordingCleanupAttempts Int?
-  recordingCleanupLastError String?
-  recordingDeletedAt    DateTime?
-  recordingManifest     Json?
+  recording             Json?       @default("{}")
   billingSnapshot       Json?       @default("{}")
   linkStatus            String      @default("ACTIVE")
   application           Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   supportTickets        SupportTicket[]
   @@index([updatedAt(sort: Desc)])
   @@index([status])
-  @@index([recordingRetentionDueAt])
 }
 
 model ResumeCandidate {

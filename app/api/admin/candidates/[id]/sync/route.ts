@@ -54,11 +54,10 @@ export async function POST(
                 : {};
             return {
                 ...parsed,
-                communication_score: interview?.communicationScore ?? parsed?.communication_score ?? parsed?.scores?.communication ?? null,
-                cognitive_insights: interview?.cognitiveInsights ?? parsed?.cognitive_insights ?? parsed?.cognitive ?? {},
-                integrity_signals: interview?.integritySignals ?? [],
-                behavior_signals: interview?.behaviorSignals ?? {},
-                behavioral_signals_analysis: interview?.behavioralSignalsAnalysis ?? {},
+                communication_score: parsed?.dimensions?.find((d: any) => d?.name?.toLowerCase?.().includes("communication"))?.score ?? null,
+
+integrity_signals: interview?.integritySignals ?? [],
+                signal_analysis: interview?.signalAnalysis ?? interview?.behavioralSignalsAnalysis ?? {},
                 question_by_question_analysis: interview?.questionByQuestionAnalysis ?? [],
             };
         })();

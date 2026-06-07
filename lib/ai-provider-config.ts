@@ -1,6 +1,12 @@
 import { DEFAULT_VOICE_ID, getVoiceById } from "@/lib/constants/voices";
 
-export const DEFAULT_DEEPGRAM_MODEL = "nova-3-general";
+export const DEFAULT_DEEPGRAM_MODEL = "nova-3";
+
+export function normalizeDeepgramModel(model?: string | null): string {
+  const raw = String(model || "").trim().toLowerCase();
+  if (!raw) return DEFAULT_DEEPGRAM_MODEL;
+  return raw;
+}
 
 export function resolveVoiceConfig(voiceId: string | null | undefined): {
   voiceId: string;
@@ -54,7 +60,7 @@ export function normalizeOrgAiConfig({
     return Array.from(new Set(raw.map((id) => String(id || "").trim()).filter(Boolean)));
   })();
 
-  const deepgramModel = String(next?.deepgramModel ?? current?.deepgramModel ?? DEFAULT_DEEPGRAM_MODEL).trim() || DEFAULT_DEEPGRAM_MODEL;
+  const deepgramModel = normalizeDeepgramModel(next?.deepgramModel ?? current?.deepgramModel ?? DEFAULT_DEEPGRAM_MODEL);
 
   return {
     ...driveFields,

@@ -20,10 +20,10 @@ _BriefType = Any
 # - Multiple variants prevent every session sounding identical.
 # - Two short sentences max -- spoken delivery, not corporate boilerplate.
 _GREETING_VARIANTS: list[str] = [
-    "Hi {name}, I'm {ai_name}. Thanks for joining today. How are you doing?",
+    "Hi {name}, I'm {ai_name}. How are you doing?",
     "Hi {name}, I'm {ai_name}. Good to have you here. How are you doing today?",
     "Hello {name}, I'm {ai_name}. Hope you're doing well. How has your day been?",
-    "Hi {name}, I'm {ai_name}. Thanks for making the time. How are you doing?",
+    "Hi {name}, I'm {ai_name}. How's your day going so far?",
 ]
 
 
@@ -60,14 +60,24 @@ def build_warmup_directive(job_title: str = "") -> str:
         "\n"
         "HOW TO REACT based on what they said:\n"
         "\n"
-        f"  IF they said they're doing well / good / fine / great:\n"
-        f"    -> 'Good to hear. So I'll be conducting your interview for {role_line} today. Are you ready to begin?'\n"
+        f"  PRIORITY RULE: If the candidate's message contains ANY question directed at you\n"
+        f"  ('how about you?', 'how are you?', 'how are you doing?', 'and you?', 'what about you?'),\n"
+        f"  that case ALWAYS takes priority -- even if they also said they're doing well.\n"
+        f"  Example: 'I'm doing great. How about you?' -- this is the 'how about you?' case, NOT the 'doing well' case.\n"
         "\n"
-        f"  IF they asked 'how about you?' or 'how are you doing?' back at you:\n"
-        f"    CRITICAL: You are an AI, so respond humanly but briefly. Do NOT ignore the question.\n"
-        f"    -> 'Packed with interviews today — it's been a good day. So I'll be conducting your interview for {role_line}. Are you ready to begin?'\n"
-        f"    -> OR: 'Doing well, thanks for asking. Ready to get started on your interview for {role_line}. Are you good to go?'\n"
-        f"    DO NOT just skip their question and pivot — acknowledge it in one clause first.\n"
+        f"  IF they asked 'how about you?' or 'how are you doing?' or 'how are you?' back at you\n"
+        f"  (even combined with 'I'm doing great / fine / good'):\n"
+        f"    You MUST answer their question with a REAL sentence before pivoting. 'Good to hear' is NOT an answer.\n"
+        f"    REQUIRED STRUCTURE:\n"
+        f"      Sentence 1: Answer about YOU specifically. ('Packed with interviews today — good day though.' / 'Doing well, running back-to-back sessions.')\n"
+        f"      Sentence 2: Role + readiness check. ('I'll be conducting your {role_line} interview. Ready to begin?')\n"
+        f"    WRONG: 'Good to hear. So I'll be conducting your interview...' -- 'Good to hear' ignores their question about you.\n"
+        f"    WRONG: 'Good. So I'll be conducting...' -- same mistake, you didn't answer them.\n"
+        f"    RIGHT: 'Packed with interviews today — it's been a good one. Ready to get into your {role_line} interview?'\n"
+        f"    RIGHT: 'Doing well, running back-to-back sessions today. I'll be conducting your {role_line} interview. You ready?'\n"
+        "\n"
+        f"  IF they said they're doing well / good / fine / great (WITHOUT asking about you):\n"
+        f"    -> 'Good to hear. So I'll be conducting your interview for {role_line} today. Are you ready to begin?'\n"
         "\n"
         f"  IF they said they're a bit nervous / anxious:\n"
         f"    -> 'That's completely understandable — just think of this as a conversation. So I'll be conducting your interview for {role_line} today. Ready to begin?'\n"
@@ -122,55 +132,39 @@ def build_interview_directive(
       6. Custom recruiter questions (mandatory, woven in anytime)
     """
     # -- Opening move ---------------------------------------------------------
+    # The ANALYST BRIEF (injected in the evaluation layer above this directive)
+    # contains the OPENING ANGLE section with the exact topic, context, and angle.
+    # This directive reinforces it — it does NOT override or duplicate it.
     if hasattr(resume_brief, "anchor_item"):
-        anchor = resume_brief.anchor_item or "their most recent work"
-        anchor_type = resume_brief.anchor_type or "project"
+        anchor_name = (resume_brief.anchor_item or "their most recent work").split(" - ")[0].strip()
     else:
-        anchor = resume_brief.get("anchor_item", "their most recent work")
-        anchor_type = resume_brief.get("anchor_type", "project")
+        anchor_name = resume_brief.get("anchor_item", "their most recent work").split(" - ")[0].strip()
 
-    anchor_name = anchor.split(' - ')[0].strip()
-    anchor_detail = anchor.split(' - ')[1].strip() if ' - ' in anchor else ""
+    _first_q_rule = {
+        "fresher": (
+            f"FIRST QUESTION RULE: stay surface-level. Ask WHAT they built and what their specific role was.\n"
+            f"Do NOT open with reflection, tradeoffs, or theory -- establish the basics first."
+        ),
+        "mid": (
+            f"FIRST QUESTION RULE: ask what they personally owned and what decisions were theirs.\n"
+            f"Do NOT open with generic 'walk me through' -- anchor to a specific thing in their story."
+        ),
+        "experienced": (
+            f"FIRST QUESTION RULE: go straight to a key decision or tradeoff in this work.\n"
+            f"Do NOT ask 'what did you build' -- you know what they built. Ask WHY they made a specific call."
+        ),
+        "senior": (
+            f"FIRST QUESTION RULE: open peer-level. Ask about a strategic judgment call or a high-stakes outcome.\n"
+            f"Do NOT start with basics -- probe the WHY behind their biggest initiative immediately."
+        ),
+    }.get(band, "FIRST QUESTION RULE: ask what they personally owned and what decisions were theirs.")
 
-    if anchor_type == "project":
-        # Pre-select one angle so the LLM can't default to the same opener every session.
-        # FIRST-QUESTION RULE: stay gentle and surface-level. The opener must invite
-        # the candidate to explain WHAT the project is and what they personally built.
-        # Reflective / hard questions ("what would you redo", "trickiest decision") are
-        # reserved for the CLOSING PROBE on a project -- not the opener.
-        _project_angles = [
-            f"Ask them to walk you through {anchor_name} -- what it is and what they built.",
-            f"Ask what problem {anchor_name} was built to solve.",
-            f"Pick one specific detail from this context and ask them to explain it: {anchor_detail}",
-            f"Ask what the first thing they built for {anchor_name} was and how it took shape from there.",
-            f"Ask what their role on {anchor_name} was and what part they personally built.",
-        ]
-        _chosen_angle = random.choice(_project_angles)
-        opening = (
-            f"Open on: {anchor_name}.\n"
-            f"Context from resume: {anchor_detail}\n"
-            f"YOUR OPENING ANGLE THIS SESSION: {_chosen_angle}\n"
-            f"ONE question only. Stay on {anchor_name} -- do not switch topics."
-        )
-    elif anchor_type in ("role", "internship"):
-        _role_angles = [
-            f"Ask what a typical day actually looked like at {anchor_name} -- what they spent most of their time on.",
-            f"Ask what the first thing they owned independently was when they started at {anchor_name}.",
-            f"Ask what the most interesting problem they worked on at {anchor_name} was.",
-            f"Ask what changed or improved because of their specific contribution at {anchor_name}.",
-        ]
-        _chosen_angle = random.choice(_role_angles)
-        opening = (
-            f"Open on their role at: {anchor_name}.\n"
-            f"Context: {anchor_detail}\n"
-            f"YOUR OPENING ANGLE THIS SESSION: {_chosen_angle}\n"
-            f"ONE question only. Stay on {anchor_name}."
-        )
-    else:
-        opening = (
-            "Open by asking what they've been working on most recently. "
-            "Pick a specific angle -- what they're most proud of, or what was the core problem they solved."
-        )
+    opening = (
+        f"Your ANALYST BRIEF (above) contains the exact OPENING ANGLE for this session.\n"
+        f"Follow it. Open on: {anchor_name}.\n"
+        f"{_first_q_rule}\n"
+        f"ONE question only. Stay on {anchor_name} until a [NEXT_TURN_DIRECTIVE] tells you to move."
+    )
 
     # -- Band-aware instinct ---------------------------------------------------
     band_instinct = {
@@ -207,6 +201,25 @@ def build_interview_directive(
     _work_history = []
     if hasattr(resume_brief, "work_history"):
         _work_history = [str(w).strip() for w in (resume_brief.work_history or []) if str(w).strip()]
+    _skill_probe_style = {
+        "fresher": (
+            "  -> Ask about real usage: 'Where have you actually used X?' not 'Do you know X?'\n"
+            "  -> Accept partial answers -- they're learning. Get one real example, then move on.\n"
+        ),
+        "mid": (
+            "  -> Ask about production usage: 'Where did you use X in a real project and what did you build?'\n"
+            "  -> If they give a textbook answer with no real example, push: 'Give me a specific case.'\n"
+        ),
+        "experienced": (
+            "  -> Probe at architecture level: 'Where did X break at scale?' / 'What would you do differently with X now?'\n"
+            "  -> Surface-level familiarity is not enough -- you want depth and consequence.\n"
+        ),
+        "senior": (
+            "  -> Only probe skills where they intersect with strategic decisions or org-level outcomes.\n"
+            "  -> Ask: 'Where did your use of X change how the team or product operated?' Not 'have you used X?'\n"
+        ),
+    }.get(band, "  -> Ask about real usage grounded in a specific role or project, NOT generic 'do you know X?'\n")
+
     if _resume_skills or _jd_skill_list:
         _resume_part = ", ".join(_resume_skills) if _resume_skills else "none listed"
         _jd_part = ", ".join(_jd_skill_list) if _jd_skill_list else "none listed"
@@ -214,21 +227,21 @@ def build_interview_directive(
         if _work_history:
             _work_ctx = (
                 f"\n  Work context: {' | '.join(_work_history[:3])}\n"
-                f"  -> When asking about a skill, GROUND it: say which company/role you're asking about.\n"
+                f"  -> When asking about a skill, GROUND it in the role/project where it was used.\n"
                 f"     Example: 'You worked as Python Developer at [Company] -- what did you build there?'\n"
                 f"     NOT: 'You mentioned Python on your resume -- tell me about it.'\n"
+                f"  -> Only name a company when the skill is tied to that employer. A standalone/personal\n"
+                f"     project is NOT linked to any company -- never say '...at <Company>' about it.\n"
             )
         skills_block = (
             f"\nSKILLS TO COVER:\n"
             f"  Resume skills: {_resume_part}\n"
             f"  JD must-have skills: {_jd_part}\n"
             f"{_work_ctx}"
-            f"  -> After covering all resume projects, probe these skills directly (Phase 2).\n"
-            f"  -> Ask about real usage grounded in a specific role or project, NOT generic 'do you know X?'.\n"
+            f"{_skill_probe_style}"
             f"  -> If the candidate denies a skill that is on their resume: ask once 'can you help me understand\n"
             f"     what you meant by listing it?' -- then move on. Do NOT keep asking about it.\n"
-            f"  -> If a skill already came up naturally in a project story, mark it covered -- "
-            f"don't ask again.\n"
+            f"  -> If a skill already came up naturally in a project story, mark it covered -- don't ask again.\n"
         )
     else:
         skills_block = ""
@@ -324,6 +337,38 @@ def build_interview_directive(
         "",
     ))
 
+    _dry_run_questions = {
+        "fresher": (
+            "  'What are you learning or building right now outside of work?'\n"
+            "  'What kind of work do you most enjoy doing day-to-day?'\n"
+            "  'What drew you to this specific role?'\n"
+            "  'What does your best work look like -- give me one example.'\n"
+            "  'What skill are you actively trying to get better at?'"
+        ),
+        "mid": (
+            "  'What's a project you're proud of that's NOT on your resume?'\n"
+            "  'What kind of ownership do you want more of in your next role?'\n"
+            "  'What drew you to this specific role and company?'\n"
+            "  'Where do you want to be technically or career-wise in two years?'"
+        ),
+        "experienced": (
+            "  'What's a technical decision you made in the last year you'd make differently now?'\n"
+            "  'What's the hardest engineering or design problem you've worked through recently?'\n"
+            "  'Where do you think your current team's architecture has the most technical debt?'\n"
+            "  'What drew you to this specific role at this stage of your career?'"
+        ),
+        "senior": (
+            "  'What's a call you made in the last year that turned out to be wrong -- and what did you learn?'\n"
+            "  'What's the most important thing you've changed your mind about in the last two years?'\n"
+            "  'Where do you think the industry is heading that most people are getting wrong?'\n"
+            "  'What kind of org or team do you do your best work in?'"
+        ),
+    }.get(band, (
+        "  'What are you learning or building right now?'\n"
+        "  'What drew you to this specific role?'\n"
+        "  'What does your best work look like -- give me one example.'"
+    ))
+
     return (
         f"[DO NOT SAY ALOUD]\n\n"
         f"GOAL: In the next ~19 minutes, understand who this candidate really is --\n"
@@ -346,12 +391,7 @@ def build_interview_directive(
         f"  -> ONE question per turn ONLY -- never bundle two questions together with 'and' or commas.\n"
         f"  -> Short, warm, direct.\n"
         f"  -> Do NOT wrap up or say goodbye until the system signals you to.\n\n"
-        f"IF TOPICS RUN DRY -- keep going with adaptive questions (pick what fits):\n"
-        f"  'What are you learning or building right now outside of work?'\n"
-        f"  'What kind of work do you most enjoy doing day-to-day?'\n"
-        f"  'What drew you to this specific role?'\n"
-        f"  'What does your best work look like -- give me one example.'\n"
-        f"  'What skill are you actively trying to get better at?'\n"
-        f"  'If you could pick one area to grow in over the next year, what would it be?'\n"
+        f"IF TOPICS RUN DRY -- keep going with adaptive questions (pick what fits for {band.upper()}):\n"
+        f"{_dry_run_questions}\n"
         f"There is always something to ask. Never close early."
     )

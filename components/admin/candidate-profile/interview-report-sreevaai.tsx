@@ -59,7 +59,7 @@ export type IntelSignalRow = {
   details?: string[];
 };
 
-type IntelId = "integrity" | "behavioral" | "cognitive";
+type IntelId = "raw_signals" | "signal_analysis";
 type QBadge = "FAIR" | "AVERAGE" | "STRONG" | "PENDING";
 
 export type SreevaAIInterviewViewModel = {
@@ -77,14 +77,13 @@ export type SreevaAIInterviewViewModel = {
   fitPercent: number;
   fitLabel: string;
   isFallback: boolean;
-  technical: { percent: number; questions: number; tag: "GOOD" | "AVERAGE" | "WEAK"; scores?: { overall: number; engagement: number; demonstrated_knowledge: number; role_fit: number; problem_solving: number; technical: number; communication: number; behavioral: number; cognitive: number } };
+  technical: { percent: number; questions: number; tag: "GOOD" | "AVERAGE" | "WEAK"; scores?: { overall: number; engagement: number; communication: number; domain_knowledge: number; role_fit: number; problem_solving: number; ownership_credibility: number; demonstrated_knowledge: number; technical: number; dimensions: { name: string; score: number; evidence: string }[] } };
   comm: { pronunciation: number; grammar: number; fluency: number; confidence: number; vocabulary: number; minimalFiller: number; tag: string; commSummary: string; hasNewSchema: boolean };
   verdictSummary: string;
   verdictRecommendationReason: string;
   aiBullets: string[];
-  cognitiveInsights: IntelSignalRow[];
   integritySignals: IntelSignalRow[];
-  behavioralAnalysis: Record<string, any>;
+  signalAnalysis: Record<string, any>;
   skills: { name: string; stars: number; status: string; scoreLabel: string; whatShowed?: string; whatMissing?: string }[];
   topStrengths: string[];
   topRisks: string[];
@@ -222,95 +221,8 @@ const BADGE_PILL: Record<IntelBadgeTone, string> = {
   slate: "border-slate-200/90 bg-slate-100 text-slate-700",
 };
 
-function cognitiveLabel(n: number): { badge: string; tone: IntelBadgeTone } {
-  if (n >= 78) return { badge: "Strong", tone: "emerald" };
-  if (n >= 65) return { badge: "Moderate", tone: "sky" };
-  if (n >= 52) return { badge: "Medium", tone: "amber" };
-  if (n >= 35) return { badge: "Average", tone: "amber" };
-  return { badge: "Limited", tone: "rose" };
-}
 
-function buildCognitiveFromInsights(
-  cogInsights: Record<string, unknown>,
-  derivedComm: { clarityScore: number; grammarScore: number; fluencyScore: number; vocabScore: number; confidenceScore: number } | null,
-  technicalPct: number,
-): IntelSignalRow[] {
-  const toN = (v: unknown, fb: number) => {
-    const n = Number(v);
-    return Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : fb;
-  };
-  const toS = (v: unknown): string => String(v || "").trim();
 
-  const clarityN = toN(cogInsights.clarity, 60);
-  const depthN   = toN(cogInsights.depth_of_knowledge, 62);
-  const probN    = toN(cogInsights.problem_solving,     technicalPct);
-  const logN     = toN(cogInsights.logical_thinking,    65);
-  const adaptN   = toN(cogInsights.adaptability,        60);
-  const confidN  = toN(cogInsights.confidence, 60);
-  const cogSummary = toS(cogInsights.summary);
-
-  const lines = (
-    score: number,
-    earnedKey: string,
-    missedKey: string,
-    evidenceKey: string,
-    earnedFallback: string,
-    missedFallback: string,
-    includeOverall = false,
-  ): string[] => {
-    const earned = toS(cogInsights[earnedKey]) || toS(cogInsights[evidenceKey]) || earnedFallback;
-    const missed = toS(cogInsights[missedKey]) || missedFallback;
-    const out: string[] = [`Score: ${score}/100`, `- ${earned}`, `- ${missed}`];
-    if (includeOverall && cogSummary) out.push(cogSummary);
-    return out;
-  };
-
-  return [
-    {
-      id: "c1", label: "Clarity of thought", icon: "activity",
-      details: lines(clarityN, "clarity_earned", "clarity_missed", "clarity_evidence",
-        "Articulated ideas with reasonable structure across responses.",
-        "Some answers required re-probing or circled without a clear conclusion."),
-      ...cognitiveLabel(clarityN),
-    },
-    {
-      id: "c2", label: "Depth of knowledge", icon: "search",
-      details: lines(depthN, "depth_earned", "depth_missed", "depth_evidence",
-        "Demonstrated applied understanding beyond surface definitions.",
-        "Answers stayed at definition level without concrete examples or implementation detail."),
-      ...cognitiveLabel(depthN),
-    },
-    {
-      id: "c3", label: "Problem solving", icon: "box",
-      details: lines(probN, "problem_solving_earned", "problem_solving_missed", "problem_solving_evidence",
-        "Showed structured breakdown in at least some scenarios.",
-        "Jumped to solutions without stating assumptions or considering edge cases."),
-      ...cognitiveLabel(probN),
-    },
-    {
-      id: "c4", label: "Logical thinking", icon: "git-branch",
-      details: lines(logN, "logical_thinking_earned", "logical_thinking_missed", "logical_thinking_evidence",
-        "Reasoning was sequenced coherently across most responses.",
-        "Some conclusions didn't follow from stated reasoning or answers drifted off-topic."),
-      ...cognitiveLabel(logN),
-    },
-    {
-      id: "c5", label: "Adaptability", icon: "zap",
-      details: lines(adaptN, "adaptability_earned", "adaptability_missed", "adaptability_evidence",
-        "Adjusted well when redirected or given new information mid-interview.",
-        "Resisted correction or failed to incorporate interviewer feedback."),
-      ...cognitiveLabel(adaptN),
-    },
-    {
-      id: "c6", label: "Confidence & conviction", icon: "star",
-      details: lines(confidN, "confidence_earned", "confidence_missed", "confidence_evidence",
-        "Answered with direct positioning on areas of clear familiarity.",
-        "Heavy hedging replaced definitive answers in key moments.",
-        true),
-      ...cognitiveLabel(confidN),
-    },
-  ];
-}
 
 const PROCTORING_DISPLAY: Record<string, { title: string; why: string; risk: string }> = {
   face_absence: { title: "Face not visible", why: "Camera detected no face during the interview. The candidate may have looked away, turned off the camera, or left the frame.", risk: "High - indicates the candidate was not actively present in front of the camera." },
@@ -324,7 +236,7 @@ const PROCTORING_DISPLAY: Record<string, { title: string; why: string; risk: str
 
 function buildIntegritySignals(
   rows: { key: string; label: string; value: string; bad: boolean }[],
-  integrityScore: number,
+  _integrityScore: number,
 ): IntelSignalRow[] {
   // Only include events that actually occurred (exclude the "No flags" clean placeholder)
   const realRows = rows.filter(r => r.key !== "clean");
@@ -354,21 +266,7 @@ function buildIntegritySignals(
     };
   });
 
-  // Overall integrity score row always at top
-  signals.unshift({
-    id: "integrity_score",
-    label: "Integrity score",
-    badge: `${integrityScore}/100`,
-    tone: integrityScore >= 80 ? "emerald" : integrityScore >= 60 ? "amber" : "rose",
-    icon: "shield",
-    details: integrityScore >= 80
-      ? ["Session shows no significant integrity concerns.", "All proctoring signals are within acceptable range."]
-      : integrityScore >= 60
-        ? ["Some proctoring events were detected.", "No high-severity flags raised - review flagged signals and cross-reference with the recording before deciding."]
-        : ["Multiple integrity flags raised in this session.", "Manual review of the recording is strongly recommended before relying on this interview alone."],
-  });
-
-  // If no real events, add a clean signal
+  // If no real events, add a single clean signal (no integrity score row — shown in header)
   if (realRows.length === 0) {
     signals.push({
       id: "clean",
@@ -449,9 +347,7 @@ export function buildSreevaAIInterviewViewModel(i: {
   mounted: boolean;
   displayAvatar: string;
   interviewReportScores: Record<string, any>;
-  interviewReportRecording: Record<string, any>;
   interviewReportCommunication: Record<string, any>;
-  interviewReportCognitiveInsights: Record<string, any>;
   interviewReportBehavioralAnalysis: Record<string, any>;
   interviewReportVerdict: Record<string, any>;
   isFallbackReport: boolean;
@@ -473,17 +369,13 @@ export function buildSreevaAIInterviewViewModel(i: {
   signalTimeline: { elapsed_sec: number; signal_name: string; signal_layer: string; evidence: string; score_delta: number; turn: number; recruiter_visible: boolean }[];
   proctoringEventsFull?: { time: string; eventType: string; reason: string; severity: string; elapsedSeconds: number }[];
   answerScoresParsed?: { question: string; answer: string; depth: number; clarity: number; specificity: number; grounding: number; overall: number; signals: string[] }[];
-  // New schema fields (from redesigned agent_persistence.py report)
   integrityScore?: number;
   integrityBand?: string;
   skillsEvaluated?: string[];
-  skillRatingsList?: { topic: string; score: number; status: string; evidence?: string; gaps?: string }[];
-  qaBlocksInterview?: any[];
-  qaBlocksAll?: any[];
+  skillRatingsList?: { skill: string; score: number; status: string; evidence?: string; gaps?: string }[];
 }): SreevaAIInterviewViewModel {
   const c = i.candidate;
   const com = i.interviewReportCommunication || {};
-  const cogInsights = i.interviewReportCognitiveInsights || {};
   const behavAnalysis = i.interviewReportBehavioralAnalysis || {};
   const scores = i.interviewReportScores || {};
   const verdict = i.interviewReportVerdict || {};
@@ -492,20 +384,27 @@ export function buildSreevaAIInterviewViewModel(i: {
     const n = Number(v);
     return Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : fallback;
   };
-  // -- Demonstrated knowledge (new primary signal: replaces technical_score) --
-  // Priority: demonstrated_knowledge (new) > technical_score (legacy) > qa_blocks average
-  const technicalPct = (() => {
-    const dk = Number(scores.demonstrated_knowledge);
-    if (Number.isFinite(dk) && dk > 0) return Math.min(100, Math.max(0, Math.round(dk)));
-    const aiTech = Number(scores.technical_score ?? scores.technical);
-    if (Number.isFinite(aiTech) && aiTech > 0) return Math.min(100, Math.max(0, Math.round(aiTech)));
-    // Derive from qa_blocks: average of score_breakdown dimensions x 10
+  // -- 5-dimension scores from new schema ----------------------------------------
+  const _dims: { name: string; score: number; evidence: string }[] =
+    Array.isArray(scores.dimensions) ? scores.dimensions : [];
+  const _dimScore = (name: string) => {
+    const d = _dims.find((d) => d.name.toLowerCase().includes(name.toLowerCase()));
+    return d ? Math.max(0, Math.min(100, Math.round(d.score))) : 0;
+  };
+  const commScore   = _dimScore("communication") || Number(scores.communication_score ?? scores.communication ?? 0);
+  const dkScore     = _dimScore("domain") || Number(scores.demonstrated_knowledge ?? scores.technical_score ?? scores.technical ?? 0);
+  const fitScore    = _dimScore("role fit") || Number(scores.role_fit ?? 0);
+  const psScore     = _dimScore("problem") || Number(scores.problem_solving ?? 0);
+  const ownScore    = _dimScore("ownership") || 0;
+  const overallPct  = Number(scores.overall ?? scores.combined_score ?? 0);
+
+  // Legacy alias kept for fitPercent computation
+  const technicalPct = dkScore || (() => {
     const qaRows = i.interviewQaRows || [];
     const blockAvgs = qaRows.map((r: any) => {
       const sb = r?.score_breakdown || {};
       const dims = [
-        Number(sb.depth ?? 0),
-        Number(sb.clarity ?? 0),
+        Number(sb.depth ?? 0), Number(sb.clarity ?? 0),
         Number(sb.specificity ?? sb.technical_accuracy ?? 0),
         Number(sb.grounding ?? sb.practical_application ?? 0),
       ].filter((n: number) => Number.isFinite(n) && n > 0);
@@ -545,25 +444,20 @@ export function buildSreevaAIInterviewViewModel(i: {
     return { clarityScore, grammarScore, fluencyScore, vocabScore, confidenceScore };
   })();
 
-  // AI comm scores take priority; derived scores are fallback only for missing fields
-  const aiCommScore = Number(scores.communication_score);
-  const commFallback = Number.isFinite(aiCommScore) && aiCommScore > 0 ? aiCommScore : 50;
-
+  const commFallback = commScore > 0 ? commScore : 50;
   const comm = {
     pronunciation: toPct(com.pronunciation, derivedComm?.clarityScore ?? commFallback),
     grammar:       toPct(com.grammar,       derivedComm?.grammarScore ?? commFallback),
     fluency:       toPct(com.fluency,       derivedComm?.fluencyScore ?? commFallback),
     confidence:    toPct(com.confidence,    derivedComm?.confidenceScore ?? commFallback),
-    // kept for legacy UI compatibility
     vocabulary:    toPct(com.vocabulary,    derivedComm?.confidenceScore ?? commFallback),
     minimalFiller: toPct(com.fluency,       derivedComm?.fluencyScore ?? commFallback),
-    tag: String(i.communicationStatus).toUpperCase() || "AVERAGE",
+    tag: commScore >= 70 ? "STRONG" : commScore >= 45 ? "AVERAGE" : "WEAK",
     commSummary: cleanAiText(String(com.summary || "").trim()),
     hasNewSchema: false,
   };
 
-  const commDimVals = [comm.pronunciation, comm.grammar, comm.fluency, comm.confidence].filter(v => v > 0);
-  const commAvg = commDimVals.length > 0 ? Math.round(commDimVals.reduce((a, b) => a + b, 0) / commDimVals.length) : commFallback;
+  const commAvg = commScore > 0 ? commScore : commFallback;
 
   // a"a" Proctoring rows a"a"
   const proctoringRows: { key: string; label: string; value: string; bad: boolean }[] =
@@ -590,7 +484,6 @@ export function buildSreevaAIInterviewViewModel(i: {
     } catch { return 95; }
   })();
 
-  const cognitiveInsights = buildCognitiveFromInsights(cogInsights, derivedComm, technicalPct);
   const integritySignals = buildIntegritySignals(proctoringRows, rawIntegrityScore);
 
   // a"a" Skills a"a"
@@ -896,7 +789,6 @@ export function buildSreevaAIInterviewViewModel(i: {
 
 
   // a"a" Timestamps a"a"
-  const rec = i.interviewReportRecording || {};
   const doneAt = c.interview?.completedAt || c.interview?.endedAt;
   const interviewedOn = doneAt
     ? new Date(doneAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
@@ -904,8 +796,7 @@ export function buildSreevaAIInterviewViewModel(i: {
       ? new Date(c.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
       : "--";
 
-  const totalTime = rec.duration_label
-    || (i.recordingDurationSec ? (i.formatDuration || formatDurationM)(i.recordingDurationSec) : i.interviewTranscript
+  const totalTime = (i.recordingDurationSec ? (i.formatDuration || formatDurationM)(i.recordingDurationSec) : i.interviewTranscript
       ? `${Math.max(1, Math.round((i.wordCount / 150) * 5))} mins (est.)` : "--");
 
   return {
@@ -924,30 +815,29 @@ export function buildSreevaAIInterviewViewModel(i: {
     fitLabel: fitLabelFromPct(fitPct),
     isFallback: i.isFallbackReport,
     technical: {
-      percent: technicalPct,
+      percent: overallPct || technicalPct,
       questions: questionsAsked,
       tag: techTag,
       scores: {
-        // New 5-category breakdown
-        overall:                toPct(scores.overall,                technicalPct),
-        engagement:             toPct(scores.engagement,             60),
-        demonstrated_knowledge: toPct(scores.demonstrated_knowledge, technicalPct),
-        role_fit:               toPct(scores.role_fit,               fitPct),
-        problem_solving:        toPct(scores.problem_solving ?? Number(cogInsights.problem_solving), Math.round(technicalPct * 0.9)),
-        // Legacy aliases
-        technical:              toPct(scores.technical_score ?? scores.technical, technicalPct),
-        communication:          toPct(scores.communication_score, commAvg),
-        behavioral:             toPct(scores.behavioral_score, Math.round(commAvg * 0.8)),
-        cognitive:              toPct(scores.cognitive_score, 50),
+        overall:                overallPct || technicalPct,
+        engagement:             toPct(scores.engagement, 60),
+        communication:          commScore,
+        domain_knowledge:       dkScore,
+        role_fit:               fitScore,
+        problem_solving:        psScore,
+        ownership_credibility:  ownScore,
+        // Legacy
+        demonstrated_knowledge: dkScore,
+        technical:              dkScore,
+        dimensions:             _dims,
       },
     },
     comm,
     verdictSummary: verdictSummaryText,
     verdictRecommendationReason,
     aiBullets,
-    cognitiveInsights,
     integritySignals,
-    behavioralAnalysis: behavAnalysis,
+    signalAnalysis: behavAnalysis,
     skills,
     topStrengths,
     topRisks,
@@ -1406,26 +1296,6 @@ function SkillRatingsContainer({ skills }: { skills: SreevaAIInterviewViewModel[
   );
 }
 
-const BEHAVIORAL_SECTION_CONFIG: Record<string, { label: string; tone: "risk" | "neutral" | "positive" | "flag"; description: string }> = {
-  engagement_signals:      { label: "Engagement",           tone: "neutral",  description: "How actively the candidate participated" },
-  consistency_signals:     { label: "Consistency & Claims", tone: "neutral",  description: "Resume claims vs. interview answers" },
-  communication_patterns:  { label: "Communication",        tone: "neutral",  description: "How clearly and directly the candidate communicated" },
-  confidence_indicators:   { label: "Confidence",           tone: "neutral",  description: "Genuine vs. surface-level confidence patterns" },
-  integrity_flags:         { label: "Integrity Flags",      tone: "flag",     description: "Behavioral or proctoring anomalies that need review" },
-  strengths_observed:      { label: "Strengths Observed",   tone: "positive", description: "What the candidate demonstrably did well" },
-  concerns_noted:          { label: "Concerns Noted",       tone: "risk",     description: "Gaps, evasions, or patterns that warrant scrutiny" },
-  proctoring_signals_detected: { label: "AI-Detected Signals", tone: "flag", description: "Behavioral patterns detected during the session" },
-};
-
-const SIGNAL_LABEL_MAP: Record<string, string> = {
-  ownership_ambiguity: "Ownership Ambiguity", example_evasion: "Example Evasion",
-  resume_claim_mismatch: "Resume Claim Mismatch", follow_up_collapse: "Follow-up Collapse",
-  latency_mismatch: "Response Timing Anomaly", complexity_latency_mismatch: "Complexity-Timing Mismatch",
-  ownership_clarified: "Ownership Clarified", example_given: "Concrete Example Provided",
-  depth_decay: "Depth Decay", strong_under_pressure: "Strong Under Pressure",
-};
-const RECOVERY_SIGNALS = new Set(["ownership_clarified", "example_given", "strong_under_pressure"]);
-
 function HiringStamp({ recommendation, color }: { recommendation: string; color: "green" | "amber" | "red" | "blue" }) {
   const cfg = {
     green: { stroke: "#15803D", fill: "#15803D", text: recommendation.toUpperCase() },
@@ -1473,241 +1343,38 @@ function HiringStamp({ recommendation, color }: { recommendation: string; color:
   );
 }
 
-function BehavioralBullet({ text, tone }: { text: string | Record<string, string>; tone: "risk" | "neutral" | "positive" | "flag" }) {
-  const [expanded, setExpanded] = useState(false);
 
-  const dotColor  = { risk: "bg-rose-500", flag: "bg-amber-500", positive: "bg-emerald-500", neutral: "bg-slate-400" }[tone];
-  const accentCls = {
-    risk:     "border-l-rose-400   bg-rose-50/30",
-    flag:     "border-l-amber-400  bg-amber-50/30",
-    positive: "border-l-emerald-400 bg-emerald-50/20",
-    neutral:  "border-l-slate-300  bg-[#FAFBFC]",
-  }[tone];
+function SignalAnalysisPanel({ analysis }: { analysis: Record<string, any> }) {
+  const points: string[] = Array.isArray(analysis?.points)
+    ? (analysis.points as string[]).filter((p) => typeof p === "string" && p.trim())
+    : [];
 
-  // Object format (new AI schema)
-  if (typeof text === "object" && text !== null) {
-    const { signal, what_happened, what_was_wrong, handled } = text;
-    const isHandled = /^yes/i.test(handled || "");
-    const isPartial = /^partial/i.test(handled || "");
-    const handledColor = isHandled ? "text-emerald-700 bg-emerald-50 border-emerald-200"
-      : isPartial ? "text-amber-700 bg-amber-50 border-amber-200"
-      : "text-rose-700 bg-rose-50 border-rose-200";
-    const handledIcon = isHandled ? "YES" : isPartial ? "PARTIAL" : "NO";
-
+  if (points.length === 0) {
     return (
-      <li className={`rounded-xl border-l-[3px] border border-[#EBEBEB] ${accentCls} overflow-hidden`}>
-        <button
-          type="button"
-          onClick={() => setExpanded(e => !e)}
-          className="w-full flex items-start gap-2.5 px-3.5 py-3 text-left hover:bg-black/[0.02] transition-colors"
-        >
-          <span className={`mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full ${dotColor}`} />
-          <span className="flex-1 text-[13px] font-semibold leading-snug text-[#1A1D22]">{signal}</span>
-          <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 text-[#98A2B3] mt-0.5 transition-transform", expanded ? "rotate-180" : "")} />
-        </button>
-        {expanded && (
-          <div className="border-t border-black/[0.05] px-4 py-3.5 space-y-3">
-            {what_happened && (
-              <div>
-                <p className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-[#6B7079] mb-1">What happened</p>
-                <p className="text-[12.5px] leading-relaxed text-[#1A1D22]">{what_happened}</p>
-              </div>
-            )}
-            {what_was_wrong && (
-              <div>
-                <p className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-[#6B7079] mb-1">What it signals</p>
-                <p className="text-[12.5px] leading-relaxed text-[#344054]">{what_was_wrong}</p>
-              </div>
-            )}
-            {handled && (
-              <div>
-                <p className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-[#6B7079] mb-1">Did they handle it?</p>
-                <p className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[12px] font-semibold leading-snug ${handledColor}`}>
-                  <span className="font-black">{handledIcon}</span>
-                  {handled}
-                </p>
-              </div>
-            )}
-          </div>
-        )}
-      </li>
+      <ul className="divide-y divide-[#F0F1F3]">
+        <li className="flex items-start gap-3 px-5 py-4">
+          <span className="mt-[6px] h-2 w-2 shrink-0 rounded-full bg-slate-300" />
+          <p className="text-[12px] text-[#6B7079]">Signal analysis not available for this session.</p>
+        </li>
+      </ul>
     );
   }
 
-  // Legacy string format fallback
-  const sepMatch = (text as string).match(/^([\s\S]+?)\s*[a'a"a"]\s*([\s\S]+)$/);
-  const [claim, detail] = sepMatch ? [sepMatch[1].trim(), sepMatch[2].trim()] : [text as string, ""];
-  const detailColor = { risk: "text-rose-700", flag: "text-amber-700", positive: "text-emerald-700", neutral: "text-[#475467]" }[tone];
-
   return (
-    <li className={`rounded-xl border-l-[3px] border border-[#EBEBEB] ${accentCls} px-3.5 py-3`}>
-      <div className="flex items-start gap-2.5">
-        <span className={`mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full ${dotColor}`} />
-        <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-semibold leading-snug text-[#1A1D22]">{claim}</p>
-          {detail && <p className={`mt-1 text-[12px] leading-relaxed ${detailColor}`}>{detail}</p>}
-        </div>
-      </div>
-    </li>
-  );
-}
-
-function ProctoringSignalCard({ signal }: { signal: any }) {
-  const [expanded, setExpanded] = useState(false);
-  const isRecovery = RECOVERY_SIGNALS.has(signal.signal);
-  const label = SIGNAL_LABEL_MAP[signal.signal] || signal.signal.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase());
-  const confidencePct = Math.round(Number(signal.confidence || 0) * 100);
-  return (
-    <div className={`rounded-2xl border ${isRecovery ? "border-emerald-200 bg-emerald-50/60" : "border-amber-200 bg-amber-50/50"} overflow-hidden`}>
-      <button type="button" onClick={() => setExpanded(e => !e)} className="w-full flex items-start justify-between gap-3 px-4 py-3 text-left hover:bg-black/[0.02] transition-colors">
-        <div className="flex items-start gap-2.5 min-w-0">
-          <span className={`mt-[3px] shrink-0 text-[15px] ${isRecovery ? "text-emerald-600" : "text-amber-600"}`}>{isRecovery ? "OK" : "WARN"}</span>
-          <div className="min-w-0">
-            <p className={`text-[13px] font-bold leading-snug ${isRecovery ? "text-emerald-900" : "text-amber-900"}`}>{label}</p>
-            <p className="text-[12px] leading-snug text-[#475467] mt-0.5">{signal.interpretation}</p>
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-2 pt-0.5">
-          {signal.count > 1 && (
-            <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${isRecovery ? "bg-emerald-100 border-emerald-200 text-emerald-700" : "bg-amber-100 border-amber-200 text-amber-700"}`}>A-{signal.count}</span>
-          )}
-          <span className="text-[10px] font-bold text-[#6B7079]">{confidencePct}%</span>
-          <ChevronDown className={`h-3.5 w-3.5 text-[#6B7079] transition-transform ${expanded ? "rotate-180" : ""}`} />
-        </div>
-      </button>
-      {expanded && (
-        <div className="border-t border-black/[0.06] px-4 py-3 space-y-2">
-          {signal.turns?.length > 0 && (
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[10px] font-black uppercase tracking-widest text-[#6B7079]">Detected at turn</span>
-              {signal.turns.map((t: number) => (
-                <span key={t} className="text-[10px] font-bold bg-white border border-[#E8EAED] rounded px-1.5 py-0.5 text-[#1A1D22]">#{t}</span>
-              ))}
+    <ul className="divide-y divide-[#F0F1F3]">
+      {points.map((text, idx) => {
+        const { title, description } = parseBulletCard(text);
+        return (
+          <li key={idx} className="flex items-start gap-3 px-5 py-4">
+            <span className="mt-[6px] h-2 w-2 shrink-0 rounded-full bg-sky-500" />
+            <div className="min-w-0 flex-1">
+              <p className="text-[13.5px] font-medium text-[#1A1D22] leading-snug">{title}</p>
+              {description && <p className="mt-1 text-[12.5px] leading-relaxed text-[#4B5563]">{description}</p>}
             </div>
-          )}
-          {signal.evidence && (
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-[#6B7079] mb-1">Evidence</p>
-              <p className="text-[12px] leading-relaxed text-[#344054] bg-white rounded-lg border border-[#E8EAED] px-3 py-2">{signal.evidence}</p>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-const BEHAVIORAL_SECTION_META: Record<string, {
-  headerBg: string;
-  headerText: string;
-  pillBg: string;
-  pillText: string;
-  divider: string;
-}> = {
-  engagement_signals:     { headerBg: "bg-sky-50",     headerText: "text-sky-800",     pillBg: "bg-sky-100",     pillText: "text-sky-700",     divider: "border-sky-100" },
-  consistency_signals:    { headerBg: "bg-violet-50",  headerText: "text-violet-800",  pillBg: "bg-violet-100",  pillText: "text-violet-700",  divider: "border-violet-100" },
-  communication_patterns: { headerBg: "bg-indigo-50",  headerText: "text-indigo-800",  pillBg: "bg-indigo-100",  pillText: "text-indigo-700",  divider: "border-indigo-100" },
-  confidence_indicators:  { headerBg: "bg-amber-50",   headerText: "text-amber-800",   pillBg: "bg-amber-100",   pillText: "text-amber-700",   divider: "border-amber-100" },
-  strengths_observed:     { headerBg: "bg-emerald-50", headerText: "text-emerald-800", pillBg: "bg-emerald-100", pillText: "text-emerald-700", divider: "border-emerald-100" },
-  concerns_noted:         { headerBg: "bg-rose-50",    headerText: "text-rose-800",    pillBg: "bg-rose-100",    pillText: "text-rose-700",    divider: "border-rose-100" },
-  proctoring_signals_detected: { headerBg: "bg-slate-50", headerText: "text-slate-800", pillBg: "bg-slate-100", pillText: "text-slate-700", divider: "border-slate-200" },
-};
-
-function BehavioralSignalsPanel({ analysis }: { analysis: Record<string, any> }) {
-  const summary = typeof analysis?.summary === "string" ? analysis.summary.trim() : "";
-  const SECTION_ORDER = [
-    "engagement_signals", "consistency_signals", "communication_patterns",
-    "confidence_indicators", "strengths_observed",
-    "concerns_noted", "proctoring_signals_detected",
-  ];
-  const structuredSections = SECTION_ORDER.filter((key) => Array.isArray(analysis?.[key]) && analysis[key].length > 0);
-  const hasContent = Boolean(summary) || structuredSections.length > 0;
-
-  if (!hasContent) {
-    return (
-      <div className="flex min-h-[120px] items-center justify-center rounded-xl border border-dashed border-[#E8EAED] bg-[#FAFBFC] px-4 py-6 text-center">
-        <p className="text-[12px] font-medium text-[#6B7079]">Behavioral analysis not available for this session.</p>
-      </div>
-    );
-  }
-
-  const fallbackBullets = [
-    ...(Array.isArray(analysis?.strengths_observed) ? analysis.strengths_observed : []),
-    ...(Array.isArray(analysis?.concerns_noted) ? analysis.concerns_noted : []),
-    ...(Array.isArray(analysis?.engagement_signals) ? analysis.engagement_signals : []),
-  ].filter((item) => typeof item === "string" && String(item).trim());
-
-  return (
-    <div className="space-y-4">
-      {/* Verdict banner */}
-      {summary && (
-        <div className="rounded-2xl border border-[#C7D2FE] bg-gradient-to-br from-[#EEF2FF] to-[#F5F3FF] px-4 py-4">
-          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#6366F1] mb-1.5">Behavioral Verdict</p>
-          <p className="text-[13px] leading-relaxed text-[#1E1B4B] font-medium">{summary}</p>
-        </div>
-      )}
-
-      {structuredSections.length === 0 ? (
-        <div className="overflow-hidden rounded-2xl border border-[#E8EAED] bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
-          <div className="border-b border-[#E8EAED] bg-[#FAFBFC] px-4 py-3">
-            <p className="text-[12px] font-bold leading-none text-[#1A1D22]">Behavioral details</p>
-            <p className="text-[11px] text-[#6B7079] mt-0.5">No structured arrays were returned, so only the narrative summary is available.</p>
-          </div>
-          <div className="px-4 py-4 space-y-3">
-            {fallbackBullets.length > 0 ? (
-              <ul className="space-y-2">
-                {fallbackBullets.slice(0, 4).map((bullet, idx) => (
-                  <BehavioralBullet key={idx} text={bullet} tone={idx === 0 ? "neutral" : idx === 1 ? "positive" : "risk"} />
-                ))}
-              </ul>
-            ) : (
-              <p className="text-[12px] leading-relaxed text-[#6B7079]">
-                The stored report includes a behavioral summary, but no detailed signal arrays. Check the raw JSON for the report payload if you expect granular items here.
-              </p>
-            )}
-          </div>
-        </div>
-      ) : (
-        SECTION_ORDER.map((key) => {
-          const value = analysis[key];
-          if (!Array.isArray(value) || value.length === 0) return null;
-          const config = BEHAVIORAL_SECTION_CONFIG[key];
-          const meta   = BEHAVIORAL_SECTION_META[key];
-          if (!config || !meta) return null;
-          const isSignalObjects = typeof value[0] === "object" && value[0] !== null && "signal" in value[0];
-
-          return (
-            <div key={key} className="overflow-hidden rounded-2xl border border-[#E8EAED] bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
-              {/* Section header */}
-              <div className={`flex items-center justify-between gap-3 px-4 py-3 ${meta.headerBg} border-b ${meta.divider}`}>
-                <div>
-                  <p className={`text-[12px] font-bold leading-none ${meta.headerText}`}>{config.label}</p>
-                  <p className="text-[11px] text-[#6B7079] mt-0.5">{config.description}</p>
-                </div>
-                <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-black ${meta.pillBg} ${meta.pillText}`}>
-                  {value.length} signal{value.length !== 1 ? "s" : ""}
-                </span>
-              </div>
-
-              {/* Signal list */}
-              <div className="px-3.5 py-3">
-                {isSignalObjects ? (
-                  <div className="space-y-2">
-                    {value.map((signal: any, idx: number) => <ProctoringSignalCard key={idx} signal={signal} />)}
-                  </div>
-                ) : (
-                  <ul className="space-y-2">
-                    {value.map((bullet: string | Record<string, string>, idx: number) => (
-                      <BehavioralBullet key={idx} text={bullet} tone={config.tone} />
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </div>
-          );
-        })
-      )}
-    </div>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
@@ -1764,6 +1431,232 @@ export function Donut({ pct, questions, questionsLabel }: { pct: number; questio
           <p className="mt-1.5 text-[11px] font-bold uppercase leading-tight text-[#5C6370]">{questionsLabel || `${questions} questions`}</p>
         </div>
       </div>
+    </div>
+  );
+}
+
+const DIMENSION_CONFIG = [
+  { key: "communication",         label: "Communication",           color: "#6366F1" },
+  { key: "domain_knowledge",      label: "Domain Knowledge",        color: "#0EA5E9" },
+  { key: "role_fit",              label: "Role Fit",                color: "#8B5CF6" },
+  { key: "problem_solving",       label: "Problem Solving",         color: "#10B981" },
+  { key: "ownership_credibility", label: "Ownership & Credibility", color: "#F59E0B" },
+] as const;
+
+export function EvaluationScoresCard({
+  scores,
+  overall,
+}: {
+  scores?: SreevaAIInterviewViewModel["technical"]["scores"];
+  overall: number;
+}) {
+  const [hovered, setHovered] = useState<string | null>(null);
+  const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const dims: { name: string; score: number; evidence: string }[] =
+    Array.isArray(scores?.dimensions) ? scores.dimensions : [];
+
+  const getValue = (key: string): number => {
+    const kw = key === "domain_knowledge" ? "domain"
+      : key === "ownership_credibility" ? "ownership"
+      : key === "role_fit" ? "role"
+      : key === "problem_solving" ? "problem"
+      : "communication";
+    const d = dims.find((d) => d.name.toLowerCase().includes(kw));
+    if (d) return Math.max(0, Math.min(100, Math.round(d.score)));
+    return Math.max(0, Math.min(100, Math.round(Number((scores as any)?.[key] ?? 0))));
+  };
+
+  const getEvidence = (key: string): string => {
+    const kw = key === "domain_knowledge" ? "domain"
+      : key === "ownership_credibility" ? "ownership"
+      : key === "role_fit" ? "role"
+      : key === "problem_solving" ? "problem"
+      : "communication";
+    return dims.find((d) => d.name.toLowerCase().includes(kw))?.evidence ?? "";
+  };
+
+  const values = DIMENSION_CONFIG.map((d) => getValue(d.key));
+  const N = DIMENSION_CONFIG.length;
+  // Extra viewBox padding so axis labels don't clip
+  const PAD = 44;
+  const R = 80;
+  const SIZE = R * 2 + PAD * 2;
+  const cx = SIZE / 2;
+  const cy = SIZE / 2;
+
+  const angle = (i: number) => (Math.PI * 2 * i) / N - Math.PI / 2;
+  const point = (i: number, r: number) => ({
+    x: cx + r * Math.cos(angle(i)),
+    y: cy + r * Math.sin(angle(i)),
+  });
+
+  const rings = [50, 100];
+
+  const shapePoints = values
+    .map((v, i) => point(i, (v / 100) * R))
+    .map((p) => `${p.x},${p.y}`)
+    .join(" ");
+
+  const hoveredEvidence = hovered ? getEvidence(hovered) : null;
+
+  // Short label for axis tip
+  const shortLabel = (label: string) =>
+    label === "Ownership & Credibility" ? "Ownership"
+    : label === "Domain Knowledge" ? "Knowledge"
+    : label;
+
+  const hoveredDim = hovered ? DIMENSION_CONFIG.find((d) => d.key === hovered) ?? null : null;
+  const hoveredVal  = hovered ? getValue(hovered) : null;
+  const tag = (v: number) => v >= 70 ? "STRONG" : v >= 45 ? "AVERAGE" : v > 0 ? "WEAK" : null;
+  const tagCls = (v: number) => v >= 70
+    ? "bg-emerald-100 text-emerald-700"
+    : v >= 45 ? "bg-amber-100 text-amber-700"
+    : "bg-rose-100 text-rose-700";
+
+  const handleEnter = (key: string, e: React.MouseEvent) => {
+    setHovered(key);
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (rect) setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+  };
+  const handleMove = (e: React.MouseEvent) => {
+    if (!hovered) return;
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (rect) setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+  };
+  const handleLeave = () => { setHovered(null); setMousePos(null); };
+
+  // Position tooltip: to the right of cursor by default, flip left if near right edge
+  const tooltipStyle = (() => {
+    if (!mousePos) return {};
+    const containerW = containerRef.current?.offsetWidth ?? 400;
+    const tipW = 240;
+    const left = mousePos.x + 14 + tipW > containerW ? mousePos.x - tipW - 14 : mousePos.x + 14;
+    return { top: mousePos.y - 20, left };
+  })();
+
+  return (
+    <div ref={containerRef} className="relative flex flex-col items-center py-3 gap-3" onMouseMove={handleMove}>
+      {/* Radar SVG */}
+      <svg
+        width={SIZE}
+        height={SIZE}
+        viewBox={`0 0 ${SIZE} ${SIZE}`}
+        className="overflow-visible shrink-0"
+      >
+        <defs>
+          <radialGradient id="evalRadarGrad" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="#6366F1" stopOpacity="0.28" />
+            <stop offset="100%" stopColor="#6366F1" stopOpacity="0.05" />
+          </radialGradient>
+        </defs>
+
+        {/* Grid rings */}
+        {rings.map((pct) => {
+          const r = (pct / 100) * R;
+          const pts = Array.from({ length: N }, (_, i) => point(i, r))
+            .map((p) => `${p.x},${p.y}`).join(" ");
+          return (
+            <polygon key={pct} points={pts} fill="none"
+              stroke={pct === 100 ? "#CBD5E1" : "#E2E8F0"}
+              strokeWidth={pct === 100 ? "1" : "0.7"}
+              strokeDasharray={pct === 50 ? "3 2" : undefined}
+            />
+          );
+        })}
+
+        {/* Spokes */}
+        {DIMENSION_CONFIG.map((_, i) => {
+          const o = point(i, R);
+          return <line key={i} x1={cx} y1={cy} x2={o.x} y2={o.y} stroke="#E2E8F0" strokeWidth="0.7" />;
+        })}
+
+        {/* Data shape */}
+        <polygon points={shapePoints} fill="url(#evalRadarGrad)" stroke="#6366F1" strokeWidth="2" strokeLinejoin="round" />
+
+        {/* Dots */}
+        {values.map((v, i) => {
+          const p = point(i, (v / 100) * R);
+          const dim = DIMENSION_CONFIG[i];
+          const isHov = hovered === dim.key;
+          return (
+            <circle key={dim.key} cx={p.x} cy={p.y}
+              r={isHov ? 6 : 4.5}
+              fill={dim.color} stroke="white" strokeWidth="1.5"
+              className="cursor-pointer" style={{ transition: "r 0.12s" }}
+              onMouseEnter={(e) => handleEnter(dim.key, e)}
+              onMouseLeave={handleLeave}
+            />
+          );
+        })}
+
+        {/* Axis tip labels */}
+        {DIMENSION_CONFIG.map((dim, i) => {
+          const lp = point(i, R + 20);
+          const isHov = hovered === dim.key;
+          return (
+            <text key={dim.key} x={lp.x} y={lp.y}
+              textAnchor="middle" dominantBaseline="middle"
+              fontSize={isHov ? "9" : "8"} fontWeight={isHov ? "700" : "500"}
+              fill={isHov ? dim.color : "#4B5563"}
+              className="cursor-pointer select-none"
+              onMouseEnter={(e) => handleEnter(dim.key, e)}
+              onMouseLeave={handleLeave}
+            >
+              {shortLabel(dim.label)}
+            </text>
+          );
+        })}
+      </svg>
+
+      {/* Dot legend row */}
+      <div className="flex flex-wrap justify-center gap-x-3 gap-y-1">
+        {DIMENSION_CONFIG.map((dim) => {
+          const val = getValue(dim.key);
+          const isHov = hovered === dim.key;
+          return (
+            <button key={dim.key} type="button"
+              className={cn(
+                "flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors",
+                isHov ? "bg-[#F3F4F6]" : "bg-transparent"
+              )}
+              onMouseEnter={(e) => handleEnter(dim.key, e)}
+              onMouseLeave={handleLeave}
+            >
+              <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: dim.color }} />
+              <span className={isHov ? "font-semibold text-[#1A1D22]" : "text-[#4B5563]"}>{dim.label}</span>
+              <span className="font-bold tabular-nums ml-0.5" style={{ color: dim.color }}>{val > 0 ? val : ""}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Floating tooltip card — positioned next to cursor */}
+      {hoveredDim && hoveredVal !== null && mousePos && (
+        <div
+          className="pointer-events-none absolute z-50 w-[240px] rounded-xl border bg-white px-3.5 py-3 shadow-xl"
+          style={{ ...tooltipStyle, borderColor: hoveredDim.color + "55" }}
+        >
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: hoveredDim.color }} />
+            <span className="text-[12px] font-bold text-[#1A1D22] leading-tight">{hoveredDim.label}</span>
+            <span className="ml-auto text-[17px] font-extrabold tabular-nums leading-none" style={{ color: hoveredDim.color }}>
+              {hoveredVal}<span className="text-[9px] font-medium text-[#9AA0AC]">/100</span>
+            </span>
+          </div>
+          {tag(hoveredVal) && (
+            <span className={cn("inline-block rounded px-1.5 py-0.5 text-[8px] font-extrabold uppercase mb-1.5", tagCls(hoveredVal))}>
+              {tag(hoveredVal)}
+            </span>
+          )}
+          {hoveredEvidence ? (
+            <p className="text-[11px] leading-relaxed text-[#3C4149]">{hoveredEvidence}</p>
+          ) : (
+            <p className="text-[11px] text-[#9AA0AC] italic">No evidence recorded.</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -2432,9 +2325,8 @@ return (
 function TabStrip({ value, onChange }: { value: IntelId; onChange: (v: IntelId) => void }) {
   const base = "shrink-0 rounded-lg px-4 py-2.5 text-[10px] font-extrabold uppercase tracking-widest transition-colors";
   const tabs: Array<[IntelId, string]> = [
-    ["integrity", "Integrity signals"],
-    ["behavioral", "Behaviour signals"],
-    ["cognitive", "Cognitive insights"],
+    ["raw_signals", "Raw Signals"],
+    ["signal_analysis", "Signal Analysis"],
   ];
   return (
     <div className="flex flex-wrap gap-2">
@@ -2471,7 +2363,7 @@ export function InterviewReportSreevaAI({
   showHeader?: boolean;
   headerActions?: ReactNode;
 }) {
-  const [intel, setIntel] = useState<IntelId>("integrity");
+  const [intel, setIntel] = useState<IntelId>("raw_signals");
   const plyrRef = useRef<any>(null);
 
   useEffect(() => {
@@ -2558,7 +2450,7 @@ export function InterviewReportSreevaAI({
 
   return (
     <div className={cn("w-full", bgPage)}>
-      <div className="mx-auto w-full max-w-6xl space-y-5 px-4 pb-16 pt-2 sm:px-6">
+      <div className="mx-auto w-full max-w-[1340px] space-y-4 px-2 pb-12 pt-2" style={{ zoom: "0.82" }}>
 
         {/* a"a" Fallback Banner a"a" */}
         {model.isFallback && (
@@ -2642,26 +2534,18 @@ export function InterviewReportSreevaAI({
           </div>
         </div>
 
-        {/* a"a" Score trio a"a" */}
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        {/* Evaluation Scores — 5 unified HR dimensions */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <div className={cn(card, "flex flex-col overflow-hidden")}>
             <div className="flex items-center justify-between border-b border-[#E8EAED] px-4 py-3">
-              <p className="text-sm font-extrabold text-[#1A1D22]">Score Breakdown</p>
+              <p className="text-sm font-extrabold text-[#1A1D22]">Evaluation Scores</p>
               <span className={cn("rounded-md px-2.5 py-0.5 text-[9px] font-extrabold uppercase",
-                model.technical.tag === "GOOD" ? "bg-emerald-100 text-emerald-800"
-                : model.technical.tag === "AVERAGE" ? "bg-amber-100 text-amber-800"
+                model.technical.percent >= 70 ? "bg-emerald-100 text-emerald-800"
+                : model.technical.percent >= 45 ? "bg-amber-100 text-amber-800"
                 : "bg-rose-100 text-rose-800"
-              )}>{model.technical.tag}</span>
+              )}>Overall {model.technical.percent}/100</span>
             </div>
-            <TechnicalScoreCard pct={model.technical.percent} questions={model.technical.questions} tag={model.technical.tag} questionsLabel={`${model.technical.questions} Questions`} />
-          </div>
-
-          <div className={cn(card, "flex flex-col")}>
-            <div className="flex items-center justify-between border-b border-[#E8EAED] px-4 py-3">
-              <p className="text-sm font-extrabold text-[#1A1D22]">Communication score</p>
-              <span className="rounded-md bg-[#E0EDFF] px-2.5 py-0.5 text-[9px] font-extrabold uppercase text-[#0B5FFF]">{model.comm.tag}</span>
-            </div>
-            <CommunicationScoreCardDonutLive comm={model.comm} />
+            <EvaluationScoresCard scores={model.technical.scores} overall={model.technical.percent} />
           </div>
 
           {/* AI Summary */}
@@ -2672,25 +2556,16 @@ export function InterviewReportSreevaAI({
               <span className="ml-auto text-[10px] text-[#9AA0AC] font-medium">AI-generated - based on full interview</span>
             </div>
             {model.isFallback ? (
-              <p className="px-4 py-5 text-[12px] text-[#6B7079]">AI analysis pending - manual review required.</p>
+              <p className="px-4 py-5 text-[11px] text-[#6B7079]">AI analysis pending - manual review required.</p>
             ) : (
               <ul className="divide-y divide-[#F5F6F7]">
-                {model.aiBullets.map((b, i) => {
-                  // Strip bullet marker and **Label**: prefix entirely a" show plain body only
-                  const stripped = b.replace(/^[a\-\*]\s*/, "").trim();
-                  const body = stripped.replace(/^\*\*[^*]+\*\*[:i14s]?\s*/, "").trim();
-                  // Render **bold** markers as dark green semibold
-                  const parts = body.split(/\*\*([^*]+)\*\*/);
+                {model.aiBullets.slice(0, 3).map((b, i) => {
+                  const stripped = b.replace(/^[-\*]\s*/, "").trim();
+                  const body = stripped.replace(/^\*\*[^*]+\*\*[:.]?\s*/, "").trim();
                   return (
-                    <li key={i} className="flex items-start gap-2.5 px-4 py-3">
-                      <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
-                      <p className="text-[12.5px] leading-relaxed text-[#1A1D22]">
-                        {parts.map((part, idx) =>
-                          idx % 2 === 1
-                            ? <strong key={idx} className="font-semibold text-[#0D4D2E]">{part}</strong>
-                            : part
-                        )}
-                      </p>
+                    <li key={i} className="flex items-start gap-2 px-4 py-2.5">
+                      <span className="mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
+                      <p className="text-[11px] leading-snug text-[#1A1D22]">{body}</p>
                     </li>
                   );
                 })}
@@ -2752,37 +2627,64 @@ export function InterviewReportSreevaAI({
         </div>
 
 
-        {/* a"a" Intelligence panel + Skills a"a" */}
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-          <div className="lg:col-span-7">
-            <div className={cn(card, "flex min-h-0 flex-col overflow-hidden p-4 sm:p-5 lg:max-h-[480px]")}>
-              <h3 className="text-base font-bold tracking-tight text-neutral-900">Interview intelligence</h3>
-              <div className="mt-4"><TabStrip value={intel} onChange={setIntel} /></div>
-              <div className="mt-4 flex min-h-0 flex-1 flex-col overflow-hidden">
-                <ScrollFade className="min-h-0 flex-1 overflow-y-auto pr-2 overscroll-contain" style={{ scrollbarWidth: "thin", scrollbarColor: "#CBD5E1 transparent" }}>
-                  {intel === "integrity" && (
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      {model.integritySignals.map((row) => <IntelMetricCard key={row.id} row={row} />)}
-                    </div>
-                  )}
-                  {intel === "behavioral" && <BehavioralSignalsPanel analysis={model.behavioralAnalysis} />}
-                  {intel === "cognitive" && (
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      {model.cognitiveInsights.map((row) => <IntelMetricCard key={row.id} row={row} isCognitive />)}
-                    </div>
-                  )}
-                </ScrollFade>
+        {/* Intelligence panel + Skills */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {/* Interview Intelligence */}
+          <div className={cn(card, "overflow-hidden")}>
+            {/* Header */}
+            <div className="border-b border-[#E8EAED] px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-semibold text-[#1A1D22]">Interview intelligence</p>
+                <div className="flex items-center gap-1.5">
+                  <Shield className={cn("h-3.5 w-3.5 shrink-0", model.integrityScore >= 80 ? "text-emerald-600" : model.integrityScore >= 60 ? "text-amber-500" : "text-rose-600")} strokeWidth={2} />
+                  <span className={cn("text-[11px] font-bold", model.integrityScore >= 80 ? "text-emerald-700" : model.integrityScore >= 60 ? "text-amber-700" : "text-rose-700")}>
+                    {model.integrityScore}/100
+                  </span>
+                </div>
               </div>
+              <div className="mt-3"><TabStrip value={intel} onChange={setIntel} /></div>
             </div>
+            {/* Body — same divide-y list structure as strengths/risks */}
+            {intel === "raw_signals" && (
+              model.integritySignals.length === 1 && model.integritySignals[0].id === "clean" ? (
+                <ul className="divide-y divide-[#F0F1F3]">
+                  <li className="flex items-start gap-3 px-5 py-4">
+                    <span className="mt-[6px] h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13.5px] font-medium text-[#1A1D22] leading-snug">No flags detected</p>
+                      <p className="mt-1 text-[12.5px] leading-relaxed text-[#4B5563]">Candidate completed the interview without any proctoring or integrity flags.</p>
+                    </div>
+                  </li>
+                </ul>
+              ) : (
+                <ul className="divide-y divide-[#F0F1F3]">
+                  {model.integritySignals.filter(r => r.id !== "clean").map((row) => (
+                    <li key={row.id} className="flex items-start gap-3 px-5 py-4">
+                      <span className={cn("mt-[6px] h-2 w-2 shrink-0 rounded-full", row.tone === "rose" ? "bg-rose-500" : row.tone === "amber" ? "bg-amber-400" : "bg-emerald-500")} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="text-[13.5px] font-medium text-[#1A1D22] leading-snug">{row.label}</p>
+                          <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-bold leading-none", BADGE_PILL[row.tone])}>{row.badge}</span>
+                        </div>
+                        {row.details && row.details.length > 0 && (
+                          <p className="mt-1 text-[12.5px] leading-relaxed text-[#4B5563]">{row.details[0].replace(/^[-]\s*/, "")}</p>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )
+            )}
+            {intel === "signal_analysis" && <SignalAnalysisPanel analysis={model.signalAnalysis} />}
           </div>
-          <div className="min-h-0 lg:col-span-5">
-            <div className={cn(card, "flex min-h-0 flex-col overflow-hidden p-0 lg:max-h-[480px]")}>
-              <div className="sticky top-0 z-10 border-b border-[#E8EAED] bg-white px-4 py-3">
-                <h3 className="text-sm font-extrabold text-[#1A1D22]">Skill ratings</h3>
-                <p className="text-[10px] text-[#6B7079] mt-0.5">Scored from interview performance only</p>
-              </div>
-              <SkillRatingsContainer skills={model.skills} />
+
+          {/* Skill ratings */}
+          <div className={cn(card, "overflow-hidden")}>
+            <div className="border-b border-[#E8EAED] px-4 py-3">
+              <p className="text-sm font-semibold text-[#1A1D22]">Skill ratings</p>
+              <p className="text-[10px] text-[#6B7079] mt-0.5">Scored from interview performance only</p>
             </div>
+            <SkillRatingsContainer skills={model.skills} />
           </div>
         </div>
 
@@ -2886,25 +2788,25 @@ export function InterviewReportSreevaAI({
           const paragraphs = summary ? summary.split(/\n+/).filter(Boolean) : [];
           
           return (
-            <div className={cn("rounded-[24px] border px-6 py-7 shadow-sm", borderCls, bgCls)}>
-              <div className="flex flex-col md:flex-row md:items-start justify-between gap-8">
-                <div className="min-w-0 flex-1 space-y-5">
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white shadow-sm shrink-0">
-                      <Sparkles className={cn("h-4 w-4", mutedCls)} />
+            <div className={cn("rounded-2xl border px-5 py-4 shadow-sm", borderCls, bgCls)}>
+              <div className="flex flex-col md:flex-row md:items-start justify-between gap-5">
+                <div className="min-w-0 flex-1 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/80 shadow-sm shrink-0">
+                      <Sparkles className={cn("h-3 w-3", mutedCls)} />
                     </span>
-                    <h3 className={cn("text-[17px] font-black tracking-tight", textCls)}>Executive Hiring Decision</h3>
+                    <h3 className={cn("text-[13px] font-bold tracking-tight", textCls)}>Executive Hiring Decision</h3>
                   </div>
-                  
-                  <div className="space-y-4 pr-4">
+
+                  <div className="space-y-2 pr-2">
                     {paragraphs.length > 0 ? (
                       paragraphs.map((para, i) => (
-                        <p key={i} className={cn("text-[14px] leading-[1.7] font-medium", textCls, i === 0 ? "font-bold text-[14.5px]" : "opacity-90")}>
+                        <p key={i} className={cn("text-[12px] leading-[1.65]", textCls, i === 0 ? "font-semibold" : "font-normal opacity-80")}>
                           {para}
                         </p>
                       ))
                     ) : (
-                      <p className={cn("text-[14px] leading-[1.7] font-medium", textCls)}>
+                      <p className={cn("text-[12px] leading-[1.65] font-normal", textCls)}>
                         {`${model.fullName} is a ${model.fitLabel.toLowerCase()} candidate for the ${model.roleLabel} role with ${model.fitPercent}% fit.`}
                         {strength && ` Strong in ${strength.toLowerCase()}.`}
                         {gap && ` Key gap: ${gap.toLowerCase()}.`}
@@ -2912,16 +2814,16 @@ export function InterviewReportSreevaAI({
                     )}
                   </div>
 
-                  <div className="pt-4 border-t border-black/5">
-                    <p className={cn("text-[13px] flex items-center gap-2", mutedCls)}>
-                      <span className="font-black uppercase tracking-[0.15em] shrink-0">Recommended Next Step:</span>
-                      <span className="font-semibold">{nextStep}</span>
+                  <div className="pt-2.5 border-t border-black/5">
+                    <p className={cn("text-[11px] flex items-center gap-1.5", mutedCls)}>
+                      <span className="font-bold uppercase tracking-[0.12em] shrink-0">Next Step:</span>
+                      <span className="font-medium">{nextStep}</span>
                     </p>
                   </div>
                 </div>
-                <div className="shrink-0 flex flex-col md:items-end gap-2.5">
-                  <span className="text-[10px] font-black uppercase tracking-[0.2em] text-black/40">Final Verdict</span>
-                  <span className={cn("rounded-xl px-6 py-3 text-[15px] font-black uppercase tracking-widest text-white shadow-lg", stampCls)}>
+                <div className="shrink-0 flex flex-col md:items-end gap-1.5">
+                  <span className="text-[9px] font-black uppercase tracking-[0.2em] text-black/35">Final Verdict</span>
+                  <span className={cn("rounded-lg px-4 py-2 text-[11px] font-black uppercase tracking-widest text-white shadow-md", stampCls)}>
                     {model.recommendation}
                   </span>
                 </div>

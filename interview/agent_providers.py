@@ -23,6 +23,7 @@ import aiohttp
 from livekit.agents import APIConnectionError, APIStatusError, APITimeoutError, tts, utils
 from livekit.agents.types import APIConnectOptions, DEFAULT_API_CONNECT_OPTIONS
 from livekit.plugins import cartesia, deepgram, openai, sarvam, silero
+from livekit.plugins.turn_detector.multilingual import MultilingualModel
 try:
     from livekit.plugins import elevenlabs  # type: ignore[attr-defined]
 except Exception:  # pragma: no cover - plugin may not be installed in all environments
@@ -59,16 +60,9 @@ _PROVIDER_DEFAULTS: dict[str, Any] = {
     "sarvam_v2_loudness":      1.0,
     "sarvam_temperature":      0.4,
     # Endpointing: how long Deepgram waits after last detected word before sending
-    # speech_final=true. 1200ms gives slow/pausing speakers (non-native English)
-    # enough room to continue a thought without the system cutting them off.
-    # Pair with utterance_end_ms below for belt-and-suspenders utterance detection.
+    # speech_final=true. Keep this conservative for Nova; final chunks are not
+    # treated as final answers anymore, LiveKit's completed-turn hook is.
     "deepgram_endpointing_ms": 1200,
-    # utterance_end_ms: Deepgram sends an UtteranceEnd event after this many ms of
-    # silence following the last finalized word. This is a second signal on top of
-    # endpointing -- catches cases where endpointing fires but more speech follows.
-    # 1500ms matches our STT assembly grace window (3s) / 2 so we get the event
-    # well before our hard cap fires.
-    "deepgram_utterance_end_ms": 1500,
     # WS connect/send timeout. Sarvam closes idle connections after 60s -- keepalive pings every
     # 20s prevent this. recv timeout is set separately to 90s in _recv_task.
     "sarvam_ws_timeout_sec":   25,
@@ -704,8 +698,21 @@ def _deepgram_supported_params() -> set[str]:
         return set()
 
 
+def build_turn_detector():
+    try:
+        detector = MultilingualModel()
+        logger.info("[TURN_DETECTOR] LiveKit MultilingualModel enabled")
+        return detector
+    except Exception as exc:
+        logger.warning("[TURN_DETECTOR] unavailable, falling back to STT endpointing: %s", exc)
+        return None
+
+
 def build_stt(language_code: str = "en", model: str = STT_MODEL):
     supported = _deepgram_supported_params()
+    if "flux" in str(model or "").lower():
+        logger.info("[STT] Flux model requested (%s), forcing Nova-only model=%s", model, STT_MODEL)
+        model = STT_MODEL
     model_lc = str(model or "").lower()
     is_nova3 = "nova-3" in model_lc
 
@@ -717,7 +724,9 @@ def build_stt(language_code: str = "en", model: str = STT_MODEL):
         "punctuate":       True,
         "no_delay":        True,
         "vad_events":      True,
-        "filler_words":    False,
+        # Keep fillers so "um/uh/hmm" remain visible to turn detection and can
+        # extend candidate thinking time. Cleanup/scoring can still ignore them.
+        "filler_words":    True,
         "keep_alive":      True,   # Send KeepAlive messages during silence -- prevents Deepgram
                                    # closing the WS with 1011 "no audio received within timeout"
     }
@@ -740,26 +749,21 @@ def build_stt(language_code: str = "en", model: str = STT_MODEL):
     elif "endpointing" in supported:
         base_kwargs["endpointing"] = ep_ms
 
-    # utterance_end_ms: secondary utterance-completion signal from Deepgram.
-    # Fires after N ms of silence following the last finalized word, giving us
-    # a server-side "the candidate has stopped speaking" event independent of
-    # LiveKit's VAD. Requires interim_results=True (already set above).
-    utt_ms = str(_PROVIDER_DEFAULTS["deepgram_utterance_end_ms"])
-    if "utterance_end_ms" in supported:
-        base_kwargs["utterance_end_ms"] = utt_ms
-
     safe_kwargs = {k: v for k, v in base_kwargs.items() if k in supported} if supported else base_kwargs
 
     logger.info(
-        "[STT] Deepgram config: model=%s language=%s interim=%s diarization=%s ep_ms=%s utt_end_ms=%s",
+        "[STT] Deepgram Nova config: model=%s language=%s interim=%s diarization=%s ep_ms=%s filler_words=%s",
         safe_kwargs.get("model"),
         safe_kwargs.get("language"),
         bool(safe_kwargs.get("interim_results", False)),
         bool(safe_kwargs.get("enable_diarization", False)),
         safe_kwargs.get("endpointing_ms", safe_kwargs.get("endpointing", "n/a")),
-        safe_kwargs.get("utterance_end_ms", "n/a"),
+        bool(safe_kwargs.get("filler_words", False)),
     )
-    return deepgram.STT(**safe_kwargs)
+    stt_v1 = deepgram.STT(**safe_kwargs)
+    setattr(stt_v1, "_hr_stt_engine", "deepgram_nova")
+    setattr(stt_v1, "_hr_turn_detection_mode", "turn_detector")
+    return stt_v1
 
 
 def build_llm(model: str = LLM_MODEL, temperature: float = 0.6):

@@ -130,7 +130,7 @@ function parseInterviewReport(raw: string | object | null | undefined) {
       scores: {
         combined:      r.combined_score ?? null,
         technical:     r.technical_score ?? null,
-        communication: r.communicationScore ?? r.communication_score ?? r.scores?.communication ?? null,
+        communication: r.dimensions?.find((d: any) => d?.name?.toLowerCase?.().includes("communication"))?.score ?? r.communication_score ?? null,
         behavioral:    r.behavioral_score ?? null,
       },
       integrity: {
@@ -138,8 +138,8 @@ function parseInterviewReport(raw: string | object | null | undefined) {
         summary: r.integrity?.summary ?? null,
       },
       communication: r.communication_analysis ?? r.communication ?? null,
-      cognitive:     r.cognitiveInsights ?? r.cognitive_insights ?? r.cognitive ?? null,
-      behavioral:    r.behavioralSignalsAnalysis ?? r.behavioral_analysis ?? r.behavior_signals ?? null,
+      
+      signal_analysis: r.signalAnalysis ?? r.behavioralSignalsAnalysis ?? r.behavioral_analysis ?? null,
       verdict: {
         summary:           r.verdict?.summary ?? null,
         recommendation:    r.verdict?.recommendation ?? null,
@@ -638,7 +638,7 @@ ${semanticContext || "No semantic matches found — rely on tools for accurate d
                 drive: { select: { id: true, title: true } },
                 interview: {
                   select: {
-                    id: true, status: true, aiSummary: true, completedAt: true, interviewDuration: true,
+                    id: true, status: true, interviewSummary: true, completedAt: true, interviewDuration: true,
                   },
                 },
               },
@@ -682,12 +682,9 @@ ${semanticContext || "No semantic matches found — rely on tools for accurate d
                   select: {
                     id: true, status: true,
                     skillRatings: true,
-                    communicationScore: true,
-                    cognitiveInsights: true,
-                    behaviorSignals: true,
-                    behavioralSignalsAnalysis: true,
+                    interviewSummary: true,
+                    signalAnalysis: true,
                     interviewTranscript: true,
-                    aiSummary: true,
                     completedAt: true,
                     interviewDuration: true,
                     questionByQuestionAnalysis: true,
@@ -709,11 +706,10 @@ ${semanticContext || "No semantic matches found — rely on tools for accurate d
             } else {
               const mergedReport = {
                 ...(candidate.interview.skillRatings as any),
-                communication_score: candidate.interview.communicationScore ?? null,
-                cognitive_insights: candidate.interview.cognitiveInsights ?? null,
+                communication_score: (candidate.interview.skillRatings as any)?.dimensions?.find((d: any) => d?.name?.toLowerCase?.().includes("communication"))?.score ?? null,
+
                 integrity_signals: candidate.interview.integritySignals ?? null,
-                behavior_signals: candidate.interview.behaviorSignals ?? null,
-                behavioral_signals_analysis: candidate.interview.behavioralSignalsAnalysis ?? null,
+                signal_analysis: candidate.interview.signalAnalysis ?? null,
                 question_by_question_analysis: candidate.interview.questionByQuestionAnalysis ?? null,
               };
               const report = parseInterviewReport(mergedReport as any);
@@ -726,7 +722,7 @@ ${semanticContext || "No semantic matches found — rely on tools for accurate d
                 interviewStatus:  candidate.interviewStatus,
                 completedAt:      candidate.interview.completedAt,
                 interviewDuration: candidate.interview.interviewDuration,
-                aiSummary:        candidate.interview.aiSummary,
+                interviewSummary: candidate.interview.interviewSummary,
                 report,
               });
             }
@@ -773,7 +769,7 @@ ${semanticContext || "No semantic matches found — rely on tools for accurate d
               createdAt: true, resumeUrl: true,
               drive: { select: { title: true, orgId: true, screeningThreshold: true } },
               interview: {
-                select: { status: true, aiSummary: true, completedAt: true, interviewDuration: true },
+                select: { status: true, interviewSummary: true, completedAt: true, interviewDuration: true },
               },
             },
           });
