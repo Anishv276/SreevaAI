@@ -60,30 +60,60 @@ def test_regex_topic_parsing():
     assert parse_tag("[TOPIC:FOLLOWUP] - text") == "FOLLOWUP"
     assert parse_tag("No tag here") is None
 
-def test_build_stt_keywords(monkeypatch):
-    import sys
+def test_build_stt_uses_flux_sttv2(monkeypatch):
     from unittest.mock import MagicMock
-    
-    # Mock deepgram.STT in livekit.plugins
-    mock_stt_class = MagicMock()
-    monkeypatch.setattr("livekit.plugins.deepgram.STT", mock_stt_class)
-    
-    # Mock _deepgram_supported_params to return a set of supported args
-    monkeypatch.setattr("interview.agent_providers._deepgram_supported_params", lambda: {"model", "language", "keywords"})
-    
+
+    mock_stt_v2_class = MagicMock()
+    monkeypatch.setattr("livekit.plugins.deepgram.STTv2", mock_stt_v2_class)
+
     from interview.agent_providers import build_stt
-    
-    # Run build_stt
-    build_stt(language_code="en", model="nova-2-general")
-    
-    # Verify that mock_stt_class was called with keywords containing instantly, heyreach, and n8n
-    assert mock_stt_class.call_count == 1
-    called_kwargs = mock_stt_class.call_args.kwargs
-    assert "keywords" in called_kwargs
-    keywords = called_kwargs["keywords"]
-    assert ("instantly", 10.0) in keywords
-    assert ("heyreach", 10.0) in keywords
-    assert ("n8n", 10.0) in keywords
+    from interview.agent_runtime_support import FLUX_EOT_THRESHOLD, FLUX_EOT_TIMEOUT_MS
+
+    build_stt(language_code="en")
+
+    assert mock_stt_v2_class.call_count == 1
+    called_kwargs = mock_stt_v2_class.call_args.kwargs
+    assert called_kwargs["model"] == "flux-general-en"
+    assert called_kwargs["sample_rate"] == 16000
+    assert called_kwargs["eot_threshold"] == FLUX_EOT_THRESHOLD
+    assert called_kwargs["eot_timeout_ms"] == FLUX_EOT_TIMEOUT_MS
+    assert called_kwargs["mip_opt_out"] is True
+    assert called_kwargs["keyterm"] == ["instantly", "heyreach", "n8n"]
+    assert "filler_words" not in called_kwargs
+    assert "language_hint" not in called_kwargs
+
+
+def test_build_stt_multilingual_uses_language_hint(monkeypatch):
+    from unittest.mock import MagicMock
+
+    mock_stt_v2_class = MagicMock()
+    monkeypatch.setattr("livekit.plugins.deepgram.STTv2", mock_stt_v2_class)
+
+    from interview.agent_providers import build_stt
+
+    build_stt(language_code="hi")
+
+    called_kwargs = mock_stt_v2_class.call_args.kwargs
+    assert called_kwargs["model"] == "flux-general-multi"
+    assert called_kwargs["language_hint"] == ["hi", "en"]
+
+
+def test_build_stt_merges_extra_flux_keyterms(monkeypatch):
+    from unittest.mock import MagicMock
+
+    mock_stt_v2_class = MagicMock()
+    monkeypatch.setattr("livekit.plugins.deepgram.STTv2", mock_stt_v2_class)
+
+    from interview.agent_providers import build_stt
+
+    build_stt(language_code="en", keyterms=["Zapier", "n8n", "", " zapier ", *[f"term{i}" for i in range(110)]])
+
+    keyterms = mock_stt_v2_class.call_args.kwargs["keyterm"]
+    assert keyterms[:4] == ["instantly", "heyreach", "n8n", "Zapier"]
+    assert len(keyterms) == 100
+    assert keyterms.count("Zapier") == 1
+    assert "" not in keyterms
+
 
 @pytest.mark.anyio
 async def test_tts_acronym_transform():

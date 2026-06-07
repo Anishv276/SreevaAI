@@ -163,7 +163,25 @@ class _RuntimeWarningSampler(logging.Filter):
 for logger_name in ("livekit.plugins.cartesia", "livekit.plugins.silero", "livekit"):
     _logger = logging.getLogger(logger_name)
     _logger.addFilter(_RuntimeWarningSampler())
-STT_MODEL = "nova-3"
+# Flux: Deepgram's conversational STT, purpose-built for real-time voice agents.
+# Uses deepgram.STTv2 (not STT) → /v2/listen endpoint. Native turn detection
+# replaces endpointing_ms. Thresholds tuned for 20-min interviews where candidates
+# give 30s–2min answers with thinking pauses and fillers.
+STT_MODEL = "flux-general-en"
+
+# EndOfTurn confidence threshold. 0.75 is patient enough for thinking pauses without
+# cutting candidates mid-sentence. Range: 0.5–0.9 (Deepgram default: 0.7).
+FLUX_EOT_THRESHOLD: float = 0.75
+
+# EagerEndOfTurn fires ~200ms early to warm up LLM. Must be <= FLUX_EOT_THRESHOLD.
+# Set to None to disable. When enabled, agent must handle TurnResumed by cancelling
+# any in-flight eval. Currently disabled — our eval gate is not wired for cancellation.
+FLUX_EAGER_EOT_THRESHOLD: float | None = None
+
+# Max silence before forced turn end regardless of confidence. 6000ms gives candidates
+# time to think between sentences. Range: 500–10000 (Deepgram default: 5000).
+FLUX_EOT_TIMEOUT_MS: int = 6000
+
 LLM_MODEL = "gpt-4.1-mini"
 INTERVIEW_LLM_MODEL = LLM_MODEL
 INTERVIEW_TEMPERATURE = 0.75

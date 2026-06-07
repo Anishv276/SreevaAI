@@ -50,7 +50,7 @@ DB fetch (get_interview_context)  +  LiveKit room connect  →  run concurrently
 
 #### 3c. Providers
 - **LLM**: GPT-4.1-mini (`INTERVIEW_LLM_MODEL`), temperature from `INTERVIEW_TEMPERATURE`.
-- **STT**: Deepgram (`deepgramModel` from DB, default `STT_MODEL`).
+- **STT**: Deepgram Flux (`flux-general-en` for English, `flux-general-multi` for non-English language sessions).
 - **TTS**: Cartesia / ElevenLabs / Sarvam (from `voiceId`/`voiceProvider` in DB, VOICE_REGISTRY lookup).
 - **VAD**: Silero ONNX (prewarmed in `prewarm()`).
 

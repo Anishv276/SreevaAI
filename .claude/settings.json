@@ -12,7 +12,14 @@
       "Bash(python find_broken.py)",
       "Bash(rm find_broken.py)",
       "Bash(python -m py_compile interview/agent_scoring.py interview/eval_pipeline.py interview/agent_runtime.py interview/probe_strategy.py interview/agent_runtime_helpers.py)",
-      "Bash(python -m py_compile interview/agent_runtime.py interview/probe_strategy.py interview/eval_pipeline.py interview/agent_scoring.py interview/agent_runtime_helpers.py)"
+      "Bash(python -m py_compile interview/agent_runtime.py interview/probe_strategy.py interview/eval_pipeline.py interview/agent_scoring.py interview/agent_runtime_helpers.py)",
+      "Bash(awk 'NR>=1960 && NR<=2935 && /nonlocal/ {print NR\": \"$0}' interview/agent_runtime.py)",
+      "Bash(python -m py_compile interview/agent_runtime.py interview/eval_pipeline.py interview/agent_scoring.py interview/probe_strategy.py interview/agent_runtime_helpers.py interview/agent_profile_context.py interview/interview_phases.py interview/turn_evaluator.py)",
+      "Bash(grep -oE \"turn=2[2-6][^\\\\\"]{0,90}\")",
+      "Bash(grep -oE \"turn=2[0-9] \\(skipped -- MOVE_ON[^\\\\\"]*|.{0,40}scoring_topic=[^|]*|.{0,30}DECISION=[A-Z_]*[^\\\\\"]{0,40}\\)\" logs.md)",
+      "Bash(grep -oE \"\\(TOPIC SWITCH: '[^']*' -> 'Zapier'|turn=2[7-9].{0,20}\\(scoring_topic|skipped|DECISION\\)[^\\\\\"]{0,60}|\\\\[QA\\\\] turn=2[7-9][^\\\\\"]{0,140}\\)\" logs.md)",
+      "Bash(python -m py_compile interview/agent_runtime.py interview/agent_persistence.py interview/eval_pipeline.py)",
+      "Bash(grep -v \"//\\\\|proctoring\\\\|proctoringRow\\\\|signalTimeline\\\\|strength\\\\|risk\")"
     ]
   }
 }

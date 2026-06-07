@@ -26,7 +26,7 @@ model Organization {
   onboardingComplete   Boolean     @default(false)
   voiceId              String?     @default("9626c31c-bec5-4cca-baa8-f8ba9e84c8bc")
   allowedVoices        String[]    @default([])
-  deepgramModel        String?     @default("nova-3")
+  deepgramModel        String?     @default("flux-general-en")
   interviewQuotaTotal  Int         @default(0)
   interviewQuotaUsed   Int         @default(0)
   creditsUsed          Float       @default(0)

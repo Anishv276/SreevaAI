@@ -44,6 +44,47 @@ interface HardwareCheckProps {
 }
 
 type CheckStatus = "idle" | "requesting" | "granted" | "denied";
+type WindowWithWebkitAudioContext = Window & {
+    webkitAudioContext?: typeof AudioContext;
+};
+
+const FLUX_VERIFY_SAMPLE_RATE = 16000;
+const FLUX_VERIFY_FETCH_TIMEOUT_MS = 22000;
+
+async function recordedAudioToLinear16Pcm(chunks: Blob[], mimeType: string): Promise<Blob> {
+    const sourceBlob = new Blob(chunks, { type: mimeType || "audio/webm" });
+    const sourceBuffer = await sourceBlob.arrayBuffer();
+    const AudioContextCtor = window.AudioContext || (window as WindowWithWebkitAudioContext).webkitAudioContext;
+    if (!AudioContextCtor) {
+        throw new Error("AudioContext is not available");
+    }
+    const audioContext = new AudioContextCtor();
+    try {
+        const decoded = await audioContext.decodeAudioData(sourceBuffer.slice(0));
+        let buffer = decoded;
+
+        if (decoded.sampleRate !== FLUX_VERIFY_SAMPLE_RATE || decoded.numberOfChannels !== 1) {
+            const frameCount = Math.max(1, Math.ceil(decoded.duration * FLUX_VERIFY_SAMPLE_RATE));
+            const offlineContext = new OfflineAudioContext(1, frameCount, FLUX_VERIFY_SAMPLE_RATE);
+            const source = offlineContext.createBufferSource();
+            source.buffer = decoded;
+            source.connect(offlineContext.destination);
+            source.start(0);
+            buffer = await offlineContext.startRendering();
+        }
+
+        const channel = buffer.getChannelData(0);
+        const pcm = new ArrayBuffer(channel.length * 2);
+        const view = new DataView(pcm);
+        for (let i = 0; i < channel.length; i++) {
+            const sample = Math.max(-1, Math.min(1, channel[i]));
+            view.setInt16(i * 2, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+        }
+        return new Blob([pcm], { type: "application/octet-stream" });
+    } finally {
+        await audioContext.close().catch(() => undefined);
+    }
+}
 
 export function HardwareCheck({
     onComplete,
@@ -432,7 +473,7 @@ export function HardwareCheck({
 
     // -----------------------------------------------------------------
     // SPEECH RECOGNITION
-    // Strategy: MediaRecorder captures audio → Deepgram nova-3 transcribes
+    // Strategy: MediaRecorder captures audio -> Deepgram Flux transcribes
     // Web Speech API used only for live "Heard:" display (not for pass/fail)
     // -----------------------------------------------------------------
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -627,15 +668,15 @@ export function HardwareCheck({
 
         // --- SLOW PATH: No Web Speech transcript — fall back to Deepgram ---
         try {
-            const audioBlob = new Blob(chunks, { type: mimeType || "audio/webm" });
+            const audioBlob = await recordedAudioToLinear16Pcm(chunks, mimeType);
             const formData = new FormData();
-            formData.append("audio", audioBlob, "mic-check.webm");
+            formData.append("audio", audioBlob, "mic-check-linear16.pcm");
             formData.append("targetPhrase", verifiedPhraseRef.current);
             formData.append("applicationId", applicationId);
             formData.append("interviewToken", interviewToken);
 
             const controller = new AbortController();
-            timeoutId = window.setTimeout(() => controller.abort(), 8000);
+            timeoutId = window.setTimeout(() => controller.abort(), FLUX_VERIFY_FETCH_TIMEOUT_MS);
             const res = await fetch("/api/verify-speech", {
                 method: "POST",
                 body: formData,

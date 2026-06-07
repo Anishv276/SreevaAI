@@ -1,6 +1,6 @@
 import { DEFAULT_VOICE_ID, getVoiceById } from "@/lib/constants/voices";
 
-export const DEFAULT_DEEPGRAM_MODEL = "nova-3";
+export const DEFAULT_DEEPGRAM_MODEL = "flux-general-en";
 
 export function normalizeDeepgramModel(model?: string | null): string {
   const raw = String(model || "").trim().toLowerCase();

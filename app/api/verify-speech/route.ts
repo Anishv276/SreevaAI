@@ -1,10 +1,125 @@
 import { NextRequest, NextResponse } from "next/server";
+import { DeepgramClient } from "@deepgram/sdk";
 import { prisma } from "@/lib/prisma";
 import { recordOrgBillingUsage } from "@/lib/usage-metrics";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
 
-const DEEPGRAM_VERIFY_MODEL = "nova-3";
-const DEEPGRAM_NOVA3_MONO_USD_PER_MIN = 0.0048;
+const DEEPGRAM_VERIFY_MODEL = "flux-general-en";
+const DEEPGRAM_FLUX_EN_USD_PER_MIN = 0.0065;
+const FLUX_VERIFY_MIN_TIMEOUT_MS = 10000;
+const FLUX_VERIFY_TIMEOUT_PADDING_MS = 6000;
+const FLUX_AUDIO_SAMPLE_RATE = 16000;
+const FLUX_AUDIO_CHUNK_BYTES = 2560; // 80ms of 16-bit mono PCM at 16kHz.
+const FLUX_AUDIO_CHUNK_DURATION_MS = 80;
+
+type FluxMessage = {
+    type?: string;
+    event?: string;
+    request_id?: string;
+    transcript?: string;
+    audio_window_end?: number;
+    code?: string;
+    description?: string;
+};
+
+type FluxConnection = {
+    on(event: "message", callback: (message: FluxMessage) => void): void;
+    on(event: "error", callback: (error: Error) => void): void;
+    on(event: "close", callback: () => void): void;
+    connect(): unknown;
+    waitForOpen(): Promise<unknown>;
+    sendMedia(message: ArrayBuffer): void;
+    sendCloseStream(message: { type: "CloseStream" }): void;
+    close(): void;
+};
+
+async function transcribeWithFlux(audioBuffer: ArrayBuffer, apiKey: string): Promise<{
+    transcript: string;
+    durationSeconds: number;
+    requestId: string;
+}> {
+    const client = new DeepgramClient();
+    const abortController = new AbortController();
+    let connection: FluxConnection | null = null;
+    let resolved = false;
+    const transcriptParts: string[] = [];
+    let durationSeconds = 0;
+    let requestId = "";
+    const audioDurationMs = Math.ceil((audioBuffer.byteLength / (FLUX_AUDIO_SAMPLE_RATE * 2)) * 1000);
+    const timeoutMs = Math.max(FLUX_VERIFY_MIN_TIMEOUT_MS, audioDurationMs + FLUX_VERIFY_TIMEOUT_PADDING_MS);
+
+    return await new Promise(async (resolve, reject) => {
+        const finish = (error?: Error) => {
+            if (resolved) return;
+            resolved = true;
+            clearTimeout(timeoutId);
+            try {
+                connection?.close();
+            } catch {
+                // Ignore close failures after terminal Deepgram events.
+            }
+            if (error) {
+                reject(error);
+                return;
+            }
+            const fallbackDurationSeconds = audioBuffer.byteLength / (FLUX_AUDIO_SAMPLE_RATE * 2);
+            resolve({
+                transcript: transcriptParts.join(" ").replace(/\s+/g, " ").trim(),
+                durationSeconds: durationSeconds || fallbackDurationSeconds,
+                requestId,
+            });
+        };
+
+        const timeoutId = setTimeout(() => {
+            abortController.abort();
+            finish(new Error("timeout"));
+        }, timeoutMs);
+
+        try {
+            connection = await client.listen.v2.connect({
+                model: DEEPGRAM_VERIFY_MODEL,
+                encoding: "linear16",
+                sample_rate: FLUX_AUDIO_SAMPLE_RATE,
+                eot_threshold: 0.7,
+                eot_timeout_ms: 1000,
+                mip_opt_out: true,
+                Authorization: `Token ${apiKey}`,
+                abortSignal: abortController.signal,
+                connectionTimeoutInSeconds: 5,
+                reconnectAttempts: 0,
+            }) as FluxConnection;
+
+            connection.on("message", (message) => {
+                if (message.request_id) requestId = message.request_id;
+                if (typeof message.audio_window_end === "number") {
+                    durationSeconds = Math.max(durationSeconds, message.audio_window_end);
+                }
+                if (message.type === "TurnInfo" && message.transcript) {
+                    transcriptParts.push(message.transcript);
+                    if (message.event === "EndOfTurn") finish();
+                    return;
+                }
+                if (message.type === "Error") {
+                    finish(new Error(message.description || message.code || "Deepgram Flux error"));
+                }
+            });
+            connection.on("error", (error) => finish(error));
+            connection.on("close", () => finish());
+
+            connection.connect();
+            await connection.waitForOpen();
+            for (let offset = 0; offset < audioBuffer.byteLength; offset += FLUX_AUDIO_CHUNK_BYTES) {
+                connection.sendMedia(audioBuffer.slice(offset, offset + FLUX_AUDIO_CHUNK_BYTES));
+                if (offset + FLUX_AUDIO_CHUNK_BYTES < audioBuffer.byteLength) {
+                    await new Promise((chunkSent) => setTimeout(chunkSent, FLUX_AUDIO_CHUNK_DURATION_MS));
+                }
+            }
+            connection.sendCloseStream({ type: "CloseStream" });
+        } catch (error) {
+            finish(error instanceof Error ? error : new Error(String(error)));
+        }
+    });
+}
 
 async function getBillingOrgId(applicationId: string, interviewToken: string) {
     if (!applicationId) return null;
@@ -44,43 +159,20 @@ export async function POST(req: NextRequest) {
 
         const audioBuffer = await audio.arrayBuffer();
 
-        const controller = new AbortController();
-        // 5s timeout — Deepgram nova-3 typically responds in 300-800ms but
-        // cold-start + large audio can take up to ~3s. 2s was too tight.
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
-        let response: Response;
+        let fluxResult: Awaited<ReturnType<typeof transcribeWithFlux>>;
         try {
-            response = await fetch(
-                "https://api.deepgram.com/v1/listen?model=nova-3&smart_format=false&punctuate=false&language=en",
-                {
-                    method: "POST",
-                    headers: {
-                        "Authorization": `Token ${apiKey}`,
-                        "Content-Type": (audio.type && audio.type !== "application/octet-stream") ? audio.type : "audio/webm",
-                    },
-                    body: audioBuffer,
-                    signal: controller.signal,
-                }
-            );
+            fluxResult = await transcribeWithFlux(audioBuffer, apiKey);
         } catch (fetchErr) {
-            if ((fetchErr as Error)?.name === "AbortError") {
-                console.warn("[verify-speech] Deepgram request timed out after 5000ms");
+            if ((fetchErr as Error)?.message === "timeout" || (fetchErr as Error)?.name === "AbortError") {
+                console.warn("[verify-speech] Deepgram Flux request timed out");
                 return NextResponse.json({ transcript: "", matched: false, error: "timeout" });
             }
-            throw fetchErr;
-        } finally {
-            clearTimeout(timeoutId);
-        }
-
-        if (!response.ok) {
-            const errText = await response.text();
-            console.error("[verify-speech] Deepgram HTTP error:", response.status, errText);
+            console.error("[verify-speech] Deepgram Flux error:", fetchErr);
             return NextResponse.json({ error: "Transcription failed" }, { status: 500 });
         }
 
-        const data = await response.json();
-        console.log("[verify-speech] Deepgram raw:", JSON.stringify(data).slice(0, 300));
-        const durationSeconds = Math.max(0, Number(data?.metadata?.duration || 0));
+        console.log("[verify-speech] Deepgram Flux transcript:", fluxResult.transcript.slice(0, 300));
+        const durationSeconds = Math.max(0, Number(fluxResult.durationSeconds || 0));
         if (applicationId && durationSeconds > 0) {
             const orgId = await getBillingOrgId(applicationId, interviewToken).catch(() => null);
             if (orgId) {
@@ -93,14 +185,14 @@ export async function POST(req: NextRequest) {
                         sttProvider: "DEEPGRAM",
                         sttModel: DEEPGRAM_VERIFY_MODEL,
                         sttAudioSeconds: durationSeconds,
-                        sttCostUsd: (durationSeconds / 60) * DEEPGRAM_NOVA3_MONO_USD_PER_MIN,
-                        eventId: `verify-speech:${applicationId}:${data?.metadata?.request_id || Date.now()}`,
+                        sttCostUsd: (durationSeconds / 60) * DEEPGRAM_FLUX_EN_USD_PER_MIN,
+                        eventId: `verify-speech:${applicationId}:${fluxResult.requestId || Date.now()}`,
                     },
                 });
             }
         }
 
-        const transcript: string = data?.results?.channels?.[0]?.alternatives?.[0]?.transcript ?? "";
+        const transcript: string = fluxResult.transcript;
 
         if (!transcript) {
             console.warn("[verify-speech] Empty transcript from Deepgram");

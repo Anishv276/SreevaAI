@@ -17,13 +17,12 @@ import json
 import inspect
 import os
 from dataclasses import replace
-from typing import Any
+from typing import Any, Sequence
 
 import aiohttp
 from livekit.agents import APIConnectionError, APIStatusError, APITimeoutError, tts, utils
 from livekit.agents.types import APIConnectOptions, DEFAULT_API_CONNECT_OPTIONS
 from livekit.plugins import cartesia, deepgram, openai, sarvam, silero
-from livekit.plugins.turn_detector.multilingual import MultilingualModel
 try:
     from livekit.plugins import elevenlabs  # type: ignore[attr-defined]
 except Exception:  # pragma: no cover - plugin may not be installed in all environments
@@ -31,7 +30,9 @@ except Exception:  # pragma: no cover - plugin may not be installed in all envir
 
 from interview.agent_runtime_support import (
     LLM_MODEL,
-    STT_MODEL,
+    FLUX_EOT_THRESHOLD,
+    FLUX_EAGER_EOT_THRESHOLD,
+    FLUX_EOT_TIMEOUT_MS,
     logger,
 )
 from interview.agent_utils import _cartesia_plugin_model
@@ -59,10 +60,6 @@ _PROVIDER_DEFAULTS: dict[str, Any] = {
     "sarvam_v2_pitch":         0.0,
     "sarvam_v2_loudness":      1.0,
     "sarvam_temperature":      0.4,
-    # Endpointing: how long Deepgram waits after last detected word before sending
-    # speech_final=true. Keep this conservative for Nova; final chunks are not
-    # treated as final answers anymore, LiveKit's completed-turn hook is.
-    "deepgram_endpointing_ms": 1200,
     # WS connect/send timeout. Sarvam closes idle connections after 60s -- keepalive pings every
     # 20s prevent this. recv timeout is set separately to 90s in _recv_task.
     "sarvam_ws_timeout_sec":   25,
@@ -690,80 +687,93 @@ def build_elevenlabs_tts(
     return elevenlabs.TTS(**tts_kwargs)
 
 
-def _deepgram_supported_params() -> set[str]:
-    try:
-        sig = inspect.signature(deepgram.STT.__init__)
-        return set(sig.parameters.keys()) - {"self"}
-    except Exception:
-        return set()
+# Base keyterms that are always included regardless of role/JD.
+# Extra role/resume/JD terms can be passed at STT construction time. Avoid
+# updating LiveKit STTv2 mid-stream: in livekit-plugins-deepgram 1.5.x,
+# update_options() reconnects instead of sending Deepgram's raw Configure message.
+_FLUX_BASE_KEYTERMS: list[str] = [
+    "instantly", "heyreach", "n8n",
+]
 
 
-def build_turn_detector():
-    try:
-        detector = MultilingualModel()
-        logger.info("[TURN_DETECTOR] LiveKit MultilingualModel enabled")
-        return detector
-    except Exception as exc:
-        logger.warning("[TURN_DETECTOR] unavailable, falling back to STT endpointing: %s", exc)
-        return None
+def _merge_flux_keyterms(extra_keyterms: Sequence[str] | None = None) -> list[str]:
+    """Return Flux keyterms deduped in order and capped to Deepgram's limit."""
+    merged: list[str] = []
+    seen: set[str] = set()
+    for term in [*_FLUX_BASE_KEYTERMS, *(extra_keyterms or [])]:
+        cleaned = " ".join(str(term or "").strip().split())
+        if not cleaned:
+            continue
+        key = cleaned.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(cleaned)
+        if len(merged) >= 100:
+            break
+    return merged
 
 
-def build_stt(language_code: str = "en", model: str = STT_MODEL):
-    supported = _deepgram_supported_params()
-    if "flux" in str(model or "").lower():
-        logger.info("[STT] Flux model requested (%s), forcing Nova-only model=%s", model, STT_MODEL)
-        model = STT_MODEL
-    model_lc = str(model or "").lower()
-    is_nova3 = "nova-3" in model_lc
+def build_stt(language_code: str = "en", keyterms: Sequence[str] | None = None):
+    """Build a Deepgram Flux STTv2 instance for live interview sessions.
 
-    base_kwargs: dict[str, Any] = {
-        "model":           model,
-        "smart_format":    True,
-        "language":        language_code,
-        "interim_results": True,
-        "punctuate":       True,
-        "no_delay":        True,
-        "vad_events":      True,
-        # Keep fillers so "um/uh/hmm" remain visible to turn detection and can
-        # extend candidate thinking time. Cleanup/scoring can still ignore them.
-        "filler_words":    True,
-        "keep_alive":      True,   # Send KeepAlive messages during silence -- prevents Deepgram
-                                   # closing the WS with 1011 "no audio received within timeout"
+    Flux uses /v2/listen (not /v1). Turn detection is native — EOT events replace
+    endpointing_ms. VAD (Silero) is still passed to AgentSession for barge-in handling.
+    Language: flux-general-en for English-only, flux-general-multi for multilingual.
+    For Hindi (Sarvam TTS sessions), pass language_code="hi" to use flux-general-multi.
+    """
+    # Resolve model: multilingual model when non-English language requested.
+    # language_hint is only valid on flux-general-multi — sending it to flux-general-en
+    # returns HTTP 400. For English we always use flux-general-en (better accuracy).
+    is_multilingual = language_code not in ("en", "en-US", "en-IN", "en-GB")
+    resolved_model = "flux-general-multi" if is_multilingual else "flux-general-en"
+    flux_keyterms = _merge_flux_keyterms(keyterms)
+
+    stt_kwargs: dict[str, Any] = {
+        "model":          resolved_model,
+        "sample_rate":    16000,
+        "eot_threshold":  FLUX_EOT_THRESHOLD,
+        "eot_timeout_ms": FLUX_EOT_TIMEOUT_MS,
+        # mip_opt_out: candidate interview audio should not be used for model training.
+        "mip_opt_out":    True,
+        "keyterm":        flux_keyterms,
     }
-    if "nova" in model.lower() and "enable_diarization" in supported:
-        base_kwargs["enable_diarization"] = True
 
-    keyword_terms = ["instantly", "heyreach", "n8n"]
-    # Deepgram rejects `keywords` for Nova-3. Use keyterm/keyterms there.
-    if is_nova3:
-        if "keyterm" in supported:
-            base_kwargs["keyterm"] = keyword_terms
-        elif "keyterms" in supported:
-            base_kwargs["keyterms"] = keyword_terms
-    elif "keywords" in supported:
-        base_kwargs["keywords"] = [(term, 10.0) for term in keyword_terms]
+    # eager_eot_threshold: fires EagerEndOfTurn ~200ms earlier to pre-warm LLM.
+    # Only enable if FLUX_EAGER_EOT_THRESHOLD is set (non-None) — requires that
+    # the eval gate handles TurnResumed cancellation to avoid double-firing.
+    if FLUX_EAGER_EOT_THRESHOLD is not None:
+        stt_kwargs["eager_eot_threshold"] = FLUX_EAGER_EOT_THRESHOLD
 
-    ep_ms = _PROVIDER_DEFAULTS["deepgram_endpointing_ms"]
-    if "endpointing_ms" in supported:
-        base_kwargs["endpointing_ms"] = ep_ms
-    elif "endpointing" in supported:
-        base_kwargs["endpointing"] = ep_ms
-
-    safe_kwargs = {k: v for k, v in base_kwargs.items() if k in supported} if supported else base_kwargs
+    # language_hint: bias language detection for flux-general-multi.
+    # For Hindi sessions, hint both hi+en (code-switching is common in Indian interviews).
+    if is_multilingual:
+        lang_hint_map: dict[str, list[str]] = {
+            "hi":    ["hi", "en"],
+            "hi-IN": ["hi", "en"],
+        }
+        hints = lang_hint_map.get(language_code, [language_code])
+        stt_kwargs["language_hint"] = hints
 
     logger.info(
-        "[STT] Deepgram Nova config: model=%s language=%s interim=%s diarization=%s ep_ms=%s filler_words=%s",
-        safe_kwargs.get("model"),
-        safe_kwargs.get("language"),
-        bool(safe_kwargs.get("interim_results", False)),
-        bool(safe_kwargs.get("enable_diarization", False)),
-        safe_kwargs.get("endpointing_ms", safe_kwargs.get("endpointing", "n/a")),
-        bool(safe_kwargs.get("filler_words", False)),
+        "[STT] Flux config: model=%s eot_threshold=%s eager_eot=%s eot_timeout_ms=%s"
+        " multilingual=%s language_hint=%s mip_opt_out=True keyterm_count=%d keyterms=%s",
+        resolved_model,
+        FLUX_EOT_THRESHOLD,
+        FLUX_EAGER_EOT_THRESHOLD,
+        FLUX_EOT_TIMEOUT_MS,
+        is_multilingual,
+        stt_kwargs.get("language_hint"),
+        len(flux_keyterms),
+        flux_keyterms,
     )
-    stt_v1 = deepgram.STT(**safe_kwargs)
-    setattr(stt_v1, "_hr_stt_engine", "deepgram_nova")
-    setattr(stt_v1, "_hr_turn_detection_mode", "turn_detector")
-    return stt_v1
+
+    stt_v2 = deepgram.STTv2(**stt_kwargs)
+    # Mark engine and turn detection mode so agent_runtime can read them without
+    # importing deepgram directly or doing isinstance checks.
+    setattr(stt_v2, "_hr_stt_engine", "deepgram_flux")
+    setattr(stt_v2, "_hr_turn_detection_mode", "stt")
+    return stt_v2
 
 
 def build_llm(model: str = LLM_MODEL, temperature: float = 0.6):

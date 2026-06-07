@@ -12,7 +12,7 @@ extractedDetails → JD JSON (role, skills, requirements, ...)
 interviewQuestions → custom questions list (JSON string)
 proctoringSignals  → which proctoring signals are ON/OFF for this org
 voiceId / voiceProvider / voiceModel → TTS voice config
-deepgramModel   → STT model (default: nova-3)
+deepgramModel   → STT model (default: flux-general-en)
 orgId / orgName / orgLocation
 driveLocation   → location tag for the job
 aiName          → interviewer AI name (default: Ishitha)

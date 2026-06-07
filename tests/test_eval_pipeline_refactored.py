@@ -12,9 +12,10 @@ from interview.eval_pipeline import (
     EvaluationPayload,
     TopicState,
     TopicImportanceClassifier,
-    ResponseScoreCalculator,
     SignalPenaltyCalculator,
     _normalize_topic_key,
+    _weighted_score,
+    _score_to_contribution,
     evaluate_topic_saturation,
     run_eval_and_build_directive,
 )
@@ -76,8 +77,7 @@ def _mock_td(action: str = "PROBE", quality: float = 5.5, mode: str = "ownership
 
 async def _run_pipeline(payload: dict, mock_td_tuple):
     client = MagicMock()
-    with patch("interview.eval_pipeline.run_turn_evaluation", new_callable=AsyncMock) as mock_eval, \
-         patch("interview.eval_pipeline.apply_turn_decision", side_effect=lambda ts, *a, **kw: ts):
+    with patch("interview.eval_pipeline.run_turn_evaluation", new_callable=AsyncMock) as mock_eval:
         mock_eval.return_value = mock_td_tuple
         return await run_eval_and_build_directive(payload, client)
 
@@ -134,9 +134,11 @@ class TestTopicStateAndSaturation:
         assert TopicImportanceClassifier.classify("other", is_anchor=False) == "LOW"
 
     def test_response_score_calculator(self):
+        # ResponseScoreCalculator was refactored into module-level helpers
+        # (_weighted_score / _score_to_contribution). Same math, same expected values.
         quality = {"clarity": 8.0, "depth": 8.0, "specificity": 8.0, "grounding": 8.0}
-        assert ResponseScoreCalculator.calculate_response_score(quality) == 8.0
-        assert ResponseScoreCalculator.calculate_contribution(8.0) == 2.625
+        assert _weighted_score(quality) == 8.0
+        assert _score_to_contribution(8.0) == 2.625
 
     def test_signal_penalty_calculator(self):
         events = [
@@ -159,9 +161,6 @@ class TestPipelineContract:
             "signal_events",
             "depth_signal",
             "saturation",
-            "new_trust_state",
-            "risk_integrity_delta",
-            "risk_depth_delta",
             "discussed_log_entry",
             "eval_llm_usages",
         ]:

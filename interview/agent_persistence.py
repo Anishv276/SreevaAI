@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import time
 from collections import Counter
 from dataclasses import dataclass
@@ -318,9 +319,8 @@ _ELEVENLABS_TTS_USD_PER_M: dict[str, float] = {
 _ELEVENLABS_TTS_DEFAULT = float(os.environ.get("ELEVENLABS_TTS_USD_PER_MILLION_CHARS", "100.0"))
 _SARVAM_STT_INR_PER_HOUR: dict[str, float] = {"saaras:v3": 30.0}
 _DEEPGRAM_STT_USD_PER_MIN: dict[str, float] = {
-    "nova-3": 0.0048, "nova-3-multilingual": 0.0058,
-    "nova-2": 0.0043, "nova-2-general": 0.0043,
-    "flux": 0.0065, "flux-multilingual": 0.0078,
+    "flux-general-en":    0.0065,
+    "flux-general-multi": 0.0078,
 }
 
 # Usage bucket field mapping (unchanged -- referenced by summarize_session_usage)
@@ -400,7 +400,7 @@ class _DeepgramStrategy:
         return 0.0
 
     def stt_cost(self, model: str, seconds: float) -> float:
-        rate = _DEEPGRAM_STT_USD_PER_MIN.get(model, _DEEPGRAM_STT_USD_PER_MIN["nova-3"])
+        rate = _DEEPGRAM_STT_USD_PER_MIN.get(model, _DEEPGRAM_STT_USD_PER_MIN["flux-general-en"])
         return (seconds / 60.0) * rate
 
 
@@ -1130,7 +1130,10 @@ async def persist_transcript(
                          "updatedAt"           = NOW()
                        WHERE "applicationId" = $5""",
                     full_text, duration, final_status,
-                    json.dumps(proctor_report.get("events", []) if proctor_report else []),
+                    json.dumps([
+                        ev for ev in (proctor_report.get("events", []) if proctor_report else [])
+                        if ev.get("eventType") or ev.get("type")
+                    ]),
                     app_id,
                 )
                 logger.info(f"[TRANSCRIPT] Final save {len(transcript_lines)} lines, {duration}s, status={final_status} for {app_id}")
@@ -1503,30 +1506,33 @@ _EVAL_PROMPT = ChatPromptTemplate.from_messages([
 
 # -- Per-question skill extraction --------------------------------------------
 
-_SKILLS_SYSTEM = """You are extracting skills being tested in an interview for the '{job_title}' role.
+_SKILLS_SYSTEM = """You are a senior technical interviewer writing a skill-by-skill breakdown for the hiring team after an interview for the '{job_title}' role.
 
-You will receive each question the AI interviewer asked, paired with the candidate's answer and its pre-scored quality dimensions (clarity, depth, specificity, grounding — each 0-10).
+You will receive every question-answer pair from the interview with pre-scored dimensions (clarity, depth, specificity, grounding — each 0-10).
 
-Your job: for each AI question, identify the ONE primary skill or domain area being tested, then score how well the candidate demonstrated it.
+YOUR TASK: Identify every distinct skill, tool, or domain the candidate actually spoke about during the interview — then rate how well they demonstrated it.
 
-RULES for skill naming:
-- Name the DOMAIN or COMPETENCY being tested by the question — not the tool or product mentioned.
-- GOOD: "Lead Qualification", "System Design", "Campaign Strategy", "Data Analysis", "Stakeholder Communication"
-- BAD: "Python", "Salesforce", "Excel", "n8n", "Google Ads" — these are tools, not skills
-- If a question tests general communication or soft skill, name it concisely: "Structured Communication", "Ownership Mindset"
-- Deduplicate: if two questions test the same skill, merge them (return one entry with the higher score)
-- Skip warmup questions (intro, tell me about yourself)
-- Maximum 8 skills total
+SKILL NAMING — name what the candidate actually discussed, specifically:
+- If they talked about n8n workflows → "n8n Workflow Automation"
+- If they talked about lead qualification logic → "Lead Qualification"
+- If they talked about Power BI dashboards → "Power BI / Data Visualization"
+- If they talked about outreach campaigns → "Outreach Campaign Management"
+- Name the actual thing they discussed — do NOT abstract into vague competency labels like "Project Execution and Ownership" or "Data Validation and Analysis"
+- Tools ARE valid skill names when that is what was discussed: "DuckDB", "n8n", "Zapier", "Meta API", "Apollo.io"
+- Soft skills: only include if the candidate gave clear evidence — "Structured Communication", "Ownership Mindset"
 
-For scoring (1-10):
-- Use the pre-scored dimensions as your primary signal: avg(clarity, depth, specificity, grounding) mapped to 1-10
-- Adjust up if the answer showed genuine hands-on ownership (specific project, real numbers, named decisions)
-- Adjust down if the answer was vague, refused, or clearly fabricated
-- evidence: 1 sentence citing what the candidate actually said or did
-- gaps: 1 sentence on what was missing or weak (write "None" if score >= 8)
-- status: PROVED (score 7-10), PARTIAL (score 4-6), NOT_PROVED (score 1-3)
+SCORING (1-10):
+- Base score: avg(clarity, depth, specificity, grounding) from the pre-scored dimensions
+- Adjust UP: candidate gave specific project names, real numbers, step-by-step process, or named personal decisions
+- Adjust DOWN: candidate was vague, refused, gave "I don't know", or denied the skill exists on their resume
+- If candidate explicitly denied knowledge of a skill (e.g., "I don't know Zapier") → score 1, status NOT_PROVED
+- evidence: ONE sentence quoting or closely paraphrasing what the candidate actually said
+- gaps: ONE sentence on what was missing or weak ("None" only if score >= 8)
+- status: PROVED (7-10), PARTIAL (4-6), NOT_PROVED (1-3)
 
-OUTPUT ONLY valid JSON:
+DEDUPLICATION: If multiple questions covered the same skill, merge into one entry using the BEST answer's score and evidence.
+
+OUTPUT ONLY valid JSON — no markdown, no explanation:
 {{"skills":[{{"skill":"","score":5,"status":"PARTIAL","evidence":"","gaps":""}}]}}"""
 
 _SKILLS_PROMPT = ChatPromptTemplate.from_messages([
@@ -1607,13 +1613,25 @@ async def _node_deterministic_signals(state: ReportState) -> dict:
     }
 
 
+def _qa_question(s: dict) -> str:
+    """Question text from a score entry, tolerant of both shapes:
+    raw answer_scores use 'question'/'answer'; DB-persisted rows use
+    'ai_question'/'candidate_answer'. The report graph is fed RAW answer_scores,
+    so 'question' is the real key -- but accept either so neither path breaks."""
+    return str(s.get("question") or s.get("ai_question") or "").strip()
+
+
+def _qa_answer(s: dict) -> str:
+    return str(s.get("answer") or s.get("candidate_answer") or "").strip()
+
+
 def _build_qa_block_for_skills(idx: int, s: dict) -> dict:
     """Return a minimal Q&A dict suitable for the skills prompt."""
     sb = s.get("score_breakdown") or {}
     return {
         "n":         idx,
-        "question":  s.get("ai_question", ""),
-        "answer":    s.get("candidate_answer", ""),
+        "question":  _qa_question(s),
+        "answer":    _qa_answer(s),
         "clarity":   sb.get("clarity",    s.get("clarity",    0)),
         "depth":     sb.get("depth",      s.get("depth",      0)),
         "specificity": sb.get("fluency",  s.get("specificity", 0)),
@@ -1648,7 +1666,7 @@ async def _node_eval_llm_call(state: ReportState) -> dict:
     qa_items = [
         _build_qa_block_for_skills(i + 1, s)
         for i, s in enumerate(all_scores)
-        if not s.get("is_warmup", False) and s.get("ai_question", "").strip()
+        if not s.get("is_warmup", False) and _qa_question(s)
     ]
     qa_block_text = "\n".join(
         f"Q{q['n']}: {q['question']}\n"
@@ -1669,14 +1687,24 @@ async def _node_eval_llm_call(state: ReportState) -> dict:
         await persist_org_manual_billing_usage(org_id, "interviewReport", _extract_openai_completion_usage(eval_msg))
         await persist_org_manual_billing_usage(org_id, "interviewReport", _extract_openai_completion_usage(skills_msg))
 
+    def _parse_llm_json(content: str) -> dict:
+        """Strip markdown fences then parse JSON."""
+        text = (content or "").strip()
+        # strip ```json ... ``` or ``` ... ```
+        text = re.sub(r"^```(?:json)?\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+        return json.loads(text.strip() or "{}")
+
     try:
-        eval_result = LLMEvalResponse.model_validate(json.loads(eval_msg.content or "{}"))
-    except Exception:
+        eval_result = LLMEvalResponse.model_validate(_parse_llm_json(eval_msg.content))
+    except Exception as e:
+        logger.warning(f"[REPORT] eval parse failed: {e} | raw={str(eval_msg.content)[:200]}")
         eval_result = LLMEvalResponse()
 
     try:
-        skills_result = LLMSkillsResponse.model_validate(json.loads(skills_msg.content or "{}"))
-    except Exception:
+        skills_result = LLMSkillsResponse.model_validate(_parse_llm_json(skills_msg.content))
+    except Exception as e:
+        logger.warning(f"[REPORT] skills parse failed: {e} | raw={str(skills_msg.content)[:200]}")
         skills_result = LLMSkillsResponse()
 
     logger.info(
@@ -1701,8 +1729,8 @@ async def _node_assemble_and_persist(state: ReportState) -> dict:
     skills_result    = state.get("skills_result") or LLMSkillsResponse()
     integrity_result = state["integrity_result"]
 
-    # Signal analysis (parallel with this node's work is handled upstream by gather)
-    signal_analysis, signal_llm_usages = await generate_signal_analysis(
+    # Signal analysis — LLM narrative points
+    signal_analysis_raw, signal_llm_usages = await generate_signal_analysis(
         transcript_lines=state.get("transcript_lines", []),
         answer_scores=interview_scores,
         total_duration_sec=int(proctoring_data.get("session_duration", 0)),
@@ -1711,6 +1739,13 @@ async def _node_assemble_and_persist(state: ReportState) -> dict:
     )
     for _bu in signal_llm_usages:
         await persist_org_manual_billing_usage(org_id, "interviewReport", _bu)
+
+    # Merge LLM narrative + raw behavioral signals into one blob
+    behavioral_signals = proctoring_data.get("events", [])
+    signal_analysis = {
+        "points":  signal_analysis_raw.get("points", []) if isinstance(signal_analysis_raw, dict) else [],
+        "signals": behavioral_signals,
+    }
 
     # Extract dimension scores
     comm  = eval_result.communication.score

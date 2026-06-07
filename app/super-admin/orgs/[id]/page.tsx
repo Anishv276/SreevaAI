@@ -338,7 +338,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                             <div className="space-y-6">
                                 <div className="p-4 rounded-xl bg-gray-50 border border-gray-100 text-[11px] text-gray-500 space-y-1">
                                     <p className="font-bold text-gray-700 uppercase tracking-widest text-[10px]">STT</p>
-                                    <p>Deepgram Nova-3 · hardcoded for all orgs</p>
+                                    <p>Deepgram Flux - hardcoded for all orgs</p>
                                 </div>
                             </div>
                         </div>

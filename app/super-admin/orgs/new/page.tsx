@@ -231,7 +231,7 @@ export default function NewOrgPage() {
     adminPassword: "",
     voiceId: DEFAULT_VOICE_ID,
     allowedVoices: [DEFAULT_VOICE_ID],
-    deepgramModel: "nova-3",
+    deepgramModel: "flux-general-en",
   }));
 
   const primaryVoiceId = form.voiceId || form.allowedVoices[0] || DEFAULT_VOICE_ID;
@@ -662,8 +662,8 @@ export default function NewOrgPage() {
                 value={form.deepgramModel}
                 onChange={(value) => updateForm({ deepgramModel: value })}
                 options={[
-                  { value: "nova-3", label: "Nova-3 (Latest)" },
-                  { value: "nova-2-general", label: "Nova-2 (Legacy)" },
+                  { value: "flux-general-en", label: "Flux English" },
+                  { value: "flux-general-multi", label: "Flux Multilingual" },
                 ]}
               />
             </div>
