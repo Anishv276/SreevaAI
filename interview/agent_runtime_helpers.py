@@ -45,6 +45,41 @@ def sanitize_candidate_facing_text(text: str) -> str:
     return result
 
 
+_BANNED_ACK_REPLACEMENTS: tuple[tuple[re.Pattern[str], str], ...] = (
+    # Prompt-only bans are not enough in long voice sessions. Keep the spoken
+    # line natural and short without letting forbidden "thanks for ..." phrasing
+    # leak into Sarvam or the transcript.
+    (re.compile(r"^\s*thanks\s+for\s+(?:sharing|clarifying|explaining|that)\s*[,.\-–—]*\s*", re.I), "Got it. "),
+    (re.compile(r"^\s*thank\s+you\s+for\s+(?:sharing|clarifying|explaining)\s*[,.\-–—]*\s*", re.I), "Got it. "),
+    # Warmup guard: if the model ignores "how about you?" and emits the observed
+    # bad transition, convert it into a real human answer before the readiness check.
+    (re.compile(r"^\s*good\.\s+so\s+i['’]?ll\s+be\s+conducting\b", re.I), "Doing well, packed with interviews today. I'll be conducting"),
+)
+
+_TRAILING_FILLER_RE = re.compile(
+    r"(?:[,.\s]+)(?:um+|uh+|hmm+|mm+|ah+|oh+)\s*[.!?]*\s*$",
+    re.I,
+)
+
+
+def polish_candidate_facing_text(text: str) -> str:
+    """Final deterministic cleanup before text is spoken or tracked.
+
+    LiveKit text transforms run before TTS, and Sarvam receives plain text. This
+    keeps the final text sentence-safe: no banned acknowledgements, no fillers
+    dangling at the end, and a guarded warmup answer for the common "how about
+    you?" failure mode seen in fresh logs.
+    """
+    result = sanitize_candidate_facing_text(text)
+    if not result:
+        return ""
+    for pattern, replacement in _BANNED_ACK_REPLACEMENTS:
+        result = pattern.sub(replacement, result)
+    result = _TRAILING_FILLER_RE.sub("", result)
+    result = re.sub(r"\s{2,}", " ", result).strip()
+    return result
+
+
 from interview.tts_phonetic_processor import TTSPhoneticProcessor
 tts_phonetic_processor = TTSPhoneticProcessor().initialize_defaults()
 
@@ -77,36 +112,13 @@ def _apply_tts_phonetic_fixes(text: str) -> str:
 
 
 def _enforce_single_question(text: str) -> str:
-    """Keep at most ONE question in the spoken output.
+    """Legacy hook retained for call-site compatibility.
 
-    Generic, last-line-of-defense enforcement of the one-question-per-turn rule
-    (works for any role/resume/JD). The agent occasionally emits a compound turn
-    like a short reaction + TWO questions ("What did you build? And what was your
-    role?"). We keep everything up to and including the FIRST '?', and drop any
-    further question sentences that follow it.
-
-    A single question that merely contains the word "and" (one '?') is left
-    untouched -- we split on question marks, not on "and".
+    We no longer trim valid compound interview openers before TTS. The fresh
+    logs showed this created a worse bug: Sarvam spoke only the first sentence
+    while transcript/eval tracked the unspoken tail. The interviewer prompt
+    still asks for one focused turn, but final speech must not be silently cut.
     """
-    if not text:
-        return text
-    # Count question marks. 0 or 1 -> nothing to trim.
-    first_q = text.find("?")
-    if first_q == -1:
-        return text
-    head = text[: first_q + 1]
-    tail = text[first_q + 1:].strip()
-    if not tail:
-        return text
-    # If the tail contains another question, drop the tail entirely (it is a
-    # second question). If the tail is only a trailing statement with no '?',
-    # keep it -- it's a closing remark, not a second question.
-    if "?" in tail:
-        logger.debug(
-            "[SINGLE_Q] Trimmed compound output to first question. Dropped tail: %r",
-            tail[:120],
-        )
-        return head.strip()
     return text
 
 
@@ -118,7 +130,7 @@ async def _single_question_transform(text_stream):
     buffer = ""
     async for chunk in text_stream:
         buffer += chunk
-    result = sanitize_candidate_facing_text(buffer)
+    result = polish_candidate_facing_text(buffer)
     result = _enforce_single_question(result)
     result = _apply_tts_phonetic_fixes(result)
     if result:

@@ -58,6 +58,7 @@ from interview.agent_runtime_helpers import (
     _build_recent_context_block,
     _single_question_transform,
     _tts_acronym_transform,
+    polish_candidate_facing_text,
     remove_system_messages,
     remove_system_messages_multi,
     sanitize_candidate_facing_text,
@@ -1609,19 +1610,19 @@ async def entrypoint(ctx: JobContext):
             if str(s).strip() and _is_real_skill_token(str(s).strip())
         ]
 
-        _rs_keys = {s.lower() for s in _rs_raw}
+        _rs_keys = {_topic_short_key_for_ordering(s) for s in _rs_raw}
 
         unique_resume_skills: list[str] = []
         seen_rs: set[str] = set()
         for s in _rs_raw:
-            k = s.lower()
+            k = _topic_short_key_for_ordering(s)
             if k and k not in seen_rs:
                 seen_rs.add(k); unique_resume_skills.append(s)
 
         unique_jd_only_skills: list[str] = []
         seen_jd: set[str] = set()
         for s in _jd_raw:
-            k = s.lower()
+            k = _topic_short_key_for_ordering(s)
             if k and k not in _rs_keys and k not in seen_jd:
                 seen_jd.add(k); unique_jd_only_skills.append(s)
 
@@ -1630,12 +1631,23 @@ async def entrypoint(ctx: JobContext):
         # Side-table: skill short-key -> source ("resume_skill" or "jd_skill").
         # Read by the MOVE_ON branch to pick the right question phrasing.
         source_by_key = {
-            s.lower(): ("resume_skill" if s.lower() in _rs_keys else "jd_skill")
+            _topic_short_key_for_ordering(s): (
+                "resume_skill" if _topic_short_key_for_ordering(s) in _rs_keys else "jd_skill"
+            )
             for s in unique_s
         }
         return unique_r[:_cap_r], unique_s, source_by_key
 
     _resume_topics_pool, _skill_topics_pool, _skill_source_by_key = _build_topic_pools()
+    _resume_claim_topic_keys = {
+        _topic_short_key_for_ordering(t)
+        for t in _resume_topics_pool
+        if _topic_short_key_for_ordering(t)
+    } | {
+        k
+        for k, src in _skill_source_by_key.items()
+        if src == "resume_skill"
+    }
 
     # Initialize _active_topic with the FULL context string (not short title).
     # This allows the LLM to have complete project/role context for grounded questions.
@@ -1719,7 +1731,7 @@ async def entrypoint(ctx: JobContext):
             k = _topic_short_key(t)
             if not k or k == exclude_key or k in _deepened_topic_keys or k in _denied_topics:
                 continue
-            ts = _topic_states.get(k)
+            ts = _topic_states.get(_normalize_topic_key(k))
             score = float(ts.get("saturation_score", 0.0)) if isinstance(ts, dict) else 0.0
             # Only worth deepening if they actually engaged (real signal, not a denial).
             if score >= 2.0 and (best is None or score > best[1]):
@@ -1731,7 +1743,12 @@ async def entrypoint(ctx: JobContext):
         real scenario question, or None when all JD skills have been used."""
         for s in (_jd_skills or []):
             key = _topic_short_key_for_ordering(str(s))
-            if key and key not in _jd_scenarios_asked:
+            if (
+                key
+                and key not in _jd_scenarios_asked
+                and key not in _denied_topics
+                and key not in _covered_topic_keys
+            ):
                 return str(s).strip()
         return None
 
@@ -1908,6 +1925,96 @@ async def entrypoint(ctx: JobContext):
         if not session_start_time:
             return float(time_limit_mins * 60)
         return max(0.0, float(time_limit_mins * 60) - (time.time() - session_start_time))
+
+    def _candidate_meta_intent(text: str) -> Optional[str]:
+        """Classify candidate turns that are about the interview itself.
+
+        These must be handled before scoring. Otherwise a real human question
+        like "what is this company about?" gets scored as a bad answer to the
+        previous interview question and the agent feels like a bot.
+        """
+        t = re.sub(r"\s+", " ", (text or "").lower()).strip()
+        if not t:
+            return None
+        if any(m in t for m in (
+            "can you repeat", "could you repeat", "repeat that", "repeat the question",
+            "say that again", "say again", "didn't get you", "didnt get you",
+            "didn't hear", "didnt hear", "didn't catch", "didnt catch",
+            "what was the question", "what are you asking",
+        )):
+            return "repeat"
+        if any(m in t for m in (
+            "what is this company", "what's this company", "what company is this",
+            "tell me about the company", "explain me the company", "company about",
+        )):
+            return "company"
+        if any(m in t for m in (
+            "what do you mean gtm", "what is gtm", "what's gtm",
+            "what do you mean by gtm", "gtm role", "what is the role",
+            "explain the role", "what does this role mean",
+        )):
+            return "role"
+        if any(m in t for m in (
+            "should i use", "which tool should", "what tool should",
+            "zapier or", "or some other tool", "which one should i",
+        )):
+            return "tool_choice"
+        if any(m in t for m in (
+            "can we shift", "can we change", "change the question",
+            "shift to new question", "skip this", "skip the question",
+            "new question",
+        )):
+            return "skip"
+        if any(m in t for m in (
+            "why are you asking", "what stage", "which stage",
+            "what are you trying to collect", "what information you are trying",
+        )):
+            return "process"
+        return None
+
+    def _meta_answer_directive(intent: str, candidate_text: str) -> str:
+        org = _compact_optional(ctx_data.orgName) or "the company"
+        role = job_title or "this role"
+        last_q = (_last_interviewer_question or "").strip()
+        if intent == "repeat":
+            return (
+                "[META_QUESTION_DIRECTIVE - DO NOT SAY ALOUD]\n"
+                "The candidate asked you to repeat or simplify the question.\n"
+                f"Repeat this question in simpler words: \"{last_q}\"\n"
+                "Do not score their request. Ask only the repeated question."
+            )
+        if intent == "company":
+            return (
+                "[META_QUESTION_DIRECTIVE - DO NOT SAY ALOUD]\n"
+                "The candidate asked what the company is about. Answer like a real interviewer first.\n"
+                f"Say one short sentence: \"{org} is hiring for this role, and today I'm mainly checking how your automation and GTM thinking fit the work.\"\n"
+                f"Then continue with ONE concise interview question for the {role} role. Do not ignore their question."
+            )
+        if intent == "role":
+            return (
+                "[META_QUESTION_DIRECTIVE - DO NOT SAY ALOUD]\n"
+                "The candidate asked what GTM/the role means. Answer first, then continue.\n"
+                "Say one short sentence explaining that GTM means go-to-market: outreach, lead generation, campaign workflows, and conversion improvement.\n"
+                "Then ask ONE simple question about which of those areas they have actually worked on."
+            )
+        if intent == "tool_choice":
+            return (
+                "[META_QUESTION_DIRECTIVE - DO NOT SAY ALOUD]\n"
+                "The candidate is asking which tool to choose, not answering the interview question.\n"
+                "Answer briefly: either Zapier or n8n can be valid; what matters is why they choose it for the workflow.\n"
+                "Then ask ONE question: which tool would they choose for that workflow and why?"
+            )
+        if intent == "skip":
+            return (
+                "[META_QUESTION_DIRECTIVE - DO NOT SAY ALOUD]\n"
+                "The candidate asked to change or skip the question. Respect it.\n"
+                "Acknowledge briefly, then ask ONE different question from a new uncovered topic. Do not mention the skipped topic again."
+            )
+        return (
+            "[META_QUESTION_DIRECTIVE - DO NOT SAY ALOUD]\n"
+            f"The candidate asked about the interview process. Answer in one short sentence: you are mapping fit for the {role} role.\n"
+            "Then ask exactly one concise question from the current stage objective."
+        )
 
     @ctx.room.on("disconnected")
     def on_disconnected(reason):
@@ -2178,6 +2285,58 @@ async def entrypoint(ctx: JobContext):
                 persist_transcript(app_id, lines_snap_eval, session_start_time, partial=True),
                 f"transcript_save_turn_{turn_snapshot}",
             )
+            _meta_intent = _candidate_meta_intent(answer_snap)
+            if _meta_intent and not is_warmup_response:
+                if _meta_intent == "skip":
+                    async with _session_state_lock:
+                        _mark_topic_covered(_active_topic)
+                        if _active_topic:
+                            _denied_topics.add(_topic_short_key(_active_topic))
+                        _next_after_skip = _next_uncovered_topic(exclude=_active_topic)
+                        if _next_after_skip:
+                            _active_topic = _next_after_skip
+                            _last_question_topic = _topic_short_title(_active_topic or "")
+                async with _session_state_lock:
+                    answer_scores.append({
+                        "question": question_snap or _last_interviewer_question or "",
+                        "answer": answer_snap,
+                        "clarity": 0, "depth": 0, "specificity": 0, "grounding": 0,
+                        "overall": 0.0,
+                        "signals": [],
+                        "concerns": [],
+                        "is_meta_question": True,
+                        "topic": _active_topic or "general",
+                    })
+                spawn_background_task(
+                    persist_answer_scores(app_id, list(answer_scores)),
+                    f"scores_meta_turn_{turn_snapshot}",
+                )
+                remove_system_messages_multi(chat_ctx, (
+                    "[META_QUESTION_DIRECTIVE", "[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT",
+                ))
+                chat_ctx.add_message(
+                    role="system",
+                    content=_meta_answer_directive(_meta_intent, answer_snap),
+                )
+                if _meta_intent == "skip" and _active_topic:
+                    chat_ctx.add_message(
+                        role="system",
+                        content=(
+                            "[TOPIC_LOCK - CRITICAL INSTRUCTION]\n"
+                            "The candidate asked to skip the previous question. Respect that.\n"
+                            f"NEW ACTIVE TOPIC: {_topic_short_title(_active_topic)}\n"
+                            f"FULL CONTEXT: {_active_topic}\n"
+                            "Ask one different, concrete question on this new topic. Do not reference the skipped topic."
+                        ),
+                    )
+                logger.info(
+                    "[META] turn=%d intent=%s -- skipped eval/scoring and injected response directive",
+                    turn_snapshot, _meta_intent,
+                )
+                agent._move_on_opener_pending = False
+                agent._waiting_for_eval = False
+                agent._directive_ready.set()
+                return
             # Candidate meta-question handling:
             # if they ask "why these questions / what stage", answer briefly and continue.
             meta_q = content.lower()
@@ -2324,12 +2483,11 @@ async def entrypoint(ctx: JobContext):
                 _denial_is_skill = _denial_topic_key in {
                     _topic_short_key(s).lower() for s in _skill_topics_pool
                 }
-                # Integrity flag: the resume CLAIMS this topic (it is in the resume
-                # project/skill pools) yet the candidate denied / disclaimed it. Record
-                # it for HR -- a resume-vs-reality mismatch is real signal, not noise.
-                _resume_claims_topic = _denial_topic_key in {
-                    _topic_short_key(t).lower() for t in (_resume_topics_pool + _skill_topics_pool)
-                }
+                # Integrity flag only for actual resume claims: resume projects,
+                # work history, internships, and resume-listed skills. JD-only
+                # requirements such as Zapier are not resume claims and should not
+                # become resume_claim_denied signals.
+                _resume_claims_topic = _denial_topic_key in _resume_claim_topic_keys
                 async with _session_state_lock:
                     _denied_topics.add(_denial_topic_key)
                     if _denial_is_skill:
@@ -2404,12 +2562,13 @@ async def entrypoint(ctx: JobContext):
                         (_scoring_topic_full or "").split(" - ")[0].strip()
                         if _scoring_topic_full else None
                     )
-                    _ts_obj = _topic_states.get(_scoring_topic) if _scoring_topic else None
+                    _scoring_topic_key = _normalize_topic_key(_scoring_topic or "")
+                    _ts_obj = _topic_states.get(_scoring_topic_key) if _scoring_topic_key else None
                     active_topic_state = (
                         _ts_obj if isinstance(_ts_obj, dict) else
                         _ts_obj.to_dict() if _ts_obj is not None else None
                     )
-                    _topic_key_now = re.sub(r"[^a-z0-9]+", " ", (_scoring_topic or "").lower()).strip()
+                    _topic_key_now = _scoring_topic_key
                     _topic_score_history_snap = list(_topic_score_histories.get(_topic_key_now, []))
                     # H2 fix: pass depth scores as prior_depth_scores so
                     # follow_up_collapse compares depth-to-depth, not depth-to-overall.
@@ -2556,7 +2715,7 @@ async def entrypoint(ctx: JobContext):
                 _new_topic_state_dict = _saturation.get("topic_state_dict")
                 if _new_topic_state_dict and _scoring_topic_log and _scoring_topic_log != "?":
                     async with _session_state_lock:
-                        _topic_states[_scoring_topic_log] = _new_topic_state_dict
+                        _topic_states[_normalize_topic_key(_scoring_topic_log)] = _new_topic_state_dict
 
                 # -- Persist state mutations (scores, trust, risk, log) --------
                 await _apply_eval_result(_eval_result_inline, result_turn=turn_snapshot)
@@ -2721,7 +2880,7 @@ async def entrypoint(ctx: JobContext):
                         # Only auto-credit skills if the project produced substantive content.
                         # A denied/zero-memory topic (clarity+depth near 0) must not silently
                         # mark skills as covered -- the candidate never demonstrated them.
-                        _old_topic_sat_dict = _topic_states.get(_topic_short_key(_old_topic_str))
+                        _old_topic_sat_dict = _topic_states.get(_normalize_topic_key(_topic_short_key(_old_topic_str)))
                         _old_topic_best_weighted = 0.0
                         if isinstance(_old_topic_sat_dict, dict):
                             _old_topic_best_weighted = float(_old_topic_sat_dict.get("saturation_score", 0.0) or 0.0)
@@ -3067,7 +3226,7 @@ async def entrypoint(ctx: JobContext):
                     # H5 fix: advance probe_rotation_index in the stored TopicState so
                     # the next PROBE on this topic uses the next goal angle.
                     if _scoring_topic_log and _scoring_topic_log != "?":
-                        _ts_for_rotation = _topic_states.get(_scoring_topic_log)
+                        _ts_for_rotation = _topic_states.get(_normalize_topic_key(_scoring_topic_log))
                         if isinstance(_ts_for_rotation, dict):
                             _ts_for_rotation["probe_rotation_index"] = _rotation_idx + 1
                     logger.info(
@@ -3166,7 +3325,7 @@ async def entrypoint(ctx: JobContext):
                     return
                 if not llm_spoke_event.is_set():
                     llm_spoke_event.set()
-                clean_content = sanitize_candidate_facing_text(content)
+                clean_content = polish_candidate_facing_text(content)
                 if not clean_content or clean_content == "<wait for response>":
                     return
                 # Track last question for eval engine -- only for real interview turns.
@@ -3395,7 +3554,16 @@ async def entrypoint(ctx: JobContext):
         nonlocal awaiting_candidate_response, awaiting_candidate_since, \
             inactivity_nudge_sent_for_current_prompt, _nudge_count, _last_nudge_at
         awaiting_candidate_response = start_waiting
-        awaiting_candidate_since = time.monotonic() if start_waiting else None
+        if start_waiting:
+            if preserve_nudge_flags and awaiting_candidate_since is not None:
+                # Scripted nudges make the agent speak briefly, but they should not
+                # reset the original silence timer. Keep measuring inactivity from
+                # the candidate's last real opportunity to answer.
+                pass
+            else:
+                awaiting_candidate_since = time.monotonic()
+        else:
+            awaiting_candidate_since = None
         if not preserve_nudge_flags:
             inactivity_nudge_sent_for_current_prompt = False
             _nudge_count = 0
@@ -3575,14 +3743,15 @@ async def entrypoint(ctx: JobContext):
     disconnected_task = asyncio.create_task(disconnect_event.wait())
     total_seconds = time_limit_mins * 60
     # Inactivity timing:
-    #   10s silence  -> soft nudge (up to 3, rotating, 10s apart)
-    #   40s silence  -> termination warning
-    #   50s silence  -> end call
-    INACTIVITY_NUDGE_SECS = 20       # first nudge after 20s silence -- 10s was too quick, interrupted thinking
-    INACTIVITY_NUDGE_INTERVAL = 20   # repeat every 20s
+    #   10s silence -> gentle nudge
+    #   30s silence -> stronger help prompt
+    #   50s silence -> termination warning
+    #   60s silence -> end call
+    INACTIVITY_NUDGE_SECS = 10
+    INACTIVITY_NUDGE_INTERVAL = 20
     INACTIVITY_NUDGE_MAX = 2         # max 2 nudges before warning
-    INACTIVITY_WARNING_SECS = 40     # termination warning at 40s
-    INACTIVITY_END_SECS = 50         # end call at 50s
+    INACTIVITY_WARNING_SECS = 50
+    INACTIVITY_END_SECS = 60
     TIME_GUARD_SECS = 20             # final 20s: block eval/signals, fire goodbye
     final_timeout_announced = False
     _nudge_count = 0                 # how many soft nudges already sent this turn
@@ -3590,16 +3759,18 @@ async def entrypoint(ctx: JobContext):
 
     _name = candidate_first_name or candidate_name
     _SOFT_NUDGES = [
-        f"Take your time, {_name}.",
-        f"No rush -- think out loud if that helps.",
+        f"Take a moment, {_name}.",
+        "If it helps, you can think out loud.",
     ]
 
     async def _deliver_nudge(text: str) -> None:
         await session.say(text, allow_interruptions=True)
-        # Scripted speech doesn't fire agent_speech_committed, manually restart clock.
+        # Scripted speech doesn't fire agent_speech_committed. Keep waiting for
+        # the same candidate answer without resetting the original silence timer.
         nonlocal awaiting_candidate_response, awaiting_candidate_since
         awaiting_candidate_response = True
-        awaiting_candidate_since = time.monotonic()
+        if awaiting_candidate_since is None:
+            awaiting_candidate_since = time.monotonic()
     async def _send_termination_signal(reason: str):
         try:
             import json
