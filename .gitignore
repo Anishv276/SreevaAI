@@ -46,6 +46,7 @@ next-env.d.ts
 
 # python
 __pycache__/
+.pycache_tmp/
 *.pyc
 *.pyo
 *.pyd
