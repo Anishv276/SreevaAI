@@ -30,107 +30,6 @@ import { PremiumFilter } from "@/components/admin/premium-filter";
 import { useAdminOrg } from "@/context/admin-org-context";
 
 // ---------------------------------------------------------------------------
-// Email Composer Modal
-// ---------------------------------------------------------------------------
-const VARIABLES = [
-    { label: "{{name}}", desc: "Candidate full name" },
-    { label: "{{role}}", desc: "Job title" },
-    { label: "{{email}}", desc: "Candidate email" },
-];
-function EmailComposer({
-    candidate, onClose, isBlocked, blockedMessage,
-}: {
-    candidate: { id: string; name: string; email: string; role: string } | null;
-    onClose: () => void;
-    isBlocked: boolean;
-    blockedMessage: string;
-}) {
-    const [subject, setSubject] = useState("");
-    const [body, setBody] = useState("");
-    const [sending, setSending] = useState(false);
-    const bodyRef = useRef<HTMLTextAreaElement>(null);
-    const insertVariable = (v: string) => {
-        const el = bodyRef.current;
-        if (!el) return;
-        const start = el.selectionStart;
-        const end = el.selectionEnd;
-        const newBody = body.slice(0, start) + v + body.slice(end);
-        setBody(newBody);
-        setTimeout(() => { el.selectionStart = el.selectionEnd = start + v.length; el.focus(); }, 0);
-    };
-    const handleSend = async () => {
-        if (!subject.trim() || !body.trim()) { toast.error("Subject and message are required"); return; }
-        if (isBlocked) { toast.error(blockedMessage); return; }
-        setSending(true);
-        try {
-            const res = await fetch(`/api/candidates/${candidate!.id}/send-email`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ subject, body }),
-            });
-            if (res.ok) { toast.success(`Email sent to ${candidate!.name}`); onClose(); }
-            else { const d = await res.json(); toast.error(d.error || "Failed to send email"); }
-        } catch { toast.error("Failed to send email"); }
-        finally { setSending(false); }
-    };
-    if (!candidate) return null;
-    return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm" onClick={onClose}>
-            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xl overflow-hidden" onClick={e => e.stopPropagation()}>
-                <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-gray-50">
-                    <div>
-                        <h2 className="text-lg font-black text-gray-900 tracking-tight">Compose Email</h2>
-                        <p className="text-[11px] text-gray-400 font-bold uppercase tracking-widest mt-0.5">To: {candidate.name} · {candidate.email}</p>
-                    </div>
-                    <button onClick={onClose} className="h-8 w-8 rounded-xl flex items-center justify-center hover:bg-gray-100 text-gray-400 transition-colors">
-                        <X className="h-4 w-4" />
-                    </button>
-                </div>
-                <div className="px-6 pt-4 pb-2 space-y-3">
-                    <div>
-                        <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-1 block">Subject</label>
-                        <input
-                            className="w-full h-11 px-4 rounded-2xl border border-gray-100 bg-gray-50 text-sm font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-200 transition-all"
-                            placeholder="Email subject..."
-                            value={subject}
-                            onChange={e => setSubject(e.target.value)}
-                        />
-                    </div>
-                    <div>
-                        <div className="flex items-center justify-between mb-1">
-                            <label className="text-[10px] font-black uppercase tracking-widest text-gray-400">Message</label>
-                            <div className="flex gap-1.5">
-                                {VARIABLES.map(v => (
-                                    <button key={v.label} title={v.desc} onClick={() => insertVariable(v.label)}
-                                        className="text-[10px] font-black px-2 py-1 rounded-lg bg-orange-50 text-[#F97316] hover:bg-orange-100 transition-colors">
-                                        {v.label}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                        <textarea
-                            ref={bodyRef} rows={8}
-                            className="w-full px-4 py-3 rounded-2xl border border-gray-100 bg-gray-50 text-sm font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-orange-200 transition-all resize-none"
-                            placeholder={`Hi {{name}},\n\nWrite your message here...`}
-                            value={body} onChange={e => setBody(e.target.value)}
-                        />
-                        <p className="text-[10px] text-gray-400 font-bold mt-1">Click variable buttons to insert at cursor position</p>
-                    </div>
-                </div>
-                <div className="flex items-center justify-end gap-3 px-6 py-4 bg-gray-50/50 border-t border-gray-50">
-                    <Button variant="ghost" onClick={onClose} className="h-10 px-5 rounded-2xl font-bold text-gray-500">Cancel</Button>
-                    <Button onClick={handleSend} disabled={sending || isBlocked}
-                        className="h-10 px-6 rounded-2xl border border-gray-200 bg-white text-gray-900 font-bold flex items-center gap-2 shadow-sm hover:bg-gray-50">
-                        <Send className="h-4 w-4" />
-                        {sending ? "Sending..." : "Send Email"}
-                    </Button>
-                </div>
-            </div>
-        </div>
-    );
-}
-
-// ---------------------------------------------------------------------------
 // Email confirm modal (interview link / rejection — same as drive page)
 // ---------------------------------------------------------------------------
 function normalizeStatusKey(value?: string) {
@@ -295,7 +194,6 @@ export default function CandidatesPage() {
     const [isExporting, setIsExporting] = useState(false);
     const [sendingInterviewLinkId, setSendingInterviewLinkId] = useState<string | null>(null);
     const [timeline, setTimeline] = useState<DateRange>({ type: "all" });
-    const [emailCandidate, setEmailCandidate] = useState<{ id: string; name: string; email: string; role: string } | null>(null);
     const [interviewScoresById, setInterviewScoresById] = useState<Record<string, number>>({});
     const [emailConfirm, setEmailConfirm] = useState<{
         mode: "single" | "bulk"; candidateId?: string; candidateName?: string; resumeStatus?: string;
@@ -518,10 +416,9 @@ export default function CandidatesPage() {
                     if (!res.ok) { toast.error(data?.error || "Failed to send interview link"); return; }
                     toast.success(`Interview link sent to ${emailConfirm.candidateName}`);
                 } else if (status === "rejected") {
-                    await fetch(`/api/candidates/${emailConfirm.candidateId}/send-email`, {
-                        method: "POST", headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ emailType: "rejection" }),
-                    });
+                    const res = await fetch(`/api/candidates/${emailConfirm.candidateId}/send-rejection-email`, { method: "POST" });
+                    const data = await res.json().catch(() => null);
+                    if (!res.ok) { toast.error(data?.error || "Failed to send rejection email"); return; }
                     toast.success(`Rejection email sent to ${emailConfirm.candidateName}`);
                 }
             } else if (emailConfirm.mode === "bulk") {
@@ -1007,10 +904,6 @@ export default function CandidatesPage() {
                 );
             })()}
 
-            <EmailComposer
-                candidate={emailCandidate} onClose={() => setEmailCandidate(null)}
-                isBlocked={isInterviewActionBlocked} blockedMessage={interviewActionBlockedMessage}
-            />
         </div>
     );
 }

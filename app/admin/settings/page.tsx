@@ -1,432 +1,166 @@
 "use client";
 
-
-
 import { useState, useEffect, useRef } from "react";
-
 import { Button } from "@/components/ui/button";
-
 import { Input } from "@/components/ui/input";
-
-import { Label } from "@/components/ui/label";
-
-import { Badge } from "@/components/ui/badge";
-
 import {
-    User, Building2, Bell, CreditCard,
-    Camera, Check, Trash2, Crown,
-    MessageSquare, Calendar, Globe, Mail, Phone, Shield, ShieldAlert, Briefcase, History,
-    BarChart3, AlertCircle, Zap, ExternalLink, Upload, Lock, Eye, EyeOff,
-    Loader2, Copy, X, MapPin as MapPinIcon, CheckCircle2, Clock
+    User, Building2, Lock, Globe, Mail, ShieldAlert,
+    AlertCircle, Zap, Upload, Eye, Trash2, Loader2, X, CheckCircle2,
 } from "lucide-react";
-
-import {
-    Table,
-    TableHeader,
-    TableBody,
-    TableHead,
-    TableRow,
-    TableCell,
-} from "@/components/ui/table";
-
-import { LocationAutocomplete } from "@/components/ui/location-autocomplete";
-
-import { PhoneInput } from "@/components/application/phone-input";
-
 import { cn } from "@/lib/utils";
-
-import { useAuth } from "@/context/auth-context";
 import { useAdminOrg } from "@/context/admin-org-context";
-
 import { ActionConfirmModal } from "@/components/ui/action-confirm-modal";
-
 import { useSearchParams } from "next/navigation";
-
 import { toast } from "@/components/ui/toast-custom";
 import { PasswordInput } from "@/components/ui/password-input";
-import {
-    SettingsCard,
-    Field,
-    Toggle
-} from "@/components/admin/settings/settings-shared";
-
-
-
-
-/*  Section nav  */
+import { SettingsCard, Field } from "@/components/admin/settings/settings-shared";
 
 const sections = [
-    { id: "profile", icon: User, label: "Profile" },
-    { id: "company", icon: Building2, label: "Company" },
+    { id: "account", icon: User, label: "Account" },
     { id: "password", icon: Lock, label: "Password" },
 ];
 
-
-
-/*  Reusable card wrapper  */
-
-
-
-
-
-/*  Main Page  */
-
 export default function SettingsPage() {
-
     const adminOrg = useAdminOrg();
-
     const searchParams = useSearchParams();
-
-    const [activeSection, setActiveSection] = useState("profile");
-
-
+    const [activeSection, setActiveSection] = useState("account");
 
     useEffect(() => {
-
         const section = searchParams.get("section");
-
-        if (section && sections.some(s => s.id === section)) {
-
-            setActiveSection(section);
-
-        }
-
+        // map legacy "profile" / "company" deep-links to "account"
+        const mapped = section === "profile" || section === "company" ? "account" : section;
+        if (mapped && sections.some(s => s.id === mapped)) setActiveSection(mapped);
     }, [searchParams]);
 
     const [isLoading, setIsLoading] = useState(true);
-
     const logoInputRef = useRef<HTMLInputElement>(null);
-
     const [isUploadingLogo, setIsUploadingLogo] = useState(false);
 
-
-
-    /* Profile */
-
-    const [profile, setProfile] = useState({ name: "", email: "", phone: "", jobTitle: "" });
-
-
-
-    /* Company */
-
-    const [company, setCompany] = useState(() => ({
+    const [profile, setProfile] = useState({ name: "", email: "" });
+    const [company, setCompany] = useState({
         name: adminOrg?.name || "",
-        industry: adminOrg?.industry || "SAAS / TECHNOLOGY",
-        size: adminOrg?.size || "51–250 EMPLOYEES",
         website: adminOrg?.website || "",
-        location: adminOrg?.location || "",
         logoUrl: adminOrg?.logoUrl || "",
-        customSenderEmail: "",
-        customSenderName: ""
-    }));
-
-
-
-
-
-    // Modal States
+    });
 
     const [isLogoModalOpen, setIsLogoModalOpen] = useState(false);
-
     const [isLogoPreviewOpen, setIsLogoPreviewOpen] = useState(false);
-
     const [isProcessingAction, setIsProcessingAction] = useState(false);
-
-
-
-    /* Password */
 
     const [passwords, setPasswords] = useState({ current: "", next: "", confirm: "" });
     const [isNewPasswordValid, setIsNewPasswordValid] = useState(false);
     const [pwError, setPwError] = useState("");
     const [pwSaved, setPwSaved] = useState(false);
 
-    /* OTP States */
     const [otp, setOtp] = useState("");
     const [showOtpModal, setShowOtpModal] = useState(false);
     const [sendingOtp, setSendingOtp] = useState(false);
     const [otpError, setOtpError] = useState("");
     const [otpAttempts, setOtpAttempts] = useState(0);
 
-
-
-    /* Global Saving */
-
     const [isSaving, setIsSaving] = useState(false);
-
     const [saved, setSaved] = useState(false);
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    const pwStrength = (pw: string) => {
-
-        if (pw.length === 0) return 0;
-
-        let s = 0;
-
-        if (pw.length >= 8) s++;
-
-        if (/[A-Z]/.test(pw)) s++;
-
-        if (/[0-9]/.test(pw)) s++;
-
-        if (/[^A-Za-z0-9]/.test(pw)) s++;
-
-        return s;
-
-    };
-
-    const strengthLabel = ["Too short", "Weak", "Fair", "Good", "Strong"];
-
-    const strengthColor = ["bg-red-400", "bg-red-400", "bg-orange-400", "bg-yellow-400", "bg-green-500"];
-
-
-
-    // Fetch initial data
-
     useEffect(() => {
-
         const fetchAll = async () => {
-
             try {
-                // Fetch detailed personal profile
-
                 const profileRes = await fetch("/api/auth/profile");
-
                 if (profileRes.ok) {
-
-                    const profData = await profileRes.json();
-
-                    setProfile({
-
-                        name: profData.name || "",
-
-                        email: profData.email || "",
-
-                        phone: profData.phone || "",
-
-                        jobTitle: profData.jobTitle || ""
-
-                    });
-
+                    const d = await profileRes.json();
+                    setProfile({ name: d.name || "", email: d.email || "" });
                 }
-
             } catch (err) {
-
-                console.error("Org data fetch failed:", err);
-
+                console.error("Profile fetch failed:", err);
             } finally {
-
                 setIsLoading(false);
-
             }
         };
-
-
-
         fetchAll();
-
     }, []);
 
-
-
     const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-
         const file = e.target.files?.[0];
-
         if (!file) return;
-
-
-
         setIsUploadingLogo(true);
-
         try {
-
             const formData = new FormData();
-
             formData.append("file", file);
-
             const res = await fetch("/api/upload/logo", { method: "POST", body: formData });
-
             if (res.ok) {
-
                 const { url } = await res.json();
-
                 setCompany(prev => {
-
                     const updated = { ...prev, logoUrl: url };
-
-                    // Auto-save the logo change?
-
                     fetch("/api/admin/organization", {
-
                         method: "PATCH",
-
                         headers: { "Content-Type": "application/json" },
-
-                        body: JSON.stringify(updated)
-
+                        body: JSON.stringify(updated),
                     }).catch(err => console.error("Logo auto-save failed:", err));
-
                     return updated;
-
                 });
-
             }
-
         } catch (err) {
-
-            console.error("Upload Error:", err);
-
+            console.error("Upload error:", err);
         } finally {
-
             setIsUploadingLogo(false);
-
         }
-
     };
-
-
-
-    const handleLogoDelete = () => setIsLogoModalOpen(true);
-
-
 
     const confirmLogoDelete = async () => {
-
         if (!company.logoUrl) return;
-
         setIsProcessingAction(true);
-
         try {
-
-            // 1. Evict from Cloudflare R2
-
             await fetch("/api/upload/logo", {
-
                 method: "DELETE",
-
                 headers: { "Content-Type": "application/json" },
-
                 body: JSON.stringify({ url: company.logoUrl }),
-
             });
-
-
-
-            // 2. Clear from Organization Record
-
             setCompany(prev => {
-
                 const updated = { ...prev, logoUrl: "" };
-
                 fetch("/api/admin/organization", {
-
                     method: "PATCH",
-
                     headers: { "Content-Type": "application/json" },
-
-                    body: JSON.stringify(updated)
-
-                }).catch(err => console.error("Logo delete auto-save failed:", err));
-
+                    body: JSON.stringify(updated),
+                }).catch(err => console.error("Logo delete save failed:", err));
                 return updated;
-
             });
-
-
-
             setIsLogoModalOpen(false);
-
         } catch (err) {
-
-            console.error("Delete Error:", err);
-
+            console.error("Delete error:", err);
         } finally {
-
             setIsProcessingAction(false);
-
         }
-
     };
-
-
 
     const handleSave = async () => {
-
         setIsSaving(true);
-
         try {
-
-            if (activeSection === "company") {
-
-                await fetch("/api/admin/organization", {
-
+            await Promise.all([
+                fetch("/api/auth/profile", {
                     method: "PATCH",
-
                     headers: { "Content-Type": "application/json" },
-
-                    body: JSON.stringify(company)
-
-                });
-
-            } else if (activeSection === "profile") {
-
-                await fetch("/api/auth/profile", {
-
+                    body: JSON.stringify({ name: profile.name }),
+                }),
+                fetch("/api/admin/organization", {
                     method: "PATCH",
-
                     headers: { "Content-Type": "application/json" },
-
-                    body: JSON.stringify({ name: profile.name, phone: profile.phone, jobTitle: profile.jobTitle })
-
-                });
-
-            }
-
+                    body: JSON.stringify(company),
+                }),
+            ]);
             setSaved(true);
-
-            toast.success(`${activeSection.charAt(0).toUpperCase() + activeSection.slice(1)} updated successfully!`);
-
+            toast.success("Settings saved!");
             setTimeout(() => setSaved(false), 2500);
-
         } catch (err) {
-
             console.error(err);
-
-            toast.error("Failed to update settings.");
-
+            toast.error("Failed to save settings.");
         } finally {
-
             setIsSaving(false);
-
         }
-
     };
-
-
 
     const handlePasswordSave = async () => {
         if (!passwords.current) { setPwError("Current password is required."); return; }
         if (passwords.next.length < 8) { setPwError("New password must be at least 8 characters."); return; }
         if (passwords.next !== passwords.confirm) { setPwError("Passwords do not match."); return; }
-
         setSendingOtp(true);
         setPwError("");
         try {
@@ -450,38 +184,23 @@ export default function SettingsPage() {
     };
 
     const handleVerifyAndSavePassword = async () => {
-        if (!otp || otp.length < 6) {
-            setOtpError("6-digit code required.");
-            return;
-        }
-
+        if (!otp || otp.length < 6) { setOtpError("6-digit code required."); return; }
         setIsSaving(true);
         setOtpError("");
         try {
             const res = await fetch("/api/auth/profile", {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    currentPassword: passwords.current,
-                    newPassword: passwords.next,
-                    otp
-                }),
+                body: JSON.stringify({ currentPassword: passwords.current, newPassword: passwords.next, otp }),
             });
-
             if (!res.ok) {
                 const data = await res.json().catch(() => ({}));
                 const nextAttempts = otpAttempts + 1;
                 setOtpAttempts(nextAttempts);
                 setOtpError(nextAttempts >= 3 ? "Access denied: 3 attempts failed." : (data.error || `Incorrect. ${3 - nextAttempts} left.`));
-                if (nextAttempts >= 3) {
-                    setTimeout(() => {
-                        setShowOtpModal(false);
-                        setOtp("");
-                    }, 2000);
-                }
+                if (nextAttempts >= 3) setTimeout(() => { setShowOtpModal(false); setOtp(""); }, 2000);
                 return;
             }
-
             setPwSaved(true);
             setPasswords({ current: "", next: "", confirm: "" });
             setOtp("");
@@ -495,491 +214,172 @@ export default function SettingsPage() {
         }
     };
 
-
-
     if (isLoading) {
-
         return (
-
             <div className="flex h-[450px] items-center justify-center">
-
                 <Loader2 className="h-8 w-8 text-[#F97316] animate-spin" />
-
             </div>
-
         );
-
     }
 
-
-
     return (
-
         <div style={{ zoom: 0.72, transformOrigin: "top center" }}>
-
             <div className="space-y-8 pb-16">
 
-                {/*  Page Header  */}
-
+                {/* Header */}
                 <div className="flex items-center gap-4 group">
-
                     <div className="h-12 w-1.5 bg-gradient-to-b from-[#F97316] to-orange-400 rounded-full shadow-[0_0_12px_rgba(249,115,22,0.4)] transition-all duration-300 group-hover:h-14" />
-
                     <div>
-
                         <h1 className="text-3xl sm:text-4xl font-extrabold text-gray-900 tracking-tight">Settings</h1>
-
-                        <p className="text-gray-500 font-medium mt-1 text-base">
-
-                            Manage your account & preferences
-
-                        </p>
-
+                        <p className="text-gray-500 font-medium mt-1 text-base">Manage your account & preferences</p>
                     </div>
-
                 </div>
-
-
 
                 <div className="flex gap-8 items-start">
 
-                    {/*  Left Nav  */}
-
+                    {/* Left Nav */}
                     <aside className="w-56 flex-shrink-0 sticky top-8">
-
                         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-2 space-y-0.5">
-
                             {sections.map((s) => (
-
                                 <button
-
                                     key={s.id}
-
                                     onClick={() => setActiveSection(s.id)}
-
                                     className={cn(
-
                                         "flex items-center gap-3 w-full px-4 py-2.5 rounded-lg text-[13px] font-bold transition-all duration-200",
-
                                         activeSection === s.id
-
                                             ? "text-[#F97316] bg-orange-50"
-
                                             : "text-gray-500 hover:text-gray-900 hover:bg-gray-50"
-
                                     )}
-
                                 >
-
                                     <s.icon className={cn("h-4 w-4 transition-colors", activeSection === s.id ? "text-[#F97316]" : "text-gray-400")} />
-
                                     {s.label}
-
                                 </button>
-
                             ))}
-
                         </div>
-
                     </aside>
 
-
-
-                    {/*  Content  */}
-
+                    {/* Content */}
                     <div className="flex-1 min-w-0 space-y-6">
 
-
-
-                        {/* PROFILE */}
-
-                        {activeSection === "profile" && (
-
+                        {/* ACCOUNT — profile + company merged */}
+                        {activeSection === "account" && (
                             <div className="space-y-6">
 
-                                <SettingsCard title="Personal Information" description="Update your name and contact details.">
-
+                                {/* Personal */}
+                                <SettingsCard title="Personal Information" description="Your name and login email.">
                                     <div className="grid grid-cols-1 gap-5">
-
                                         <Field label="Full Name">
-
                                             <div className="relative">
-
                                                 <User className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-
                                                 <Input
-
                                                     className="pl-10 h-10 rounded-lg border-gray-200 bg-white font-medium focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all"
-
                                                     value={profile.name}
-
                                                     onChange={e => setProfile(p => ({ ...p, name: e.target.value }))}
-
                                                 />
-
                                             </div>
-
                                         </Field>
-
                                         <Field label="Email Address">
-
                                             <div className="relative">
-
                                                 <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-
                                                 <Input
-
                                                     disabled
-
                                                     type="email"
-
                                                     className="pl-10 h-10 rounded-lg border-gray-200 bg-gray-50 font-medium opacity-60"
-
                                                     value={profile.email}
-
                                                 />
-
                                             </div>
-
                                         </Field>
-
-                                        <Field label="Job Title">
-
-                                            <div className="relative">
-
-                                                <Briefcase className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-
-                                                <Input
-
-                                                    className="pl-10 h-10 rounded-lg border-gray-200 bg-white font-medium focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all"
-
-                                                    value={profile.jobTitle}
-
-                                                    onChange={e => setProfile(p => ({ ...p, jobTitle: e.target.value }))}
-
-                                                />
-
-                                            </div>
-
-                                        </Field>
-
-                                        <Field label="Phone Number">
-
-                                            <PhoneInput
-
-                                                value={profile.phone}
-
-                                                onChange={val => setProfile(p => ({ ...p, phone: val }))}
-
-                                                className="mt-1"
-
-                                            />
-
-                                        </Field>
-
                                     </div>
-
                                 </SettingsCard>
 
-                            </div>
-
-                        )}
-
-
-
-                        {/* COMPANY */}
-
-                        {activeSection === "company" && (
-
-                            <div className="space-y-6">
-
-                                <SettingsCard title="Company Logo" description="This logo will appear on your recruitment drives, landing pages, and AI interview screens.">
-
-                                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-8">
-
-                                        <div className="relative group">
-
-                                            <div
-
-                                                onClick={() => !company.logoUrl && logoInputRef.current?.click()}
-
-                                                className={cn(
-
-                                                    "h-32 w-32 rounded-3xl border-2 border-dashed border-gray-100 bg-gray-50 flex items-center justify-center overflow-hidden transition-all group-hover:border-orange-200 group-hover:bg-orange-50 shadow-inner group-hover:shadow-orange-100/50",
-
-                                                    !company.logoUrl && "cursor-pointer"
-
-                                                )}
-
-                                            >
-
-                                                {isUploadingLogo ? (
-
-                                                    <div className="flex flex-col items-center gap-2">
-
-                                                        <Loader2 className="h-8 w-8 text-[#F97316] animate-spin" />
-
-                                                        <span className="text-[10px] font-black text-orange-400 uppercase tracking-widest animate-pulse">Syncing</span>
-
-                                                    </div>
-
-                                                ) : company.logoUrl ? (
-
-                                                    <img src={company.logoUrl} className="h-full w-full object-contain p-3 transition-transform duration-500 group-hover:scale-105" alt="Logo Preview" />
-
-                                                ) : (
-
-                                                    <div className="flex flex-col items-center gap-2 text-gray-300 group-hover:text-orange-400 transition-all duration-300">
-
-                                                        <Upload className="h-8 w-8" />
-
-                                                        <span className="text-[10px] font-black uppercase tracking-widest">Upload</span>
-
-                                                    </div>
-
-                                                )}
-
-                                            </div>
-
-
-
-                                            {company.logoUrl && !isUploadingLogo && (
-
-                                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-all duration-300 rounded-3xl flex items-center justify-center gap-2 backdrop-blur-[2px]">
-
-                                                    <button
-
-                                                        onClick={() => setIsLogoPreviewOpen(true)}
-
-                                                        className="h-10 w-10 bg-white text-gray-900 rounded-xl flex items-center justify-center shadow-lg hover:bg-[#F97316] hover:text-white transition-all transform hover:scale-110"
-
-                                                    >
-
-                                                        <Eye className="h-5 w-5" />
-
-                                                    </button>
-
-                                                    <button
-
-                                                        onClick={handleLogoDelete}
-
-                                                        className="h-10 w-10 bg-white text-red-500 rounded-xl flex items-center justify-center shadow-lg hover:bg-red-500 hover:text-white transition-all transform hover:scale-110"
-
-                                                    >
-
-                                                        <Trash2 className="h-5 w-5" />
-
-                                                    </button>
-
-                                                </div>
-
-                                            )}
-
-                                        </div>
-
-
-
-                                        <div className="space-y-3">
-
-                                            <input
-
-                                                type="file"
-
-                                                ref={logoInputRef}
-
-                                                className="hidden"
-
-                                                accept="image/*"
-
-                                                onChange={handleLogoUpload}
-
-                                            />
-
-                                            <div className="flex gap-2.5">
-
-                                                <Button
-
-                                                    disabled={isUploadingLogo}
-
-                                                    onClick={() => logoInputRef.current?.click()}
-
-                                                    className="h-11 px-6 rounded-xl bg-gray-950 hover:bg-[#F97316] text-white font-bold shadow-2xl transition-all"
-
-                                                >
-
-                                                    {isUploadingLogo ? "Syncing..." : company.logoUrl ? "Change Logo" : "Upload Logo"}
-
-                                                </Button>
-
-                                            </div>
-
-                                            <p className="text-[11px] text-gray-400 font-bold uppercase tracking-widest leading-none">
-
-                                                <span className="text-[#F97316]">Pro Tip:</span> Use a high-quality SVG or PNG with transparent background.
-
-                                            </p>
-
-                                        </div>
-
-                                    </div>
-
-                                </SettingsCard>
-
-
-
-                                <SettingsCard title="Company Details" description="Information about your organization.">
-
+                                {/* Company */}
+                                <SettingsCard title="Company Details" description="Your organization name, website, and branding.">
                                     <div className="grid grid-cols-1 gap-5">
+
+                                        {/* Logo */}
+                                        <Field label="Company Logo">
+                                            <div className="flex items-center gap-6">
+                                                <div className="relative group flex-shrink-0">
+                                                    <div
+                                                        onClick={() => !company.logoUrl && logoInputRef.current?.click()}
+                                                        className={cn(
+                                                            "h-24 w-24 rounded-2xl border-2 border-dashed border-gray-100 bg-gray-50 flex items-center justify-center overflow-hidden transition-all group-hover:border-orange-200 group-hover:bg-orange-50 shadow-inner",
+                                                            !company.logoUrl && "cursor-pointer"
+                                                        )}
+                                                    >
+                                                        {isUploadingLogo ? (
+                                                            <Loader2 className="h-6 w-6 text-[#F97316] animate-spin" />
+                                                        ) : company.logoUrl ? (
+                                                            <img src={company.logoUrl} className="h-full w-full object-contain p-2" alt="Logo" />
+                                                        ) : (
+                                                            <div className="flex flex-col items-center gap-1 text-gray-300 group-hover:text-orange-400 transition-colors">
+                                                                <Upload className="h-6 w-6" />
+                                                                <span className="text-[9px] font-black uppercase tracking-widest">Upload</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    {company.logoUrl && !isUploadingLogo && (
+                                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-all rounded-2xl flex items-center justify-center gap-1.5 backdrop-blur-[2px]">
+                                                            <button onClick={() => setIsLogoPreviewOpen(true)} className="h-8 w-8 bg-white text-gray-900 rounded-lg flex items-center justify-center hover:bg-[#F97316] hover:text-white transition-all">
+                                                                <Eye className="h-4 w-4" />
+                                                            </button>
+                                                            <button onClick={() => setIsLogoModalOpen(true)} className="h-8 w-8 bg-white text-red-500 rounded-lg flex items-center justify-center hover:bg-red-500 hover:text-white transition-all">
+                                                                <Trash2 className="h-4 w-4" />
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <input type="file" ref={logoInputRef} className="hidden" accept="image/*" onChange={handleLogoUpload} />
+                                                    <Button
+                                                        disabled={isUploadingLogo}
+                                                        onClick={() => logoInputRef.current?.click()}
+                                                        className="h-10 px-5 rounded-xl bg-gray-950 hover:bg-[#F97316] text-white font-bold transition-all"
+                                                    >
+                                                        {isUploadingLogo ? "Uploading…" : company.logoUrl ? "Change Logo" : "Upload Logo"}
+                                                    </Button>
+                                                    <p className="text-[11px] text-gray-400 font-medium">SVG or PNG with transparent background recommended.</p>
+                                                </div>
+                                            </div>
+                                        </Field>
 
                                         <Field label="Company Name">
-
                                             <div className="relative">
-
                                                 <Building2 className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-
-                                                <Input className="pl-10 h-10 rounded-lg border-gray-200 bg-white font-medium focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all"
-
-                                                    value={company.name} onChange={e => setCompany(c => ({ ...c, name: e.target.value }))} />
-
+                                                <Input
+                                                    className="pl-10 h-10 rounded-lg border-gray-200 bg-white font-medium focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all"
+                                                    value={company.name}
+                                                    onChange={e => setCompany(c => ({ ...c, name: e.target.value }))}
+                                                />
                                             </div>
-
                                         </Field>
-
-                                        <div className="grid grid-cols-2 gap-4">
-
-                                            <Field label="Industry">
-
-                                                <select
-
-                                                    value={company.industry}
-
-                                                    onChange={e => setCompany(c => ({ ...c, industry: e.target.value }))}
-
-                                                    className="w-full h-10 px-4 rounded-lg border border-gray-200 bg-white font-medium text-sm text-gray-900 focus:outline-none focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all font-sans"
-
-                                                >
-
-                                                    {[
-
-                                                        "SAAS / TECHNOLOGY",
-
-                                                        "FINANCIAL SERVICES",
-
-                                                        "LOGISTICS & SUPPLY CHAIN",
-
-                                                        "RETAIL & E-COMMERCE",
-
-                                                        "HEALTHCARE & PHARMA",
-
-                                                        "REAL ESTATE",
-
-                                                        "MEDIA & ENTERTAINMENT",
-
-                                                        "EDUCATION / EDTECH",
-
-                                                        "MANUFACTURING",
-
-                                                        "HOSPITALITY & TRAVEL"
-
-                                                    ].map(i => <option key={i}>{i}</option>)}
-
-                                                </select>
-
-                                            </Field>
-
-                                            <Field label="Company Size">
-
-                                                <select
-
-                                                    value={company.size}
-
-                                                    onChange={e => setCompany(c => ({ ...c, size: e.target.value }))}
-
-                                                    className="w-full h-10 px-4 rounded-lg border border-gray-200 bg-white font-medium text-sm text-gray-900 focus:outline-none focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all font-sans"
-
-                                                >
-
-                                                    {["1–50 EMPLOYEES", "51–250 EMPLOYEES", "251–1000 EMPLOYEES", "1001+"].map(s => <option key={s}>{s}</option>)}
-
-                                                </select>
-
-                                            </Field>
-
-                                        </div>
 
                                         <Field label="Website URL">
-
                                             <div className="relative">
-
                                                 <Globe className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-
-                                                <Input className="pl-10 h-10 rounded-lg border-gray-200 bg-white font-medium focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all"
-
+                                                <Input
+                                                    className="pl-10 h-10 rounded-lg border-gray-200 bg-white font-medium focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all"
                                                     placeholder="https://company.com"
-
-                                                    value={company.website} onChange={e => setCompany(c => ({ ...c, website: e.target.value }))} />
-
+                                                    value={company.website}
+                                                    onChange={e => setCompany(c => ({ ...c, website: e.target.value }))}
+                                                />
                                             </div>
-
-                                        </Field>
-
-                                        <Field label="Phone Number">
-
-                                            <PhoneInput
-
-                                                value={profile.phone}
-
-                                                onChange={val => setProfile(p => ({ ...p, phone: val }))}
-
-                                                className="mt-1"
-
-                                            />
-
-                                        </Field>
-
-                                        <Field label="Headquarters / Location">
-
-                                            <LocationAutocomplete
-
-                                                value={company.location}
-
-                                                onChange={val => setCompany(c => ({ ...c, location: val }))}
-
-                                                placeholder="Bangalore, India"
-
-                                            />
-
                                         </Field>
 
                                     </div>
-
                                 </SettingsCard>
 
+                                {/* Save */}
+                                <div className="flex justify-end pt-2">
+                                    <Button onClick={handleSave} disabled={isSaving} className={cn("h-11 px-12 rounded-lg font-bold shadow-md transition-all", saved ? "bg-emerald-500 text-white" : "bg-[#F97316] text-white")}>
+                                        {isSaving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                                        {saved ? "Changes Saved" : "Save Changes"}
+                                    </Button>
+                                </div>
                             </div>
-
                         )}
 
-
-
-
-
-                        {/* DOMAINS */}
-
-
-
-
-
-
-
-
-
-
-
-
-                        {/* BILLING */}
-                        {/* BILLING */}
-                        {/*     PASSWORD     */}
-
+                        {/* PASSWORD */}
                         {activeSection === "password" && (
                             <div className="space-y-6">
                                 <SettingsCard title="Change Password" description="Update your password to keep your account secure.">
@@ -990,7 +390,6 @@ export default function SettingsPage() {
                                             value={passwords.current}
                                             onChange={e => setPasswords(p => ({ ...p, current: e.target.value }))}
                                         />
-
                                         <PasswordInput
                                             label="New Password"
                                             placeholder="Enter new password"
@@ -999,33 +398,27 @@ export default function SettingsPage() {
                                             showChecklist
                                             onValidationChange={setIsNewPasswordValid}
                                         />
-
                                         <PasswordInput
                                             label="Confirm New Password"
                                             placeholder="Re-enter new password"
                                             value={passwords.confirm}
                                             onChange={e => setPasswords(p => ({ ...p, confirm: e.target.value }))}
                                         />
-
                                         {pwSaved && (
                                             <div className="flex items-center gap-2 p-3.5 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-700 animate-in fade-in slide-in-from-top-1">
                                                 <CheckCircle2 className="h-4 w-4" />
                                                 <span className="text-[12px] font-bold">Password updated successfully!</span>
                                             </div>
                                         )}
-
                                         {pwError && (
                                             <div className="flex items-center gap-2 p-3.5 rounded-xl bg-red-50 border border-red-100 text-red-600 animate-in fade-in slide-in-from-top-1">
                                                 <AlertCircle className="h-4 w-4" />
                                                 <span className="text-[12px] font-bold">{pwError}</span>
                                             </div>
                                         )}
-
                                         <div className="pt-2">
                                             <button
-                                                onClick={() => {
-                                                    window.location.href = "/login/forgot-password?from=settings";
-                                                }}
+                                                onClick={() => { window.location.href = "/login/forgot-password?from=settings"; }}
                                                 className="text-xs font-bold text-[#F97316] hover:underline flex items-center gap-1.5"
                                             >
                                                 <Zap className="h-3 w-3" />
@@ -1041,103 +434,40 @@ export default function SettingsPage() {
                                         {pwSaved ? "Password Updated" : "Update Password"}
                                     </Button>
                                 </div>
-
                             </div>
-
-                        )}
-
-
-
-                        {/*  Save Button  */}
-
-                        {["profile", "company"].includes(activeSection) && (
-
-                            <div className="flex justify-end pt-4">
-
-                                <Button onClick={handleSave} disabled={isSaving} className={cn("h-11 px-12 rounded-lg font-bold shadow-md transition-all", saved ? "bg-emerald-500 text-white" : "bg-[#F97316] text-white")}>
-
-                                    {isSaving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-
-                                    {saved ? "Changes Saved" : "Save Changes"}
-
-                                </Button>
-
-                            </div>
-
                         )}
 
                     </div>
-
                 </div>
 
-
-
+                {/* Modals */}
                 <ActionConfirmModal
-
                     isOpen={isLogoModalOpen}
-
                     onClose={() => setIsLogoModalOpen(false)}
-
                     onConfirm={confirmLogoDelete}
-
                     title="Remove Company Logo"
-
                     description="Are you sure you want to remove your company logo? This will revert your portal header and branding."
-
                     confirmText="Confirm Remove"
-
                     isLoading={isProcessingAction}
-
                 />
 
-
-
-                {/* Logo Preview Modal */}
-
                 {isLogoPreviewOpen && company.logoUrl && (
-
-                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-8 backdrop-blur-xl bg-white/40 animate-in-fade">
-
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-8 backdrop-blur-xl bg-white/40">
                         <div className="absolute inset-0" onClick={() => setIsLogoPreviewOpen(false)} />
-
-                        <div className="relative w-full max-w-2xl bg-white rounded-[2.5rem] border border-gray-100 shadow-[0_40px_100px_rgba(0,0,0,0.1)] p-12 py-16 animate-in-scale">
-
+                        <div className="relative w-full max-w-2xl bg-white rounded-[2.5rem] border border-gray-100 shadow-[0_40px_100px_rgba(0,0,0,0.1)] p-12 py-16">
                             <button onClick={() => setIsLogoPreviewOpen(false)} className="absolute top-8 right-8 h-12 w-12 bg-gray-50 rounded-2xl flex items-center justify-center text-gray-400 hover:text-gray-900 transition-all">
-
                                 <X className="h-6 w-6" />
-
                             </button>
-
                             <div className="space-y-8 text-center">
-
-                                <div className="space-y-2">
-
-                                    <h3 className="text-2xl font-black text-gray-900 uppercase italic tracking-tighter">Branding Asset</h3>
-
-                                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-none">Identity Verification Preview</p>
-
+                                <h3 className="text-2xl font-black text-gray-900 tracking-tight">Logo Preview</h3>
+                                <div className="bg-gray-50 rounded-3xl p-12 border border-dashed border-gray-200">
+                                    <img src={company.logoUrl} className="max-h-[280px] mx-auto object-contain" alt="Logo Preview" />
                                 </div>
-
-                                <div className="bg-gray-50/50 rounded-3xl p-12 border border-dashed border-gray-200">
-
-                                    <img src={company.logoUrl} className="max-h-[300px] mx-auto object-contain drop-shadow-xl" alt="Logo Preview" />
-
-                                </div>
-
-                                <p className="text-[10px] font-black text-[#F97316] uppercase italic leading-none tracking-widest">Logo successfully synchronized with R2 storage</p>
-
                             </div>
-
                         </div>
-
                     </div>
-
                 )}
 
-
-
-
-                {/* OTP Verification Modal */}
                 {showOtpModal && (
                     <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 backdrop-blur-xl bg-white/30">
                         <div className="w-full max-w-lg bg-white border border-gray-100 rounded-[2rem] shadow-[0_50px_150px_rgba(0,0,0,0.15)] overflow-hidden">
@@ -1155,13 +485,13 @@ export default function SettingsPage() {
                                     <p className="text-gray-400 font-bold uppercase tracking-widest text-[9px]">Enter the 6-digit code sent to your email</p>
                                 </div>
                                 <div className="space-y-6">
-                                    <Input
+                                    <input
                                         type="text"
                                         maxLength={6}
                                         value={otp}
                                         onChange={e => setOtp(e.target.value.replace(/\D/g, ""))}
                                         placeholder="000000"
-                                        className="w-full h-20 text-center text-4xl font-black tracking-[0.5em] bg-gray-50 rounded-2xl border-0"
+                                        className="w-full h-20 text-center text-4xl font-black tracking-[0.5em] bg-gray-50 rounded-2xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-orange-200"
                                     />
                                     {otpError && (
                                         <div className="flex items-center justify-center gap-2 text-red-600 text-[10px] font-black uppercase tracking-widest">
@@ -1178,12 +508,8 @@ export default function SettingsPage() {
                         </div>
                     </div>
                 )}
+
             </div>
         </div>
-
     );
-
 }
-
-
-

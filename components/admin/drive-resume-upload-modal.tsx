@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/toast-custom";
-import { AlertCircle, FileText, Loader2, Lock, Upload, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, FileText, Loader2, Lock, Minus, Plus, UploadCloud } from "lucide-react";
 import { getInterviewActionBlockedMessage, isInterviewQuotaLocked, isOrgRestrictedStatus } from "@/lib/interview-quota";
 import { useAdminOrg } from "@/context/admin-org-context";
 
@@ -17,188 +17,134 @@ interface DriveResumeUploadModalProps {
     onUploaded?: () => void;
 }
 
-export function DriveResumeUploadModal({
-    open,
-    onOpenChange,
-    driveId,
-    driveName,
-    onUploaded,
-}: DriveResumeUploadModalProps) {
+function fmt(bytes: number) {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+export function DriveResumeUploadModal({ open, onOpenChange, driveId, driveName, onUploaded }: DriveResumeUploadModalProps) {
     const [files, setFiles] = useState<File[]>([]);
-    const [isDragging, setIsDragging] = useState(false);
-    const [isUploading, setIsUploading] = useState(false);
+    const [dragging, setDragging] = useState(false);
+    const [uploading, setUploading] = useState(false);
+    const [done, setDone] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const adminOrg = useAdminOrg();
-    const quotaLocked = isInterviewQuotaLocked(adminOrg ?? {});
-    const orgStatus = String(adminOrg?.status || "ACTIVE");
-    const isSuspended = isOrgRestrictedStatus(orgStatus);
-    const accessLocked = quotaLocked || isSuspended;
     const inputRef = useRef<HTMLInputElement>(null);
 
-    const reset = () => {
-        setFiles([]);
-        setIsDragging(false);
-        setIsUploading(false);
-        setError(null);
+    const adminOrg = useAdminOrg();
+    const quotaLocked = isInterviewQuotaLocked(adminOrg ?? {});
+    const isSuspended = isOrgRestrictedStatus(String(adminOrg?.status || "ACTIVE"));
+    const locked = quotaLocked || isSuspended;
+    const totalSize = files.reduce((s, f) => s + f.size, 0);
+
+    const reset = () => { setFiles([]); setDragging(false); setUploading(false); setDone(false); setError(null); };
+    const close = () => {
+        if (uploading && !window.confirm("Upload in progress. Close anyway?")) return;
+        reset(); onOpenChange(false);
     };
-
-    const handleClose = () => {
-        if (isUploading && !window.confirm("Resume upload is still running. Close anyway?")) {
-            return;
-        }
-        reset();
-        onOpenChange(false);
+    const add = (incoming: File[]) => {
+        const pdfs = incoming.filter(f => f.name.toLowerCase().endsWith(".pdf"));
+        setFiles(prev => { const seen = new Set(prev.map(f => f.name)); return [...prev, ...pdfs.filter(f => !seen.has(f.name))]; });
     };
-
-    const onDrop = (e: React.DragEvent) => {
-        e.preventDefault();
-        setIsDragging(false);
-        const dropped = Array.from(e.dataTransfer.files).filter((file) => file.name.toLowerCase().endsWith(".pdf"));
-        setFiles((prev) => [...prev, ...dropped]);
-    };
-
-    const startUpload = async () => {
-        if (accessLocked) {
-            toast.error(getInterviewActionBlockedMessage(isSuspended));
-            return;
-        }
-        if (!files.length || isUploading) {
-            toast.error("Please add at least one PDF resume");
-            return;
-        }
-
-        setIsUploading(true);
-        setError(null);
-
+    const upload = async () => {
+        if (locked) { toast.error(getInterviewActionBlockedMessage(isSuspended)); return; }
+        if (!files.length || uploading) return;
+        setUploading(true); setError(null);
         try {
-            const formData = new FormData();
-            files.forEach((file) => formData.append("files", file));
-
-            const res = await fetch(`/api/drives/${driveId}/resume-screening`, {
-                method: "POST",
-                body: formData,
-            });
-
-            if (!res.ok) {
-                const payload = await res.json().catch(() => null);
-                throw new Error(payload?.error || "Upload failed");
-            }
-
-            await res.json().catch(() => null);
-            toast.success("Upload successful! Resumes have been added and will be processed shortly.");
+            const fd = new FormData();
+            files.forEach(f => fd.append("files", f));
+            const res = await fetch(`/api/drives/${driveId}/resume-screening`, { method: "POST", body: fd });
+            if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Upload failed");
+            setDone(true);
+            toast.success(`${files.length} resume${files.length > 1 ? "s" : ""} queued for screening.`);
             onUploaded?.();
-            reset();
-            onOpenChange(false);
-        } catch (err) {
-            const message = err instanceof Error ? err.message : "Upload failed";
-            setError(message);
-            toast.error(message);
-            setIsUploading(false);
+            setTimeout(() => { reset(); onOpenChange(false); }, 1200);
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : "Upload failed";
+            setError(msg); toast.error(msg); setUploading(false);
         }
     };
 
-    useEffect(() => {
-        if (!open) {
-            reset();
-        }
-    }, [open]);
+    useEffect(() => { if (!open) reset(); }, [open]);
 
     return (
-        <Dialog open={open} onOpenChange={handleClose}>
-            <DialogContent className="flex max-h-[90vh] max-w-2xl flex-col overflow-hidden rounded-[2rem] border border-white/40 bg-white/95 backdrop-blur-2xl shadow-[0_30px_100px_rgba(0,0,0,0.18)]">
-                <DialogHeader className="space-y-2 shrink-0">
-                    <DialogTitle className="text-2xl font-black tracking-tight text-gray-900">Upload Resumes</DialogTitle>
-                    <p className="text-sm text-gray-500">{driveName}</p>
-                </DialogHeader>
+        <Dialog open={open} onOpenChange={close}>
+            <DialogContent className="flex w-full max-w-lg flex-col gap-0 overflow-hidden rounded-2xl border border-zinc-100 bg-white p-0 shadow-xl">
 
-                <div className="flex-1 space-y-5 overflow-y-auto py-3 pr-1">
+                <VisuallyHidden><DialogTitle>Upload Resumes</DialogTitle></VisuallyHidden>
+
+                {/* Header */}
+                <div className="px-6 py-4 border-b border-zinc-100">
+                    <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Upload Resumes</p>
+                    <h2 className="mt-0.5 text-[15px] font-semibold text-zinc-800 truncate max-w-[340px]">{driveName}</h2>
+                </div>
+
+                {/* Body */}
+                <div className="overflow-y-auto px-6 py-5 space-y-3">
+
+                    {/* Drop zone */}
                     <div
-                        onDragOver={(e) => {
-                            e.preventDefault();
-                            setIsDragging(true);
-                        }}
-                        onDragLeave={() => setIsDragging(false)}
-                        onDrop={onDrop}
-                        onClick={() => files.length === 0 && inputRef.current?.click()}
+                        onDragOver={e => { e.preventDefault(); setDragging(true); }}
+                        onDragLeave={() => setDragging(false)}
+                        onDrop={e => { e.preventDefault(); setDragging(false); add(Array.from(e.dataTransfer.files)); }}
+                        onClick={() => !files.length && inputRef.current?.click()}
                         className={cn(
-                            "rounded-3xl border-2 border-dashed transition-all duration-200 cursor-pointer",
-                            isDragging ? "border-orange-400 bg-orange-50/70" : "border-gray-200 hover:border-orange-300",
-                            files.length > 0 ? "p-5 bg-orange-50/20" : "p-12"
+                            "rounded-xl border-2 border-dashed transition-all duration-150",
+                            dragging ? "border-orange-200 bg-orange-50/40" : files.length === 0
+                                ? "cursor-pointer border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50/50"
+                                : "border-zinc-100 bg-zinc-50/30"
                         )}
                     >
-                        <input
-                            ref={inputRef}
-                            type="file"
-                            multiple
-                            accept=".pdf"
-                            className="hidden"
-                            onChange={(e) => {
-                                setFiles((prev) => [...prev, ...Array.from(e.target.files || [])]);
-                                e.target.value = "";
-                            }}
-                        />
+                        <input ref={inputRef} type="file" multiple accept=".pdf" className="hidden"
+                            onChange={e => { add(Array.from(e.target.files || [])); e.target.value = ""; }} />
 
                         {files.length === 0 ? (
-                            <div className="text-center">
-                                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-orange-100 text-orange-500 shadow-sm">
-                                    <Upload className="h-7 w-7" />
+                            <div className="flex flex-col items-center justify-center py-10 text-center select-none">
+                                <div className={cn("mb-3 flex h-12 w-12 items-center justify-center rounded-xl transition-colors",
+                                    dragging ? "bg-orange-100 text-orange-500" : "bg-zinc-100 text-zinc-400")}>
+                                    <UploadCloud className="h-5 w-5" />
                                 </div>
-                                <p className="text-base font-bold text-gray-800">Drop PDF resumes here</p>
-                                <p className="mt-1 text-sm text-gray-400">or click to browse files</p>
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        inputRef.current?.click();
-                                    }}
-                                    className="mt-5 h-10 rounded-2xl border-orange-200 bg-white px-4 text-sm font-bold text-orange-600 hover:border-orange-300 hover:bg-orange-50"
-                                >
+                                <p className="text-[13px] font-semibold text-zinc-700">
+                                    {dragging ? "Release to add files" : "Drop PDF resumes here"}
+                                </p>
+                                <p className="mt-0.5 text-[12px] text-zinc-400">or browse from your computer</p>
+                                <button type="button"
+                                    onClick={e => { e.stopPropagation(); inputRef.current?.click(); }}
+                                    className="mt-4 h-8 rounded-lg border border-zinc-200 bg-white px-4 text-[12px] font-medium text-zinc-600 shadow-sm hover:border-zinc-300 hover:bg-zinc-50 transition">
                                     Browse files
-                                </Button>
+                                </button>
+                                <p className="mt-3 text-[11px] text-zinc-300">PDF only · All sizes accepted</p>
                             </div>
                         ) : (
-                            <div className="space-y-3">
-                                <div className="flex flex-wrap items-center justify-between gap-3">
-                                    <div>
-                                        <p className="text-3xl font-black text-gray-900 tabular-nums leading-none">{files.length}</p>
-                                        <p className="text-xs font-bold uppercase tracking-widest text-gray-400">PDF files selected</p>
+                            <div className="p-4 space-y-3">
+                                {/* Stats */}
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-baseline gap-2">
+                                        <span className="text-2xl font-bold tabular-nums text-zinc-800">{files.length}</span>
+                                        <span className="text-[12px] text-zinc-400 font-medium">
+                                            {files.length === 1 ? "file" : "files"} &middot; {fmt(totalSize)}
+                                        </span>
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                        <Button
-                                            type="button"
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                inputRef.current?.click();
-                                            }}
-                                            className="h-10 rounded-2xl border-orange-200 bg-orange-50 px-4 text-xs font-bold text-orange-600 hover:border-orange-300 hover:bg-orange-100 transition-colors"
-                                        >
-                                            + Add More
-                                        </Button>
-                                        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-orange-100 text-orange-500 shadow-sm">
-                                            <FileText className="h-5 w-5" />
-                                        </div>
-                                    </div>
+                                    <button type="button"
+                                        onClick={e => { e.stopPropagation(); inputRef.current?.click(); }}
+                                        className="flex items-center gap-1 h-7 rounded-lg border border-zinc-200 bg-white px-2.5 text-[11px] font-medium text-zinc-500 shadow-sm hover:border-zinc-300 hover:text-zinc-700 transition">
+                                        <Plus className="h-3 w-3" /> Add more
+                                    </button>
                                 </div>
 
-                                <div className="max-h-56 overflow-y-auto space-y-2 rounded-2xl border border-orange-100 bg-white/80 p-3 pr-2">
-                                    {files.map((file) => (
-                                        <div key={`${file.name}-${file.size}`} className="flex items-center justify-between gap-3 rounded-2xl border border-gray-100 bg-white px-4 py-3 shadow-sm">
-                                            <div className="min-w-0">
-                                                <span className="block truncate text-sm font-bold text-gray-800">{file.name}</span>
-                                                <span className="text-[11px] font-medium text-gray-400">{Math.max(1, Math.round(file.size / 1024))} KB</span>
-                                            </div>
-                                            <button
-                                                type="button"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setFiles((prev) => prev.filter((item) => item !== file));
-                                                }}
-                                                className="shrink-0 rounded-xl p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700"
-                                            >
-                                                <X className="h-4 w-4" />
+                                {/* File list */}
+                                <div className="max-h-48 overflow-y-auto space-y-1 rounded-lg border border-zinc-100 bg-white p-1.5">
+                                    {files.map((file, i) => (
+                                        <div key={`${file.name}-${file.size}`}
+                                            className="group flex items-center gap-2.5 rounded-lg px-3 py-2 hover:bg-zinc-50 transition">
+                                            <span className="w-4 shrink-0 text-[10px] font-medium tabular-nums text-zinc-300 text-right">{i + 1}</span>
+                                            <FileText className="h-3.5 w-3.5 shrink-0 text-zinc-300" />
+                                            <p className="min-w-0 flex-1 truncate text-[12px] font-medium text-zinc-600">{file.name}</p>
+                                            <span className="shrink-0 text-[11px] text-zinc-300">{fmt(file.size)}</span>
+                                            <button type="button"
+                                                onClick={e => { e.stopPropagation(); setFiles(p => p.filter(f => f !== file)); }}
+                                                className="shrink-0 rounded p-0.5 text-zinc-300 opacity-0 group-hover:opacity-100 hover:text-red-400 transition">
+                                                <Minus className="h-3.5 w-3.5" />
                                             </button>
                                         </div>
                                     ))}
@@ -207,43 +153,48 @@ export function DriveResumeUploadModal({
                         )}
                     </div>
 
-                    {accessLocked && (
-                        <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-                            <Lock className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
-                            <div className="space-y-1">
-                                <p className="font-bold">Resume upload locked</p>
-                                <p className="font-medium">{getInterviewActionBlockedMessage(isSuspended)}</p>
+                    {/* Locked */}
+                    {locked && (
+                        <div className="flex items-start gap-2.5 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3">
+                            <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400" />
+                            <div>
+                                <p className="text-[12px] font-semibold text-amber-700">Upload unavailable</p>
+                                <p className="text-[11px] text-amber-500 mt-0.5">{getInterviewActionBlockedMessage(isSuspended)}</p>
                             </div>
                         </div>
                     )}
 
+                    {/* Error */}
                     {error && (
-                        <div className="flex items-start gap-3 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
-                            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                            <span className="font-medium">{error}</span>
+                        <div className="flex items-start gap-2.5 rounded-xl border border-red-100 bg-red-50 px-4 py-3">
+                            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-400" />
+                            <p className="text-[12px] text-red-500">{error}</p>
                         </div>
                     )}
+                </div>
 
-                    <div className="flex shrink-0 items-center justify-end gap-3 border-t border-gray-100 pt-4">
-                        <Button
-                            type="button"
-                            variant="outline"
-                            onClick={handleClose}
-                            className="h-11 rounded-2xl border-gray-200 bg-white px-5 font-bold text-gray-600 hover:bg-gray-50"
-                        >
+                {/* Footer */}
+                <div className="flex items-center justify-between border-t border-zinc-100 px-6 py-4">
+                    <p className="text-[11px] text-zinc-400">
+                        {files.length > 0 ? `${files.length} PDF${files.length !== 1 ? "s" : ""} ready` : "No files selected"}
+                    </p>
+                    <div className="flex items-center gap-2">
+                        <button onClick={close} disabled={uploading}
+                            className="h-8 rounded-lg border border-zinc-200 px-4 text-[12px] font-medium text-zinc-500 hover:bg-zinc-50 transition disabled:opacity-40">
                             Cancel
-                        </Button>
-                        <Button
-                            type="button"
-                            onClick={startUpload}
-                            disabled={!files.length || isUploading || accessLocked}
-                            className="h-11 rounded-2xl bg-orange-600 px-5 font-bold text-white shadow-[0_10px_24px_rgba(249,115,22,0.28)] hover:bg-orange-700 hover:shadow-[0_12px_28px_rgba(249,115,22,0.34)]"
-                        >
-                            {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                            {isUploading ? "Uploading..." : "Start Screening"}
-                        </Button>
+                        </button>
+                        <button onClick={upload} disabled={!files.length || uploading || locked || done}
+                            className={cn(
+                                "flex h-8 items-center gap-1.5 rounded-lg px-4 text-[12px] font-semibold text-white transition disabled:opacity-40",
+                                done ? "bg-emerald-500" : "bg-orange-500 hover:bg-orange-600"
+                            )}>
+                            {done ? <><CheckCircle2 className="h-3.5 w-3.5" /> Done</>
+                                : uploading ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Uploading…</>
+                                    : <>Start Screening {files.length > 0 && <span className="rounded bg-white/20 px-1.5 py-0.5 text-[10px]">{files.length}</span>}</>}
+                        </button>
                     </div>
                 </div>
+
             </DialogContent>
         </Dialog>
     );

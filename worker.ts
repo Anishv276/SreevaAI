@@ -450,8 +450,8 @@ async function processDriveResumeBatchJob(job: any) {
   if (!batchId || !driveId || !orgId) {
     throw new Error("Invalid drive batch job payload");
   }
-  const batchExtractModel = "gpt-5.4-mini";
-  const batchReportModel = "gpt-5.4-mini";
+  const batchExtractModel = "gpt-4o-mini";
+  const batchReportModel = "gpt-4o-mini";
 
   console.log(`[RESUME-WORKER] Batch queued -> starting batchId=${batchId} driveId=${driveId}`);
 
@@ -497,7 +497,7 @@ async function processDriveResumeBatchJob(job: any) {
   let structuredJd = parseJsonSafe<Record<string, any>>(drive.extractedDetails, {});
   const jdRawText = buildJdRawText(drive);
   if (!hasJdMustHaves(structuredJd) && jdRawText.length >= 80) {
-    const extracted = await extractJDFromText(jdRawText, "gpt-5.4-mini");
+    const extracted = await extractJDFromText(jdRawText, "gpt-4o-mini");
     if (hasJdMustHaves(extracted.data || {})) {
       structuredJd = extracted.data || {};
       await prisma.drive.update({
@@ -971,7 +971,7 @@ async function processResumeFileExtractJob(job: any) {
     fileUrl = null,
     fileName = "resume.pdf",
     orgId = null,
-    orgOpenAIModel = "gpt-5.4-mini",
+    orgOpenAIModel = "gpt-4o-mini",
   } = job.data || {};
 
   if (!key) {
@@ -1056,8 +1056,8 @@ if (isQueueEnabled("resume-processing")) {
       applicantEmail,
       applicantName,
       structuredResume: initialStructuredResume,
-      extractModel = "gpt-5.4-mini",
-      reportModel = "gpt-5.4-mini",
+      extractModel = "gpt-4o-mini",
+      reportModel = "gpt-4o-mini",
     } = job.data;
     console.log(`[JOB] Processing application ${applicationId} for ${applicantEmail}`);
     // Guard: skip if the application record was deleted
@@ -1325,11 +1325,9 @@ if (isQueueEnabled("invitation-delivery-queue")) {
       const {
         applicationId,
         action,
-        emailType,
       }: {
         applicationId?: string;
-        action?: "shortlist" | "reject" | "hire" | "nothired" | "confirm";
-        emailType?: "screening" | "hiring";
+        action?: "shortlist" | "reject" | "nothired";
       } = job.data || {};
 
       console.log(`[Invitation Worker] Job received: action=${action}, applicationId=${applicationId}`);
@@ -1355,12 +1353,6 @@ if (isQueueEnabled("invitation-delivery-queue")) {
                 },
               },
               deadline: true,
-            },
-          },
-          interview: {
-            select: {
-              id: true,
-              accessToken: true,
             },
           },
         },
@@ -1402,38 +1394,29 @@ if (isQueueEnabled("invitation-delivery-queue")) {
           token: isInterviewTokenRequired() ? interviewRecord.accessToken : null,
           orgName: application.drive?.organization?.name || "Sreeva AI",
         });
-      } else if (action === "confirm") {
-        const baseUrl = appUrl;
-        interviewLink = buildInterviewLink(baseUrl, applicationId, {
-          token: isInterviewTokenRequired() ? application.interview?.accessToken : null,
+      }
+      const { sendInterviewInviteEmail, sendRejectionEmail } = await import('./lib/mail');
+      let mailResult: { success: boolean; error?: string };
+      if (action === "shortlist") {
+        if (!interviewLink) throw new Error(`interviewLink required for action=shortlist`);
+        mailResult = await sendInterviewInviteEmail({
+          email: application.email,
+          fullName: application.fullName || "Candidate",
+          jobTitle: application.drive?.title || "Unknown Role",
+          orgName: application.drive?.organization?.name || "Sreeva AI",
+          interviewLink,
+          schedulingDeadline: application.drive?.deadline ?? null,
+        });
+      } else if (action === "reject" || action === "nothired") {
+        mailResult = await sendRejectionEmail({
+          email: application.email,
+          fullName: application.fullName || "Candidate",
+          jobTitle: application.drive?.title || "Unknown Role",
           orgName: application.drive?.organization?.name || "Sreeva AI",
         });
-        console.log(`[Invitation Worker] Generated confirmation link: ${interviewLink}`);
-      }
-      const { sendApplicationStatusEmail } = await import('./lib/mail');
-      const actionStatusMap: Record<"shortlist" | "reject" | "hire" | "nothired" | "confirm", "SHORTLISTED" | "REJECTED" | "Hired" | "CONFIRMED"> = {
-        shortlist: "SHORTLISTED",
-        reject: "REJECTED",
-        nothired: "REJECTED",
-        hire: "Hired",
-        confirm: "CONFIRMED",
-      };
-      // Scheduling flow must never send rejection content:
-      // shortlist + confirm emails stay in the shortlisted pipeline.
-      const emailStatus = action === "confirm" ? "SHORTLISTED" : actionStatusMap[action];
-      if (!emailStatus) {
+      } else {
         throw new Error(`Unsupported invitation action: ${action}`);
       }
-      console.log(`[Invitation Worker] Mapped status: action=${action} -> emailStatus=${emailStatus}`);
-      const mailResult = await sendApplicationStatusEmail({
-        email: application.email,
-        fullName: application.fullName || "Candidate",
-        jobTitle: application.drive?.title || "Unknown Role",
-        orgName: application.drive?.organization?.name || "Sreeva AI",
-        status: emailStatus as any,
-        interviewLink,
-        schedulingDeadline: application.drive?.deadline || undefined,
-      });
       if (!mailResult.success) {
         const reason = "error" in mailResult && mailResult.error
           ? mailResult.error
@@ -1455,7 +1438,7 @@ if (isQueueEnabled("invitation-delivery-queue")) {
       }
       await appendCandidateActivity(applicationId, {
         type: "email_sent",
-        label: action === "shortlist" ? "Shortlisted email sent" : action === "hire" ? "Hire email sent" : action === "confirm" ? "Interview confirmation email sent" : "Rejection email sent",
+        label: action === "shortlist" ? "Interview invite sent" : "Rejection email sent",
         details: `Delivered at ${new Date().toISOString()}`,
         timestamp: new Date().toISOString(),
         source: "worker",
@@ -1785,6 +1768,53 @@ if (isQueueEnabled("interview-finalization")) {
           );
         }
         console.log(`[SUCCESS] Interview finalization persisted for ${applicationId}`);
+
+        // ── 1b. Notify org admins that the interview is complete ──────────────
+        if (interviewStatus === "COMPLETED") {
+          try {
+            const appForNotify = await prisma.application.findUnique({
+              where: { id: applicationId },
+              select: {
+                fullName: true,
+                drive: {
+                  select: {
+                    title: true,
+                    orgId: true,
+                    organization: { select: { name: true } },
+                  },
+                },
+                interview: { select: { completedAt: true } },
+              },
+            });
+            const notifyOrgId = appForNotify?.drive?.orgId;
+            if (notifyOrgId) {
+              const admins = await prisma.user.findMany({
+                where: { orgId: notifyOrgId, role: "ADMIN" },
+                select: { email: true, name: true },
+              });
+              const { sendInterviewCompletedEmail } = await import('./lib/mail');
+              const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://sreevaai.com';
+              const reportLink = `${appUrl}/admin/candidates/${applicationId}`;
+              await Promise.allSettled(
+                admins.map(admin =>
+                  sendInterviewCompletedEmail({
+                    adminEmail: admin.email,
+                    adminName: admin.name || "Admin",
+                    candidateName: appForNotify?.fullName || "Candidate",
+                    jobTitle: appForNotify?.drive?.title || "Unknown Role",
+                    orgName: appForNotify?.drive?.organization?.name || "Sreeva AI",
+                    driveTitle: appForNotify?.drive?.title,
+                    completedAt: appForNotify?.interview?.completedAt ?? undefined,
+                    reportLink,
+                  })
+                )
+              );
+              console.log(`[MAIL] Interview completed notifications sent to ${admins.length} admin(s) for ${applicationId}`);
+            }
+          } catch (notifyError) {
+            console.warn(`[MAIL] Failed to send interview completed notifications for ${applicationId}:`, notifyError);
+          }
+        }
 
         // ── 2. Generate AI interview report (no timeout — we're in a worker) ──
         try {

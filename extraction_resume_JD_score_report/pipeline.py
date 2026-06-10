@@ -174,7 +174,7 @@ class HRPipeline:
         final_res = {
             "data": result.get("data", result),
             "usage": result.get("usage", {
-                "model": "gpt-5.4-mini",
+                "model": "gpt-4o-mini",
                 "inputTokens": 0,
                 "outputTokens": 0,
                 "cachedInputTokens": 0,

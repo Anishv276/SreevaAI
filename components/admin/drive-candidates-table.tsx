@@ -308,11 +308,9 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                     }
                     toast.success(`Schedule link sent to ${emailConfirm.candidateName}`);
                 } else if (status === "rejected") {
-                    await fetch(`/api/candidates/${emailConfirm.candidateId}/send-email`, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ emailType: "rejection" }),
-                    });
+                    const res = await fetch(`/api/candidates/${emailConfirm.candidateId}/send-rejection-email`, { method: "POST" });
+                    const data = await res.json().catch(() => null);
+                    if (!res.ok) { toast.error(data?.error || "Failed to send rejection email"); return; }
                     toast.success(`Rejection email sent to ${emailConfirm.candidateName}`);
                 }
             } else if (emailConfirm.mode === "bulk") {

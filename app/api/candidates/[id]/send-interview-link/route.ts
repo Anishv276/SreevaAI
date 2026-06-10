@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { sendApplicationStatusEmail } from "@/lib/mail";
+import { sendInterviewInviteEmail } from "@/lib/mail";
 import { buildInterviewLink } from "@/lib/interview-links";
 import { getSession, isAdminRole } from "@/lib/auth";
 import { getOrgBillingStatus } from "@/lib/credits";
@@ -106,14 +106,13 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
             orgName: application.drive?.organization?.name || "Sreeva AI",
         });
 
-        const mailResult = await sendApplicationStatusEmail({
+        const mailResult = await sendInterviewInviteEmail({
             email: application.email,
             fullName: application.fullName,
             jobTitle: application.drive?.title || "Unknown Role",
             orgName: application.drive?.organization?.name || "Sreeva AI",
-            status: "SHORTLISTED",
             interviewLink,
-            schedulingDeadline: (application.drive as any)?.deadline || undefined,
+            schedulingDeadline: (application.drive as any)?.deadline ?? null,
         });
 
         if (!mailResult.success) {
