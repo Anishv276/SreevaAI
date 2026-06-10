@@ -29,21 +29,14 @@ export async function GET(req: Request) {
 
         // --- Core Fetcher Function ---
         async function fetchActivity(dateCutoff: Date | null) {
-            const getWhere = (table: "application" | "interview") => {
-                const base = table === "interview" 
-                    ? { application: { drive: { orgId } } } 
-                    : { drive: { orgId } };
-                
-                if (dateCutoff) {
-                    const timeField = table === "interview" ? "updatedAt" : "createdAt";
-                    return { ...base, [timeField]: { gte: dateCutoff } };
-                }
-                return base;
+            const applicationWhere = {
+                drive: { orgId },
+                ...(dateCutoff ? { createdAt: { gte: dateCutoff } } : {}),
             };
 
             return await Promise.all([
                 prisma.application.findMany({
-                    where: getWhere("application") as any,
+                    where: applicationWhere,
                     select: { id: true, createdAt: true, drive: { select: { title: true } } },
                     orderBy: { createdAt: "desc" },
                     take: 20

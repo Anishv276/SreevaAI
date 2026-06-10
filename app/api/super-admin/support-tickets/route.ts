@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 
@@ -16,7 +17,7 @@ export async function GET(request: Request) {
         const q = searchParams.get("q")?.trim() || "";
         const offset = (page - 1) * limit;
 
-        const where: Record<string, any> = {};
+        const where: Prisma.SupportTicketWhereInput = {};
         if (status && status !== "ALL") {
             where.status = status;
         }
@@ -75,26 +76,36 @@ export async function GET(request: Request) {
             prisma.supportTicket.count({ where: { ...where, status: "CLOSED" } }),
         ]);
 
-        const enrichedTickets = await Promise.all(tickets.map(async (ticket) => {
-            if (!ticket.interview && ticket.applicationId) {
-                const application = await prisma.application.findUnique({
-                    where: { id: ticket.applicationId },
-                    include: {
-                        drive: {
-                            include: {
-                                organization: {
-                                    select: { id: true, name: true, slug: true, plan: true },
-                                },
+        const missingApplicationIds = tickets
+            .filter((ticket) => !ticket.interview && ticket.applicationId)
+            .map((ticket) => ticket.applicationId as string);
+
+        const applications = missingApplicationIds.length > 0
+            ? await prisma.application.findMany({
+                where: { id: { in: missingApplicationIds } },
+                include: {
+                    drive: {
+                        include: {
+                            organization: {
+                                select: { id: true, name: true, slug: true, plan: true },
                             },
                         },
                     },
-                });
+                },
+            })
+            : [];
+
+        const applicationsById = new Map(applications.map((application) => [application.id, application]));
+
+        const enrichedTickets = tickets.map((ticket) => {
+            if (!ticket.interview && ticket.applicationId) {
+                const application = applicationsById.get(ticket.applicationId);
                 if (application) {
                     return { ...ticket, interview: { application } };
                 }
             }
             return ticket;
-        }));
+        });
 
         return NextResponse.json({
             tickets: enrichedTickets,

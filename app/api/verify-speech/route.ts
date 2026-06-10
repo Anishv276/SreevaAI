@@ -168,7 +168,7 @@ export async function POST(req: NextRequest) {
         const applicationId = (formData.get("applicationId") as string | null)?.trim() ?? "";
         const interviewToken = (formData.get("interviewToken") as string | null)?.trim() ?? "";
 
-        if (!audio || !targetPhrase || !applicationId) {
+        if (!audio || !targetPhrase.trim() || !applicationId) {
             return NextResponse.json({ error: "Missing audio, targetPhrase, or applicationId" }, { status: 400 });
         }
         if (isInterviewTokenRequired() && !interviewToken) {

@@ -6,8 +6,8 @@ import { OrgCreditPieChart, OrgQuotaConsumption, OrgInterviewPieChart } from "@/
 import { RecentActivity } from "@/components/super-admin/recent-activity";
 import { Plus, ArrowRight, Building2, Loader2 } from "lucide-react";
 import Link from "next/link";
+import Image from "next/image";
 import { cn } from "@/lib/utils";
-import { motion } from "framer-motion";
 
 interface Org {
     id: string;
@@ -24,6 +24,21 @@ interface ChartStats {
     orgCreditStats: { name: string; creditsUsed: number }[];
     orgInterviewStats: { name: string; count: number }[];
     orgQuotaStats: { name: string; used: number; total: number }[];
+}
+
+interface DashboardStats extends ChartStats {
+    totalOrgs: number;
+    activeOrgs: number;
+    suspendedOrgs: number;
+    closedOrgs: number;
+    totalAdmins: number;
+    totalDrives: number;
+    totalCandidates: number;
+    totalCreditsUsed: number;
+    platformHealth: number;
+    engagedOrgs: number;
+    trends: { orgs: number; admins: number; drives: number; candidates: number };
+    recentActivity: { type: "ORG" | "DRIVE" | "CANDIDATE" | "INTERVIEW"; detail: string; org: string; at: string }[];
 }
 
 function getStatusBadge(org: Org) {
@@ -45,12 +60,42 @@ function getStatusBadge(org: Org) {
 
 export default function SuperAdminDashboard() {
     const [orgs, setOrgs] = useState<Org[]>([]);
-    const [chartStats, setChartStats] = useState<ChartStats>({ orgCreditStats: [], orgInterviewStats: [], orgQuotaStats: [] });
+    const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(null);
+    const [statsLoading, setStatsLoading] = useState(true);
+    const [statsError, setStatsError] = useState<string | null>(null);
     const [orgsLoading, setOrgsLoading] = useState(true);
-    const [chartsLoading, setChartsLoading] = useState(true);
+
+    const loadDashboardStats = async (signal?: AbortSignal) => {
+        setStatsLoading(true);
+        setStatsError(null);
+
+        try {
+            const res = await fetch("/api/super-admin/stats", signal ? { signal } : undefined);
+            if (!res.ok) {
+                setStatsError("Failed to load dashboard stats.");
+                return;
+            }
+
+            const data = await res.json();
+            setDashboardStats({
+                ...data,
+                orgCreditStats: data.orgCreditStats ?? [],
+                orgInterviewStats: data.orgInterviewStats ?? [],
+                orgQuotaStats: data.orgQuotaStats ?? [],
+                recentActivity: data.recentActivity ?? [],
+            });
+        } catch (err: unknown) {
+            if (!(err instanceof Error) || err.name !== "AbortError") {
+                setStatsError("Network error.");
+            }
+        } finally {
+            if (!signal?.aborted) {
+                setStatsLoading(false);
+            }
+        }
+    };
 
     useEffect(() => {
-        // Fetch recent orgs separately — lightweight
         fetch("/api/super-admin/orgs?limit=6")
             .then(async (res) => {
                 if (res.ok) setOrgs((await res.json()).orgs ?? []);
@@ -58,25 +103,14 @@ export default function SuperAdminDashboard() {
             .catch(() => {})
             .finally(() => setOrgsLoading(false));
 
-        // Fetch chart stats from dedicated endpoint
-        fetch("/api/super-admin/stats")
-            .then(async (res) => {
-                if (res.ok) {
-                    const data = await res.json();
-                    setChartStats({
-                        orgCreditStats: data.orgCreditStats ?? [],
-                        orgInterviewStats: data.orgInterviewStats ?? [],
-                        orgQuotaStats: data.orgQuotaStats ?? [],
-                    });
-                }
-            })
-            .catch(() => {})
-            .finally(() => setChartsLoading(false));
+        const controller = new AbortController();
+        void loadDashboardStats(controller.signal);
+
+        return () => controller.abort();
     }, []);
 
     return (
         <div className="space-y-7 pb-10 animate-in fade-in duration-700" style={{ zoom: 0.78, transformOrigin: "top center" }}>
-            {/* Header */}
             <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between mb-8">
                 <div className="flex items-center gap-5">
                     <div className="h-12 w-1.5 bg-orange-600 rounded-full shadow-[0_0_15px_rgba(234,88,12,0.3)]" />
@@ -85,7 +119,7 @@ export default function SuperAdminDashboard() {
                         <div className="flex items-center gap-3">
                             <span className="h-1.5 w-1.5 rounded-full bg-orange-500 animate-pulse" />
                             <p className="text-gray-400 font-bold text-[11px] uppercase tracking-widest">
-                                Platform Pulse · {new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "short" })}
+                                Platform Pulse Â· {new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "short" })}
                             </p>
                         </div>
                     </div>
@@ -106,12 +140,14 @@ export default function SuperAdminDashboard() {
                 </div>
             </div>
 
-            {/* Stats Cards */}
-            <SuperAdminStatsGrid />
+            <SuperAdminStatsGrid
+                stats={dashboardStats}
+                loading={statsLoading}
+                error={statsError}
+                onRetry={() => { void loadDashboardStats(); }}
+            />
 
-            {/* Active Orgs + Interview Split */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-                {/* Active Organizations */}
                 <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
                     <div className="flex items-center justify-between mb-5">
                         <div>
@@ -144,7 +180,13 @@ export default function SuperAdminDashboard() {
                                             <div className="flex items-center gap-3">
                                                 {org.logoUrl ? (
                                                     <div className="h-9 w-9 rounded-xl border border-gray-100 bg-white p-1.5 flex items-center justify-center shrink-0">
-                                                        <img src={org.logoUrl} alt={org.name} className="h-full w-full object-contain" />
+                                                        <Image
+                                                            src={org.logoUrl}
+                                                            alt={org.name}
+                                                            width={36}
+                                                            height={36}
+                                                            className="h-full w-full object-contain"
+                                                        />
                                                     </div>
                                                 ) : (
                                                     <div className="h-9 w-9 rounded-xl bg-gray-900 text-white flex items-center justify-center font-bold text-sm shrink-0">
@@ -171,18 +213,20 @@ export default function SuperAdminDashboard() {
                     )}
                 </div>
 
-                {/* Interview Split */}
-                <OrgInterviewPieChart stats={chartStats.orgInterviewStats} loading={chartsLoading} />
+                <OrgInterviewPieChart stats={dashboardStats?.orgInterviewStats ?? []} loading={statsLoading} />
             </div>
 
-            {/* Credit Analytics */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-                <OrgCreditPieChart stats={chartStats.orgCreditStats} loading={chartsLoading} />
-                <OrgQuotaConsumption stats={chartStats.orgQuotaStats} loading={chartsLoading} />
+                <OrgCreditPieChart stats={dashboardStats?.orgCreditStats ?? []} loading={statsLoading} />
+                <OrgQuotaConsumption stats={dashboardStats?.orgQuotaStats ?? []} loading={statsLoading} />
             </div>
 
-            {/* Global Activity */}
-            <RecentActivity />
+            <RecentActivity
+                activities={dashboardStats?.recentActivity ?? null}
+                loading={statsLoading}
+                error={statsError}
+                onRetry={() => { void loadDashboardStats(); }}
+            />
         </div>
     );
 }

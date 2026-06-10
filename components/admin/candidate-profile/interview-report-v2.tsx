@@ -15,6 +15,7 @@
 
 import { forwardRef, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import Image from "next/image";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import {
@@ -29,16 +30,24 @@ import {
   XCircle,
   Minus,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode, RefObject } from "react";
+import type { APITypes } from "plyr-react";
 import type { SreevaAIInterviewViewModel } from "./interview-report-sreevaai";
+
+type PlyrHandle = APITypes & {
+  plyr?: {
+    currentTime?: number;
+  };
+  querySelector?: (selector: string) => HTMLVideoElement | null;
+};
 
 // ─── Dynamic video player ────────────────────────────────────────────────────
 
 const Plyr = dynamic(
   () =>
     import("plyr-react").then((m) => {
-      const Wrapper = forwardRef<any, any>((props, ref) => {
-        const PlyrComponent = m.Plyr as any;
+      const Wrapper = forwardRef<APITypes, ComponentProps<typeof m.Plyr>>((props, ref) => {
+        const PlyrComponent = m.Plyr;
         return (
           <div suppressHydrationWarning>
             <PlyrComponent ref={ref} {...props} />
@@ -527,7 +536,7 @@ function RecordingBlock({
   videoUrl: string | null;
   videoMimeType: string | null;
   durationSec: number | null;
-  plyrRef: React.RefObject<any>;
+  plyrRef: RefObject<PlyrHandle | null>;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -584,7 +593,7 @@ export function InterviewReportV2({
   showHeader?: boolean;
   headerActions?: ReactNode;
 }) {
-  const plyrRef = useRef<any>(null);
+  const plyrRef = useRef<PlyrHandle>(null);
 
   const handleSeek = (seconds: number) => {
     if (!Number.isFinite(seconds)) return;
@@ -603,7 +612,7 @@ export function InterviewReportV2({
     { label: "Problem Solving", value: sc?.problem_solving ?? Math.round(model.technical.percent * 0.9) },
     { label: "Role Readiness", value: sc?.role_fit ?? Math.round(model.technical.percent * 0.85) },
     { label: "Communication", value: Math.round((model.comm.fluency + model.comm.pronunciation + model.comm.confidence) / 3) || Math.round(model.technical.percent * 0.8) },
-    { label: "Ownership", value: sc?.behavioral ?? Math.round(model.technical.percent * 0.88) },
+    { label: "Ownership", value: sc?.ownership_credibility ?? Math.round(model.technical.percent * 0.88) },
   ] as { label: string; value: number }[];
 
   // Clamp all values 0-100
@@ -665,7 +674,14 @@ export function InterviewReportV2({
                 <div className="relative shrink-0">
                   <div className="h-14 w-14 rounded-full overflow-hidden border-2 border-white shadow-md bg-slate-100">
                     {model.displayAvatar && (
-                      <img src={model.displayAvatar} alt="" className="h-full w-full object-cover" />
+                      <Image
+                        src={model.displayAvatar}
+                        alt=""
+                        width={56}
+                        height={56}
+                        className="h-full w-full object-cover"
+                        unoptimized
+                      />
                     )}
                   </div>
                   {/* Recommendation dot */}

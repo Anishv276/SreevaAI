@@ -34,7 +34,7 @@ export async function GET(request: Request) {
         const toDate = to ? new Date(to) : null;
 
         // -- Phase 1: Total Count (Filtered) -------------------
-        let whereClause: any = search ? {
+        const whereClause: Prisma.OrganizationWhereInput = search ? {
             OR: [
                 { name: { contains: search, mode: "insensitive" as const } },
                 { slug: { contains: search, mode: "insensitive" as const } },
@@ -42,7 +42,7 @@ export async function GET(request: Request) {
         } : {};
 
         if (fromDate && toDate) {
-            whereClause.createdAt = {
+            (whereClause as Prisma.OrganizationWhereInput).createdAt = {
                 gte: fromDate,
                 lte: toDate
             };
@@ -148,13 +148,42 @@ export async function GET(request: Request) {
                 LIMIT 5
             `,
             prisma.$queryRaw<Array<{ type: string, detail: string, org: string, at: Date }>>`
-                (SELECT 'ORG' as type, name as detail, '' as org, "createdAt" as at FROM "Organization")
-                UNION ALL
-                (SELECT 'DRIVE' as type, title as detail, (SELECT name FROM "Organization" o WHERE o.id = d."orgId") as org, "createdAt" as at FROM "Drive" d)
-                UNION ALL
-                (SELECT 'CANDIDATE' as type, "fullName" as detail, (SELECT name FROM "Organization" o JOIN "Drive" d2 ON d2."orgId" = o.id WHERE d2.id = a."driveId") as org, "createdAt" as at FROM "Application" a)
-                UNION ALL
-                (SELECT 'INTERVIEW' as type, 'Completed' as detail, (SELECT name FROM "Organization" o JOIN "Drive" d3 ON d3."orgId" = o.id JOIN "Application" a2 ON a2."driveId" = d3.id WHERE a2.id = i."applicationId") as org, "completedAt" as at FROM "Interview" i WHERE i."status" = 'COMPLETED')
+                SELECT * FROM (
+                    SELECT * FROM (
+                        SELECT 'ORG' as type, name as detail, '' as org, "createdAt" as at
+                        FROM "Organization"
+                        ORDER BY "createdAt" DESC
+                        LIMIT 10
+                    ) org_activity
+                    UNION ALL
+                    SELECT * FROM (
+                        SELECT 'DRIVE' as type, d.title as detail, COALESCE(o.name, '') as org, d."createdAt" as at
+                        FROM "Drive" d
+                        LEFT JOIN "Organization" o ON o.id = d."orgId"
+                        ORDER BY d."createdAt" DESC
+                        LIMIT 10
+                    ) drive_activity
+                    UNION ALL
+                    SELECT * FROM (
+                        SELECT 'CANDIDATE' as type, a."fullName" as detail, COALESCE(o.name, '') as org, a."createdAt" as at
+                        FROM "Application" a
+                        LEFT JOIN "Drive" d ON d.id = a."driveId"
+                        LEFT JOIN "Organization" o ON o.id = d."orgId"
+                        ORDER BY a."createdAt" DESC
+                        LIMIT 10
+                    ) candidate_activity
+                    UNION ALL
+                    SELECT * FROM (
+                        SELECT 'INTERVIEW' as type, 'Completed' as detail, COALESCE(o.name, '') as org, i."completedAt" as at
+                        FROM "Interview" i
+                        JOIN "Application" a ON a.id = i."applicationId"
+                        LEFT JOIN "Drive" d ON d.id = a."driveId"
+                        LEFT JOIN "Organization" o ON o.id = d."orgId"
+                        WHERE i."status" = 'COMPLETED' AND i."completedAt" IS NOT NULL
+                        ORDER BY i."completedAt" DESC
+                        LIMIT 10
+                    ) interview_activity
+                ) activity_feed
                 ORDER BY at DESC
                 LIMIT 10
             `,
@@ -220,7 +249,12 @@ export async function GET(request: Request) {
             }
         };
 
-        const toEffectiveStatus = (org: Record<string, any>) => {
+        const toEffectiveStatus = (org: {
+            status?: string | null;
+            statusControl?: string | null;
+            interviewQuotaTotal?: number | null;
+            interviewQuotaUsed?: number | null;
+        }) => {
             const status = String(org.status || "ACTIVE").toUpperCase();
             if (status === "CLOSED") {
                 return "CLOSED";
@@ -238,7 +272,7 @@ export async function GET(request: Request) {
         };
 
         return NextResponse.json({
-            orgs: orgs.map((org: any) => ({
+            orgs: orgs.map((org) => ({
                 ...org,
                 status: toEffectiveStatus(org),
             })),
@@ -355,7 +389,12 @@ export async function POST(request: Request) {
         // Create org + admin in a transaction
         const result = await prisma.$transaction(async (tx) => {
             // Build org data explicitly to ensure exclusivity
-            const orgData: any = {
+            const orgData: Prisma.OrganizationCreateInput & {
+                id: string;
+                usageMetrics: Prisma.InputJsonValue;
+                location: string | null;
+            } = {
+                id: generateId("org", orgName),
                 name: orgName,
                 slug: normalizedSlug,
                 plan: normalizedPlan,
@@ -370,7 +409,6 @@ export async function POST(request: Request) {
                 recordingRetentionDays: resolvedRecordingEnabled ? resolvedRecordingRetentionDays : null,
                 usageMetrics: {},
                 location: location || null,
-
             };
 
             if (resolvedSignals !== undefined) {
@@ -384,12 +422,11 @@ export async function POST(request: Request) {
                 })
             );
 
-            const orgId = generateId("org", orgName);
             const userName = adminName || normalizedAdminEmail.split("@")[0];
             const userId = generateId("usr", userName);
 
             const org = await tx.organization.create({
-                data: { id: orgId, ...orgData },
+                data: orgData,
             });
 
             const admin = await tx.user.create({
@@ -419,10 +456,11 @@ export async function POST(request: Request) {
             org: result.org,
             adminEmail: result.admin.email,
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error creating org:", error);
-        if (error.code === "P2002") {
-            const target = Array.isArray(error.meta?.target) ? error.meta.target.map(String) : [];
+        if (typeof error === "object" && error && "code" in error && (error as { code?: string }).code === "P2002") {
+            const meta = error as { meta?: { target?: unknown } };
+            const target = Array.isArray(meta.meta?.target) ? meta.meta?.target.map(String) : [];
             if (target.includes("slug")) {
                 return NextResponse.json({ error: "Slug already exists. Choose another." }, { status: 409 });
             }

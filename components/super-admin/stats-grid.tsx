@@ -19,13 +19,30 @@ interface SuperAdminStats {
     trends: { orgs: number; admins: number; drives: number; candidates: number };
 }
 
-export function SuperAdminStatsGrid() {
+interface SuperAdminStatsGridProps {
+    stats?: SuperAdminStats | null;
+    loading?: boolean;
+    error?: string | null;
+    onRetry?: () => void;
+}
+
+export function SuperAdminStatsGrid({
+    stats: externalStats,
+    loading: externalLoading,
+    error: externalError,
+    onRetry,
+}: SuperAdminStatsGridProps) {
     const [stats, setStats] = useState<SuperAdminStats | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [retryKey, setRetryKey] = useState(0);
+    const useExternalData = externalStats !== undefined;
 
     useEffect(() => {
+        if (useExternalData) {
+            return;
+        }
+
         const controller = new AbortController();
         const { signal } = controller;
 
@@ -41,8 +58,8 @@ export function SuperAdminStatsGrid() {
                 } else {
                     setError("Failed to load stats.");
                 }
-            } catch (err: any) {
-                if (!signal.aborted && err.name !== "AbortError") setError("Network error.");
+            } catch (err: unknown) {
+                if (!signal.aborted && (!(err instanceof Error) || err.name !== "AbortError")) setError("Network error.");
             } finally {
                 if (!signal.aborted) setLoading(false);
             }
@@ -51,14 +68,24 @@ export function SuperAdminStatsGrid() {
         void loadStats();
 
         return () => controller.abort();
-    }, [retryKey]);
+    }, [retryKey, useExternalData]);
 
-    if (error) {
+    const resolvedStats = useExternalData ? externalStats : stats;
+    const resolvedLoading = useExternalData ? Boolean(externalLoading) : loading;
+    const resolvedError = useExternalData ? externalError ?? null : error;
+
+    if (resolvedError) {
         return (
             <div className="rounded-2xl border border-red-100 bg-red-50 px-6 py-4 flex items-center justify-between">
-                <p className="text-sm font-semibold text-red-600">{error}</p>
+                <p className="text-sm font-semibold text-red-600">{resolvedError}</p>
                 <button
-                    onClick={() => setRetryKey((k) => k + 1)}
+                    onClick={() => {
+                        if (onRetry) {
+                            onRetry();
+                            return;
+                        }
+                        setRetryKey((k) => k + 1);
+                    }}
                     className="text-xs font-bold text-red-700 underline underline-offset-2 hover:text-red-900"
                 >
                     Retry
@@ -67,7 +94,7 @@ export function SuperAdminStatsGrid() {
         );
     }
 
-    if (loading || !stats) {
+    if (resolvedLoading || !resolvedStats) {
         return (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
                 {[...Array(6)].map((_, i) => (
@@ -77,7 +104,7 @@ export function SuperAdminStatsGrid() {
         );
     }
 
-    const s = stats;
+    const s = resolvedStats;
     const activePercentage = s.platformHealth ?? (s.totalOrgs > 0 ? Math.round((s.activeOrgs / s.totalOrgs) * 100) : 0);
 
     const cards = [
@@ -142,7 +169,7 @@ export function SuperAdminStatsGrid() {
             {cards.map((card, idx) => (
                 <motion.div
                     key={idx}
-                    variants={{ hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.16, 1, 0.3, 1] as any } } }}
+                    variants={{ hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] } } }}
                     className="bg-white rounded-2xl border border-gray-200 p-4 flex flex-col gap-3 hover:border-gray-300 hover:shadow-sm transition-all duration-200"
                 >
                     <div className="flex items-start justify-between">

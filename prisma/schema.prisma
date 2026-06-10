@@ -35,6 +35,9 @@ model Organization {
 
   drives               Drive[]
   users                User[]
+
+  @@index([status])
+  @@index([createdAt(sort: Desc)])
 }
 
 model SuperAdmin {
@@ -81,6 +84,7 @@ model SupportTicket {
 
   @@index([status, createdAt])
   @@index([interviewId, createdAt])
+  @@index([applicationId])
 }
 
 model Drive {
@@ -109,6 +113,7 @@ model Drive {
   organization       Organization? @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
+  @@index([orgId, createdAt(sort: Desc)])
 }
 
 model Application {
@@ -131,6 +136,7 @@ model Application {
   interview        Interview?
 
   @@index([driveId, resumeStatus, hiringStatus, updatedAt])
+  @@index([driveId, aiScore(sort: Desc), updatedAt(sort: Desc)])
   @@index([createdAt(sort: Desc)])
   @@index([updatedAt(sort: Desc)])
 }
@@ -162,6 +168,8 @@ model Interview {
   supportTickets        SupportTicket[]
   @@index([updatedAt(sort: Desc)])
   @@index([status])
+  @@index([status, completedAt(sort: Desc)])
+  @@index([status, updatedAt(sort: Desc)])
 }
 
 model ResumeCandidate {

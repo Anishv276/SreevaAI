@@ -1,6 +1,18 @@
+import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+
+type OrgStatusRow = {
+    status: string;
+    statusControl: string | null;
+    interviewQuotaTotal: number | null;
+    interviewQuotaUsed: number | null;
+};
+
+type CreditRow = { name: string; creditsUsed: number };
+type InterviewRow = { name: string; count: number };
+type RecentActivityRow = { type: string; detail: string; org: string; at: Date };
 
 export async function GET() {
     try {
@@ -20,15 +32,16 @@ export async function GET() {
             totalOrgs,
             counts,
             allOrgStatuses,
-            orgCreditStats,
-            orgInterviewStats,
+            creditTopRows,
+            creditTotalRows,
+            interviewTopRows,
+            interviewTotalRows,
             orgQuotaStats,
             recentActivity,
             trends,
             recentlyActiveOrgs,
         ] = await Promise.all([
             prisma.organization.count(),
-            // Global counts
             prisma.$queryRaw<Array<{
                 totalAdmins: number;
                 totalDrives: number;
@@ -52,33 +65,37 @@ export async function GET() {
                     COALESCE(SUM(COALESCE("creditsUsed", 0)), 0)::FLOAT AS "totalCreditsUsed"
                 FROM "Organization"
             `,
-            // All orgs with quota data to compute effective statuses
-            prisma.$queryRaw<Array<{
-                status: string;
-                statusControl: string | null;
-                interviewQuotaTotal: number | null;
-                interviewQuotaUsed: number | null;
-            }>>`
+            prisma.$queryRaw<Array<OrgStatusRow>>`
                 SELECT status, "statusControl", "interviewQuotaTotal", "interviewQuotaUsed"
                 FROM "Organization"
             `,
-            // Full credit stats (no LIMIT) for accurate "Other" bucket
-            prisma.$queryRaw<Array<{ name: string; creditsUsed: number }>>`
-                SELECT name, COALESCE("creditsUsed", 0) AS "creditsUsed"
+            prisma.$queryRaw<Array<CreditRow>>(Prisma.sql`
+                SELECT name, COALESCE("creditsUsed", 0)::FLOAT AS "creditsUsed"
                 FROM "Organization"
-                ORDER BY "creditsUsed" DESC
-            `,
-            // Full interview stats (no LIMIT) for accurate "Other" bucket
-            prisma.$queryRaw<Array<{ name: string; count: number }>>`
+                ORDER BY COALESCE("creditsUsed", 0) DESC, name ASC
+                LIMIT 4
+            `),
+            prisma.$queryRaw<Array<{ totalCreditsUsed: number }>>(Prisma.sql`
+                SELECT COALESCE(SUM(COALESCE("creditsUsed", 0)), 0)::FLOAT AS "totalCreditsUsed"
+                FROM "Organization"
+            `),
+            prisma.$queryRaw<Array<InterviewRow>>(Prisma.sql`
                 SELECT o.name, COUNT(i.id)::INT AS count
                 FROM "Organization" o
                 JOIN "Drive" d ON d."orgId" = o.id
                 JOIN "Application" a ON a."driveId" = d.id
                 JOIN "Interview" i ON i."applicationId" = a.id
-                GROUP BY o.name
-                ORDER BY count DESC
-            `,
-            // Quota consumption per org (for bar chart replacement)
+                GROUP BY o.id, o.name
+                ORDER BY COUNT(i.id) DESC, o.name ASC
+                LIMIT 4
+            `),
+            prisma.$queryRaw<Array<{ totalInterviews: number }>>(Prisma.sql`
+                SELECT COUNT(i.id)::INT AS "totalInterviews"
+                FROM "Organization" o
+                JOIN "Drive" d ON d."orgId" = o.id
+                JOIN "Application" a ON a."driveId" = d.id
+                JOIN "Interview" i ON i."applicationId" = a.id
+            `),
             prisma.$queryRaw<Array<{ name: string; used: number; total: number }>>`
                 SELECT name,
                     COALESCE("interviewQuotaUsed", 0)::INT AS used,
@@ -88,30 +105,55 @@ export async function GET() {
                 ORDER BY (COALESCE("interviewQuotaUsed", 0)::FLOAT / NULLIF(COALESCE("interviewQuotaTotal", 0), 0)) DESC
                 LIMIT 8
             `,
-            // Recent activity
-            prisma.$queryRaw<Array<{ type: string; detail: string; org: string; at: Date }>>`
-                (SELECT 'ORG' AS type, name AS detail, '' AS org, "createdAt" AS at FROM "Organization")
-                UNION ALL
-                (SELECT 'DRIVE' AS type, title AS detail,
-                    (SELECT name FROM "Organization" o WHERE o.id = d."orgId") AS org,
-                    "createdAt" AS at FROM "Drive" d)
-                UNION ALL
-                (SELECT 'CANDIDATE' AS type, "fullName" AS detail,
-                    (SELECT name FROM "Organization" o JOIN "Drive" d2 ON d2."orgId" = o.id WHERE d2.id = a."driveId") AS org,
-                    "createdAt" AS at FROM "Application" a)
-                UNION ALL
-                (SELECT 'INTERVIEW' AS type, 'Completed' AS detail,
-                    (SELECT name FROM "Organization" o JOIN "Drive" d3 ON d3."orgId" = o.id JOIN "Application" a2 ON a2."driveId" = d3.id WHERE a2.id = i."applicationId") AS org,
-                    "completedAt" AS at FROM "Interview" i WHERE i."status" = 'COMPLETED' AND i."completedAt" IS NOT NULL)
+            prisma.$queryRaw<Array<RecentActivityRow>>(Prisma.sql`
+                SELECT * FROM (
+                    SELECT * FROM (
+                        SELECT 'ORG'::text AS type, o.name AS detail, ''::text AS org, o."createdAt" AS at
+                        FROM "Organization" o
+                        ORDER BY o."createdAt" DESC
+                        LIMIT 10
+                    ) org_activity
+                    UNION ALL
+                    SELECT * FROM (
+                        SELECT 'DRIVE'::text AS type, d.title AS detail, COALESCE(o.name, '')::text AS org, d."createdAt" AS at
+                        FROM "Drive" d
+                        LEFT JOIN "Organization" o ON o.id = d."orgId"
+                        ORDER BY d."createdAt" DESC
+                        LIMIT 10
+                    ) drive_activity
+                    UNION ALL
+                    SELECT * FROM (
+                        SELECT 'CANDIDATE'::text AS type, a."fullName" AS detail, COALESCE(o.name, '')::text AS org, a."createdAt" AS at
+                        FROM "Application" a
+                        LEFT JOIN "Drive" d ON d.id = a."driveId"
+                        LEFT JOIN "Organization" o ON o.id = d."orgId"
+                        ORDER BY a."createdAt" DESC
+                        LIMIT 10
+                    ) candidate_activity
+                    UNION ALL
+                    SELECT * FROM (
+                        SELECT 'INTERVIEW'::text AS type, 'Completed'::text AS detail, COALESCE(o.name, '')::text AS org, i."completedAt" AS at
+                        FROM "Interview" i
+                        JOIN "Application" a ON a.id = i."applicationId"
+                        LEFT JOIN "Drive" d ON d.id = a."driveId"
+                        LEFT JOIN "Organization" o ON o.id = d."orgId"
+                        WHERE i."status" = 'COMPLETED' AND i."completedAt" IS NOT NULL
+                        ORDER BY i."completedAt" DESC
+                        LIMIT 10
+                    ) interview_activity
+                ) activity_feed
                 ORDER BY at DESC
                 LIMIT 10
-            `,
-            // Trend comparison (last 7 days vs prior 7 days)
+            `),
             prisma.$queryRaw<Array<{
-                orgsNew: number; orgsPrev: number;
-                adminsNew: number; adminsPrev: number;
-                drivesNew: number; drivesPrev: number;
-                candidatesNew: number; candidatesPrev: number;
+                orgsNew: number;
+                orgsPrev: number;
+                adminsNew: number;
+                adminsPrev: number;
+                drivesNew: number;
+                drivesPrev: number;
+                candidatesNew: number;
+                candidatesPrev: number;
             }>>`
                 SELECT
                     (SELECT COUNT(*)::INT FROM "Organization" WHERE "createdAt" >= ${lastWeek}) AS "orgsNew",
@@ -123,7 +165,6 @@ export async function GET() {
                     (SELECT COUNT(*)::INT FROM "Application" WHERE "createdAt" >= ${lastWeek}) AS "candidatesNew",
                     (SELECT COUNT(*)::INT FROM "Application" WHERE "createdAt" >= ${twoWeeksAgo} AND "createdAt" < ${lastWeek}) AS "candidatesPrev"
             `,
-            // Orgs with at least one completed interview in last 30 days (engagement health)
             prisma.$queryRaw<Array<{ count: number }>>`
                 SELECT COUNT(DISTINCT o.id)::INT AS count
                 FROM "Organization" o
@@ -134,19 +175,30 @@ export async function GET() {
             `,
         ]);
 
-        // Compute effective status counts using same logic as orgs route
         let activeOrgs = 0;
         let suspendedOrgs = 0;
         let closedOrgs = 0;
 
         for (const org of allOrgStatuses) {
             const status = String(org.status || "ACTIVE").toUpperCase();
-            if (status === "CLOSED") { closedOrgs++; continue; }
+            if (status === "CLOSED") {
+                closedOrgs++;
+                continue;
+            }
+
             const statusControl = String(org.statusControl || "").toUpperCase();
-            if (statusControl === "MANUAL") { suspendedOrgs++; continue; }
+            if (statusControl === "MANUAL") {
+                suspendedOrgs++;
+                continue;
+            }
+
             const total = Math.max(0, Number(org.interviewQuotaTotal || 0));
             const used = Math.max(0, Number(org.interviewQuotaUsed || 0));
-            if (total > 0 && used >= total) { suspendedOrgs++; continue; }
+            if (total > 0 && used >= total) {
+                suspendedOrgs++;
+                continue;
+            }
+
             activeOrgs++;
         }
 
@@ -156,24 +208,28 @@ export async function GET() {
         const t = trends[0] || {};
         const c = counts[0] || {};
 
-        // Build top-4 + "Other" for credits (from full dataset)
-        const top4Credits = orgCreditStats.slice(0, 4);
-        const otherCredits = orgCreditStats.slice(4).reduce((s, o) => s + Number(o.creditsUsed), 0);
+        const creditTotal = Number(creditTotalRows[0]?.totalCreditsUsed || 0);
+        const top4Credits = creditTopRows.slice(0, 4);
+        const otherCredits = Math.max(
+            0,
+            creditTotal - top4Credits.reduce((sum, row) => sum + Number(row.creditsUsed || 0), 0)
+        );
         const creditStatsWithOther = [
-            ...top4Credits.map((o) => ({ name: o.name, creditsUsed: Number(o.creditsUsed) })),
+            ...top4Credits.map((row) => ({ name: row.name, creditsUsed: Number(row.creditsUsed || 0) })),
             ...(otherCredits > 0 ? [{ name: "Other", creditsUsed: otherCredits }] : []),
         ];
 
-        // Build top-4 + "Other" for interviews (from full dataset)
-        const top4IVs = orgInterviewStats.slice(0, 4);
-        const otherIVs = orgInterviewStats.slice(4).reduce((s, o) => s + Number(o.count), 0);
-        const ivStatsWithOther = [
-            ...top4IVs.map((o) => ({ name: o.name, count: Number(o.count) })),
-            ...(otherIVs > 0 ? [{ name: "Other", count: otherIVs }] : []),
+        const interviewTotal = Number(interviewTotalRows[0]?.totalInterviews || 0);
+        const top4Interviews = interviewTopRows.slice(0, 4);
+        const otherInterviews = Math.max(
+            0,
+            interviewTotal - top4Interviews.reduce((sum, row) => sum + Number(row.count || 0), 0)
+        );
+        const interviewStatsWithOther = [
+            ...top4Interviews.map((row) => ({ name: row.name, count: Number(row.count || 0) })),
+            ...(otherInterviews > 0 ? [{ name: "Other", count: otherInterviews }] : []),
         ];
 
-        // Platform health: composite score
-        // 60% weight: % active orgs (effective), 40% weight: % orgs engaged in last 30 days
         const engagedOrgs = Number(recentlyActiveOrgs[0]?.count || 0);
         const engagedPct = totalOrgs > 0 ? (engagedOrgs / totalOrgs) * 100 : 0;
         const activePct = totalOrgs > 0 ? (activeOrgs / totalOrgs) * 100 : 0;
@@ -194,25 +250,25 @@ export async function GET() {
             totalInterviewQuotaConsumed: Number(c.totalInterviewQuotaConsumed || 0),
             totalCreditsUsed: Number(c.totalCreditsUsed || 0),
             orgCreditStats: creditStatsWithOther,
-            orgInterviewStats: ivStatsWithOther,
-            orgQuotaStats: orgQuotaStats.map((o) => ({
-                name: o.name,
-                used: Number(o.used),
-                total: Number(o.total),
+            orgInterviewStats: interviewStatsWithOther,
+            orgQuotaStats: orgQuotaStats.map((row) => ({
+                name: row.name,
+                used: Number(row.used),
+                total: Number(row.total),
             })),
             platformHealth,
             engagedOrgs,
             recentActivity,
             trends: {
-                orgs:       calc(Number(t.orgsNew), Number(t.orgsPrev)),
-                admins:     calc(Number(t.adminsNew), Number(t.adminsPrev)),
-                drives:     calc(Number(t.drivesNew), Number(t.drivesPrev)),
+                orgs: calc(Number(t.orgsNew), Number(t.orgsPrev)),
+                admins: calc(Number(t.adminsNew), Number(t.adminsPrev)),
+                drives: calc(Number(t.drivesNew), Number(t.drivesPrev)),
                 candidates: calc(Number(t.candidatesNew), Number(t.candidatesPrev)),
             },
         }, {
             headers: { "Cache-Control": "private, max-age=60" },
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("super-admin stats error:", error);
         return NextResponse.json({ error: "Failed to load stats" }, { status: 500 });
     }

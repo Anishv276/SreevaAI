@@ -35,7 +35,8 @@
     "**/*.mts",
     ".next/types/**/*.ts",
     "C:/Users/vamsi/AppData/Local/Temp/nextjs-hr-updates/types/**/*.ts",
-    "C:/Users/vamsi/AppData/Local/Temp/nextjs-hr-updates/dev/types/**/*.ts"
+    "C:/Users/vamsi/AppData/Local/Temp/nextjs-hr-updates/dev/types/**/*.ts",
+    ".next/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",

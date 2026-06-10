@@ -12,20 +12,37 @@ interface Activity {
     at: string;
 }
 
+interface RecentActivityProps {
+    activities?: Activity[] | null;
+    loading?: boolean;
+    error?: string | null;
+    onRetry?: () => void;
+}
+
 const ACTIVITY_CONFIG: Record<Activity["type"], { label: string; icon: React.ElementType; style: string }> = {
-    ORG:       { label: "New Organization",   icon: Building2, style: "bg-orange-50 text-orange-600 border-orange-100" },
-    DRIVE:     { label: "New Hiring Drive",   icon: Briefcase, style: "bg-blue-50 text-blue-600 border-blue-100" },
-    CANDIDATE: { label: "Candidate Applied",  icon: UserCheck, style: "bg-emerald-50 text-emerald-600 border-emerald-100" },
-    INTERVIEW: { label: "Interview Completed",icon: Video,     style: "bg-violet-50 text-violet-600 border-violet-100" },
+    ORG: { label: "New Organization", icon: Building2, style: "bg-orange-50 text-orange-600 border-orange-100" },
+    DRIVE: { label: "New Hiring Drive", icon: Briefcase, style: "bg-blue-50 text-blue-600 border-blue-100" },
+    CANDIDATE: { label: "Candidate Applied", icon: UserCheck, style: "bg-emerald-50 text-emerald-600 border-emerald-100" },
+    INTERVIEW: { label: "Interview Completed", icon: Video, style: "bg-violet-50 text-violet-600 border-violet-100" },
 };
 
-export function RecentActivity() {
+export function RecentActivity({
+    activities: externalActivities,
+    loading: externalLoading,
+    error: externalError,
+    onRetry,
+}: RecentActivityProps) {
     const [activities, setActivities] = useState<Activity[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [retryKey, setRetryKey] = useState(0);
+    const useExternalData = externalActivities !== undefined;
 
     useEffect(() => {
+        if (useExternalData) {
+            return;
+        }
+
         const controller = new AbortController();
         const { signal } = controller;
 
@@ -42,8 +59,8 @@ export function RecentActivity() {
                 } else {
                     setError("Failed to load activity.");
                 }
-            } catch (err: any) {
-                if (!signal.aborted && err.name !== "AbortError") setError("Network error.");
+            } catch (err: unknown) {
+                if (!signal.aborted && (!(err instanceof Error) || err.name !== "AbortError")) setError("Network error.");
             } finally {
                 if (!signal.aborted) setLoading(false);
             }
@@ -52,7 +69,11 @@ export function RecentActivity() {
         void loadActivity();
 
         return () => controller.abort();
-    }, [retryKey]);
+    }, [retryKey, useExternalData]);
+
+    const resolvedActivities = useExternalData ? externalActivities ?? [] : activities;
+    const resolvedLoading = useExternalData ? Boolean(externalLoading) : loading;
+    const resolvedError = useExternalData ? externalError ?? null : error;
 
     return (
         <section>
@@ -67,27 +88,33 @@ export function RecentActivity() {
                     </div>
                 </div>
 
-                {loading ? (
+                {resolvedLoading ? (
                     <div className="flex justify-center py-10">
                         <Loader2 className="h-6 w-6 animate-spin text-orange-500" />
                     </div>
-                ) : error ? (
+                ) : resolvedError ? (
                     <div className="flex flex-col items-center py-10 gap-2">
-                        <p className="text-sm font-semibold text-gray-500">{error}</p>
+                        <p className="text-sm font-semibold text-gray-500">{resolvedError}</p>
                         <button
-                            onClick={() => setRetryKey((k) => k + 1)}
+                            onClick={() => {
+                                if (onRetry) {
+                                    onRetry();
+                                    return;
+                                }
+                                setRetryKey((k) => k + 1);
+                            }}
                             className="text-xs font-bold text-gray-600 underline underline-offset-2 hover:text-gray-900"
                         >
                             Retry
                         </button>
                     </div>
-                ) : activities.length === 0 ? (
+                ) : resolvedActivities.length === 0 ? (
                     <div className="py-10 text-center">
                         <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">No recent activity</p>
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {activities.map((activity, i) => {
+                        {resolvedActivities.map((activity, i) => {
                             const cfg = ACTIVITY_CONFIG[activity.type];
                             const Icon = cfg.icon;
                             return (

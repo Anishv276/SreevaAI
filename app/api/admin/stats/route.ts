@@ -1,31 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { getRangeWindow } from "@/lib/date-utils";
-
-function candidateRatingToScore(value: unknown): number {
-    if (typeof value === "number" && Number.isFinite(value)) {
-        return Math.max(1, Math.min(5, Math.round(value)));
-    }
-    if (value && typeof value === "object" && !Array.isArray(value)) {
-        const feeling = (value as { overallFeeling?: unknown }).overallFeeling;
-        switch (String(feeling || "").trim()) {
-            case "Terrible":
-                return 1;
-            case "Okay":
-                return 2;
-            case "Good":
-                return 3;
-            case "Great":
-                return 4;
-            case "Loved it":
-                return 5;
-            default:
-                return 0;
-        }
-    }
-    return 0;
-}
 
 
 export async function GET(req: NextRequest) {
@@ -66,7 +43,7 @@ export async function GET(req: NextRequest) {
         };
 
         // Single query for all application/interview stats using FILTER
-        const [appStats, driveStats, interviewRatings] = await Promise.all([
+        const [appStats, driveStats, ratingStats] = await Promise.all([
             prisma.$queryRaw`
                 SELECT
                     COUNT(*) FILTER (WHERE a."createdAt" >= ${start})::INT AS applications,
@@ -101,10 +78,32 @@ export async function GET(req: NextRequest) {
                 FROM "Drive"
                 WHERE "orgId" = ${orgId}
             ` as Promise<DriveStatsRow[]>,
-            prisma.interview.findMany({
-                where: { application: { drive: { orgId } }, status: "COMPLETED", completedAt: { gte: start } },
-                select: { candidateRating: true }
-            })
+            prisma.$queryRaw<Array<{ avgRating: number | null }>>(Prisma.sql`
+                SELECT COALESCE(
+                    AVG(
+                        CASE
+                            WHEN jsonb_typeof("candidateRating") = 'number' THEN LEAST(5, GREATEST(1, ROUND(("candidateRating")::text::numeric)))
+                            WHEN jsonb_typeof("candidateRating") = 'object' THEN
+                                CASE trim(COALESCE("candidateRating"->>'overallFeeling', ''))
+                                    WHEN 'Terrible' THEN 1
+                                    WHEN 'Okay' THEN 2
+                                    WHEN 'Good' THEN 3
+                                    WHEN 'Great' THEN 4
+                                    WHEN 'Loved it' THEN 5
+                                    ELSE NULL
+                                END
+                            ELSE NULL
+                        END
+                    ),
+                    0
+                )::FLOAT AS "avgRating"
+                FROM "Interview" i
+                JOIN "Application" a ON a.id = i."applicationId"
+                JOIN "Drive" d ON d.id = a."driveId"
+                WHERE d."orgId" = ${orgId}
+                  AND i."status" = 'COMPLETED'
+                  AND i."completedAt" >= ${start}
+            `),
         ]);
 
         const s = appStats[0];
@@ -123,12 +122,7 @@ export async function GET(req: NextRequest) {
         const screenedInPeriod = Number(s.screenedInPeriod);
         const shortlisted = Number(s.shortlisted);
         const liveInterviews = Number(s.liveInterviews);
-        const ratingValues = interviewRatings
-            .map((row) => candidateRatingToScore(row.candidateRating))
-            .filter((score) => score > 0);
-        const avgRating = ratingValues.length > 0
-            ? ratingValues.reduce((sum, score) => sum + score, 0) / ratingValues.length
-            : 0;
+        const avgRating = Number(ratingStats[0]?.avgRating || 0);
 
         const response = NextResponse.json({
             activeDrives: Number(d.activeDrives),
@@ -153,8 +147,11 @@ export async function GET(req: NextRequest) {
         });
         response.headers.set("Cache-Control", "private, max-age=30, stale-while-revalidate=60");
         return response;
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Dashboard stats error:", error);
-        return NextResponse.json({ error: error.message || "Failed to fetch stats" }, { status: 500 });
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : "Failed to fetch stats" },
+            { status: 500 }
+        );
     }
 }
