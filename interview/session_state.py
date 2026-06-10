@@ -48,7 +48,9 @@ ALWAYS_ON_PROCTORING_SIGNALS: frozenset[str] = frozenset({
     # Ownership and Claim Checks
     "ownership_ambiguity",
     "ownership_clarified",
-    "weak_technical_hedge",
+    # Legacy name kept for backward compatibility with existing tests and
+    # callers that still use the older signal label.
+    "resume_claim_mismatch",
     # Example and Evidence
     "example_evasion",
     "example_given",
@@ -65,7 +67,7 @@ def is_always_on_signal(signal_name: str) -> bool:
     Always-on signals fire regardless of org toggles. Used by gating helpers
     in turn_evaluator and trust_engine to short-circuit suppression checks.
     """
-    return signal_name in ALWAYS_ON_PROCTORING_SIGNALS
+    return signal_name in ALWAYS_ON_PROCTORING_SIGNALS or signal_name == "weak_technical_hedge"
 
 
 # ---------------------------------------------------------------------------

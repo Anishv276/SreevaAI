@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import json
 import random
 import time
@@ -135,6 +135,13 @@ _ACK_ONLY_ASSISTANT_RE = re.compile(
 )
 _MEANINGFUL_SHORT_ANSWERS = {
     "no",
+    "yes",
+    "yeah",
+    "yep",
+    "ok",
+    "okay",
+    "sure",
+    "right",
     "nothing", "none", "pass", "skip", "na", "n/a",
 }
 

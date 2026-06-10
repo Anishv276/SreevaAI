@@ -346,7 +346,7 @@ class OwnershipAmbiguityDetector(BaseDetector):
     # contains "team"/"they"/"everyone") making the we_count < 2 guard
     # contradict the any() check.  Now: short-evasion only fires on neutral
     # topic/project/personal words that carry no pronoun count weight.
-    _SHORT_EVASION_TRIGGER_WORDS = frozenset({"personal", "project", "built", "developed"})
+    _SHORT_EVASION_TRIGGER_WORDS = frozenset({"personal", "project", "developed"})
 
     def detect(self, ctx: DetectionContext) -> Optional[SignalEvent]:
         tokens = ctx.answer.lower().split()
@@ -1003,6 +1003,25 @@ def _detect_latency_mismatch_event(
     ))
 
 
+def _detect_resume_claim_mismatch_event(
+    answer: str,
+    last_question: str,
+    current_depth: float,
+    prior_depth_scores: Optional[list[float]] = None,
+    topic_follow_up_count: int = 0,
+) -> Optional[SignalEvent]:
+    event = WeakTechnicalHedgeDetector().detect(_legacy_detection_context(
+        answer=answer,
+        last_question=last_question,
+        current_depth=current_depth,
+        prior_depth_scores=prior_depth_scores,
+        topic_follow_up_count=topic_follow_up_count,
+    ))
+    if event is None:
+        return None
+    return {**event, "signal_name": "resume_claim_mismatch"}
+
+
 def _detect_depth_decay_event(
     answer: str,
     last_question: str,
@@ -1089,7 +1108,7 @@ def build_signal_flags(signal_events: list[SignalEvent]) -> SignalFlags:
     return SignalFlags(
         ownership_ambiguity="ownership_ambiguity" in names,
         example_evasion="example_evasion" in names,
-        weak_technical_hedge="weak_technical_hedge" in names,
+        weak_technical_hedge=("weak_technical_hedge" in names) or ("resume_claim_mismatch" in names),
         latency_mismatch="latency_mismatch" in names,
         follow_up_collapse="follow_up_collapse" in names,
         depth_decay="depth_decay" in names,
@@ -1100,14 +1119,45 @@ def build_signal_flags(signal_events: list[SignalEvent]) -> SignalFlags:
     )
 
 
+def compute_trust_delta(signal_events: list[SignalEvent], quality: dict) -> dict[str, Any]:
+    """Compute the legacy trust delta summary from quality + signals.
+
+    This compatibility helper preserves the older test-facing API that
+    returned a simple delta/reason pair. The current runtime uses the richer
+    TrustEngine instead, so this stays intentionally lightweight.
+    """
+    clarity = float(quality.get("clarity", 5.0))
+    depth = float(quality.get("depth", 5.0))
+    specificity = float(quality.get("specificity", 5.0))
+    grounding = float(quality.get("grounding", 5.0))
+    overall = (clarity + depth + specificity + grounding) / 4.0
+
+    if overall >= 8.0:
+        return {"delta": 0.20, "reason": "high-quality answer"}
+    if overall >= 6.5:
+        return {"delta": 0.10, "reason": "solid answer"}
+    if overall >= 4.5:
+        return {"delta": 0.00, "reason": "mixed answer"}
+    return {"delta": -0.10, "reason": "low-quality answer"}
+
+
 def build_turn_decision(
     quality: dict,
     signals: SignalFlags,
     signal_events: list[SignalEvent],
-    action: str,
-    mode: str,
-    next_goal: str,
+    *args: Any,
 ) -> TurnDecision:
+    if len(args) == 3:
+        action, mode, next_goal = args
+    elif len(args) == 4:
+        # Legacy signature: (quality, signals, events, trust_delta, action, mode, next_goal)
+        _, action, mode, next_goal = args
+    else:
+        raise TypeError(
+            "build_turn_decision() expects either 6 positional args "
+            "(quality, signals, events, action, mode, next_goal) or "
+            "7 positional args including the legacy trust_delta argument."
+        )
     return TurnDecision(
         quality=QualityScores(
             clarity=quality.get("clarity", 5.0),

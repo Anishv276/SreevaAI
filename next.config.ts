@@ -6,6 +6,19 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  serverExternalPackages: [
+    '@prisma/client',
+    '@prisma/adapter-pg',
+    'pg',
+    'bcryptjs',
+    'bullmq',
+    'ioredis',
+    'openai',
+    '@aws-sdk/client-s3',
+    '@aws-sdk/s3-request-presigner',
+    'livekit-server-sdk',
+    'sharp',
+  ],
   webpack: (config, { dev }) => {
     if (!dev) {
       config.cache = false;
@@ -13,7 +26,6 @@ const nextConfig: NextConfig = {
     return config;
   },
   experimental: {
-    turbopackFileSystemCacheForDev: true,
     serverActions: {
       bodySizeLimit: '20mb',
       allowedOrigins,

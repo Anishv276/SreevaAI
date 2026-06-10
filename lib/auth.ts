@@ -53,25 +53,31 @@ export async function createSession(user: SessionUser): Promise<string> {
 }
 
 // ─── Request-Level Session Cache ───────────────────────────────────────────────
-// Prevents the same token from being verified more than once per request.
-// This eliminates duplicate Redis + JWT calls that were causing 30s hangs.
-// The cache is flushed every 5 seconds to prevent memory growth.
-const _sessionCache = new Map<string, SessionUser | null>();
-let _cacheFlushTimer: ReturnType<typeof setTimeout> | null = null;
+// Caches verified sessions to avoid repeated Redis round-trips on every route.
+// TTL is 60s in dev (Redis is remote, so per-navigation Redis calls are expensive)
+// and 5s in production (short enough that revocations propagate quickly).
+const _sessionCache = new Map<string, { user: SessionUser | null; expiresAt: number }>();
+const CACHE_TTL_MS = process.env.NODE_ENV === "production" ? 5_000 : 60_000;
 
-function scheduleCacheFlush() {
-    if (_cacheFlushTimer) return;
-    _cacheFlushTimer = setTimeout(() => {
-        _sessionCache.clear();
-        _cacheFlushTimer = null;
-    }, 5000);
+function pruneExpiredCache() {
+    const now = Date.now();
+    for (const [key, entry] of _sessionCache) {
+        if (entry.expiresAt <= now) _sessionCache.delete(key);
+    }
 }
 // ───────────────────────────────────────────────────────────────────────────────
 
+function cacheSet(token: string, user: SessionUser | null) {
+    pruneExpiredCache();
+    _sessionCache.set(token, { user, expiresAt: Date.now() + CACHE_TTL_MS });
+}
+
 export async function verifySession(token: string): Promise<SessionUser | null> {
     // 1. Check in-memory cache first (zero network cost — eliminates duplicate trips)
-    if (_sessionCache.has(token)) {
-        return _sessionCache.get(token) ?? null;
+    const cached = _sessionCache.get(token);
+    if (cached) {
+        if (cached.expiresAt > Date.now()) return cached.user;
+        _sessionCache.delete(token);
     }
 
     try {
@@ -90,9 +96,6 @@ export async function verifySession(token: string): Promise<SessionUser | null> 
         const sessionUser = payload as unknown as SessionTokenPayload;
 
         // 3. REVOCATION CHECK — UNCONDITIONAL in every environment.
-        //    Previously a NODE_ENV !== "production" fast-path skipped the blacklist
-        //    and password-change checks entirely, so logout was a no-op outside
-        //    prod (and in any prod that wasn't started with NODE_ENV=production).
         //    The latency optimization is the in-memory cache above + the single
         //    batched mget below — never the skipping of the security check.
         if (redis && sessionUser?.userId) {
@@ -102,25 +105,21 @@ export async function verifySession(token: string): Promise<SessionUser | null> 
             );
 
             if (isBlacklisted) {
-                _sessionCache.set(token, null);
-                scheduleCacheFlush();
+                cacheSet(token, null);
                 return null;
             }
 
             if (lastPwdChange && sessionUser.iat && sessionUser.iat * 1000 < Number(lastPwdChange)) {
-                _sessionCache.set(token, null);
-                scheduleCacheFlush();
+                cacheSet(token, null);
                 return null;
             }
         }
 
         const result = sessionUser as unknown as SessionUser;
-        _sessionCache.set(token, result);
-        scheduleCacheFlush();
+        cacheSet(token, result);
         return result;
     } catch {
-        _sessionCache.set(token, null);
-        scheduleCacheFlush();
+        cacheSet(token, null);
         return null;
     }
 }

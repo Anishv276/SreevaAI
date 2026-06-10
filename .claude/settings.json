@@ -93,13 +93,26 @@
       "Bash(node -e \"const j=require\\('C:/Temp/gh8.json'\\); console.log\\('total:', j.total_count\\); j.items?.forEach\\(i=>console.log\\('#'+i.number, i.title, i.state\\)\\)\")",
       "Bash(curl -s \"https://api.github.com/repos/vercel/next.js/issues/77624\" -o C:/Temp/gh9.json)",
       "Bash(node -e \"const j=require\\('C:/Temp/gh9.json'\\); console.log\\(j.body?.substring\\(0,3000\\)\\)\")",
-      "Bash(mkdir -p \"/c/Dev\" && echo \"Created C:\\\\Dev\")"
+      "Bash(mkdir -p \"/c/Dev\" && echo \"Created C:\\\\Dev\")",
+      "Bash(cmd /c \"xcopy \\\\\"C:\\\\Users\\\\vamsi\\\\OneDrive\\\\Desktop\\\\HR-updates\\\\\" \\\\\"C:\\\\Dev\\\\hr-updates\\\\\" /E /I /H /Y /EXCLUDE:C:\\\\Users\\\\vamsi\\\\OneDrive\\\\Desktop\\\\HR-updates\\\\xcopy-exclude.txt 2>&1\")",
+      "Bash(cmd /c \"dir C:\\\\Dev\")",
+      "Bash(cmd /c \"robocopy \\\\\"C:\\\\Users\\\\vamsi\\\\OneDrive\\\\Desktop\\\\HR-updates\\\\\" \\\\\"C:\\\\Dev\\\\hr-updates\\\\\" /E /XD node_modules .next nextjs-dev-cache __pycache__ .venv /XF xcopy-exclude.txt /NFL /NDL /NJH /NJS /nc /ns\")",
+      "Bash(cmd /c \"dir C:\\\\Dev\\\\hr-updates /B 2>&1 | more\")",
+      "Bash(curl -s \"https://api.github.com/repos/vercel/next.js/issues/64876\" -o C:/Temp/issue1.json)",
+      "Bash(node -e \"const j=require\\('C:/Temp/issue1.json'\\); console.log\\(j.title\\); console.log\\(j.body?.substring\\(0,2000\\)\\)\")",
+      "Bash(curl -s \"https://api.github.com/repos/vercel/next.js/issues/56604\" -o C:/Temp/issue2.json)",
+      "Bash(node -e \"const j=require\\('C:/Temp/issue2.json'\\); console.log\\(j.title, '\\\\nState:', j.state\\); console.log\\(j.body?.substring\\(0,3000\\)\\)\")",
+      "Bash(curl -s \"https://api.github.com/search/issues?q=turbopack+slow+compile+first+load+repo:vercel/next.js&sort=reactions&per_page=8\" -o C:/Temp/search1.json)",
+      "Bash(node -e \"const j=require\\('C:/Temp/search1.json'\\); j.items?.forEach\\(i=>console.log\\('#'+i.number, i.state, '👍'+i.reactions['+1'], i.title\\)\\)\")",
+      "Bash(rm \"C:\\\\Users\\\\vamsi\\\\OneDrive\\\\Desktop\\\\HR-updates\\\\add-defender-exclusions.ps1\")",
+      "PowerShell(redis-cli ping 2>&1)"
     ],
     "additionalDirectories": [
       "c:\\Users\\vamsi\\OneDrive\\Desktop\\HR-updates\\scratch",
       "C:\\nextjs-dev-cache",
       "C:\\Temp",
-      "C:\\"
+      "C:\\",
+      "C:\\Users\\vamsi\\OneDrive\\Desktop\\HR-updates"
     ]
   }
 }

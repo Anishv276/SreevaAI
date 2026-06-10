@@ -1,4 +1,4 @@
-﻿"""Entrypoint for the AI interview agent worker."""
+"""Entrypoint for the AI interview agent worker."""
 import asyncio
 import os
 import sys

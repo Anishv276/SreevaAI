@@ -153,12 +153,9 @@ class _ResumeContextParser:
             compact = " - ".join(part for part in parts if part)
             if technologies:
                 compact = f"{compact} [{_join_items(technologies, 3)}]" if compact else _join_items(technologies, 3)
-            # Tag standalone projects so downstream never links them to an employer
             if compact:
                 if company:
                     compact = f"{compact} (at {company})"
-                else:
-                    compact = f"{compact} [standalone]"
                 projects.append(compact)
         return projects
 
