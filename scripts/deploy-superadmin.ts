@@ -8,7 +8,13 @@ const prisma = new PrismaClient();
 async function main() {
     const oldEmail = normalizeEmail("lumoscale@gmail.com");
     const newEmail = normalizeEmail("support@sreevaai.com");
-    const password = "sreevaai@123";
+    // Never hardcode the credential. Supply it at run time:
+    //   SUPERADMIN_PASSWORD='...' npx tsx scripts/deploy-superadmin.ts
+    const password = process.env.SUPERADMIN_PASSWORD?.trim();
+    if (!password || password.length < 12) {
+        console.error("❌ SUPERADMIN_PASSWORD env var is required (min 12 chars). Aborting.");
+        process.exit(1);
+    }
     const name = "Super Administrator";
 
     console.log(`\n🚀 Migrating Super Admin credentials from ${oldEmail} to ${newEmail}...`);
@@ -106,7 +112,7 @@ async function main() {
 
     console.log(`\n✅ SUCCESS: Super Admin Credentials Migrated!`);
     console.log(`📧 Email: ${newEmail}`);
-    console.log(`🔐 Password: ${password} (stored securely as hash)`);
+    console.log(`🔐 Password: (set from SUPERADMIN_PASSWORD env var, stored as bcrypt hash)`);
     console.log(`\n👉 You can now log in at your deployment URL or https://sreevaai.com/login\n`);
 }
 

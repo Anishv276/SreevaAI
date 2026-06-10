@@ -22,18 +22,6 @@ export async function POST(
             return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
         }
 
-        const interview = await prismaAny.interview.findUnique({
-            where: { applicationId },
-        });
-
-        if (!interview) {
-            return NextResponse.json({ error: "Interview session not found" }, { status: 404 });
-        }
-
-        if (requireInterviewToken && interview.accessToken !== interviewToken) {
-            return NextResponse.json({ error: "Invalid interview token" }, { status: 401 });
-        }
-
         const application = await prismaAny.application.findUnique({
             where: { id: applicationId },
             include: {
@@ -44,11 +32,22 @@ export async function POST(
                         },
                     },
                 },
+                interview: true,
             },
         });
 
         if (!application) {
             return NextResponse.json({ error: "Application not found" }, { status: 404 });
+        }
+
+        const interview = application.interview;
+
+        if (!interview) {
+            return NextResponse.json({ error: "Interview session not found" }, { status: 404 });
+        }
+
+        if (requireInterviewToken && interview.accessToken !== interviewToken) {
+            return NextResponse.json({ error: "Invalid interview token" }, { status: 401 });
         }
 
         {
@@ -57,14 +56,18 @@ export async function POST(
             const startedAtMs = interview.startedAt ? interview.startedAt.getTime() : null;
             const interviewStatus = String(interview.status || "").toUpperCase();
             const isAlreadyDone = interviewStatus === "COMPLETED" || interviewStatus === "NO_SHOW";
+            if (isAlreadyDone) {
+                return NextResponse.json({
+                    error: "Interview has been completed.",
+                    code: "INTERVIEW_COMPLETED",
+                }, { status: 409 });
+            }
 
             const deadlineExpired = expiresAtMs !== null && now > expiresAtMs;
             // joinWindow only blocks if interview is CURRENTLY in progress — not if it was
             // completed/no-show days ago. An old startedAt on a finished interview must not
             // permanently lock the candidate out of re-attempting after an admin reset.
-            const joinWindowExpired = !isAlreadyDone
-                && startedAtMs !== null
-                && (now - startedAtMs) >= JOIN_WINDOW_MS;
+            const joinWindowExpired = startedAtMs !== null && (now - startedAtMs) >= JOIN_WINDOW_MS;
             const isExpiredByTime = deadlineExpired || joinWindowExpired;
 
             // Reset EXPIRED linkStatus if the interview was already done (completed/no-show)

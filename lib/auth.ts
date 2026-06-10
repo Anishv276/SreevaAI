@@ -2,22 +2,13 @@ import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import redis from "./redis";
+import { getSecretKey, allSecretKeys } from "./session-secret";
 
-function getJwtSecret(): string {
-    const secret = process.env.JWT_SECRET?.trim();
-    if (secret) return secret;
-
-    if (process.env.NODE_ENV === "production") {
-        throw new Error(
-            "JWT_SECRET is required in production environments. Please set it in your environment."
-        );
-    }
-    return "development-jwt-fallback-secret-keep-secure";
-}
-
-function getSecretKey() {
-    return new TextEncoder().encode(getJwtSecret());
-}
+// ─── Rotating JWT Secret ───────────────────────────────────────────────────────
+// The rotating-secret implementation now lives in lib/session-secret.ts so the
+// Edge middleware (proxy.ts) and this Node auth layer verify against the SAME
+// key set. See that module for the rotation/grace-period semantics.
+// ──────────────────────────────────────────────────────────────────────────────
 
 export type SessionRole = "SUPER_ADMIN" | "ADMIN" | "CANDIDATE";
 
@@ -50,11 +41,14 @@ export function isAdminRole(role: string | null | undefined): boolean {
     return normalizeRole(role) === "ADMIN";
 }
 
+const SESSION_DURATION = "2h";
+const SESSION_DURATION_MS = 2 * 60 * 60 * 1000; // 2 hours
+
 export async function createSession(user: SessionUser): Promise<string> {
     return await new SignJWT({ ...user })
         .setProtectedHeader({ alg: "HS256" })
         .setIssuedAt()
-        .setExpirationTime("7d")
+        .setExpirationTime(SESSION_DURATION)
         .sign(getSecretKey());
 }
 
@@ -81,20 +75,26 @@ export async function verifySession(token: string): Promise<SessionUser | null> 
     }
 
     try {
-        // 2. Verify JWT cryptographically first (no network needed)
-        const { payload } = await jwtVerify(token, getSecretKey());
+        // 2. Verify JWT — try current secret, then previous (handles rotation grace period)
+        let payload: any = null;
+        for (const key of allSecretKeys()) {
+            try {
+                const result = await jwtVerify(token, key);
+                payload = result.payload;
+                break;
+            } catch {
+                // try next key
+            }
+        }
+        if (!payload) throw new Error("invalid token");
         const sessionUser = payload as unknown as SessionTokenPayload;
 
-        // 3. DEV MODE FAST PATH: Skip cloud Redis entirely to avoid 200-500ms latency
-        //    This is the primary fix for the 30-second local dev hang.
-        if (process.env.NODE_ENV !== "production") {
-            const result = sessionUser as unknown as SessionUser;
-            _sessionCache.set(token, result);
-            scheduleCacheFlush();
-            return result;
-        }
-
-        // 4. PRODUCTION: Batch BOTH Redis checks into ONE single round-trip (was 2 separate trips)
+        // 3. REVOCATION CHECK — UNCONDITIONAL in every environment.
+        //    Previously a NODE_ENV !== "production" fast-path skipped the blacklist
+        //    and password-change checks entirely, so logout was a no-op outside
+        //    prod (and in any prod that wasn't started with NODE_ENV=production).
+        //    The latency optimization is the in-memory cache above + the single
+        //    batched mget below — never the skipping of the security check.
         if (redis && sessionUser?.userId) {
             const [isBlacklisted, lastPwdChange] = await redis.mget(
                 `blacklist:${token}`,
@@ -153,8 +153,8 @@ export async function refreshSessionCookie(request: NextRequest, response: NextR
     const expSeconds = Number(tokenPayload.exp || 0);
     if (expSeconds > 0) {
         const remainingMs = expSeconds * 1000 - Date.now();
-        const refreshThresholdMs = 24 * 60 * 60 * 1000; // refresh only in last 24h
-        if (remainingMs > refreshThresholdMs) {
+        // Re-issue when less than 30 min left on the 2h token — sliding window
+        if (remainingMs > 30 * 60 * 1000) {
             return response;
         }
     }
@@ -163,14 +163,13 @@ export async function refreshSessionCookie(request: NextRequest, response: NextR
     void exp;
     void iat;
 
-    const expiresIn = 7 * 24 * 60 * 60 * 1000; // 7 days
     const newSessionToken = await createSession(userData);
 
     response.cookies.set("session", newSessionToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "lax",
-        expires: new Date(Date.now() + expiresIn),
+        expires: new Date(Date.now() + SESSION_DURATION_MS),
         path: "/",
     });
     return response;

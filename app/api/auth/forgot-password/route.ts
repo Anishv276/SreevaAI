@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { randomInt } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { sendOtpEmail } from "@/lib/mail";
 import { isRateLimited } from "@/lib/rate-limit";
@@ -14,7 +15,7 @@ export async function POST(request: Request) {
 
         const normalizedEmail = normalizeEmail(email);
 
-        const isLimited = await isRateLimited(`otp:${normalizedEmail}`, 1, 30);
+        const isLimited = await isRateLimited(`otp:${normalizedEmail}`, 1, 30, true);
         if (isLimited) {
             return NextResponse.json({
                 error: "Please wait 30 seconds before requesting another code."
@@ -45,7 +46,9 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Access denied. Only authorized accounts can reset passwords." }, { status: 403 });
         }
 
-        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        // CSPRNG — Math.random() is not cryptographically secure and made the
+        // 6-digit code predictable/brute-forceable.
+        const otp = randomInt(100000, 1000000).toString();
         const expires = new Date(Date.now() + 10 * 60 * 1000);
 
         if (superAdminRecord) {

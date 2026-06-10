@@ -1,23 +1,22 @@
 /**
  * Fix UTF-8 mojibake across public HTML/CSS/JS files.
- * Only replaces known bad sequences — never touches attribute quotes.
+ * Only replaces known bad sequences.
  * Run: node scripts/fix-encoding.mjs
  */
 import { readFileSync, writeFileSync, readdirSync, statSync } from 'fs';
 import { join, extname } from 'path';
 
-// Map of garbled bytes (as they appear in the file) → correct UTF-8 character
+// Map garbled bytes to their correct UTF-8 characters.
 const REPLACEMENTS = [
-  // Order matters: longest match first
-  ['â€"â€"', '— '],   // double em-dash (chapter eyebrows)
-  ['â€"',    '—'],    // em dash
-  ['â€™',    '’'], // right single quote / apostrophe
-  ['â€œ',    '“'], // left double quote
-  ['â€\x9d', '”'], // right double quote
-  ['Â·',     '·'], // middle dot ·
-  ['Ã—',     '×'], // multiplication sign ×
-  ['â„',     '⁄'], // fraction slash ⁄
-  ['Â',      ''],       // stray non-breaking space prefix byte
+  ['\u00c3\u00a2\u20ac\u201d\u00c3\u00a2\u20ac\u201d', '\u2014 '],
+  ['\u00c3\u00a2\u20ac\u201d', '\u2014'],
+  ['\u00c3\u00a2\u20ac\u2122', '\u2019'],
+  ['\u00c3\u00a2\u20ac\u0153', '\u201c'],
+  ['\u00c3\u00a2\u20ac\u009d', '\u201d'],
+  ['\u00c3\u0082\u00b7', '\u00b7'],
+  ['\u00c3\u0097', '\u00d7'],
+  ['\u00c3\u00a2\u20ac\u017e', '\u2044'],
+  ['\u00c3\u0082', ''],
 ];
 
 const TARGET_EXTS = new Set(['.html', '.css', '.js']);
@@ -33,7 +32,7 @@ function fixFile(filePath) {
 
   if (content !== original) {
     writeFileSync(filePath, content, 'utf8');
-    console.log('  fixed:', filePath);
+    console.log('fixed:', filePath);
     return true;
   }
   return false;

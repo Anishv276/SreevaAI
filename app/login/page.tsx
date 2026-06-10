@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/auth-context";
 import { ChevronLeft } from "lucide-react";
@@ -15,6 +15,38 @@ export default function LoginPage() {
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
+    const [checkingSession, setCheckingSession] = useState(true);
+
+    useEffect(() => {
+        let cancelled = false;
+
+        const redirectIfAuthenticated = async () => {
+            try {
+                const res = await fetch("/api/auth/me", { cache: "no-store" });
+                if (!res.ok) return;
+
+                const session = await res.json().catch(() => null);
+                if (!session || cancelled) return;
+
+                const nextRoute =
+                    session.role === "SUPER_ADMIN"
+                        ? "/super-admin"
+                        : session.role === "ADMIN"
+                            ? "/admin"
+                            : "/careers";
+
+                router.replace(nextRoute);
+            } finally {
+                if (!cancelled) setCheckingSession(false);
+            }
+        };
+
+        void redirectIfAuthenticated();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [router]);
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -44,6 +76,17 @@ export default function LoginPage() {
             setLoading(false);
         }
     };
+
+    if (checkingSession) {
+        return (
+            <div className="min-h-screen bg-[#fbf8f4] flex items-center justify-center p-6 font-medium editorial-theme">
+                <div className="text-center space-y-3">
+                    <img src="/Logo.png" alt="Sreeva AI" className="h-16 w-16 mx-auto animate-pulse" />
+                    <p className="text-[#6f6862] text-[10px] font-black uppercase tracking-[0.4em]">Checking session</p>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div suppressHydrationWarning={true} className="min-h-screen bg-[#fbf8f4] flex items-center justify-center p-6 font-medium relative editorial-theme">

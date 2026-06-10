@@ -1,7 +1,16 @@
 import { NextResponse } from "next/server";
+import { timingSafeEqual } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { syncCandidateCorpusToPinecone } from "@/lib/pinecone";
 import { getSession, isAdminRole } from "@/lib/auth";
+
+/** Constant-time equality so the internal sync token can't be recovered by timing. */
+function safeEqual(a: string, b: string): boolean {
+    const ab = Buffer.from(a);
+    const bb = Buffer.from(b);
+    if (ab.length !== bb.length) return false;
+    return timingSafeEqual(ab, bb);
+}
 
 /**
  * API to manually or automatically sync a candidate's data to Pinecone.
@@ -13,9 +22,13 @@ export async function POST(
 ) {
     try {
         let session: Awaited<ReturnType<typeof getSession>> | null = null;
-        const internalSecret = process.env.WORKER_SYNC_TOKEN?.trim() || process.env.JWT_SECRET?.trim();
+        // Dedicated worker secret only — do NOT fall back to JWT_SECRET (that would
+        // let anyone who learns the JWT signing key bypass this endpoint's auth).
+        const internalSecret = process.env.WORKER_SYNC_TOKEN?.trim();
         const internalToken = _req.headers.get("x-internal-sync-token")?.trim();
-        const isInternalRequest = Boolean(internalSecret && internalToken && internalToken === internalSecret);
+        const isInternalRequest = Boolean(
+            internalSecret && internalToken && safeEqual(internalToken, internalSecret)
+        );
 
         if (!isInternalRequest) {
             session = await getSession();

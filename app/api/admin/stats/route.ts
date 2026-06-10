@@ -102,7 +102,7 @@ export async function GET(req: NextRequest) {
                 WHERE "orgId" = ${orgId}
             ` as Promise<DriveStatsRow[]>,
             prisma.interview.findMany({
-                where: { application: { drive: { orgId } } },
+                where: { application: { drive: { orgId } }, status: "COMPLETED", completedAt: { gte: start } },
                 select: { candidateRating: true }
             })
         ]);
@@ -130,7 +130,7 @@ export async function GET(req: NextRequest) {
             ? ratingValues.reduce((sum, score) => sum + score, 0) / ratingValues.length
             : 0;
 
-        return NextResponse.json({
+        const response = NextResponse.json({
             activeDrives: Number(d.activeDrives),
             closingSoon: Number(d.closingSoon),
             totalCandidates: applications,
@@ -151,6 +151,8 @@ export async function GET(req: NextRequest) {
             avgRating,
             invited: Number(s.invited),
         });
+        response.headers.set("Cache-Control", "private, max-age=30, stale-while-revalidate=60");
+        return response;
     } catch (error: any) {
         console.error("Dashboard stats error:", error);
         return NextResponse.json({ error: error.message || "Failed to fetch stats" }, { status: 500 });

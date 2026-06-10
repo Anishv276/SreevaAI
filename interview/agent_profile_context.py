@@ -838,6 +838,7 @@ async def generate_llm_brief(
     anchor_type: str,
     openai_client: Any,
     llm_model: str = "gpt-4.1-mini",
+    usage_sink: Optional[Any] = None,
 ) -> str:
     """
     Call GPT-4.1-mini to generate a narrative analyst brief.
@@ -863,6 +864,16 @@ async def generate_llm_brief(
             temperature=0.3,
             max_tokens=900,
         )
+        if usage_sink:
+            usage = getattr(response, "usage", None)
+            billing_usage = {
+                "model": llm_model,
+                "inputTokens": int(getattr(usage, "prompt_tokens", 0) or 0),
+                "outputTokens": int(getattr(usage, "completion_tokens", 0) or 0),
+                "cachedInputTokens": int(getattr(getattr(usage, "prompt_tokens_details", None), "cached_tokens", 0) or 0),
+            }
+            if billing_usage["inputTokens"] or billing_usage["outputTokens"] or billing_usage["cachedInputTokens"]:
+                usage_sink(billing_usage)
         brief_text = response.choices[0].message.content or ""
         brief_text = brief_text.strip()
         logger.info(

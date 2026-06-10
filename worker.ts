@@ -6,7 +6,6 @@ import { tmpdir } from 'os';
 import { writeFile, unlink } from 'fs/promises';
 import { prisma } from './lib/prisma';
 import redisConnection from './lib/redis';
-import * as dotenv from 'dotenv';
 import { putObject, getObjectBuffer, headObjectStrict } from "./lib/s3";
 import { generateId } from "./lib/ids";
 import { isInterviewTokenRequired } from "./lib/interview-access";
@@ -17,6 +16,7 @@ import { parseDriveScreeningSettings } from "./lib/screening-criteria";
 import { recordOrgBillingUsage } from "./lib/usage-metrics";
 import { syncCandidateCorpusToPinecone } from "./lib/pinecone";
 import { buildInterviewLink } from "./lib/interview-links";
+import { safeFetch } from "./lib/safe-fetch";
 import { Prisma } from "@prisma/client";
 import { recordingRetentionQueue } from "./lib/queue";
 import {
@@ -28,9 +28,7 @@ import {
   scheduleRecordingRetentionDeletion,
 } from "./lib/recording-retention";
 import { mergeRecordingState, normalizeRecordingState, parseJsonRecord } from "./lib/recording-state";
-// Load environment variables without dotenv's startup banner.
-dotenv.config({ quiet: true } as any);
-// â”€â”€â”€ Silence BullMQ's built-in eviction-policy warning â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Silence BullMQ's built-in eviction-policy warning.
 // BullMQ internally logs "IMPORTANT! Eviction policy is volatile-lru" on every
 // queue/worker connection check. We handle this ourselves, so we suppress it.
 const _origLog = console.log.bind(console);
@@ -68,15 +66,16 @@ console.error = (...args: any[]) => {
   }
   _origError(...args);
 };
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
 if (!process.env.REDIS_URL) {
-  console.error('â Œ FATAL: REDIS_URL is missing from environment variables!');
+  console.error('FATAL: REDIS_URL is missing from environment variables!');
   process.exit(1);
 }
 void redisConnection.connect().catch(() => {}); // force-connect before BullMQ workers start
 const pythonCmd = getPythonExecutable();
 
 const DRIVE_BATCH_SIZE = 5;
+const DEFAULT_R2_PUBLIC_URL = "https://pub-e4a8b24775c741f6a650def856cfec9f.r2.dev";
 
 function parseJsonSafe<T = Record<string, any>>(raw: unknown, fallback: T): T {
   try {
@@ -86,6 +85,24 @@ function parseJsonSafe<T = Record<string, any>>(raw: unknown, fallback: T): T {
     return fallback;
   } catch {
     return fallback;
+  }
+}
+
+function isAllowedResumeFetchUrl(rawUrl: string): boolean {
+  try {
+    const url = new URL(rawUrl);
+    if (url.protocol !== "https:") return false;
+
+    const baseUrl = new URL(process.env.NEXT_PUBLIC_R2_RESUMES_URL || DEFAULT_R2_PUBLIC_URL);
+    if (url.origin !== baseUrl.origin) return false;
+
+    const basePath = baseUrl.pathname.replace(/\/$/, "");
+    if (basePath && basePath !== "" && basePath !== "/") {
+      return url.pathname.startsWith(`${basePath}/`);
+    }
+    return url.pathname.startsWith("/resumes/");
+  } catch {
+    return false;
   }
 }
 
@@ -232,7 +249,7 @@ async function processInterviewStartJob(job: any) {
     );
     await prismaAny.application.update({
       where: { id: applicationId },
-      data: { interviewStatus: "in progress" },
+      data: { interviewStatus: "IN_PROGRESS" },
     }).catch(() => {});
     return {
       success: true,
@@ -263,7 +280,7 @@ async function processInterviewStartJob(job: any) {
 
   await prismaAny.application.update({
     where: { id: applicationId },
-    data: { interviewStatus: "in progress" },
+    data: { interviewStatus: "IN_PROGRESS" },
   });
 
   console.log(
@@ -274,7 +291,7 @@ async function processInterviewStartJob(job: any) {
     applicationId,
     startedAt: startedAtCandidate.toISOString(),
     linkStatus: existingInterview?.linkStatus || "ACTIVE",
-    interviewStatus: "in progress",
+    interviewStatus: "IN_PROGRESS",
   };
 }
 
@@ -1092,8 +1109,11 @@ if (isQueueEnabled("resume-processing")) {
         if (isRemoteUrl) {
           tempResumePath = join(tmpdir(), `resume_${applicationId}_${Date.now()}.pdf`);
           try {
+            if (!isAllowedResumeFetchUrl(resumeUrl)) {
+              throw new Error("Resume URL is not an allowed R2 resume URL");
+            }
             console.log(`[JOB] Fetching remote resume for extraction: ${resumeUrl}`);
-            const response = await fetch(resumeUrl);
+            const response = await safeFetch(resumeUrl);
             if (!response.ok) throw new Error(`Failed to fetch resume: ${response.statusText}`);
             const buffer = Buffer.from(await response.arrayBuffer());
             await writeFile(tempResumePath, buffer);
@@ -1426,6 +1446,12 @@ if (isQueueEnabled("invitation-delivery-queue")) {
           source: "worker",
         });
         throw new Error(reason);
+      }
+      if (action === "shortlist") {
+        await prismaAny.application.update({
+          where: { id: applicationId },
+          data: { interviewStatus: "pending", updatedAt: new Date() },
+        }).catch(() => {});
       }
       await appendCandidateActivity(applicationId, {
         type: "email_sent",
@@ -2295,7 +2321,7 @@ if (isQueueEnabled("jd-extraction")) {
         }
         console.log(`[JD-EXTRACTION] Job ${job.id} fetching JD URL`, { url });
         const { load } = await import("cheerio");
-        const response = await fetch(url);
+        const response = await safeFetch(url);
         if (!response.ok) {
           throw new Error(`Failed to fetch JD URL: ${response.statusText}`);
         }
@@ -2430,7 +2456,7 @@ async function purgeAllQueues() {
   }
 }
 /**
- * ðŸ› ï¸  REDIS CONFIGURATION & CRON SETUP
+ * REDIS CONFIGURATION & CRON SETUP
  * Attempts to set safe Redis settings and register repeatable jobs.
  */
 async function initializeWorkerMetadata() {
@@ -2440,13 +2466,13 @@ async function initializeWorkerMetadata() {
     try {
       await redisConnection.config('SET', 'maxmemory-policy', 'noeviction');
     } catch (configErr: any) {
-      console.warn(`  âš ï¸  Could not set Redis eviction policy (provider restricted): ${configErr.message}`);
-      console.warn("  â„¹ï¸  Running queue cleanup to free memory instead...");
+      console.warn(`Could not set Redis eviction policy (provider restricted): ${configErr.message}`);
+      console.warn("Running queue cleanup to free memory instead...");
     }
     // Removed destructive purgeAllQueues() which deletes pending user uploads on restart
     // await purgeAllQueues();
     if (await shouldSkipCronRegistration()) {
-      console.warn("  âš ï¸  Cron registration skipped because Redis is still near its memory limit.");
+      console.warn("Cron registration skipped because Redis is still near its memory limit.");
       return;
     }
     if (setupCronJobs) {

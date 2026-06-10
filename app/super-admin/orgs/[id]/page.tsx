@@ -113,7 +113,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
             const transcript = "Hello buddy, how are you doing? I'm ready to interview candidates.";
             const res = await fetch("/api/admin/voice/preview", {
                 method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ voiceId, transcript }),
+                body: JSON.stringify({ voiceId, transcript, orgId: id }),
             });
             if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || "Preview failed");
             const blob = await res.blob();

@@ -1,11 +1,27 @@
 import { prisma } from "@/lib/prisma";
+import { getSession } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
+    // -- AUTH + TENANT SCOPE -----------------------------------------------
+    // This SSE stream broadcasts new/updated application activity. Without a
+    // session + org scope it leaks candidate PII (name, email) across every
+    // organization to any unauthenticated caller.
+    const session = await getSession();
+    if (!session) {
+        return new Response(JSON.stringify({ error: "Not authorized" }), {
+            status: 401,
+            headers: { "Content-Type": "application/json" },
+        });
+    }
+    // SUPER_ADMIN has no single org; the activity feed is an org-scoped feature,
+    // so a non-org session simply gets an empty (heartbeat-only) stream.
+    const sessionOrgId = session.role === "SUPER_ADMIN" ? null : (session.orgId ?? null);
+
     const encoder = new TextEncoder();
-    
+
     const stream = new ReadableStream({
         async start(controller) {
             const send = (data: any) => {
@@ -26,9 +42,14 @@ export async function GET(request: Request) {
                 if (closed) return;
                 
                 try {
+                    // A SUPER_ADMIN (no single org) gets a heartbeat-only stream;
+                    // everyone else is scoped strictly to their own org's drives.
+                    if (!sessionOrgId) return;
+                    const orgScope = { drive: { orgId: sessionOrgId } };
+
                     // Check for NEW applications
                     const newApps = await prisma.application.findMany({
-                        where: { createdAt: { gt: lastCheck } },
+                        where: { ...orgScope, createdAt: { gt: lastCheck } },
                         select: { id: true, fullName: true, email: true, createdAt: true },
                         orderBy: { createdAt: "desc" },
                         take: 5
@@ -37,6 +58,7 @@ export async function GET(request: Request) {
                     // Check for UPDATED applications (status changes by AI worker etc.)
                     const updatedApps = await prisma.application.findMany({
                         where: {
+                            ...orgScope,
                             updatedAt: { gt: lastCheck },
                             createdAt: { lte: lastCheck } // exclude newly created (already caught above)
                         },

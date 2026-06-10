@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
+import { updateCandidateStatusSchema } from "@/lib/validation";
 import { deleteCandidateEmbeddings } from "@/lib/pinecone";
 import { deleteUrlTargets } from "@/lib/delete-utils";
 import { appendCandidateActivity } from "@/lib/candidate-activity";
@@ -15,8 +16,16 @@ export async function GET(
         if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
 
         const { id } = await params;
-        const candidate: any = await prisma.application.findUnique({
-            where: { id },
+        // -- TENANT ISOLATION: enforce org ownership in the DB query itself.
+        // Non-SUPER_ADMINs are scoped to their own org; a SUPER_ADMIN sees any.
+        // Doing this in the WHERE clause (not a post-fetch JS check) closes the
+        // null-orgId bypass where an orphaned drive made the check short-circuit.
+        const orgScope =
+            session.role === "SUPER_ADMIN"
+                ? { id }
+                : { id, drive: { orgId: session.orgId ?? "__none__" } };
+        const candidate: any = await prisma.application.findFirst({
+            where: orgScope,
             select: {
                 id: true,
                 fullName: true,
@@ -82,10 +91,9 @@ export async function GET(
             );
         }
 
-        const candidateOrgId = candidate.drive?.orgId || null;
-        if (session.role !== "SUPER_ADMIN" && session.orgId && candidateOrgId && candidateOrgId !== session.orgId) {
-            return NextResponse.json({ error: "Candidate belongs to a different organization" }, { status: 403 });
-        }
+        // Org ownership is now enforced by the findFirst WHERE clause above, so a
+        // returned candidate is guaranteed to belong to the caller's org (or the
+        // caller is a SUPER_ADMIN). No post-fetch check needed.
 
         return NextResponse.json({
             ...candidate,
@@ -94,7 +102,9 @@ export async function GET(
             driveTitle: candidate.drive?.title || "Role N/A"
         }, {
             headers: {
-                'Cache-Control': 'private, max-age=60',
+                // PII (email, phone, resume, scores, transcript) must not be
+                // cached by the browser or any intermediary.
+                'Cache-Control': 'private, no-store',
             }
         });
 
@@ -113,7 +123,13 @@ export async function DELETE(
         if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
 
         const { id } = await params;
-        const orgId = (new URL(request.url).searchParams.get("orgId") || session?.orgId);
+        // -- TENANT ISOLATION: only a SUPER_ADMIN may target another org via the
+        // query string. A regular admin is always scoped to their own session org,
+        // otherwise any admin could pass ?orgId=<victim_org> and delete across tenants.
+        const orgId =
+            session.role === "SUPER_ADMIN"
+                ? (new URL(request.url).searchParams.get("orgId") || session.orgId)
+                : session.orgId;
 
         // -- SECURITY & FETCH: Ensure candidate belongs to the Org ------
         const candidate = await prisma.application.findFirst({
@@ -185,8 +201,22 @@ export async function PATCH(
 
         const { id } = await params;
         const { searchParams } = new URL(request.url);
-        const orgId = searchParams.get("orgId") || session?.orgId;
-        const body = await request.json();
+        // -- TENANT ISOLATION: only SUPER_ADMIN may target another org via query.
+        const orgId =
+            session.role === "SUPER_ADMIN"
+                ? (searchParams.get("orgId") || session.orgId)
+                : session.orgId;
+
+        // -- VALIDATION: allowlist of status fields + value length caps ------
+        const rawBody = await request.json();
+        const parsed = updateCandidateStatusSchema.safeParse(rawBody);
+        if (!parsed.success) {
+            return NextResponse.json(
+                { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
+                { status: 400 }
+            );
+        }
+        const body = parsed.data;
 
         // -- SECURITY: Verify ownership ---------------------
         const candidate = await prisma.application.findFirst({
@@ -218,19 +248,19 @@ export async function PATCH(
 
         if (isRejected) {
             dataToUpdate.resumeStatus = "rejected";
-            dataToUpdate.interviewStatus = "not qualified";
+            dataToUpdate.interviewStatus = "Not Qualified";
             dataToUpdate.hiringStatus = "not hired";
         }
 
         if (isHired) {
             dataToUpdate.resumeStatus = "shortlisted";
-            dataToUpdate.interviewStatus = "finished";
+            dataToUpdate.interviewStatus = "COMPLETED";
             dataToUpdate.hiringStatus = "hired";
         }
 
         if (isNotHired) {
             dataToUpdate.resumeStatus = "rejected";
-            dataToUpdate.interviewStatus = "not qualified";
+            dataToUpdate.interviewStatus = "Not Qualified";
             dataToUpdate.hiringStatus = "not hired";
         }
 

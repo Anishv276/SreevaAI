@@ -63,6 +63,15 @@ export const bulkDeleteCandidatesSchema = z.object({
   ids: z.array(z.string().min(1)).min(1, "At least one ID required"),
 });
 
+// PATCH /api/candidates/[id] — allowlist of mutable status fields. Free-form
+// values are capped in length to prevent junk being persisted; the route applies
+// its own canonicalization on top of this.
+export const updateCandidateStatusSchema = z.object({
+  resumeStatus: z.string().min(1).max(40).optional(),
+  interviewStatus: z.string().min(1).max(40).optional(),
+  hiringStatus: z.string().min(1).max(40).optional(),
+}).strict();
+
 export const interviewTokenSchema = z.object({
   applicationId: z.string().min(1, "Application ID required"),
   interviewToken: z.string().min(1, "Access token required"),

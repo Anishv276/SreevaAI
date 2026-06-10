@@ -5,7 +5,7 @@ import time
 from contextvars import ContextVar
 from typing import Any, Optional
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(override=False)  # override=False: skip if env vars already set (avoids redundant disk reads)
 logger = logging.getLogger("interview-agent")
 logger.setLevel(logging.DEBUG)
 

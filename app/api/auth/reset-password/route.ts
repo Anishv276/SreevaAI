@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { isRateLimited } from "@/lib/rate-limit";
 import { invalidateUserSessions } from "@/lib/auth";
 import { normalizeEmail } from "@/lib/email";
+import { validatePasswordStrength } from "@/lib/validation";
 
 export async function POST(request: Request) {
     try {
@@ -14,8 +15,12 @@ export async function POST(request: Request) {
         }
 
         const normalizedEmail = normalizeEmail(email);
+        const { isValid, error: passwordError } = validatePasswordStrength(String(newPassword));
+        if (!isValid) {
+            return NextResponse.json({ error: passwordError || "Password is too weak" }, { status: 400 });
+        }
 
-        const isLimited = await isRateLimited(`reset-otp:${normalizedEmail}`, 1, 30);
+        const isLimited = await isRateLimited(`reset-otp:${normalizedEmail}`, 1, 30, true);
         if (isLimited) {
             return NextResponse.json({ 
                 error: "Please wait 30 seconds between attempts to verify a security code." 

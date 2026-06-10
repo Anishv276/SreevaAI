@@ -19,11 +19,31 @@ export async function GET(
         return NextResponse.json({ error: "Missing jobId" }, { status: 400 });
     }
 
+    // -- AUTH + IDOR GUARD ----------------------------------------------------
+    // BullMQ assigns sequential integer job IDs, so without an ownership check any
+    // authenticated (or unauthenticated) caller could enumerate /status/1..N and
+    // read other orgs' extracted JD/resume text. Require a session and verify the
+    // job belongs to the caller's org (SUPER_ADMIN exempt) before returning data.
+    const session = await getSession();
+    if (!session) {
+        return NextResponse.json({ error: "Not authorized" }, { status: 401 });
+    }
+    const callerOrgId = session.role === "SUPER_ADMIN" ? null : (session.orgId ?? null);
+
     const queue = new Queue(JD_EXTRACTION_QUEUE_NAME, { connection: redisConnection });
     try {
         const readJob = async (candidateQueue: Queue, source: "jd" | "resume") => {
             const job = await candidateQueue.getJob(jobId);
             if (!job) return null;
+
+            // Enforce org ownership of the job before exposing any of its data.
+            // callerOrgId === null means SUPER_ADMIN (allowed to read any job).
+            if (callerOrgId !== null) {
+                const jobOrgId = (job.data as Record<string, unknown> | undefined)?.orgId;
+                if (typeof jobOrgId !== "string" || jobOrgId !== callerOrgId) {
+                    return null; // treat as not-found — don't reveal existence
+                }
+            }
 
             const state = await job.getState();
             if (state === "failed") {
@@ -38,11 +58,9 @@ export async function GET(
                 if (source === "jd") {
                     const hydratedData = hydrateJdExtraction({ data: result?.data });
 
-                    let orgId: string | null = null;
-                    try {
-                        const session = await getSession();
-                        orgId = session?.orgId || null;
-                    } catch { /* no session */ }
+                    // Bill the authenticated caller's org; fall back to the job's
+                    // own orgId (e.g. for SUPER_ADMIN reads where session.orgId is null).
+                    let orgId: string | null = session.orgId || null;
                     if (!orgId) {
                         const jobOrgId = (job.data as Record<string, unknown> | undefined)?.orgId;
                         if (typeof jobOrgId === "string" && jobOrgId.trim()) {

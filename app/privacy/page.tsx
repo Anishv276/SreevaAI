@@ -53,8 +53,7 @@ export default function PrivacyPolicy() {
         checkAuth();
     }, []);
 
-    const dashboardHref = session?.role === "SUPER_ADMIN" ? "/super-admin" : "/admin";
-    const ctaHref = session ? dashboardHref : "https://cal.com/vamsivk/30min";
+    const workspaceHref = session?.role === "SUPER_ADMIN" ? "/super-admin" : "/admin";
 
     return (
         <div className="min-h-screen bg-white text-slate-900">
@@ -67,16 +66,11 @@ export default function PrivacyPolicy() {
                     </Link>
 
                     <div className="flex items-center gap-4">
-                        {!session && (
-                            <Link href="/login" className="font-medium text-slate-600">
-                                Login
-                            </Link>
-                        )}
                         <Link
-                            href={ctaHref}
+                            href={session ? workspaceHref : "/login"}
                             className="bg-black px-6 py-2 rounded font-bold text-white"
                         >
-                            {session ? "Dashboard" : "Book Demo"}
+                            {session ? "Open Workspace" : "Login"}
                         </Link>
                     </div>
                 </div>

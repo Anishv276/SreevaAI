@@ -160,7 +160,7 @@ export default function SuperAdminSupportPage() {
                 <Link href="/super-admin">
                     <button className="flex items-center gap-1.5 bg-white border border-gray-100 hover:border-gray-200 text-gray-500 text-[11px] font-bold px-3 py-1.5 rounded-lg transition-all">
                         <ArrowRight className="h-3 w-3 rotate-180" />
-                        Dashboard
+                        Overview
                     </button>
                 </Link>
             </div>

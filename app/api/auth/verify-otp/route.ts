@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { normalizeEmail } from "@/lib/email";
+import { isRateLimited } from "@/lib/rate-limit";
 
 export async function POST(request: Request) {
     try {
@@ -11,6 +12,17 @@ export async function POST(request: Request) {
         }
 
         const normalizedEmail = normalizeEmail(email);
+
+        // -- BRUTE-FORCE GUARD (fail closed) --------------------------------
+        // A 6-digit OTP with no throttle is brute-forceable. Cap verification
+        // attempts per email; fail closed so a Redis outage can't open the door.
+        const isLimited = await isRateLimited(`verify-otp:${normalizedEmail}`, 10, 600, true);
+        if (isLimited) {
+            return NextResponse.json(
+                { error: "Too many attempts. Please request a new code.", code: "RATE_LIMIT_EXCEEDED" },
+                { status: 429 }
+            );
+        }
 
         const superAdmin = await prisma.superAdmin.findFirst({
             where: {

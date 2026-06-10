@@ -106,7 +106,13 @@ class TopicState:
         min_expected = self.saturation_threshold * self.progress_check_pct
         return effective_score < min_expected
 
-    def add_response_contribution(self, response_score: float, signal_penalties: float = 0.0, turn: Optional[int] = None) -> None:
+    def add_response_contribution(
+        self,
+        response_score: float,
+        signal_penalties: float = 0.0,
+        turn: Optional[int] = None,
+        weighted_quality: Optional[float] = None,
+    ) -> None:
         quality_contribution = max(0.0, response_score + signal_penalties)
         # Base credit is only awarded when the candidate provided substantive content.
         # A denial, repeat request, or zero-score answer contributes 0 base credit
@@ -116,10 +122,12 @@ class TopicState:
         self.saturation_score += total
         self.follow_up_turns += 1
         self.is_saturated = self.saturation_score >= self.saturation_threshold
-        # Track consecutive low-yield turns for the dry-topic exit. A turn is
-        # "low-yield" when the candidate added almost nothing (denial, blank, or a
-        # vague one-liner). Any substantive answer resets the streak.
-        if quality_contribution <= 0.5:
+        # Track consecutive low-yield turns for the dry-topic exit. Use the
+        # visible weighted answer quality, not the saturation contribution, because
+        # contribution can be zero for shallow-but-real fresher answers. Fresh logs
+        # showed this incorrectly moved off the anchor topic after a usable answer.
+        low_yield_basis = weighted_quality if weighted_quality is not None else quality_contribution
+        if low_yield_basis <= 1.0:
             self.consecutive_low_yield += 1
         else:
             self.consecutive_low_yield = 0
@@ -129,6 +137,8 @@ class TopicState:
     def is_dry_topic(self) -> bool:
         """True when the topic has gone dry -- consecutive low-yield answers hit the
         band cap. Forces MOVE_ON so the agent stops re-asking a dead topic."""
+        if self.follow_up_turns < self.dry_topic_cap:
+            return False
         return self.consecutive_low_yield >= self.dry_topic_cap
 
     def to_dict(self) -> dict:
@@ -296,7 +306,7 @@ def evaluate_topic_saturation(
     score_before = topic_state.saturation_score
     follow_ups_before = topic_state.follow_up_turns
 
-    topic_state.add_response_contribution(final_contribution, 0.0, turn=turn)
+    topic_state.add_response_contribution(final_contribution, 0.0, turn=turn, weighted_quality=weighted)
 
     logger.info(
         "[SAT_CALC] topic=%s | weighted=%.2f contribution=%.2f signal_modifier=%+.2f final_contribution=%.2f",
@@ -409,7 +419,11 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     async def _evaluate_answer_capturing(**kwargs):
         result = await evaluate_answer(**kwargs)
         usage = result.pop("_llm_usage", None)
-        if usage:
+        if usage and (
+            int(usage.get("inputTokens", 0) or 0)
+            or int(usage.get("outputTokens", 0) or 0)
+            or int(usage.get("cachedInputTokens", 0) or 0)
+        ):
             _captured_eval_usage.append(usage)
         return result
 

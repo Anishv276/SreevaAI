@@ -3,7 +3,11 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
 import { interviewRecordingQueue } from "@/lib/queue";
-import { getOrgRecordingSettings } from "@/lib/recording-retention";
+import {
+    computeRecordingRetentionDueAt,
+    getOrgRecordingSettings,
+    normalizeRecordingRetentionDays,
+} from "@/lib/recording-retention";
 import { mergeRecordingState, normalizeRecordingState, parseJsonRecord, type RecordingState } from "@/lib/recording-state";
 
 export const runtime = "nodejs";
@@ -100,6 +104,28 @@ function statusToLabel(status: EgressStatus | number | undefined): string {
     }
 }
 
+function isTerminalRecordingStatus(status: string) {
+    return ["COMPLETE", "COMPLETED", "FAILED", "ABORTED", "LIMIT_REACHED"].includes(
+        String(status || "").trim().toUpperCase()
+    );
+}
+
+function addSeconds(base: Date | null, seconds: number | null | undefined) {
+    if (!base || !Number.isFinite(base.getTime()) || !seconds || seconds <= 0) return null;
+    return new Date(base.getTime() + Math.round(seconds) * 1000);
+}
+
+async function getRetentionDaysForApplication(applicationId: string) {
+    const application = await prisma.application.findUnique({
+        where: { id: applicationId },
+        select: { drive: { select: { orgId: true } } },
+    }).catch(() => null);
+    const orgId = String(application?.drive?.orgId || "");
+    if (!orgId) return null;
+    const settings = await getOrgRecordingSettings(orgId);
+    return settings.recordingEnabled ? settings.recordingRetentionDays : null;
+}
+
 async function authenticateInterview(applicationId: string, interviewToken: string, requireInterviewToken: boolean) {
     const interviewRecord = await prisma.interview.findUnique({
         where: { applicationId },
@@ -131,6 +157,7 @@ async function persistRecordingState(params: {
     durationSec?: number | null;
     recordingName?: string | null;
     recordingKey?: string | null;
+    retentionDays?: number | null;
 }) {
     const {
         applicationId,
@@ -143,6 +170,7 @@ async function persistRecordingState(params: {
         durationSec = null,
         recordingName = null,
         recordingKey = null,
+        retentionDays = undefined,
     } = params;
 
     const currentRow = await prisma.interview.findUnique({
@@ -157,13 +185,28 @@ async function persistRecordingState(params: {
         ...manifest,
         lastStatus: status,
     };
+    const resolvedKey = recordingKey || String(nextManifest.recordingKey || "").trim() || null;
+    const resolvedUrl = recordingUrl || String(nextManifest.recordingUrl || "").trim() || null;
+    const normalizedRetentionDays = normalizeRecordingRetentionDays(
+        retentionDays === undefined ? await getRetentionDaysForApplication(applicationId) : retentionDays
+    );
+    const terminalWithAsset = isTerminalRecordingStatus(status) && Boolean(resolvedKey || resolvedUrl);
+    const retentionBase =
+        completedAt
+        || addSeconds(startedAt, durationSec)
+        || (nextManifest.startedAt ? addSeconds(new Date(nextManifest.startedAt), durationSec) : null)
+        || startedAt
+        || null;
+    const retentionDueAt = terminalWithAsset && normalizedRetentionDays !== null
+        ? computeRecordingRetentionDueAt(retentionBase, normalizedRetentionDays)
+        : null;
     const nextRecording = mergeRecordingState((currentRow as any)?.recording, {
         ...(recordingName ? { name: recordingName } : {}),
         mode: nextManifest.mode || "livekit_egress",
         status,
         mimeType,
         url: recordingUrl || undefined,
-        key: recordingKey || String(nextManifest.recordingKey || "").trim() || undefined,
+        key: resolvedKey || undefined,
         egressId: String(nextManifest.egressId || "").trim() || undefined,
         roomName: String(nextManifest.roomName || "").trim() || undefined,
         startedAt: startedAt ? startedAt.toISOString() : undefined,
@@ -171,6 +214,16 @@ async function persistRecordingState(params: {
         recordedAt: completedAt && recordingUrl ? completedAt.toISOString() : undefined,
         durationSec,
         manifest: parseJsonRecord(nextManifest),
+        ...(retentionDueAt && normalizedRetentionDays !== null ? {
+            retention: {
+                days: normalizedRetentionDays,
+                dueAt: retentionDueAt.toISOString(),
+                cleanupStatus: "PENDING",
+                cleanupAttempts: 0,
+                cleanupLastError: null,
+                deletedAt: null,
+            },
+        } : {}),
     } as RecordingState);
 
     await prisma.$executeRawUnsafe(

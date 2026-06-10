@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 
 export async function POST(req: Request) {
     try {
@@ -69,6 +70,18 @@ export async function DELETE(req: Request) {
         const key = getKeyFromUrl(url);
 
         if (!key) return NextResponse.json({ error: "Invalid key" }, { status: 400 });
+        const expectedPrefix = `logo_${session.orgId}_`;
+        if (!key.startsWith(expectedPrefix)) {
+            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        }
+
+        const org = await prisma.organization.findUnique({
+            where: { id: session.orgId },
+            select: { logoUrl: true },
+        });
+        if (org?.logoUrl && org.logoUrl !== url) {
+            return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        }
 
         const BUCKET_NAME = process.env.R2_LOGOS_BUCKET || "logos";
         await deleteObject(BUCKET_NAME, key);

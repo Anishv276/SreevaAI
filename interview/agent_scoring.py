@@ -74,6 +74,8 @@ async def evaluate_answer(
         r"^(no\.?\s*)?(i\s+)?(didn'?t|did not)\s+(do|work on|build|make|create)\s*(it|that|this|anything)?\s*[.!?]*$",
         r"^(no\.?\s*)?(i\s+)?(never|haven'?t|have not|hadn'?t|had not)\s+(used|worked|done|tried)\s*(it|that|this)?\s*[.!?]*$",
         r"^(i\s+)?don'?t\s+know\s*[.!?]*$",
+        r"^.+\s+is\s+not\s+(?:my\s+)?(?:core\s+)?skill\s*[.!?]*$",
+        r"^(?:it|that|this)\s+is\s+not\s+(?:my\s+)?(?:core\s+)?skill\s*[.!?]*$",
         r"^(no\.?\s*){1,3}[.!?]*$",
     )
     import re as _re_scoring
@@ -244,6 +246,7 @@ async def evaluate_answer(
                     },
                 ],
                 response_format={"type": "json_object"},
+                stream_options={"include_usage": True},
             ),
             timeout=8.0,  # Inner LLM call. MUST be < eval wrapper (10s) < LLM gate (12s).
         )

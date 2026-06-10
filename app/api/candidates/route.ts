@@ -120,7 +120,7 @@ export async function GET(request: Request) {
             ];
         }
 
-        const [candidates, total] = await Promise.all([
+        const [candidates, total, statsResult] = await Promise.all([
             prisma.application.findMany({
                 where,
                 include: {
@@ -136,16 +136,15 @@ export async function GET(request: Request) {
                 skip: offset,
                 take: limit,
             }),
-            prisma.application.count({ where })
+            prisma.application.count({ where }),
+            prisma.application.groupBy({
+                by: ['resumeStatus', 'hiringStatus', 'interviewStatus'],
+                where: {
+                    drive: { orgId, ...(driveId && driveId !== "all" ? { id: driveId } : {}) }
+                },
+                _count: { _all: true }
+            }),
         ]);
-
-        const statsResult = await prisma.application.groupBy({
-            by: ['resumeStatus', 'hiringStatus', 'interviewStatus'],
-            where: {
-                drive: { orgId, ...(driveId && driveId !== "all" ? { id: driveId } : {}) }
-            },
-            _count: { _all: true }
-        });
 
         // Aggregate stats manually from groupBy result
         const statsRow = {
@@ -162,13 +161,13 @@ export async function GET(request: Request) {
             const count = group._count._all;
             const resStatus = (group.resumeStatus || "").toLowerCase();
             const hiStatus = (group.hiringStatus || "").toLowerCase();
-            const intStatus = (group.interviewStatus || "").toLowerCase();
+            const intStatus = String(group.interviewStatus || "").toLowerCase().replace(/[_-]+/g, " ");
 
             if (resStatus === 'shortlisted') statsRow.shortlisted += count;
             if (resStatus === 'rejected') statsRow.rejected += count;
             if (hiStatus === 'hired') statsRow.hired += count;
             if (hiStatus === 'not hired') statsRow.not_hired += count;
-            if (intStatus === 'inprogress') statsRow.interviewRunning += count;
+            if (intStatus === 'inprogress' || intStatus === 'in progress') statsRow.interviewRunning += count;
             if (intStatus === 'pending') statsRow.interviewPending += count;
             if (intStatus === 'finished' || intStatus === 'completed') statsRow.interviewCompleted += count;
         });
@@ -244,7 +243,13 @@ export async function DELETE(request: Request) {
         if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
 
         const { searchParams } = new URL(request.url);
-        const orgId = searchParams.get("orgId") || session?.orgId;
+        // -- TENANT ISOLATION: only SUPER_ADMIN may target another org via query.
+        // A regular admin is always scoped to their own org so they cannot pass
+        // ?orgId=<victim_org> and bulk-delete another tenant's candidates.
+        const isSuperAdmin = session.role === "SUPER_ADMIN";
+        const orgId = isSuperAdmin
+            ? (searchParams.get("orgId") || session.orgId)
+            : session.orgId;
 
         let ids: string[] = [];
         try {
@@ -269,27 +274,24 @@ export async function DELETE(request: Request) {
             whereClause.id = { in: ids };
         }
 
-        const belongsToOrg = await prisma.application.findMany({
+        const candidatesToCleanup = await prisma.application.findMany({
             where: whereClause,
-            select: { id: true }
+            select: {
+                id: true,
+                resumeUrl: true,
+                interview: {
+                    select: {
+                        recording: true,
+                        snapshots: true
+                    } as any
+                }
+            }
         });
 
-        const validIds = belongsToOrg.map((a: (typeof belongsToOrg)[number]) => a.id);
+        const validIds = candidatesToCleanup.map((a: (typeof candidatesToCleanup)[number]) => a.id);
         if (validIds.length === 0) return NextResponse.json({ message: "No matching candidates found" });
 
         try {
-            const candidatesToCleanup = await prisma.application.findMany({
-                where: { id: { in: validIds } },
-                select: {
-                    resumeUrl: true,
-                    interview: {
-                        select: {
-                            recording: true,
-                            snapshots: true
-                        } as any
-                    }
-                }
-            });
 
             const urls: string[] = [];
             for (const cand of candidatesToCleanup) {

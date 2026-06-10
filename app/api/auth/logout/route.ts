@@ -8,8 +8,8 @@ export async function POST() {
         const token = cookieStore.get("session")?.value;
 
         if (token && redis) {
-            // Blacklist for 7 days (the max lifetime of a token)
-            await redis.set(`blacklist:${token}`, "1", "EX", 60 * 60 * 24 * 7);
+            // Blacklist for 2h — that's the max token lifetime now
+            await redis.set(`blacklist:${token}`, "1", "EX", 60 * 60 * 2);
         }
     } catch (e) {
         console.error("[LOGOUT_ERROR]", e);

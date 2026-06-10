@@ -27,10 +27,11 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
-    const [isLoading, setIsLoading] = useState(true);
+    const [isLoading, setIsLoading] = useState(false);
     const router = useRouter();
 
     const refreshUser = useCallback(async () => {
+        setIsLoading(true);
         try {
             const res = await fetch("/api/auth/me");
             if (res.ok) {
@@ -57,10 +58,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
     }, []);
 
-    // Initial check on mount & Listen for multi-tab logout
+    // Only listen for multi-tab logout — do NOT auto-fetch on mount.
+    // Admin pages get session server-side via layout; callers invoke refreshUser() explicitly when needed.
     useEffect(() => {
-        refreshUser();
-
         const handleStorageChange = (e: StorageEvent) => {
             if (e.key === "logout-event") {
                 setUser(null);
@@ -71,7 +71,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         window.addEventListener("storage", handleStorageChange);
         return () => window.removeEventListener("storage", handleStorageChange);
-    }, [refreshUser, router]);
+    }, [router]);
 
     const logout = async () => {
         // Clear local state first for instant UI response

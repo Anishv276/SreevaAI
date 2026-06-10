@@ -58,6 +58,11 @@ export async function GET(request: Request) {
 
         const formattedApplications = applications.map((app: any) => {
             const nowMs = Date.now();
+            const expiresAtMs = app.interview?.expiresAt ? new Date(app.interview.expiresAt).getTime() : null;
+            const isDeadlineExpired = expiresAtMs !== null && nowMs > expiresAtMs;
+            const effectiveLinkStatus = app.interview
+                ? (isDeadlineExpired ? "EXPIRED" : (app.interview.linkStatus || "ACTIVE"))
+                : null;
             const interviewStage = app.interview
                 ? {
                     status: app.interview.status,
@@ -65,12 +70,11 @@ export async function GET(request: Request) {
                     accessToken: app.interview.accessToken,
                     expiresAt: app.interview.expiresAt,
                     mode: "DEADLINE",
-                    linkStatus: app.interview.linkStatus || "ACTIVE",
+                    linkStatus: effectiveLinkStatus,
                     canStart: (() => {
                         if (app.interview.status !== "PENDING") return false;
-                        const expiresAtMs = app.interview.expiresAt ? new Date(app.interview.expiresAt).getTime() : null;
                         const startedAtMs = app.interview.startedAt ? new Date(app.interview.startedAt).getTime() : null;
-                        const deadlineOpen = expiresAtMs === null || nowMs < expiresAtMs;
+                        const deadlineOpen = !isDeadlineExpired;
                         const withinRejoinWindow = startedAtMs === null || nowMs <= startedAtMs + 5 * 60 * 1000;
                         return deadlineOpen && withinRejoinWindow;
                     })(),

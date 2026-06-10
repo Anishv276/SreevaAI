@@ -6,7 +6,13 @@ const prisma = new PrismaClient();
 async function main() {
     const orgId = "sreeva-org-id";
     const email = "support@sreevaai.com";
-    const password = "sreevaai@123";
+    // Never hardcode the credential. Supply it at run time:
+    //   SUPERADMIN_PASSWORD='...' npx tsx scripts/bootstrap_new_account.ts
+    const password = process.env.SUPERADMIN_PASSWORD?.trim();
+    if (!password || password.length < 12) {
+        console.error("❌ SUPERADMIN_PASSWORD env var is required (min 12 chars). Aborting.");
+        process.exit(1);
+    }
 
     console.log("🚀 Performing full database wipe...");
 
@@ -70,7 +76,7 @@ async function main() {
     console.log("✅ Organization Admin user created:", user.email);
     console.log("\n--- LOGIN CREDENTIALS ---");
     console.log(`Email: ${email}`);
-    console.log(`Password: ${password}`);
+    console.log(`Password: (set from SUPERADMIN_PASSWORD env var)`);
     console.log("---------------------------\n");
 }
 

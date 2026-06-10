@@ -122,6 +122,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
             }, { status: 500 });
         }
 
+        await prismaAny.application.update({
+            where: { id: applicationId },
+            data: { interviewStatus: "pending", updatedAt: new Date() },
+        });
+
         await appendCandidateActivity(applicationId, {
             type: "interview_invite_sent",
             label: "Interview link sent",

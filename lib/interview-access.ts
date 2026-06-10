@@ -1,8 +1,11 @@
 export function isInterviewTokenRequired() {
-    // Temporary dev-friendly bypass:
-    // - In production, token checks stay on by default.
-    // - In non-production, we allow interviews to proceed without a security token.
-    return process.env.NODE_ENV === "production" && process.env.INTERVIEW_TOKEN_REQUIRED !== "false";
+    // Fail-closed: the interview access token is REQUIRED in every environment.
+    // It can only be disabled by an explicit, deliberate opt-out
+    // (INTERVIEW_TOKEN_REQUIRED="false"), which should never be set outside a
+    // throwaway local dev box. Previously this returned false whenever
+    // NODE_ENV !== "production", which silently disabled auth on the proctoring,
+    // egress, finalize and snapshot-upload endpoints in any non-prod deploy.
+    return process.env.INTERVIEW_TOKEN_REQUIRED !== "false";
 }
 
 export function isInterviewReopenAllowed() {

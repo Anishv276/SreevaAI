@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { authorizeDriveAccess } from "@/lib/drive-access";
 
 export async function GET(
     request: Request,
@@ -7,6 +8,10 @@ export async function GET(
 ) {
     try {
         const { id: driveId } = await params;
+        const access = await authorizeDriveAccess(driveId);
+        if (!access.ok) {
+            return NextResponse.json({ error: access.error }, { status: access.status });
+        }
         const { searchParams } = new URL(request.url);
         const candidateId = searchParams.get("candidateId");
 

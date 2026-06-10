@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { randomInt } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { isRateLimited } from "@/lib/rate-limit";
@@ -35,7 +36,8 @@ export async function POST() {
             }, { status: 429 });
         }
 
-        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        // CSPRNG — see forgot-password route; Math.random() is not secure.
+        const otp = randomInt(100000, 1000000).toString();
         const expires = new Date(Date.now() + 10 * 60 * 1000);
 
         if (isSuperAdmin) {

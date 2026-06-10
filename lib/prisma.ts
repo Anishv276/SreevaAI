@@ -1,4 +1,3 @@
-import "dotenv/config"
 import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 
@@ -17,9 +16,12 @@ function createPrismaClient() {
 
     const adapter = new PrismaPg({
         connectionString: connectionUrl.toString(),
-        connectionTimeoutMillis: 15000,
-        max: 3,
-        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 5000,
+        max: 5,
+        min: 1,
+        idleTimeoutMillis: 60000,
+        allowExitOnIdle: false,
+        ssl: { rejectUnauthorized: false }, // Supabase uses self-signed cert in chain
     })
     return new PrismaClient({
         adapter,

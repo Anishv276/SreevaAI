@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { authorizeDriveAccess } from "@/lib/drive-access";
 
 export async function PATCH(
     request: Request,
@@ -7,6 +8,10 @@ export async function PATCH(
 ) {
     try {
         const { id: driveId, candidateId } = await params;
+        const access = await authorizeDriveAccess(driveId);
+        if (!access.ok) {
+            return NextResponse.json({ error: access.error }, { status: access.status });
+        }
         const { resumeStatus } = await request.json();
 
         if (!resumeStatus || !["SHORTLISTED", "REJECTED"].includes(resumeStatus)) {
@@ -43,6 +48,10 @@ export async function DELETE(
 ) {
     try {
         const { id: driveId, candidateId } = await params;
+        const access = await authorizeDriveAccess(driveId);
+        if (!access.ok) {
+            return NextResponse.json({ error: access.error }, { status: access.status });
+        }
 
         const candidate = await prisma.resumeCandidate.findUnique({
             where: { id: candidateId },

@@ -75,6 +75,12 @@ def polish_candidate_facing_text(text: str) -> str:
         return ""
     for pattern, replacement in _BANNED_ACK_REPLACEMENTS:
         result = pattern.sub(replacement, result)
+    result = re.sub(
+        r"^\s*good\s+to\s+hear\.\s+i(?:'|\u2019)?ll\s+be\s+conducting\b",
+        "Good to hear; doing well, packed with interviews today. I'll be conducting",
+        result,
+        flags=re.I,
+    )
     result = _TRAILING_FILLER_RE.sub("", result)
     result = re.sub(r"\s{2,}", " ", result).strip()
     return result
@@ -243,11 +249,20 @@ def append_transcript_line(transcript_lines: list[str], speaker: str, text: str)
     prev = transcript_lines[-1]
     if prev == line:
         return
-    same_speaker_prefix = f"{speaker}: "
-    if prev.startswith(same_speaker_prefix):
-        prev_text = prev[len(same_speaker_prefix):]
-        if clean.startswith(prev_text) or prev_text.startswith(clean):
-            transcript_lines[-1] = line if len(clean) >= len(prev_text) else prev
+    current_speaker_match = re.match(r"^([A-Za-z]+)(?:\[\d+\])?$", speaker)
+    prev_match = re.match(r"^([A-Za-z]+)(?:\[\d+\])?:\s*(.*)$", prev)
+    if current_speaker_match and prev_match and current_speaker_match.group(1) == prev_match.group(1):
+        prev_speaker = re.sub(r":\s*.*$", "", prev)
+        prev_text = prev_match.group(2).strip()
+        if clean == prev_text or prev_text.startswith(clean):
             return
+        if clean.startswith(prev_text):
+            transcript_lines[-1] = f"{prev_speaker}: {clean}"
+            logger.debug(f"Transcript merged: {transcript_lines[-1]}")
+            return
+        merged = " ".join(f"{prev_text} {clean}".split()).strip()
+        transcript_lines[-1] = f"{prev_speaker}: {merged}"
+        logger.debug(f"Transcript merged: {transcript_lines[-1]}")
+        return
     transcript_lines.append(line)
     logger.debug(f"Transcript: {line}")

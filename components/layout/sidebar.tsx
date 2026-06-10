@@ -25,7 +25,7 @@ interface NavItem {
 const NAV_GROUPS: { items: NavItem[] }[] = [
     {
         items: [
-            { icon: LayoutDashboard, label: "Dashboard", href: "/admin" },
+            { icon: LayoutDashboard, label: "Overview", href: "/admin" },
             { icon: Briefcase, label: "Active Jobs", href: "/admin/drives" },
             { icon: PlusCircle, label: "Create Job", href: "/admin/create-drive" },
             { icon: Users, label: "Candidates", href: "/admin/candidates" },

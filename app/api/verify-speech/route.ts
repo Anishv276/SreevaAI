@@ -3,6 +3,7 @@ import { DeepgramClient } from "@deepgram/sdk";
 import { prisma } from "@/lib/prisma";
 import { recordOrgBillingUsage } from "@/lib/usage-metrics";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
+import { isRateLimited } from "@/lib/rate-limit";
 
 const DEEPGRAM_VERIFY_MODEL = "flux-general-en";
 const DEEPGRAM_FLUX_EN_USD_PER_MIN = 0.0065;
@@ -11,6 +12,7 @@ const FLUX_VERIFY_TIMEOUT_PADDING_MS = 6000;
 const FLUX_AUDIO_SAMPLE_RATE = 16000;
 const FLUX_AUDIO_CHUNK_BYTES = 2560; // 80ms of 16-bit mono PCM at 16kHz.
 const FLUX_AUDIO_CHUNK_DURATION_MS = 80;
+const MAX_VERIFY_AUDIO_BYTES = 1 * 1024 * 1024;
 
 type FluxMessage = {
     type?: string;
@@ -121,19 +123,31 @@ async function transcribeWithFlux(audioBuffer: ArrayBuffer, apiKey: string): Pro
     });
 }
 
-async function getBillingOrgId(applicationId: string, interviewToken: string) {
+async function validateInterviewAccess(applicationId: string, interviewToken: string) {
     if (!applicationId) return null;
 
     const app = await prisma.application.findUnique({
         where: { id: applicationId },
         select: {
             drive: { select: { orgId: true } },
-            interview: { select: { accessToken: true } },
+            interview: {
+                select: {
+                    accessToken: true,
+                    expiresAt: true,
+                    linkStatus: true,
+                },
+            },
         },
     });
 
-    if (!app?.drive?.orgId) return null;
+    if (!app?.drive?.orgId || !app.interview) return null;
     if (isInterviewTokenRequired() && app.interview?.accessToken !== interviewToken) {
+        return null;
+    }
+    if (app.interview.expiresAt && app.interview.expiresAt < new Date()) {
+        return null;
+    }
+    if (app.interview.linkStatus && app.interview.linkStatus !== "ACTIVE") {
         return null;
     }
 
@@ -142,14 +156,34 @@ async function getBillingOrgId(applicationId: string, interviewToken: string) {
 
 export async function POST(req: NextRequest) {
     try {
+        const forwardedFor = req.headers.get("x-forwarded-for") || "";
+        const ip = forwardedFor.split(",")[0]?.trim() || "unknown";
+        if (await isRateLimited(`verify-speech:ip:${ip}`, 30, 60, true)) {
+            return NextResponse.json({ error: "Too many speech verification attempts" }, { status: 429 });
+        }
+
         const formData = await req.formData();
         const audio = formData.get("audio") as Blob | null;
         const targetPhrase = (formData.get("targetPhrase") as string | null) ?? "";
         const applicationId = (formData.get("applicationId") as string | null)?.trim() ?? "";
         const interviewToken = (formData.get("interviewToken") as string | null)?.trim() ?? "";
 
-        if (!audio || !targetPhrase) {
-            return NextResponse.json({ error: "Missing audio or targetPhrase" }, { status: 400 });
+        if (!audio || !targetPhrase || !applicationId) {
+            return NextResponse.json({ error: "Missing audio, targetPhrase, or applicationId" }, { status: 400 });
+        }
+        if (isInterviewTokenRequired() && !interviewToken) {
+            return NextResponse.json({ error: "Missing interview token" }, { status: 401 });
+        }
+        if (audio.size > MAX_VERIFY_AUDIO_BYTES) {
+            return NextResponse.json({ error: "Audio file is too large" }, { status: 413 });
+        }
+        if (await isRateLimited(`verify-speech:application:${applicationId}`, 10, 60, true)) {
+            return NextResponse.json({ error: "Too many speech verification attempts" }, { status: 429 });
+        }
+
+        const orgId = await validateInterviewAccess(applicationId, interviewToken);
+        if (!orgId) {
+            return NextResponse.json({ error: "Invalid or expired interview token" }, { status: 401 });
         }
 
         const apiKey = process.env.DEEPGRAM_API_KEY;
@@ -171,25 +205,25 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "Transcription failed" }, { status: 500 });
         }
 
-        console.log("[verify-speech] Deepgram Flux transcript:", fluxResult.transcript.slice(0, 300));
+        console.log("[verify-speech] Deepgram Flux transcript received", {
+            length: fluxResult.transcript.length,
+            requestId: fluxResult.requestId || null,
+        });
         const durationSeconds = Math.max(0, Number(fluxResult.durationSeconds || 0));
-        if (applicationId && durationSeconds > 0) {
-            const orgId = await getBillingOrgId(applicationId, interviewToken).catch(() => null);
-            if (orgId) {
-                await recordOrgBillingUsage({
-                    orgId,
-                    feature: "interview",
-                    usage: {
-                        model: "verify-speech",
-                        sttRuns: 1,
-                        sttProvider: "DEEPGRAM",
-                        sttModel: DEEPGRAM_VERIFY_MODEL,
-                        sttAudioSeconds: durationSeconds,
-                        sttCostUsd: (durationSeconds / 60) * DEEPGRAM_FLUX_EN_USD_PER_MIN,
-                        eventId: `verify-speech:${applicationId}:${fluxResult.requestId || Date.now()}`,
-                    },
-                });
-            }
+        if (durationSeconds > 0) {
+            await recordOrgBillingUsage({
+                orgId,
+                feature: "interview",
+                usage: {
+                    model: "verify-speech",
+                    sttRuns: 1,
+                    sttProvider: "DEEPGRAM",
+                    sttModel: DEEPGRAM_VERIFY_MODEL,
+                    sttAudioSeconds: durationSeconds,
+                    sttCostUsd: (durationSeconds / 60) * DEEPGRAM_FLUX_EN_USD_PER_MIN,
+                    eventId: `verify-speech:${applicationId}:${fluxResult.requestId || Date.now()}`,
+                },
+            });
         }
 
         const transcript: string = fluxResult.transcript;
@@ -210,7 +244,10 @@ export async function POST(req: NextRequest) {
         const spokenNorm = norm(transcript);
         const targetNorm = norm(targetPhrase);
 
-        console.log("[verify-speech] spoken:", spokenNorm, "| target:", targetNorm);
+        console.log("[verify-speech] normalized transcript evaluated", {
+            spokenWordCount: spokenNorm.split(" ").filter(Boolean).length,
+            targetWordCount: targetNorm.split(" ").filter(Boolean).length,
+        });
 
         const targetWords = targetNorm.split(" ").filter(Boolean);
         const spokenWords = new Set(spokenNorm.split(" ").filter(Boolean));

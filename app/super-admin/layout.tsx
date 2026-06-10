@@ -108,7 +108,7 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
                 {/* Nav */}
                 <nav className="flex-1 p-4 space-y-1 mt-4">
                     {[ 
-                        { href: "/super-admin", label: "Dashboard", icon: LayoutDashboard },
+                        { href: "/super-admin", label: "Overview", icon: LayoutDashboard },
                         { href: "/super-admin/orgs", label: "Organizations", icon: Users },
                         { href: "/super-admin/voices", label: "Voice Engine", icon: AudioLines },
                         { href: "/super-admin/billing", label: "Billing", icon: CreditCard },

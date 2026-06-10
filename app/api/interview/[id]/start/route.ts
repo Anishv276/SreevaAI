@@ -38,6 +38,7 @@ export async function POST(
         accessToken: true,
         expiresAt: true,
         startedAt: true,
+        status: true,
         linkStatus: true,
       },
     });
@@ -50,7 +51,33 @@ export async function POST(
       return NextResponse.json({ error: "Invalid interview token" }, { status: 401 });
     }
 
+    const startNow = Date.now();
+    const startExpiresAtMs = interview.expiresAt ? interview.expiresAt.getTime() : null;
+    const startIsExpiredByTime = startExpiresAtMs !== null && startNow > startExpiresAtMs;
+    const interviewRecordStatus = String(interview.status || "").toUpperCase();
+
+    if (interviewRecordStatus === "COMPLETED" || interviewRecordStatus === "NO_SHOW") {
+      return NextResponse.json({
+        error: "Interview has been completed.",
+        code: "INTERVIEW_COMPLETED",
+      }, { status: 409 });
+    }
+
     if (interview.startedAt) {
+      if (interview.linkStatus === "EXPIRED" || startIsExpiredByTime) {
+        if (startIsExpiredByTime && interview.linkStatus !== "EXPIRED") {
+          await prismaAny.interview.update({
+            where: { applicationId },
+            data: { linkStatus: "EXPIRED" },
+          }).catch(() => {});
+        }
+        return NextResponse.json({
+          error: startIsExpiredByTime
+            ? "This job posting has closed. Applications are no longer being accepted."
+            : "Access Denied: Interview link has expired. Please contact support.",
+          code: startIsExpiredByTime ? "DRIVE_CLOSED" : "LINK_EXPIRED",
+        }, { status: 403 });
+      }
       return NextResponse.json({
         success: true,
         alreadyStarted: true,
@@ -61,7 +88,6 @@ export async function POST(
     const now = Date.now();
     const expiresAtMs = interview.expiresAt ? interview.expiresAt.getTime() : null;
     const isExpiredByTime = expiresAtMs !== null && now > expiresAtMs;
-    const interviewStatus = String(interview.linkStatus || "").toUpperCase();
 
     // Reset EXPIRED status if the deadline hasn't passed — handles re-attempts after
     // a previous session completed or timed out with startedAt set.

@@ -2,7 +2,6 @@
 import json
 import random
 import time
-import asyncpg
 from typing import Optional, Any
 import re
 from dataclasses import replace
@@ -36,7 +35,6 @@ from interview.agent_providers import (
     build_vad,
 )
 from interview.agent_persistence import (
-    _create_db_pool,
     flush_pending_manual_billing,
     generate_interview_report,
     generate_interview_summary,
@@ -136,7 +134,7 @@ _ACK_ONLY_ASSISTANT_RE = re.compile(
     re.IGNORECASE,
 )
 _MEANINGFUL_SHORT_ANSWERS = {
-    "no", "yes", "yeah", "yep", "okay", "ok", "sure", "maybe",
+    "no",
     "nothing", "none", "pass", "skip", "na", "n/a",
 }
 
@@ -368,6 +366,7 @@ async def _generate_move_on_directive(
     cross_ref_rule: str,
     client: Any,
     llm_model: str = "gpt-4.1-mini",
+    usage_sink: Optional[Any] = None,
 ) -> str:
     """
     Ask GPT-4.1-mini to generate a full MOVE_ON directive including the opening
@@ -503,6 +502,16 @@ async def _generate_move_on_directive(
             temperature=0.4,
             max_tokens=550,
         )
+        if usage_sink:
+            usage = getattr(response, "usage", None)
+            billing_usage = {
+                "model": llm_model,
+                "inputTokens": int(getattr(usage, "prompt_tokens", 0) or 0),
+                "outputTokens": int(getattr(usage, "completion_tokens", 0) or 0),
+                "cachedInputTokens": int(getattr(getattr(usage, "prompt_tokens_details", None), "cached_tokens", 0) or 0),
+            }
+            if billing_usage["inputTokens"] or billing_usage["outputTokens"] or billing_usage["cachedInputTokens"]:
+                usage_sink(billing_usage)
         generated = (response.choices[0].message.content or "").strip()
         if not generated:
             raise ValueError("empty response")
@@ -518,9 +527,13 @@ async def _generate_move_on_directive(
             "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
             + generated
             + "\n\nACKNOWLEDGEMENT RULES:\n"
-            "  - ONE short phrase max (3-5 words): 'Got it.', 'Okay.', 'Fair enough.', 'Makes sense.', 'Alright.'\n"
-            "  - Choose based on what the candidate just said.\n"
+            "  - Start with ONE natural micro-reaction, 3-8 words, based on what the candidate just said.\n"
+            "  - Use varied human fillers: 'Right, that makes sense.', 'Hmm, okay.', 'Ah, okay.', "
+            "'Oh, interesting.', 'Fair enough.', 'No worries.'\n"
+            "  - For vague answers use 'Hmm, okay...' before clarifying. For honest gaps use 'Fair enough.' or 'No worries.'\n"
+            "  - Do not repeat the same acknowledgement two turns in a row.\n"
             "  - NEVER say 'Thanks for sharing', 'Thanks for clarifying', or any 'thanks for [verb]ing' phrase.\n"
+            "  - NEVER end a sentence with 'hmm', 'umm', 'ahh', 'ohh', 'right', or 'yeah'.\n"
             f"  - NEVER reference the old topic '{old_topic_title}' -- it is closed.\n"
             "  - DO NOT wrap up, say goodbye, or add any closing phrase.\n"
             + memory_block
@@ -544,6 +557,7 @@ class InterviewAgent(Agent):
         super().__init__(*args, **kwargs)
         self._pending_eval_task: Optional[asyncio.Task] = None
         self._waiting_for_eval: bool = False
+        self._tts_text_characters: int = 0
         # Cleared when a user turn arrives, set after directive is injected.
         # llm_node waits on this before generating the real interview question.
         self._directive_ready: asyncio.Event = asyncio.Event()
@@ -554,6 +568,10 @@ class InterviewAgent(Agent):
         # After that single skip, normal eval resumes.
         self._move_on_opener_pending: bool = False
         self._completed_user_turn_handler = None
+
+    def _record_tts_text(self, text: str) -> None:
+        if text:
+            self._tts_text_characters += len(text)
 
     async def on_user_turn_completed(self, turn_ctx, new_message) -> None:
         """LiveKit calls this after end-of-turn, before generating the reply."""
@@ -738,10 +756,14 @@ class InterviewAgent(Agent):
                     sentence = buf[:m.start() + 1].strip()
                     buf = buf[m.end():]
                     if sentence:
-                        tts_stream.push_text(sentence + " ")
+                        pushed_text = sentence + " "
+                        self._record_tts_text(pushed_text)
+                        tts_stream.push_text(pushed_text)
                         n += 1
             if buf.strip():
-                tts_stream.push_text(buf.strip())
+                pushed_text = buf.strip()
+                self._record_tts_text(pushed_text)
+                tts_stream.push_text(pushed_text)
                 n += 1
             tts_stream.end_input()
             logger.info("[TTS] Streamed %d sentence(s) via WebSocket", n)
@@ -761,6 +783,7 @@ class InterviewAgent(Agent):
                     full_text += chunk
                 if not full_text.strip():
                     return
+                self._record_tts_text(full_text)
                 async with tts_engine.synthesize(full_text, conn_options=conn_options) as stream:
                     async for ev in stream:
                         yield ev.frame
@@ -801,19 +824,9 @@ def prewarm(proc: JobProcess):
         logger.info("Default TTS prewarmed.")
     except Exception as e:
         logger.warning(f"Failed to prewarm default TTS: {e}")
-    try:
-        loop = asyncio.get_running_loop()
-        db_pool_task = loop.create_task(_create_db_pool())
-        proc.userdata["db_pool_init_task"] = db_pool_task
-        def _store_db_pool(task: asyncio.Task[asyncpg.Pool]) -> None:
-            try:
-                proc.userdata["db_pool"] = task.result()
-            except Exception as task_err:
-                logger.warning(f"Database pool warmup failed: {task_err}")
-        db_pool_task.add_done_callback(_store_db_pool)
-        logger.info("Database pool warmup scheduled.")
-    except RuntimeError:
-        logger.info("No running event loop in prewarm; DB pool will initialize lazily.")
+    # DB pool initializes lazily on first job — asyncpg requires an async context
+    # which is not available in the sync prewarm() function.
+    logger.info("DB pool will initialize lazily on first job.")
 
 
 class _EvalSignalToggles(BaseModel):
@@ -1180,6 +1193,7 @@ async def entrypoint(ctx: JobContext):
         resume_brief=resume_brief,
         coverage_items=base_coverage_items,
     )
+    _eval_llm_usages_accumulated: list[dict] = []
     # Build rule-based brief first (used as fallback and for coverage/anchor data)
     _rule_based_brief = build_merged_interview_brief(
         candidate_name=candidate_first_name or candidate_name,
@@ -1204,6 +1218,7 @@ async def entrypoint(ctx: JobContext):
         anchor_type=resume_brief.anchor_type,
         openai_client=_brief_openai_client,
         llm_model=analysis_model,
+        usage_sink=_eval_llm_usages_accumulated.append,
     )
 
     # Use LLM brief if generated successfully; fall back to rule-based
@@ -1375,10 +1390,23 @@ async def entrypoint(ctx: JobContext):
     plugin_tts_audio_seconds = 0.0
     plugin_stt_audio_seconds = 0.0
 
+    def _metric_number(metrics, *names: str) -> float:
+        for name in names:
+            value = getattr(metrics, name, None)
+            if value is None and isinstance(metrics, dict):
+                value = metrics.get(name)
+            try:
+                number = float(value or 0)
+            except (TypeError, ValueError):
+                number = 0.0
+            if number > 0:
+                return number
+        return 0.0
+
     def _on_tts_metrics_collected(metrics) -> None:
         nonlocal plugin_tts_characters, plugin_tts_audio_seconds
-        chars = int(getattr(metrics, "characters_count", 0) or 0)
-        audio_seconds = float(getattr(metrics, "audio_duration", 0.0) or 0.0)
+        chars = int(_metric_number(metrics, "characters_count", "charactersCount", "chars", "characters"))
+        audio_seconds = _metric_number(metrics, "audio_duration", "audioDuration", "duration", "duration_seconds")
         if chars > 0:
             plugin_tts_characters += chars
         if audio_seconds > 0:
@@ -1386,7 +1414,7 @@ async def entrypoint(ctx: JobContext):
 
     def _on_stt_metrics_collected(metrics) -> None:
         nonlocal plugin_stt_audio_seconds
-        audio_seconds = float(getattr(metrics, "audio_duration", 0.0) or 0.0)
+        audio_seconds = _metric_number(metrics, "audio_duration", "audioDuration", "duration", "duration_seconds")
         if audio_seconds > 0:
             plugin_stt_audio_seconds += audio_seconds
 
@@ -1833,6 +1861,22 @@ async def entrypoint(ctx: JobContext):
                 shared = title & other_full
                 if len(shared) >= 2 and len(shared) / len(title) >= 0.6:
                     return True
+        # Role/project duplicates can share only one distinctive token after
+        # stopword cleanup, e.g. "Sensex Analysis Project" vs
+        # "Python Developer - Sensex Project - Seneca Global IT Services".
+        # Treat this as overlap only when one side is a role/work-history item
+        # and the other is a project/system item, keeping the rule conservative.
+        distinctive_shared = {tok for tok in inter if len(tok) >= 5}
+        if distinctive_shared:
+            la, lb = (a or "").lower(), (b or "").lower()
+            role_words = ("developer", "intern", "engineer", "strategist", "analyst")
+            project_words = ("project", "system", "pipeline", "automation")
+            a_role = any(w in la for w in role_words)
+            b_role = any(w in lb for w in role_words)
+            a_project = any(w in la for w in project_words)
+            b_project = any(w in lb for w in project_words)
+            if (a_role and b_project) or (b_role and a_project):
+                return True
         return False
 
     def _auto_cover_overlapping_topics(closed_topic: Optional[str]) -> list[str]:
@@ -1861,9 +1905,8 @@ async def entrypoint(ctx: JobContext):
 
     # Inline eval: OpenAI client used directly for scoring -- no worker process needed.
     _eval_openai_client: AsyncOpenAI = AsyncOpenAI()
-    # Accumulated per-turn eval LLM usage records (gpt-4.1-mini calls). Applied to
-    # billing snapshot at session end so eval costs are tracked per org.
-    _eval_llm_usages_accumulated: list[dict] = []
+    # Accumulated manual interview LLM usage records. Applied to the billing
+    # snapshot and org usage at session end so eval/brief/directive calls are tracked.
     async def _publish_launch_prereqs_ready() -> None:
         """Notify frontend that launch prerequisites are complete."""
         nonlocal launch_prereqs_signal_sent
@@ -2008,7 +2051,8 @@ async def entrypoint(ctx: JobContext):
             return (
                 "[META_QUESTION_DIRECTIVE - DO NOT SAY ALOUD]\n"
                 "The candidate asked to change or skip the question. Respect it.\n"
-                "Acknowledge briefly, then ask ONE different question from a new uncovered topic. Do not mention the skipped topic again."
+                "Acknowledge naturally with a short reaction like 'Fair enough.' or 'No worries.' "
+                "Then ask ONE different question from a new uncovered topic. Do not mention the skipped topic again."
             )
         return (
             "[META_QUESTION_DIRECTIVE - DO NOT SAY ALOUD]\n"
@@ -2257,7 +2301,6 @@ async def entrypoint(ctx: JobContext):
                 if (
                     word_count <= 2
                     and not is_greeting_response
-                    and turn_snapshot != 3
                     and not is_meaningful_short_answer
                 ):
                     logger.debug(f"[TRANSCRIPT] Ignoring probable STT fragment ({word_count} words): '{content[:60]}'")
@@ -2319,6 +2362,19 @@ async def entrypoint(ctx: JobContext):
                     content=_meta_answer_directive(_meta_intent, answer_snap),
                 )
                 if _meta_intent == "skip" and _active_topic:
+                    _skip_topic_key = _topic_short_key(_active_topic or "")
+                    _skip_topic_rule = ""
+                    if _skip_topic_key in _skill_source_by_key:
+                        _skip_topic_rule = (
+                            "\nSOURCE RULE: This is a skill topic. Ask where they actually used it "
+                            "or what they built with it. Do not ask textbook theory."
+                        )
+                    if _skip_topic_key in {"ai", "ai tools"}:
+                        _skip_topic_rule = (
+                            "\nAI SKILL RULE: Ask about actual AI tools, agents, prompts, or workflows "
+                            "they have used or built. Do not ask supervised vs unsupervised learning "
+                            "or any textbook AI theory."
+                        )
                     chat_ctx.add_message(
                         role="system",
                         content=(
@@ -2327,6 +2383,7 @@ async def entrypoint(ctx: JobContext):
                             f"NEW ACTIVE TOPIC: {_topic_short_title(_active_topic)}\n"
                             f"FULL CONTEXT: {_active_topic}\n"
                             "Ask one different, concrete question on this new topic. Do not reference the skipped topic."
+                            f"{_skip_topic_rule}"
                         ),
                     )
                 logger.info(
@@ -2443,6 +2500,8 @@ async def entrypoint(ctx: JobContext):
                     "i didn't mention", "i did not mention",
                     "i forgot", "i've forgotten", "i have forgotten",
                     "no. i forgot", "no i forgot",
+                    "not my core skill", "not core skill", "not a core skill",
+                    "isn't my core skill", "is not my core skill",
                 ))
                 and len(answer_snap.split()) < 15
             )
@@ -3052,24 +3111,33 @@ async def entrypoint(ctx: JobContext):
                     # NEW topic is a resume_skill (fair to probe depth) or jd_skill
                     # (don't quiz on theory; stay applied).
                     if _src == "resume_skill":
-                        _cross_ref_rule = (
-                            "\n[CROSS-REFERENCE RULE -- candidate may cite a covered project]\n"
-                            "If the candidate cites a project already in INTERVIEW MEMORY as evidence "
-                            f"for {_new_topic_title}, treat that project as KNOWN CONTEXT -- do NOT "
-                            "re-introduce it ('Let's move to ...'), do NOT ask what they built in it, "
-                            "and do NOT ask their role in it (already covered).\n"
-                            f"They CLAIM {_new_topic_title} on their resume, so probe SKILL-LEVEL depth.\n"
-                            "Pick ONE category and generate the equivalent question for the CURRENT skill:\n"
-                            f"  a) Mechanic / concept  -- how a core feature of {_new_topic_title} works\n"
-                            f"  b) Pitfall awareness   -- a common mistake or gotcha with {_new_topic_title}\n"
-                            f"  c) Tradeoff            -- when to use {_new_topic_title} vs an alternative, or when NOT to\n"
-                            f"  d) Hands-on debugging  -- how they'd debug a typical {_new_topic_title} problem\n"
-                            f"  e) Internals           -- what {_new_topic_title} does under the hood\n"
-                            "Calibrate to band: FRESHER -> (a)(b)(d); MID/SENIOR -> (c)(e).\n"
-                            "The question must be answerable WITHOUT re-explaining the project. It tests\n"
-                            "whether they actually know the skill, not just that they used it once.\n"
-                            "NEVER ask a question whose answer is already in INTERVIEW MEMORY."
-                        )
+                        if _new_topic_title.lower() in {"ai", "ai tools"}:
+                            _cross_ref_rule = (
+                                "\n[CROSS-REFERENCE RULE -- applied AI skill]\n"
+                                "The candidate lists AI/AI tools, but this is a broad skill. Do NOT ask textbook AI theory "
+                                "such as supervised vs unsupervised learning. Ask one applied question about actual tools, "
+                                "agents, prompts, automations, or workflows they have used or built. If they say they do "
+                                "not know or do not remember, acknowledge once and pivot away."
+                            )
+                        else:
+                            _cross_ref_rule = (
+                                "\n[CROSS-REFERENCE RULE -- candidate may cite a covered project]\n"
+                                "If the candidate cites a project already in INTERVIEW MEMORY as evidence "
+                                f"for {_new_topic_title}, treat that project as KNOWN CONTEXT -- do NOT "
+                                "re-introduce it ('Let's move to ...'), do NOT ask what they built in it, "
+                                "and do NOT ask their role in it (already covered).\n"
+                                f"They CLAIM {_new_topic_title} on their resume, so probe SKILL-LEVEL depth.\n"
+                                "Pick ONE category and generate the equivalent question for the CURRENT skill:\n"
+                                f"  a) Mechanic / concept  -- how a core feature of {_new_topic_title} works\n"
+                                f"  b) Pitfall awareness   -- a common mistake or gotcha with {_new_topic_title}\n"
+                                f"  c) Tradeoff            -- when to use {_new_topic_title} vs an alternative, or when NOT to\n"
+                                f"  d) Hands-on debugging  -- how they'd debug a typical {_new_topic_title} problem\n"
+                                f"  e) Internals           -- what {_new_topic_title} does under the hood\n"
+                                "Calibrate to band: FRESHER -> (a)(b)(d); MID/SENIOR -> (c)(e).\n"
+                                "The question must be answerable WITHOUT re-explaining the project. It tests\n"
+                                "whether they actually know the skill, not just that they used it once.\n"
+                                "NEVER ask a question whose answer is already in INTERVIEW MEMORY."
+                            )
                     elif _src == "jd_skill":
                         _cross_ref_rule = (
                             "\n[CROSS-REFERENCE RULE -- JD-only skill, candidate does NOT claim it on resume]\n"
@@ -3104,6 +3172,7 @@ async def entrypoint(ctx: JobContext):
                         cross_ref_rule=_cross_ref_rule,
                         client=_eval_openai_client,
                         llm_model=analysis_model,
+                        usage_sink=_eval_llm_usages_accumulated.append,
                     )
 
                     # Fallback: rule-based verbatim directive if LLM failed
@@ -3516,6 +3585,10 @@ async def entrypoint(ctx: JobContext):
                     agent._waiting_for_eval = True
                     agent._directive_ready.clear()
                     logger.info("[LLM_GATE] Pre-cleared after interview question delivery")
+                reset_inactivity_clock(start_waiting=True)
+                logger.debug(
+                    "[NUDGE] Inactivity countdown armed after assistant prompt delivery"
+                )
                 logger.info("TURN %d | phase=%s", turn_count, "interview" if warmup_complete else "warmup")
                 # Note: Transcript and answer_scores are now persisted after EVERY eval turn (async).
                 # See _process_user_conversation_item() for per-turn async persistence.
@@ -3527,6 +3600,8 @@ async def entrypoint(ctx: JobContext):
                 # completed user turn is stable. Evaluation runs only from
                 # InterviewAgent.on_user_turn_completed so late fragments are not
                 # dropped or scored prematurely.
+                reset_inactivity_clock(start_waiting=False)
+                logger.debug("[NUDGE] Candidate speech observed; inactivity countdown cleared")
                 logger.debug("[USER_TURN] fragment observed; waiting for completed-turn hook")
         except Exception as _e:
             logger.warning("[TRANSCRIPT] on_conversation_item_added error: %s", _e)
@@ -3543,6 +3618,7 @@ async def entrypoint(ctx: JobContext):
     awaiting_candidate_response = False
     awaiting_candidate_since: float | None = None
     inactivity_nudge_sent_for_current_prompt = False
+    inactivity_nudge_speaking = False
     first_agent_turn_committed_at: float | None = None
     llm_spoke_event = asyncio.Event()
     # Extended to 15s: greeting TTS takes ~6s, candidate answers at ~7-10s, and
@@ -3577,7 +3653,6 @@ async def entrypoint(ctx: JobContext):
         nonlocal is_candidate_speaking
         if event.new_state == "speaking":
             is_candidate_speaking = True
-            reset_inactivity_clock(start_waiting=False)
         elif event.new_state == "listening":
             is_candidate_speaking = False
     @session.on("agent_state_changed")
@@ -3585,13 +3660,16 @@ async def entrypoint(ctx: JobContext):
         nonlocal is_agent_speaking, first_agent_turn_committed_at
         if event.new_state == "speaking":
             is_agent_speaking = True
-            reset_inactivity_clock(start_waiting=False)
+            if inactivity_nudge_speaking:
+                logger.debug("[NUDGE] Scripted inactivity prompt speaking; preserving countdown")
+            else:
+                reset_inactivity_clock(start_waiting=False)
+                logger.debug("[NUDGE] AI started speaking; old inactivity countdown cleared")
         elif event.new_state == "listening":
             is_agent_speaking = False
             if first_agent_turn_committed_at is None:
                 first_agent_turn_committed_at = time.monotonic()
-            reset_inactivity_clock(start_waiting=True, preserve_nudge_flags=True)
-            logger.debug("[NUDGE] AI finished speaking; starting inactivity countdown")
+            logger.debug("[NUDGE] AI finished speaking; waiting for assistant prompt commit")
     # Wait for participant to join so we have their identity for tracking.
     # Keep waiting during hardware check and handle room-disconnect gracefully.
     async def wait_for_human_participant(max_wait_seconds: int = 600):
@@ -3744,12 +3822,13 @@ async def entrypoint(ctx: JobContext):
     total_seconds = time_limit_mins * 60
     # Inactivity timing:
     #   10s silence -> gentle nudge
+    #   20s silence -> thinking-out-loud prompt
     #   30s silence -> stronger help prompt
     #   50s silence -> termination warning
     #   60s silence -> end call
     INACTIVITY_NUDGE_SECS = 10
-    INACTIVITY_NUDGE_INTERVAL = 20
-    INACTIVITY_NUDGE_MAX = 2         # max 2 nudges before warning
+    INACTIVITY_NUDGE_INTERVAL = 10
+    INACTIVITY_NUDGE_MAX = 3         # 10s, 20s, 30s before warning
     INACTIVITY_WARNING_SECS = 50
     INACTIVITY_END_SECS = 60
     TIME_GUARD_SECS = 20             # final 20s: block eval/signals, fire goodbye
@@ -3761,13 +3840,27 @@ async def entrypoint(ctx: JobContext):
     _SOFT_NUDGES = [
         f"Take a moment, {_name}.",
         "If it helps, you can think out loud.",
+        f"Still with me, {_name}? A rough answer is completely fine.",
     ]
+    _INACTIVITY_WARNING_TEXT = (
+        f"Hey {_name}, I still haven't heard from you. "
+        "I'll have to wrap up the call in 10 seconds if you don't respond."
+    )
+    _INACTIVITY_END_TEXT = (
+        "I'll end the interview here since I haven't heard back. "
+        "Thank you for your time today."
+    )
 
     async def _deliver_nudge(text: str) -> None:
-        await session.say(text, allow_interruptions=True)
-        # Scripted speech doesn't fire agent_speech_committed. Keep waiting for
-        # the same candidate answer without resetting the original silence timer.
-        nonlocal awaiting_candidate_response, awaiting_candidate_since
+        # Scripted speech should not behave like a new interview question. Preserve
+        # the original silence timer across the nudge audio so 10/20/30/50/60s
+        # thresholds are measured from the candidate's first chance to answer.
+        nonlocal awaiting_candidate_response, awaiting_candidate_since, inactivity_nudge_speaking
+        inactivity_nudge_speaking = True
+        try:
+            await session.say(text, allow_interruptions=True)
+        finally:
+            inactivity_nudge_speaking = False
         awaiting_candidate_response = True
         if awaiting_candidate_since is None:
             awaiting_candidate_since = time.monotonic()
@@ -3940,11 +4033,7 @@ async def entrypoint(ctx: JobContext):
             and inactivity_elapsed >= INACTIVITY_WARNING_SECS
         ):
             try:
-                warning_text = (
-                    f"Hey {_name}, I haven't heard from you in a bit. "
-                    f"I'll have to wrap up the call in {INACTIVITY_END_SECS - INACTIVITY_WARNING_SECS} seconds if I don't hear back."
-                )
-                spawn_background_task(_deliver_nudge(warning_text), "inactivity_warning")
+                spawn_background_task(_deliver_nudge(_INACTIVITY_WARNING_TEXT), "inactivity_warning")
                 inactivity_nudge_sent_for_current_prompt = True
                 logger.info("[NUDGE] Termination warning sent at %.0fs silence", inactivity_elapsed)
             except Exception as e:
@@ -3956,6 +4045,10 @@ async def entrypoint(ctx: JobContext):
             and inactivity_elapsed >= INACTIVITY_END_SECS
         ):
             logger.info("[NUDGE] Ending interview due to inactivity (%ds)", int(inactivity_elapsed))
+            try:
+                await session.say(_INACTIVITY_END_TEXT, allow_interruptions=False)
+            except Exception as e:
+                logger.warning("[NUDGE] Failed to deliver inactivity ending line: %s", e)
             await _send_termination_signal("inactivity_timeout")
             interview_marked_finished = True
             interview_finished_event.set()
@@ -4048,6 +4141,17 @@ async def entrypoint(ctx: JobContext):
     await asyncio.sleep(0.5)
     logger.info("[REPORT_PREP] answer_scores final count: %d turns", len(answer_scores))
 
+    billable_tts_characters = max(
+        int(plugin_tts_characters or 0),
+        int(getattr(agent, "_tts_text_characters", 0) or 0),
+    )
+    if billable_tts_characters and billable_tts_characters != plugin_tts_characters:
+        logger.info(
+            "[USAGE] Using TTS text fallback for billing chars provider_metrics=%d text_chars=%d",
+            plugin_tts_characters,
+            billable_tts_characters,
+        )
+
     await persist_org_usage_metrics(
         org_id,
         latest_session_usage or session.usage,
@@ -4055,7 +4159,7 @@ async def entrypoint(ctx: JobContext):
         tts_model=org_tts_model,
         stt_provider="DEEPGRAM",
         stt_model=STT_MODEL,
-        plugin_tts_characters=plugin_tts_characters,
+        plugin_tts_characters=billable_tts_characters,
         plugin_tts_audio_seconds=plugin_tts_audio_seconds,
         plugin_stt_audio_seconds=plugin_stt_audio_seconds,
     )
@@ -4104,6 +4208,11 @@ async def entrypoint(ctx: JobContext):
         except Exception as e:
             logger.error(f"[SUMMARY] Failed for {app_id}: {e}")
 
+    # Queue accumulated eval/brief/directive LLM usage before writing the exact
+    # interview snapshot so recent-interview rows match the org-level totals.
+    for _eval_usage in _eval_llm_usages_accumulated:
+        await persist_org_manual_billing_usage(org_id, "interview", _eval_usage)
+
     try:
         await persist_interview_billing_snapshot(
             app_id,
@@ -4116,17 +4225,13 @@ async def entrypoint(ctx: JobContext):
             tts_model=org_tts_model,
             stt_provider="DEEPGRAM",
             stt_model=STT_MODEL,
-            plugin_tts_characters=plugin_tts_characters,
+            plugin_tts_characters=billable_tts_characters,
             plugin_tts_audio_seconds=plugin_tts_audio_seconds,
             plugin_stt_audio_seconds=plugin_stt_audio_seconds,
         )
     except Exception as e:
         logger.error(f"[USAGE] Failed to persist interview billing snapshot for {app_id}: {e}")
         raise
-    # Queue accumulated eval LLM usage (gpt-4.1-mini per-turn calls) so they are
-    # included in the billing snapshot written by flush_pending_manual_billing below.
-    for _eval_usage in _eval_llm_usages_accumulated:
-        await persist_org_manual_billing_usage(org_id, "interview", _eval_usage)
     await flush_pending_manual_billing(org_id)
     # Sync with dashboard: Application COMPLETED
     if finished_task.done():

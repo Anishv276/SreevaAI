@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
+import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
-import { getSession } from "@/lib/auth";
+import { getSession, invalidateUserSessions } from "@/lib/auth";
 import { deleteOrgEmbeddings } from "@/lib/pinecone";
 import { deleteUrlTargets } from "@/lib/delete-utils";
 import { getRecordingUrl } from "@/lib/recording-state";
@@ -11,6 +12,7 @@ import { normalizeOrgAiConfig } from "@/lib/ai-provider-config";
 import { ORG_STATUS_CONTROL_MANUAL, ORG_STATUS_CONTROL_QUOTA, getEffectiveOrgStatus, normalizeOrgStatusControl, syncOrgStatusWithInterviewQuota } from "@/lib/credits";
 import { normalizeOrgLimitInput } from "@/lib/org-limits";
 import { normalizeEmail } from "@/lib/email";
+import { validatePasswordStrength } from "@/lib/validation";
 import { normalizeRecordingRetentionDays } from "@/lib/recording-retention";
 
 // GET /api/super-admin/orgs/[id] - fetch org for editing
@@ -84,6 +86,7 @@ export async function PATCH(
             recordingEnabled, recordingRetentionDays,
             proctoringSignals,
             adminName, adminEmail,
+            adminPassword,
             voiceId, allowedVoices,
             usageMetrics,
             interviewQuotaTotal,
@@ -164,6 +167,7 @@ export async function PATCH(
             proctoringSignals === undefined &&
             adminName === undefined &&
             adminEmail === undefined &&
+            adminPassword === undefined &&
             voiceId === undefined &&
             allowedVoices === undefined &&
             interviewQuotaTopUp === undefined;
@@ -298,9 +302,16 @@ export async function PATCH(
                 }
             }
         }
+        if (adminPassword !== undefined && String(adminPassword).trim()) {
+            const { isValid, error: passwordError } = validatePasswordStrength(String(adminPassword).trim());
+            if (!isValid) {
+                return NextResponse.json({ error: passwordError }, { status: 400 });
+            }
+        }
 
 
         // -- TRANSACTION: Update Org & Admin ------------------
+        let primaryAdminId: string | null = null;
         const updated = await prisma.$transaction(async (tx) => {
             // 1. Update Org
             const org = await (tx.organization as any).update({
@@ -329,8 +340,8 @@ export async function PATCH(
                 );
             }
 
-            // 2. Update Primary Admin if name/email provided
-            if (adminName !== undefined || adminEmail !== undefined) {
+            // 2. Update Primary Admin if name/email/password provided
+            if (adminName !== undefined || adminEmail !== undefined || (adminPassword !== undefined && String(adminPassword).trim())) {
                 // Find the first ORG_ADMIN
                 const admin = await tx.user.findFirst({
                     where: { orgId: id, role: "ORG_ADMIN" },
@@ -338,14 +349,20 @@ export async function PATCH(
                 });
 
                 if (admin) {
+                    primaryAdminId = admin.id;
                     const adminUpdate: any = {};
-                    if (adminName) adminUpdate.name = adminName;
-                    if (adminEmail) adminUpdate.email = normalizeEmail(adminEmail);
+                    if (adminName !== undefined) adminUpdate.name = adminName;
+                    if (adminEmail !== undefined) adminUpdate.email = normalizeEmail(adminEmail);
+                    if (adminPassword !== undefined && String(adminPassword).trim()) {
+                        adminUpdate.password = await bcrypt.hash(String(adminPassword).trim(), 10);
+                    }
 
-                    await tx.user.update({
-                        where: { id: admin.id },
-                        data: adminUpdate
-                    });
+                    if (Object.keys(adminUpdate).length > 0) {
+                        await tx.user.update({
+                            where: { id: admin.id },
+                            data: adminUpdate
+                        });
+                    }
                 }
             }
 
@@ -379,6 +396,10 @@ export async function PATCH(
                 directStatus === "ACTIVE"
                     ? ORG_STATUS_CONTROL_QUOTA
                     : nextStatusControl ?? currentStatusControl;
+        }
+
+        if (primaryAdminId && adminPassword !== undefined && String(adminPassword).trim()) {
+            await invalidateUserSessions(primaryAdminId);
         }
 
         return NextResponse.json(updated);

@@ -5,6 +5,8 @@ import { resumeQueue } from "@/lib/queue";
 import { generateId } from "@/lib/ids";
 import { getOrgBillingStatus } from "@/lib/credits";
 import { getInterviewQuotaSupportMessage } from "@/lib/interview-quota";
+import { getSession, isAdminRole, isSuperAdminRole } from "@/lib/auth";
+import { authorizeDriveAccess } from "@/lib/drive-access";
 
 const RESUME_BUCKET = process.env.R2_RESUMES_BUCKET || "resumes";
 
@@ -34,6 +36,13 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // -- AUTH: admin/super-admin only. This route uploads + queues resumes and
+    // bills the org, so it must never be callable anonymously.
+    const session = await getSession();
+    if (!session || (!isAdminRole(session.role) && !isSuperAdminRole(session.role))) {
+      return NextResponse.json({ error: "Not authorized" }, { status: 401 });
+    }
+
     const { id: driveId } = await params;
     const formData = await request.formData();
     const files = formData.getAll("files") as File[];
@@ -57,6 +66,11 @@ export async function POST(
     }
     if (!drive.orgId) {
       return NextResponse.json({ error: "Drive has no organisation" }, { status: 400 });
+    }
+    // -- TENANT ISOLATION: a regular admin may only screen into their own org's
+    // drives. SUPER_ADMIN may operate across orgs.
+    if (!isSuperAdminRole(session.role) && drive.orgId !== session.orgId) {
+      return NextResponse.json({ error: "Drive belongs to a different organization" }, { status: 403 });
     }
 
     const billingStatus = await getOrgBillingStatus(drive.orgId);
@@ -182,30 +196,80 @@ export async function GET(
 ) {
   try {
     const { id: driveId } = await params;
+    const access = await authorizeDriveAccess(driveId);
+    if (!access.ok) {
+      return NextResponse.json({ error: access.error }, { status: access.status });
+    }
+
     const { searchParams } = new URL(request.url);
     const batchId = searchParams.get("batchId");
 
     if (batchId) {
-      const batch = await prisma.resumeBatch.findUnique({ where: { id: batchId } });
+      const batch = await prisma.resumeBatch.findFirst({
+        where: { id: batchId, driveId, orgId: access.orgId },
+        select: {
+          id: true,
+          driveId: true,
+          orgId: true,
+          status: true,
+          totalCount: true,
+          processedCount: true,
+          failedCount: true,
+          createdAt: true,
+          updatedAt: true,
+          completedAt: true,
+        },
+      });
       if (!batch) {
         return NextResponse.json({ error: "Batch not found" }, { status: 404 });
       }
-      return NextResponse.json(batch);
+      return NextResponse.json(batch, {
+        headers: { "Cache-Control": "private, no-store" },
+      });
     }
 
     const [batches, candidates] = await Promise.all([
       prisma.resumeBatch.findMany({
-        where: { driveId },
+        where: { driveId, orgId: access.orgId },
         orderBy: { createdAt: "desc" },
         take: 20,
+        select: {
+          id: true,
+          driveId: true,
+          orgId: true,
+          status: true,
+          totalCount: true,
+          processedCount: true,
+          failedCount: true,
+          createdAt: true,
+          updatedAt: true,
+          completedAt: true,
+        },
       }),
       prisma.resumeCandidate.findMany({
         where: { driveId },
         orderBy: { createdAt: "asc" },
+        select: {
+          id: true,
+          driveId: true,
+          bulkBatchId: true,
+          fullName: true,
+          fileName: true,
+          email: true,
+          phone: true,
+          aiScore: true,
+          aiReport: true,
+          resumeStatus: true,
+          createdAt: true,
+          updatedAt: true,
+        },
       }),
     ]);
 
-    return NextResponse.json({ batches, candidates });
+    return NextResponse.json(
+      { batches, candidates },
+      { headers: { "Cache-Control": "private, no-store" } }
+    );
   } catch (err) {
     console.error("[RESUME-SCREENING] GET error:", err);
     return NextResponse.json({ error: (err as Error).message }, { status: 500 });

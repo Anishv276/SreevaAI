@@ -35,18 +35,6 @@ export function normalizeOrgStatusControl(value: unknown): OrgStatusControl {
         : ORG_STATUS_CONTROL_QUOTA;
 }
 
-async function getOrgStatusControlRaw(orgId: string): Promise<OrgStatusControl> {
-    const rows = await prisma.$queryRaw<Array<{ statusControl: string | null }>>(
-        Prisma.sql`
-            SELECT "statusControl"
-            FROM "Organization"
-            WHERE id = ${orgId}
-            LIMIT 1
-        `
-    );
-
-    return normalizeOrgStatusControl(rows[0]?.statusControl);
-}
 
 export function getInterviewQuotaUnits(durationSeconds: number): number {
     if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
@@ -117,11 +105,21 @@ export async function incrementOrgCreditsUsed(orgId: string, creditsDelta: numbe
 }
 
 export async function syncOrgStatusWithInterviewQuota(orgId: string): Promise<string | null> {
-    const current = await prisma.organization.findUnique({
-        where: { id: orgId },
-        select: { status: true, interviewQuotaTotal: true, interviewQuotaUsed: true },
-    });
+    const rows = await prisma.$queryRaw<Array<{
+        status: string | null;
+        interviewQuotaTotal: number | null;
+        interviewQuotaUsed: number | null;
+        statusControl: string | null;
+    }>>(
+        Prisma.sql`
+            SELECT "status", "interviewQuotaTotal", "interviewQuotaUsed", "statusControl"
+            FROM "Organization"
+            WHERE id = ${orgId}
+            LIMIT 1
+        `
+    );
 
+    const current = rows[0];
     if (!current) {
         return null;
     }
@@ -135,7 +133,7 @@ export async function syncOrgStatusWithInterviewQuota(orgId: string): Promise<st
         return "CLOSED";
     }
 
-    const statusControl = await getOrgStatusControlRaw(orgId);
+    const statusControl = normalizeOrgStatusControl(current.statusControl);
 
     if (statusControl === ORG_STATUS_CONTROL_MANUAL) {
         if (currentStatus !== "SUSPENDED") {
@@ -227,23 +225,15 @@ export async function deductInterviewQuota(orgId: string, count = 1): Promise<{
     deducted: number;
     interviewQuotaRemaining: number;
 }> {
-    await prisma.$executeRaw(
-        Prisma.sql`
-            UPDATE "Organization"
-            SET "interviewQuotaUsed" = COALESCE("interviewQuotaUsed", 0) + ${count}
-            WHERE id = ${orgId}
-        `
-    );
-
     const updated = await prisma.$queryRaw<Array<{
         interviewQuotaTotal: number | null;
         interviewQuotaUsed: number | null;
     }>>(
         Prisma.sql`
-            SELECT "interviewQuotaTotal", "interviewQuotaUsed"
-            FROM "Organization"
+            UPDATE "Organization"
+            SET "interviewQuotaUsed" = COALESCE("interviewQuotaUsed", 0) + ${count}
             WHERE id = ${orgId}
-            LIMIT 1
+            RETURNING "interviewQuotaTotal", "interviewQuotaUsed"
         `
     );
     const interviewQuotaTotal = updated[0]?.interviewQuotaTotal ?? 0;

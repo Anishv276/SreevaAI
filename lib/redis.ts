@@ -1,4 +1,3 @@
-import "dotenv/config";
 import IORedis from "ioredis";
 
 export const DEFAULT_LOCAL_REDIS_URL = "redis://localhost:6379";

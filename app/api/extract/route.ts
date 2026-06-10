@@ -1,11 +1,21 @@
 import { NextResponse } from "next/server";
 import { extractionLimiter } from "@/lib/rate-limit";
-import { getSession } from "@/lib/auth";
+import { getSession, isAdminRole, isSuperAdminRole } from "@/lib/auth";
 import { enqueueJdExtraction } from "@/lib/jd-extraction";
 import { resumeQueue } from "@/lib/queue";
+import { safeFetch, SsrfBlockedError } from "@/lib/safe-fetch";
 
 export async function POST(request: Request) {
     try {
+        // -- AUTH: this route enqueues billable extraction work and (for JDs)
+        // fetches arbitrary URLs server-side. It must require a valid session;
+        // previously the session was read inside a try/catch that swallowed
+        // failures and the orgId was taken from a client form field.
+        const session = await getSession();
+        if (!session || (!isAdminRole(session.role) && !isSuperAdminRole(session.role))) {
+            return NextResponse.json({ error: "Not authorized" }, { status: 401 });
+        }
+
         // -- RATE LIMITING -------------------
         const ip = request.headers.get("x-forwarded-for") || "unknown";
         const { success, remaining, reset } = await extractionLimiter.check(ip);
@@ -52,16 +62,15 @@ export async function POST(request: Request) {
         const file = formData.get("file") as File | null;
         const url = formData.get("url") as string | null;
         const typeRaw = formData.get("type") as string | null;
-        const explicitOrgId = formData.get("orgId") as string | null;
-        let sessionOrgId: string | null = null;
-        try {
-            const session = await getSession();
-            sessionOrgId = session?.orgId || null;
-        } catch {
-            sessionOrgId = null;
-        }
-        const orgId = explicitOrgId || sessionOrgId;
+        // Org is derived from the authenticated session only. A SUPER_ADMIN (no
+        // single org) may target a specific org via the form field; everyone else
+        // is pinned to their session org and the client value is ignored.
+        const explicitOrgId = (formData.get("orgId") as string | null)?.trim() || null;
+        const orgId = session.role === "SUPER_ADMIN" ? (explicitOrgId || session.orgId) : session.orgId;
 
+        if (!orgId) {
+            return NextResponse.json({ error: "Organization context is required" }, { status: 400 });
+        }
 
         if (!file && !url) {
             return NextResponse.json({ error: "Missing file or URL" }, { status: 400 });
@@ -82,9 +91,11 @@ export async function POST(request: Request) {
                 let text: string;
                 try {
                     const { load } = await import("cheerio");
-                    const response = await fetch(url);
+                    // SSRF-safe: validates the URL against private/loopback/metadata
+                    // ranges and disables redirect following before fetching.
+                    const response = await safeFetch(url);
                     if (!response.ok) {
-                        console.error("[SCRAPE_FETCH_FAILED]:", { url, status: response.status });
+                        console.error("[SCRAPE_FETCH_FAILED]:", { status: response.status });
                         return NextResponse.json({ error: "Failed to fetch URL" }, { status: 400 });
                     }
                     const html = await response.text();
@@ -93,11 +104,14 @@ export async function POST(request: Request) {
                     text = $("body").text().replace(/\s+/g, " ").trim().slice(0, 15000);
                     console.log("[SCRAPE_SUCCESS]: Text extracted, length:", text.length);
                 } catch (err: any) {
-                    console.error("[SCRAPE_FATAL_ERROR]:", { url, error: err.message });
+                    if (err instanceof SsrfBlockedError) {
+                        return NextResponse.json({ error: "URL not allowed" }, { status: 400 });
+                    }
+                    console.error("[SCRAPE_FATAL_ERROR]:", { error: err.message });
                     return NextResponse.json({ error: "Failed to scrape JD from URL" }, { status: 500 });
                 }
 
-                const jobId = await enqueueJdExtraction({ kind: "text", text, orgOpenAIModel, orgId: orgId || undefined });
+                const jobId = await enqueueJdExtraction({ kind: "text", text, orgOpenAIModel, orgId });
                 console.log(`[JD-EXTRACT] Enqueued URL extraction job ${jobId}`);
                 return NextResponse.json({ jobId }, { status: 202 });
             }
@@ -136,7 +150,7 @@ export async function POST(request: Request) {
 
             // Upload to R2 and enqueue extraction concurrently
             const [jobId, fileUrl] = await Promise.all([
-                enqueueJdExtraction({ kind: "file", fileName: file.name, buffer, orgOpenAIModel, orgId: orgId || undefined }),
+                enqueueJdExtraction({ kind: "file", fileName: file.name, buffer, orgOpenAIModel, orgId }),
                 (async () => {
                     try {
                         const bucket = process.env.R2_JDS_BUCKET || "jds";

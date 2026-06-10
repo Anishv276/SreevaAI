@@ -78,7 +78,7 @@ export async function POST(request: Request) {
                 where: { id: { in: validIds } },
                 data: {
                     resumeStatus: "rejected",
-                    interviewStatus: "not qualified",
+                    interviewStatus: "Not Qualified",
                     hiringStatus: "not hired",
                 },
             });
@@ -97,30 +97,16 @@ export async function POST(request: Request) {
         if (action === "hire") {
             await prisma.application.updateMany({
                 where: { id: { in: validIds } },
-                data: { hiringStatus: "hired", resumeStatus: "shortlisted", interviewStatus: "finished" },
+                data: { hiringStatus: "hired", resumeStatus: "shortlisted", interviewStatus: "COMPLETED" },
             });
 
             await Promise.all(validIds.map((id) => appendCandidateActivity(id, {
                 type: "status_changed",
                 label: "Candidate hired",
-                details: "resume=shortlisted, interview=finished, hiring=hired",
+                details: "resume=shortlisted, interview=COMPLETED, hiring=hired",
                 timestamp: new Date().toISOString(),
                 source: "hr",
             })));
-
-            try {
-                const driveIds = [...new Set(applications.map((a: (typeof applications)[number]) => a.drive.id))];
-                for (const dId of driveIds) {
-                    const driveStats = await prisma.drive.findUnique({
-                        where: { id: dId },
-                        include: {
-                            _count: { select: { applications: { where: { hiringStatus: { equals: "hired", mode: "insensitive" } } } } }
-                        }
-                    });
-                }
-            } catch (err) {
-                console.error("Auto-close bulk drive error:", err);
-            }
 
             return NextResponse.json({ message: `${validIds.length} candidates hired` });
         }

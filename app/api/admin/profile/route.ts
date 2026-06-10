@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getSession } from "@/lib/auth";
+import { getSession, isAdminRole } from "@/lib/auth";
 
 // GET /api/admin/profile - returns org-level profile details (name, phone, jobTitle) + user email
 export async function GET() {
     try {
         const session = await getSession();
-        if (!session?.orgId || !session?.userId) {
+        if (!session?.orgId || !session?.userId || !isAdminRole(session.role)) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
@@ -35,7 +35,7 @@ export async function GET() {
 export async function PATCH(req: Request) {
     try {
         const session = await getSession();
-        if (!session?.userId) {
+        if (!session?.orgId || !session?.userId || !isAdminRole(session.role)) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 

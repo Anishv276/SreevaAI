@@ -73,7 +73,6 @@ const sections = [
 
 export default function SettingsPage() {
 
-    const { user } = useAuth();
     const adminOrg = useAdminOrg();
 
     const searchParams = useSearchParams();
@@ -243,7 +242,7 @@ export default function SettingsPage() {
 
         fetchAll();
 
-    }, [user]);
+    }, []);
 
 
 
@@ -592,7 +591,7 @@ export default function SettingsPage() {
 
 
 
-                        {/*  PROFILE  */}
+                        {/* PROFILE */}
 
                         {activeSection === "profile" && (
 
@@ -688,7 +687,7 @@ export default function SettingsPage() {
 
 
 
-                        {/*  COMPANY  */}
+                        {/* COMPANY */}
 
                         {activeSection === "company" && (
 
@@ -964,7 +963,7 @@ export default function SettingsPage() {
 
 
 
-                        {/*  DOMAINS  */}
+                        {/* DOMAINS */}
 
 
 
@@ -977,17 +976,8 @@ export default function SettingsPage() {
 
 
 
-                        {/*  BILLING  */}
-
-
-                        {/*     BILLING     */}
-
-
-
-
-
-
-
+                        {/* BILLING */}
+                        {/* BILLING */}
                         {/*     PASSWORD     */}
 
                         {activeSection === "password" && (
