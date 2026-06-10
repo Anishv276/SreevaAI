@@ -105,14 +105,26 @@
       "Bash(curl -s \"https://api.github.com/search/issues?q=turbopack+slow+compile+first+load+repo:vercel/next.js&sort=reactions&per_page=8\" -o C:/Temp/search1.json)",
       "Bash(node -e \"const j=require\\('C:/Temp/search1.json'\\); j.items?.forEach\\(i=>console.log\\('#'+i.number, i.state, '👍'+i.reactions['+1'], i.title\\)\\)\")",
       "Bash(rm \"C:\\\\Users\\\\vamsi\\\\OneDrive\\\\Desktop\\\\HR-updates\\\\add-defender-exclusions.ps1\")",
-      "PowerShell(redis-cli ping 2>&1)"
+      "PowerShell(redis-cli ping 2>&1)",
+      "Bash(grep -E \"__pycache__|\\\\.pyc$|\\\\.pyo$|pycache_tmp\")",
+      "Bash(cd \"c:\\\\Users\\\\vamsi\\\\OneDrive\\\\Desktop\\\\HR-updates\" && rm -rf .pycache_tmp/)",
+      "Bash(mkdir -p \"c:\\\\Users\\\\vamsi\\\\OneDrive\\\\Desktop\\\\HR-updates\\\\docs\")",
+      "Bash(npx tsx --env-file=.env -e ' *)",
+      "Bash(timeout 8 npx tsx --env-file=.env worker-redis-test.ts)",
+      "Bash(npx tsx *)",
+      "Bash(Test-NetConnection -ComputerName aws-1-ap-south-1.pooler.supabase.com -Port 6543)",
+      "Bash(python scripts/extract_pdf.py)",
+      "Bash(python -c \"from scripts.extract_pdf import main; print\\('OK'\\)\")",
+      "Bash(python -c \"import sys; sys.path.insert\\(0,'.'\\);  from extraction_resume_JD_score_report.pipeline import main; print\\('OK'\\)\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\vamsi\\OneDrive\\Desktop\\HR-updates\\scratch",
       "C:\\nextjs-dev-cache",
       "C:\\Temp",
       "C:\\",
-      "C:\\Users\\vamsi\\OneDrive\\Desktop\\HR-updates"
+      "C:\\Users\\vamsi\\OneDrive\\Desktop\\HR-updates",
+      "c:\\Users\\vamsi\\OneDrive\\Desktop\\HR-updates\\.pycache_tmp",
+      "c:\\Users\\vamsi\\OneDrive\\Desktop\\HR-updates\\docs"
     ]
   }
 }

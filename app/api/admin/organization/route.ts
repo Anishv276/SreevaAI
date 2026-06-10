@@ -6,15 +6,9 @@ import { getSession, isAdminRole, isSuperAdminRole } from "@/lib/auth";
 function getRequestedOrgId(request: Request) {
     const url = new URL(request.url);
     const explicitOrgId = url.searchParams.get("orgId")?.trim() || "";
-    if (explicitOrgId) {
-        return explicitOrgId;
-    }
-
+    if (explicitOrgId) return explicitOrgId;
     const referer = request.headers.get("referer") || "";
-    if (!referer) {
-        return "";
-    }
-
+    if (!referer) return "";
     try {
         return new URL(referer).searchParams.get("orgId")?.trim() || "";
     } catch {
@@ -40,12 +34,9 @@ export async function GET(request: Request) {
         const orgRows = await prisma.$queryRaw<Array<{
             name: string | null;
             plan: string | null;
-            industry: string | null;
-            size: string | null;
             website: string | null;
             logoUrl: string | null;
             onboardingComplete: boolean | null;
-            location: string | null;
             status: string | null;
             statusControl: string | null;
             voiceId: string | null;
@@ -61,12 +52,9 @@ export async function GET(request: Request) {
                 SELECT
                     o.name,
                     o.plan,
-                    o.industry,
-                    o.size,
                     o.website,
                     o."logoUrl",
                     o."onboardingComplete",
-                    o.location,
                     o.status,
                     o."statusControl",
                     o."voiceId",
@@ -88,7 +76,6 @@ export async function GET(request: Request) {
         );
 
         const org = orgRows[0];
-
         if (!org) {
             return NextResponse.json({ error: "Organization not found" }, { status: 404 });
         }
@@ -103,9 +90,7 @@ export async function GET(request: Request) {
             status: effectiveStatus,
             activeDriveCount: Number(org.activeDriveCount ?? 0),
         }, {
-            headers: {
-                'Cache-Control': 'private, max-age=120',
-            }
+            headers: { 'Cache-Control': 'private, max-age=120' }
         });
     } catch (error) {
         console.error("Error fetching organization:", error);
@@ -121,17 +106,12 @@ export async function PATCH(req: Request) {
         }
 
         const body = await req.json();
-        const { name, industry, size, website, location, phone, logoUrl } = body;
+        const { name, website, logoUrl } = body;
 
-        // Build update payload - only include fields that were actually sent
         const data: Record<string, any> = {};
         if (name !== undefined) data.name = name;
-        if (industry !== undefined) data.industry = industry;
-        if (size !== undefined) data.size = size;
         if (website !== undefined) data.website = website;
-        if (location !== undefined) data.location = location;
 
-        // Handle logo separately - delete old one from R2 if being replaced
         if (logoUrl !== undefined) {
             const currentOrg = await prisma.organization.findUnique({
                 where: { id: session.orgId },

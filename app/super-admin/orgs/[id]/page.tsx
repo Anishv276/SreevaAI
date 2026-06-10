@@ -2,7 +2,7 @@
 
 import { useEffect, useState, use, useRef, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Building2, User, Mail, ShieldCheck, Globe, RefreshCw, Play, Pause, MapPin as MapPinIcon, ChevronRight, Coins, ChevronDown, Loader2, Shield, Layers, AudioLines, Search, Lock, Clock } from "lucide-react";
+import { ArrowLeft, Building2, User, Mail, ShieldCheck, Globe, RefreshCw, Play, Pause, MapPin as MapPinIcon, ChevronRight, Coins, ChevronDown, Loader2, Shield, Layers, AudioLines, Search, Lock, Clock, Eye, EyeOff } from "lucide-react";
 import { LocationAutocomplete } from "@/components/ui/location-autocomplete";
 import { toast } from "@/components/ui/toast-custom";
 import { ProctoringSignalsSection } from "@/components/super-admin/proctoring-signals-section";
@@ -14,7 +14,9 @@ import { Steps } from "@/components/create-drive/steps";
 import { formatOrgLimitValue } from "@/lib/org-limits";
 
 // UI Components
-function PremiumInput({ label, icon: Icon, error, required = true, ...props }: any) {
+function PremiumInput({ label, icon: Icon, error, required = true, type = "text", showPasswordToggle = false, ...props }: any) {
+    const [showPassword, setShowPassword] = useState(false);
+    const isPasswordField = type === "password" && showPasswordToggle;
     return (
         <div className="space-y-2">
             <label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest">
@@ -22,7 +24,28 @@ function PremiumInput({ label, icon: Icon, error, required = true, ...props }: a
                 {label}
                 {required && <span className="text-[#F97316] ml-0.5">*</span>}
             </label>
-            <input {...props} className={cn("h-10 w-full rounded-lg bg-white border border-gray-200 px-3 text-[14px] font-medium shadow-sm transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[#F97316]/30 focus:border-[#F97316] hover:border-orange-300 hover:shadow-md", error && "border-red-500")} />
+            <div className="relative">
+                <input
+                    {...props}
+                    type={isPasswordField ? (showPassword ? "text" : "password") : type}
+                    onWheel={type === "number" ? (e: React.WheelEvent<HTMLInputElement>) => e.currentTarget.blur() : props.onWheel}
+                    className={cn(
+                        "h-10 w-full rounded-lg bg-white border border-gray-200 px-3 text-[14px] font-medium shadow-sm transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[#F97316]/30 focus:border-[#F97316] hover:border-orange-300 hover:shadow-md",
+                        isPasswordField ? "pr-10" : "",
+                        error && "border-red-500"
+                    )}
+                />
+                {isPasswordField ? (
+                    <button
+                        type="button"
+                        onClick={() => setShowPassword((value) => !value)}
+                        aria-label={showPassword ? "Hide password" : "Show password"}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-gray-400 hover:text-[#F97316] transition-colors"
+                    >
+                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                ) : null}
+            </div>
         </div>
     );
 }
@@ -38,7 +61,8 @@ function SectionHeader({ title }: { title: string }) {
 
 function LimitControl({ value, onChange, label }: { value: string, onChange: (val: string) => void, label: string }) {
     const isUnlimited = String(value).toLowerCase() === "unlimited" || Number(value) === 0;
-    const inputValue = isUnlimited ? "" : String(value);
+    const [localValue, setLocalValue] = useState(isUnlimited ? "" : String(value));
+    useEffect(() => { if (!isUnlimited) setLocalValue(String(value)); }, [value, isUnlimited]);
     return (
         <div className="space-y-2">
             <label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest"><Layers className="h-3 w-3 text-[#F97316]" /> {label}</label>
@@ -47,7 +71,7 @@ function LimitControl({ value, onChange, label }: { value: string, onChange: (va
                     <button type="button" onClick={() => onChange("Unlimited")} className={cn("px-3 h-7 rounded-md text-[10px] font-bold uppercase transition-all", isUnlimited ? "bg-white text-[#F97316] shadow-sm" : "text-gray-400 hover:text-gray-600")}>Unlimited</button>
                     <button type="button" onClick={() => { if (isUnlimited) onChange("1"); }} className={cn("px-3 h-7 rounded-md text-[10px] font-bold uppercase transition-all", !isUnlimited ? "bg-white text-[#F97316] shadow-sm" : "text-gray-400 hover:text-gray-600")}>Limited</button>
                 </div>
-                {!isUnlimited && <input type="number" min="1" value={inputValue} onChange={(e) => onChange(String(Math.max(1, Number(e.target.value) || 1)))} className="h-9 w-16 rounded-lg border border-gray-200 bg-white px-2 text-sm font-bold text-gray-900 focus:border-[#F97316] outline-none text-center shadow-sm" />}
+                {!isUnlimited && <input type="text" inputMode="numeric" pattern="[0-9]*" min="1" value={localValue} onChange={(e) => { const v = e.target.value.replace(/[^0-9]/g, ""); setLocalValue(v); if (v !== "") onChange(String(Math.max(1, Number(v)))); }} onBlur={() => { const n = Math.max(1, Number(localValue) || 1); setLocalValue(String(n)); onChange(String(n)); }} onWheel={(e) => e.currentTarget.blur()} className="h-9 w-16 rounded-lg border border-gray-200 bg-white px-2 text-sm font-bold text-gray-900 focus:border-[#F97316] outline-none text-center shadow-sm" />}
             </div>
         </div>
     );
@@ -280,7 +304,15 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                                 <p className="text-xs font-semibold text-gray-900 uppercase tracking-widest">Authentication Security</p>
                                 <p className="text-[11px] text-gray-500 font-medium leading-relaxed mt-1">If you need to reset the administrator password, enter a new one below. Leave it blank to keep the current credentials.</p>
                                 <div className="mt-4 max-w-sm">
-                                    <PremiumInput label="Update Password (Optional)" icon={Lock} type="password" value={form.adminPassword} onChange={(e: any) => setForm(p => ({ ...p, adminPassword: e.target.value }))} placeholder="••••••••" />
+                                    <PremiumInput
+                                        label="Update Password (Optional)"
+                                        icon={Lock}
+                                        type="password"
+                                        showPasswordToggle
+                                        value={form.adminPassword}
+                                        onChange={(e: any) => setForm(p => ({ ...p, adminPassword: e.target.value }))}
+                                        placeholder="••••••••"
+                                    />
                                 </div>
                             </div>
                         </div>
@@ -440,10 +472,14 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                                 </label>
                                 {form.recordingEnabled ? (
                                     <input
-                                        type="number"
+                                        type="text"
+                                        inputMode="numeric"
+                                        pattern="[0-9]*"
                                         min="1"
                                         value={form.recordingRetentionDays}
-                                        onChange={(e) => setForm(p => ({ ...p, recordingRetentionDays: String(Math.max(1, Number(e.target.value) || 1)) }))}
+                                        onChange={(e) => { const v = e.target.value.replace(/[^0-9]/g, ""); setForm(p => ({ ...p, recordingRetentionDays: v })); }}
+                                        onBlur={() => { const n = Math.max(1, Number(form.recordingRetentionDays) || 1); setForm(p => ({ ...p, recordingRetentionDays: String(n) })); }}
+                                        onWheel={(e) => e.currentTarget.blur()}
                                         className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3.5 text-sm font-medium text-gray-900 shadow-sm outline-none transition focus:border-[#F97316] focus:ring-4 focus:ring-orange-50"
                                         placeholder="30"
                                     />

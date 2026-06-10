@@ -13,8 +13,13 @@ export function fmtDate(iso: string) {
   const yest = new Date(today);
   yest.setDate(yest.getDate() - 1);
   const isYest = ymd(d) === ymd(yest);
+  if (isToday) return "Today";
+  if (isYest) return "Yesterday";
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+export function fmtTime(iso: string) {
+  const d = new Date(iso);
   const time = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
-  if (isToday) return `Today, ${time}`;
-  if (isYest) return `Yesterday, ${time}`;
-  return `${d.toLocaleDateString("en-US", { month: "short", day: "numeric" })}, ${time}`;
+  return time;
 }

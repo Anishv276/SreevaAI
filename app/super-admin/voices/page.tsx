@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ChevronDown, Loader2, PlusCircle, Search, Sparkles, Volume2 } from "lucide-react";
+import { ArrowLeft, ChevronDown, Loader2, Plus, Search, Trash2, X, Zap, AudioWaveform, Mic2, Play, Pause } from "lucide-react";
 import { toast } from "@/components/ui/toast-custom";
+import { cn } from "@/lib/utils";
 
 type BuiltInVoice = {
   id: string;
@@ -33,73 +34,141 @@ type VoiceRegistry = {
   builtInVoices: BuiltInVoice[];
 };
 
+type Provider = "CARTESIA" | "SARVAM" | "ELEVENLABS";
+
+const PROVIDER_META: Record<Provider, { label: string; color: string; bg: string; border: string; dot: string; activeBg: string; activeText: string }> = {
+  CARTESIA: {
+    label: "Cartesia",
+    color: "text-slate-600",
+    bg: "bg-slate-50",
+    border: "border-slate-200",
+    dot: "bg-slate-400",
+    activeBg: "bg-slate-100",
+    activeText: "text-slate-800",
+  },
+  SARVAM: {
+    label: "Sarvam",
+    color: "text-orange-600",
+    bg: "bg-orange-50",
+    border: "border-orange-200",
+    dot: "bg-orange-500",
+    activeBg: "bg-orange-100",
+    activeText: "text-orange-700",
+  },
+  ELEVENLABS: {
+    label: "ElevenLabs",
+    color: "text-slate-900",
+    bg: "bg-white",
+    border: "border-slate-300",
+    dot: "bg-slate-900",
+    activeBg: "bg-slate-900",
+    activeText: "text-white",
+  },
+};
+
 export default function SuperAdminVoicesPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
+  const [activeTab, setActiveTab] = useState<Provider>("CARTESIA");
   const [showSarvamPicker, setShowSarvamPicker] = useState(false);
   const [selectedSarvamIds, setSelectedSarvamIds] = useState<string[]>([]);
   const [registry, setRegistry] = useState<VoiceRegistry | null>(null);
-  const [form, setForm] = useState({
-    provider: "CARTESIA",
-    id: "",
-  });
+  const [form, setForm] = useState({ provider: "CARTESIA" as Provider, id: "" });
+
+  // Preview state
+  const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const activeAudioRef = useRef<HTMLAudioElement | null>(null);
+  const previewUrlRef = useRef<string | null>(null);
 
   const loadRegistry = async () => {
     setLoading(true);
     try {
       const res = await fetch("/api/super-admin/voices", { cache: "no-store" });
       if (!res.ok) throw new Error("Failed to load voices");
-      const data = await res.json();
-      setRegistry(data);
-    } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : "Failed to load voices");
+      setRegistry(await res.json());
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to load voices");
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    void loadRegistry();
-  }, []);
+  useEffect(() => { void loadRegistry(); }, []);
+
+  const stopPreview = () => {
+    if (activeAudioRef.current) {
+      activeAudioRef.current.pause();
+      activeAudioRef.current.src = "";
+      activeAudioRef.current = null;
+    }
+    if (previewUrlRef.current) {
+      URL.revokeObjectURL(previewUrlRef.current);
+      previewUrlRef.current = null;
+    }
+    setPlayingVoiceId(null);
+  };
+
+  const playSample = async (voice: BuiltInVoice) => {
+    if (playingVoiceId === voice.id) { stopPreview(); return; }
+    setPreviewLoading(true);
+    try {
+      stopPreview();
+      const endpoint = voice.provider === "SARVAM"
+        ? "/api/admin/voice/preview/sarvam"
+        : "/api/admin/voice/preview";
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ voiceId: voice.id, transcript: "Hello, how are you doing? I'm ready to conduct the interview.", orgId: null }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || "Preview failed");
+      const blob = await res.blob();
+      const audioUrl = URL.createObjectURL(blob);
+      previewUrlRef.current = audioUrl;
+      const audio = new Audio(audioUrl);
+      activeAudioRef.current = audio;
+      setPlayingVoiceId(voice.id);
+      audio.play();
+      audio.onended = () => { stopPreview(); };
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Preview failed");
+      setPlayingVoiceId(null);
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
 
   const builtInMatch = useMemo(() => {
     const id = form.id.trim();
     if (!id || !registry) return null;
-    return registry.builtInVoices.find((voice) => voice.id === id) || null;
+    return registry.builtInVoices.find((v) => v.id === id) ?? null;
   }, [form.id, registry]);
 
-  const filteredSelectable = useMemo(() => {
-    if (!registry) return [];
+  const byProvider = useMemo(() => {
+    if (!registry) return { CARTESIA: [], SARVAM: [], ELEVENLABS: [] } as Record<Provider, BuiltInVoice[]>;
     const term = search.trim().toLowerCase();
-    if (!term) return registry.selectableVoices;
-    return registry.selectableVoices.filter((voice) =>
-      [voice.id, voice.name, voice.description, voice.provider, voice.model].join(" ").toLowerCase().includes(term)
-    );
+    const voices = term
+      ? registry.selectableVoices.filter((v) =>
+          [v.id, v.name, v.description, v.provider, v.model].join(" ").toLowerCase().includes(term)
+        )
+      : registry.selectableVoices;
+    return {
+      CARTESIA: voices.filter((v) => v.provider === "CARTESIA"),
+      SARVAM: voices.filter((v) => v.provider === "SARVAM"),
+      ELEVENLABS: voices.filter((v) => v.provider === "ELEVENLABS"),
+    } as Record<Provider, BuiltInVoice[]>;
   }, [registry, search]);
 
-  const cartesiaSelectable = useMemo(
-    () => filteredSelectable.filter((voice) => voice.provider === "CARTESIA"),
-    [filteredSelectable]
+  const missingSarvam = useMemo(
+    () => registry?.builtInVoices.filter((v) => v.provider === "SARVAM" && !v.isSelectable) ?? [],
+    [registry]
   );
 
-  const sarvamSelectable = useMemo(
-    () => filteredSelectable.filter((voice) => voice.provider === "SARVAM"),
-    [filteredSelectable]
-  );
-  const elevenlabsSelectable = useMemo(
-    () => filteredSelectable.filter((voice) => voice.provider === "ELEVENLABS"),
-    [filteredSelectable]
-  );
-
-  const missingSarvamVoices = useMemo(() => {
-    if (!registry) return [];
-    return registry.builtInVoices.filter((voice) => voice.provider === "SARVAM" && !voice.isSelectable);
-  }, [registry]);
-
-  const isCustomVoice = (voiceId: string) =>
-    Boolean(registry?.customVoices.some((row) => row.id === voiceId && !row.isBuiltIn));
+  const isCustom = (id: string) =>
+    Boolean(registry?.customVoices.some((r) => r.id === id && !r.isBuiltIn));
 
   const submitAction = async (action: "add" | "remove" | "delete", payload: Record<string, unknown>) => {
     setSaving(true);
@@ -112,15 +181,13 @@ export default function SuperAdminVoicesPage() {
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error || "Request failed");
       toast.success(
-        action === "add"
-          ? "Voice added to engine"
-          : action === "remove"
-            ? "Voice removed from engine"
-            : "Voice permanently deleted from DB"
+        action === "add" ? "Voice added to engine" :
+        action === "remove" ? "Voice removed from engine" :
+        "Voice permanently deleted"
       );
       await loadRegistry();
-    } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : "Action failed");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Action failed");
     } finally {
       setSaving(false);
     }
@@ -128,19 +195,13 @@ export default function SuperAdminVoicesPage() {
 
   const onAdd = async () => {
     const id = form.id.trim();
-    if (!id) {
-      toast.error("Voice ID is required");
-      return;
-    }
+    if (!id) { toast.error("Voice ID is required"); return; }
     await submitAction("add", { id, provider: form.provider });
+    setForm((p) => ({ ...p, id: "" }));
   };
 
-  const addSelectedSarvamVoices = async () => {
-    if (selectedSarvamIds.length === 0) {
-      toast.error("Select at least one Sarvam voice");
-      return;
-    }
-
+  const addSarvam = async () => {
+    if (!selectedSarvamIds.length) { toast.error("Select at least one voice"); return; }
     setSaving(true);
     try {
       for (const id of selectedSarvamIds) {
@@ -152,322 +213,393 @@ export default function SuperAdminVoicesPage() {
         const data = await res.json().catch(() => null);
         if (!res.ok) throw new Error(data?.error || `Failed to add ${id}`);
       }
-      toast.success(`${selectedSarvamIds.length} Sarvam voice(s) added to engine`);
+      toast.success(`${selectedSarvamIds.length} Sarvam voice(s) added`);
       setSelectedSarvamIds([]);
       setShowSarvamPicker(false);
       await loadRegistry();
-    } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : "Failed to add Sarvam voices");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Failed to add voices");
     } finally {
       setSaving(false);
     }
   };
 
+  const totalActive = registry?.selectableVoices.length ?? 0;
+
   if (loading && !registry) {
     return (
-      <div className="min-h-[60vh] flex items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-slate-500" />
+      <div className="flex min-h-[70vh] items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-orange-50">
+            <Loader2 className="h-5 w-5 animate-spin text-orange-500" />
+          </div>
+          <p className="text-sm font-medium text-slate-500">Loading voice registry…</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 px-4 py-4 sm:px-6 lg:px-0">
+    <div className="mx-auto max-w-5xl space-y-4 px-4 py-4 sm:px-6 lg:px-0">
+
+      {/* Back */}
       <button
         type="button"
         onClick={() => router.back()}
-        className="inline-flex items-center gap-2 text-sm font-bold text-gray-400 transition-colors hover:text-gray-600"
+        className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-400 transition-colors hover:text-slate-700"
       >
         <ArrowLeft className="h-4 w-4" />
         Back
       </button>
 
-      <div className="group">
-        <div className="mb-3 flex items-center gap-4">
-          <div className="h-12 w-1.5 rounded-full bg-gradient-to-b from-[#F97316] to-orange-400 shadow-[0_0_12px_rgba(249,115,22,0.4)] transition-all duration-300 group-hover:h-14" />
+      {/* Page header */}
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-orange-500 to-orange-400 shadow-md shadow-orange-200">
+            <AudioWaveform className="h-5 w-5 text-white" />
+          </div>
           <div>
-            <h1 className="text-3xl font-extrabold tracking-tight text-gray-900 sm:text-4xl">Voice Engine</h1>
-            <p className="mt-1 text-base font-medium text-gray-500">Manage selectable Cartesia, Sarvam, and ElevenLabs voices by provider and voice ID.</p>
+            <h1 className="text-lg font-extrabold tracking-tight text-slate-900">Voice Engine</h1>
+            <p className="text-xs font-medium text-slate-500">Manage TTS voices across Cartesia, Sarvam, and ElevenLabs</p>
+          </div>
+        </div>
+
+        {/* Quick stats — always visible in header */}
+        <div className="flex items-center gap-2">
+          {(["CARTESIA", "SARVAM", "ELEVENLABS"] as Provider[]).map((p) => {
+            const meta = PROVIDER_META[p];
+            const count = byProvider[p].length;
+            return (
+              <div key={p} className={cn("flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5", meta.bg, meta.border)}>
+                <span className={cn("h-1.5 w-1.5 rounded-full", meta.dot)} />
+                <span className={cn("text-[11px] font-bold", meta.color)}>{meta.label}</span>
+                <span className={cn("text-[11px] font-extrabold tabular-nums", meta.color)}>{count}</span>
+              </div>
+            );
+          })}
+          <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5">
+            <Zap className="h-3 w-3 text-orange-500" />
+            <span className="text-[11px] font-bold text-slate-600">Total</span>
+            <span className="text-[11px] font-extrabold tabular-nums text-slate-900">{totalActive}</span>
           </div>
         </div>
       </div>
 
-      <div
-        className="rounded-2xl bg-white p-8 transition-all duration-300"
-        style={{ border: "1px solid #E5E7EB", borderTop: "4px solid #F97316", boxShadow: "0 4px 24px rgba(0,0,0,0.06), 0 1px 4px rgba(0,0,0,0.04)" }}
-      >
-        <div className="mb-6 flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-[#F97316]" />
-          <h2 className="text-base font-bold text-gray-900">Add Voice To Engine</h2>
-        </div>
+      {/* Main grid */}
+      <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
 
-        <div className="grid gap-6 lg:grid-cols-2">
-          <section className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm">
-            <h3 className="text-sm font-bold uppercase tracking-widest text-gray-500">Provider + Voice ID</h3>
-            <div className="mt-4 space-y-4">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="space-y-2 text-xs font-bold uppercase tracking-widest text-slate-500">
-                  Provider
-                  <select
-                    value={form.provider}
-                    onChange={(e) => {
-                      const provider = e.target.value;
-                      setForm((prev) => ({ ...prev, provider, id: provider === "SARVAM" ? "" : prev.id }));
-                      setSelectedSarvamIds([]);
-                      setShowSarvamPicker(false);
-                    }}
-                    className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-900 outline-none focus:border-orange-500"
-                  >
-                    <option value="CARTESIA">Cartesia</option>
-                    <option value="SARVAM">Sarvam</option>
-                    <option value="ELEVENLABS">ElevenLabs</option>
-                  </select>
-                </label>
-                {form.provider !== "SARVAM" ? (
-                  <label className="space-y-2 text-xs font-bold uppercase tracking-widest text-slate-500">
-                    Voice ID
-                    <input
-                      value={form.id}
-                      onChange={(e) => setForm((prev) => ({ ...prev, id: e.target.value }))}
-                      className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm font-medium text-slate-900 outline-none focus:border-orange-500"
-                      placeholder={form.provider === "CARTESIA" ? "Paste Cartesia voice ID" : "Paste ElevenLabs voice ID"}
-                    />
-                  </label>
-                ) : (
-                  <div className="space-y-2 text-xs font-bold uppercase tracking-widest text-slate-500">
-                    Missing Sarvam Voices
-                    <div className="relative">
-                      <button
-                        type="button"
-                        onClick={() => setShowSarvamPicker((prev) => !prev)}
-                        className="flex h-11 w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-3 text-left text-sm font-semibold text-slate-900 outline-none hover:border-orange-300"
-                      >
-                        <span>
-                          {selectedSarvamIds.length > 0
-                            ? `${selectedSarvamIds.length} selected`
-                            : `${missingSarvamVoices.length} available`}
-                        </span>
-                        <ChevronDown className="h-4 w-4 text-slate-400" />
-                      </button>
-                      {showSarvamPicker ? (
-                        <div className="absolute z-20 mt-2 max-h-60 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
-                          {missingSarvamVoices.length === 0 ? (
-                            <p className="px-2 py-3 text-xs font-medium text-slate-500">All Sarvam voices are already in engine.</p>
-                          ) : (
-                            missingSarvamVoices.map((voice) => {
-                              const checked = selectedSarvamIds.includes(voice.id);
-                              return (
-                                <label
-                                  key={voice.id}
-                                  className="flex cursor-pointer items-start gap-2 rounded-lg px-2 py-2 hover:bg-slate-50"
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={checked}
-                                    onChange={() => {
-                                      setSelectedSarvamIds((prev) =>
-                                        checked ? prev.filter((id) => id !== voice.id) : [...prev, voice.id]
-                                      );
-                                    }}
-                                    className="mt-0.5 h-4 w-4"
-                                  />
-                                  <div className="min-w-0">
-                                    <p className="truncate text-sm font-semibold text-slate-900">{voice.name}</p>
-                                    <p className="truncate text-xs font-medium text-slate-500">{voice.id}</p>
-                                  </div>
-                                </label>
-                              );
-                            })
-                          )}
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                )}
+        {/* ── Left: Add Voice panel ── */}
+        <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+          {/* Panel header */}
+          <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3">
+            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-orange-100">
+              <Plus className="h-3.5 w-3.5 text-orange-600" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-slate-900">Add Voice</p>
+              <p className="text-[11px] font-medium text-slate-400">Register a new voice to the engine</p>
+            </div>
+          </div>
+
+          <div className="space-y-3 p-4">
+            {/* Provider selector */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Provider</label>
+              <div className="grid grid-cols-3 gap-0.5 rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+                {(["CARTESIA", "SARVAM", "ELEVENLABS"] as Provider[]).map((p) => {
+                  const meta = PROVIDER_META[p];
+                  const active = form.provider === p;
+                  return (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => {
+                        setForm({ provider: p, id: "" });
+                        setSelectedSarvamIds([]);
+                        setShowSarvamPicker(false);
+                      }}
+                      className={cn(
+                        "rounded-md py-1.5 text-[10px] font-bold uppercase tracking-wider transition-all",
+                        active
+                          ? cn("shadow-sm", meta.activeBg, meta.activeText)
+                          : "text-slate-400 hover:text-slate-600"
+                      )}
+                    >
+                      {meta.label}
+                    </button>
+                  );
+                })}
               </div>
-
-              {form.provider !== "SARVAM" && builtInMatch ? (
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-                  <p className="text-sm font-semibold text-emerald-800">
-                    Matched built-in voice: {builtInMatch.name} ({builtInMatch.provider})
-                  </p>
-                  <p className="text-xs text-emerald-700">{builtInMatch.model}</p>
-                </div>
-              ) : form.provider !== "SARVAM" ? (
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  <p className="text-sm font-medium text-slate-700">
-                    {form.provider === "CARTESIA"
-                      ? "If Cartesia metadata is available, name/details are auto-fetched."
-                      : "If ElevenLabs metadata is available, name/details are auto-fetched."}
-                  </p>
-                </div>
-              ) : null}
             </div>
 
-            <div className="mt-6 flex gap-3">
-              {form.provider !== "SARVAM" ? (
-                <button
-                  type="button"
-                  disabled={saving}
-                  onClick={onAdd}
-                  className="inline-flex h-11 items-center gap-2 rounded-xl bg-emerald-600 px-4 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
-                >
-                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlusCircle className="h-4 w-4" />}
-                  Add
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  disabled={saving || selectedSarvamIds.length === 0}
-                  onClick={addSelectedSarvamVoices}
-                  className="inline-flex h-11 items-center gap-2 rounded-xl bg-emerald-600 px-4 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
-                >
-                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlusCircle className="h-4 w-4" />}
-                  Add Selected
+            {/* Voice ID or Sarvam picker */}
+            {form.provider !== "SARVAM" ? (
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Voice ID</label>
+                <input
+                  value={form.id}
+                  onChange={(e) => setForm((p) => ({ ...p, id: e.target.value }))}
+                  placeholder={form.provider === "CARTESIA" ? "Paste Cartesia voice ID…" : "Paste ElevenLabs voice ID…"}
+                  className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                />
+              </div>
+            ) : (
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                  Available Sarvam Voices
+                </label>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setShowSarvamPicker((p) => !p)}
+                    className="flex h-9 w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 outline-none transition hover:border-orange-300 focus:border-orange-400"
+                  >
+                    <span className={selectedSarvamIds.length ? "font-semibold text-slate-900" : "text-slate-400"}>
+                      {selectedSarvamIds.length > 0
+                        ? `${selectedSarvamIds.length} voice${selectedSarvamIds.length > 1 ? "s" : ""} selected`
+                        : missingSarvam.length === 0
+                          ? "All voices already active"
+                          : `${missingSarvam.length} voice${missingSarvam.length > 1 ? "s" : ""} available`}
+                    </span>
+                    <ChevronDown className={cn("h-4 w-4 text-slate-400 transition-transform", showSarvamPicker && "rotate-180")} />
+                  </button>
+                  {showSarvamPicker && (
+                    <div className="absolute z-20 mt-1.5 max-h-56 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
+                      {missingSarvam.length === 0 ? (
+                        <p className="px-4 py-3 text-xs font-medium text-slate-500">
+                          All Sarvam voices are already in the engine.
+                        </p>
+                      ) : (
+                        <div className="p-1.5 space-y-0.5">
+                          {missingSarvam.map((voice) => {
+                            const checked = selectedSarvamIds.includes(voice.id);
+                            return (
+                              <label
+                                key={voice.id}
+                                className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 transition hover:bg-slate-50"
+                              >
+                                <div className={cn(
+                                  "flex h-4 w-4 shrink-0 items-center justify-center rounded border-2 transition",
+                                  checked ? "border-orange-500 bg-orange-500" : "border-slate-300"
+                                )}>
+                                  {checked && <svg className="h-2.5 w-2.5 text-white" fill="none" viewBox="0 0 10 8"><path d="M1 4l3 3 5-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                                </div>
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() =>
+                                    setSelectedSarvamIds((prev) =>
+                                      checked ? prev.filter((id) => id !== voice.id) : [...prev, voice.id]
+                                    )
+                                  }
+                                  className="sr-only"
+                                />
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-semibold text-slate-900">{voice.name}</p>
+                                  <p className="truncate text-[11px] font-mono text-slate-400">{voice.id}</p>
+                                </div>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Built-in match hint — only shown when there IS a match */}
+            {form.provider !== "SARVAM" && form.id.trim() && builtInMatch && (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-2.5">
+                <p className="text-xs font-semibold text-emerald-800">Matched: {builtInMatch.name}</p>
+                <p className="mt-0.5 text-[11px] text-emerald-600">{builtInMatch.model} · {builtInMatch.provider}</p>
+              </div>
+            )}
+
+            {/* Add button */}
+            <button
+              type="button"
+              disabled={saving || (form.provider === "SARVAM" ? selectedSarvamIds.length === 0 : !form.id.trim())}
+              onClick={form.provider === "SARVAM" ? addSarvam : onAdd}
+              className="flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-gradient-to-r from-orange-500 to-orange-400 text-xs font-bold text-white shadow-sm shadow-orange-200 transition hover:from-orange-600 hover:to-orange-500 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+              {form.provider === "SARVAM"
+                ? selectedSarvamIds.length > 0
+                  ? `Add ${selectedSarvamIds.length} Voice${selectedSarvamIds.length > 1 ? "s" : ""}`
+                  : "Select Voices to Add"
+                : "Add to Engine"}
+            </button>
+          </div>
+        </div>
+
+        {/* ── Right: Active Registry ── */}
+        <div className="flex flex-col rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden" style={{ maxHeight: "calc(100vh - 180px)" }}>
+          {/* Header */}
+          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
+            <div className="flex items-center gap-2">
+              <div className="flex h-6 w-6 items-center justify-center rounded-md bg-slate-100">
+                <Mic2 className="h-3.5 w-3.5 text-slate-600" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-slate-900">Active Registry</p>
+                <p className="text-[11px] font-medium text-slate-400">All voices selectable by organizations</p>
+              </div>
+            </div>
+            <div className="relative w-48">
+              <Search className="absolute left-2.5 top-1/2 h-3 w-3 -translate-y-1/2 text-slate-400" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search voices…"
+                className="h-8 w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-3 text-xs font-medium text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-orange-400 focus:bg-white focus:ring-2 focus:ring-orange-100"
+              />
+              {search && (
+                <button type="button" onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2">
+                  <X className="h-3 w-3 text-slate-400 hover:text-slate-600" />
                 </button>
               )}
             </div>
-          </section>
+          </div>
 
-          <section className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm">
-            <div className="flex items-center justify-between gap-3">
-              <h3 className="text-sm font-bold uppercase tracking-widest text-gray-500">Active Registry</h3>
-              <div className="relative w-56">
-                <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="h-10 w-full rounded-xl border border-slate-200 pl-9 pr-3 text-sm font-medium text-slate-900 outline-none focus:border-orange-500"
-                  placeholder="Search voices"
-                />
-              </div>
-            </div>
+          {/* Provider tabs */}
+          <div className="flex shrink-0 border-b border-slate-100 px-4">
+            {(["CARTESIA", "SARVAM", "ELEVENLABS"] as Provider[]).map((p) => {
+              const meta = PROVIDER_META[p];
+              const count = byProvider[p].length;
+              const active = activeTab === p;
+              return (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setActiveTab(p)}
+                  className={cn(
+                    "flex items-center gap-1.5 border-b-2 px-3 py-2.5 text-xs font-semibold transition-colors",
+                    active
+                      ? "border-orange-500 text-orange-600"
+                      : "border-transparent text-slate-400 hover:text-slate-600"
+                  )}
+                >
+                  <span className={cn("h-1.5 w-1.5 rounded-full transition", active ? meta.dot : "bg-slate-300")} />
+                  {meta.label}
+                  <span className={cn(
+                    "rounded-full px-1.5 py-0.5 text-[10px] font-bold tabular-nums transition",
+                    active ? cn(meta.bg, meta.border, "border", meta.color) : "bg-slate-100 text-slate-400"
+                  )}>
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
 
-            <div className="mt-4 space-y-4">
-              <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-3">
-                <div className="mb-2 flex items-center gap-2">
-                  <Volume2 className="h-4 w-4 text-orange-500" />
-                  <p className="text-xs font-bold uppercase tracking-widest text-slate-600">Cartesia Voices</p>
+          {/* Voice list — scrollable */}
+          <div className="flex-1 overflow-y-auto p-3">
+            {byProvider[activeTab].length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-10 text-center">
+                <div className={cn("flex h-10 w-10 items-center justify-center rounded-xl mb-2", PROVIDER_META[activeTab].bg)}>
+                  <AudioWaveform className={cn("h-4 w-4", PROVIDER_META[activeTab].color)} />
                 </div>
-                <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
-                  {cartesiaSelectable.map((voice) => (
-                    <div key={voice.id} className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-bold text-slate-900">{voice.name}</p>
-                        <p className="truncate text-xs text-slate-500">{voice.id}</p>
+                <p className="text-xs font-semibold text-slate-700">
+                  {search ? "No voices match your search" : `No ${PROVIDER_META[activeTab].label} voices active`}
+                </p>
+                <p className="mt-0.5 text-[11px] font-medium text-slate-400">
+                  {search ? "Try a different search term" : "Add a voice using the panel on the left"}
+                </p>
+              </div>
+            ) : (
+              <div className="grid gap-1.5 sm:grid-cols-2">
+                {byProvider[activeTab].map((voice) => {
+                  const meta = PROVIDER_META[activeTab];
+                  const custom = isCustom(voice.id);
+                  const isPlaying = playingVoiceId === voice.id;
+                  const isLoadingThis = previewLoading && isPlaying;
+                  return (
+                    <div
+                      key={voice.id}
+                      className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5 transition hover:border-slate-300 hover:shadow-sm"
+                    >
+                      {/* Voice info */}
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className={cn("flex h-6 w-6 shrink-0 items-center justify-center rounded-md", meta.bg)}>
+                          <span className={cn("h-1.5 w-1.5 rounded-full", meta.dot)} />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <p className="truncate text-xs font-bold text-slate-900">{voice.name}</p>
+                            {custom && (
+                              <span className="shrink-0 rounded border border-violet-200 bg-violet-50 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide text-violet-600">
+                                Custom
+                              </span>
+                            )}
+                            {voice.gender && (
+                              <span className="shrink-0 rounded border border-slate-200 bg-slate-50 px-1 py-0.5 text-[9px] font-semibold capitalize text-slate-500">
+                                {voice.gender}
+                              </span>
+                            )}
+                          </div>
+                          <p className="truncate font-mono text-[10px] text-slate-400">{voice.id}</p>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
+
+                      {/* Action buttons — always visible */}
+                      <div className="flex shrink-0 items-center gap-1">
+                        {/* Preview */}
+                        <button
+                          type="button"
+                          onClick={() => playSample(voice)}
+                          disabled={previewLoading && !isPlaying}
+                          title={isPlaying ? "Stop preview" : "Preview voice"}
+                          className={cn(
+                            "flex h-6 w-6 items-center justify-center rounded-md border transition",
+                            isPlaying
+                              ? "border-orange-300 bg-orange-50 text-orange-600 hover:bg-orange-100"
+                              : "border-slate-200 bg-white text-slate-500 hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600",
+                            previewLoading && !isPlaying && "cursor-not-allowed opacity-40"
+                          )}
+                        >
+                          {isLoadingThis ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : isPlaying ? (
+                            <Pause className="h-3 w-3 fill-current" />
+                          ) : (
+                            <Play className="h-3 w-3 fill-current ml-0.5" />
+                          )}
+                        </button>
+
+                        {/* Remove */}
                         <button
                           type="button"
                           disabled={saving}
                           onClick={() => submitAction("remove", { id: voice.id })}
-                          className="rounded-lg border border-rose-200 px-2.5 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+                          title="Remove from engine"
+                          className="flex h-6 items-center rounded-md border border-slate-200 bg-white px-2 text-[10px] font-bold text-slate-600 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40"
                         >
                           Remove
                         </button>
-                        {isCustomVoice(voice.id) ? (
-                          <button
-                            type="button"
-                            disabled={saving}
-                            onClick={() => submitAction("delete", { id: voice.id })}
-                            className="rounded-lg border border-rose-300 px-2.5 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
-                          >
-                            Delete
-                          </button>
-                        ) : null}
-                      </div>
-                    </div>
-                  ))}
-                  {cartesiaSelectable.length === 0 ? (
-                    <p className="py-2 text-xs font-medium text-slate-500">No Cartesia voices active.</p>
-                  ) : null}
-                </div>
-              </div>
 
-              <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-3">
-                <div className="mb-2 flex items-center gap-2">
-                  <Volume2 className="h-4 w-4 text-emerald-500" />
-                  <p className="text-xs font-bold uppercase tracking-widest text-slate-600">Sarvam Voices</p>
-                </div>
-                <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
-                  {sarvamSelectable.map((voice) => (
-                    <div key={voice.id} className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-bold text-slate-900">{voice.name}</p>
-                        <p className="truncate text-xs text-slate-500">{voice.id}</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          disabled={saving}
-                          onClick={() => submitAction("remove", { id: voice.id })}
-                          className="rounded-lg border border-rose-200 px-2.5 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
-                        >
-                          Remove
-                        </button>
-                        {isCustomVoice(voice.id) ? (
+                        {/* Delete (custom only) */}
+                        {custom && (
                           <button
                             type="button"
                             disabled={saving}
                             onClick={() => submitAction("delete", { id: voice.id })}
-                            className="rounded-lg border border-rose-300 px-2.5 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+                            title="Permanently delete"
+                            className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40"
                           >
-                            Delete
+                            <Trash2 className="h-3 w-3" />
                           </button>
-                        ) : null}
+                        )}
                       </div>
                     </div>
-                  ))}
-                  {sarvamSelectable.length === 0 ? (
-                    <p className="py-2 text-xs font-medium text-slate-500">No Sarvam voices active.</p>
-                  ) : null}
-                </div>
+                  );
+                })}
               </div>
-
-              <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-3">
-                <div className="mb-2 flex items-center gap-2">
-                  <Volume2 className="h-4 w-4 text-indigo-500" />
-                  <p className="text-xs font-bold uppercase tracking-widest text-slate-600">ElevenLabs Voices</p>
-                </div>
-                <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
-                  {elevenlabsSelectable.map((voice) => (
-                    <div key={voice.id} className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-bold text-slate-900">{voice.name}</p>
-                        <p className="truncate text-xs text-slate-500">{voice.id}</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          disabled={saving}
-                          onClick={() => submitAction("remove", { id: voice.id })}
-                          className="rounded-lg border border-rose-200 px-2.5 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
-                        >
-                          Remove
-                        </button>
-                        {isCustomVoice(voice.id) ? (
-                          <button
-                            type="button"
-                            disabled={saving}
-                            onClick={() => submitAction("delete", { id: voice.id })}
-                            className="rounded-lg border border-rose-300 px-2.5 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
-                          >
-                            Delete
-                          </button>
-                        ) : null}
-                      </div>
-                    </div>
-                  ))}
-                  {elevenlabsSelectable.length === 0 ? (
-                    <p className="py-2 text-xs font-medium text-slate-500">No ElevenLabs voices active.</p>
-                  ) : null}
-                </div>
-              </div>
-            </div>
-          </section>
+            )}
+          </div>
         </div>
       </div>
     </div>
   );
 }
-

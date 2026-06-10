@@ -9,6 +9,8 @@ import {
   Building2,
   CheckCircle2,
   Coins,
+  Eye,
+  EyeOff,
   Globe,
   Loader2,
   Lock,
@@ -91,6 +93,7 @@ function TextInput({
   type = "text",
   required = false,
   autoComplete,
+  showPasswordToggle = false,
 }: {
   label: string;
   icon: ComponentType<{ className?: string }>;
@@ -100,19 +103,38 @@ function TextInput({
   type?: string;
   required?: boolean;
   autoComplete?: string;
+  showPasswordToggle?: boolean;
 }) {
   const Icon = icon;
+  const [showPassword, setShowPassword] = useState(false);
+  const isPasswordField = type === "password" && showPasswordToggle;
   return (
     <Field label={label} icon={Icon}>
-      <input
-        type={type}
-        required={required}
-        autoComplete={autoComplete}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-medium text-slate-900 shadow-sm outline-none transition focus:border-[#F97316] focus:ring-4 focus:ring-orange-50"
-      />
+      <div className="relative">
+        <input
+          type={isPasswordField ? (showPassword ? "text" : "password") : type}
+          required={required}
+          autoComplete={autoComplete}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onWheel={type === "number" ? (e: React.WheelEvent<HTMLInputElement>) => e.currentTarget.blur() : undefined}
+          placeholder={placeholder}
+          className={cn(
+            "h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-medium text-slate-900 shadow-sm outline-none transition focus:border-[#F97316] focus:ring-4 focus:ring-orange-50",
+            isPasswordField ? "pr-11" : ""
+          )}
+        />
+        {isPasswordField ? (
+          <button
+            type="button"
+            onClick={() => setShowPassword((value) => !value)}
+            aria-label={showPassword ? "Hide password" : "Show password"}
+            className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 transition hover:text-[#F97316]"
+          >
+            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </button>
+        ) : null}
+      </div>
     </Field>
   );
 }
@@ -158,7 +180,8 @@ function LimitControl({
   onChange: (value: string) => void;
 }) {
   const isUnlimited = String(value).toLowerCase() === "unlimited" || Number(value) === 0;
-  const inputValue = isUnlimited ? "" : String(value);
+  const [localValue, setLocalValue] = useState(isUnlimited ? "" : String(value));
+  useEffect(() => { if (!isUnlimited) setLocalValue(String(value)); }, [value, isUnlimited]);
 
   return (
     <Field label={label} icon={Coins}>
@@ -189,10 +212,13 @@ function LimitControl({
         </div>
         {!isUnlimited ? (
           <input
-            type="number"
-            min={1}
-            value={inputValue}
-            onChange={(e) => onChange(String(Math.max(1, Number(e.target.value) || 1)))}
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            value={localValue}
+            onChange={(e) => { const v = e.target.value.replace(/[^0-9]/g, ""); setLocalValue(v); if (v !== "") onChange(String(Math.max(1, Number(v)))); }}
+            onBlur={() => { const n = Math.max(1, Number(localValue) || 1); setLocalValue(String(n)); onChange(String(n)); }}
+            onWheel={(e) => e.currentTarget.blur()}
             className="h-11 w-20 rounded-xl border border-slate-200 bg-white px-2 text-center text-sm font-bold text-slate-900 shadow-sm outline-none focus:border-[#F97316] focus:ring-4 focus:ring-orange-50"
           />
         ) : null}
@@ -561,6 +587,7 @@ export default function NewOrgPage() {
               label="Password"
               icon={Lock}
               type="password"
+              showPasswordToggle
               value={form.adminPassword}
               onChange={(value) => updateForm({ adminPassword: value })}
               placeholder="Minimum 8 characters"
@@ -730,10 +757,13 @@ export default function NewOrgPage() {
               </label>
               {form.recordingEnabled ? (
                 <input
-                  type="number"
-                  min="1"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   value={form.recordingRetentionDays}
-                  onChange={(e) => updateForm({ recordingRetentionDays: String(Math.max(1, Number(e.target.value) || 1)) })}
+                  onChange={(e) => { const v = e.target.value.replace(/[^0-9]/g, ""); updateForm({ recordingRetentionDays: v }); }}
+                  onBlur={() => { const n = Math.max(1, Number(form.recordingRetentionDays) || 1); updateForm({ recordingRetentionDays: String(n) }); }}
+                  onWheel={(e) => e.currentTarget.blur()}
                   className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-medium text-slate-900 shadow-sm outline-none transition focus:border-[#F97316] focus:ring-4 focus:ring-orange-50"
                   placeholder="30"
                 />

@@ -24,10 +24,10 @@ export default function DashboardPage() {
     const quotaLocked = isInterviewQuotaLocked(adminOrg ?? {});
     const orgStatus = String(adminOrg?.status || "ACTIVE").toUpperCase();
 
-    const { jobs, organization } = useJobs();
-    const activeDriveCount = organization?.activeDriveCount ?? getActiveDriveCount(jobs);
+    const { jobs } = useJobs();
+    const activeDriveCount = adminOrg?.activeDriveCount ?? getActiveDriveCount(jobs);
     const isSuspended = isOrgRestrictedStatus(orgStatus);
-    const driveCreationLocked = isDriveCreationLocked(organization?.maxActiveDrives, activeDriveCount) || quotaLocked || isSuspended;
+    const driveCreationLocked = isDriveCreationLocked(adminOrg?.maxActiveDrives, activeDriveCount) || quotaLocked || isSuspended;
 
     return (
         <div className="space-y-7 pb-10 animate-in fade-in duration-700" style={{ zoom: 0.78, transformOrigin: "top center" }}>

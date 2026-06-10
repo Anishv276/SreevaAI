@@ -58,8 +58,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
                         status: true,
                         name: true,
                         logoUrl: true,
-                        industry: true,
-                        size: true,
                         website: true,
                     },
                 },

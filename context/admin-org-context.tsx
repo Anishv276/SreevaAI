@@ -10,14 +10,12 @@ export type OrgData = {
     name?: string;
     logoUrl?: string | null;
     plan?: string;
-    industry?: string | null;
-    size?: string | null;
     website?: string | null;
-    location?: string | null;
     voiceId?: string | null;
     allowedVoices?: string[];
     deepgramModel?: string | null;
     maxActiveDrives?: string | null;
+    activeDriveCount?: number;
     proctoringSignals?: string | null;
     interviewQuotaTotal?: number;
     interviewQuotaUsed?: number;

@@ -79,8 +79,8 @@ function CreateDriveForm() {
   const hasInitialLoadedRef = useRef<string | null>(null);
   const formDataRef = useRef<any>(formData);
   const jdPersistedUrlRef = useRef<string | null>(null);
-  const activeDriveCount = organization?.activeDriveCount ?? getActiveDriveCount(jobs);
-  const maxActiveDrives = organization?.maxActiveDrives;
+  const activeDriveCount = adminOrg?.activeDriveCount ?? getActiveDriveCount(jobs);
+  const maxActiveDrives = adminOrg?.maxActiveDrives;
   const allowLanguageSelection = canUseMultilingual(organization?.plan);
   const isSuspended = isOrgRestrictedStatus(orgStatus);
   const interviewAccessLocked = quotaLocked || isSuspended;
@@ -180,7 +180,7 @@ function CreateDriveForm() {
           const { voiceId: _a, allowedVoices: _b, aiName: _c, ...jdData } = data || {};
           setFormData((prev: any) => ({ ...prev, ...jdData }));
           localStorage.removeItem("jd_draft");
-          toast.success("Job Description synced from AI Assistant!");
+          toast.success("Job description synced from AI Assistant!");
         } catch (e) {
           console.error("CreateDrive Sync - Parse Error:", e);
         }
@@ -258,7 +258,7 @@ function CreateDriveForm() {
 
         setFormData((prev: any) => ({
           ...prev,
-          title: `${extracted?.job_title || prev.role || "New"} Recruitment Drive`,
+          title: extracted?.job_title || prev.role || "New Job",
           role: extracted?.job_title || prev.role || "",
           interviewQuestions: Array.isArray(extracted?.interview_questions) && extracted.interview_questions.length > 0
             ? extracted.interview_questions : prev.interviewQuestions,
@@ -299,7 +299,7 @@ function CreateDriveForm() {
     let parsedQuestions = currentFormData.interviewQuestions || [];
     if (typeof parsedQuestions === "string") { try { parsedQuestions = JSON.parse(parsedQuestions); } catch { parsedQuestions = []; } }
     const jobData = {
-      title: currentFormData.title || "Untitled Drive",
+      title: currentFormData.title || "Untitled Job",
       description: currentFormData.description || "",
       role: currentFormData.role || "",
       deadline: currentFormData.deadline || null,
@@ -326,7 +326,7 @@ function CreateDriveForm() {
       if (savedId) {
         setPublishedDriveId(savedId);
         setPublished(true);
-        toast.success(isEditAction ? "Drive updated successfully!" : "Drive created successfully!");
+        toast.success(isEditAction ? "Job updated successfully!" : "Job created successfully!");
       } else {
         throw new Error("Failed to retrieve Drive ID after saving. Please check the dashboard.");
       }
@@ -337,6 +337,25 @@ function CreateDriveForm() {
       setIsSavingDraft(false);
     }
   };
+
+  const screeningConfig = useMemo(() => ({
+    threshold: Number(formData.screeningThreshold ?? 60),
+    criteria: (formData.screeningCriteria || {}) as ScreeningCriteria,
+  }), [formData.screeningThreshold, formData.screeningCriteria]);
+
+  const handleScreeningConfig = useMemo(() => (cfg: any) =>
+    setFormData((prev: any) => {
+      const current = {
+        threshold: Number(prev.screeningThreshold ?? 60),
+        criteria: (prev.screeningCriteria || {}) as ScreeningCriteria,
+      };
+      const next = typeof cfg === "function" ? cfg(current) : cfg;
+      return {
+        ...prev,
+        screeningThreshold: Number(next.threshold ?? 60),
+        screeningCriteria: sanitizeScreeningCriteria(next.criteria || {}),
+      };
+    }), []);
 
   // Success screen
   if (published) {
@@ -352,18 +371,71 @@ function CreateDriveForm() {
         </div>
         <div>
           <h1 className="text-2xl font-bold text-gray-900">
-            Your Drive is {isEditAction ? "Updated" : "Created"}! 🎉
+            Your Job is {isEditAction ? "Updated" : "Created"}! 🎉
           </h1>
           <p className="text-gray-500 mt-2 text-[15px]">
-            Your recruitment drive is ready.
+            Your job is ready.
           </p>
         </div>
         <Button
           className="bg-[#F97316] hover:bg-orange-600 text-white"
           onClick={() => router.push(publishedDriveId ? `/admin/candidates/drive/${publishedDriveId}` : "/admin/drives")}
         >
-          Back to Drive
+          Back to Jobs
         </Button>
+      </div>
+    );
+  }
+
+  // Locked screen — shown instead of the form when creation is blocked
+  if (driveCreationLocked) {
+    return (
+      <div className="max-w-4xl mx-auto py-4 space-y-4">
+        <button
+          onClick={() => router.push("/admin")}
+          className="mb-6 flex items-center gap-2 text-sm font-bold text-gray-400 hover:text-gray-600 transition-colors"
+        >
+          <ChevronLeft className="h-4 w-4" />
+          Back
+        </button>
+        <div className="rounded-2xl bg-white flex flex-col items-center justify-center py-20 px-8 text-center gap-6"
+          style={{ border: "1px solid #E5E7EB", borderTop: "4px solid #F97316", boxShadow: "0 4px 24px rgba(0,0,0,0.06)" }}
+        >
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-orange-100">
+            <Lock className="h-8 w-8 text-[#F97316]" />
+          </div>
+          <div className="space-y-2 max-w-md">
+            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#F97316]">
+              {interviewAccessLocked ? (isSuspended ? "Account Suspended" : "Interview Quota Locked") : "Job Limit Reached"}
+            </p>
+            <h2 className="text-2xl font-bold text-gray-900">
+              {interviewAccessLocked ? getInterviewQuotaSupportMessage("interviews") : "Upgrade to create more jobs"}
+            </h2>
+            <p className="text-sm font-medium text-gray-500">
+              {interviewAccessLocked
+                ? getInterviewActionBlockedMessage(isSuspended)
+                : `Your plan allows ${formatDriveLimit(maxActiveDrives)} active jobs. You currently have ${activeDriveCount} active. Upgrade your plan to add more.`}
+            </p>
+          </div>
+          {interviewAccessLocked ? (
+            <a
+              href={getSupportComposeUrl({ subject: "Interview quota support request", body: isSuspended ? "Hi support team,\n\nOur account is suspended by Super Admin. Please help us restore access.\n" : "Hi support team,\n\nPlease help us restore interview access for our account.\n" })}
+              target="_blank" rel="noreferrer"
+              className="flex items-center gap-2 rounded-xl px-8 py-3 text-[15px] font-bold text-white transition-all hover:shadow-lg"
+              style={{ background: "linear-gradient(135deg, #F97316, #ea6608)" }}
+            >
+              Contact Support <ChevronRight className="h-4 w-4" />
+            </a>
+          ) : (
+            <Link
+              href="/admin/billing"
+              className="flex items-center gap-2 rounded-xl px-8 py-3 text-[15px] font-bold text-white transition-all hover:shadow-lg"
+              style={{ background: "linear-gradient(135deg, #F97316, #ea6608)" }}
+            >
+              Go to Billing <ChevronRight className="h-4 w-4" />
+            </Link>
+          )}
+        </div>
       </div>
     );
   }
@@ -376,7 +448,7 @@ function CreateDriveForm() {
         className="mb-6 flex items-center gap-2 text-sm font-bold text-gray-400 hover:text-gray-600 transition-colors"
       >
         <ChevronLeft className="h-4 w-4" />
-        {isEditMode ? "Back to All Drives" : "Back"}
+        {isEditMode ? "Back to All Jobs" : "Back"}
       </button>
 
       <div className="mb-8 group">
@@ -384,46 +456,13 @@ function CreateDriveForm() {
           <div className="h-12 w-1.5 bg-gradient-to-b from-[#F97316] to-orange-400 rounded-full shadow-[0_0_12px_rgba(249,115,22,0.4)] transition-all duration-300 group-hover:h-14" />
           <div>
             <h1 className="text-3xl sm:text-4xl font-extrabold text-gray-900 tracking-tight">
-              {isEditAction ? "Edit Drive Details" : "Create New Drive"}
+              {isEditAction ? "Edit Job" : "Create New Job"}
             </h1>
             <p className="text-gray-500 font-medium mt-1 text-base sm:text-lg">
-              Configure your hiring drive and screening process.
+              Configure your job and screening process.
             </p>
           </div>
         </div>
-        {driveCreationLocked && !isEditMode && (
-          <div className="mt-6 rounded-3xl border border-orange-200 bg-gradient-to-r from-orange-50 to-amber-50 px-5 py-4 shadow-sm">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-start gap-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-orange-100 text-[#F97316]">
-                  <Lock className="h-5 w-5" />
-                </div>
-                <div className="space-y-1">
-                  <p className="text-[11px] font-black uppercase tracking-[0.22em] text-[#F97316]">
-                    {interviewAccessLocked ? (isSuspended ? "Account suspended" : "Interview quota locked") : "Drive limit reached"}
-                  </p>
-                  <h2 className="text-lg font-bold text-gray-900">
-                    {interviewAccessLocked ? getInterviewQuotaSupportMessage("interviews") : "Go to Billing to upgrade your plan"}
-                  </h2>
-                  <p className="text-sm font-medium text-gray-600">
-                    {interviewAccessLocked
-                      ? getInterviewActionBlockedMessage(isSuspended)
-                      : `Your plan allows ${formatDriveLimit(maxActiveDrives)} active drives and you currently have ${activeDriveCount} active drives.`}
-                  </p>
-                </div>
-              </div>
-              {interviewAccessLocked ? (
-                <a href={getSupportComposeUrl({ subject: "Interview quota support request", body: isSuspended ? "Hi support team,\n\nOur account is suspended by Super Admin. Please help us restore access.\n" : "Hi support team,\n\nPlease help us restore interview access for our account.\n" })} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#F97316] px-5 py-3 text-sm font-bold text-white shadow-md transition-colors hover:bg-orange-600">
-                  Contact Support <ChevronRight className="h-4 w-4" />
-                </a>
-              ) : (
-                <Link href="/admin/billing" className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#F97316] px-5 py-3 text-sm font-bold text-white shadow-md transition-colors hover:bg-orange-600">
-                  Upgrade Plan <ChevronRight className="h-4 w-4" />
-                </Link>
-              )}
-            </div>
-          </div>
-        )}
       </div>
 
       <div
@@ -448,19 +487,19 @@ function CreateDriveForm() {
 
           <Divider />
 
-          {/* Section 2: Drive Name & Role */}
+          {/* Section 2: Job Name & Role */}
           <section>
-            <SectionHeader index={2} title="Drive Details" subtitle="Name and role for this recruitment drive" />
+            <SectionHeader index={2} title="Job Details" subtitle="Name and role for this job" />
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
                 <Label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest">
-                  Drive Name
+                  Job Name
                   <span className="text-[#F97316] ml-0.5">*</span>
                 </Label>
                 <Input
                   value={formData.title || ""}
                   onChange={(e) => setFormData((prev: any) => ({ ...prev, title: e.target.value }))}
-                  placeholder="e.g. Senior Backend Engineer Drive"
+                  placeholder="e.g. Senior Backend Engineer"
                   className={cn(
                     "h-10 rounded-lg bg-white px-3 text-[14px] font-medium shadow-sm transition-all duration-150 placeholder:text-gray-400 placeholder:font-normal border-gray-200 hover:border-orange-300 hover:shadow-md focus-visible:ring-[#F97316]/30 focus-visible:border-[#F97316]",
                     isAnalyzing && !formData.title && "bg-orange-50/30"
@@ -496,13 +535,13 @@ function CreateDriveForm() {
                 className={cn(isAnalyzing && !formData.deadline && "opacity-95")}
               />
               <p className="text-[11px] text-gray-400 font-medium">
-                Candidates can attend until this deadline.
+                Candidates can apply until this deadline.
               </p>
             </div>
             {isAnalyzing && (
               <p className="mt-2 text-[11px] text-orange-500 font-medium flex items-center gap-1.5">
                 <Loader2 className="h-3 w-3 animate-spin" />
-                AI is filling these fields from your JD...
+                AI is filling these fields from your job description...
               </p>
             )}
           </section>
@@ -525,24 +564,8 @@ function CreateDriveForm() {
           <section>
             <SectionHeader index={4} title="Screening Settings" subtitle="Set threshold and criteria for resume screening" />
             <ScreeningSettings
-              config={{
-                threshold: Number(formData.screeningThreshold ?? 60),
-                criteria: (formData.screeningCriteria || {}) as ScreeningCriteria,
-              }}
-              setConfig={(cfg) =>
-                setFormData((prev: any) => {
-                  const current = {
-                    threshold: Number(prev.screeningThreshold ?? 60),
-                    criteria: (prev.screeningCriteria || {}) as ScreeningCriteria,
-                  };
-                  const next = typeof cfg === "function" ? cfg(current) : cfg;
-                  return {
-                    ...prev,
-                    screeningThreshold: Number(next.threshold ?? 60),
-                    screeningCriteria: sanitizeScreeningCriteria(next.criteria || {}),
-                  };
-                })
-              }
+              config={screeningConfig}
+              setConfig={handleScreeningConfig}
             />
           </section>
         </div>
@@ -556,31 +579,19 @@ function CreateDriveForm() {
             {isEditAction ? "Cancel" : "Back"}
           </button>
 
-          {driveCreationLocked && !isEditMode ? (
-            interviewAccessLocked ? (
-              <a href={getSupportComposeUrl({ subject: "Interview quota support request", body: isSuspended ? "Hi support team,\n\nOur account is suspended by Super Admin. Please help us restore access.\n" : "Hi support team,\n\nPlease help us restore interview access for our account.\n" })} target="_blank" rel="noreferrer" className="flex items-center gap-2 rounded-xl px-8 py-3 text-[15px] font-bold text-white transition-all duration-200 active:scale-95 hover:shadow-lg" style={{ background: "linear-gradient(135deg, #F97316, #ea6608)" }}>
-                <Lock className="h-5 w-5" /> Contact Support
-              </a>
-            ) : (
-              <Link href="/admin/billing" className="flex items-center gap-2 rounded-xl px-8 py-3 text-[15px] font-bold text-white transition-all duration-200 active:scale-95 hover:shadow-lg" style={{ background: "linear-gradient(135deg, #F97316, #ea6608)" }}>
-                <Lock className="h-5 w-5" /> Go to Billing
-              </Link>
-            )
-          ) : (
-            <button
-              type="button"
-              onClick={handlePublish}
-              disabled={isSavingDraft}
-              className={cn(
-                "flex items-center gap-2 rounded-xl px-8 py-3 text-[15px] font-bold text-white transition-all duration-200 active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed",
-                !isSavingDraft && "hover:shadow-lg"
-              )}
-              style={{ background: "linear-gradient(135deg, #F97316, #ea6608)", animation: isSavingDraft ? "none" : "pulse-glow 2s infinite" }}
-            >
-              {isSavingDraft ? <Loader2 className="h-5 w-5 animate-spin" /> : <Rocket className="h-5 w-5" />}
-              {isSavingDraft ? "Saving..." : isEditAction ? "Update Drive" : "Create Drive"}
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={handlePublish}
+            disabled={isSavingDraft}
+            className={cn(
+              "flex items-center gap-2 rounded-xl px-8 py-3 text-[15px] font-bold text-white transition-all duration-200 active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed",
+              !isSavingDraft && "hover:shadow-lg"
+            )}
+            style={{ background: "linear-gradient(135deg, #F97316, #ea6608)", animation: isSavingDraft ? "none" : "pulse-glow 2s infinite" }}
+          >
+            {isSavingDraft ? <Loader2 className="h-5 w-5 animate-spin" /> : <Rocket className="h-5 w-5" />}
+            {isSavingDraft ? "Saving..." : isEditAction ? "Update Job" : "Create Job"}
+          </button>
         </div>
       </div>
 

@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession, isAdminRole } from "@/lib/auth";
 
-// GET /api/admin/profile - returns org-level profile details (name, phone, jobTitle) + user email
 export async function GET() {
     try {
         const session = await getSession();
@@ -12,7 +11,7 @@ export async function GET() {
 
         const user = await prisma.user.findUnique({
             where: { id: session.userId },
-            select: { name: true, phone: true, jobTitle: true, email: true }
+            select: { name: true, email: true }
         });
 
         if (!user) {
@@ -21,8 +20,6 @@ export async function GET() {
 
         return NextResponse.json({
             name: user.name || "",
-            phone: user.phone || "",
-            jobTitle: user.jobTitle || "",
             email: user.email || "",
         });
     } catch (error) {
@@ -31,7 +28,6 @@ export async function GET() {
     }
 }
 
-// PATCH /api/admin/profile - update org-level profile fields
 export async function PATCH(req: Request) {
     try {
         const session = await getSession();
@@ -39,17 +35,12 @@ export async function PATCH(req: Request) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        const body = await req.json();
-        const { name, phone, jobTitle } = body;
+        const { name } = await req.json();
 
         const updatedUser = await prisma.user.update({
             where: { id: session.userId },
-            data: {
-                name: name || undefined,
-                phone: phone || undefined,
-                jobTitle: jobTitle || undefined,
-            },
-            select: { name: true, phone: true, jobTitle: true }
+            data: { name: name || undefined },
+            select: { name: true }
         });
 
         return NextResponse.json(updatedUser);

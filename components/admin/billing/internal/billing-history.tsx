@@ -261,8 +261,8 @@ export function HistoryTable({
     out = out.filter((r) => isInDateRange(r.date));
     out = [...out].sort((a, b) => {
       const k = sort.key;
-      const av = a[k];
-      const bv = b[k];
+      const av = a[k] ?? "";
+      const bv = b[k] ?? "";
       const cmp = av < bv ? -1 : av > bv ? 1 : 0;
       return sort.dir === "asc" ? cmp : -cmp;
     });
@@ -276,7 +276,7 @@ export function HistoryTable({
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  const gridCols = showCreditsUsed ? "1.6fr 1.4fr .9fr .9fr 1fr 120px" : "1.6fr 1.4fr .9fr 1fr 120px";
+  const gridCols = showCreditsUsed ? "1.6fr 1.4fr .9fr .9fr 1fr .85fr 120px" : "1.6fr 1.4fr .9fr 1fr .85fr 120px";
 
   return (
     <div
@@ -399,6 +399,9 @@ export function HistoryTable({
         <HistorySortHead k="date" sort={sort} setSort={setSort}>
           Date
         </HistorySortHead>
+        <HistorySortHead k="time" sort={sort} setSort={setSort}>
+          Duration
+        </HistorySortHead>
         <HistorySortHead k="status" sort={sort} setSort={setSort}>
           Status
         </HistorySortHead>
@@ -449,6 +452,7 @@ export function HistoryTable({
               </div>
             ) : null}
             <div style={{ color: MUTED, fontSize: 12.5 }}>{fmtDate(row.date)}</div>
+            <div style={{ color: MUTED, fontSize: 12.5 }}>{row.time ?? "—"}</div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4 }}>
               <StatusPill status={row.status} />
             </div>

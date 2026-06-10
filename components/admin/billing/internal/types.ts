@@ -8,6 +8,7 @@ export type InterviewRow = {
   creditsUsed: number;
   status: InterviewStatus;
   date: string;
+  time?: string;
 };
 
 export type CreditPack = {

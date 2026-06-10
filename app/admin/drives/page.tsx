@@ -110,9 +110,9 @@ export default function DrivesPage() {
     };
 
     const isSuspended = isOrgRestrictedStatus(orgStatus);
-    const activeDriveCount = organization?.activeDriveCount ?? getActiveDriveCount(jobs);
+    const activeDriveCount = adminOrg?.activeDriveCount ?? getActiveDriveCount(jobs);
     const interviewAccessLocked = quotaLocked || isSuspended;
-    const driveCreationLocked = isDriveCreationLocked(organization?.maxActiveDrives, activeDriveCount) || interviewAccessLocked;
+    const driveCreationLocked = isDriveCreationLocked(adminOrg?.maxActiveDrives, activeDriveCount) || interviewAccessLocked;
 
     const confirmDelete = async () => {
         if (!driveToDelete) return;

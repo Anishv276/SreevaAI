@@ -10,9 +10,9 @@ import {
     Briefcase, Globe, Database, HelpCircle, CreditCard, Mail
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/context/auth-context";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { isInterviewQuotaLocked, isOrgRestrictedStatus } from "@/lib/interview-quota";
 import { useAdminOrg } from "@/context/admin-org-context";
 
@@ -44,7 +44,6 @@ export function Sidebar() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const orgId = searchParams.get("orgId");
-    const [menuOpen, setMenuOpen] = useState(false);
     const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
     const [isLoggingOut, setIsLoggingOut] = useState(false);
     const { logout, user } = useAuth();
@@ -109,56 +108,48 @@ export function Sidebar() {
     return (
         <>
             {/* LOGOUT CONFIRMATION MODAL */}
-            <AnimatePresence>
-                {showLogoutConfirm && (
-                    <div className="fixed inset-0 z-[1000] flex items-center justify-center p-6 pb-20 md:pb-6 font-inter">
-                        <motion.div 
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            className="absolute inset-0 bg-gray-900/40 backdrop-blur-sm"
-                            onClick={() => !isLoggingOut && setShowLogoutConfirm(false)}
-                        />
-                        <motion.div 
-                            initial={{ opacity: 0, scale: 0.95, y: 20 }}
-                            animate={{ opacity: 1, scale: 1, y: 0 }}
-                            exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                            ref={modalRef}
-                            className="relative w-full max-w-md bg-white border border-gray-100 rounded-[2rem] shadow-[0_32px_80px_rgba(0,0,0,0.15)] overflow-hidden"
-                        >
-                            <div className="p-8 text-center space-y-6">
-                                <div className="flex justify-center">
-                                    <div className="h-20 w-20 rounded-3xl bg-red-50 text-red-500 flex items-center justify-center animate-pulse">
-                                        <ShieldAlert className="h-10 w-10" />
-                                    </div>
-                                </div>
-                                <div className="space-y-2">
-                                    <h2 className="text-2xl font-bold text-gray-900 tracking-tight">Sign Out?</h2>
-                                    <p className="text-sm font-medium text-gray-500 leading-relaxed">
-                                        You are about to end your session. Any unsaved changes in current job configurations might be lost.
-                                    </p>
-                                </div>
-                                <div className="grid grid-cols-2 gap-3 pt-2">
-                                    <button
-                                        onClick={() => setShowLogoutConfirm(false)}
-                                        disabled={isLoggingOut}
-                                        className="h-12 bg-gray-50 text-gray-600 rounded-2xl font-bold text-sm hover:bg-gray-100 transition-all active:scale-[0.98] border border-gray-100"
-                                    >
-                                        Stay Active
-                                    </button>
-                                    <button
-                                        onClick={handleLogout}
-                                        disabled={isLoggingOut}
-                                        className="h-12 bg-gray-900 text-white rounded-2xl font-bold text-sm shadow-xl shadow-gray-200 hover:bg-red-600 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
-                                    >
-                                        {isLoggingOut ? <Loader2 className="h-4 w-4 animate-spin" /> : "Sign Out"}
-                                    </button>
+            {showLogoutConfirm && (
+                <div className="fixed inset-0 z-[1000] flex items-center justify-center p-6 pb-20 md:pb-6 font-inter">
+                    <div
+                        className="absolute inset-0 bg-gray-900/40 backdrop-blur-sm"
+                        onClick={() => !isLoggingOut && setShowLogoutConfirm(false)}
+                    />
+                    <div
+                        ref={modalRef}
+                        className="relative w-full max-w-md bg-white border border-gray-100 rounded-[2rem] shadow-[0_32px_80px_rgba(0,0,0,0.15)] overflow-hidden"
+                    >
+                        <div className="p-8 text-center space-y-6">
+                            <div className="flex justify-center">
+                                <div className="h-20 w-20 rounded-3xl bg-red-50 text-red-500 flex items-center justify-center animate-pulse">
+                                    <ShieldAlert className="h-10 w-10" />
                                 </div>
                             </div>
-                        </motion.div>
+                            <div className="space-y-2">
+                                <h2 className="text-2xl font-bold text-gray-900 tracking-tight">Sign Out?</h2>
+                                <p className="text-sm font-medium text-gray-500 leading-relaxed">
+                                    You are about to end your session. Any unsaved changes in current job configurations might be lost.
+                                </p>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3 pt-2">
+                                <button
+                                    onClick={() => setShowLogoutConfirm(false)}
+                                    disabled={isLoggingOut}
+                                    className="h-12 bg-gray-50 text-gray-600 rounded-2xl font-bold text-sm hover:bg-gray-100 transition-all active:scale-[0.98] border border-gray-100"
+                                >
+                                    Stay Active
+                                </button>
+                                <button
+                                    onClick={handleLogout}
+                                    disabled={isLoggingOut}
+                                    className="h-12 bg-gray-900 text-white rounded-2xl font-bold text-sm shadow-xl shadow-gray-200 hover:bg-red-600 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                                >
+                                    {isLoggingOut ? <Loader2 className="h-4 w-4 animate-spin" /> : "Sign Out"}
+                                </button>
+                            </div>
+                        </div>
                     </div>
-                )}
-            </AnimatePresence>
+                </div>
+            )}
 
             <aside
                 id="global-admin-sidebar"
@@ -255,69 +246,13 @@ export function Sidebar() {
 
                 {/* Footer Section */}
                 <div className="px-4 pb-6 pt-4 border-t border-gray-100/50">
-                    {/* User Profile */}
-                    <div className="relative">
-                        <button
-                            onClick={() => setMenuOpen(!menuOpen)}
-                            className={cn(
-                                "w-full flex items-center gap-3 p-2 rounded-2xl transition-all duration-300 group border",
-                                menuOpen 
-                                    ? "bg-gray-50 border-gray-200 shadow-md" 
-                                    : "bg-white border-transparent hover:border-gray-200 hover:shadow-lg"
-                            )}
-                        >
-                            <div className="relative">
-                                <div 
-                                    suppressHydrationWarning
-                                    className={cn(
-                                        "h-10 w-10 rounded-xl flex items-center justify-center font-bold text-xs uppercase transition-all duration-500",
-                                        menuOpen ? "bg-[#F97316] text-white" : "bg-gray-100 text-gray-500 group-hover:bg-[#F97316] group-hover:text-white"
-                                    )}
-                                >
-                                    {user?.name?.[0] || user?.email?.[0] || "A"}
-                                </div>
-                                <div className="absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full border-2 border-white bg-green-500" />
-                            </div>
-                            <div className="flex-1 text-left min-w-0">
-                                <p className={cn("text-[17px] font-bold truncate tracking-tight text-gray-900")}>
-                                    {user?.name || "Recruiter"}
-                                </p>
-                                <p className={cn("text-[10px] font-medium truncate text-gray-400")}>
-                                    {user?.email}
-                                </p>
-                            </div>
-                            <ChevronDown className={cn(
-                                "h-4 w-4 transition-transform duration-500 text-gray-400",
-                                menuOpen ? "rotate-180" : "group-hover:scale-110"
-                            )} />
-                        </button>
-
-                        <AnimatePresence>
-                            {menuOpen && (
-                                <motion.div
-                                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                                    className="absolute bottom-[calc(100%+12px)] left-0 right-0 bg-white border border-gray-200 rounded-2xl overflow-hidden z-50 shadow-[0_20px_50px_rgba(0,0,0,0.1)] p-1.5 font-inter"
-                                >
-                                    <button 
-                                        onClick={() => { router.push("/admin/settings"); setMenuOpen(false); }}
-                                        className="flex items-center gap-3 w-full px-4 py-2.5 text-[12px] font-semibold text-gray-600 hover:text-gray-950 hover:bg-gray-50 rounded-xl transition-all group/item"
-                                    >
-                                        <User className="h-4 w-4 text-gray-400 group-hover/item:text-[#F97316] transition-colors" />
-                                        Profile Settings
-                                    </button>
-                                    <div className="h-px bg-gray-100 my-1 mx-3" />
-                                    <button 
-                                        onClick={() => { setShowLogoutConfirm(true); setMenuOpen(false); }}
-                                        className="flex items-center gap-3 w-full px-4 py-2.5 text-[12px] font-semibold text-red-500 hover:bg-red-50 rounded-xl transition-all"
-                                    >
-                                        <LogOut className="h-4 w-4" /> Sign Out
-                                    </button>
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
-                    </div>
+                    <button
+                        onClick={() => setShowLogoutConfirm(true)}
+                        className="w-full h-12 flex items-center justify-center gap-3 px-6 rounded-xl text-[11px] text-gray-900 hover:text-rose-600 hover:bg-rose-50 font-black uppercase tracking-[0.2em] transition-all group"
+                    >
+                        <LogOut className="h-4 w-4 group-hover:-translate-x-1 transition-transform" />
+                        Sign Out
+                    </button>
                 </div>
             </aside>
         </>

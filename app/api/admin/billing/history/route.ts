@@ -62,6 +62,7 @@ export async function GET(request: Request) {
           creditsUsed: Math.round((durationSec / 60) * 100) / 100,
           status: normalizeStatus(row.status),
           date,
+          time: (() => { const m = Math.floor(durationSec / 60); const s = durationSec % 60; return durationSec ? `${m}m ${String(s).padStart(2, "0")}s` : undefined; })(),
         };
       })
       .filter((row) => row.status !== "pending");
