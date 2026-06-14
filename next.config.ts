@@ -6,6 +6,16 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'pub-67307f9b6269400eb31764dc43d0a2ce.r2.dev',
+        port: '',
+        pathname: '/**',
+      },
+    ],
+  },
   serverExternalPackages: [
     '@prisma/client',
     '@prisma/adapter-pg',

@@ -115,7 +115,9 @@
       "Bash(Test-NetConnection -ComputerName aws-1-ap-south-1.pooler.supabase.com -Port 6543)",
       "Bash(python scripts/extract_pdf.py)",
       "Bash(python -c \"from scripts.extract_pdf import main; print\\('OK'\\)\")",
-      "Bash(python -c \"import sys; sys.path.insert\\(0,'.'\\);  from extraction_resume_JD_score_report.pipeline import main; print\\('OK'\\)\")"
+      "Bash(python -c \"import sys; sys.path.insert\\(0,'.'\\);  from extraction_resume_JD_score_report.pipeline import main; print\\('OK'\\)\")",
+      "Bash(xargs grep -l \"ResumeReview\\\\|startAnalysis\\\\|resume.*extract\\\\|isAnalyzing\")",
+      "Bash(xargs grep -l \"ResumeReview\\\\|ResumeUpload\\\\|startAnalysis\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\vamsi\\OneDrive\\Desktop\\HR-updates\\scratch",

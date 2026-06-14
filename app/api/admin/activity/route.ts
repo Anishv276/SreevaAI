@@ -28,42 +28,52 @@ export async function GET(req: Request) {
         const start = getRangeStart(range, from);
 
         // --- Core Fetcher Function ---
-        async function fetchActivity(dateCutoff: Date | null) {
+        async function fetchActivity(dateCutoff: Date | null): Promise<[
+            Array<{ id: string; createdAt: Date; drive: { title: string | null } | null }>,
+            Array<{
+                id: string;
+                status: string;
+                updatedAt: Date;
+                completedAt: Date | null;
+                application: { aiScore: number | null; drive: { title: string | null } | null };
+            }>,
+            Array<{ id: string; updatedAt: Date; drive: { title: string | null } | null }>
+        ]> {
             const applicationWhere = {
                 drive: { orgId },
                 ...(dateCutoff ? { createdAt: { gte: dateCutoff } } : {}),
             };
 
-            return await Promise.all([
-                prisma.application.findMany({
-                    where: applicationWhere,
-                    select: { id: true, createdAt: true, drive: { select: { title: true } } },
-                    orderBy: { createdAt: "desc" },
-                    take: 20
-                }),
-                prisma.interview.findMany({
-                    where: {
-                        ...(dateCutoff ? { updatedAt: { gte: dateCutoff } } : {}),
-                        application: { drive: { orgId } },
-                        status: { in: ["COMPLETED", "IN_PROGRESS"] },
-                    },
-                    select: {
-                        id: true, status: true, updatedAt: true, completedAt: true,
-                        application: { select: { aiScore: true, drive: { select: { title: true } } } },
-                    },
-                    orderBy: { updatedAt: "desc" },
-                    take: 20
-                }),
-                prisma.application.findMany({
-                    where: {
-                        ...(dateCutoff ? { updatedAt: { gte: dateCutoff } } : {}),
-                        resumeStatus: "rejected", drive: { orgId },
-                    },
-                    select: { id: true, updatedAt: true, drive: { select: { title: true } } },
-                    orderBy: { updatedAt: "desc" },
-                    take: 20
-                })
-            ]);
+            const recentApplications = await prisma.application.findMany({
+                where: applicationWhere,
+                select: { id: true, createdAt: true, drive: { select: { title: true } } },
+                orderBy: { createdAt: "desc" },
+                take: 20
+            });
+            const recentInterviews = await prisma.interview.findMany({
+                where: {
+                    ...(dateCutoff ? { updatedAt: { gte: dateCutoff } } : {}),
+                    application: { drive: { orgId } },
+                    status: { in: ["COMPLETED", "IN_PROGRESS"] },
+                },
+                select: {
+                    id: true, status: true, updatedAt: true, completedAt: true,
+                    application: { select: { aiScore: true, drive: { select: { title: true } } } },
+                },
+                orderBy: { updatedAt: "desc" },
+                take: 20
+            });
+            const recentRejections = await prisma.application.findMany({
+                where: {
+                    ...(dateCutoff ? { updatedAt: { gte: dateCutoff } } : {}),
+                    resumeStatus: "rejected", drive: { orgId },
+                },
+                select: { id: true, updatedAt: true, drive: { select: { title: true } } },
+                orderBy: { updatedAt: "desc" },
+                take: 20
+            });
+
+            return [recentApplications, recentInterviews, recentRejections];
         }
 
         // Fetch activity within range; if nothing found, widen to 90 days instead of all-time

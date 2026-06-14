@@ -129,6 +129,21 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [pageSize]);
 
+    // Auto-poll while any candidate is waiting/processing so progress shows without a manual refresh
+    useEffect(() => {
+        const hasPending = candidates.some((c: any) => {
+            const s = String(c.resumeStatus || c.status || "").toLowerCase();
+            return s === "waiting" || s === "processing";
+        });
+        if (!hasPending) return;
+        const timer = setInterval(() => {
+            const { startDate, endDate } = getDateRange();
+            void fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm, scoreSort);
+        }, 3000);
+        return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [candidates, pagination.page, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, searchTerm, scoreSort]);
+
     const handlePageChange = (newPage: number) => {
         if (newPage < 1 || newPage > pagination.totalPages) return;
         let startDate: string | undefined;

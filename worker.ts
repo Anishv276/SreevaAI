@@ -168,6 +168,40 @@ async function runPythonJson(args: string[], timeoutMs = 180000): Promise<any> {
   });
 }
 
+// Like runPythonJson but writes `stdinPayload` to the process stdin.
+// Used for RESUME_AND_SCORE mode to pass the JD payload without a temp file.
+async function runPythonJsonWithStdin(args: string[], stdinPayload: string, timeoutMs = 180000): Promise<any> {
+  return new Promise((resolve, reject) => {
+    let out = "";
+    let err = "";
+    const p = spawn(pythonCmd, args);
+    const timer = setTimeout(() => {
+      p.kill();
+      reject(new Error(`python timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+    p.stdout.on("data", (data) => { out += data.toString(); });
+    p.stderr.on("data", (data) => { err += data.toString(); });
+    p.on("close", (code) => {
+      clearTimeout(timer);
+      if (code !== 0) {
+        reject(new Error(err || `python exited ${code}`));
+        return;
+      }
+      try {
+        resolve(JSON.parse(out));
+      } catch (e: any) {
+        reject(new Error(`Invalid python JSON: ${e.message}`));
+      }
+    });
+    p.on("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    p.stdin.write(stdinPayload);
+    p.stdin.end();
+  });
+}
+
 async function setDriveCandidateStage(
   candidateId: string,
   stage: string,
@@ -494,6 +528,16 @@ async function processDriveResumeBatchJob(job: any) {
   const threshold = parsedSettings.threshold;
   const screeningCriteria = parsedSettings.criteria;
 
+  // Mark all candidates as "queued" immediately so the frontend stops showing "waiting"
+  // while JD extraction runs (which can take several seconds before any per-candidate work starts).
+  await prisma.resumeCandidate.updateMany({
+    where: { bulkBatchId: batchId, resumeStatus: "waiting" },
+    data: {
+      resumeStatus: "processing",
+      aiReport: JSON.stringify({ processing: { stage: "queued", progress: 5 } }),
+    },
+  });
+
   let structuredJd = parseJsonSafe<Record<string, any>>(drive.extractedDetails, {});
   const jdRawText = buildJdRawText(drive);
   if (!hasJdMustHaves(structuredJd) && jdRawText.length >= 80) {
@@ -585,51 +629,66 @@ async function processDriveResumeBatchJob(job: any) {
 
           let resumeRawText: string;
           let structuredResume: Record<string, any>;
+          let aiResult: Record<string, any>;
+          let scoreUsage: Record<string, any> | null = null;
 
           if (hasCachedParse) {
-            console.log(`[RESUME-WORKER] Candidate ${candidate.id}: using cached parse result, skipping LLM extraction`);
+            // Already have parsed resume — only need to score it (single subprocess)
+            console.log(`[RESUME-WORKER] Candidate ${candidate.id}: using cached parse, running score only`);
+            const tmpScorePath = join(tmpdir(), `drive_score_${candidate.id}_${Date.now()}.json`);
+            await writeFile(tmpScorePath, JSON.stringify({
+              resume: cachedStructured,
+              jd: structuredJd,
+              resume_raw_text: cachedText,
+              jd_raw_text: jdRawText,
+              threshold,
+              screening_criteria: screeningCriteria,
+            }));
+            const scoreOnly = await runPythonJson(["scripts/extract_pdf.py", tmpScorePath, "SCORE", batchReportModel]);
+            await unlink(tmpScorePath).catch(() => {});
+            if (scoreOnly?.error) throw new Error(scoreOnly.error);
             resumeRawText = cachedText;
             structuredResume = cachedStructured;
+            aiResult = scoreOnly.data || scoreOnly;
+            scoreUsage = scoreOnly.usage || null;
           } else {
-            const extracted = await runPythonJson(["scripts/extract_pdf.py", tmpPdfPath, "RESUME", batchExtractModel]);
-            if (extracted?.error) throw new Error(extracted.error);
-            resumeRawText = String(extracted?.text || "");
-            structuredResume = extracted?.data || {};
-            if (extracted?.usage?.inputTokens || extracted?.usage?.outputTokens) {
+            // Combined mode: one subprocess does extract + parse + score + report
+            console.log(`[RESUME-WORKER] Candidate ${candidate.id}: running combined RESUME_AND_SCORE`);
+            const jdPayload = JSON.stringify({
+              jd: structuredJd,
+              jd_raw_text: jdRawText,
+              threshold,
+              screening_criteria: screeningCriteria,
+            });
+            const combined = await runPythonJsonWithStdin(
+              ["scripts/extract_pdf.py", tmpPdfPath, "RESUME_AND_SCORE", batchExtractModel, batchReportModel],
+              jdPayload,
+            );
+            if (combined?.error) throw new Error(combined.error);
+            resumeRawText = String(combined?.text || "");
+            structuredResume = combined?.data || {};
+            aiResult = combined?.score || {};
+            scoreUsage = combined?.usage_score || null;
+
+            // Bill extraction usage separately
+            const usageExtract = combined?.usage_extract || {};
+            if (usageExtract?.inputTokens || usageExtract?.outputTokens) {
               await recordOrgBillingUsage({
                 orgId,
                 feature: "resumeExtraction",
                 usage: {
-                  model: extracted.usage.model,
-                  inputTokens: extracted.usage.inputTokens || 0,
-                  outputTokens: extracted.usage.outputTokens || 0,
-                  cachedInputTokens: extracted.usage.cachedInputTokens || 0,
+                  model: usageExtract.model,
+                  inputTokens: usageExtract.inputTokens || 0,
+                  outputTokens: usageExtract.outputTokens || 0,
+                  cachedInputTokens: usageExtract.cachedInputTokens || 0,
                   eventId: `resume-extraction:${candidate.id}`,
                 },
               });
             }
           }
 
-          console.log(`[RESUME-WORKER] Candidate ${candidate.id}: extracting -> scoring (50%)`);
-          await setDriveCandidateStage(candidate.id, "scoring", 50, "processing");
+          await setDriveCandidateStage(candidate.id, "finalizing", 80, "processing");
 
-          const tmpScorePath = join(tmpdir(), `drive_score_${candidate.id}_${Date.now()}.json`);
-          await writeFile(tmpScorePath, JSON.stringify({
-            resume: structuredResume,
-            jd: structuredJd,
-            resume_raw_text: resumeRawText,
-            jd_raw_text: jdRawText,
-            threshold,
-            screening_criteria: screeningCriteria,
-          }));
-          const scoreResult = await runPythonJson(["scripts/extract_pdf.py", tmpScorePath, "SCORE", batchReportModel]);
-          await unlink(tmpScorePath).catch(() => {});
-          if (scoreResult?.error) throw new Error(scoreResult.error);
-
-          console.log(`[RESUME-WORKER] Candidate ${candidate.id}: scoring -> finalizing (75%)`);
-          await setDriveCandidateStage(candidate.id, "finalizing", 75, "processing");
-
-          const aiResult = scoreResult.data || scoreResult;
           const finalScore =
             typeof aiResult.score === "number"
               ? aiResult.score
@@ -702,15 +761,16 @@ async function processDriveResumeBatchJob(job: any) {
             `[RESUME-WORKER] Candidate ${candidate.id}: completed score=${finalScore} status=${finalStatus}`
           );
 
-          if (scoreResult?.usage?.inputTokens || scoreResult?.usage?.outputTokens) {
+          // Bill score/report usage — populated from combined.usage_score or scoreOnly.usage above
+          if (scoreUsage?.inputTokens || scoreUsage?.outputTokens) {
             await recordOrgBillingUsage({
               orgId,
               feature: "resumeReport",
               usage: {
-                model: scoreResult.usage.model,
-                inputTokens: scoreResult.usage.inputTokens || 0,
-                outputTokens: scoreResult.usage.outputTokens || 0,
-                cachedInputTokens: scoreResult.usage.cachedInputTokens || 0,
+                model: scoreUsage.model,
+                inputTokens: scoreUsage.inputTokens || 0,
+                outputTokens: scoreUsage.outputTokens || 0,
+                cachedInputTokens: scoreUsage.cachedInputTokens || 0,
                 eventId: `resume-report:${candidate.id}`,
               },
             });

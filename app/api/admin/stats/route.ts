@@ -42,69 +42,65 @@ export async function GET(req: NextRequest) {
             closingSoon: number;
         };
 
-        // Single query for all application/interview stats using FILTER
-        const [appStats, driveStats, ratingStats] = await Promise.all([
-            prisma.$queryRaw`
-                SELECT
-                    COUNT(*) FILTER (WHERE a."createdAt" >= ${start})::INT AS applications,
-                    COUNT(*) FILTER (WHERE a."createdAt" >= ${todayStart})::INT AS "applicationsToday",
-                    COUNT(*) FILTER (WHERE a."createdAt" >= ${prevStart} AND a."createdAt" < ${prevEnd})::INT AS "applicationsPrev",
-                    COUNT(*) FILTER (WHERE a."createdAt" >= ${start} AND a."aiScore" IS NOT NULL)::INT AS "screenedInPeriod",
-                    COUNT(*) FILTER (WHERE a."updatedAt" >= ${start} AND a."resumeStatus" ILIKE 'SHORTLISTED')::INT AS shortlisted,
-                    COUNT(*) FILTER (WHERE a."updatedAt" >= ${start} AND a."hiringStatus" ILIKE 'HIRED')::INT AS "hiredThisMonth",
-                    COUNT(*) FILTER (WHERE a."updatedAt" >= ${prevStart} AND a."updatedAt" < ${prevEnd} AND a."hiringStatus" ILIKE 'HIRED')::INT AS "hiredPrevMonth",
-                    COUNT(*) FILTER (
-                        WHERE i."status" = 'COMPLETED' AND i."completedAt" >= ${start}
-                    )::INT AS interviewed,
-                    COUNT(*) FILTER (WHERE i."status" = 'IN_PROGRESS')::INT AS "liveInterviews",
-                    COUNT(*) FILTER (WHERE i."status" = 'COMPLETED' AND a."aiScore" IS NULL)::INT AS "needsReview",
-                    COUNT(*) FILTER (WHERE i."createdAt" >= ${start})::INT AS invited,
-                    -- Time metrics
-                    AVG(EXTRACT(EPOCH FROM (a."updatedAt" - a."createdAt"))/86400) FILTER (
-                        WHERE a."updatedAt" >= ${start} AND a."hiringStatus" ILIKE 'HIRED'
-                    )::FLOAT AS "avgTimeToHire",
-                    AVG(EXTRACT(EPOCH FROM (a."updatedAt" - a."createdAt"))/86400) FILTER (
-                        WHERE a."updatedAt" >= ${prevStart} AND a."updatedAt" < ${prevEnd} AND a."hiringStatus" ILIKE 'HIRED'
-                    )::FLOAT AS "avgTimeToHirePrev"
-                FROM "Application" a
-                JOIN "Drive" d ON d.id = a."driveId"
-                LEFT JOIN "Interview" i ON i."applicationId" = a.id
-                WHERE d."orgId" = ${orgId}
-            ` as Promise<AppStatsRow[]>,
-            prisma.$queryRaw`
-                SELECT
-                    COUNT(*)::INT AS "activeDrives",
-                    0::INT AS "closingSoon"
-                FROM "Drive"
-                WHERE "orgId" = ${orgId}
-            ` as Promise<DriveStatsRow[]>,
-            prisma.$queryRaw<Array<{ avgRating: number | null }>>(Prisma.sql`
-                SELECT COALESCE(
-                    AVG(
-                        CASE
-                            WHEN jsonb_typeof("candidateRating") = 'number' THEN LEAST(5, GREATEST(1, ROUND(("candidateRating")::text::numeric)))
-                            WHEN jsonb_typeof("candidateRating") = 'object' THEN
-                                CASE trim(COALESCE("candidateRating"->>'overallFeeling', ''))
-                                    WHEN 'Terrible' THEN 1
-                                    WHEN 'Okay' THEN 2
-                                    WHEN 'Good' THEN 3
-                                    WHEN 'Great' THEN 4
-                                    WHEN 'Loved it' THEN 5
-                                    ELSE NULL
-                                END
-                            ELSE NULL
-                        END
-                    ),
-                    0
-                )::FLOAT AS "avgRating"
-                FROM "Interview" i
-                JOIN "Application" a ON a.id = i."applicationId"
-                JOIN "Drive" d ON d.id = a."driveId"
-                WHERE d."orgId" = ${orgId}
-                  AND i."status" = 'COMPLETED'
-                  AND i."completedAt" >= ${start}
-            `),
-        ]);
+        const appStats = await prisma.$queryRaw<AppStatsRow[]>`
+            SELECT
+                COUNT(*) FILTER (WHERE a."createdAt" >= ${start})::INT AS applications,
+                COUNT(*) FILTER (WHERE a."createdAt" >= ${todayStart})::INT AS "applicationsToday",
+                COUNT(*) FILTER (WHERE a."createdAt" >= ${prevStart} AND a."createdAt" < ${prevEnd})::INT AS "applicationsPrev",
+                COUNT(*) FILTER (WHERE a."createdAt" >= ${start} AND a."aiScore" IS NOT NULL)::INT AS "screenedInPeriod",
+                COUNT(*) FILTER (WHERE a."updatedAt" >= ${start} AND a."resumeStatus" ILIKE 'SHORTLISTED')::INT AS shortlisted,
+                COUNT(*) FILTER (WHERE a."updatedAt" >= ${start} AND a."hiringStatus" ILIKE 'HIRED')::INT AS "hiredThisMonth",
+                COUNT(*) FILTER (WHERE a."updatedAt" >= ${prevStart} AND a."updatedAt" < ${prevEnd} AND a."hiringStatus" ILIKE 'HIRED')::INT AS "hiredPrevMonth",
+                COUNT(*) FILTER (
+                    WHERE i."status" = 'COMPLETED' AND i."completedAt" >= ${start}
+                )::INT AS interviewed,
+                COUNT(*) FILTER (WHERE i."status" = 'IN_PROGRESS')::INT AS "liveInterviews",
+                COUNT(*) FILTER (WHERE i."status" = 'COMPLETED' AND a."aiScore" IS NULL)::INT AS "needsReview",
+                COUNT(*) FILTER (WHERE i."createdAt" >= ${start})::INT AS invited,
+                AVG(EXTRACT(EPOCH FROM (a."updatedAt" - a."createdAt"))/86400) FILTER (
+                    WHERE a."updatedAt" >= ${start} AND a."hiringStatus" ILIKE 'HIRED'
+                )::FLOAT AS "avgTimeToHire",
+                AVG(EXTRACT(EPOCH FROM (a."updatedAt" - a."createdAt"))/86400) FILTER (
+                    WHERE a."updatedAt" >= ${prevStart} AND a."updatedAt" < ${prevEnd} AND a."hiringStatus" ILIKE 'HIRED'
+                )::FLOAT AS "avgTimeToHirePrev"
+            FROM "Application" a
+            JOIN "Drive" d ON d.id = a."driveId"
+            LEFT JOIN "Interview" i ON i."applicationId" = a.id
+            WHERE d."orgId" = ${orgId}
+        `;
+        const driveStats = await prisma.$queryRaw<DriveStatsRow[]>`
+            SELECT
+                COUNT(*)::INT AS "activeDrives",
+                0::INT AS "closingSoon"
+            FROM "Drive"
+            WHERE "orgId" = ${orgId}
+        `;
+        const ratingStats = await prisma.$queryRaw<Array<{ avgRating: number | null }>>(Prisma.sql`
+            SELECT COALESCE(
+                AVG(
+                    CASE
+                        WHEN jsonb_typeof("candidateRating") = 'number' THEN LEAST(5, GREATEST(1, ROUND(("candidateRating")::text::numeric)))
+                        WHEN jsonb_typeof("candidateRating") = 'object' THEN
+                            CASE trim(COALESCE("candidateRating"->>'overallFeeling', ''))
+                                WHEN 'Terrible' THEN 1
+                                WHEN 'Okay' THEN 2
+                                WHEN 'Good' THEN 3
+                                WHEN 'Great' THEN 4
+                                WHEN 'Loved it' THEN 5
+                                ELSE NULL
+                            END
+                        ELSE NULL
+                    END
+                ),
+                0
+            )::FLOAT AS "avgRating"
+            FROM "Interview" i
+            JOIN "Application" a ON a.id = i."applicationId"
+            JOIN "Drive" d ON d.id = a."driveId"
+            WHERE d."orgId" = ${orgId}
+              AND i."status" = 'COMPLETED'
+              AND i."completedAt" >= ${start}
+        `);
 
         const s = appStats[0];
         const d = driveStats[0];

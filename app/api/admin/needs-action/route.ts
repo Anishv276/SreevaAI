@@ -14,65 +14,60 @@ export async function GET() {
         }
         const orgId = session.orgId;
 
-        const [awaitingReview, inviteNotSent, shortlistedNoDecision] = await Promise.all([
-            // Bucket 1: interview COMPLETED, no hire/resume decision yet
-            prisma.application.findMany({
-                where: {
-                    drive: { orgId },
-                    interview: { status: "COMPLETED" },
-                    hiringStatus: { in: ["pending", "PENDING"] },
-                    resumeStatus: { notIn: ["SHORTLISTED", "shortlisted", "REJECTED", "rejected", "HIRED", "hired"] },
-                },
-                select: {
-                    id: true,
-                    fullName: true,
-                    aiScore: true,
-                    updatedAt: true,
-                    drive: { select: { title: true, role: true } },
-                    interview: { select: { completedAt: true } },
-                },
-                orderBy: { updatedAt: "asc" },
-                take: 5,
-            }),
+        const awaitingReview = await prisma.application.findMany({
+            where: {
+                drive: { orgId },
+                interview: { status: "COMPLETED" },
+                hiringStatus: { in: ["pending", "PENDING"] },
+                resumeStatus: { notIn: ["SHORTLISTED", "shortlisted", "REJECTED", "rejected", "HIRED", "hired"] },
+            },
+            select: {
+                id: true,
+                fullName: true,
+                aiScore: true,
+                updatedAt: true,
+                drive: { select: { title: true, role: true } },
+                interview: { select: { completedAt: true } },
+            },
+            orderBy: { updatedAt: "asc" },
+            take: 5,
+        });
 
-            // Bucket 2: uploaded (application exists), no interview record at all OR interview never invited
-            prisma.application.findMany({
-                where: {
-                    drive: { orgId },
-                    OR: [
-                        { interview: null },
-                        { interview: { inviteSentAt: null, status: "PENDING" } },
-                    ],
-                    resumeStatus: { notIn: ["REJECTED", "rejected"] },
-                    hiringStatus: { notIn: ["HIRED", "hired", "REJECTED", "rejected"] },
-                },
-                select: {
-                    id: true,
-                    fullName: true,
-                    createdAt: true,
-                    drive: { select: { title: true, role: true } },
-                },
-                orderBy: { createdAt: "asc" },
-                take: 5,
-            }),
+        const inviteNotSent = await prisma.application.findMany({
+            where: {
+                drive: { orgId },
+                OR: [
+                    { interview: null },
+                    { interview: { inviteSentAt: null, status: "PENDING" } },
+                ],
+                resumeStatus: { notIn: ["REJECTED", "rejected"] },
+                hiringStatus: { notIn: ["HIRED", "hired", "REJECTED", "rejected"] },
+            },
+            select: {
+                id: true,
+                fullName: true,
+                createdAt: true,
+                drive: { select: { title: true, role: true } },
+            },
+            orderBy: { createdAt: "asc" },
+            take: 5,
+        });
 
-            // Bucket 3: shortlisted but no hire/reject decision
-            prisma.application.findMany({
-                where: {
-                    drive: { orgId },
-                    resumeStatus: { in: ["SHORTLISTED", "shortlisted"] },
-                    hiringStatus: { in: ["pending", "PENDING"] },
-                },
-                select: {
-                    id: true,
-                    fullName: true,
-                    updatedAt: true,
-                    drive: { select: { title: true, role: true } },
-                },
-                orderBy: { updatedAt: "asc" },
-                take: 5,
-            }),
-        ]);
+        const shortlistedNoDecision = await prisma.application.findMany({
+            where: {
+                drive: { orgId },
+                resumeStatus: { in: ["SHORTLISTED", "shortlisted"] },
+                hiringStatus: { in: ["pending", "PENDING"] },
+            },
+            select: {
+                id: true,
+                fullName: true,
+                updatedAt: true,
+                drive: { select: { title: true, role: true } },
+            },
+            orderBy: { updatedAt: "asc" },
+            take: 5,
+        });
 
         return NextResponse.json({
             awaitingReview: awaitingReview.map((a) => ({

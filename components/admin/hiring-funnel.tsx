@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import type { DateRange } from "./date-filter";
 import { ErrorState } from "./error-state";
 
@@ -46,6 +45,7 @@ export function HiringFunnel({ dateRange }: HiringFunnelProps) {
     const [data, setData] = useState<FunnelData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [retryKey, setRetryKey] = useState(0);
 
     useEffect(() => {
         const controller = new AbortController();
@@ -73,11 +73,13 @@ export function HiringFunnel({ dateRange }: HiringFunnelProps) {
 
         fetchData();
         return () => controller.abort();
-    }, [dateRange]);
+    }, [dateRange, retryKey]);
 
     const handleRetry = () => {
         setLoading(true);
         setError(null);
+        setData(null);
+        setRetryKey((k) => k + 1);
     };
 
     const stages = data ? [

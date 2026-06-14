@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
 import type { DateRange } from "./date-filter";
@@ -41,6 +41,7 @@ export function ScoreDistribution({ dateRange }: ScoreDistributionProps) {
     const [data, setData] = useState<DistributionData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [retryKey, setRetryKey] = useState(0);
 
     useEffect(() => {
         const controller = new AbortController();
@@ -68,11 +69,13 @@ export function ScoreDistribution({ dateRange }: ScoreDistributionProps) {
 
         fetchData();
         return () => controller.abort();
-    }, [dateRange]);
+    }, [dateRange, retryKey]);
 
     const handleRetry = () => {
         setLoading(true);
         setError(null);
+        setData(null);
+        setRetryKey((k) => k + 1);
     };
 
     const maxCount = data
@@ -128,7 +131,6 @@ export function ScoreDistribution({ dateRange }: ScoreDistributionProps) {
 
                         {/* Bars with Staggered Motion */}
                         {data?.distribution.map((band, idx) => {
-                            const pct = Math.round((band.count / yMax) * 100);
                             const barH = (band.count / yMax) * (CHART_H - 32);
                             const color = TIER_COLORS[band.tier] || band.color;
                             
