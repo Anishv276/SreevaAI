@@ -189,22 +189,19 @@ class LLMEvalDimension(BaseModel):
 
 
 class LLMEvalResponse(BaseModel):
-    communication:         LLMEvalDimension = Field(default_factory=LLMEvalDimension)
-    domain_knowledge:      LLMEvalDimension = Field(default_factory=LLMEvalDimension)
-    role_fit:              LLMEvalDimension = Field(default_factory=LLMEvalDimension)
-    problem_solving:       LLMEvalDimension = Field(default_factory=LLMEvalDimension)
-    ownership_credibility: LLMEvalDimension = Field(default_factory=LLMEvalDimension)
-    strengths:             list[str] = Field(default_factory=list)
-    concerns:              list[str] = Field(default_factory=list)
-    decision_note:         str = ""
+    communication:            LLMEvalDimension = Field(default_factory=LLMEvalDimension)
+    technical_knowledge:      LLMEvalDimension = Field(default_factory=LLMEvalDimension)
+    resume_credibility:       LLMEvalDimension = Field(default_factory=LLMEvalDimension)
+    problem_solving:          LLMEvalDimension = Field(default_factory=LLMEvalDimension)
+    clarity_of_thought:       LLMEvalDimension = Field(default_factory=LLMEvalDimension)
+    strengths:                list[str] = Field(default_factory=list)
+    concerns:                 list[str] = Field(default_factory=list)
 
 
 class LLMSkillEntry(BaseModel):
     skill:    str = ""
     score:    int = Field(default=5, ge=1, le=10)
-    status:   Literal["PROVED", "PARTIAL", "NOT_PROVED"] = "PARTIAL"
     evidence: str = ""
-    gaps:     str = ""
 
     @field_validator("score", mode="before")
     @classmethod
@@ -213,12 +210,6 @@ class LLMSkillEntry(BaseModel):
             return max(1, min(10, int(round(float(v)))))
         except (TypeError, ValueError):
             return 5
-
-    @field_validator("status", mode="before")
-    @classmethod
-    def _norm(cls, v: Any) -> str:
-        s = str(v or "").upper()
-        return s if s in {"PROVED", "PARTIAL", "NOT_PROVED"} else "PARTIAL"
 
 
 class LLMSkillsResponse(BaseModel):
@@ -280,6 +271,7 @@ class ReportState(TypedDict, total=False):
     org_id:           str | None
     llm_model:        str
     jd_json:          dict | None
+    topic_records:    list[dict]   # per-topic ground-truth from agent MOVE_ON
     # Computed by nodes
     integrity_result: dict
     transcript_text:  str
@@ -1466,47 +1458,106 @@ def _extract_openai_completion_usage(completion: Any) -> dict[str, Any]:
 
 # -- Unified 5-Dimension Evaluation Prompt ------------------------------------
 
-_EVAL_SYSTEM = """You are evaluating a completed interview for the '{job_title}' role.
+_EVAL_SYSTEM = """You are a senior recruiter and talent evaluator. You have just reviewed a complete AI-conducted interview for the '{job_title}' role.
 {jd_context}
 
-PRE-COMPUTED CONTEXT (use as background — do NOT simply echo these numbers):
-  Integrity: {integrity_score}/100 ({integrity_band})
-  Behavioral signals: {signal_context}
+BACKGROUND SIGNALS (do NOT echo these numbers — use them as context only):
+  Integrity Score: {integrity_score}/100 ({integrity_band})
+  Behavioral flags observed: {signal_context}
 
-Score each of these 5 HR dimensions 0-100. For each, write 1 concise evidence sentence.
-Be accurate and honest. Do NOT inflate. If the candidate was poor, reflect that.
+---
 
-1. communication (0-100): Clarity, fluency, grammar, confidence across the full interview.
-   0-20: Very hard to follow  21-50: Hesitant/unclear  51-75: Adequate  76-100: Clear, fluent, confident
+STEP 1 — BEFORE YOU SCORE ANYTHING, read the entire transcript and form these opinions:
 
-2. domain_knowledge (0-100): Depth of knowledge and real hands-on experience in the evaluated topics.
-   0-20: Refused/unable  21-40: Minimal  41-60: Surface-level  61-80: Concrete examples  81-100: Deep evidence-rich
+"strengths": Every genuine strength you observed — written like you're telling a colleague what stood out.
+  - Name the specific moment, tool, question, or answer. Not "good communicator" — but "walked through the Zapier workflow trigger-to-action without being prompted."
+  - If nothing genuine stands out, return an empty array. Do NOT invent. Do NOT pad.
+  - No floor. Zero is honest. Four is the max.
+  - Each item is ONE sentence. Sharp. Specific. Could not apply to any other candidate.
 
-3. role_fit (0-100): How well demonstrated skills and background match JD requirements.
-   0-20: No relevant fit  21-40: Very weak  41-60: Partial fit  61-80: Good fit  81-100: Excellent fit
+"concerns": Every genuine concern — written with the same directness you'd use in a debrief call.
+  - If they contradicted their resume, name what they claimed and what they couldn't explain.
+  - If they went blank on a follow-up, say which topic.
+  - If every answer was surface-level with no depth, say that.
+  - No floor. Zero means no concerns. Four is the max.
+  - Do NOT soften. Do NOT hedge. A concern written weakly is useless to the hiring manager.
 
-4. problem_solving (0-100): Structured reasoning, handling follow-up pressure, tradeoff thinking.
-   0-20: No reasoning  21-40: Facts only  41-60: Some structure  61-80: Logical approach  81-100: Sophisticated
+---
 
-5. ownership_credibility (0-100): Owns their experience, direct answers, consistent resume-interview alignment, no evasion.
-   0-20: Vague/evasive  21-40: Often hedged  41-60: Mixed  61-80: Mostly owns it  81-100: Fully credible, direct
+STEP 2 — SCORE exactly 5 dimensions. For each produce:
+- "score": integer 0–100
+- "evidence": ONE sentence — written like a recruiter's verbal note, not a bot summary. Must name something SPECIFIC from this interview. If they were weak, the sentence must sound like it.
 
-"strengths": Array of 2-4 real strengths (ONE sentence each). Empty if none genuine.
-"concerns": Array of 2-4 concerns (ONE sentence each). Be explicit if candidate refused.
-"decision_note": 150-250 word executive hiring decision narrative for senior stakeholders.
-  Start with: STRONG HIRE, HIRE, MAYBE, or REJECT.
-  Explain WHY with specific evidence from the interview. No scores or metrics.
+SCORING PHILOSOPHY:
+- Do NOT inflate. Weak candidate = weak scores. Use the full 0–100 range.
+- Refused to answer / went blank / pure filler → 0–20.
+- Textbook answer, no personal evidence → 21–45.
+- 76–100 only when there is real, verifiable, specific depth in the transcript.
 
-OUTPUT ONLY valid JSON (no markdown, no extra text):
-{{"communication":{{"score":0,"evidence":""}},"domain_knowledge":{{"score":0,"evidence":""}},"role_fit":{{"score":0,"evidence":""}},"problem_solving":{{"score":0,"evidence":""}},"ownership_credibility":{{"score":0,"evidence":""}},"strengths":[],"concerns":[],"decision_note":""}}"""
+DIMENSION 1 — communication (weight: 15%)
+Score: How clearly and confidently did they express themselves across the ENTIRE interview?
+Look at: sentence structure, directness, filler words, hesitation, confidence under challenge.
+  0–20 : Incomprehensible — constant restarts, impossible to follow
+  21–45: Frequently unclear — hedged, lost the point mid-answer
+  46–65: Passable — mostly followable, inconsistent
+  66–80: Good — clear and direct, minor slips
+  81–100: Excellent — precise, structured, confident under every challenge
+Evidence: name a specific moment or pattern where communication succeeded or failed.
+
+DIMENSION 2 — technical_knowledge (weight: 30%)
+Score: Did they show REAL hands-on knowledge — or just vocabulary?
+Look at: named tools + explained HOW, real numbers, real steps, real decisions, held up under probing.
+  0–20 : Nothing — repeated the question or went silent
+  21–45: Surface — knows terms, can't explain mechanics
+  46–65: Partial — real in 1–2 areas, weak elsewhere
+  66–80: Solid — concrete examples, named tools, process explained
+  81–100: Deep — specific details, real numbers, step-by-step, held every probe
+Evidence: name the specific tool/concept/project and whether they showed real depth.
+
+DIMENSION 3 — resume_credibility (weight: 20%)
+Score: Did their live answers hold up against their resume claims?
+NOT about JD fit — about whether what they WROTE matches what they SAID.
+Look at: could they explain their listed projects? Did probing reveal gaps or contradictions?
+  0–20 : Claims completely unsupported — couldn't explain their own experience
+  21–45: Significant gaps — most items vague or contradicted under probing
+  46–65: Mixed — some held, some fell apart
+  66–80: Credible — most backed with real detail, minor gaps
+  81–100: Fully credible — every claim explained with evidence, nothing contradicted
+Evidence: name a specific resume claim that was tested and whether it held or collapsed.
+
+DIMENSION 4 — problem_solving (weight: 25%)
+Score: Can they think through a problem — or do they recite answers?
+Look at: did they frame before answering? Name tradeoffs? Engage reasoning when probed? Or restate the same answer twice?
+  0–20 : No reasoning — restated facts, silent on follow-ups
+  21–45: Facts only — no structure, no tradeoff thinking
+  46–65: Some structure — basic answers, fell apart under pressure
+  66–80: Logical — named tradeoffs, handled probes clearly
+  81–100: Sophisticated — framed independently, named tradeoffs unprompted, engaged every probe
+Evidence: name a specific probe and how they handled or failed it.
+
+DIMENSION 5 — clarity_of_thought (weight: 10%)
+Score: Was their thinking organized — or did they dump everything and hope?
+DIFFERENT from communication — a fluent candidate can still be completely unstructured.
+Look at: did they lead with a point? Stay on topic? Answer what was asked, or drift?
+  0–20 : Stream of consciousness — no clear point in any answer
+  21–45: Frequently drifted — missed what was actually asked
+  46–65: Inconsistent — structured sometimes, scattered in others
+  66–80: Clear — most answers structured, minor drift
+  81–100: Sharp — framed every answer, landed a clear point, nothing wasted
+Evidence: name a specific pattern — how they opened answers, whether they drifted.
+
+---
+
+OUTPUT ONLY valid JSON. No markdown. No explanation. No extra keys:
+{{"strengths":[],"concerns":[],"communication":{{"score":0,"evidence":""}},"technical_knowledge":{{"score":0,"evidence":""}},"resume_credibility":{{"score":0,"evidence":""}},"problem_solving":{{"score":0,"evidence":""}},"clarity_of_thought":{{"score":0,"evidence":""}}}}"""
 
 _EVAL_PROMPT = ChatPromptTemplate.from_messages([
     ("system", _EVAL_SYSTEM),
-    ("human", "Interview Transcript for '{job_title}':\n{transcript}"),
+    ("human", "Full Interview Transcript for '{job_title}':\n\n{transcript}"),
 ])
 
 
-# -- Per-question skill extraction --------------------------------------------
+# -- Per-question skill extraction (fallback — used only when no topic_records available) -------
 
 _SKILLS_SYSTEM = """You are a senior technical interviewer writing a skill-by-skill breakdown for the hiring team after an interview for the '{job_title}' role.
 
@@ -1518,28 +1569,64 @@ SKILL NAMING — name what the candidate actually discussed, specifically:
 - If they talked about n8n workflows → "n8n Workflow Automation"
 - If they talked about lead qualification logic → "Lead Qualification"
 - If they talked about Power BI dashboards → "Power BI / Data Visualization"
-- If they talked about outreach campaigns → "Outreach Campaign Management"
-- Name the actual thing they discussed — do NOT abstract into vague competency labels like "Project Execution and Ownership" or "Data Validation and Analysis"
-- Tools ARE valid skill names when that is what was discussed: "DuckDB", "n8n", "Zapier", "Meta API", "Apollo.io"
-- Soft skills: only include if the candidate gave clear evidence — "Structured Communication", "Ownership Mindset"
+- Name the actual thing they discussed — do NOT use vague labels like "Project Execution" or "Data Analysis"
+- Tools ARE valid skill names: "DuckDB", "n8n", "Zapier", "Meta API", "Apollo.io"
+- Soft skills only if candidate gave clear evidence
 
 SCORING (1-10):
-- Base score: avg(clarity, depth, specificity, grounding) from the pre-scored dimensions
-- Adjust UP: candidate gave specific project names, real numbers, step-by-step process, or named personal decisions
-- Adjust DOWN: candidate was vague, refused, gave "I don't know", or denied the skill exists on their resume
-- If candidate explicitly denied knowledge of a skill (e.g., "I don't know Zapier") → score 1, status NOT_PROVED
-- evidence: ONE sentence quoting or closely paraphrasing what the candidate actually said
-- gaps: ONE sentence on what was missing or weak ("None" only if score >= 8)
-- status: PROVED (7-10), PARTIAL (4-6), NOT_PROVED (1-3)
+- Base: avg(clarity, depth, specificity, grounding)
+- Adjust UP: specific project names, real numbers, step-by-step process, personal decisions
+- Adjust DOWN: vague, refused, "I don't know", or denied skill exists
+- evidence: ONE sharp sentence quoting or closely paraphrasing what the candidate said — not a generic summary
 
-DEDUPLICATION: If multiple questions covered the same skill, merge into one entry using the BEST answer's score and evidence.
+DEDUPLICATION: merge entries for the same skill, use the best answer's score and evidence.
 
-OUTPUT ONLY valid JSON — no markdown, no explanation:
-{{"skills":[{{"skill":"","score":5,"status":"PARTIAL","evidence":"","gaps":""}}]}}"""
+OUTPUT ONLY valid JSON. No markdown:
+{{"skills":[{{"skill":"","score":5,"evidence":""}}]}}"""
 
 _SKILLS_PROMPT = ChatPromptTemplate.from_messages([
     ("system", _SKILLS_SYSTEM),
     ("human", "{qa_block}"),
+])
+
+# -- Anchored skills extraction from topic_records (primary path) --------------
+
+_SKILLS_FROM_RECORDS_SYSTEM = """You are writing a skill-by-skill breakdown for the hiring team after an interview for the '{job_title}' role.
+
+You will receive structured topic records captured by the interviewer at the moment each topic was closed. Each record contains:
+- topic: what was discussed (project name, skill area, or tool)
+- topic_type: "project" or "skill"
+- exit_reason: why the topic ended (saturated=candidate fully answered, weak_exit=shallow/brief, depth_decay=kept giving vague answers, explicit_denial=said they don't know, dry_topic=no real content)
+- probe_count: how many follow-up questions were asked (higher = interviewer had to dig harder)
+- avg_overall: mean score across all turns on this topic (0–10)
+- avg_depth: mean depth score (0–10)
+- last_specificity / last_grounding: final turn scores on specificity and grounding (0–10)
+- tech_skills: list of tools/technologies associated with this topic (from the candidate's resume)
+- candidate_answers: actual things the candidate said during this topic (last 6 responses)
+- denied: true if candidate explicitly said they don't know / don't remember
+
+YOUR TASK:
+Produce one skill entry per meaningful skill or tool discussed. For project-type topics, extract the specific skills the project demonstrates (use tech_skills + the candidate's actual answers). For skill-type topics, the topic IS the skill.
+
+SCORING RULES (1–10, anchored to avg_overall):
+- Start from avg_overall as base.
+- exit_reason penalties:
+    explicit_denial → cap at 2
+    dry_topic       → cap at 3
+    weak_exit       → deduct 1.5, cap at 5
+    depth_decay     → deduct 1.0, cap at 6
+    saturated / eval_moveon → no penalty
+- probe_count bonus: probe_count <= 1 and avg_overall >= 7 → add 0.5
+- Round to nearest integer, clamp 1–10.
+
+EVIDENCE — ONE sharp sentence using the candidate's actual words from candidate_answers. Not a generic summary. Quote specifics.
+
+OUTPUT ONLY valid JSON. No markdown:
+{{"skills":[{{"skill":"","score":5,"evidence":""}}]}}"""
+
+_SKILLS_FROM_RECORDS_PROMPT = ChatPromptTemplate.from_messages([
+    ("system", _SKILLS_FROM_RECORDS_SYSTEM),
+    ("human", "{records_block}"),
 ])
 
 
@@ -1547,31 +1634,83 @@ _SKILLS_PROMPT = ChatPromptTemplate.from_messages([
 
 # -- Summary Prompt ------------------------------------------------------------
 
-_SUMMARY_SYSTEM = """You are a senior talent partner writing a confidential post-interview note for the hiring team.
+_SUMMARY_SYSTEM = """You are a senior talent partner writing a confidential post-interview brief for the hiring team.
 
-Context:
-  Role: {job_title}
-  Skills tested: {skills_str}
-  Integrity: {integrity_band}
-  Behavioral signals: {signal_summary}
+Role: {job_title}
+Integrity: {integrity_band}
+Behavioral signals: {signal_summary}
 
-Read the full interview transcript and write exactly 4 bullet points. Each bullet is ONE clear sentence in plain, professional language. Base everything on what actually happened in the transcript.
+DIMENSION SCORES + EVIDENCE (what the evaluator observed):
+{dimension_block}
 
-- Bullet 1 — Role readiness: Did the candidate demonstrate strong, moderate, weak, or no fit? Name a specific moment from the transcript as evidence.
-- Bullet 2 — Strongest area: The ONE domain where they showed the most genuine depth. Cite what they actually said. If nothing stood out, say so directly.
-- Bullet 3 — Communication: How did they engage — fluent, hesitant, direct, evasive? Was quality improving, declining, or flat across the interview?
-- Bullet 4 — Hiring flag: The single most important signal — a standout strength, a clear gap, or an integrity concern. If integrity is LOW or CRITICAL, name it explicitly.
+SKILL BREAKDOWN (what was tested and how they performed):
+{skill_block}
 
-RULES:
-- Do NOT include any numbers, scores, or percentages.
-- Do NOT soften negative findings. If the interview was poor, say so.
-- Do NOT invent positives not visible in the transcript.
+STRENGTHS OBSERVED:
+{strengths_block}
+
+CONCERNS FLAGGED:
+{concerns_block}
+
+---
+
+Write 3–5 bullet points. Each bullet is ONE clear sentence.
+
+Rules for what to cover:
+- Cover only what actually mattered in THIS interview. If communication was unremarkable, skip it.
+- If they were strong in one specific area, name it with the exact thing they said or did.
+- If they were weak across the board, all bullets can be negative — do not force balance.
+- If a skill or dimension was clearly the deciding factor, lead with it.
+- If integrity was flagged, name it explicitly in one bullet.
+- Do NOT write a bullet for every dimension — write bullets for what STOOD OUT.
+
+Rules for how to write:
+- Sound like a recruiter giving a verbal debrief, not a bot writing a report.
+- Never write a sentence that could apply to any other candidate.
+- No scores, no numbers, no percentages in the bullets.
+- No softening negative findings. If they struggled, say they struggled and why it matters.
+- Never invent positives not visible in the evidence above.
 - Never use gender-biased language.
 - Each bullet starts with a dash (-)."""
 
 _SUMMARY_PROMPT = ChatPromptTemplate.from_messages([
     ("system", _SUMMARY_SYSTEM),
     ("human", "Full Interview Transcript:\n{transcript}"),
+])
+
+
+# -- Verdict Prompt ------------------------------------------------------------
+
+_VERDICT_SYSTEM = """You are a senior hiring manager writing a final verdict for a '{job_title}' interview. You have the full evaluation in front of you.
+
+DIMENSION SCORES + EVIDENCE:
+{dimension_block}
+
+SKILL BREAKDOWN:
+{skill_block}
+
+STRENGTHS:
+{strengths_block}
+
+CONCERNS:
+{concerns_block}
+
+INTEGRITY: {integrity_band} ({integrity_score}/100)
+
+---
+
+Write ONE paragraph. 80–120 words. No more.
+
+Rules:
+- Start with exactly one of: STRONG HIRE / HIRE / MAYBE / REJECT — then a colon, then your reasoning.
+- Name the single strongest signal and the single biggest concern — from the evidence above, not generic.
+- End with exactly one action sentence: what should happen next (hire, pass, bring back for technical round, etc.).
+- No scores, no numbers, no hedging. You have a strong opinion and you are accountable for it.
+- Write like you are telling this to the hiring manager face to face — not filing a report."""
+
+_VERDICT_PROMPT = ChatPromptTemplate.from_messages([
+    ("system", _VERDICT_SYSTEM),
+    ("human", "Job Title: {job_title}"),
 ])
 
 
@@ -1713,20 +1852,47 @@ async def _node_eval_llm_call(state: ReportState) -> dict:
     }
 
     # ── Skills call ────────────────────────────────────────────────────────────
-    skills_chain = _SKILLS_PROMPT | llm
-    qa_items = [
-        _build_qa_block_for_skills(i + 1, s)
-        for i, s in enumerate(all_scores)
-        if not s.get("is_warmup", False) and _qa_question(s)
-    ]
-    qa_block_text = "\n".join(
-        f"Q{q['n']}: {q['question']}\n"
-        f"A: {q['answer']}\n"
-        f"[clarity={q['clarity']} depth={q['depth']} specificity={q['specificity']} grounding={q['grounding']}]"
-        for q in qa_items
-    ) or "No interview questions found."
-
-    skills_input = {"job_title": job_title, "qa_block": qa_block_text}
+    topic_records = state.get("topic_records") or []
+    if topic_records:
+        # Primary path: anchored to per-topic ground-truth captured at MOVE_ON time
+        skills_chain = _SKILLS_FROM_RECORDS_PROMPT | llm
+        records_lines = []
+        for i, rec in enumerate(topic_records, 1):
+            scores = rec.get("scores", {})
+            answers_text = " | ".join(rec.get("candidate_answers", [])[:4]) or "No answers recorded."
+            tech = ", ".join(rec.get("tech_skills", [])) or "—"
+            records_lines.append(
+                f"[TOPIC {i}]\n"
+                f"topic: {rec.get('topic', '')}\n"
+                f"topic_type: {rec.get('topic_type', 'project')}\n"
+                f"exit_reason: {rec.get('exit_reason', 'unknown')}\n"
+                f"probe_count: {rec.get('probe_count', 0)}\n"
+                f"avg_overall: {scores.get('avg_overall', 0):.1f}\n"
+                f"avg_depth: {scores.get('avg_depth', 0):.1f}\n"
+                f"last_specificity: {scores.get('last_specificity', 0):.1f}\n"
+                f"last_grounding: {scores.get('last_grounding', 0):.1f}\n"
+                f"tech_skills: {tech}\n"
+                f"denied: {rec.get('denied', False)}\n"
+                f"candidate_answers: {answers_text}\n"
+            )
+        skills_input = {"job_title": job_title, "records_block": "\n".join(records_lines)}
+        logger.info(f"[REPORT] Using anchored topic_records path: {len(topic_records)} topics")
+    else:
+        # Fallback path: reconstruct from QA pairs
+        skills_chain = _SKILLS_PROMPT | llm
+        qa_items = [
+            _build_qa_block_for_skills(i + 1, s)
+            for i, s in enumerate(all_scores)
+            if not s.get("is_warmup", False) and _qa_question(s)
+        ]
+        qa_block_text = "\n".join(
+            f"Q{q['n']}: {q['question']}\n"
+            f"A: {q['answer']}\n"
+            f"[clarity={q['clarity']} depth={q['depth']} specificity={q['specificity']} grounding={q['grounding']}]"
+            for q in qa_items
+        ) or "No interview questions found."
+        skills_input = {"job_title": job_title, "qa_block": qa_block_text}
+        logger.info("[REPORT] topic_records empty — falling back to QA-block skills path")
 
     # ── Run both in parallel ───────────────────────────────────────────────────
     eval_msg, skills_msg = await asyncio.gather(
@@ -1760,9 +1926,9 @@ async def _node_eval_llm_call(state: ReportState) -> dict:
 
     logger.info(
         f"[REPORT] Eval complete: app={state['app_id']} "
-        f"comm={eval_result.communication.score} dk={eval_result.domain_knowledge.score} "
-        f"fit={eval_result.role_fit.score} ps={eval_result.problem_solving.score} "
-        f"own={eval_result.ownership_credibility.score} skills={len(skills_result.skills)}"
+        f"comm={eval_result.communication.score} tech={eval_result.technical_knowledge.score} "
+        f"cred={eval_result.resume_credibility.score} ps={eval_result.problem_solving.score} "
+        f"cot={eval_result.clarity_of_thought.score} skills={len(skills_result.skills)}"
     )
 
     return {"eval_result": eval_result, "skills_result": skills_result}
@@ -1800,24 +1966,22 @@ async def _node_assemble_and_persist(state: ReportState) -> dict:
 
     # Extract dimension scores
     comm  = eval_result.communication.score
-    dk    = eval_result.domain_knowledge.score
-    fit   = eval_result.role_fit.score
+    tech  = eval_result.technical_knowledge.score
+    cred  = eval_result.resume_credibility.score
     ps    = eval_result.problem_solving.score
-    own   = eval_result.ownership_credibility.score
+    cot   = eval_result.clarity_of_thought.score
 
-    # Overall score: weighted average of all 5 dimensions
+    # Overall score: weighted average — technical_knowledge + problem_solving are the heavy hitters
     overall_score = max(0, min(100, int(round(
-        comm * 0.20 + dk * 0.25 + fit * 0.20 + ps * 0.20 + own * 0.15
+        comm * 0.15 + tech * 0.30 + cred * 0.20 + ps * 0.25 + cot * 0.10
     ))))
 
-    # Skill ratings from per-question LLM extraction
+    # Skill ratings: name + score + one evidence line
     skill_ratings_list = [
         {
             "skill":    r.skill,
             "score":    r.score,
-            "status":   r.status,
             "evidence": r.evidence,
-            "gaps":     r.gaps,
         }
         for r in skills_result.skills
         if r.skill
@@ -1828,11 +1992,11 @@ async def _node_assemble_and_persist(state: ReportState) -> dict:
     # NOTE: skill_ratings are now stored separately in the "skillRatings" column
     score_breakdown_report = {
         "dimensions": [
-            {"name": "Communication",          "score": comm, "evidence": eval_result.communication.evidence},
-            {"name": "Domain Knowledge",       "score": dk,   "evidence": eval_result.domain_knowledge.evidence},
-            {"name": "Role Fit",               "score": fit,  "evidence": eval_result.role_fit.evidence},
-            {"name": "Problem Solving",        "score": ps,   "evidence": eval_result.problem_solving.evidence},
-            {"name": "Ownership & Credibility","score": own,  "evidence": eval_result.ownership_credibility.evidence},
+            {"name": "Communication",              "score": comm, "evidence": eval_result.communication.evidence},
+            {"name": "Technical & Subject Knowledge","score": tech, "evidence": eval_result.technical_knowledge.evidence},
+            {"name": "Resume Credibility",         "score": cred, "evidence": eval_result.resume_credibility.evidence},
+            {"name": "Problem Solving",            "score": ps,   "evidence": eval_result.problem_solving.evidence},
+            {"name": "Clarity of Thought",         "score": cot,  "evidence": eval_result.clarity_of_thought.evidence},
         ],
         "overall":          overall_score,
         "engagement":       engagement_score,
@@ -1847,9 +2011,8 @@ async def _node_assemble_and_persist(state: ReportState) -> dict:
     }
 
     interview_summary_report = {
-        "strengths":    eval_result.strengths,
-        "concerns":     eval_result.concerns,
-        "decision_note": eval_result.decision_note,
+        "strengths": eval_result.strengths,
+        "concerns":  eval_result.concerns,
     }
 
     # Write to DB — scoreBreakdown and skillRatings are now separate columns
@@ -1871,24 +2034,29 @@ async def _node_assemble_and_persist(state: ReportState) -> dict:
             )
         logger.info(
             f"[REPORT] Generated report for {app_id}: "
-            f"overall={overall_score} comm={comm} dk={dk} fit={fit} "
-            f"ps={ps} own={own} integrity={integrity_result['score']} "
+            f"overall={overall_score} comm={comm} tech={tech} cred={cred} "
+            f"ps={ps} cot={cot} integrity={integrity_result['score']} "
             f"topics={len(skills_evaluated)}"
         )
     except Exception as e:
         logger.error(f"[REPORT] DB write failed for {app_id}: {e}", exc_info=True)
 
     scores_context = {
-        "overall":            overall_score,
-        "communication":      comm,
-        "domain_knowledge":   dk,
-        "role_fit":           fit,
-        "problem_solving":    ps,
-        "ownership_credibility": own,
-        "integrity_score":    integrity_result["score"],
-        "integrity_band":     integrity_result["band"],
-        "skills_evaluated":   skills_evaluated,
-        "signal_summary":     state.get("signal_context", "none"),
+        "overall":               overall_score,
+        "communication":         comm,
+        "technical_knowledge":   tech,
+        "resume_credibility":    cred,
+        "problem_solving":       ps,
+        "clarity_of_thought":    cot,
+        "integrity_score":       integrity_result["score"],
+        "integrity_band":        integrity_result["band"],
+        "skills_evaluated":      skills_evaluated,
+        "signal_summary":        state.get("signal_context", "none"),
+        # Rich context for summary + verdict LLM calls
+        "dimensions":            score_breakdown_report["dimensions"],
+        "skill_ratings":         skill_ratings_list,
+        "strengths":             eval_result.strengths,
+        "concerns":              eval_result.concerns,
     }
     return {"scores_context": scores_context}
 
@@ -1923,14 +2091,14 @@ async def generate_interview_report(
     org_id: Optional[str] = None,
     llm_model: str = LLM_MODEL,
     jd_json: Optional[dict] = None,
+    topic_records: Optional[list] = None,
 ) -> Optional[dict]:
     """Generate the complete structured interview report via LangGraph pipeline.
 
     Returns a scores_context dict for generate_interview_summary(), or None on failure.
 
-    NOTE: Browser-side integrity signals (tab_switch, face_absence, etc.) are fetched
-    directly from DB inside _node_deterministic_signals so they are always included
-    in the integrity score even if the caller's proctoring_data doesn't have them.
+    topic_records: per-topic ground-truth records built by the agent at MOVE_ON time.
+    When provided, skill extraction uses these instead of re-reading the transcript cold.
     """
     if not transcript_lines or not DATABASE_URL:
         logger.warning("[REPORT] Skipping: missing transcript or DATABASE_URL")
@@ -1951,6 +2119,7 @@ async def generate_interview_report(
         "org_id":            org_id,
         "llm_model":         llm_model,
         "jd_json":           jd_json,
+        "topic_records":     topic_records or [],
     }
 
     try:
@@ -1972,7 +2141,7 @@ async def generate_interview_summary(
     llm_model: str = LLM_MODEL,
     scores_context: Optional[dict] = None,
 ) -> None:
-    """Generate high-quality candidate insights narrative using full interview context."""
+    """Generate summary bullets + standalone verdict using full scores/skills/strengths as input."""
     if not transcript_lines or not DATABASE_URL:
         logger.warning("[SUMMARY] Skipping: missing transcript or DATABASE_URL")
         return
@@ -1981,32 +2150,78 @@ async def generate_interview_summary(
         return
 
     try:
-        lines_to_use     = transcript_lines[4:] if len(transcript_lines) > 4 else transcript_lines
+        lines_to_use       = transcript_lines[4:] if len(transcript_lines) > 4 else transcript_lines
         summary_transcript = truncate_to_tokens("\n".join(lines_to_use), 3000)
 
-        ctx            = scores_context or {}
-        integrity_band = ctx.get("integrity_band", "HIGH")
-        skills_str     = ", ".join(ctx.get("skills_evaluated", [])) or "not determined"
-        signal_summary = ctx.get("signal_summary", "No signals flagged")
+        ctx             = scores_context or {}
+        integrity_band  = ctx.get("integrity_band", "HIGH")
+        integrity_score = ctx.get("integrity_score", 100)
+        signal_summary  = ctx.get("signal_summary", "No signals flagged")
 
-        llm   = ChatOpenAI(model=llm_model, temperature=0.1, max_tokens=400)
-        chain = _SUMMARY_PROMPT | llm
+        # Build rich dimension block: name + score + evidence per dimension
+        dimensions = ctx.get("dimensions", [])
+        if dimensions:
+            dimension_block = "\n".join(
+                f"  {d['name']}: {d['score']}/100 — {d.get('evidence', '').strip()}"
+                for d in dimensions
+            )
+        else:
+            dimension_block = "  Not available"
 
-        summary_msg = await asyncio.wait_for(
-            chain.ainvoke({
-                "job_title":     job_title,
-                "skills_str":    skills_str,
-                "integrity_band": integrity_band,
-                "signal_summary": signal_summary,
-                "transcript":    summary_transcript,
-            }),
-            timeout=60.0,
+        # Build skill block: skill name + score + evidence
+        skills = ctx.get("skill_ratings", [])
+        if skills:
+            skill_block = "\n".join(
+                f"  {s['skill']} ({s['score']}/10, {s['status']}): {s.get('evidence', '').strip()}"
+                for s in skills[:12]
+            )
+        else:
+            skill_block = "  Not available"
+
+        # Strengths and concerns from eval
+        strengths = ctx.get("strengths", [])
+        concerns  = ctx.get("concerns", [])
+        strengths_block = "\n".join(f"  - {s}" for s in strengths) if strengths else "  None identified"
+        concerns_block  = "\n".join(f"  - {c}" for c in concerns)  if concerns  else "  None flagged"
+
+        shared_vars = {
+            "job_title":       job_title,
+            "integrity_band":  integrity_band,
+            "integrity_score": integrity_score,
+            "signal_summary":  signal_summary,
+            "dimension_block": dimension_block,
+            "skill_block":     skill_block,
+            "strengths_block": strengths_block,
+            "concerns_block":  concerns_block,
+        }
+
+        llm = ChatOpenAI(model=llm_model, temperature=0.1, max_tokens=500)
+
+        # Run summary bullets and verdict in parallel
+        summary_chain = _SUMMARY_PROMPT | llm
+        verdict_chain = _VERDICT_PROMPT | llm
+
+        summary_msg, verdict_msg = await asyncio.gather(
+            asyncio.wait_for(
+                summary_chain.ainvoke({**shared_vars, "transcript": summary_transcript}),
+                timeout=60.0,
+            ),
+            asyncio.wait_for(
+                verdict_chain.ainvoke(shared_vars),
+                timeout=60.0,
+            ),
         )
-        await persist_org_manual_billing_usage(org_id, "interviewReport", _extract_openai_completion_usage(summary_msg))
+
+        await asyncio.gather(
+            persist_org_manual_billing_usage(org_id, "interviewReport", _extract_openai_completion_usage(summary_msg)),
+            persist_org_manual_billing_usage(org_id, "interviewReport", _extract_openai_completion_usage(verdict_msg)),
+        )
 
         summary_text = (getattr(summary_msg, "content", "") or "").strip()
-        if not summary_text:
-            logger.warning(f"[SUMMARY] Empty summary generated for {app_id}; skipping save")
+        verdict_text = (getattr(verdict_msg, "content", "") or "").strip()
+
+        if not summary_text and not verdict_text:
+            logger.warning(f"[SUMMARY] Both outputs empty for {app_id}; skipping save")
             return
 
         pool = await DatabasePool.get()
@@ -2015,10 +2230,10 @@ async def generate_interview_summary(
                 """UPDATE "Interview"
                    SET "interviewSummary" = COALESCE("interviewSummary", '{}') || $1::jsonb
                    WHERE "applicationId" = $2""",
-                json.dumps({"summary": summary_text}),
+                json.dumps({"summary": summary_text, "decision_note": verdict_text}),
                 app_id,
             )
-        logger.info(f"[SUMMARY] Generated candidate insights for {app_id}")
+        logger.info(f"[SUMMARY] Generated summary + verdict for {app_id}")
 
     except asyncio.TimeoutError:
         logger.warning(f"[SUMMARY] Timed out for {app_id}")

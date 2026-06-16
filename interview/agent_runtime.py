@@ -1475,8 +1475,8 @@ async def entrypoint(ctx: JobContext):
             # here is a secondary LiveKit-layer guard, kept loose so Flux leads.
             turn_detection="stt",
             endpointing=EndpointingOptions(
-                min_delay=0.3,
-                max_delay=2.0,
+                min_delay=3.0,
+                max_delay=8.0,
                 mode="dynamic",
             ),
             interruption=InterruptionOptions(
@@ -1484,10 +1484,10 @@ async def entrypoint(ctx: JobContext):
                 # Adaptive mode uses ML to distinguish backchannels (hmm/yeah/okay)
                 # from genuine interruptions  avoids cutting off thinking candidates.
                 mode="adaptive",
-                min_duration=2.5,
-                # Lowered from 8 to 3 so barge-in triggers sooner while still giving
-                # the detector a little speech to distinguish from backchannels.
-                min_words=3,
+                min_duration=0.5,
+                # Lowered to 1 so genuine barge-ins (e.g. "Wait!") trigger immediately.
+                # Adaptive mode handles noise/backchannel rejection.
+                min_words=1,
                 # Discard audio on interrupted turns -- prevents the partial TTS chunk
                 # from being resumed and replayed, which caused "Okay wait" to be
                 # spoken twice when a false interruption was detected and then resumed.
@@ -1584,6 +1584,13 @@ async def entrypoint(ctx: JobContext):
     # Running log of topics already covered  injected into every directive so the AI
     # never re-explores something already discussed.
     _discussed_log: list[str] = []
+    # Per-topic ground-truth records built at MOVE_ON time — replaces end-of-session
+    # LLM transcript re-reading for skill extraction. Each entry is appended when the
+    # agent closes a topic so eval scores, probe count, exit reason, and candidate
+    # answers are captured while the context is live, not inferred afterward.
+    _topic_records: list[dict] = []
+    # Running buffer of candidate answers for the CURRENT active topic (reset on MOVE_ON)
+    _current_topic_answers: list[str] = []
     # Lock protecting all shared session state that is written by background tasks.
     _session_state_lock = asyncio.Lock()
 
@@ -2250,7 +2257,7 @@ async def entrypoint(ctx: JobContext):
             _last_applied_eval_turn, _discussed_log, _topic_score_histories, \
             _resume_topics_pool, _skill_topics_pool, _awaiting_first_interview_question, \
             _denied_topics, _asked_questions_log, _reflection_probe_count, _skill_denial_count, \
-            _last_question_topic
+            _last_question_topic, _topic_records, _current_topic_answers
         try:
             if not content or role != "user":
                 return
@@ -2316,6 +2323,10 @@ async def entrypoint(ctx: JobContext):
             # Commit candidate text immediately so transcript persistence and eval context
             # use the same canonical source of truth as Interview.interviewTranscript.
             append_transcript_line("Candidate", content)
+            # Accumulate candidate answers for the current topic — used at MOVE_ON
+            # to build grounded skill records instead of re-reading the transcript later.
+            if warmup_complete and content.strip():
+                _current_topic_answers.append(content.strip())
             lines_snap_eval = list(transcript_lines)
             question_snap = _last_interviewer_question
             answer_snap = content
@@ -2911,6 +2922,78 @@ async def entrypoint(ctx: JobContext):
                     # -- Agent picks the next topic ----------------------------
                     _old_topic = _active_topic
                     _mark_topic_covered(_old_topic)
+
+                    # ── Ground-truth topic record ──────────────────────────────
+                    # Capture everything we know about this topic NOW — eval scores,
+                    # probe count, exit reason, actual candidate answers — so the
+                    # skill extraction LLM gets real signal instead of re-reading
+                    # the transcript cold after the session ends.
+                    try:
+                        _old_key = _topic_short_key(_old_topic or "")
+                        _old_ts  = _topic_states.get(_normalize_topic_key(_old_key)) or {}
+                        # Extract tech skills from [bracket] in topic string
+                        _tech_brackets = re.findall(r"\[([^\]]+)\]", _old_topic or "")
+                        _tech_skills: list[str] = []
+                        for _chunk in _tech_brackets:
+                            for _tok in re.split(r"[;,]", _chunk):
+                                _tok = _tok.strip()
+                                if _tok:
+                                    _tech_skills.append(_tok)
+                        # Determine exit reason from saturation flags
+                        _exit_reason = (
+                            "explicit_denial" if _old_key in _denied_topics
+                            else "weak_exit"   if _weak_exit
+                            else "depth_decay" if _depth_decay
+                            else "saturated"   if _is_saturated
+                            else "dry_topic"   if _dry_topic
+                            else "eval_moveon"
+                        )
+                        # Compute avg scores across all turns on this topic
+                        _topic_normed_key = re.sub(r"[^a-z0-9]+", " ", _old_key.lower()).strip()
+                        _overall_hist = _topic_score_histories.get(_topic_normed_key, [])
+                        _depth_hist   = _topic_depth_histories.get(_topic_normed_key, [])
+                        _avg_overall  = round(sum(_overall_hist) / len(_overall_hist), 2) if _overall_hist else 0.0
+                        _avg_depth    = round(sum(_depth_hist)   / len(_depth_hist),   2) if _depth_hist   else 0.0
+                        # Current turn's scores
+                        _cur_clarity     = float(_qr.get("clarity",     0) or 0)
+                        _cur_depth       = float(_qr.get("depth",       0) or 0)
+                        _cur_specificity = float(_qr.get("specificity", 0) or 0)
+                        _cur_grounding   = float(_qr.get("grounding",   0) or 0)
+                        _cur_overall     = float(_qr.get("overall",     0) or 0)
+                        # Probe count = follow_up_turns from TopicState
+                        _probe_count = int(_old_ts.get("follow_up_turns", 0) or 0)
+                        # Is this a skill topic or a resume project/work-history topic?
+                        _is_skill_topic = _old_key.lower() in _skill_source_by_key
+                        _topic_record = {
+                            "topic":        _old_topic or "",
+                            "topic_key":    _old_key,
+                            "topic_type":   "skill" if _is_skill_topic else "project",
+                            "exit_reason":  _exit_reason,
+                            "probe_count":  _probe_count,
+                            "scores": {
+                                "avg_overall":   _avg_overall,
+                                "avg_depth":     _avg_depth,
+                                "last_clarity":     _cur_clarity,
+                                "last_depth":       _cur_depth,
+                                "last_specificity": _cur_specificity,
+                                "last_grounding":   _cur_grounding,
+                                "last_overall":     _cur_overall,
+                            },
+                            "saturation_score": float(_old_ts.get("saturation_score", 0.0) or 0.0),
+                            "candidate_answers": list(_current_topic_answers[-6:]),  # last 6 answers on this topic
+                            "tech_skills": _tech_skills,
+                            "denied": _old_key in _denied_topics,
+                        }
+                        _topic_records.append(_topic_record)
+                        logger.info(
+                            "[TOPIC_RECORD] turn=%d | recorded topic=%r exit=%s probes=%d avg_overall=%.1f answers=%d",
+                            turn_snapshot, _old_key, _exit_reason, _probe_count, _avg_overall, len(_current_topic_answers),
+                        )
+                    except Exception as _tr_err:
+                        logger.warning("[TOPIC_RECORD] Failed to record topic: %s", _tr_err)
+
+                    # Reset answer buffer for the next topic
+                    _current_topic_answers = []
 
                     # Concern 4c: a project built during a work role (or a work role
                     # that is really the same as a discussed project) must NOT be asked
@@ -3662,6 +3745,10 @@ async def entrypoint(ctx: JobContext):
             is_candidate_speaking = True
         elif event.new_state == "listening":
             is_candidate_speaking = False
+            # Restart the inactivity clock from 0 every time the candidate stops speaking.
+            # This ensures they get a full 10 seconds of silence before a nudge fires.
+            if awaiting_candidate_response:
+                reset_inactivity_clock(start_waiting=True, preserve_nudge_flags=False)
     @session.on("agent_state_changed")
     def on_agent_state_changed(event):
         nonlocal is_agent_speaking, first_agent_turn_committed_at
@@ -3845,17 +3932,17 @@ async def entrypoint(ctx: JobContext):
 
     _name = candidate_first_name or candidate_name
     _SOFT_NUDGES = [
-        f"Take a moment, {_name}.",
-        "If it helps, you can think out loud.",
-        f"Still with me, {_name}? A rough answer is completely fine.",
+        f"Take your time, {_name}. I'm here when you're ready.",
+        "No rush at all. If it helps, feel free to think out loud.",
+        f"Are you still with me, {_name}? Just let me know if you need me to repeat the question.",
     ]
     _INACTIVITY_WARNING_TEXT = (
-        f"Hey {_name}, I still haven't heard from you. "
-        "I'll have to wrap up the call in 10 seconds if you don't respond."
+        f"It looks like you might have stepped away, {_name}. "
+        "I'll go ahead and pause our interview shortly if I don't hear from you."
     )
     _INACTIVITY_END_TEXT = (
-        "I'll end the interview here since I haven't heard back. "
-        "Thank you for your time today."
+        "I'm going to end the session here since I haven't heard back. "
+        "Thank you so much for your time today."
     )
 
     async def _deliver_nudge(text: str) -> None:
@@ -4054,6 +4141,7 @@ async def entrypoint(ctx: JobContext):
             logger.info("[NUDGE] Ending interview due to inactivity (%ds)", int(inactivity_elapsed))
             try:
                 await session.say(_INACTIVITY_END_TEXT, allow_interruptions=False)
+                await asyncio.sleep(4.0)  # wait for TTS to fully play before disconnecting
             except Exception as e:
                 logger.warning("[NUDGE] Failed to deliver inactivity ending line: %s", e)
             await _send_termination_signal("inactivity_timeout")
@@ -4189,6 +4277,7 @@ async def entrypoint(ctx: JobContext):
                     org_id=org_id,
                     llm_model=analysis_model,
                     jd_json=_coerce_jsonish(extracted_details) if extracted_details else None,
+                    topic_records=list(_topic_records),
                 ),
                 timeout=300,
             )

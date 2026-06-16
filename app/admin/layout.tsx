@@ -134,10 +134,11 @@ export default async function AdminLayout({ children }: { children: React.ReactN
                         body.reports-mode #global-admin-sidebar { display: none !important; }
                         body.reports-mode #admin-main-wrapper { padding-left: 0 !important; }
                         body.reports-mode .recruiter-assistant-btn { display: none !important; }
+                        body.reports-mode #admin-content-inner { padding: 0 !important; max-width: 100% !important; }
                     ` }} />
                     <main className="min-h-screen">
                         <LowCreditsBanner orgStatus={orgData.status} />
-                        <div className="max-w-full mx-auto px-4 pb-4 pt-4 md:px-8 md:pb-8 lg:px-10 lg:pb-10">
+                        <div id="admin-content-inner" className="max-w-full mx-auto px-4 pb-4 pt-4 md:px-8 md:pb-8 lg:px-10 lg:pb-10">
                             {children}
                         </div>
                     </main>

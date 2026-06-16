@@ -11,29 +11,24 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-_SIGNAL_ANALYSIS_SYSTEM = """You are a senior HR analyst writing a post-interview signal analysis for a hiring team.
+_SIGNAL_ANALYSIS_SYSTEM = """You are a senior technical recruiter writing a post-interview brief that a hiring manager will read in 30 seconds to decide whether to move this candidate forward.
 
-You will receive the full picture of what happened during the interview:
-- Every question asked and the candidate's answer with scores (clarity, depth, specificity, grounding, 0-10)
-- Every behavioral signal that fired (ownership language, evasion, follow-up collapse, etc.) with turn numbers
-- Proctoring events (tab switches, camera issues, face detection, etc.)
-- Factual inconsistencies detected during the interview
-- Session duration and participation stats
+You have full access to: every Q&A with per-dimension scores, behavioral signals that fired, proctoring events, inconsistencies, and the transcript.
 
-Write 4 to 5 analysis points. Each point is 2-3 sentences. Together they give the HR team a complete picture of what this candidate was actually like during the evaluation.
+Write exactly 4 points. Each point covers ONE specific thing — a strength, a gap, a pattern, or an integrity flag. Two sentences max per point. The hiring manager should not need to scroll.
 
-Rules:
-- Write like a smart colleague briefing the hiring manager — direct, specific, no corporate fluff
-- Each point must be grounded in actual evidence from the data (specific topic, specific question content, specific signal)
-- NEVER say "turn 3" or "turn 7" — always reference by topic or question content e.g. "when asked about data pipelines" or "during the system design question"
-- Cover what matters: how they spoke, how deep their answers were, whether they owned their experience, any integrity flags, how they handled pressure
-- If something looked suspicious (tab switch before a suspiciously good answer, identity flag, inconsistency), say it plainly
-- If they were genuinely strong, say that too with the evidence
-- Do NOT use section headers or labels — just the points as a plain array of strings
-- Do NOT mention score numbers or metric names — describe what you observed in plain language
+RULES — read these carefully:
+1. Every point must name the specific topic or question it is about. Not "when discussing their experience" — say "when asked about the n8n workflow they built" or "on the React state management question".
+2. Include what the candidate actually said or did. Quote a phrase or describe the exact behavior. No paraphrasing into abstractions.
+3. If the candidate struggled: say what broke down (gave only surface-level steps, couldn't explain why they made a decision, needed 4 follow-ups before answering, said "I don't remember" to a project on their own resume).
+4. If they were strong: say what made it strong (gave numbers, named specific tools, walked through their own decision without being prompted, corrected themselves mid-answer).
+5. If proctoring flags exist: name the event type, how many times, and whether it correlates with a suspiciously better or worse answer.
+6. If no real weakness exists, don't invent one. If no real strength exists, don't fabricate one.
+7. NEVER write: "demonstrated strong communication", "showed good problem-solving skills", "the candidate exhibited", "overall performance was", or any sentence that could apply to any candidate in any interview.
+8. Do NOT mention score numbers or dimension names.
 
-Output ONLY a JSON array of 4-5 strings. No keys, no object wrapper, just the array.
-Example shape: ["Point one here.", "Point two here.", "Point three here.", "Point four here."]"""
+Output ONLY a JSON array of exactly 4 strings. No object wrapper, no markdown.
+["Point one.", "Point two.", "Point three.", "Point four."]"""
 
 
 def _build_prompt(
@@ -87,37 +82,33 @@ def _build_prompt(
     else:
         parts.append("INCONSISTENCIES\nNone detected.")
 
-    # Behavioral signals summary
-    behavioral: list[str] = []
-    for s in answer_scores:
-        topic = s.get('topic') or f"question about {str(s.get('question',''))[:60]}"
-        for sig in s.get("signals", []):
-            behavioral.append(f"  [{topic}] — {sig} (score: {s.get('overall','?')}/10)")
-        for concern in s.get("concerns", []):
-            behavioral.append(f"  [{topic}] — concern: {concern}")
-    if behavioral:
-        parts.append("BEHAVIORAL SIGNALS\n" + "\n".join(behavioral))
-
-    # Q&A with scores
+    # Q&A with behavioral signals inline — main evidence block
     qa_lines = []
     for s in answer_scores:
         if s.get("is_warmup"):
             continue
-        qa_lines.append(
-            f"  Topic: {s.get('topic','?')} | overall {s.get('overall','?')}/10\n"
-            f"    Q: {str(s.get('question',''))[:180]}\n"
-            f"    A: {str(s.get('answer',''))[:280]}\n"
-            f"    clarity={s.get('clarity','?')} depth={s.get('depth','?')} "
-            f"specificity={s.get('specificity','?')} grounding={s.get('grounding','?')}"
-        )
-    if qa_lines:
-        parts.append("QUESTION & ANSWER SCORES\n" + "\n".join(qa_lines))
+        topic = s.get('topic') or "unknown topic"
+        question = str(s.get('question', '')).strip()[:220]
+        answer = str(s.get('answer', '')).strip()[:400]
+        depth = s.get('depth', '?')
+        specificity = s.get('specificity', '?')
+        grounding = s.get('grounding', '?')
+        signals = s.get("signals", [])
+        concerns = s.get("concerns", [])
 
-    # Transcript tail
-    if transcript_lines:
-        full = "\n".join(transcript_lines)
-        excerpt = full[-3000:] if len(full) > 3000 else full
-        parts.append(f"TRANSCRIPT (recent portion)\n{excerpt}")
+        block = (
+            f"  TOPIC: {topic}\n"
+            f"    Q: {question}\n"
+            f"    A: {answer}\n"
+            f"    [depth={depth} specificity={specificity} grounding={grounding}]"
+        )
+        if signals:
+            block += f"\n    SIGNALS: {', '.join(signals)}"
+        if concerns:
+            block += f"\n    CONCERNS: {', '.join(concerns)}"
+        qa_lines.append(block)
+    if qa_lines:
+        parts.append("QUESTION & ANSWER LOG\n" + "\n\n".join(qa_lines))
 
     return "\n\n".join(parts)
 
@@ -153,8 +144,8 @@ async def generate_signal_analysis(
                 {"role": "system", "content": _SIGNAL_ANALYSIS_SYSTEM},
                 {"role": "user",   "content": prompt_content},
             ],
-            temperature=0.3,
-            max_tokens=800,
+            temperature=0.2,
+            max_tokens=1000,
         )
 
         usage = getattr(response, "usage", None)

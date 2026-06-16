@@ -729,52 +729,6 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
                             <FileText className="mr-1.5 h-3.5 w-3.5" />
                             Resume report
                         </Button>
-                        <div className="flex items-center gap-2 border-l border-[#DDE1E5] pl-2">
-                            {!isSuspended && (
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => setConfirmDialog({
-                                        action: "resend_link",
-                                        title: "Resend Interview Link?",
-                                        description: "Send a new interview link to the candidate."
-                                    })}
-                                    disabled={isUpdating}
-                                    className="h-8 rounded-lg border-blue-200 bg-blue-50 px-3 text-[11px] font-bold text-blue-700 hover:bg-blue-100"
-                                >
-                                    Resend Link
-                                </Button>
-                            )}
-                            <Button
-                                type="button"
-                                variant={isHired ? "default" : "outline"}
-                                size="sm"
-                                disabled={isUpdating}
-                                onClick={() => setConfirmDialog({
-                                    action: "hire",
-                                    title: "Mark as Hired?",
-                                    description: `Confirm hiring decision for ${candidate?.fullName}.`
-                                })}
-                                className={isHired ? "h-8 rounded-lg bg-emerald-600 text-white px-3 text-[11px] font-bold hover:bg-emerald-700" : "h-8 rounded-lg border-emerald-200 bg-emerald-50 px-3 text-[11px] font-bold text-emerald-700 hover:bg-emerald-100"}
-                            >
-                                Hire
-                            </Button>
-                            <Button
-                                type="button"
-                                variant={isNotHired ? "default" : "outline"}
-                                size="sm"
-                                disabled={isUpdating}
-                                onClick={() => setConfirmDialog({
-                                    action: "not_hired",
-                                    title: "Mark as Not Hired?",
-                                    description: `Confirm rejection for ${candidate?.fullName}.`
-                                })}
-                                className={isNotHired ? "h-8 rounded-lg bg-rose-600 text-white px-3 text-[11px] font-bold hover:bg-rose-700" : "h-8 rounded-lg border-rose-200 bg-rose-50 px-3 text-[11px] font-bold text-rose-700 hover:bg-rose-100"}
-                            >
-                                Not Hired
-                            </Button>
-                        </div>
                     </div>
                 }
                 model={buildSreevaAIInterviewViewModel({
