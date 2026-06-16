@@ -125,17 +125,13 @@ export async function POST(req: Request) {
     const now = new Date();
 
     if (interview) {
-      await prisma.$executeRawUnsafe(
-        `
-        UPDATE "Interview"
-        SET "integritySignals" = $1::jsonb,
-            "updatedAt" = $2
-        WHERE "applicationId" = $3
-        `,
-        JSON.stringify(mergedEvents),
-        now,
-        applicationId
-      );
+      await (prisma.interview as any).update({
+        where: { applicationId },
+        data: {
+          integritySignals: mergedEvents as any,
+          updatedAt: now,
+        }
+      });
     } else {
       await (prisma.interview as any).upsert({
         where: { applicationId },

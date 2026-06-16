@@ -61,12 +61,19 @@ export async function POST(
 
         const interviewReport = (() => {
             const interview = app.interview as any;
-            const raw = interview?.skillRatings;
+            // scoreBreakdown holds dimensions/overall/integrity (renamed from skillRatings)
+            const raw = interview?.scoreBreakdown;
             const parsed = raw
                 ? (typeof raw === "string" ? JSON.parse(raw) : raw)
                 : {};
+            // skillRatings is now the flat [{skill, score, ...}] list
+            const skillRatingsRaw = interview?.skillRatings;
+            const skillRatingsList = Array.isArray(skillRatingsRaw)
+                ? skillRatingsRaw
+                : (typeof skillRatingsRaw === "string" ? JSON.parse(skillRatingsRaw || "[]") : []);
             return {
                 ...parsed,
+                skill_ratings: skillRatingsList,
                 communication_score: parsed?.dimensions?.find((d: any) => d?.name?.toLowerCase?.().includes("communication"))?.score ?? null,
 
 integrity_signals: interview?.integritySignals ?? [],

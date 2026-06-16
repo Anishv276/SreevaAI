@@ -164,7 +164,7 @@ export async function POST(req: NextRequest) {
 
     const org = await prisma.organization.findUnique({
       where: { id: orgId },
-      select: { name: true, industry: true, size: true, plan: true },
+      select: { name: true, plan: true },
     });
     if (!canUseRecruiterAssistant(org?.plan)) {
       return NextResponse.json(
@@ -373,7 +373,7 @@ You have complete, real-time access to the organization's hiring database and ev
 Every answer is based on LIVE data from tools — never from memory or assumptions.
 
 ### ORGANIZATION:
-- Name: ${org?.name ?? "Unknown"} | Industry: ${org?.industry ?? "N/A"} | Size: ${org?.size ?? "N/A"} | Plan: ${org?.plan ?? "STARTER"}
+- Name: ${org?.name ?? "Unknown"} | Plan: ${org?.plan ?? "STARTER"}
 
 ---
 
@@ -682,6 +682,7 @@ ${semanticContext || "No semantic matches found — rely on tools for accurate d
                   select: {
                     id: true, status: true,
                     skillRatings: true,
+                    scoreBreakdown: true,
                     interviewSummary: true,
                     signalAnalysis: true,
                     interviewTranscript: true,
@@ -704,9 +705,15 @@ ${semanticContext || "No semantic matches found — rely on tools for accurate d
                 message: "Interview not yet completed — no report available.",
               });
             } else {
+              const skillRatingsRaw = candidate.interview.skillRatings;
+              const skillRatingsList = Array.isArray(skillRatingsRaw)
+                ? skillRatingsRaw
+                : (typeof skillRatingsRaw === "string" ? JSON.parse(skillRatingsRaw || "[]") : []);
+
               const mergedReport = {
-                ...(candidate.interview.skillRatings as any),
-                communication_score: (candidate.interview.skillRatings as any)?.dimensions?.find((d: any) => d?.name?.toLowerCase?.().includes("communication"))?.score ?? null,
+                ...(candidate.interview.scoreBreakdown as any),
+                skill_ratings: skillRatingsList,
+                communication_score: (candidate.interview.scoreBreakdown as any)?.dimensions?.find((d: any) => d?.name?.toLowerCase?.().includes("communication"))?.score ?? null,
 
                 integrity_signals: candidate.interview.integritySignals ?? null,
                 signal_analysis: candidate.interview.signalAnalysis ?? null,

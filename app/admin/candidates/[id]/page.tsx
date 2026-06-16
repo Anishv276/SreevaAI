@@ -135,7 +135,7 @@ export default function CandidateProfilePage() {
 
 const interviewReportData: any = (() => {
     try {
-        const raw = candidate?.interview?.skillRatings;
+        const raw = candidate?.interview?.scoreBreakdown;
         if (!raw) return {};
         const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
         const interview = candidate?.interview as any;
@@ -151,7 +151,7 @@ const interviewReportData: any = (() => {
     } catch {
         return {};
     }
-})();
+})()
 
 const interviewRecordingUrl = candidate?.interview?.interviewRecordingUrl || "";
 const interviewTranscript = candidate?.interview?.interviewTranscript || "";
@@ -166,11 +166,17 @@ const isFallbackReport = !interviewReportData?.dimensions;
 
 // -- 5-dimension scores --------------------------------------------------------
 const _dims: { name: string; score: number; evidence: string }[] =
-    Array.isArray(interviewReportData?.dimensions) ? interviewReportData.dimensions : [];
+    Array.isArray(interviewReportData?.dimensions) ? interviewReportData.dimensions : [
+        { name: "Communication", score: Number(interviewReportData?.communication?.score || 0), evidence: String(interviewReportData?.communication?.evidence || "") },
+        { name: "Domain Knowledge", score: Number(interviewReportData?.domain_knowledge?.score || 0), evidence: String(interviewReportData?.domain_knowledge?.evidence || "") },
+        { name: "Role Fit", score: Number(interviewReportData?.role_fit?.score || 0), evidence: String(interviewReportData?.role_fit?.evidence || "") },
+        { name: "Problem Solving", score: Number(interviewReportData?.problem_solving?.score || 0), evidence: String(interviewReportData?.problem_solving?.evidence || "") },
+        { name: "Ownership & Credibility", score: Number(interviewReportData?.ownership_credibility?.score || 0), evidence: String(interviewReportData?.ownership_credibility?.evidence || "") },
+    ].filter(d => d.score > 0 || d.evidence);
 const _dimByName = (name: string) => _dims.find((d) => d.name.toLowerCase().includes(name.toLowerCase()))?.score ?? 0;
 
 const interviewReportScores = {
-    overall:               Number(interviewReportData?.overall ?? 0),
+    overall:               candidate?.aiScore ? Number(candidate.aiScore) : Number(interviewReportData?.overall ?? 0),
     engagement:            Number(interviewReportData?.engagement ?? 0),
     communication:         _dimByName("communication"),
     domain_knowledge:      _dimByName("domain"),
@@ -196,13 +202,22 @@ const _integrity = interviewReportData?.integrity || {};
 const integrityScore = Number(_integrity.score ?? 100);
 const integrityBand  = String(_integrity.band ?? "HIGH");
 
-// -- Skills --------------------------------------------------------------------
-const skillsEvaluated: string[] = Array.isArray(interviewReportData?.skills_evaluated)
-    ? interviewReportData.skills_evaluated.filter((s: any) => typeof s === "string" && s.trim())
-    : [];
+// -- Skills: now read directly from the dedicated skillRatings column (flat array)
+const skillRatingsList: any[] = (() => {
+    const raw = (candidate?.interview as any)?.skillRatings;
+    if (Array.isArray(raw)) return raw;
+    if (typeof raw === "string") {
+        try { return JSON.parse(raw) as any[]; } catch { return []; }
+    }
+    // Backward-compat: old rows still have skill_ratings nested inside scoreBreakdown
+    return Array.isArray(interviewReportData?.skill_ratings) ? interviewReportData.skill_ratings : [];
+})();
 
-const skillRatingsList: any[] = Array.isArray(interviewReportData?.skill_ratings)
-    ? interviewReportData.skill_ratings : [];
+const skillsEvaluated: string[] = (
+    Array.isArray(interviewReportData?.skills_evaluated)
+        ? interviewReportData.skills_evaluated.filter((s: any) => typeof s === "string" && s.trim())
+        : skillRatingsList.map((r: any) => String(r?.skill || "").trim()).filter(Boolean)
+);
 
 const interviewReportBehavioralAnalysis = {
     ...(interviewReportData?.signal_analysis || {}),

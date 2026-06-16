@@ -74,10 +74,31 @@ async function recordedAudioToLinear16Pcm(chunks: Blob[], mimeType: string): Pro
         }
 
         const channel = buffer.getChannelData(0);
-        const pcm = new ArrayBuffer(channel.length * 2);
+
+        // --- Trim leading silence / noise ---
+        // Scan in 50ms windows. Find the first window where RMS exceeds a speech
+        // threshold, then start from 100ms before that point so we don't clip
+        // the first syllable. This removes repeated filler like "two two two"
+        // captured before the user starts reading the actual sentence.
+        const windowSamples = Math.floor(FLUX_VERIFY_SAMPLE_RATE * 0.05); // 50ms
+        const SPEECH_RMS_THRESHOLD = 0.015; // tune: lower = more sensitive
+        let speechStartSample = 0;
+        for (let i = 0; i < channel.length - windowSamples; i += windowSamples) {
+            let sumSq = 0;
+            for (let j = i; j < i + windowSamples; j++) sumSq += channel[j] * channel[j];
+            const rms = Math.sqrt(sumSq / windowSamples);
+            if (rms > SPEECH_RMS_THRESHOLD) {
+                // Go back 100ms as a safety buffer so we don't cut the first phoneme
+                speechStartSample = Math.max(0, i - Math.floor(FLUX_VERIFY_SAMPLE_RATE * 0.1));
+                break;
+            }
+        }
+        const trimmedChannel = speechStartSample > 0 ? channel.slice(speechStartSample) : channel;
+
+        const pcm = new ArrayBuffer(trimmedChannel.length * 2);
         const view = new DataView(pcm);
-        for (let i = 0; i < channel.length; i++) {
-            const sample = Math.max(-1, Math.min(1, channel[i]));
+        for (let i = 0; i < trimmedChannel.length; i++) {
+            const sample = Math.max(-1, Math.min(1, trimmedChannel[i]));
             view.setInt16(i * 2, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
         }
         return new Blob([pcm], { type: "application/octet-stream" });
@@ -85,6 +106,7 @@ async function recordedAudioToLinear16Pcm(chunks: Blob[], mimeType: string): Pro
         await audioContext.close().catch(() => undefined);
     }
 }
+
 
 export function HardwareCheck({
     onComplete,
@@ -124,7 +146,7 @@ export function HardwareCheck({
     const [consentChecked, setConsentChecked] = useState(false);
     // Live transcript from speech recognition
     const [liveTranscript, setLiveTranscript] = useState("");
-    const [interimTranscript, setInterimTranscript] = useState("");
+
     const [micRetryToken, setMicRetryToken] = useState(0);
     // Live mic volume level for visual feedback (0-1)
     const [micVolumeLevel, setMicVolumeLevel] = useState(0);
@@ -162,7 +184,7 @@ export function HardwareCheck({
         sessionFinalTextRef.current = "";
         liveTranscriptRef.current = "";
         setLiveTranscript("");
-        setInterimTranscript("");
+
         setMicRetryToken(t => t + 1);
     }, [verifiedPhrase]);
 
@@ -181,7 +203,7 @@ export function HardwareCheck({
         sessionFinalTextRef.current = "";
         liveTranscriptRef.current = "";
         setLiveTranscript("");
-        setInterimTranscript("");
+
         setMicRetryToken(t => t + 1);
     }, [clearMicTimers]);
 
@@ -544,44 +566,7 @@ export function HardwareCheck({
         return () => clearInterval(interval);
     }, [micStatus]);
 
-    // Web Speech API — live display only, no pass/fail logic
-    useEffect(() => {
-        if (micStatus !== "granted" || verifiedRef.current) return;
-        const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-        if (!SR) return;
-        const r = new SR();
-        r.continuous = true;
-        r.interimResults = true;
-        r.lang = "en-US";
-        recogRef.current = r;
-        r.onresult = (event: any) => {
-            if (verifiedRef.current) return;
-            let final = "", interim = "";
-            for (let i = 0; i < event.results.length; i++) {
-                if (event.results[i].isFinal) final += event.results[i][0].transcript + " ";
-                else interim = event.results[i][0].transcript;
-            }
-            const t = (final + interim).trim();
-            liveTranscriptRef.current = t;
-            setLiveTranscript(t);
-            if (t) {
-                if (micSilenceTimerRef.current !== null) window.clearTimeout(micSilenceTimerRef.current);
-                micSilenceTimerRef.current = window.setTimeout(() => {
-                    void autoStopAndVerify();
-                }, 100);
-            }
-        };
-        r.onerror = () => { };
-        r.onend = () => {
-            if (!verifiedRef.current && recogRef.current === r && !autoVerifyInProgressRef.current) {
-                setTimeout(() => { try { r.start(); } catch { } }, 300);
-            }
-        };
-        try { r.start(); } catch { }
-        return () => {
-            if (recogRef.current === r) { try { r.abort(); } catch { } recogRef.current = null; }
-        };
-    }, [autoStopAndVerify, micStatus, micRetryToken]);
+    // Web Speech API has been removed to rely exclusively on Deepgram for verification.
 
     // Start recording audio via MediaRecorder
     const startRecording = useCallback(() => {
@@ -606,7 +591,7 @@ export function HardwareCheck({
         sessionFinalTextRef.current = "";
         liveTranscriptRef.current = "";
         setLiveTranscript("");
-        setInterimTranscript("");
+
 
         const mr = new MediaRecorder(audioStream, mimeType ? { mimeType } : undefined);
         mr.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
@@ -651,22 +636,7 @@ export function HardwareCheck({
             return matchedCount >= Math.ceil(targetWords.length * 0.8);
         };
 
-        // --- FAST PATH: Web Speech API already has the transcript ---
-        if (wsTranScript) {
-            const matched = checkMatch(wsTranScript);
-            setLiveTranscript(wsTranScript);
-            if (matched) {
-                verifiedRef.current = true;
-                setMicVerified(true);
-            }
-            setIsVerifying(false);
-            clearMicTimers();
-            autoVerifyInProgressRef.current = false;
-            setIsRecording(false);
-            return;
-        }
-
-        // --- SLOW PATH: No Web Speech transcript — fall back to Deepgram ---
+        // --- Deepgram Verification ---
         try {
             const audioBlob = await recordedAudioToLinear16Pcm(chunks, mimeType);
             const formData = new FormData();
@@ -844,7 +814,7 @@ export function HardwareCheck({
         setSpeakerStatus("idle");
         setSpeakerPlaying(false);
         setLiveTranscript("");
-        setInterimTranscript("");
+
         try {
             const constraints: MediaStreamConstraints = {
                 video: cameraId
@@ -1090,7 +1060,7 @@ export function HardwareCheck({
                                     {/* Static circle progress — fills based on words matched */}
                                     {(() => {
                                         const targetWords = (verifiedPhrase || "").toLowerCase().replace(/[^a-z\s]/g, "").split(/\s+/).filter(Boolean);
-                                        const spokenWordSet = new Set((liveTranscript + " " + interimTranscript).toLowerCase().replace(/[^a-z\s]/g, "").split(/\s+/).filter(Boolean));
+                                        const spokenWordSet = new Set((liveTranscript).toLowerCase().replace(/[^a-z\s]/g, "").split(/\s+/).filter(Boolean));
                                         const matchedCount = micVerified ? targetWords.length : targetWords.filter(w => spokenWordSet.has(w)).length;
                                         const progress = targetWords.length > 0 ? matchedCount / targetWords.length : 0;
                                         const r = 28, circ = 2 * Math.PI * r;
@@ -1171,9 +1141,9 @@ export function HardwareCheck({
                                                 ) : liveTranscript ? (
                                                     <span className="text-orange-500 font-bold">&ldquo;{liveTranscript}&rdquo;</span>
                                                 ) : isRecording ? (
-                                                    <span className="text-gray-400 animate-pulse">Listening... speak the sentence and pause</span>
+                                                    <span className="text-orange-400 animate-pulse">Listening... read the sentence and click Stop</span>
                                                 ) : (
-                                                    <span className="text-gray-300">Press Record, say the sentence, then pause to auto-verify</span>
+                                                    <span className="text-gray-300">Press Record, read the sentence, then press Stop</span>
                                                 )}
                                             </p>
 
@@ -1202,9 +1172,12 @@ export function HardwareCheck({
                                                         <Mic className="w-3.5 h-3.5" /> Record
                                                     </button>
                                                 ) : (
-                                                    <div className="flex items-center gap-2 rounded-full px-5 py-2 text-xs font-bold bg-orange-50 text-orange-600 border border-orange-100">
-                                                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Auto-verifying...
-                                                    </div>
+                                                    <button
+                                                        onClick={stopAndVerify}
+                                                        className="flex items-center gap-2 rounded-full px-5 py-2 text-xs font-bold bg-red-500 hover:bg-red-600 text-white shadow-sm transition-all"
+                                                    >
+                                                        <span className="w-2.5 h-2.5 bg-white rounded-[2px]" /> Stop & Verify
+                                                    </button>
                                                 )}
                                             </div>
 

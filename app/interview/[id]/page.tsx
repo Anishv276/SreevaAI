@@ -172,9 +172,32 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         } catch { }
     }, []);
 
+    const [isInitiallyLocked, setIsInitiallyLocked] = useState(false);
+
     useEffect(() => {
-        setPhase("check");
-    }, []);
+        let active = true;
+        (async () => {
+            try {
+                const url = new URL(`/api/interview/${id}/token`, window.location.href);
+                if (interviewToken) url.searchParams.set("token", interviewToken);
+                const res = await fetch(url.toString(), { cache: "no-store" });
+                const data = await res.json();
+                if (!active) return;
+
+                if (!res.ok && data.error) {
+                    setBlockedAccessTitle(data.code === "DRIVE_CLOSED" ? "Job Closed" : "Access Restricted");
+                    setBlockedAccessMessage(data.error);
+                    setIsInitiallyLocked(true);
+                    // Keep phase as loading so HardwareCheck doesn't mount
+                } else {
+                    setPhase("check");
+                }
+            } catch (err) {
+                if (active) setPhase("check");
+            }
+        })();
+        return () => { active = false; };
+    }, [id, interviewToken]);
 
     //  Face violation handler 
     const handleFaceViolation = useCallback((
@@ -901,12 +924,14 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                                 </a>
                             </p>
                             <div className="mt-6 flex justify-center gap-3">
-                                <Button
-                                    onClick={() => setBlockedAccessMessage(null)}
-                                    className="rounded-full bg-orange-500 px-6 py-2.5 text-white font-bold hover:bg-orange-600"
-                                >
-                                    Got it
-                                </Button>
+                                {!isInitiallyLocked && (
+                                    <Button
+                                        onClick={() => setBlockedAccessMessage(null)}
+                                        className="rounded-full bg-orange-500 px-6 py-2.5 text-white font-bold hover:bg-orange-600"
+                                    >
+                                        Got it
+                                    </Button>
+                                )}
                             </div>
                         </motion.div>
                     </motion.div>

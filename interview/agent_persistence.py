@@ -319,6 +319,8 @@ _ELEVENLABS_TTS_USD_PER_M: dict[str, float] = {
 _ELEVENLABS_TTS_DEFAULT = float(os.environ.get("ELEVENLABS_TTS_USD_PER_MILLION_CHARS", "100.0"))
 _SARVAM_STT_INR_PER_HOUR: dict[str, float] = {"saaras:v3": 30.0}
 _DEEPGRAM_STT_USD_PER_MIN: dict[str, float] = {
+    "nova-3":             0.0048,
+    "nova-2":             0.0043,
     "flux-general-en":    0.0065,
     "flux-general-multi": 0.0078,
 }
@@ -1022,7 +1024,7 @@ async def get_interview_context(app_id: str) -> dict:
            d."extractedDetails", d."screeningCriteria", d."orgId" AS "orgId",
            d.location AS "driveLocation", d."interviewLanguage", d."interviewQuestions",
            COALESCE(d."voiceId", o."voiceId") AS "voiceId",
-           COALESCE(d."aiName", 'Ishitha') AS "aiName", o.name AS "orgName", o.location AS "orgLocation",
+           COALESCE(d."aiName", 'Ishitha') AS "aiName", o.name AS "orgName", NULL::text AS "orgLocation",
            o."deepgramModel", o."proctoringSignals",
            ev.provider AS "voiceProvider", ev.model AS "voiceModel",
            i.status AS "interviewStatus"
@@ -1578,18 +1580,62 @@ _SUMMARY_PROMPT = ChatPromptTemplate.from_messages([
 # ═══════════════════════════════════════════════════════════════════════════════
 
 async def _node_deterministic_signals(state: ReportState) -> dict:
-    """Node 1 (sync): Compute integrity score + signal context deterministically."""
+    """Node 1 (sync): Compute integrity score + signal context deterministically.
+
+    Merges agent-side behavioral signals (proctoring_data["events"]) with
+    browser-side integrity signals stored in DB integritySignals (tab_switch,
+    face_absence, camera_disabled, etc.)  so the integrity score reflects both.
+    """
     proctoring_data  = state.get("proctoring_data") or {}
     transcript_lines = state.get("transcript_lines", [])
+    app_id           = state.get("app_id", "")
 
-    proctoring_events = proctoring_data.get("events", [])
-    inconsistencies   = proctoring_data.get("inconsistencies", [])
+    # Agent-side behavioral signals (ownership_ambiguity, follow_up_collapse, etc.)
+    agent_proctoring_events = list(proctoring_data.get("events", []) or [])
+    inconsistencies         = list(proctoring_data.get("inconsistencies", []) or [])
 
-    integrity_result = _compute_integrity_score(proctoring_events, [], inconsistencies)
+    # Browser-side integrity signals (tab_switch, face_absence, camera_disabled, etc.)
+    # These are stored in DB "integritySignals" by /api/interview/proctoring.
+    # They were never fetched here before, so they never affected the integrity score.
+    db_integrity_events: list[dict] = []
+    if app_id and DATABASE_URL:
+        try:
+            pool = await DatabasePool.get()
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    'SELECT "integritySignals" FROM "Interview" WHERE "applicationId" = $1 LIMIT 1',
+                    app_id,
+                )
+            if row and row["integritySignals"]:
+                raw = row["integritySignals"]
+                parsed = raw if isinstance(raw, list) else (json.loads(raw) if isinstance(raw, str) else [])
+                db_integrity_events = [e for e in (parsed or []) if isinstance(e, dict)]
+                # Normalize field name: DB stores eventType, _compute_integrity_score expects signal_name
+                for ev in db_integrity_events:
+                    if "eventType" in ev and "signal_name" not in ev:
+                        ev["signal_name"] = ev["eventType"]
+                logger.info(
+                    "[REPORT] Fetched %d browser-side integrity signals from DB for %s",
+                    len(db_integrity_events), app_id,
+                )
+        except Exception as _e:
+            logger.warning("[REPORT] Failed to fetch integritySignals from DB for %s: %s", app_id, _e)
+
+    # Merge: agent signals + browser signals; update proctoring_data events so the
+    # rest of the pipeline (signal_analysis, signalAnalysis DB column) also sees them.
+    all_proctoring_events = agent_proctoring_events + db_integrity_events
+    proctoring_data = {**proctoring_data, "events": all_proctoring_events}
+
+    # _compute_integrity_score(signal_events, proctoring_events, inconsistencies)
+    # signal_events = behavioral signals from eval pipeline (passed as first arg)
+    # proctoring_events = browser-side events (passed as second arg)
+    # Both are now merged in all_proctoring_events; pass agent signals as first arg
+    # and browser signals as second so the weight table applies correctly.
+    integrity_result = _compute_integrity_score(agent_proctoring_events, db_integrity_events, inconsistencies)
 
     sig_counts = Counter(
         str(evt.get("signal_name") or evt.get("signal") or evt.get("event") or "").strip()
-        for evt in proctoring_events
+        for evt in all_proctoring_events
         if evt.get("signal_name") or evt.get("signal") or evt.get("event")
     )
     signal_context = ", ".join(f"{k}x{v}" for k, v in sig_counts.items()) if sig_counts else "none"
@@ -1610,6 +1656,9 @@ async def _node_deterministic_signals(state: ReportState) -> dict:
         "signal_context":   signal_context,
         "jd_context":       jd_context,
         "transcript_text":  transcript_text,
+        # Return the merged proctoring_data so downstream nodes (assemble) use
+        # the full event list (agent signals + browser signals).
+        "proctoring_data":  proctoring_data,
     }
 
 
@@ -1629,14 +1678,16 @@ def _build_qa_block_for_skills(idx: int, s: dict) -> dict:
     """Return a minimal Q&A dict suitable for the skills prompt."""
     sb = s.get("score_breakdown") or {}
     return {
-        "n":         idx,
-        "question":  _qa_question(s),
-        "answer":    _qa_answer(s),
-        "clarity":   sb.get("clarity",    s.get("clarity",    0)),
-        "depth":     sb.get("depth",      s.get("depth",      0)),
-        "specificity": sb.get("fluency",  s.get("specificity", 0)),
-        "grounding": sb.get("confidence", s.get("grounding",  0)),
-        "is_warmup": s.get("is_warmup", False),
+        "n":           idx,
+        "question":    _qa_question(s),
+        "answer":      _qa_answer(s),
+        # Use the correct dimension keys -- score_breakdown uses clarity/depth/specificity/grounding.
+        # Fallback to top-level keys for raw answer_scores that don't carry score_breakdown.
+        "clarity":     sb.get("clarity",     s.get("clarity",     0)),
+        "depth":       sb.get("depth",       s.get("depth",       0)),
+        "specificity": sb.get("specificity", s.get("specificity", 0)),
+        "grounding":   sb.get("grounding",   s.get("grounding",   0)),
+        "is_warmup":   s.get("is_warmup", False),
     }
 
 
@@ -1773,8 +1824,9 @@ async def _node_assemble_and_persist(state: ReportState) -> dict:
     ]
     skills_evaluated = [r["skill"] for r in skill_ratings_list]
 
-    # Final skillRatings blob
-    skill_ratings_report = {
+    # Final scoreBreakdown blob — dimension scores, overall, engagement, integrity
+    # NOTE: skill_ratings are now stored separately in the "skillRatings" column
+    score_breakdown_report = {
         "dimensions": [
             {"name": "Communication",          "score": comm, "evidence": eval_result.communication.evidence},
             {"name": "Domain Knowledge",       "score": dk,   "evidence": eval_result.domain_knowledge.evidence},
@@ -1791,7 +1843,7 @@ async def _node_assemble_and_persist(state: ReportState) -> dict:
             "methodology":  "signal_weighted_deterministic",
         },
         "skills_evaluated": skills_evaluated,
-        "skill_ratings":    skill_ratings_list,
+        # verdict / decision_note comes from interviewSummary, not stored here
     }
 
     interview_summary_report = {
@@ -1800,17 +1852,19 @@ async def _node_assemble_and_persist(state: ReportState) -> dict:
         "decision_note": eval_result.decision_note,
     }
 
-    # Write to DB
+    # Write to DB — scoreBreakdown and skillRatings are now separate columns
     try:
         pool = await DatabasePool.get()
         async with pool.acquire() as conn:
             await conn.execute(
                 """UPDATE "Interview"
-                   SET "skillRatings"      = $1,
-                       "signalAnalysis"    = $2,
-                       "interviewSummary"  = $3
-                   WHERE "applicationId" = $4""",
-                json.dumps(skill_ratings_report),
+                   SET "scoreBreakdown"   = $1,
+                       "skillRatings"    = $2,
+                       "signalAnalysis"  = $3,
+                       "interviewSummary" = $4
+                   WHERE "applicationId" = $5""",
+                json.dumps(score_breakdown_report),
+                json.dumps(skill_ratings_list),
                 json.dumps(signal_analysis),
                 json.dumps(interview_summary_report),
                 app_id,
@@ -1873,6 +1927,10 @@ async def generate_interview_report(
     """Generate the complete structured interview report via LangGraph pipeline.
 
     Returns a scores_context dict for generate_interview_summary(), or None on failure.
+
+    NOTE: Browser-side integrity signals (tab_switch, face_absence, etc.) are fetched
+    directly from DB inside _node_deterministic_signals so they are always included
+    in the integrity score even if the caller's proctoring_data doesn't have them.
     """
     if not transcript_lines or not DATABASE_URL:
         logger.warning("[REPORT] Skipping: missing transcript or DATABASE_URL")
@@ -1889,7 +1947,7 @@ async def generate_interview_report(
         "interview_scores":  interview_scores,
         "all_scores":        answer_scores,
         "job_title":         job_title,
-        "proctoring_data":   proctoring_data,
+        "proctoring_data":   proctoring_data or {},
         "org_id":            org_id,
         "llm_model":         llm_model,
         "jd_json":           jd_json,

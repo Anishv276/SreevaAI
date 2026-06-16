@@ -474,12 +474,12 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         _recovery_quality = {"clarity": 2.0, "depth": 1.0, "specificity": 1.0, "grounding": 1.0}
         from interview.turn_decision import build_turn_decision, build_signal_flags
         _recovery_td = build_turn_decision(
-            quality=_recovery_quality,
-            signals=build_signal_flags([]),
-            signal_events=[],
-            action="PROBE",
-            mode="clarification",
-            next_goal="",
+            _recovery_quality,
+            build_signal_flags([]),
+            [],
+            "PROBE",
+            "clarification",
+            "",
         )
         _eval_result = (_recovery_td, "")
 

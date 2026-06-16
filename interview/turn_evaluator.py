@@ -177,12 +177,12 @@ async def _node_build_decision(state: EvalGraphState) -> dict:
         raw = state.get("raw_quality") or {}
         events = state.get("signal_events") or []
         td = build_turn_decision(
-            quality=raw,
-            signals=build_signal_flags(events),
-            signal_events=events,
-            action=raw.get("action", "MOVE_ON"),
-            mode=raw.get("probe_mode") or "normal",
-            next_goal=raw.get("next_goal", ""),
+            raw,
+            build_signal_flags(events),
+            events,
+            raw.get("action", "MOVE_ON"),
+            raw.get("probe_mode") or "normal",
+            raw.get("next_goal", ""),
         )
         return {"turn_decision": td}
     except Exception as exc:
@@ -350,11 +350,11 @@ async def run_turn_evaluation(
     ]
 
     td = build_turn_decision(
-        quality=result,
-        signals=build_signal_flags(signal_events),
-        signal_events=signal_events,
-        action=result.get("action", "MOVE_ON"),
-        mode=result.get("probe_mode") or "normal",
-        next_goal=result.get("next_goal", ""),
+        result,
+        build_signal_flags(signal_events),
+        signal_events,
+        result.get("action", "MOVE_ON"),
+        result.get("probe_mode") or "normal",
+        result.get("next_goal", ""),
     )
     return td, ""   # directive always overwritten by eval_pipeline

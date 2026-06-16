@@ -204,3 +204,62 @@ export async function POST(
         return NextResponse.json({ error: "Failed to generate token" }, { status: 500 });
     }
 }
+
+export async function GET(
+    request: Request,
+    { params }: { params: Promise<{ id: string }> }
+) {
+    try {
+        const prismaAny = prisma as any;
+        const { id: applicationId } = await params;
+        const url = new URL(request.url);
+        const interviewToken = url.searchParams.get("token") || "";
+        const requireInterviewToken = isInterviewTokenRequired();
+
+        if (!applicationId || (requireInterviewToken && !interviewToken)) {
+            return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+        }
+
+        const application = await prismaAny.application.findUnique({
+            where: { id: applicationId },
+            include: { interview: true },
+        });
+
+        if (!application || !application.interview) {
+            return NextResponse.json({ error: "Interview session not found" }, { status: 404 });
+        }
+
+        const interview = application.interview;
+
+        if (requireInterviewToken && interview.accessToken !== interviewToken) {
+            return NextResponse.json({ error: "Invalid interview token" }, { status: 401 });
+        }
+
+        const now = Date.now();
+        const expiresAtMs = interview.expiresAt ? interview.expiresAt.getTime() : null;
+        const startedAtMs = interview.startedAt ? interview.startedAt.getTime() : null;
+        const interviewStatus = String(interview.status || "").toUpperCase();
+        const isAlreadyDone = interviewStatus === "COMPLETED" || interviewStatus === "NO_SHOW";
+        
+        if (isAlreadyDone) {
+            return NextResponse.json({ error: "Interview has been completed.", code: "INTERVIEW_COMPLETED" }, { status: 409 });
+        }
+
+        const deadlineExpired = expiresAtMs !== null && now > expiresAtMs;
+        const joinWindowExpired = startedAtMs !== null && (now - startedAtMs) >= JOIN_WINDOW_MS;
+        const isExpiredByTime = deadlineExpired || joinWindowExpired;
+
+        if (interview.linkStatus === "EXPIRED" || isExpiredByTime) {
+            if (deadlineExpired) {
+                return NextResponse.json({ error: "This job posting has closed. Applications are no longer being accepted.", code: "DRIVE_CLOSED" }, { status: 403 });
+            }
+            return NextResponse.json({ error: "Access Denied: Interview link has expired. Please contact support.", code: "LINK_EXPIRED" }, { status: 403 });
+        }
+
+        return NextResponse.json({ ok: true, code: "ACTIVE" });
+    } catch (error) {
+        console.error("Status check error:", error);
+        return NextResponse.json({ error: "Failed to check status" }, { status: 500 });
+    }
+}
+

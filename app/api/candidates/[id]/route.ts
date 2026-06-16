@@ -65,6 +65,7 @@ export async function GET(
                         updatedAt: true,
                         inviteSentAt: true,
                         skillRatings: true,
+                        scoreBreakdown: true,
                         signalAnalysis: true,
 
                         questionByQuestionAnalysis: true,

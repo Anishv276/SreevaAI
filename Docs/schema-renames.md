@@ -69,7 +69,7 @@ This document lists all proposed renames for the Prisma schema — from current 
 | `resetOtpExpires` | `passwordResetOtpExpiresAt` | Makes clear it's a timestamp |
 
 ---
-
+    
 ### `Drive` → (model renamed to `JobPosting`)
 
 | Current Field | Proposed Field | Reason |

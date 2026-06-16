@@ -577,9 +577,6 @@ export function buildSreevaAIInterviewViewModel(i: {
   });
 
   const skills = Array.from(skillMap.values()).sort((a, b) => b.stars - a.stars);
-  if (skills.length === 0 && !i.isFallbackReport) {
-    skills.push({ name: "Role fit (JD)", stars: Math.max(1, Math.min(5, Math.round((technicalPct / 100) * 5))), status: "NOT TESTED", scoreLabel: "N/A" });
-  }
 
   // a"a" Transcript a"a" Parse turns from DB transcript with timestamps
   const secToLabel = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;

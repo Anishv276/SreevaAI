@@ -1896,6 +1896,7 @@ if (isQueueEnabled("interview-finalization")) {
                 select: {
                   interviewTranscript: true,
                   skillRatings: true,
+                  scoreBreakdown: true,
                   interviewDuration: true,
                   integritySignals: true,
                   createdAt: true,
@@ -1916,7 +1917,8 @@ if (isQueueEnabled("interview-finalization")) {
           const createdAtIso = app.createdAt.toISOString();
           const resumeReportCreatedAtIso = app.updatedAt.toISOString();
           const interviewCreatedAtIso = app.interview?.createdAt?.toISOString() || app.interview?.updatedAt?.toISOString() || createdAtIso;
-          const existingInterviewReport = app.interview?.skillRatings || null;
+          // Pinecone sync expects the full dimension report (now in scoreBreakdown)
+          const existingInterviewReport = app.interview?.scoreBreakdown || null;
 
           const resumeText =
             app.resumeText?.trim() ||

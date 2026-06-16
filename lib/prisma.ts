@@ -2,9 +2,13 @@ import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 
 function createPrismaClient() {
-    const databaseUrl = process.env.DATABASE_URL
+    // Supabase recommends using the direct/session connection for persistent
+    // app servers and reserving the transaction pooler for transient/serverless
+    // traffic. Prefer DIRECT_URL here because this Next dev server keeps
+    // long-lived connections open across many admin requests.
+    const databaseUrl = process.env.DIRECT_URL ?? process.env.DATABASE_URL
     if (!databaseUrl) {
-        throw new Error('DATABASE_URL is not set')
+        throw new Error('DIRECT_URL or DATABASE_URL is not set')
     }
 
     const connectionUrl = new URL(databaseUrl)

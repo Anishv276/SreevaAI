@@ -140,14 +140,20 @@ async function validateInterviewAccess(applicationId: string, interviewToken: st
         },
     });
 
-    if (!app?.drive?.orgId || !app.interview) return null;
+    if (!app?.drive?.orgId || !app.interview) {
+        console.error("[verify-speech] validateInterviewAccess failed: Missing orgId or interview", { orgId: app?.drive?.orgId, hasInterview: !!app?.interview });
+        return null;
+    }
     if (isInterviewTokenRequired() && app.interview?.accessToken !== interviewToken) {
+        console.error("[verify-speech] validateInterviewAccess failed: Invalid interview token", { required: isInterviewTokenRequired(), expected: app.interview?.accessToken, received: interviewToken });
         return null;
     }
     if (app.interview.expiresAt && app.interview.expiresAt < new Date()) {
+        console.error("[verify-speech] validateInterviewAccess failed: Interview expired");
         return null;
     }
     if (app.interview.linkStatus && app.interview.linkStatus !== "ACTIVE") {
+        console.error("[verify-speech] validateInterviewAccess failed: Link not ACTIVE");
         return null;
     }
 
@@ -250,8 +256,31 @@ export async function POST(req: NextRequest) {
         });
 
         const targetWords = targetNorm.split(" ").filter(Boolean);
-        const spokenWords = new Set(spokenNorm.split(" ").filter(Boolean));
-        const matchedCount = targetWords.filter(w => spokenWords.has(w)).length;
+        const spokenWords = spokenNorm.split(" ").filter(Boolean);
+
+        // Reject if the transcript is suspiciously long compared to the target phrase.
+        // If someone spoke 3x+ more words than the target, it means there was a lot of
+        // noise or repeated filler — we don't want to match on garbage.
+        const wordRatio = spokenWords.length / Math.max(1, targetWords.length);
+        if (wordRatio > 3.5) {
+            console.warn("[verify-speech] Transcript too long vs target (possible noise)", { spokenWords: spokenWords.length, targetWords: targetWords.length });
+            return NextResponse.json({ transcript, matched: false, matchedCount: 0, total: targetWords.length });
+        }
+
+        // Ordered subsequence match: every target word must appear in the transcript
+        // in the correct order. This prevents "two two two I am" from matching
+        // "I am ready" just because both contain 'i' and 'am' as set members.
+        let spokenIdx = 0;
+        let matchedCount = 0;
+        for (const tw of targetWords) {
+            while (spokenIdx < spokenWords.length && spokenWords[spokenIdx] !== tw) {
+                spokenIdx++;
+            }
+            if (spokenIdx < spokenWords.length) {
+                matchedCount++;
+                spokenIdx++;
+            }
+        }
         // 80% threshold — handles accent/contraction/minor mishearing
         const matched = matchedCount >= Math.ceil(targetWords.length * 0.8);
 
