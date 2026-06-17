@@ -167,9 +167,17 @@ export default function DrivesPage() {
                                     Contact Support
                                 </a>
                             ) : (
-                                <Link href="/admin/billing" className="text-[12px] font-bold text-slate-700 hover:text-slate-900 uppercase tracking-widest">
-                                    Go to Billing
-                                </Link>
+                                <a
+                                    href={getSupportComposeUrl({
+                                        subject: "Upgrade plan request",
+                                        body: "Hi support team,\n\nWe would like to upgrade our plan to create more jobs.\n",
+                                    })}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-[12px] font-bold text-slate-700 hover:text-slate-900 uppercase tracking-widest"
+                                >
+                                    Contact Support
+                                </a>
                             )}
                         </div>
                     ) : (
@@ -240,9 +248,17 @@ export default function DrivesPage() {
                                             Contact Support
                                         </a>
                                     ) : (
-                                        <Link href="/admin/billing" className="text-[12px] font-bold text-slate-700 hover:text-slate-900 uppercase tracking-widest">
-                                            Go to Billing
-                                        </Link>
+                                        <a
+                                            href={getSupportComposeUrl({
+                                                subject: "Upgrade plan request",
+                                                body: "Hi support team,\n\nWe would like to upgrade our plan to create more jobs.\n",
+                                            })}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="text-[12px] font-bold text-slate-700 hover:text-slate-900 uppercase tracking-widest"
+                                        >
+                                            Contact Support
+                                        </a>
                                     )}
                                 </div>
                             ) : (

@@ -3,92 +3,90 @@ import { Queue } from 'bullmq';
 
 /**
  * QUEUE DEFINITIONS
- * These represent the names of the pipelines in your platform.
+ * All queues share this cleanup policy:
+ *  - Completed jobs: auto-deleted 60s after finishing   (keeps Redis lean)
+ *  - Failed jobs:    auto-deleted 60s after failure     (never block new jobs)
+ *
+ * Nothing ever accumulates — no manual cleanup needed.
  */
 
 const defaultJobOptions = {
-  removeOnComplete: true, // Remove completed jobs immediately to keep Redis lean
-  removeOnFail: { count: 100 },    // Keep the last 100 failed jobs for debugging
+  removeOnComplete: { age: 60 },   // completed jobs gone after 60s
+  removeOnFail:    { age: 60 },    // failed jobs gone after 60s — frees slot for next job
 };
 
-// 1. Handles resume PDF text extraction and screening
+// 1. Resume PDF text extraction and AI screening
 export const resumeQueue = new Queue('resume-processing', {
   connection: redisConnection,
-  defaultJobOptions
+  defaultJobOptions,
 });
 
-// 2. Handles transactional emails (invites, reports)
+// 2. Transactional emails (invites, reports)
 export const emailQueue = new Queue('email-delivery', {
   connection: redisConnection,
-  defaultJobOptions
+  defaultJobOptions,
 });
 
-// 2b. Handles delayed interview invitation delivery
+// 3. Interview invitation delivery (delayed sends)
 export const invitationDeliveryQueue = new Queue('invitation-delivery-queue', {
   connection: redisConnection,
-  defaultJobOptions
+  defaultJobOptions,
 });
 
-// 3. Handles async interview recording/transcript persistence
+// 4. Async interview recording / transcript persistence
 export const interviewFinalizationQueue = new Queue('interview-finalization', {
   connection: redisConnection,
-  defaultJobOptions
+  defaultJobOptions,
 });
 
-// 4. Handles proctoring snapshots (direct R2 upload + DB sync)
+// 5. Proctoring snapshots (direct R2 upload + DB sync)
 export const interviewSnapshotQueue = new Queue('interview-snapshots', {
   connection: redisConnection,
   defaultJobOptions: {
     attempts: 3,
-    backoff: {
-      type: 'exponential',
-      delay: 1000,
-    },
-    removeOnComplete: true, // DELETE IMMEDIATELY to save 32MB RAM
-    removeOnFail: { count: 1 }, // Keep only 1 for debugging
-  }
+    backoff: { type: 'exponential', delay: 1000 },
+    removeOnComplete: { age: 60 },
+    removeOnFail:    { age: 60 },
+  },
 });
 
-// 5. Handles AI-generated JD PDF uploads to Cloudflare R2
+// 6. AI-generated JD PDF uploads to Cloudflare R2
 export const jdUploadQueue = new Queue('jd-upload', {
   connection: redisConnection,
-  defaultJobOptions
+  defaultJobOptions,
 });
 
-// 6. Handles server-side interview recording finalization (LiveKit egress completion)
+// 7. Server-side interview recording finalization (LiveKit egress completion)
 export const interviewRecordingQueue = new Queue('interview-recording', {
   connection: redisConnection,
   defaultJobOptions: {
     attempts: 3,
     backoff: { type: 'exponential', delay: 2000 },
-    removeOnComplete: true,
-    removeOnFail: { count: 20 },
-  }
+    removeOnComplete: { age: 60 },
+    removeOnFail:    { age: 60 },
+  },
 });
 
-// 7. Handles recording retention cleanup after the retention window expires.
+// 8. Recording retention cleanup after the retention window expires
 export const recordingRetentionQueue = new Queue('recording-retention-cleanup', {
   connection: redisConnection,
   defaultJobOptions: {
     attempts: 5,
     backoff: { type: 'exponential', delay: 5000 },
-    removeOnComplete: true,
-    removeOnFail: { count: 50 },
-  }
+    removeOnComplete: { age: 60 },
+    removeOnFail:    { age: 60 },
+  },
 });
 
-// 8. Handles the exact moment an interview transitions from launching to live.
+// 9. Interview-start transition (PENDING → IN_PROGRESS)
 export const interviewStartQueue = new Queue('interview-start', {
   connection: redisConnection,
   defaultJobOptions: {
     attempts: 3,
-    backoff: {
-      type: 'exponential',
-      delay: 1000,
-    },
-    removeOnComplete: true,
-    removeOnFail: { count: 20 },
-  }
+    backoff: { type: 'exponential', delay: 1000 },
+    removeOnComplete: { age: 60 },
+    removeOnFail:    { age: 60 },
+  },
 });
 
 export default redisConnection;

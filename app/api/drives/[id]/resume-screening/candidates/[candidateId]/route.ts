@@ -65,8 +65,9 @@ export async function DELETE(
             return NextResponse.json({ error: "Candidate not in this drive" }, { status: 403 });
         }
 
-        await prisma.resumeCandidate.delete({
+        await prisma.resumeCandidate.update({
             where: { id: candidateId },
+            data: { isDeleted: true }
         });
 
         return NextResponse.json({ success: true });

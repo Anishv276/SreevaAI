@@ -2,10 +2,9 @@
 
 import { useMemo } from "react";
 import { useCallback, useEffect, useState } from "react";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { FileText, Sparkles, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { InterviewReportSreevaAI, buildSreevaAIInterviewViewModel } from "@/components/admin/candidate-profile/interview-report-sreevaai";
 import { ResumeReportSreevaAI, buildSreevaAIResumeViewModel } from "@/components/admin/candidate-profile/resume-report-sreevaai";
 import { useAdminOrg } from "@/context/admin-org-context";
@@ -66,8 +65,8 @@ export default function CandidateProfilePage() {
     const [candidate, setCandidate] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const router = useRouter();
     const [mounted, setMounted] = useState(false);
-    const [resumeReportOpen, setResumeReportOpen] = useState(false);
     const [isUpdating, setIsUpdating] = useState(false);
     const [confirmDialog, setConfirmDialog] = useState<{ action: string; title: string; description: string } | null>(null);
     const orgStatus = String(adminOrg?.status || candidate?.organization?.status || "").trim().toUpperCase();
@@ -434,26 +433,14 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
             ? snapshot
             : `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(candidate?.fullName || "Candidate")}`;
     })();
-    const resumeReportData: any = (() => {
+    const resumeReportPayload: any = (() => {
         try {
-            const raw = candidate?.aiReport;
+            const raw = candidate?.fullScanReport;
             if (!raw) return {};
             return typeof raw === "string" ? JSON.parse(raw) : raw;
         } catch {
             return {};
         }
-    })();
-    const resumeReportPayload: any = (() => {
-        const raw = resumeReportData;
-        if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-            if (raw.data && typeof raw.data === "object" && !Array.isArray(raw.data)) {
-                return raw.data;
-            }
-            if (raw.report && typeof raw.report === "object" && !Array.isArray(raw.report)) {
-                return raw.report;
-            }
-        }
-        return raw || {};
     })();
     const structuredResumeData: any = (() => {
         const raw = candidate?.resumeData;
@@ -522,6 +509,7 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
 
         // AI-direct fields from gpt-4o report
         const aiRadar = report.fit_radar || null;
+        const aiRadarNotes = report.fit_radar_notes || null;
         const aiSkillRows = Array.isArray(report.skill_match_rows) ? report.skill_match_rows : null;
         const missingMustSkills: string[] = (() => {
             const fromMatching = report?.skill_matching?.missing_must;
@@ -536,6 +524,9 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
         })();
         const candidatePotential = report.candidate_potential?.for_this_role || null;
         const decisionReason = typeof report.decision_reason === "string" ? report.decision_reason : null;
+        const aiSummaryCards = Array.isArray(report.ai_summary) && report.ai_summary.length >= 1 ? report.ai_summary : null;
+        const aiStrengths = Array.isArray(report.strengths) && report.strengths.length > 0 ? report.strengths : null;
+        const aiWeaknesses = Array.isArray(report.weaknesses) && report.weaknesses.length > 0 ? report.weaknesses : null;
         const humanLayer = report.human_layer || null;
 
         return buildSreevaAIResumeViewModel({
@@ -550,7 +541,7 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
             mounted,
             displayAvatar: candidatePhotoSrc,
             backHref,
-            hasAiReport: Boolean(candidate?.aiReport),
+            hasAiReport: Boolean(candidate?.fullScanReport),
             hasResumeText: Boolean(candidate?.resumeText),
             matchScore: score,
             summary,
@@ -565,10 +556,14 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
             structuredJdData,
             experienceReadout: report.experience_assessment?.vs_required || null,
             aiRadar,
+            aiRadarNotes,
             aiSkillRows,
             missingMustSkills,
             candidatePotential,
             decisionReason,
+            aiSummaryCards,
+            aiStrengths,
+            aiWeaknesses,
             humanLayer,
             skillMatching: report.skill_matching || null,
             resumeParseConfidence: typeof structuredResumeData?.parse_confidence === "string"
@@ -680,7 +675,7 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
     if (reportMode === "resume") {
         return (
             <div className="min-h-screen bg-slate-50">
-                <ResumeReportSreevaAI model={resumeReportModel} />
+                <ResumeReportSreevaAI model={resumeReportModel} onBack={() => router.push(backHref)} />
             </div>
         );
     }
@@ -708,10 +703,6 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
     }
 
 
-    const hiringStatus = candidate?.hiringStatus?.toLowerCase() || "pending";
-    const isHired = hiringStatus === "hired";
-    const isNotHired = hiringStatus === "not hired";
-
     return (
         <>
             <InterviewReportSreevaAI
@@ -723,7 +714,7 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
                             variant="outline"
                             size="sm"
                             disabled={interviewReportLocked}
-                            onClick={() => setResumeReportOpen(true)}
+                            onClick={() => router.push("?report=resume")}
                             className="h-8 rounded-lg border-[#DDE1E5] bg-white px-3 text-[11px] font-bold text-[#0D4D2E] hover:bg-[#F7FAF8]"
                         >
                             <FileText className="mr-1.5 h-3.5 w-3.5" />
@@ -769,27 +760,6 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
                 })}
             />
 
-            <Dialog open={resumeReportOpen} onOpenChange={setResumeReportOpen}>
-                <DialogContent className="w-[95vw] max-w-[95vw] max-h-[95vh] overflow-hidden border-0 bg-transparent p-0 shadow-none">
-                    <DialogTitle className="sr-only">Resume Report</DialogTitle>
-                    <DialogDescription className="sr-only">
-                        Detailed resume analysis report for the selected candidate.
-                    </DialogDescription>
-                    <div className="h-[95vh] overflow-y-auto">
-                        {candidate?.fullName && (candidate?.aiReport || candidate?.resumeText) ? (
-                            <ResumeReportSreevaAI model={resumeReportModel} onBack={() => setResumeReportOpen(false)} />
-                        ) : (
-                            <div className="flex h-full items-center justify-center rounded-2xl bg-white p-8 text-center shadow-lg">
-                                <div>
-                                    <FileText className="mx-auto mb-2 h-10 w-10 text-gray-300" />
-                                    <p className="text-gray-600">No resume report available yet</p>
-                                    <p className="mt-1 text-xs text-gray-500">Resume analysis will appear after screening completes</p>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                </DialogContent>
-            </Dialog>
 
             {confirmDialog && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">

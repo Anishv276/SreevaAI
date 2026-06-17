@@ -230,7 +230,6 @@ APP_BASE_URL = (
     or os.environ.get("NEXT_PUBLIC_APP_URL")
     or "https://sreevaai.com"
 ).rstrip("/")
-WORKER_SYNC_TOKEN = os.environ.get("WORKER_SYNC_TOKEN")  # dedicated secret only — no JWT_SECRET fallback
 _DB_POOL: Any = None
 _DB_POOL_INIT_TASK: Any = None
 _PENDING_MANUAL_BILLING: dict[str, list[tuple[str, dict]]] = {}

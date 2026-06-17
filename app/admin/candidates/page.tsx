@@ -28,14 +28,12 @@ import { DateFilter, type DateRange } from "@/components/admin/date-filter";
 import { motion } from "framer-motion";
 import { PremiumFilter } from "@/components/admin/premium-filter";
 import { useAdminOrg } from "@/context/admin-org-context";
-
 // ---------------------------------------------------------------------------
 // Email confirm modal (interview link / rejection — same as drive page)
 // ---------------------------------------------------------------------------
 function normalizeStatusKey(value?: string) {
     return String(value || "").trim().toLowerCase().replace(/[_-]+/g, " ");
 }
-
 function parseCandidateInterviewReport(raw: unknown): any {
     if (!raw) return {};
     if (typeof raw === "string") {
@@ -48,12 +46,10 @@ function parseCandidateInterviewReport(raw: unknown): any {
     if (typeof raw === "object") return raw;
     return {};
 }
-
 function deriveCandidateInterviewScore(rawReport: unknown): number | null {
     const report = parseCandidateInterviewReport(rawReport);
     const directCombined = Number(report?.scores?.combined_score ?? report?.combined_score);
     if (Number.isFinite(directCombined) && directCombined >= 0) return Math.round(directCombined);
-
     const qaBlocks = Array.isArray(report?.qa_blocks) ? report.qa_blocks : [];
     const nums = qaBlocks
         .map((b: any) => parseFloat(String(b?.score || "").replace(/[^\d.]/g, "")))
@@ -62,7 +58,6 @@ function deriveCandidateInterviewScore(rawReport: unknown): number | null {
         const avg = nums.reduce((a: number, b: number) => a + b, 0) / nums.length;
         return Math.round(avg <= 10 ? avg * 10 : avg);
     }
-
     return null;
 }
 function EmailConfirmModal({
@@ -110,19 +105,18 @@ function EmailConfirmModal({
         </div>
     );
 }
-
 // ---------------------------------------------------------------------------
 // Stats row
 // ---------------------------------------------------------------------------
 function CandidateStatsRow() {
     const { stats, isLoading, error } = useCandidates();
     const kpis = [
-        { label: "Shortlisted", value: stats.shortlisted, icon: Target, color: "text-gray-900", bg: "bg-gray-100" },
-        { label: "Hired", value: stats.hired, icon: Award, color: "text-gray-900", bg: "bg-gray-100" },
+        { label: "Shortlisted", value: stats.shortlisted, icon: Target, color: "text-emerald-600", bg: "bg-emerald-50" },
+        { label: "Hired", value: stats.hired, icon: Award, color: "text-emerald-600", bg: "bg-emerald-50" },
         { label: "Rejected", value: stats.rejected, icon: UserX, color: "text-rose-600", bg: "bg-rose-50" },
-        { label: "Live", value: stats.interviewRunning, icon: Radio, color: "text-gray-900", bg: "bg-gray-100", pulse: stats.interviewRunning > 0 },
-        { label: "Pending", value: stats.interviewPending, icon: Clock, color: "text-gray-500", bg: "bg-gray-50" },
-        { label: "Completed", value: stats.interviewCompleted, icon: ShieldCheck, color: "text-gray-900", bg: "bg-gray-100" },
+        { label: "Live", value: stats.interviewRunning, icon: Radio, color: "text-blue-600", bg: "bg-blue-50", pulse: stats.interviewRunning > 0 },
+        { label: "Pending", value: stats.interviewPending, icon: Clock, color: "text-slate-500", bg: "bg-slate-50" },
+        { label: "Completed", value: stats.interviewCompleted, icon: ShieldCheck, color: "text-emerald-600", bg: "bg-emerald-50" },
     ];
     if (error) return (
         <div className="w-full h-24 rounded-2xl bg-red-50/50 border border-red-100/50 flex flex-col items-center justify-center gap-1.5">
@@ -159,7 +153,6 @@ function CandidateStatsRow() {
         </div>
     );
 }
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -175,7 +168,6 @@ function formatCandidateStatusLabel(value?: string) {
     if (normalized === "not qualified") return "Not Qualified";
     return normalized.replace(/\b\w/g, (ch) => ch.toUpperCase());
 }
-
 // ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
@@ -191,7 +183,6 @@ export default function CandidatesPage() {
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [isBulkLoading, setIsBulkLoading] = useState(false);
     const [isCandidatesTableReady, setIsCandidatesTableReady] = useState(false);
-    const [isExporting, setIsExporting] = useState(false);
     const [sendingInterviewLinkId, setSendingInterviewLinkId] = useState<string | null>(null);
     const [timeline, setTimeline] = useState<DateRange>({ type: "all" });
     const [interviewScoresById, setInterviewScoresById] = useState<Record<string, number>>({});
@@ -201,12 +192,10 @@ export default function CandidatesPage() {
     const [deleteConfirm, setDeleteConfirm] = useState<{
         mode: "single" | "bulk"; candidateId?: string; candidateName?: string;
     } | null>(null);
-
     const searchParams = useSearchParams();
     const router = useRouter();
     const driveIdParam = searchParams.get("driveId");
     const orgIdParam = searchParams.get("orgId");
-
     const adminOrg = useAdminOrg();
     const quotaLocked = isInterviewQuotaLocked(adminOrg ?? {});
     const orgStatus = String(adminOrg?.status || "ACTIVE").trim().toUpperCase();
@@ -214,9 +203,7 @@ export default function CandidatesPage() {
     const isInterviewActionBlocked = isSuspended || quotaLocked;
     const interviewActionBlockedMessage = getInterviewActionBlockedMessage(isSuspended);
     const tableIsLoading = isLoading || !isCandidatesTableReady;
-
     useEffect(() => { setRoleFilter(driveIdParam || "all"); }, [driveIdParam]);
-
     const getDateRange = () => {
         let startDate: string | undefined, endDate: string | undefined;
         if (timeline.type === "today") { startDate = new Date().toISOString().split("T")[0]; endDate = startDate; }
@@ -225,7 +212,6 @@ export default function CandidatesPage() {
         else if (timeline.type === "custom") { startDate = timeline.from; endDate = timeline.to; }
         return { startDate, endDate };
     };
-
     // Filter/search change — show skeleton, reset to page 1
     useEffect(() => {
         setIsCandidatesTableReady(false);
@@ -237,7 +223,6 @@ export default function CandidatesPage() {
         return () => clearTimeout(handler);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [resumeFilter, interviewFilter, hiringFilter, roleFilter, timeline, searchTerm]);
-
     // Page size change — no skeleton, just refetch silently
     const pageSizeRef = useRef(pageSize);
     useEffect(() => {
@@ -247,17 +232,14 @@ export default function CandidatesPage() {
         void fetchCandidates(1, pageSize, roleFilter, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [pageSize]);
-
     useEffect(() => {
         let cancelled = false;
         const completedCandidates = candidates.filter((candidate: any) => {
             const interviewStage = normalizeStatusKey(candidate.interviewStatus) || "pending";
             return interviewStage === "completed" || interviewStage === "finished";
         });
-
         const missing = completedCandidates.filter((candidate: any) => interviewScoresById[candidate.id] == null);
         if (missing.length === 0) return;
-
         (async () => {
             const results = await Promise.allSettled(
                 missing.map(async (candidate: any) => {
@@ -265,12 +247,10 @@ export default function CandidatesPage() {
                     if (!res.ok) return null;
                     const data = await res.json().catch(() => null);
                     const score = deriveCandidateInterviewScore(data?.interview?.skillRatings);
-                    return score == null ? null : { id: candidate.id, score };
+                    return { id: candidate.id, score: score ?? -1 };
                 })
             );
-
             if (cancelled) return;
-
             setInterviewScoresById((prev) => {
                 const next = { ...prev };
                 for (const result of results) {
@@ -281,12 +261,10 @@ export default function CandidatesPage() {
                 return next;
             });
         })();
-
         return () => {
             cancelled = true;
         };
     }, [candidates, interviewScoresById]);
-
     const refetch = (page = pagination.page) => {
         let startDate: string | undefined, endDate: string | undefined;
         if (timeline.type === "today") { startDate = new Date().toISOString().split("T")[0]; endDate = startDate; }
@@ -295,9 +273,7 @@ export default function CandidatesPage() {
         else if (timeline.type === "custom") { startDate = timeline.from; endDate = timeline.to; }
         fetchCandidates(page, pageSize, roleFilter, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm);
     };
-
     const handlePageChange = (p: number) => { if (p >= 1 && p <= pagination.totalPages) refetch(p); };
-
     const handleMoveToDrive = (candidateDriveId?: string | null) => {
         if (!candidateDriveId) { toast.error("This candidate is not linked to a job yet."); return; }
         const href = orgIdParam
@@ -305,7 +281,6 @@ export default function CandidatesPage() {
             : `/admin/candidates/drive/${encodeURIComponent(candidateDriveId)}`;
         router.push(href);
     };
-
     const handleUpdateStatus = async (applicationId: string, statusUpdate: { resumeStatus?: string; hiringStatus?: string }, successMsg: string) => {
         try {
             const res = await fetch(`/api/candidates/${applicationId}`, {
@@ -316,7 +291,6 @@ export default function CandidatesPage() {
             else toast.error("Failed to update status");
         } catch { toast.error("Failed to update status"); }
     };
-
     const handleSendInterviewLink = async (candidate: { id: string; name: string }) => {
         if (isInterviewActionBlocked) { toast.error(interviewActionBlockedMessage); return; }
         try {
@@ -328,11 +302,9 @@ export default function CandidatesPage() {
         } catch { toast.error("Failed to send interview link"); }
         finally { setSendingInterviewLinkId(null); }
     };
-
     const filteredCandidates = candidates;
     const selectedCount = selectedIds.size;
     const isAllSelected = filteredCandidates.length > 0 && filteredCandidates.every((c: any) => selectedIds.has(c.id));
-
     const toggleSelectAll = () => setSelectedIds(prev => {
         const next = new Set(prev);
         if (isAllSelected) filteredCandidates.forEach((c: any) => next.delete(c.id));
@@ -341,7 +313,6 @@ export default function CandidatesPage() {
     });
     const toggleSelection = (id: string) => setSelectedIds(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
     const clearSelection = () => setSelectedIds(new Set());
-
     const handleBulkStatus = async (action: "hire" | "not_hired" | "reject" | "shortlist" | "delete") => {
         if (!selectedCount || isBulkLoading) return;
         setIsBulkLoading(true);
@@ -356,7 +327,6 @@ export default function CandidatesPage() {
         } catch { toast.error("Failed to update selected candidates"); }
         finally { setIsBulkLoading(false); }
     };
-
     const handleDeleteConfirmed = async () => {
         if (!deleteConfirm) return;
         setIsBulkLoading(true);
@@ -371,7 +341,6 @@ export default function CandidatesPage() {
         } catch { toast.error("Failed to delete candidate"); }
         finally { setIsBulkLoading(false); setDeleteConfirm(null); }
     };
-
     const handleBulkSendInterviewLink = async () => {
         if (!selectedCount || isBulkLoading) return;
         if (isInterviewActionBlocked) { toast.error(interviewActionBlockedMessage); return; }
@@ -386,7 +355,6 @@ export default function CandidatesPage() {
         } catch { toast.error("Failed to send interview links"); }
         finally { setIsBulkLoading(false); }
     };
-
     const openSendEmailConfirm = (candidate: { id: string; name: string; resumeStatus?: string }) => {
         if (isSuspended) { toast.error(interviewActionBlockedMessage); return; }
         const status = normalizeStatusKey(candidate.resumeStatus);
@@ -441,7 +409,6 @@ export default function CandidatesPage() {
         } catch { toast.error("Failed to send email"); }
         finally { setIsBulkLoading(false); setEmailConfirm(null); }
     };
-
     return (
         <div className="space-y-8 pb-10 animate-in fade-in duration-700 font-sans" style={{ zoom: 0.7, transformOrigin: "top center" }}>
             {/* Header */}
@@ -456,37 +423,8 @@ export default function CandidatesPage() {
                         </div>
                     </div>
                 </div>
-                <div className="flex items-center gap-3">
-                    <Button variant="outline" disabled={isExporting}
-                        onClick={async () => {
-                            try {
-                                setIsExporting(true);
-                                let url = `/api/candidates/export?page=1&limit=1000`;
-                                if (roleFilter !== "all") url += `&driveId=${roleFilter}`;
-                                if (resumeFilter !== "all") url += `&resumeStatus=${resumeFilter}`;
-                                if (interviewFilter !== "all") url += `&interviewStatus=${interviewFilter}`;
-                                if (hiringFilter !== "all") url += `&hiringStatus=${hiringFilter}`;
-                                const res = await fetch(url);
-                                if (!res.ok) { const e = await res.json().catch(() => null); throw new Error(e?.error || "Failed to export"); }
-                                const blob = await res.blob();
-                                const a = document.createElement("a");
-                                a.href = window.URL.createObjectURL(blob);
-                                a.download = `candidates_export_${new Date().toISOString().split("T")[0]}.csv`;
-                                document.body.appendChild(a); a.click(); a.remove();
-                                toast.success("Export successful — CSV downloaded.");
-                            } catch (err: any) {
-                                toast.error(`Export Failed: ${err.message || "Failed to download."}`);
-                            } finally { setIsExporting(false); }
-                        }}
-                        className="h-12 px-6 rounded-2xl border-white/40 bg-white/40 backdrop-blur-md text-gray-600 font-bold hover:bg-white hover:text-[#F97316] transition-all shadow-sm">
-                        {isExporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
-                        {isExporting ? "Exporting..." : "Export"}
-                    </Button>
-                </div>
             </div>
-
             <CandidateStatsRow />
-
             {/* Bulk action groups — identical to drive-candidates-table */}
             {selectedCount > 0 && (
                 <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
@@ -512,7 +450,6 @@ export default function CandidatesPage() {
                             </Button>
                         </div>
                     </div>
-
                     {/* Group 2: Hire */}
                     <div className="rounded-2xl border border-indigo-100 bg-indigo-50/40 px-3 py-2.5">
                         <p className="text-[9px] font-black uppercase tracking-[0.22em] text-indigo-600 mb-2">Hire</p>
@@ -527,7 +464,6 @@ export default function CandidatesPage() {
                             </Button>
                         </div>
                     </div>
-
                     {/* Group 3: Interview Link — locked (not hidden) when suspended/quota */}
                     <div className="rounded-2xl border border-orange-100 bg-orange-50/40 px-3 py-2.5">
                         <p className="text-[9px] font-black uppercase tracking-[0.22em] text-orange-600 mb-2">Interview Link</p>
@@ -542,7 +478,6 @@ export default function CandidatesPage() {
                             </Button>
                         </div>
                     </div>
-
                     {/* Group 4: Delete */}
                     <div className="rounded-2xl border border-red-100 bg-red-50/40 px-3 py-2.5">
                         <p className="text-[9px] font-black uppercase tracking-[0.22em] text-red-500 mb-2">Remove</p>
@@ -555,7 +490,6 @@ export default function CandidatesPage() {
                     </div>
                 </div>
             )}
-
             {error && (
                 <div className="bg-red-50 border border-red-100 rounded-2xl p-4 flex items-center justify-between animate-in slide-in-from-top-4">
                     <div className="flex items-center gap-3">
@@ -565,7 +499,6 @@ export default function CandidatesPage() {
                     <button onClick={clearError} className="text-red-600 hover:text-red-800 transition-colors"><X className="h-4 w-4" /></button>
                 </div>
             )}
-
             {/* Table */}
             <div className="group relative bg-white/40 backdrop-blur-xl rounded-[2.5rem] border border-white/40 shadow-[0_8px_32px_rgba(0,0,0,0.03)] overflow-hidden transition-all duration-700 hover:shadow-[0_20px_60px_rgba(0,0,0,0.08)]">
                 <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-orange-400/0 via-[#F97316]/40 to-orange-400/0" />
@@ -590,8 +523,8 @@ export default function CandidatesPage() {
                                 options={[
                                     { value: "all", label: "All Interview" },
                                     { value: "pending", label: "Pending", colorClass: "text-amber-600" },
-                                    { value: "inprogress", label: "In Progress", colorClass: "text-orange-600" },
-                                    { value: "finished", label: "Completed", colorClass: "text-indigo-600" },
+                                    { value: "inprogress", label: "In Progress", colorClass: "text-blue-600" },
+                                    { value: "finished", label: "Completed", colorClass: "text-emerald-600" },
                                 ]} />
                             <PremiumFilter value={hiringFilter} onChange={setHiringFilter} icon={BadgeCheck} placeholder="Hiring"
                                 options={[
@@ -608,7 +541,6 @@ export default function CandidatesPage() {
                         </div>
                     </div>
                 </div>
-
                 <div className="relative w-full overflow-auto max-h-[86vh]">
                     <Table>
                         <TableHeader className="bg-gray-50/50 sticky top-0 z-10 backdrop-blur-md">
@@ -648,7 +580,6 @@ export default function CandidatesPage() {
                                 const resumeScore = Number(candidate.score ?? candidate.aiScore ?? 0);
                                 const interviewScore = interviewScoresById[candidate.id] ?? (interviewReportUnlocked ? 0 : null);
                                 const canResendInterview = interviewStage === "pending" || interviewStage === "in progress" || interviewStage === "completed" || interviewStage === "finished" || mainStatus === "shortlisted";
-
                                 return (
                                     <TableRow key={candidate.id}
                                         onClick={() => toggleSelection(candidate.id)}
@@ -709,7 +640,7 @@ export default function CandidatesPage() {
                                                 )}
                                                 <Badge variant="secondary" className={cn(
                                                     "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest border-0 shadow-sm pointer-events-none",
-                                                    interviewStage === "completed" || interviewStage === "finished" ? "bg-indigo-50 text-indigo-700" :
+                                                    interviewStage === "completed" || interviewStage === "finished" ? "bg-emerald-50 text-emerald-700" :
                                                         interviewStage === "in progress" ? "bg-blue-50 text-blue-700" :
                                                             interviewStage === "pending" ? "bg-slate-50 text-slate-500" : "bg-amber-50 text-amber-700"
                                                 )}>{interviewStageLabel}</Badge>
@@ -758,7 +689,6 @@ export default function CandidatesPage() {
                                                 </DropdownMenuTrigger>
                                                 <DropdownMenuContent align="end" side="bottom" sideOffset={8} collisionPadding={12}
                                                     className="w-64 max-h-[70vh] overflow-y-auto origin-top-right p-2 rounded-2xl shadow-xl border-gray-100 bg-white">
-
                                                     {/* Go to Job Drive — extra on candidates page */}
                                                     <DropdownMenuLabel className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400">
                                                         Job <span className="ml-1 text-gray-300">({candidate.role || "Open Role"})</span>
@@ -770,7 +700,6 @@ export default function CandidatesPage() {
                                                             candidate.driveId ? "text-gray-700 focus:text-gray-900 focus:bg-gray-50" : "text-gray-400 opacity-70")}>
                                                         <Briefcase className="h-4 w-4 mr-2 shrink-0" /> Go to Job Drive
                                                     </DropdownMenuItem>
-
                                                     {/* Shortlist */}
                                                     <DropdownMenuLabel className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400 mt-1">Shortlist</DropdownMenuLabel>
                                                     <DropdownMenuItem onClick={() => handleUpdateStatus(candidate.id, { resumeStatus: "shortlisted" }, `${displayName} shortlisted`)}
@@ -790,7 +719,6 @@ export default function CandidatesPage() {
                                                         {isSuspended ? <Lock className="h-4 w-4 mr-2 shrink-0" /> : <Mail className="h-4 w-4 mr-2 shrink-0" />}
                                                         Send Email
                                                     </DropdownMenuItem>
-
                                                     {/* Hire */}
                                                     <DropdownMenuLabel className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400 mt-1">Hire</DropdownMenuLabel>
                                                     <DropdownMenuItem onClick={() => handleUpdateStatus(candidate.id, { hiringStatus: "hired" }, `${displayName} hired`)}
@@ -801,7 +729,6 @@ export default function CandidatesPage() {
                                                         className="rounded-xl px-2.5 py-2 text-sm font-semibold cursor-pointer text-rose-600 focus:text-rose-700 focus:bg-rose-50">
                                                         <XCircle className="h-4 w-4 mr-2 shrink-0" /> Not Hired
                                                     </DropdownMenuItem>
-
                                                     {/* Manage */}
                                                     <DropdownMenuLabel className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400 mt-1">Manage</DropdownMenuLabel>
                                                     {/* Resend Interview Link — locked (not hidden) when suspended/quota */}
@@ -836,7 +763,6 @@ export default function CandidatesPage() {
                     </Table>
                 </div>
             </div>
-
             {/* Pagination */}
             <div className="flex flex-col gap-4 border-t border-white/20 bg-white/20 px-4 py-5 backdrop-blur-xl rounded-2xl lg:flex-row lg:items-center lg:justify-between">
                 <div className="flex flex-wrap items-center gap-3">
@@ -871,14 +797,12 @@ export default function CandidatesPage() {
                     </Button>
                 </div>
             </div>
-
             {/* Modals */}
             <EmailConfirmModal
                 confirm={emailConfirm} onClose={() => setEmailConfirm(null)}
                 onConfirm={handleSendEmailConfirmed} isBulkLoading={isBulkLoading}
                 filteredCandidates={filteredCandidates} selectedIds={selectedIds}
             />
-
             {deleteConfirm && (() => {
                 const isBulk = deleteConfirm.mode === "bulk";
                 return (
@@ -903,7 +827,6 @@ export default function CandidatesPage() {
                     </div>
                 );
             })()}
-
         </div>
     );
 }

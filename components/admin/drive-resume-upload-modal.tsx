@@ -56,7 +56,7 @@ export function DriveResumeUploadModal({ open, onOpenChange, driveId, driveName,
             const res = await fetch(`/api/drives/${driveId}/resume-screening`, { method: "POST", body: fd });
             if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Upload failed");
             setDone(true);
-            toast.success(`${files.length} resume${files.length > 1 ? "s" : ""} queued for screening.`);
+            toast.success(`${files.length} resume${files.length > 1 ? "s" : ""} successfully added for AI screening.`);
             onUploaded?.();
             setTimeout(() => { reset(); onOpenChange(false); }, 1200);
         } catch (e) {

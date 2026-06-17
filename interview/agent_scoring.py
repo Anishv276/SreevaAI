@@ -348,27 +348,3 @@ async def evaluate_answer(
             "reason": "eval recovery (llm slow/unavailable)",
             "is_eval_recovery": True,
         }
-
-
-def notify_sync_engine(app_id: str, turn: int, action: str) -> None:
-    """Fire-and-forget HTTP ping to the sync engine after eval completes."""
-    import threading, urllib.request, urllib.error, os
-    sync_url = os.environ.get("SYNC_ENGINE_URL", "")
-    if not sync_url:
-        return
-
-    def _ping():
-        try:
-            payload = json.dumps({"app_id": app_id, "turn": turn, "action": action}).encode()
-            req = urllib.request.Request(
-                f"{sync_url}/eval-complete",
-                data=payload,
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
-            with urllib.request.urlopen(req, timeout=5):
-                pass
-        except Exception as e:
-            logger.warning("[SYNC_ERROR] Failed to notify sync engine: %s", e)
-
-    threading.Thread(target=_ping, daemon=True).start()

@@ -9,12 +9,10 @@ export const metadata: Metadata = {
 };
 import { cn } from "@/lib/utils";
 import { OnboardingRedirect } from "@/components/admin/onboarding-redirect";
-import { RecruiterAssistant } from "@/components/admin/RecruiterAssistant";
 import { Toaster } from "@/components/ui/toast-custom";
 import { AdminStatusGate } from "@/components/admin/AdminStatusGate";
 import { LowCreditsBanner } from "../../components/admin/LowCreditsBanner";
 import { prisma } from "@/lib/prisma";
-import { canUseRecruiterAssistant } from "@/lib/org-plans";
 import { AdminOrgProvider } from "@/context/admin-org-context";
 import "../editorial.css";
 
@@ -76,7 +74,6 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     // Real-time synchronization: prioritize DB state over session cookie for onboarding UI
     const needsOnboarding = orgData.onboardingComplete !== true;
     const showSidebar = !needsOnboarding;
-    const showRecruiterAssistant = showSidebar && canUseRecruiterAssistant((orgData as any).plan);
 
     return (
         <>
@@ -133,7 +130,6 @@ export default async function AdminLayout({ children }: { children: React.ReactN
                     <style dangerouslySetInnerHTML={{ __html: `
                         body.reports-mode #global-admin-sidebar { display: none !important; }
                         body.reports-mode #admin-main-wrapper { padding-left: 0 !important; }
-                        body.reports-mode .recruiter-assistant-btn { display: none !important; }
                         body.reports-mode #admin-content-inner { padding: 0 !important; max-width: 100% !important; }
                     ` }} />
                     <main className="min-h-screen">
@@ -145,8 +141,6 @@ export default async function AdminLayout({ children }: { children: React.ReactN
                 </div>
             </div>
 
-            {/* Premium AI Assistant */}
-            {showRecruiterAssistant && <RecruiterAssistant logoUrl={orgData.logoUrl} name={orgData.name} />}
         </div>
         </AdminStatusGate>
         </AdminOrgProvider>

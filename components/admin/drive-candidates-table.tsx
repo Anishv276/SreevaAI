@@ -431,8 +431,8 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                             options={[
                                 { value: "all", label: "All Interview" },
                                 { value: "pending", label: "Pending", colorClass: "text-amber-600" },
-                                { value: "inprogress", label: "In Progress", colorClass: "text-orange-600" },
-                                { value: "completed", label: "Completed", colorClass: "text-indigo-600" },
+                                { value: "inprogress", label: "In Progress", colorClass: "text-blue-600" },
+                                { value: "completed", label: "Completed", colorClass: "text-emerald-600" },
                             ]}
                         />
                         <PremiumFilter
@@ -756,7 +756,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                                 <div className="flex justify-center items-center h-full">
                                                     <Badge variant="secondary" className={cn(
                                                         "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest border-0 shadow-sm transition-all pointer-events-none",
-                                                        interviewStatusKey === "completed" || interviewStatusKey === "finished" ? "bg-indigo-50 text-indigo-700" :
+                                                        interviewStatusKey === "completed" || interviewStatusKey === "finished" ? "bg-emerald-50 text-emerald-700" :
                                                             interviewStatusKey === "in progress" ? "bg-blue-50 text-blue-700" :
                                                                 interviewStatusKey === "pending" ? "bg-slate-50 text-slate-500" :
                                                                     "bg-amber-50 text-amber-700"

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type ReactNode } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import {
@@ -8,36 +8,28 @@ import {
   Link2,
   Loader2,
   Sparkles,
-  Shield,
-  Zap,
   Activity,
+  CheckCircle,
+  XCircle,
+  ChevronDown,
 } from "lucide-react";
 import {
   SREEVAAI_REPORT_CARD,
-  SREEVAAI_REPORT_PAGE_BG,
-  SemicircleGauge,
   fitLabelFromPct,
 } from "./interview-report-sreevaai";
 
 const card = SREEVAAI_REPORT_CARD;
 const bgPage = "bg-white relative overflow-hidden";
 
-const MeshGradient = () => (
-  <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden opacity-30">
-    <div className="absolute -left-[10%] -top-[10%] h-[600px] w-[600px] rounded-full bg-gray-100 blur-[100px]" />
-    <div className="absolute -right-[5%] top-[10%] h-[500px] w-[500px] rounded-full bg-slate-50 blur-[80px]" />
-  </div>
-);
-
-type RadarKey = "essentials" | "impact" | "domain" | "skills" | "evidence";
+type RadarKey = "must_haves" | "exp_depth" | "domain_fit" | "skill_breadth" | "evidence_quality";
 type RadarNotes = Record<RadarKey, string>;
 
 const RESUME_RADAR_LABELS: { key: RadarKey; label: string }[] = [
-  { key: "essentials", label: "Essentials" },
-  { key: "impact", label: "Impact" },
-  { key: "domain", label: "Domain" },
-  { key: "skills", label: "Skills" },
-  { key: "evidence", label: "Evidence" },
+  { key: "must_haves", label: "Must-Haves" },
+  { key: "exp_depth", label: "Exp Depth" },
+  { key: "domain_fit", label: "Domain Fit" },
+  { key: "skill_breadth", label: "Skill Breadth" },
+  { key: "evidence_quality", label: "Evidence" },
 ];
 
 function ResumeRadarPlot({
@@ -198,6 +190,12 @@ function ResumeRadarPlot({
   );
 }
 
+export type SkillRow = {
+  name: string;
+  bucket: "matched" | "not_matched" | "listed";
+  evidenceNote?: string;
+};
+
 export type SreevaAIResumeViewModel = {
   backHref: string;
   processing: boolean;
@@ -208,62 +206,17 @@ export type SreevaAIResumeViewModel = {
   experienceLine: string;
   fitPercent: number;
   fitLabel: string;
-  fitRadar: { essentials: number; impact: number; domain: number; skills: number; evidence: number };
+  fitRadar: { must_haves: number; exp_depth: number; domain_fit: number; skill_breadth: number; evidence_quality: number };
   fitRadarNotes: RadarNotes;
   aiSummaryPoints: { label: string; body: string; tone: "emerald" | "amber" | "rose" }[];
   strengths: { label: string; body: string }[];
   weaknesses: { label: string; body: string }[];
   decisionStamp: "SHORTLISTED" | "REJECTED" | "BORDERLINE";
-  skillMatching?: unknown;
-  skillMatchRows: {
-    name: string;
-    matched: boolean;
-    depth: "deep" | "working" | "listed" | "missing";
-    source: "work_history" | "project" | "listed" | "missing";
-    category?: string;
-    evidenceNote?: string;
-  }[];
+  skillRows: SkillRow[];
   careerLines: { label: string; body: string; time: string }[];
   resumeUrl: string | null;
   reviewStrip: string;
 };
-
-function buildResumeAiSummaryPoints(model: Pick<
-  SreevaAIResumeViewModel,
-  "fitRadarNotes"
-> & {
-  comparison: {
-    techFitLabel: string;
-    techFitBody: string;
-    experienceFitLabel: string;
-    experienceFitBody: string;
-    appliedExperienceBody: string;
-    watchoutBody: string;
-  };
-}): { label: string; body: string; tone: "emerald" | "amber" | "rose" }[] {
-  return [
-    {
-      label: "Core skill",
-      body: readableSummaryText(model.comparison.techFitBody, 220),
-      tone: model.comparison.techFitLabel === "Strong" ? "emerald" : model.comparison.techFitLabel === "Moderate" ? "amber" : "rose",
-    },
-    {
-      label: "Experience",
-      body: readableSummaryText(model.comparison.experienceFitBody, 220),
-      tone: model.comparison.experienceFitLabel === "Strong" ? "emerald" : model.comparison.experienceFitLabel === "Moderate" ? "amber" : "rose",
-    },
-    {
-      label: "Applied work",
-      body: readableSummaryText(model.comparison.appliedExperienceBody, 220),
-      tone: "emerald",
-    },
-    {
-      label: "Red flags",
-      body: readableSummaryText(model.comparison.watchoutBody || model.fitRadarNotes.evidence, 220),
-      tone: "rose",
-    },
-  ];
-}
 
 function readableSummaryText(text: string, maxLen = 180) {
   const clean = String(text || "")
@@ -323,28 +276,6 @@ function normalizeSourceStrength(raw: unknown): "work_history_outcome" | "work_h
   return "listed";
 }
 
-function parseRequiredYears(value: unknown): number | null {
-  const text = String(value || "");
-  const match = text.match(/vs\s+([\d.]+)\s+yrs?\s+required/i) || text.match(/([\d.]+)\s+yrs?\s+required/i);
-  if (!match) return null;
-  const parsed = Number(match[1]);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
-}
-
-function formatExperienceRequirementLabel(minYears: number | null, maxYears: number | null, roleLevel: unknown): string {
-  const level = normalizeTextToken(roleLevel);
-  if (level === "intern" || (minYears === 0 && (maxYears === 1 || maxYears == null))) {
-    return "intern-level / 0-1 years";
-  }
-  if (minYears != null && maxYears != null) {
-    if (minYears === 0 && maxYears <= 1) return "intern-level / 0-1 years";
-    return `${minYears}-${maxYears} years`;
-  }
-  if (minYears != null) return `${minYears}+ years`;
-  if (maxYears != null) return `up to ${maxYears} years`;
-  return "experience not clearly stated";
-}
-
 function formatExperienceDuration(totalYears: number | null | undefined): string {
   if (totalYears == null || !Number.isFinite(totalYears) || totalYears < 0) return "";
   const years = Math.floor(totalYears);
@@ -352,76 +283,6 @@ function formatExperienceDuration(totalYears: number | null | undefined): string
   const yearPart = `${years} yr${years === 1 ? "" : "s"}`;
   const monthPart = `${months} mo${months === 1 ? "" : "s"}`;
   return `${yearPart} ${monthPart}`;
-}
-
-function normalizeTextToken(value: unknown): string {
-  return String(value || "")
-    .toLowerCase()
-    .replace(/[\u2010-\u2015]/g, "-")
-    .replace(/[^a-z0-9.+#\-/\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function buildDecisionNoteFallback(args: {
-  candidateName: string;
-  decisionStamp: "SHORTLISTED" | "REJECTED" | "BORDERLINE";
-  topMatchedSkills: { name: string; evidenceNote?: string }[];
-  missingMustHave: string[];
-  candidateYears: number | null;
-  requiredYears: number | null;
-  ownerRoles: Array<{ company?: string; role?: string; technologies_used?: string[] }>;
-}): string {
-  const safeName = args.candidateName?.trim() || "This candidate";
-  const skillList = args.topMatchedSkills.slice(0, 3).map((row) => row.name).filter(Boolean);
-  const primarySkill = skillList[0] || "core role skills";
-  const missingList = args.missingMustHave.slice(0, 2).filter(Boolean);
-  const role = args.ownerRoles[0];
-  const roleCompany = role?.company || "previous role";
-  const roleTitle = role?.role || "engineering role";
-  const roleTech = Array.isArray(role?.technologies_used) ? role!.technologies_used!.slice(0, 2).join(" and ") : "";
-  const yearsText = Number.isFinite(args.candidateYears as number) ? `${args.candidateYears} years` : "the available years";
-  const reqText = Number.isFinite(args.requiredYears as number) ? `${args.requiredYears} years` : "the role requirement";
-
-  if (args.decisionStamp === "SHORTLISTED") {
-    return [
-      `${safeName} is shortlisted because the resume shows direct evidence in ${primarySkill}${skillList.length > 1 ? ` with additional proof in ${skillList.slice(1).join(" and ")}` : ""}.`,
-      `${yearsText} aligns with ${reqText}, and ownership signals are visible from ${roleTitle} at ${roleCompany}${roleTech ? ` using ${roleTech}` : ""}.`,
-      missingList.length > 0
-        ? `The key risk is limited evidence for ${missingList.join(" and ")}, but the overall signal still supports advancement.`
-        : "The evidence repeats across work history, which is stronger than keyword-only profile matching.",
-      `Advance to interview and validate production depth on ${primarySkill}${missingList.length > 0 ? ` and ${missingList[0]}` : ""} before final round.`,
-    ].join(" ");
-  }
-
-  if (args.decisionStamp === "REJECTED") {
-    return [
-      `${safeName} is rejected because the resume does not provide sufficient direct evidence for role-critical requirements${missingList.length > 0 ? `, especially ${missingList.join(" and ")}` : ""}.`,
-      `${yearsText} against ${reqText} and the current ownership signals from ${roleTitle} at ${roleCompany} are below the bar for this role level.`,
-      `The decisive gap is the difference between listed skills and proven production outcomes, even where partial strengths exist in ${primarySkill}.`,
-      "Reconsider only if updated evidence demonstrates clear production ownership, scope, and measurable impact in missing must-have areas.",
-    ].join(" ");
-  }
-
-  return [
-    `${safeName} is currently borderline because evidence is mixed between matched skills like ${primarySkill} and unresolved role-critical gaps${missingList.length > 0 ? ` such as ${missingList.join(" and ")}` : ""}.`,
-    `${yearsText} compared with ${reqText} and the available ownership context from ${roleTitle} at ${roleCompany} are directionally positive but not conclusive.`,
-    "The strongest concern is uneven depth across must-have areas, so the profile is not a clear advance or reject yet.",
-    `Use the next screen to validate production ownership, decision-making, and depth in ${primarySkill}${missingList.length > 0 ? ` and ${missingList[0]}` : ""}.`,
-  ].join(" ");
-}
-
-function tokenMatches(left: unknown, right: unknown): boolean {
-  const a = normalizeTextToken(left);
-  const b = normalizeTextToken(right);
-  if (!a || !b) return false;
-  return a === b || a.includes(b) || b.includes(a);
-}
-
-function sanitizePdfText(value: unknown): string {
-  return String(value || "")
-    .replace(/\s+/g, " ")
-    .trim();
 }
 
 /**
@@ -463,7 +324,11 @@ export function buildSreevaAIResumeViewModel(i: {
   structuredJdData?: unknown;
   experienceReadout?: string | null;
   // AI-direct fields from gpt-4o report
-  aiRadar?: { essentials?: number; experience?: number; domain?: number; skills?: number; evidence?: number; confidence?: number } | null;
+  aiRadar?: { must_haves?: number; essentials?: number; exp_depth?: number; experience?: number; domain_fit?: number; domain?: number; skill_breadth?: number; skills?: number; evidence_quality?: number; evidence?: number; confidence?: number } | null;
+  aiRadarNotes?: { must_haves?: string; exp_depth?: string; domain_fit?: string; skill_breadth?: string; evidence_quality?: string } | null;
+  aiSummaryCards?: { label: string; body: string; tone: string }[] | null;
+  aiStrengths?: { label: string; body: string }[] | null;
+  aiWeaknesses?: { label: string; body: string }[] | null;
   aiSkillRows?: { name: string; stars: number; evidence_note?: string }[] | null;
   missingMustSkills?: string[] | null;
   skillMatching?: unknown;
@@ -491,14 +356,8 @@ export function buildSreevaAIResumeViewModel(i: {
   const dM = Math.max(1, Number(b?.domain_max ?? 10));
   const dS = Number(b?.domain_score ?? 0);
 
-  // Math fallbacks — only used when AI radar not present
-  const expPct = Math.min(100, Math.round((exS / exM) * 100));
-
-  const nRoles = Array.isArray(i.combinedWorkHistory) ? i.combinedWorkHistory.length : 0;
-
   const ar = i.aiRadar;
   const resumeStruct = asRecord(i.structuredResumeData);
-  const jdStruct = asRecord(i.structuredJdData);
   const reportSkillMatching = asRecord(i.skillMatching);
   const structuredSkills = asRecord(resumeStruct.skills);
   const structuredExperience = asRecord(resumeStruct.experience);
@@ -575,8 +434,6 @@ export function buildSreevaAIResumeViewModel(i: {
     )
     : skillsExtractedFallback;
 
-  const experienceText = String(i.experienceReadout || "").trim() || String((resumeStruct as Record<string, any>)?.experience_assessment?.vs_required || "").trim();
-  const parsedRequiredYears = parseRequiredYears(experienceText);
   const candidateYears = Number(
     c.experienceYears ?? structuredExperience.total_years ?? (resumeStruct as Record<string, any>)?.experience?.years ?? NaN,
   );
@@ -597,141 +454,65 @@ export function buildSreevaAIResumeViewModel(i: {
   })();
 
   const fitRadarNotes: RadarNotes = {
-    essentials:
+    must_haves:
       structuredSkillNames.length > 0
-        ? `Built from ${evidenceBackedSkillNames.length} evidence-backed tech signals out of ${structuredSkillNames.length} extracted skills, using resume work history and project proof first.`
-        : "Falls back to the JD skill bucket because the extracted skill rows were sparse.",
-    impact:
+        ? `Scored from ${evidenceBackedSkillNames.length} of ${structuredSkillNames.length} extracted JD must-haves confirmed with work-history or project evidence — not just listed in skills section.`
+        : "JD must-haves could not be verified from extracted skill rows — falling back to JD skill bucket.",
+    exp_depth:
       workHistoryRows.length > 0
-        ? `Derived from ${workHistoryRows.length} role(s) — scores ownership level (owner/contributor), impact_strength (high/medium/low), and count of measurable impact signals per role.`
-        : "Falls back to the experience score bucket because no structured work history was available to rate impact.",
-    domain:
+        ? `Scored from ${workHistoryRows.length} role(s): checks years vs JD minimum, ownership level (owner/contributor/unclear), and whether work was building or assisting — not just counting years.`
+        : "No structured work history found — falling back to raw experience score.",
+    domain_fit:
       domainSignals.length > 0
-        ? `Derived from ${domainSignals.length} domain or stack signals such as business domains, keywords, and extracted functional skills.`
-        : "Falls back to the JD domain bucket because the resume did not expose enough domain signals.",
-    skills:
+        ? `Scored from ${domainSignals.length} domain signals: industry background, company-type context, and JD keyword overlap — measures ramp-time risk if hired.`
+        : "Resume did not expose enough domain signals — falling back to JD domain keyword bucket.",
+    skill_breadth:
       structuredSkillNames.length > 0
-        ? `Built from ${structuredSkillNames.length} extracted technical/tool signals, with ${evidenceBackedSkillNames.length} confirmed by work history or projects.`
-        : "Falls back to the JD skill bucket because the resume did not expose enough structured skill data.",
-    evidence:
+        ? `Scored from ${structuredSkillNames.length} technical/tool signals across work history + projects — ${evidenceBackedSkillNames.length} confirmed used (not just listed), measuring width not depth.`
+        : "Resume did not expose enough structured skill data — falling back to JD skill bucket.",
+    evidence_quality:
       structuredEvidenceItems.length > 0
-        ? `Based on ${structuredEvidenceItems.length} extracted evidence items, with ${evidenceSignalCount} showing measurable outcomes, ownership, or strong proof.`
-        : "Falls back to work-history impact signals because no structured evidence items were available.",
+        ? `Scored from ${structuredEvidenceItems.length} evidence items — ${evidenceSignalCount} carry measurable outcomes, ownership, or repeated use across roles. Measures how much of the resume can be trusted vs. taken at face value.`
+        : "No structured evidence items found — falling back to work-history impact signals.",
   };
-
-  const jdSkills = asRecord(jdStruct.skills);
-  const jdMustHave = uniqueNonEmpty([
-    ...extractStringList(jdSkills.must_have, ["skill", "name", "label", "title"]),
-    ...extractStringList(jdStruct.responsibilities),
-    ...extractStringList(jdStruct.keywords),
-  ]);
-  const jdPrioritySignals = uniqueNonEmpty([
-    ...jdMustHave,
-    ...extractStringList(jdStruct.scoring_hints?.green_flags_to_reward),
-  ]);
-  const jdAdjacentSignals = uniqueNonEmpty([
-    ...extractStringList(jdSkills.good_to_have, ["skill", "name", "label", "title"]),
-    ...extractStringList(jdStruct.scoring_hints?.red_flags_to_watch),
-  ]);
-  const resumeNarrativeSignals = uniqueNonEmpty([
-    ...structuredSkillNames,
-    ...structuredWorkHistory.flatMap((job: any) => extractStringList([
-      job?.role,
-      job?.company,
-      job?.recruiter_summary,
-      ...(Array.isArray(job?.responsibilities) ? job.responsibilities : []),
-      ...(Array.isArray(job?.impact_signals) ? job.impact_signals : []),
-      ...(Array.isArray(job?.technologies_used) ? job.technologies_used : []),
-    ])),
-    ...structuredProjects.flatMap((proj: any) => extractStringList([
-      proj?.name,
-      proj?.summary,
-      ...(Array.isArray(proj?.technologies) ? proj.technologies : []),
-    ])),
-    ...extractStringList(resumeStruct.candidate_summary),
-    ...extractStringList(resumeStruct.core_claims),
-    ...extractStringList(resumeStruct.keywords),
-  ]);
-  const directMatches = jdPrioritySignals.filter((sig) => resumeNarrativeSignals.some((rv) => tokenMatches(sig, rv)));
-  const adjacentMatches = jdAdjacentSignals.filter((sig) => resumeNarrativeSignals.some((rv) => tokenMatches(sig, rv)));
-  const missingMustHave = jdMustHave.filter((sig) => !resumeNarrativeSignals.some((rv) => tokenMatches(sig, rv)));
-  const directCount = directMatches.length;
-  const adjacentCount = adjacentMatches.length;
-  const techFitLabel = directCount >= 3 || (directCount >= 2 && adjacentCount >= 1)
-    ? "Strong"
-    : directCount >= 1 || adjacentCount >= 2
-      ? "Moderate"
-      : "Weak";
-  const techFitBody = directCount >= 2
-    ? `I see direct evidence of ${directMatches.slice(0, 3).join(", ")} in the resume. That gives me confidence on the core stack for this JD.`
-    : adjacentCount >= 2
-      ? `I do not see an exact stack match, but I do see adjacent experience through ${adjacentMatches.slice(0, 3).join(", ")} and related backend or project work. That helps, but it is still not a clean direct stack match.`
-      : `I do not see the exact JD stack clearly evidenced in the extracted resume. This reads as a weak technology match, even if the candidate has general software experience.`;
-
-  const requiredYears = (() => {
-    const exp = asRecord(jdStruct.experience);
-    const min = Number(exp.min_years);
-    return Number.isFinite(min) && min >= 0 ? min : null;
-  })();
-  const requiredYearsMax = (() => {
-    const exp = asRecord(jdStruct.experience);
-    const max = Number(exp.max_years);
-    return Number.isFinite(max) && max >= 0 ? max : null;
-  })();
-  const experienceRequirementLabel = formatExperienceRequirementLabel(requiredYears, requiredYearsMax, jdStruct.role_level || jdStruct.role_context?.seniority);
-  const experienceFitLabel = (() => {
-    if (requiredYears == null || !Number.isFinite(candidateYears)) return "Moderate";
-    const gap = candidateYears - requiredYears;
-    if (gap >= 0) return "Strong";
-    if (gap >= -1) return "Moderate";
-    return "Weak";
-  })();
-  const experienceFitBody = requiredYears != null && Number.isFinite(candidateYears)
-    ? candidateYears >= requiredYears
-      ? `${experienceRequirementLabel} is the hiring bar. I see ${candidateYears} extracted years in the resume, so the level is acceptable; my remaining check is how directly the stack matches the JD.`
-      : `${experienceRequirementLabel} is the hiring bar. The resume is short by about ${Math.abs(candidateYears - requiredYears)} year(s), so I would only move forward if the candidate is otherwise a very close technology match.`
-    : expPct >= 60
-      ? `Experience looks reasonably aligned based on the extracted work history and the seniority implied by the role.`
-      : `Experience is present, but the extracted data is not strong enough for me to call it a clean fit yet.`;
-  const appliedExperienceBody = directCount >= 2
-    ? `I can see the requested stack used in real work, not just listed in skills. That is the strongest proof because the candidate has already applied the skills in a work setting.`
-    : adjacentCount >= 2
-      ? `I can see the candidate has worked in the same kind of backend or product context, but some JD tools or framework names are missing or only adjacent. Useful, but not a full stack confirmation.`
-      : `The resume mostly shows related work or listed skills, so applied evidence is still thin against this JD.`;
-  const watchoutBody = missingMustHave.length > 0
-    ? `The gaps I would verify next are ${missingMustHave.slice(0, 3).join(", ")}. Those are the first things I would confirm before I trust the fit.`
-    : `I do not see major must-have gaps; my main question is depth of proof, not whether the role basics are present.`;
 
   const clamp = (v: unknown, fb: number) => {
     const n = Number(v);
     return Number.isFinite(n) ? Math.min(100, Math.max(0, Math.round(n))) : fb;
   };
   const fitRadar = {
-    essentials: essentialsFallback,
-    impact: impactFallback,
-    domain: domainFallback,
-    skills: skillsExtractedFallback,
-    evidence: evidenceFallback,
+    must_haves: essentialsFallback,
+    exp_depth: impactFallback,
+    domain_fit: domainFallback,
+    skill_breadth: skillsExtractedFallback,
+    evidence_quality: evidenceFallback,
   };
   if (ar) {
-    if (fitRadar.essentials === 0) fitRadar.essentials = clamp(ar?.essentials, fitRadar.essentials);
-    if (fitRadar.impact === 0) fitRadar.impact = clamp(ar?.experience, fitRadar.impact);
-    if (fitRadar.domain === 0) fitRadar.domain = clamp(ar?.domain, fitRadar.domain);
-    if (fitRadar.skills === 0) fitRadar.skills = clamp(ar?.skills, fitRadar.skills);
-    if (fitRadar.evidence === 0) fitRadar.evidence = clamp(ar?.evidence ?? ar?.confidence, fitRadar.evidence);
+    if (fitRadar.must_haves === 0) fitRadar.must_haves = clamp(ar?.must_haves ?? ar?.essentials, fitRadar.must_haves);
+    if (fitRadar.exp_depth === 0) fitRadar.exp_depth = clamp(ar?.exp_depth ?? ar?.experience, fitRadar.exp_depth);
+    if (fitRadar.domain_fit === 0) fitRadar.domain_fit = clamp(ar?.domain_fit ?? ar?.domain, fitRadar.domain_fit);
+    if (fitRadar.skill_breadth === 0) fitRadar.skill_breadth = clamp(ar?.skill_breadth ?? ar?.skills, fitRadar.skill_breadth);
+    if (fitRadar.evidence_quality === 0) fitRadar.evidence_quality = clamp(ar?.evidence_quality ?? ar?.evidence ?? ar?.confidence, fitRadar.evidence_quality);
+  }
+  // Override fallback notes with LLM-generated sharp notes if present
+  const an = i.aiRadarNotes;
+  if (an) {
+    if (an.must_haves) fitRadarNotes.must_haves = an.must_haves;
+    if (an.exp_depth) fitRadarNotes.exp_depth = an.exp_depth;
+    if (an.domain_fit) fitRadarNotes.domain_fit = an.domain_fit;
+    if (an.skill_breadth) fitRadarNotes.skill_breadth = an.skill_breadth;
+    if (an.evidence_quality) fitRadarNotes.evidence_quality = an.evidence_quality;
   }
 
-  const aiSummaryPoints = buildResumeAiSummaryPoints({
-    fitRadarNotes,
-    comparison: {
-      techFitLabel,
-      techFitBody,
-      experienceFitLabel,
-      experienceFitBody,
-      appliedExperienceBody,
-      watchoutBody,
-    },
-  });
+  const validTones = new Set(["emerald", "amber", "rose"]);
+  const aiSummaryPoints: SreevaAIResumeViewModel["aiSummaryPoints"] =
+    i.aiSummaryCards && i.aiSummaryCards.length >= 1
+      ? i.aiSummaryCards.map((c) => ({
+          label: String(c.label || ""),
+          body: readableSummaryText(String(c.body || ""), 300),
+          tone: (validTones.has(c.tone) ? c.tone : "amber") as "emerald" | "amber" | "rose",
+        }))
+      : [];
   const decisionStamp: SreevaAIResumeViewModel["decisionStamp"] =
     i.normalizedStatus?.toLowerCase() === "shortlisted"
       ? "SHORTLISTED"
@@ -739,216 +520,68 @@ export function buildSreevaAIResumeViewModel(i: {
         ? "REJECTED"
         : "BORDERLINE";
 
-  // Build matched + missing skill rows. Prefer structured report skill_matching, then AI skill_match_rows, then resume skills.
-  const skillMatchRows: SreevaAIResumeViewModel["skillMatchRows"] = (() => {
-    const matchedRows: SreevaAIResumeViewModel["skillMatchRows"] = [];
-    const details = Array.isArray(skillMatching.must_have_details) ? skillMatching.must_have_details : [];
-    const matchedMust = Array.isArray(skillMatching.matched_must) ? skillMatching.matched_must : [];
-    const matchedGood = Array.isArray(skillMatching.matched_good) ? skillMatching.matched_good : [];
-    const missingMust = Array.isArray(skillMatching.missing_must) ? skillMatching.missing_must : [];
-    const firstLine = (value: unknown) => extractStringList(value)[0] || "";
+  // ── Skill Signals: 3-bucket build ─────────────────────────────────────────
+  // Bucket 1 "matched"     → in JD criteria AND found in resume (scored "meets" by scorer)
+  // Bucket 2 "not_matched" → in JD criteria AND missing from resume
+  // Bucket 3 "listed"      → in resume but NOT in any JD criteria (shows candidate's full stack)
+  const skillRows: SreevaAIResumeViewModel["skillRows"] = (() => {
+    const normalizeKey = (v: string) => v.toLowerCase().replace(/[^a-z0-9]+/g, "");
+    const seen = new Set<string>(); // dedup by normalised name
+    const rows: SkillRow[] = [];
 
-    const buildRowFromDetail = (detail: any, fallbackMatched: boolean) => {
-      const name = firstLine(detail?.name || detail?.criterion || detail?.skill || detail?.label || detail?.title);
-      if (!name) return null;
-      const status = String(detail?.status || "").toLowerCase();
-      const matchLevel = String(detail?.match_level || "").toLowerCase();
-      const source = String(detail?.source || "").toLowerCase();
-      const matched = fallbackMatched || status === "found" || matchLevel === "full";
-      const depth = matchLevel === "full" || status === "found"
-        ? "deep"
-        : matchLevel === "partial" || matchLevel === "mentioned"
-          ? "working"
-          : matched
-            ? "listed"
-            : "missing";
-      const mappedSource: "work_history" | "project" | "listed" | "missing" =
-        source === "work_history" || source === "work_history_outcome"
-          ? "work_history"
-          : source === "project"
-            ? "project"
-            : matched
-              ? "listed"
-              : "missing";
-      const noteSource = firstLine(detail?.evidence || detail?.note || detail?.impact || detail?.candidate_has || detail?.candidateHas || detail?.reason);
-      return {
-        name,
-        matched,
-        depth,
-        source: mappedSource,
-        category: firstLine(detail?.category || detail?.priority || ""),
-        evidenceNote: noteSource || (matched ? "Evidence found in extracted resume data" : "Missing from the extracted resume"),
-      } as SreevaAIResumeViewModel["skillMatchRows"][number];
-    };
+    // ── MATCHED (JD criteria that the scorer confirmed) ───────────────────
+    const matchedMust: string[] = Array.isArray(skillMatching.matched_must) ? skillMatching.matched_must : [];
+    const matchedGood: string[] = Array.isArray(skillMatching.matched_good) ? skillMatching.matched_good : [];
 
-    if (details.length > 0) {
-      for (const detail of details.slice(0, 12)) {
-        const row = buildRowFromDetail(detail, String(detail?.status || "").toLowerCase() === "found");
-        if (row) matchedRows.push(row);
-      }
-    }
-
-    if (i.aiSkillRows && i.aiSkillRows.length > 0) {
-      for (const r of i.aiSkillRows.slice(0, 10)) {
-        const skillName = (r as any).name || (r as any).skill || "Skill";
-        if (matchedRows.some((row) => row.name.toLowerCase() === String(skillName).toLowerCase())) continue;
-        const stars = Math.min(5, Math.max(1, Number((r as any).stars) || 2));
-        // stars rubric → depth + source
-        // 5/4 = deep evidence in work history; 3 = working use in work history (no metrics);
-        // 2 = project / listed only; 1 = transferable / text mention only
-        let depth: "deep" | "working" | "listed";
-        let source: "work_history" | "project" | "listed";
-        if (stars >= 4) {
-          depth = "deep";
-          source = "work_history";
-        } else if (stars === 3) {
-          depth = "working";
-          source = "work_history";
-        } else if (stars === 2) {
-          depth = "listed";
-          source = "project";
-        } else {
-          depth = "listed";
-          source = "listed";
-        }
-
-        const evidenceNote = typeof (r as any).evidence_note === "string" && (r as any).evidence_note.length > 3
-          ? (r as any).evidence_note
-          : "Confirmed in resume";
-
-        matchedRows.push({
-          name: skillName,
-          matched: true,
-          depth,
-          source,
-          category: "skill",
-          evidenceNote,
-        });
-      }
-    } else if (i.techSkillSample && i.techSkillSample.length) {
-      for (const name of i.techSkillSample.slice(0, 10)) {
-        matchedRows.push({
-          name,
-          matched: true,
-          depth: "listed",
-          source: "listed",
-          category: "skill",
-          evidenceNote: "Listed in resume",
-        });
-      }
-    }
-
-    const normalizeKey = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, "");
-    const looselyMatches = (left: string, right: string) => {
-      const a = normalizeKey(left);
-      const b = normalizeKey(right);
-      return Boolean(a && b && (a === b || a.includes(b) || b.includes(a)));
-    };
-    const structuredJdSkills = (i.structuredJdData as Record<string, unknown> | null | undefined)?.skills as Record<string, unknown> | undefined;
-    const structuredResumeSkills = (i.structuredResumeData as Record<string, unknown> | null | undefined)?.skills as Record<string, unknown> | undefined;
-    const jdMustHaveNames = Array.isArray(structuredJdSkills?.must_have)
-      ? uniqueNonEmpty((structuredJdSkills.must_have as unknown[]).map((item) => extractSkillName(item)))
-      : [];
-    const jdGoodToHaveNames = Array.isArray(structuredJdSkills?.good_to_have)
-      ? uniqueNonEmpty((structuredJdSkills.good_to_have as unknown[]).map((item) => extractSkillName(item)))
-      : [];
-    const resumeSkillNames = uniqueNonEmpty([
-      ...extractStringList(structuredResumeSkills?.technical),
-      ...extractStringList(structuredResumeSkills?.tools),
-      ...extractStringList(structuredResumeSkills?.domain_skills),
-      ...extractStringList((i.structuredResumeData as Record<string, unknown> | null | undefined)?.keywords),
-    ]);
-    if (matchedRows.length < 6) {
-      for (const name of jdMustHaveNames.slice(0, 8)) {
-        if (!name || matchedRows.some((row) => looselyMatches(row.name, name))) continue;
-        const hit = resumeSkillNames.find((skill) => looselyMatches(skill, name));
-        matchedRows.push({
-          name,
-          matched: Boolean(hit),
-          depth: hit ? "working" : "missing",
-          source: hit ? "listed" : "missing",
-          category: "must-have",
-          evidenceNote: hit
-            ? `Present in structured resume skills: ${hit}`
-            : "Missing from the structured resume skills",
-        });
-      }
-    }
-
-    if (matchedRows.length < 8) {
-      for (const name of jdGoodToHaveNames.slice(0, 5)) {
-        if (!name || matchedRows.some((row) => looselyMatches(row.name, name))) continue;
-        const hit = resumeSkillNames.find((skill) => looselyMatches(skill, name));
-        if (!hit) continue;
-        matchedRows.push({
-          name,
-          matched: true,
-          depth: "listed",
-          source: "listed",
-          category: "good-to-have",
-          evidenceNote: `Seen in structured resume skills: ${hit}`,
-        });
-      }
-    }
-
-    if (matchedRows.length === 0 && resumeSkillNames.length > 0) {
-      for (const name of resumeSkillNames.slice(0, 8)) {
-        matchedRows.push({
-          name,
-          matched: true,
-          depth: "listed",
-          source: "listed",
-          category: "skill",
-          evidenceNote: "Present in structured resume skills",
-        });
-      }
-    }
-
-    for (const name of matchedGood.slice(0, 4)) {
-      const clean = String(name || "").trim();
-      if (!clean || matchedRows.some((row) => row.name.toLowerCase() === clean.toLowerCase())) continue;
-      matchedRows.push({
-        name: clean,
-        matched: true,
-        depth: "working",
-        source: "listed",
-        category: "good-to-have",
-        evidenceNote: "Matched as a good-to-have signal in the extracted report",
-      });
-    }
-
-    const missingRows: SreevaAIResumeViewModel["skillMatchRows"] = [];
-    const missingNames = missingMust.length > 0 ? missingMust : (Array.isArray(i.missingMustSkills) ? i.missingMustSkills : []);
-    for (const name of missingNames.slice(0, 8)) {
+    for (const name of [...matchedMust, ...matchedGood]) {
       const clean = String(name || "").trim();
       if (!clean) continue;
-      missingRows.push({
-        name: clean,
-        matched: false,
-        depth: "missing",
-        source: "missing",
-        category: "must-have",
-        evidenceNote: "Required must-have not found in extracted resume evidence",
-      });
+      const key = normalizeKey(clean);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      // Find evidence note from must_have_details if present
+      const detail = Array.isArray(skillMatching.must_have_details)
+        ? skillMatching.must_have_details.find((d: any) => normalizeKey(String(d?.name || d?.criterion || "")) === key)
+        : null;
+      const note = detail?.evidence || "";
+      rows.push({ name: clean, bucket: "matched", evidenceNote: note || undefined });
     }
 
-    const deduped = [...matchedRows, ...missingRows].reduce<SreevaAIResumeViewModel["skillMatchRows"]>((acc, row) => {
-      const key = row.name.toLowerCase();
-      if (acc.some((item) => item.name.toLowerCase() === key)) return acc;
-      acc.push(row);
-      return acc;
-    }, []);
+    // ── NOT MATCHED (JD criteria missing from resume) ─────────────────────
+    const missingMust: string[] = Array.isArray(skillMatching.missing_must)
+      ? skillMatching.missing_must
+      : Array.isArray(i.missingMustSkills) ? i.missingMustSkills : [];
+    for (const name of missingMust) {
+      const clean = String(name || "").trim();
+      if (!clean) continue;
+      const key = normalizeKey(clean);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      rows.push({ name: clean, bucket: "not_matched" });
+    }
 
-    const priority = (row: SreevaAIResumeViewModel["skillMatchRows"][number]) => {
-      if (row.matched && row.depth === "deep" && row.source === "work_history") return 0;
-      if (row.matched && row.depth === "deep") return 1;
-      if (row.matched && row.depth === "working" && row.source === "work_history") return 2;
-      if (row.matched && row.source === "project") return 3;
-      if (row.matched && row.source === "listed") return 4;
-      return 5;
-    };
+    // ── LISTED IN RESUME (all resume skills not already in matched/not_matched) ──
+    // Collect every skill from the structured resume parse
+    const resumeSkillNames: string[] = uniqueNonEmpty([
+      ...(Array.isArray(structuredSkills.technical) ? structuredSkills.technical : [])
+        .map((s: any) => extractSkillName(s)),
+      ...(Array.isArray(structuredSkills.tools) ? structuredSkills.tools : [])
+        .map((s: any) => extractSkillName(s)),
+      ...(Array.isArray(structuredSkills.domain_skills) ? structuredSkills.domain_skills : [])
+        .map((s: any) => (typeof s === "string" ? s : extractSkillName(s))),
+      ...structuredWorkHistory.flatMap((job: any) => extractStringList(job?.technologies_used)),
+      ...structuredProjects.flatMap((proj: any) => extractStringList(proj?.technologies)),
+    ]);
+    for (const name of resumeSkillNames) {
+      const clean = String(name || "").trim();
+      if (!clean) continue;
+      const key = normalizeKey(clean);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      rows.push({ name: clean, bucket: "listed" });
+    }
 
-    return deduped.sort((a, b) => priority(a) - priority(b));
+    return rows;
   })();
 
   const history = (i.combinedWorkHistory || []) as Array<{
@@ -985,28 +618,22 @@ export function buildSreevaAIResumeViewModel(i: {
     const endFmt = r.is_current ? "Present" : formatWorkDate(r.end_date || r.end_year);
     const when = [startFmt, endFmt].filter(Boolean).join(" – ");
     const label = `${r.role || "Role"} @ ${r.company || " "}`;
-    // Prefer AI-annotated recruiter_summary; fall back to responsibilities / impact signals from raw parse
-    const scopeParts = [
-      r.ownership_level ? `${r.ownership_level} ownership` : "",
-      r.impact_strength ? `${r.impact_strength} impact` : "",
-      typeof r.duration_months === "number" && Number.isFinite(r.duration_months) ? `${r.duration_months} months` : "",
+    // Primary body: LLM-written recruiter_summary from work_history_annotated
+    // Fallback: responsibilities or impact signals from raw parse
+    const primaryBody = r.recruiter_summary
+      || (Array.isArray(r.responsibilities) && r.responsibilities.length > 0 ? r.responsibilities.slice(0, 2).join(" ") : "")
+      || (Array.isArray(r.impact_signals) && r.impact_signals.length > 0 ? r.impact_signals.slice(0, 2).join(" ") : "");
+    // Compact metadata strip appended only when we have something meaningful to add
+    const metaParts = [
+      r.ownership_level && r.ownership_level !== "unclear" ? `${r.ownership_level} ownership` : "",
+      r.impact_strength && r.impact_strength !== "low" ? `${r.impact_strength} impact` : "",
       Array.isArray(r.technologies_used) && r.technologies_used.length > 0
-        ? `Tech: ${r.technologies_used.slice(0, 3).join(", ")}`
+        ? r.technologies_used.slice(0, 3).join(", ")
         : "",
     ].filter(Boolean);
-    const scopeText = scopeParts.join(" · ");
-    const body = [
-      scopeText,
-      r.recruiter_summary
-    ]
-      .filter(Boolean)
-      .join(" · ")
-      || (Array.isArray(r.responsibilities) && r.responsibilities.length > 0
-        ? r.responsibilities.slice(0, 3).join(" ")
-        : "")
-      || (Array.isArray(r.impact_signals) && r.impact_signals.length > 0
-        ? r.impact_signals.slice(0, 2).join(" ")
-        : "No description available.");
+    const body = primaryBody
+      ? metaParts.length > 0 ? `${primaryBody} [${metaParts.join(" · ")}]` : primaryBody
+      : metaParts.length > 0 ? metaParts.join(" · ") : "No description available.";
     return { label, body, time: when || `Block ${idx + 1}` };
   });
   if (careerLines.length === 0) {
@@ -1017,137 +644,18 @@ export function buildSreevaAIResumeViewModel(i: {
     });
   }
 
-  const strengths: SreevaAIResumeViewModel["strengths"] = [];
-  const weaknesses: SreevaAIResumeViewModel["weaknesses"] = [];
-  const topMatchedSkills = skillMatchRows.filter((row) => row.matched).slice(0, 3);
+  const sanitizeItems = (raw: { label: string; body: string }[]) =>
+    raw.map((item) => ({
+      label: String(item.label || "").trim(),
+      body: readableSummaryText(String(item.body || ""), 260),
+    })).filter((item) => item.label && item.body);
 
-  if (topMatchedSkills.length > 0) {
-    const strongNames = topMatchedSkills.map((row) => row.name).join(", ");
-    const evidence = topMatchedSkills.find((row) => row.evidenceNote)?.evidenceNote || "Evidence found in the extracted resume";
-    strengths.push({
-      label: "Evidence-backed skill match",
-      body: `${strongNames} are surfaced as matched skills with resume evidence, which is the same kind of must-have-based scoring structured hiring tools use.`,
-    });
-    strengths.push({
-      label: "Clear proof signal",
-      body: evidence,
-    });
-  }
+  const strengths: SreevaAIResumeViewModel["strengths"] =
+    i.aiStrengths && i.aiStrengths.length > 0 ? sanitizeItems(i.aiStrengths).slice(0, 4) : [];
 
-  const ownerRoles = history.filter((row) => row.ownership_level === "owner" && row.impact_strength === "high").slice(0, 2);
-  if (ownerRoles.length > 0) {
-    const firstRole = ownerRoles[0];
-    strengths.push({
-      label: "Owner-level delivery",
-      body: `${firstRole.role || "A prior role"} at ${firstRole.company || "a previous company"} shows ownership and high impact, which is a strong positive signal for role readiness.`,
-    });
-  }
+  const weaknesses: SreevaAIResumeViewModel["weaknesses"] =
+    i.aiWeaknesses && i.aiWeaknesses.length > 0 ? sanitizeItems(i.aiWeaknesses).slice(0, 4) : [];
 
-  if (Number.isFinite(candidateYears) && parsedRequiredYears != null && candidateYears >= parsedRequiredYears) {
-    strengths.push({
-      label: "Experience alignment",
-      body: `${candidateYears} years of experience meets or exceeds the ${parsedRequiredYears} year requirement, so the seniority bar is covered.`,
-    });
-  } else if (fitRadar.evidence >= 60) {
-    strengths.push({
-      label: "Evidence density",
-      body: "The report shows repeated work-history and project proof rather than a resume that is mostly just a skill list.",
-    });
-  }
-
-  if (missingMustHave.length > 0) {
-    weaknesses.push({
-      label: `Missing must-have: ${missingMustHave[0]}`,
-      body: `The resume does not clearly evidence ${missingMustHave[0]}, and scorecards usually treat must-haves as the first pass/fail filter.`,
-    });
-  }
-
-  if (Number.isFinite(candidateYears) && parsedRequiredYears != null && candidateYears < parsedRequiredYears) {
-    weaknesses.push({
-      label: "Experience gap",
-      body: `${candidateYears} years are shown against ${parsedRequiredYears} required, so this needs either stronger adjacent depth or a role-level exception.`,
-    });
-  }
-
-  if (fitRadar.evidence < 55) {
-    weaknesses.push({
-      label: "Proof depth",
-      body: "Some signals still read as listed skills or light evidence rather than repeated production use, so depth should be verified in interview.",
-    });
-  }
-
-  if (fitRadar.skills < 55) {
-    weaknesses.push({
-      label: "Narrow skill breadth",
-      body: "The broader skill mix looks thinner than the role typically wants, which can limit flexibility once the candidate is on the job.",
-    });
-  }
-
-  while (strengths.length < 4 && topMatchedSkills.length > strengths.length) {
-    const row = topMatchedSkills.find(s => !strengths.some(st => st.label.includes(s.name)));
-    if (!row) break;
-    strengths.push({
-      label: row.name,
-      body: row.evidenceNote || "Matched in the extracted resume evidence.",
-    });
-  }
-
-  while (weaknesses.length < 4) {
-    const nextGap = skillMatchRows.find(row => !row.matched && !weaknesses.some(w => w.label.includes(row.name)));
-    if (!nextGap) break;
-    weaknesses.push({
-      label: `${nextGap.name} gap`,
-      body: nextGap.evidenceNote || "This required skill is not clearly evidenced in the resume.",
-    });
-  }
-
-  const normalizedStamp = String(i.normalizedStatus || "").toUpperCase();
-  const isRejected = normalizedStamp.includes("REJECT");
-  const minStrengthWeakness = 3;
-  const strengthFallbacks = [
-    {
-      label: "Role signal consistency",
-      body: "The profile has multiple aligned signals across resume sections, which supports a stable screening read instead of a one-line claim.",
-    },
-    {
-      label: "Extracted evidence quality",
-      body: "Structured extraction includes work and skills context that helps verify role relevance beyond keyword-only matching.",
-    },
-    {
-      label: "Actionable interview focus",
-      body: "The current match pattern gives clear areas to validate in interview, which improves screening reliability and decision clarity.",
-    },
-  ];
-  const weaknessFallbacks = [
-    {
-      label: "Evidence completeness",
-      body: "Some parts of the resume still need stronger scope or outcome detail, so confidence is moderate until interview validation.",
-    },
-    {
-      label: "Role-depth uncertainty",
-      body: "Not all required skills show consistent production-grade evidence across roles, which creates decision risk for the final stage.",
-    },
-    {
-      label: "Verification dependency",
-      body: "A few claims remain list-level and need probing for scale, ownership, and measurable impact before finalizing hiring direction.",
-    },
-  ];
-
-  for (const fallback of strengthFallbacks) {
-    if (strengths.length >= minStrengthWeakness) break;
-    if (strengths.some((item) => item.label === fallback.label)) continue;
-    strengths.push(fallback);
-  }
-  for (const fallback of weaknessFallbacks) {
-    if (weaknesses.length >= minStrengthWeakness) break;
-    if (weaknesses.some((item) => item.label === fallback.label)) continue;
-    weaknesses.push(fallback);
-  }
-
-  if (isRejected && strengths.length > 4) strengths.splice(4);
-  if (weaknesses.length > 4) weaknesses.splice(4);
-
-  const shorten = (value: string, maxLen = 180) => readableSummaryText(value, maxLen);
   return {
     backHref: i.backHref || "/admin/candidates",
     processing: !i.hasResumeText && !i.hasAiReport,
@@ -1164,7 +672,7 @@ export function buildSreevaAIResumeViewModel(i: {
     strengths,
     weaknesses,
     decisionStamp,
-    skillMatchRows,
+    skillRows,
     careerLines,
     resumeUrl: c.resumeUrl || null,
     reviewStrip: (() => {
@@ -1179,20 +687,7 @@ export function buildSreevaAIResumeViewModel(i: {
       if (i.decisionReason && i.decisionReason.trim().length > 10) {
         return i.decisionReason.trim();
       }
-      // Fallback for legacy reports without decision_reason
-      return buildDecisionNoteFallback({
-        candidateName: c.fullName || "Candidate",
-        decisionStamp,
-        topMatchedSkills: topMatchedSkills.map((row) => ({ name: row.name, evidenceNote: row.evidenceNote })),
-        missingMustHave,
-        candidateYears: Number.isFinite(candidateYears) ? candidateYears : null,
-        requiredYears: parsedRequiredYears,
-        ownerRoles: ownerRoles.map((row) => ({
-          company: row.company,
-          role: row.role,
-          technologies_used: Array.isArray(row.technologies_used) ? row.technologies_used : [],
-        })),
-      });
+      return "";
     })(),
   };
 }
@@ -1211,6 +706,21 @@ export function ResumeReportSreevaAI({
   headerActions,
 }: ResumeReportSreevaAIProps) {
   const [radarHovered, setRadarHovered] = useState<RadarKey | null>(null);
+  const [openStrengths, setOpenStrengths] = useState(true);
+  const [openWeaknesses, setOpenWeaknesses] = useState(true);
+  const [expandedVerdict, setExpandedVerdict] = useState(false);
+  const [openMatchedSkills, setOpenMatchedSkills] = useState(true);
+  const [openMissingSkills, setOpenMissingSkills] = useState(true);
+  const [openListedSkills, setOpenListedSkills] = useState(false);
+  const [openCareer, setOpenCareer] = useState(true);
+  const [openAiSummary, setOpenAiSummary] = useState(true);
+
+  useEffect(() => {
+    document.body.classList.add("reports-mode");
+    return () => {
+      document.body.classList.remove("reports-mode");
+    };
+  }, []);
 
 
   const BackButton = () => {
@@ -1248,525 +758,380 @@ export function ResumeReportSreevaAI({
     );
   }
 
+  const matchedSkills = model.skillRows.filter((r) => r.bucket === "matched");
+  const notMatchedSkills = model.skillRows.filter((r) => r.bucket === "not_matched");
+  const listedSkills = model.skillRows.filter((r) => r.bucket === "listed");
+
   return (
-    <div className={cn("w-full transition-colors duration-500", bgPage)}>
-      <MeshGradient />
+    <div className="w-full h-screen flex flex-col overflow-hidden bg-[#F3F4F6]">
 
-      <div className="mx-auto w-full max-w-6xl space-y-6 px-4 pb-16 pt-4 sm:px-6 sm:pt-6">
-        {showHeader && (
-          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#DDE1E5] pb-4">
-            <div className="flex items-center gap-4">
-              <BackButton />
-              <div>
-                <h1 className="text-xl font-semibold tracking-tight text-[#1A1D22]">Resume Screening</h1>
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {headerActions ? <div className="flex items-center gap-2">{headerActions}</div> : null}
-              {model.resumeUrl ? (
-                <a
-                  href={model.resumeUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#DDE1E5] bg-white px-3 text-[11px] font-bold text-[#0D4D2E] shadow-sm hover:bg-[#F7FAF8]"
-                >
-                  <Link2 className="h-3.5 w-3.5" />
-                  View Resume
-                </a>
-              ) : (
-                <span className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#DDE1E5] bg-white px-3 text-[11px] font-bold text-[#9AA1AA] shadow-sm">
-                  <Link2 className="h-3.5 w-3.5" />
-                  View Resume
-                </span>
-              )}
-            </div>
+      {/* ── Header (shrink-0, same pattern as interview report) ── */}
+      {showHeader && (
+        <div className="shrink-0 flex flex-wrap items-center justify-between gap-3 border-b border-[#DDE1E5] px-4 py-2 bg-white z-10 shadow-sm">
+          <div className="flex items-center gap-3">
+            <BackButton />
           </div>
-        )}
+          <div className="flex flex-wrap items-center gap-2">
+            {headerActions ? <div className="flex items-center gap-2">{headerActions}</div> : null}
+            {model.resumeUrl ? (
+              <a href={model.resumeUrl} target="_blank" rel="noreferrer"
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#DDE1E5] bg-white px-3 text-[11px] font-bold text-[#0D4D2E] shadow-sm hover:bg-[#F7FAF8]">
+                <Link2 className="h-3.5 w-3.5" />
+                View Resume
+              </a>
+            ) : (
+              <span className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#DDE1E5] bg-white px-3 text-[11px] font-bold text-[#9AA1AA] shadow-sm">
+                <Link2 className="h-3.5 w-3.5" />
+                View Resume
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
-        {/* Candidate Header Card */}
-        <div className={cn(card, "relative overflow-hidden border-none bg-white p-0 shadow-[0_4px_20px_rgba(0,0,0,0.03)]")}>
-          {/* Corner Crosses */}
-          <div className="pointer-events-none absolute -left-1 -top-1 h-3 w-3 text-slate-300">
-            <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
-            <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
-          </div>
-          <div className="pointer-events-none absolute -right-1 -top-1 h-3 w-3 text-slate-300">
-            <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
-            <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
-          </div>
-          <div className="pointer-events-none absolute -bottom-1 -left-1 h-3 w-3 text-slate-300">
-            <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
-            <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
-          </div>
-          <div className="pointer-events-none absolute -bottom-1 -right-1 h-3 w-3 text-slate-300">
-            <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
-            <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
-          </div>
+      {/* ── 3-column content area (flex-1, no page scroll) ── */}
+      <div className="flex-1 overflow-hidden p-3 lg:p-4">
+        <div className="mx-auto max-w-[1600px] h-full grid grid-cols-1 lg:grid-cols-3 gap-3 lg:gap-4 items-stretch">
 
-          <div className="bg-gradient-to-br from-white via-white to-[#FFF4EC]/30 px-4 py-5 sm:px-6">
-            <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-center">
-              <div className="flex min-w-0 flex-1 gap-4 sm:gap-5">
-                <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-full border-4 border-white shadow-lg sm:h-28 sm:w-28">
-                  {model.displayAvatar ? <img src={model.displayAvatar} alt="" className="h-full w-full object-cover" /> : null}
-                </div>
-                <div className="min-w-0">
-                  <h2 className="text-2xl font-black tracking-tight text-[#1A1D22] sm:text-[2.5rem]">{model.fullName}</h2>
-                  <div className="mt-3 space-y-1.5">
-                    {model.locationLine && (
-                      <p className="text-[12px] font-semibold text-[#3D434D]">{model.locationLine}</p>
-                    )}
-                    {model.experienceLine && (
-                      <p className="text-[12px] font-semibold text-[#3D434D]">
-                        Total experience: {model.experienceLine}
+          {/* ── COL 1: Profile · Verdict · Radar ── */}
+          <div className="col-span-1 flex flex-col min-h-0 overflow-y-auto" style={{ scrollbarWidth: "thin", scrollbarColor: "#E4E7EB transparent" }}>
+            <div className="rounded-2xl bg-white border border-[#E4E7EB] shadow-sm overflow-visible">
+
+              {/* Candidate Profile */}
+              <div className="px-5 py-4">
+                <div className="flex items-center gap-4">
+                  <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-black/5 shadow-sm bg-slate-100">
+                    {model.displayAvatar ? <img src={model.displayAvatar} alt="" className="h-full w-full object-cover" /> : null}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-2 mb-1">
+                      <h2 className="text-[16px] font-bold tracking-tight text-[#111827] leading-tight truncate">{model.fullName}</h2>
+                      {(model.decisionStamp === "SHORTLISTED" || model.decisionStamp === "REJECTED") && (
+                        <span className={cn(
+                          "shrink-0 rounded-full px-2.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wider border",
+                          model.decisionStamp === "SHORTLISTED" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-rose-50 text-rose-700 border-rose-200"
+                        )}>
+                          {model.decisionStamp}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[12.5px] text-[#6B7280] truncate mb-1">{model.roleLabel}</p>
+                    {(model.locationLine || model.experienceLine) && (
+                      <p className="text-[11px] text-[#9CA3AF]">
+                        {[model.locationLine, model.experienceLine].filter(Boolean).join(" · ")}
                       </p>
                     )}
-                    <div className="pt-1">
-                      <span className="inline-flex rounded-full bg-[#F1F2F4] px-3 py-1 text-[11px] font-bold text-[#3D434D]">
-                        {model.roleLabel}
-                      </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-t border-[#F0F1F3]" />
+
+              {/* Shortlisting Verdict */}
+              {(() => {
+                const isHire = model.decisionStamp === "SHORTLISTED";
+                const isNo = model.decisionStamp === "REJECTED";
+                const bgCls = isHire ? "bg-[#F0FDF4] border-[#86EFAC]" : isNo ? "bg-rose-50 border-rose-200" : "bg-amber-50 border-amber-200";
+                const textCls = isHire ? "text-[#166534]" : isNo ? "text-rose-800" : "text-amber-800";
+                const iconCls = isHire ? "text-[#22C55E]" : isNo ? "text-rose-500" : "text-amber-500";
+                return (
+                  <div className="px-5 py-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-[13px] font-bold text-[#111827]">Shortlisting Note</p>
+                      <span className="rounded-full bg-[#F3F4F6] px-2.5 py-0.5 text-[9.5px] font-bold text-[#4B5563]">Verdict</span>
                     </div>
-                  </div>
-                </div>
-              </div>
-              {model.decisionStamp === "SHORTLISTED" || model.decisionStamp === "REJECTED" ? (
-                <div className="flex shrink-0 items-center justify-center lg:mx-2">
-                  <img
-                    src={model.decisionStamp === "REJECTED" ? "/images/stamps/rejected.png" : "/images/stamps/shortlisted.png"}
-                    alt={model.decisionStamp === "REJECTED" ? "Rejected" : "Shortlisted"}
-                    className="h-[138px] w-[138px] -rotate-6 object-contain mix-blend-multiply"
-                  />
-                </div>
-              ) : null}
-              <div className="flex flex-col items-center gap-2 rounded-3xl bg-white px-5 py-5 shadow-[0_10px_30px_rgba(0,0,0,0.04)] ring-1 ring-black/5 sm:min-w-[260px]">
-                <p className="self-start text-[10px] font-black uppercase tracking-[0.24em] text-[#6B7079]">Fit snapshot</p>
-                <div className="flex flex-col items-center gap-4 sm:items-center">
-                  <SemicircleGauge value={model.fitPercent} fitLabel={model.fitLabel} />
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Main Analysis Sections */}
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-          <div className={cn(card, "relative flex flex-col overflow-hidden border-none bg-white shadow-md lg:col-span-4")}>
-            {/* Corner Crosses */}
-            <div className="pointer-events-none absolute -left-1 -top-1 h-3 w-3 text-slate-300">
-              <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
-              <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
-            </div>
-            <div className="pointer-events-none absolute -right-1 -top-1 h-3 w-3 text-slate-300">
-              <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
-              <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
-            </div>
-            <div className="pointer-events-none absolute -bottom-1 -left-1 h-3 w-3 text-slate-300">
-              <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
-              <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
-            </div>
-            <div className="pointer-events-none absolute -bottom-1 -right-1 h-3 w-3 text-slate-300">
-              <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
-              <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
-            </div>
-            <div className="flex items-center justify-between border-b border-[#E8EAED]/50 px-4 py-3">
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-[#1A1D22]">Fit radar</p>
-              </div>
-              <span className="rounded-md bg-[#F1F2F4] px-2.5 py-0.5 text-[9px] font-extrabold uppercase text-[#1A1D22] shadow-sm">
-                {model.fitLabel}
-              </span>
-            </div>
-            <div className="flex flex-1 flex-col gap-3 px-3 pt-4">
-              <ResumeRadarPlot values={model.fitRadar} notes={model.fitRadarNotes} onHoverChange={setRadarHovered} />
-            </div>
-            <div className="mx-3 mb-3 rounded-2xl border border-[#E8EAED]/70 bg-[#FAFBFC] px-3 py-2">
-              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#1A1D22]">
-                {radarHovered
-                  ? `${RESUME_RADAR_LABELS.find((item) => item.key === radarHovered)?.label} is ${Math.round(model.fitRadar[radarHovered])}%`
-                  : "Hover to see the analysis"}
-              </p>
-              <p className="mt-1 text-[12px] leading-5 text-[#3D434D]">
-                {radarHovered
-                  ? model.fitRadarNotes[radarHovered]
-                  : "Move over any axis to see how each score was derived."}
-              </p>
-            </div>
-          </div>
-
-          <div className={cn(card, "relative flex max-h-[520px] flex-col overflow-hidden border-none bg-white shadow-md lg:col-span-8")}>
-            {/* Corner Crosses */}
-            <div className="pointer-events-none absolute -left-1 -top-1 h-3 w-3 text-slate-300">
-              <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
-              <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
-            </div>
-            <div className="pointer-events-none absolute -right-1 -top-1 h-3 w-3 text-slate-300">
-              <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
-              <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
-            </div>
-            <div className="pointer-events-none absolute -bottom-1 -left-1 h-3 w-3 text-slate-300">
-              <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
-              <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
-            </div>
-            <div className="pointer-events-none absolute -bottom-1 -right-1 h-3 w-3 text-slate-300">
-              <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
-              <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
-            </div>
-            <div className="mb-3 flex items-start justify-between gap-3">
-              <div className="flex items-center gap-2 text-[#0D4D2E]">
-                <Sparkles className="h-4 w-4" />
-                <div>
-                  <p className="text-sm font-semibold">AI Summary</p>
-                  <p className="text-[10px] font-semibold uppercase tracking-widest text-[#1A1D22]">
-                    Recruiter-friendly analysis from extracted resume data
-                  </p>
-                </div>
-              </div>
-              <span
-                className={cn(
-                  "mt-1 shrink-0 rounded-md px-2.5 py-0.5 text-[9px] font-extrabold uppercase tracking-widest shadow-sm",
-                  model.fitPercent >= 80
-                    ? "bg-[#E6F4EC] text-[#0D4D2E]"
-                    : model.fitPercent >= 60
-                      ? "bg-[#FFF4E8] text-[#B86A00]"
-                      : "bg-red-50/50 text-red-700 border border-red-100/50"
-                )}
-              >
-                {model.fitPercent >= 80 ? "Strong fit" : model.fitPercent >= 60 ? "Review" : "Needs review"}
-              </span>
-            </div>
-            <div className="flex-1 space-y-4 overflow-y-auto pr-1">
-              {model.aiSummaryPoints.map((item, j) => (
-                <div
-                  key={`${item.label}-${j}`}
-                  className={cn(
-                    "rounded-2xl border px-3 py-3 shadow-sm transition-colors",
-                    item.label === "Red flags" ? "mt-1" : "",
-                    item.label === "Red flags"
-                      ? "border-red-200 bg-red-50/50"
-                      : item.tone === "emerald"
-                        ? "border-[#D5EAD8] bg-[#F6FBF7]"
-                        : item.tone === "amber"
-                          ? "border-[#F4E0BF] bg-[#FFF9F1]"
-                          : "border-red-200 bg-red-50/50"
-                  )}
-                >
-                  <div className="mb-2 flex items-center gap-2">
-                    <span
-                      className={cn(
-                        "rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.2em]",
-                        item.label === "Red flags"
-                          ? "bg-red-100 text-red-700"
-                          : item.tone === "emerald"
-                            ? "bg-[#0D4D2E] text-white"
-                        : item.tone === "amber"
-                          ? "bg-[#B86A00] text-white"
-                        : "bg-red-100 text-red-700"
-                      )}
-                    >
-                      {item.label}
-                    </span>
-                  </div>
-                  <p className={cn("text-[13px] leading-6", item.label === "Red flags" ? "text-red-900" : "text-[#1A1D22]")}>{item.body}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <div className={cn(card, "relative border-none bg-white p-0 shadow-md overflow-hidden")}>
-            {/* Corner Crosses */}
-            <div className="pointer-events-none absolute -left-1 -top-1 h-3 w-3 text-slate-300">
-              <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
-              <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
-            </div>
-            <div className="pointer-events-none absolute -right-1 -top-1 h-3 w-3 text-slate-300">
-              <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
-              <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
-            </div>
-            <div className="pointer-events-none absolute -bottom-1 -left-1 h-3 w-3 text-slate-300">
-              <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
-              <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
-            </div>
-            <div className="pointer-events-none absolute -bottom-1 -right-1 h-3 w-3 text-slate-300">
-              <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
-              <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
-            </div>
-            <div className="border-b border-emerald-100 bg-emerald-50/70 px-4 py-3">
-              <p className="text-sm font-semibold text-emerald-800">Strengths</p>
-            </div>
-            <div className="space-y-2 p-3">
-              {model.strengths.length > 0 ? (
-                model.strengths.map((item, idx) => (
-                  <div key={`strength-${idx}`} className="flex items-start gap-2 rounded-lg border border-emerald-100/80 bg-white px-3 py-2.5 transition-colors hover:bg-emerald-50/30">
-                    <div className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
-                    <div className="min-w-0">
-                      <p className="text-[12px] font-semibold text-[#1A1D22]">{item.label}</p>
-                      <p className="mt-0.5 text-[11px] leading-relaxed text-[#3D434D]">{item.body}</p>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <p className="px-3 py-2 text-[11px] leading-5 text-[#6B7079]">No strengths could be confidently derived from the available evidence yet.</p>
-              )}
-            </div>
-          </div>
-
-          <div className={cn(card, "relative border border-red-100 bg-white p-0 shadow-md overflow-hidden")}>
-            {/* Corner Crosses */}
-            <div className="pointer-events-none absolute -left-1 -top-1 h-3 w-3 text-red-200">
-              <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
-              <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
-            </div>
-            <div className="pointer-events-none absolute -right-1 -top-1 h-3 w-3 text-red-200">
-              <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
-              <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
-            </div>
-            <div className="pointer-events-none absolute -bottom-1 -left-1 h-3 w-3 text-red-200">
-              <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
-              <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
-            </div>
-            <div className="pointer-events-none absolute -bottom-1 -right-1 h-3 w-3 text-red-200">
-              <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
-              <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
-            </div>
-            <div className="border-b border-red-100 bg-red-50 px-4 py-3">
-              <p className="text-sm font-semibold text-red-900">Weaknesses</p>
-            </div>
-            <div className="space-y-2 p-3">
-              {model.weaknesses.length > 0 ? (
-                model.weaknesses.map((item, idx) => (
-                  <div key={`weakness-${idx}`} className="flex items-start gap-2 rounded-lg border border-red-100 bg-red-50/30 px-3 py-2.5 transition-colors hover:bg-red-50/60">
-                    <div className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" />
-                    <div className="min-w-0">
-                      <p className="text-[12px] font-semibold text-red-900">{item.label}</p>
-                      <p className="mt-0.5 text-[11px] leading-relaxed text-red-800">{item.body}</p>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <p className="px-3 py-2 text-[11px] leading-5 text-red-600">No clear weaknesses surfaced from the current evidence.</p>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Detailed Lists */}
-        <div className="grid min-h-0 grid-cols-1 gap-6 lg:grid-cols-12">
-          <div className="lg:col-span-7">
-            <div className={cn(card, "flex h-[420px] min-h-0 min-w-0 flex-col overflow-hidden border border-[#DDE1E5] bg-white p-0 shadow-[0_8px_24px_rgba(0,0,0,0.05)]")}>
-              <div className="border-b border-[#D7DBE0] bg-[#FAFBFC] px-4 py-3">
-                <p className="text-sm font-semibold text-[#1A1D22]">Career timeline</p>
-              </div>
-              <div className="flex-1 space-y-3 overflow-y-auto p-4">
-                {model.careerLines.map((line, k) => (
-                  <div
-                    key={k}
-                    className="flex gap-2 rounded-xl border border-[#E2E6EB] bg-white p-3 transition-colors hover:bg-slate-50"
-                  >
-                    <Link2 className="mt-0.5 h-4 w-4 shrink-0 text-black" />
-                    <div className="min-w-0 flex-1">
-                      <div className="mb-0.5 flex flex-wrap items-center gap-1.5">
-                        <span className="text-[10px] font-bold text-[#6B7079]">Experience</span>
-                        <span className="text-[9px] text-[#8C9299]">{line.time}</span>
+                    <div className={cn("rounded-xl border px-4 py-3.5", bgCls)}>
+                      <div className="flex items-center gap-2 mb-2">
+                        {isHire ? <CheckCircle className={cn("h-[18px] w-[18px]", iconCls)} /> : isNo ? <XCircle className={cn("h-[18px] w-[18px]", iconCls)} /> : <Activity className={cn("h-[18px] w-[18px]", iconCls)} />}
+                        <span className={cn("text-[14px] font-black uppercase tracking-wide", textCls)}>
+                          {isHire ? "SHORTLISTED" : isNo ? "REJECTED" : "BORDERLINE"}
+                        </span>
                       </div>
-                      <p className="text-[12px] font-bold text-[#1A1D22]">{line.label}</p>
-                      <p className="whitespace-pre-wrap text-[12px] leading-relaxed text-[#3D434D]">{line.body}</p>
+                      {model.reviewStrip && (
+                        <div className="pt-1 relative">
+                          <p className={cn("text-[12px] leading-relaxed whitespace-pre-line pr-7", textCls, !expandedVerdict && "line-clamp-2")}>
+                            {model.reviewStrip}
+                          </p>
+                          <button type="button" onClick={() => setExpandedVerdict(!expandedVerdict)}
+                            className={cn("absolute right-0 top-0.5 p-1 hover:bg-black/5 rounded transition-colors", textCls)}>
+                            <ChevronDown className={cn("h-4 w-4 transition-transform", expandedVerdict ? "rotate-180" : "")} />
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
-                ))}
+                );
+              })()}
+
+              <div className="border-t border-[#F0F1F3]" />
+
+              {/* AI Summary */}
+              <div className="px-5 py-4">
+                <button type="button" onClick={() => setOpenAiSummary(!openAiSummary)}
+                  className="flex w-full items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="h-3.5 w-3.5 text-[#6366F1]" />
+                    <p className="text-[13px] font-bold text-[#111827]">AI Summary</p>
+                  </div>
+                  <ChevronDown className={cn("h-4 w-4 text-[#9CA3AF] transition-transform", openAiSummary ? "rotate-180" : "")} />
+                </button>
+                {openAiSummary && (
+                  <div className="space-y-3">
+                    {model.aiSummaryPoints.map((item, j) => (
+                      <div key={j} className={cn(
+                        "rounded-xl border p-3.5 shadow-sm",
+                        item.label === "Red flags" ? "bg-rose-50 border-rose-100"
+                        : item.tone === "emerald" ? "bg-[#F0FDF4] border-[#DCFCE7]"
+                        : item.tone === "amber" ? "bg-amber-50 border-amber-100"
+                        : "bg-slate-50 border-slate-100"
+                      )}>
+                        <div className="mb-2 flex items-center gap-2">
+                          <span className={cn(
+                            "rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.2em]",
+                            item.label === "Red flags" ? "bg-rose-200 text-rose-800"
+                              : item.tone === "emerald" ? "bg-[#0D4D2E] text-white"
+                              : item.tone === "amber" ? "bg-[#B86A00] text-white"
+                              : "bg-slate-200 text-slate-800"
+                          )}>{item.label}</span>
+                        </div>
+                        <p className={cn("text-[12px] leading-relaxed", item.label === "Red flags" ? "text-rose-900" : "text-[#374151]")}>{item.body}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
+
             </div>
           </div>
-          {/* Skill Signals Section */}
-          <div className="min-h-0 lg:col-span-5">
-            <div className={cn(card, "flex h-[420px] min-h-0 flex-col overflow-hidden border border-[#DDE1E5] bg-white p-0 shadow-[0_8px_24px_rgba(0,0,0,0.05)]")}>
-              {/* Corner Crosses */}
-              <div className="pointer-events-none absolute -left-1 -top-1 h-3 w-3 text-slate-300">
-                <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
-                <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
-              </div>
-              <div className="pointer-events-none absolute -right-1 -top-1 h-3 w-3 text-slate-300">
-                <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
-                <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
-              </div>
-              <div className="pointer-events-none absolute -bottom-1 -left-1 h-3 w-3 text-slate-300">
-                <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
-                <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
-              </div>
-              <div className="pointer-events-none absolute -bottom-1 -right-1 h-3 w-3 text-slate-300">
-                <div className="absolute left-1/2 top-0 h-full w-[0.5px] -translate-x-1/2 bg-current" />
-                <div className="absolute left-0 top-1/2 h-[0.5px] w-full -translate-y-1/2 bg-current" />
-              </div>
-              <div className="flex items-center justify-between border-b border-[#D7DBE0] bg-[#FAFBFC] px-4 py-3">
-                <div>
-                  <h3 className="text-sm font-semibold text-[#1A1D22]">Skill signals</h3>
-                  <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-widest text-[#1A1D22]">
-                    Extracted from resume evidence and JD match data
-                  </p>
+
+          {/* ── COL 2: Evidence Highlights · Fit Radar ── */}
+          <div className="col-span-1 flex flex-col min-h-0 overflow-y-auto" style={{ scrollbarWidth: "thin", scrollbarColor: "#E4E7EB transparent" }}>
+            <div className="rounded-2xl bg-white border border-[#E4E7EB] shadow-sm overflow-visible">
+
+              {/* Evidence Highlights */}
+              <div className="px-5 py-4">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-[#6B7280] mb-3">Evidence Highlights</p>
+                <div className="flex flex-col gap-1">
+
+                  {/* Strengths */}
+                  <div>
+                    <button type="button" onClick={() => setOpenStrengths(!openStrengths)}
+                      className="flex items-center justify-between w-full text-left py-1.5 hover:bg-emerald-50/60 rounded-lg -mx-1.5 px-1.5 transition-colors">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[12px] font-bold text-emerald-800">Strengths</span>
+                        <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700">{model.strengths.length}</span>
+                      </div>
+                      <ChevronDown className={cn("h-3.5 w-3.5 text-emerald-600 transition-transform", openStrengths ? "rotate-180" : "")} />
+                    </button>
+                    {openStrengths && (
+                      <div className="mt-1 mb-2 pl-2">
+                        {model.strengths.length > 0 ? (
+                          <ul className="space-y-2">
+                            {model.strengths.map((item, idx) => (
+                              <li key={idx} className="flex items-start gap-2.5">
+                                <span className="mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" />
+                                <div>
+                                  <p className="text-[11.5px] font-bold text-[#1A1D22] mb-0.5">{item.label}</p>
+                                  <p className="text-[11.5px] leading-relaxed text-[#374151]">{item.body}</p>
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="text-[11.5px] text-[#9CA3AF]">No specific strengths identified.</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="h-px bg-[#F3F4F6] my-1" />
+
+                  {/* Weaknesses */}
+                  <div>
+                    <button type="button" onClick={() => setOpenWeaknesses(!openWeaknesses)}
+                      className="flex items-center justify-between w-full text-left py-1.5 hover:bg-red-50/60 rounded-lg -mx-1.5 px-1.5 transition-colors">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[12px] font-bold text-red-800">Weaknesses</span>
+                        <span className="rounded-full bg-rose-100 px-1.5 py-0.5 text-[9px] font-bold text-rose-700">{model.weaknesses.length}</span>
+                      </div>
+                      <ChevronDown className={cn("h-3.5 w-3.5 text-red-600 transition-transform", openWeaknesses ? "rotate-180" : "")} />
+                    </button>
+                    {openWeaknesses && (
+                      <div className="mt-1 mb-1 pl-2">
+                        {model.weaknesses.length > 0 ? (
+                          <ul className="space-y-2">
+                            {model.weaknesses.map((item, idx) => (
+                              <li key={idx} className="flex items-start gap-2.5">
+                                <span className="mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
+                                <div>
+                                  <p className="text-[11.5px] font-bold text-[#1A1D22] mb-0.5">{item.label}</p>
+                                  <p className="text-[11.5px] leading-relaxed text-[#374151]">{item.body}</p>
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="text-[11.5px] text-[#9CA3AF]">No clear weaknesses surfaced.</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
                 </div>
-                {(() => {
-                  const matchedCount = model.skillMatchRows.filter((r) => r.matched).length;
-                  const missingCount = model.skillMatchRows.filter((r) => !r.matched).length;
-                  return (
-                    <div className="flex items-center gap-1.5 text-[10px] font-bold">
-                      <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-emerald-700">{matchedCount} matched</span>
-                      {missingCount > 0 && (
-                        <span className="rounded-full bg-amber-50 px-2 py-0.5 text-amber-700">{missingCount} missing</span>
+              </div>
+
+              <div className="border-t border-[#F0F1F3]" />
+
+              {/* Fit Radar */}
+              <div className="px-5 py-4">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-[13px] font-bold text-[#111827]">Fit Radar</p>
+                  <span className="rounded-md bg-[#F1F2F4] px-2.5 py-0.5 text-[9px] font-extrabold uppercase text-[#1A1D22] shadow-sm">{model.fitLabel}</span>
+                </div>
+                <div className="flex flex-col items-center gap-3">
+                  <div className="w-full max-w-[260px] mx-auto">
+                    <ResumeRadarPlot values={model.fitRadar} notes={model.fitRadarNotes} onHoverChange={setRadarHovered} />
+                  </div>
+                  <div className="w-full rounded-2xl border border-[#E8EAED]/70 bg-[#FAFBFC] px-3 py-2">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#1A1D22]">
+                      {radarHovered
+                        ? `${RESUME_RADAR_LABELS.find((x) => x.key === radarHovered)?.label} · ${Math.round(model.fitRadar[radarHovered])}%`
+                        : "Hover to see the analysis"}
+                    </p>
+                    {radarHovered && (
+                      <p className="mt-1 text-[10.5px] leading-relaxed text-[#5C6370]">{model.fitRadarNotes[radarHovered]}</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          {/* ── COL 3: Career Timeline · Skill Signals ── */}
+          <div className="col-span-1 flex flex-col min-h-0 overflow-y-auto" style={{ scrollbarWidth: "thin", scrollbarColor: "#E4E7EB transparent" }}>
+            <div className="rounded-2xl bg-white border border-[#E4E7EB] shadow-sm overflow-visible">
+
+              {/* Career Timeline */}
+              <div className="px-5 py-4">
+                <button type="button" onClick={() => setOpenCareer(!openCareer)}
+                  className="flex w-full items-center justify-between mb-3">
+                  <p className="text-[13px] font-bold text-[#111827]">Career Timeline</p>
+                  <ChevronDown className={cn("h-4 w-4 text-[#9CA3AF] transition-transform", openCareer ? "rotate-180" : "")} />
+                </button>
+                {openCareer && (
+                  <div className="relative pl-3 border-l border-[#E5E7EB] space-y-5">
+                    {model.careerLines.map((line, k) => (
+                      <div key={k} className="relative">
+                        <div className="absolute -left-[17px] top-1 h-2 w-2 rounded-full bg-slate-300 ring-4 ring-white" />
+                        <div className="pl-3">
+                          <p className="text-[10px] font-bold text-[#6B7280] mb-0.5">{line.time}</p>
+                          <p className="text-[13px] font-bold text-[#111827] mb-1.5">{line.label}</p>
+                          <p className="text-[12px] leading-relaxed text-[#4B5563]">{line.body}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="border-t border-[#F0F1F3]" />
+
+              {/* Skill Signals */}
+              <div className="px-5 py-4">
+                <p className="text-[13px] font-bold text-[#111827] mb-3">Skill Signals</p>
+                <div className="flex flex-col gap-1">
+
+                  {/* Matched — in JD and found in resume */}
+                  <div>
+                    <button type="button" onClick={() => setOpenMatchedSkills(!openMatchedSkills)}
+                      className="flex items-center justify-between w-full text-left py-1.5 hover:bg-emerald-50/60 rounded-lg -mx-1.5 px-1.5 transition-colors">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[12px] font-bold text-emerald-800">Matched</span>
+                        <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700">{matchedSkills.length}</span>
+                      </div>
+                      <ChevronDown className={cn("h-3.5 w-3.5 text-emerald-600 transition-transform", openMatchedSkills ? "rotate-180" : "")} />
+                    </button>
+                    {openMatchedSkills && (
+                      <div className="mt-1 mb-2 flex flex-col divide-y divide-[#F3F4F6]">
+                        {matchedSkills.length === 0 && <p className="py-2 text-[11.5px] text-[#9CA3AF]">No JD skills matched in resume.</p>}
+                        {matchedSkills.map((s, j) => (
+                          <div key={j} className="flex items-center justify-between py-2 gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="shrink-0 text-[10px] font-bold text-[#9CA3AF] w-4 text-right">{j + 1}</span>
+                              <p className="text-[12px] font-semibold text-[#374151] truncate">{s.name}</p>
+                            </div>
+                            <span className="shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[9.5px] font-bold text-emerald-700">JD Match</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {notMatchedSkills.length > 0 && <div className="h-px bg-[#F3F4F6] my-1" />}
+
+                  {/* Not Matched — JD required but missing from resume */}
+                  {notMatchedSkills.length > 0 && (
+                    <div>
+                      <button type="button" onClick={() => setOpenMissingSkills(!openMissingSkills)}
+                        className="flex items-center justify-between w-full text-left py-1.5 hover:bg-red-50/60 rounded-lg -mx-1.5 px-1.5 transition-colors">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[12px] font-bold text-red-800">Not Matched</span>
+                          <span className="rounded-full bg-rose-100 px-1.5 py-0.5 text-[9px] font-bold text-rose-700">{notMatchedSkills.length}</span>
+                        </div>
+                        <ChevronDown className={cn("h-3.5 w-3.5 text-red-600 transition-transform", openMissingSkills ? "rotate-180" : "")} />
+                      </button>
+                      {openMissingSkills && (
+                        <div className="mt-1 mb-2 flex flex-col divide-y divide-[#F3F4F6]">
+                          {notMatchedSkills.map((s, j) => (
+                            <div key={j} className="flex items-center justify-between py-2 gap-2">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="shrink-0 text-[10px] font-bold text-[#9CA3AF] w-4 text-right">{j + 1}</span>
+                                <p className="text-[12px] font-semibold text-rose-700 truncate">{s.name}</p>
+                              </div>
+                              <span className="shrink-0 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[9.5px] font-bold text-rose-700">Missing</span>
+                            </div>
+                          ))}
+                        </div>
                       )}
                     </div>
-                  );
-                })()}
-              </div>
-              <div className="flex-1 overflow-y-auto p-4">
-                {(() => {
-                  const matched = model.skillMatchRows.filter((r) => r.matched);
-                  const missing = model.skillMatchRows.filter((r) => !r.matched);
+                  )}
 
-                  const depthChip = (depth: "deep" | "working" | "listed" | "missing") => {
-                    if (depth === "deep") return { label: "Deep", cls: "bg-emerald-100 text-emerald-800" };
-                    if (depth === "working") return { label: "Working", cls: "bg-emerald-50 text-emerald-700" };
-                    if (depth === "listed") return { label: "Listed", cls: "bg-slate-100 text-slate-700" };
-                    return { label: "Missing", cls: "bg-amber-100 text-amber-800" };
-                  };
-                  const sourceLabel = (source: "work_history" | "project" | "listed" | "missing") => {
-                    if (source === "work_history") return "Work history";
-                    if (source === "project") return "Project";
-                    if (source === "listed") return "Listed only";
-                    return "Not found";
-                  };
+                  {listedSkills.length > 0 && <div className="h-px bg-[#F3F4F6] my-1" />}
 
-                  return (
-                    <>
-                      {matched.length > 0 && (
-                        <div className="mb-3">
-                          <p className="mb-1.5 px-1 text-[10px] font-extrabold uppercase tracking-[0.18em] text-emerald-700">
-                            Matched ({matched.length})
-                          </p>
-                          <div className="space-y-1.5">
-                            {matched.map((s, j) => {
-                              const chip = depthChip(s.depth);
-                              return (
-                                <div
-                                  key={`m-${s.name}-${j}`}
-                                  className="flex items-center justify-between gap-3 rounded-xl border border-[#E2E6EB] bg-white px-3 py-2.5 transition-colors hover:bg-slate-50"
-                                >
-                                  <div className="min-w-0 flex-1">
-                                    <div className="flex items-center gap-1.5">
-                                      <p className="truncate text-[12px] font-semibold text-[#1A1D22]">{s.name}</p>
-                                      {s.category && (
-                                        <span className="shrink-0 rounded-full bg-[#EEF4FF] px-1.5 py-0.5 text-[9px] font-bold text-[#3559A8]">
-                                          {s.category}
-                                        </span>
-                                      )}
-                                      <span className="shrink-0 rounded-full bg-[#F1F3F5] px-1.5 py-0.5 text-[9px] font-bold text-[#5C6370]">
-                                        {sourceLabel(s.source)}
-                                      </span>
-                                    </div>
-                                    {s.evidenceNote && (
-                                      <p className="mt-0.5 truncate text-[10px] font-medium text-[#6B7079]">{s.evidenceNote}</p>
-                                    )}
-                                  </div>
-                                  <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10px] font-extrabold", chip.cls)}>
-                                    {chip.label}
-                                  </span>
-                                </div>
-                              );
-                            })}
-                          </div>
+                  {/* Listed in resume — candidate's full stack outside JD scope */}
+                  {listedSkills.length > 0 && (
+                    <div>
+                      <button type="button" onClick={() => setOpenListedSkills(!openListedSkills)}
+                        className="flex items-center justify-between w-full text-left py-1.5 hover:bg-slate-50/60 rounded-lg -mx-1.5 px-1.5 transition-colors">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[12px] font-bold text-slate-700">Listed in Resume</span>
+                          <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold text-slate-600">{listedSkills.length}</span>
                         </div>
-                      )}
-                      {missing.length > 0 && (
-                        <div>
-                          <p className="mb-1.5 px-1 text-[10px] font-extrabold uppercase tracking-[0.18em] text-amber-700">
-                            Missing ({missing.length})
-                          </p>
-                          <div className="space-y-1.5">
-                            {missing.map((s, j) => (
-                              <div
-                                key={`x-${s.name}-${j}`}
-                                className="flex items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2"
-                              >
-                                <div className="min-w-0 flex-1">
-                                  <p className="truncate text-[12px] font-semibold text-red-600">{s.name}</p>
-                                  {s.evidenceNote && (
-                                    <p className="mt-0.5 truncate text-[10px] font-medium text-red-900">{s.evidenceNote}</p>
-                                  )}
-                                </div>
-                                <span className="shrink-0 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-extrabold text-red-700">
-                                  Missing
-                                </span>
+                        <ChevronDown className={cn("h-3.5 w-3.5 text-slate-400 transition-transform", openListedSkills ? "rotate-180" : "")} />
+                      </button>
+                      {openListedSkills && (
+                        <div className="mt-1 mb-1 flex flex-col divide-y divide-[#F3F4F6]">
+                          {listedSkills.map((s, j) => (
+                            <div key={j} className="flex items-center justify-between py-2 gap-2">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="shrink-0 text-[10px] font-bold text-[#9CA3AF] w-4 text-right">{j + 1}</span>
+                                <p className="text-[12px] font-semibold text-[#6B7280] truncate">{s.name}</p>
                               </div>
-                            ))}
-                          </div>
+                              <span className="shrink-0 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[9.5px] font-bold text-slate-500">Listed</span>
+                            </div>
+                          ))}
                         </div>
                       )}
-                      {matched.length === 0 && missing.length === 0 && (
-                        <p className="px-1 py-2 text-[11px] text-[#6B7079]">No skill signals extracted yet.</p>
-                      )}
-                    </>
-                  );
-                })()}
+                    </div>
+                  )}
+
+                </div>
               </div>
+
             </div>
           </div>
-        </div>
 
-        {/* Decision Section */}
-          <div className={cn(
-            "rounded-3xl border p-[1.5px] shadow-2xl transition-all duration-500",
-            model.decisionStamp === "SHORTLISTED"
-              ? "border-emerald-200 bg-gradient-to-br from-emerald-100 via-white to-emerald-50 shadow-emerald-200/40"
-            : model.decisionStamp === "REJECTED"
-              ? "border-red-200 bg-gradient-to-br from-red-100 via-white to-red-50 shadow-red-200/40"
-              : "border-[#DDE1E5] bg-gradient-to-r from-gray-100 via-white to-gray-50 shadow-gray-200/40"
-        )}>
-          <div className="flex flex-col gap-4 rounded-[calc(1.5rem-1.5px)] bg-white/60 backdrop-blur-sm px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex min-w-0 flex-1 items-start gap-4">
-              <div className={cn(
-                "mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl shadow-sm",
-                model.decisionStamp === "SHORTLISTED" ? "bg-emerald-600 text-white" :
-                  model.decisionStamp === "REJECTED" ? "bg-red-100 text-red-700" : "bg-slate-800 text-white"
-              )}>
-                {model.decisionStamp === "SHORTLISTED" ? <Shield className="h-5 w-5" /> :
-                  model.decisionStamp === "REJECTED" ? <Zap className="h-5 w-5" /> : <Activity className="h-5 w-5" />}
-              </div>
-              <div className="min-w-0">
-                <p className={cn(
-                  "text-[10px] font-semibold uppercase tracking-[0.2em]",
-                  model.decisionStamp === "SHORTLISTED" ? "text-emerald-700" :
-                    model.decisionStamp === "REJECTED" ? "text-red-800" : "text-[#5C6370]"
-                )}>
-                  Why {model.decisionStamp === "SHORTLISTED" ? "Shortlisted" : model.decisionStamp === "REJECTED" ? "Rejected" : "Borderline"}
-                </p>
-                <p className="mt-3 text-[13px] leading-7 text-[#1A1D22] whitespace-pre-wrap">
-                  {(() => {
-                    const parts = model.reviewStrip
-                      .split(/(?<=\.)\s+/)
-                      .map((sentence) => sentence.trim())
-                      .filter(Boolean);
-
-                    if (parts.length === 0) return model.reviewStrip;
-
-                    return (
-                      <>
-                        <strong>{parts[0]} </strong>
-                        {parts.slice(1).join(" ")}
-                      </>
-                    );
-                  })()}
-                </p>
-              </div>
-            </div>
-            <div className="flex shrink-0 items-center gap-3">
-              <div className={cn(
-                "rounded-xl px-4 py-2 text-[11px] font-black uppercase tracking-widest shadow-sm",
-                model.decisionStamp === "SHORTLISTED" ? "bg-emerald-600 text-white" :
-                  model.decisionStamp === "REJECTED" ? "bg-red-100 text-red-700" : "bg-black text-white"
-              )}>
-                {model.decisionStamp}
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </div>

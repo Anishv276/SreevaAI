@@ -48,11 +48,6 @@ export function getDefaultMaxActiveDrivesForPlan(plan?: string | null): number {
   return 0;
 }
 
-export function canUseRecruiterAssistant(plan?: string | null): boolean {
-  const normalized = normalizeOrgPlan(plan);
-  return normalized !== "STARTER";
-}
-
 export function canUseMultilingual(plan?: string | null): boolean {
   const normalized = normalizeOrgPlan(plan);
   return normalized !== "STARTER";

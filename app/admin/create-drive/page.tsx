@@ -427,13 +427,14 @@ function CreateDriveForm() {
               Contact Support <ChevronRight className="h-4 w-4" />
             </a>
           ) : (
-            <Link
-              href="/admin/billing"
+            <a
+              href={getSupportComposeUrl({ subject: "Upgrade plan request", body: "Hi support team,\n\nWe would like to upgrade our plan to create more jobs.\n" })}
+              target="_blank" rel="noreferrer"
               className="flex items-center gap-2 rounded-xl px-8 py-3 text-[15px] font-bold text-white transition-all hover:shadow-lg"
               style={{ background: "linear-gradient(135deg, #F97316, #ea6608)" }}
             >
-              Go to Billing <ChevronRight className="h-4 w-4" />
-            </Link>
+              Contact Support <ChevronRight className="h-4 w-4" />
+            </a>
           )}
         </div>
       </div>

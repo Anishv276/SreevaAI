@@ -10,6 +10,10 @@ import { formatOrgPlan } from "@/lib/org-plans";
 import { getLandingPackageByName, getLandingPackageForOrgPlan, type LandingPackage } from "@/lib/landing-packages";
 import type { InterviewRow } from "./internal/types";
 import { useCount } from "./internal/use-billing-count";
+import { getSupportComposeUrl } from "@/lib/interview-quota";
+import { useAdminOrg } from "@/context/admin-org-context";
+import { useJobs } from "@/context/jobs-context";
+import { getActiveDriveCount } from "@/lib/drive-limits";
 
 type BillingStatus = {
   interviewQuotaTotal: number;
@@ -46,6 +50,8 @@ export function BillingContent({
   showCreditInternals = false,
   showCreditsUsedInHistory = false,
 }: BillingContentProps = {}) {
+  const adminOrg = useAdminOrg();
+  const { jobs } = useJobs();
   const [status, setStatus] = React.useState<BillingStatus>({
     interviewQuotaTotal: 0,
     interviewQuotaUsed: 0,
@@ -168,10 +174,23 @@ export function BillingContent({
   const animTotal = useCount(interviewTotal, [interviewTotal]);
   const animPct = useCount(interviewUsedPct, [interviewUsedPct]);
 
+  const maxDrivesRaw = adminOrg?.maxActiveDrives;
+  const isJobsUnlimited = String(maxDrivesRaw) === "-1";
+  const jobsTotal = isJobsUnlimited ? 0 : Number(maxDrivesRaw || 0);
+  const jobsUsed = adminOrg?.activeDriveCount ?? getActiveDriveCount(jobs);
+  const jobsRemaining = isJobsUnlimited ? 0 : Math.max(0, jobsTotal - jobsUsed);
+  const jobsUsedPct = jobsTotal > 0 ? (jobsUsed / jobsTotal) * 100 : 0;
+
+  const animJobsRemaining = useCount(jobsRemaining, [jobsRemaining]);
+  const animJobsUsed = useCount(jobsUsed, [jobsUsed]);
+  const animJobsTotal = useCount(jobsTotal, [jobsTotal]);
+  const animJobsPct = useCount(jobsUsedPct, [jobsUsedPct]);
+
   const animCreditUsed = useCount(status.creditsUsed, [status.creditsUsed]);
-  const ringR = 88;
+  const ringR = 56;
   const ringC = 2 * Math.PI * ringR;
   const ringDash = ringC * (animPct / 100);
+  const jobsRingDash = ringC * (animJobsPct / 100);
 
   return (
     <div className="font-sans" style={{ maxWidth: "100%", margin: "0 auto", padding: "8px 0 56px" }}>
@@ -252,38 +271,65 @@ export function BillingContent({
             </div>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 32, flexWrap: "wrap" }}>
-            <div style={{ position: "relative", width: 220, height: 220, flexShrink: 0 }}>
-              <svg width={220} height={220} style={{ transform: "rotate(-90deg)" }}>
-                <circle cx={110} cy={110} r={ringR} stroke={LINE} strokeWidth={14} fill="none" />
-                <circle
-                  cx={110}
-                  cy={110}
-                  r={ringR}
-                  stroke={ORANGE}
-                  strokeWidth={14}
-                  fill="none"
-                  strokeDasharray={`${ringDash} ${ringC}`}
-                  strokeLinecap="round"
-                />
-              </svg>
-              <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-                <div style={{ fontSize: 11, color: MUTED, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase" }}>Remaining</div>
-                <div style={{ fontSize: 44, fontWeight: 800, color: INK, letterSpacing: "-0.03em", marginTop: 6 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 24 }}>
+            <div style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 24, padding: 28, boxShadow: "0 4px 20px rgba(0,0,0,0.03)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
+                <div style={{ width: 40, height: 40, borderRadius: 12, background: "#FFF7ED", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <Sparkles style={{ width: 20, height: 20, color: ORANGE }} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: 16, fontWeight: 800, color: INK, margin: 0, letterSpacing: "-0.01em" }}>Interview Quota</h3>
+                  <p style={{ fontSize: 12, fontWeight: 500, color: MUTED, margin: 0 }}>Available AI screening sessions</p>
+                </div>
+              </div>
+              
+              <div style={{ display: "flex", alignItems: "flex-end", gap: 8, marginBottom: 24 }}>
+                <span style={{ fontSize: 48, fontWeight: 800, color: INK, lineHeight: 1, letterSpacing: "-0.03em" }}>
                   {statusLoading ? "..." : animRemaining.toFixed(0)}
-                </div>
-                <div style={{ fontSize: 12, color: MUTED, marginTop: 4 }}>
-                  of {statusLoading ? "..." : animTotal.toFixed(0)} interviews
-                </div>
+                </span>
+                <span style={{ fontSize: 14, fontWeight: 600, color: MUTED, paddingBottom: 6 }}>
+                  remaining of {statusLoading ? "..." : animTotal.toFixed(0)}
+                </span>
+              </div>
+
+              <div style={{ height: 8, background: LINE, borderRadius: 4, overflow: "hidden", marginBottom: 16 }}>
+                <div style={{ height: "100%", width: `${animPct}%`, background: ORANGE, borderRadius: 4, transition: "width 1s ease-out" }} />
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 600 }}>
+                <span style={{ color: MUTED }}>{animUsed.toFixed(0)} used</span>
+                <span style={{ color: ORANGE }}>{animPct.toFixed(1)}% consumed</span>
               </div>
             </div>
 
-            <div style={{ flex: 1, display: "grid", gap: 18, minWidth: 220 }}>
-              <RingStat label="Interviews remaining" value={statusLoading ? "..." : animRemaining.toLocaleString()} hint="available to schedule" />
-              <div style={{ height: 1, background: LINE_2 }} />
-              <RingStat label="Interviews used" value={statusLoading ? "..." : animUsed.toLocaleString()} hint={`${animTotal.toLocaleString()} total allocated`} />
-              <div style={{ height: 1, background: LINE_2 }} />
-              <RingStat label="Consumption" value={`${animPct.toFixed(1)}%`} hint={`${(100 - animPct).toFixed(1)}% still available`} accent />
+            <div style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 24, padding: 28, boxShadow: "0 4px 20px rgba(0,0,0,0.03)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
+                <div style={{ width: 40, height: 40, borderRadius: 12, background: "#F3F4F6", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <BarChart3 style={{ width: 20, height: 20, color: "#4B5563" }} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: 16, fontWeight: 800, color: INK, margin: 0, letterSpacing: "-0.01em" }}>Active Jobs Quota</h3>
+                  <p style={{ fontSize: 12, fontWeight: 500, color: MUTED, margin: 0 }}>Concurrent recruitment drives</p>
+                </div>
+              </div>
+              
+              <div style={{ display: "flex", alignItems: "flex-end", gap: 8, marginBottom: 24 }}>
+                <span style={{ fontSize: 48, fontWeight: 800, color: INK, lineHeight: 1, letterSpacing: "-0.03em" }}>
+                  {isJobsUnlimited ? "∞" : Number(animJobsRemaining).toFixed(0)}
+                </span>
+                <span style={{ fontSize: 14, fontWeight: 600, color: MUTED, paddingBottom: 6 }}>
+                  {isJobsUnlimited ? "unlimited jobs available" : `remaining of ${Number(animJobsTotal).toFixed(0)}`}
+                </span>
+              </div>
+
+              <div style={{ height: 8, background: LINE, borderRadius: 4, overflow: "hidden", marginBottom: 16 }}>
+                <div style={{ height: "100%", width: `${isJobsUnlimited ? 0 : Number(animJobsPct)}%`, background: "#4B5563", borderRadius: 4, transition: "width 1s ease-out" }} />
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 600 }}>
+                <span style={{ color: MUTED }}>{Number(animJobsUsed).toFixed(0)} active currently</span>
+                {!isJobsUnlimited && <span style={{ color: "#4B5563" }}>{Number(animJobsPct).toFixed(1)}% utilized</span>}
+              </div>
             </div>
           </div>
 
@@ -396,7 +442,7 @@ export function BillingContent({
           )}
 
           {showRechargeHelp ? (
-            <div style={{ ...card, padding: 20 }}>
+            <div style={{ ...card, padding: 20, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <div style={{ width: 34, height: 34, borderRadius: 12, background: "#FFF7ED", color: ORANGE, display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <Sparkles size={16} />
@@ -406,6 +452,23 @@ export function BillingContent({
                   <div style={{ fontSize: 12.5, color: MUTED, marginTop: 2 }}>Increase the org quota - contact Sreeva AI support.</div>
                 </div>
               </div>
+              <a
+                href={getSupportComposeUrl({ subject: "Increase org quota request", body: "Hi support team,\n\nWe need more interviews. Please help us recharge.\n" })}
+                target="_blank" rel="noreferrer"
+                style={{
+                  background: "linear-gradient(135deg, #F97316, #ea6608)",
+                  color: "#fff",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  padding: "8px 16px",
+                  borderRadius: 8,
+                  textDecoration: "none",
+                  display: "inline-flex",
+                  alignItems: "center"
+                }}
+              >
+                Contact Support
+              </a>
             </div>
           ) : null}
         </div>

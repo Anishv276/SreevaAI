@@ -57,6 +57,21 @@ export function ResumeScreening({ driveId, driveName }: { driveId: string; drive
         }
     }, [driveId]);
     useEffect(() => { refresh(); }, [refresh]);
+
+    // Auto-poll while any batch or candidate is still in-flight
+    useEffect(() => {
+        const hasActiveBatch = batches.some((b) => {
+            const s = String(b.status || "").toUpperCase();
+            return s === "QUEUED" || s === "PROCESSING";
+        });
+        const hasActiveCandidate = candidates.some((c) => {
+            const s = String(c.resumeStatus || "").toLowerCase();
+            return s === "waiting" || s === "processing";
+        });
+        if (!hasActiveBatch && !hasActiveCandidate) return;
+        const timer = setInterval(refresh, 3000);
+        return () => clearInterval(timer);
+    }, [batches, candidates, refresh]);
     // ⚡ Read from shared context — no fetch needed
     const adminOrg = useAdminOrg();
     const quotaLocked = isInterviewQuotaLocked(adminOrg ?? {});
@@ -250,10 +265,32 @@ function UploadModal({
             files.forEach(f => fd.append("files", f));
             const res = await fetch(`/api/drives/${driveId}/resume-screening`, { method: "POST", body: fd });
             if (!res.ok) throw new Error((await res.json()).error || "Upload failed");
-            await res.json();
-            toast.success("Upload successful! Resumes have been added and will be processed shortly.");
-            reset();
-            onComplete();
+            const data = await res.json();
+            const nextBatchId: string = data.batchId;
+            const totalFiles = files.length;
+            setProgress({ processed: 0, total: totalFiles });
+            setPhase("processing");
+
+            // Poll batch + candidates until all are done
+            pollRef.current = setInterval(async () => {
+                try {
+                    const batchRes = await fetch(`/api/drives/${driveId}/resume-screening?batchId=${nextBatchId}`);
+                    if (!batchRes.ok) return;
+                    const batch = await batchRes.json();
+                    const done = (batch.processedCount || 0) + (batch.failedCount || 0);
+                    setProgress({ processed: done, total: batch.totalCount || totalFiles });
+                    const batchDone =
+                        String(batch.status || "").toUpperCase() === "COMPLETED" ||
+                        String(batch.status || "").toUpperCase() === "FAILED" ||
+                        done >= (batch.totalCount || totalFiles);
+                    if (batchDone) {
+                        if (pollRef.current) clearInterval(pollRef.current);
+                        const summaryData = await loadBatchSummary(nextBatchId);
+                        setSummary(summaryData);
+                        setPhase("summary");
+                    }
+                } catch { /* keep polling on transient errors */ }
+            }, 2500);
         } catch (err) {
             setPhase("failed");
             setError((err as Error).message);

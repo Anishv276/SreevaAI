@@ -117,7 +117,16 @@
       "Bash(python -c \"from scripts.extract_pdf import main; print\\('OK'\\)\")",
       "Bash(python -c \"import sys; sys.path.insert\\(0,'.'\\);  from extraction_resume_JD_score_report.pipeline import main; print\\('OK'\\)\")",
       "Bash(xargs grep -l \"ResumeReview\\\\|startAnalysis\\\\|resume.*extract\\\\|isAnalyzing\")",
-      "Bash(xargs grep -l \"ResumeReview\\\\|ResumeUpload\\\\|startAnalysis\")"
+      "Bash(xargs grep -l \"ResumeReview\\\\|ResumeUpload\\\\|startAnalysis\")",
+      "Bash(rm \"c:/Users/vamsi/OneDrive/Desktop/HR-updates/lib/pinecone.ts\")",
+      "Bash(rm \"c:/Users/vamsi/OneDrive/Desktop/HR-updates/app/api/admin/candidates/id/sync/route.ts\")",
+      "Bash(rm -rf \"c:/Users/vamsi/OneDrive/Desktop/HR-updates/app/api/admin/candidates/[id]/sync\")",
+      "Bash(npm install *)",
+      "PowerShell(Get-Process -Name \"node\" -ErrorAction SilentlyContinue | Select-Object Id, CPU, WorkingSet, StartTime, @{N='CommandLine';E={\\(Get-WmiObject Win32_Process -Filter \"ProcessId=$\\($_.Id\\)\"\\).CommandLine}} | Format-List)",
+      "PowerShell(python \"C:\\\\Users\\\\vamsi\\\\OneDrive\\\\Desktop\\\\HR-updates\\\\scripts\\\\extract_pdf.py\" --help 2>&1)",
+      "PowerShell(npx prisma db push 2>&1)",
+      "PowerShell(npx prisma migrate create --name reorder_columns 2>&1)",
+      "PowerShell($env:PGPASSWORD='your-password'; psql -h aws-1-ap-south-1.pooler.supabase.com -U postgres -d postgres -c \"\\\\d Organization\" 2>&1 | head -50)"
     ],
     "additionalDirectories": [
       "c:\\Users\\vamsi\\OneDrive\\Desktop\\HR-updates\\scratch",

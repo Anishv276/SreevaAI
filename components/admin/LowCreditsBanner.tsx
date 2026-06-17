@@ -59,28 +59,21 @@ export function LowCreditsBanner({ orgStatus }: { orgStatus?: string }) {
 
                 <div className="flex items-center gap-3">
                     <a
-                        href="/admin/billing"
+                        href={getSupportComposeUrl({
+                            subject: isEmpty ? "Urgent: interview quota exhausted" : "Interview quota running low",
+                            body: isEmpty 
+                                ? "Hi support team,\n\nOur account is exhausted or suspended. Please help us recharge immediately to stop interruptions to our interviews or services.\n"
+                                : "Hi support team,\n\nOur interview quota is running low. Please help us recharge.\n"
+                        })}
+                        target="_blank"
+                        rel="noreferrer"
                         className="inline-flex items-center gap-2 rounded-xl px-8 py-3 text-[15px] font-bold text-white transition-all duration-200 active:scale-95 hover:shadow-lg"
                         style={{
                             background: "linear-gradient(135deg, #F97316, #ea6608)",
                         }}
                     >
-                        <AlertTriangle className="h-3.5 w-3.5" />
-                        Go to Billing
+                        Contact Support
                     </a>
-                    {isEmpty && (
-                        <a
-                            href={getSupportComposeUrl({
-                                subject: "Urgent: interview quota exhausted",
-                                body: "Hi support team,\n\nOur account got suspended because no interviews are left. Please help us recharge immediately to stop interruptions to our interviews or services.\n",
-                            })}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-2 rounded-full border border-red-200 px-4 py-2 text-xs font-semibold text-red-700 transition-colors hover:bg-red-50"
-                        >
-                            Contact Support
-                        </a>
-                    )}
                     <button
                         onClick={() => setDismissed(true)}
                         className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-current transition-colors hover:bg-black/5"

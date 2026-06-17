@@ -48,9 +48,6 @@ from interview.agent_persistence import (
     update_interview_status,
 )
 from openai import AsyncOpenAI
-from interview.agent_scoring import (
-    notify_sync_engine,
-)
 from pydantic import BaseModel, field_validator
 from interview.agent_runtime_helpers import (
     _build_recent_context_block,
@@ -4329,13 +4326,6 @@ async def entrypoint(ctx: JobContext):
         logger.error(f"[USAGE] Failed to persist interview billing snapshot for {app_id}: {e}")
         raise
     await flush_pending_manual_billing(org_id)
-    # Sync with dashboard: Application COMPLETED
-    if finished_task.done():
-        # L1 fix: wrap in try/except so a sync failure never crashes session teardown.
-        try:
-            notify_sync_engine(app_id, turn=turn_count, action="session_end")
-        except Exception as _sync_err:
-            logger.warning("[SYNC] notify_sync_engine failed (non-fatal): %s", _sync_err)
     # Cancel any leftover fire-and-forget work so job teardown is instant.
     if background_tasks:
         logger.debug(f"[SHUTDOWN] Cancelling {len(background_tasks)} background task(s)")

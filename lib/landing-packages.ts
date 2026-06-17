@@ -10,7 +10,6 @@ export type LandingPackage = {
   interviewsIncluded: string;
   pricePerInterview: string;
   topup: string;
-  askSreevaAI: boolean;
   cta: string;
   featured: boolean;
   features: string[];
@@ -25,7 +24,6 @@ export const LANDING_PACKAGES: LandingPackage[] = [
     interviewsIncluded: "30 interviews included",
     pricePerInterview: "$3.30",
     topup: "$4.50/interview",
-    askSreevaAI: false,
     cta: "Book Demo",
     featured: false,
     features: [
@@ -42,14 +40,12 @@ export const LANDING_PACKAGES: LandingPackage[] = [
     interviewsIncluded: "100 interviews included",
     pricePerInterview: "$2.99",
     topup: "$3.50/interview",
-    askSreevaAI: true,
     cta: "Book Demo",
     featured: true,
     features: [
       "100 interviews included",
       "Up to 20 min per interview",
       "Top-up: $3.50/interview",
-      "Ask Sreeva AI",
     ],
   },
   {
@@ -60,14 +56,12 @@ export const LANDING_PACKAGES: LandingPackage[] = [
     interviewsIncluded: "300 interviews included",
     pricePerInterview: "$2.33",
     topup: "$2.80/interview",
-    askSreevaAI: true,
     cta: "Book Demo",
     featured: false,
     features: [
       "300 interviews included",
       "Up to 20 min per interview",
       "Top-up: $2.80/interview",
-      "Ask Sreeva AI",
     ],
   },
   {
@@ -78,14 +72,12 @@ export const LANDING_PACKAGES: LandingPackage[] = [
     interviewsIncluded: "600+ interviews",
     pricePerInterview: "Custom",
     topup: "Custom",
-    askSreevaAI: true,
     cta: "Talk to Us",
     featured: false,
     features: [
       "600+ interviews",
       "Custom interview duration",
       "Top-ups included or custom",
-      "Ask Sreeva AI",
     ],
   },
 ];

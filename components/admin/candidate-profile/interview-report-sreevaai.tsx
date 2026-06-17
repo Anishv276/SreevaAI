@@ -74,7 +74,7 @@ export type SreevaAIInterviewViewModel = {
   aiBullets: string[];
   integritySignals: IntelSignalRow[];
   signalAnalysis: Record<string, any>;
-  skills: { name: string; score: number; evidence?: string }[];
+  skills: { name: string; score: number; evidence?: string; status?: string; stars?: number; scoreLabel?: string; whatShowed?: string; whatMissing?: string }[];
   topStrengths: string[];
   topRisks: string[];
   transcript: { from: "ai" | "user"; text: string; time?: string; qBadge?: QBadge; bad?: boolean; seekSeconds?: number; seekLabel?: string }[];
@@ -1435,9 +1435,8 @@ export function InterviewReportSreevaAI({
       {showHeader && (
         <div className="shrink-0 flex flex-wrap items-center justify-between gap-3 border-b border-[#DDE1E5] px-4 py-2 bg-white z-10 shadow-sm">
           <div className="flex flex-wrap items-center gap-3">
-            <Link href={model.backHref} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#DDE1E5] bg-white px-3 text-[11px] font-bold text-[#0D4D2E] shadow-sm hover:bg-[#F7FAF8]">
+            <Link href={model.backHref} className="mt-2 inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#DDE1E5] bg-white px-3 text-[11px] font-medium text-[#0D4D2E] shadow-sm hover:bg-[#F7FAF8]">
               <ArrowLeft className="h-4 w-4" />
-              Interview report
             </Link>
           </div>
           <div className="flex flex-wrap items-center gap-2">

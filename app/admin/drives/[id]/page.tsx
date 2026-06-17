@@ -137,13 +137,6 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
                                                 {getInterviewQuotaSupportMessage("interviews")}
                                             </p>
                                             <div className="flex flex-wrap gap-3 pt-2">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => router.push("/admin/billing")}
-                                                    className="inline-flex items-center justify-center rounded-xl bg-gray-950 px-4 py-2.5 text-sm font-bold text-white"
-                                                >
-                                                    Go to Billing
-                                                </button>
                                                 <a
                                                     href={getSupportComposeUrl({
                                                         subject: "Interview quota support request",
@@ -151,7 +144,7 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
                                                     })}
                                                     target="_blank"
                                                     rel="noreferrer"
-                                                    className="inline-flex items-center justify-center rounded-xl border border-amber-200 bg-white px-4 py-2.5 text-sm font-bold text-amber-700"
+                                                    className="inline-flex items-center justify-center rounded-xl bg-gray-950 px-4 py-2.5 text-sm font-bold text-white"
                                                 >
                                                     Contact Support
                                                 </a>

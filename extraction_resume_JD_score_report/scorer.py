@@ -561,6 +561,23 @@ def compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
             _add_skill(kw, "", "medium", "keyword")
             all_resume_skill_names.append(kw)
     all_resume_skill_names.extend([s for s in domain_skills if s])
+    # Cross-validate source_strength: if a skill claims work_history but doesn't appear
+    # in any work_history[].technologies_used, downgrade to "listed" to prevent
+    # the LLM from inflating evidence strength on the skills section.
+    work_history_tech_norms = set()
+    for job in work_history:
+        for tech in (job.get("technologies_used", []) or []):
+            if tech and isinstance(tech, str):
+                norm = normalize_skill(tech)
+                if norm:
+                    work_history_tech_norms.add(norm)
+    for norm_key, ev in skill_evidence_map.items():
+        src = ev.get("source", "listed")
+        if src in ("work_history_outcome", "work_history") and norm_key not in work_history_tech_norms:
+            ev["source"] = "listed"
+            if ev.get("confidence") == "high":
+                ev["confidence"] = "medium"
+
     resume_normalized = {}
     for s in all_resume_skill_names:
         norm = normalize_skill(str(s))

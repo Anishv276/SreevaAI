@@ -248,22 +248,22 @@ class DocumentParser:
             )
 
             fit_radar = _as_dict(report.get("fit_radar", {}))
-            # Fallback radar values if LLM missed them
-            if "evidence" not in fit_radar:
+            # Fallback radar values if LLM missed any of the current axis keys
+            if "evidence_quality" not in fit_radar:
                 career_max = max(1, int(score_result["breakdown"].get("career_max", 15) or 15))
-                fit_radar["evidence"] = min(100, round((score_result["breakdown"].get("career_score", 0) / career_max) * 100))
-            if "essentials" not in fit_radar:
+                fit_radar["evidence_quality"] = min(100, round((score_result["breakdown"].get("career_score", 0) / career_max) * 100))
+            if "must_haves" not in fit_radar:
                 skills_max = max(1, int(score_result["breakdown"].get("skills_max", 50) or 50))
-                fit_radar["essentials"] = min(100, round((score_result["breakdown"].get("skills_score", 0) / skills_max) * 100))
-            if "experience" not in fit_radar:
+                fit_radar["must_haves"] = min(100, round((score_result["breakdown"].get("skills_score", 0) / skills_max) * 100))
+            if "exp_depth" not in fit_radar:
                 exp_max = max(1, int(score_result["breakdown"].get("exp_max", 15) or 15))
-                fit_radar["experience"] = min(100, round((score_result["breakdown"].get("exp_score", 0) / exp_max) * 100))
-            if "domain" not in fit_radar:
+                fit_radar["exp_depth"] = min(100, round((score_result["breakdown"].get("exp_score", 0) / exp_max) * 100))
+            if "domain_fit" not in fit_radar:
                 domain_max = max(1, int(score_result["breakdown"].get("domain_max", 10) or 10))
-                fit_radar["domain"] = min(100, round((score_result["breakdown"].get("domain_score", 0) / domain_max) * 100))
-            if "skills" not in fit_radar:
+                fit_radar["domain_fit"] = min(100, round((score_result["breakdown"].get("domain_score", 0) / domain_max) * 100))
+            if "skill_breadth" not in fit_radar:
                 match_ratio = score_result.get("skill_matching", {}).get("match_ratio", 0)
-                fit_radar["skills"] = min(100, round(float(match_ratio) if match_ratio is not None else 0))
+                fit_radar["skill_breadth"] = min(100, round(float(match_ratio) if match_ratio is not None else 0))
 
             # Prevent the LLM from hallucinating keys that overwrite our deterministic scoring engine
             for key in ["score", "base_score", "human_layer", "human_adjustment", "human_judgment", "status", "breakdown", "skill_matching", "exp_status", "hard_rejected", "rejection_reasons", "candidate_years", "jd_min_years", "fit_radar", "work_history", "education", "core_claims", "uncertain_areas", "skill_depth"]:
