@@ -239,7 +239,7 @@ function SkillMap({
   return (
     <div className="flex flex-col gap-1.5">
       {skills.slice(0, 12).map((sk, i) => {
-        const chipCls = STATUS_CHIP[sk.status] ?? STATUS_CHIP["NOT TESTED"];
+        const chipCls = STATUS_CHIP[sk.status as keyof typeof STATUS_CHIP] ?? STATUS_CHIP["NOT TESTED"];
         const isOpen = expanded === i;
         return (
           <div key={i}>
@@ -255,7 +255,7 @@ function SkillMap({
                       key={j}
                       className={cn(
                         "h-1.5 w-1.5 rounded-full",
-                        j < sk.stars ? "bg-cyan-600" : "bg-slate-200"
+                        j < (sk.stars || 0) ? "bg-cyan-600" : "bg-slate-200"
                       )}
                     />
                   ))}
