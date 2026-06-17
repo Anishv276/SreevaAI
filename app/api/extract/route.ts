@@ -4,6 +4,7 @@ import { getSession, isAdminRole, isSuperAdminRole } from "@/lib/auth";
 import { enqueueJdExtraction } from "@/lib/jd-extraction";
 import { resumeQueue } from "@/lib/queue";
 import { safeFetch, SsrfBlockedError } from "@/lib/safe-fetch";
+import { prisma } from "@/lib/prisma";
 
 export async function POST(request: Request) {
     try {
@@ -154,7 +155,9 @@ export async function POST(request: Request) {
                 (async () => {
                     try {
                         const bucket = process.env.R2_JDS_BUCKET || "jds";
-                        const fileName = `jds/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+                        const orgForSlug = await prisma.organization.findUnique({ where: { id: orgId }, select: { slug: true } });
+                        const orgSlug = orgForSlug?.slug || orgId;
+                        const fileName = `JDs/${orgSlug}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_').toLowerCase()}`;
                         console.log("[STORAGE_PUSH]: Uploading JD to R2", fileName);
                         const { putObject } = await import("@/lib/s3");
                         return await putObject(bucket, fileName, buffer, file.type);
@@ -208,7 +211,9 @@ export async function POST(request: Request) {
         console.log("[FILE_EXTRACT_START]:", { name: file.name, size: byteLength, type });
 
         const bucket = process.env.R2_RESUMES_BUCKET || "resumes";
-        const fileName = `resumes/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+        const orgForSlug = await prisma.organization.findUnique({ where: { id: orgId }, select: { slug: true } });
+        const orgSlug = orgForSlug?.slug || orgId;
+        const fileName = `resume/${orgSlug}/general_extraction/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_').toLowerCase()}`;
 
         console.log("[STORAGE_PUSH]: Uploading to R2", fileName);
         const { putObject } = await import("@/lib/s3");

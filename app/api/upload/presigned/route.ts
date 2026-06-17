@@ -54,13 +54,36 @@ export async function POST(request: Request) {
         const uniqueId = uuidv4();
         const safeFileName = fileName.replace(/[^a-z0-9.]/gi, '_').toLowerCase();
 
-        // Pick BUCKET and PREFIX based on TYPE
+        // -- GENERATE KEY --
+        let orgSlug = "unknown-org";
+        let driveTitle = "unknown-job";
+        
+        if (session?.orgId) {
+            const org = await prisma.organization.findUnique({ where: { id: session.orgId }, select: { slug: true }});
+            if (org?.slug) orgSlug = org.slug;
+        }
+
+        if (driveId) {
+            const driveData = await prisma.drive.findUnique({
+                where: { id: driveId },
+                select: { title: true, organization: { select: { slug: true } } }
+            });
+            if (driveData) {
+                driveTitle = driveData.title.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+                if (driveData.organization?.slug) {
+                    orgSlug = driveData.organization.slug;
+                }
+            }
+        }
+
+        // Pick BUCKET based on TYPE
         const bucket = isJD 
             ? (process.env.R2_JDS_BUCKET || "jds")
             : (process.env.R2_RESUMES_BUCKET || "resumes");
         
-        const prefix = isJD ? "jds/" : "resumes/";
-        const key = `${prefix}drive_${driveId || 'unknown'}/${uniqueId}_${safeFileName}`;
+        const key = isJD
+            ? `JDs/${orgSlug}/${uniqueId}_${safeFileName}`
+            : `resume/${orgSlug}/${driveTitle}/${uniqueId}_${safeFileName}`;
 
         const uploadUrl = await getPresignedUploadUrl(bucket, key, fileType);
         

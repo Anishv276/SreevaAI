@@ -34,13 +34,21 @@ export async function POST(req: Request) {
         const isJPG = magicNumbers.jpg.every((b, i) => buffer[i] === b);
         const isGIF = magicNumbers.gif.every((b, i) => buffer[i] === b);
         const isWEBP = magicNumbers.webp.every((b, i) => buffer[i] === b) && 
+
+
                        buffer.slice(8, 12).toString() === "WEBP";
 
         if (!isPNG && !isJPG && !isGIF && !isWEBP) {
             return NextResponse.json({ error: "Invalid file type. Only PNG, JPG, GIF, and WEBP are allowed." }, { status: 400 });
         }
 
-        const key = `logo_${session.orgId}_${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.]/g, '_')}`;
+        const org = await prisma.organization.findUnique({
+            where: { id: session.orgId },
+            select: { slug: true }
+        });
+        const orgSlug = org?.slug || session.orgId;
+        const safeFileName = file.name.replace(/[^a-zA-Z0-9.]/g, '_').toLowerCase();
+        const key = `logos/${orgSlug}/${Date.now()}_${safeFileName}`;
         
         // Target your "logos" bucket explicitly
         const BUCKET_NAME = process.env.R2_LOGOS_BUCKET || "logos";
@@ -70,15 +78,20 @@ export async function DELETE(req: Request) {
         const key = getKeyFromUrl(url);
 
         if (!key) return NextResponse.json({ error: "Invalid key" }, { status: 400 });
-        const expectedPrefix = `logo_${session.orgId}_`;
-        if (!key.startsWith(expectedPrefix)) {
+        
+        const org = await prisma.organization.findUnique({
+            where: { id: session.orgId },
+            select: { slug: true, logoUrl: true },
+        });
+        const orgSlug = org?.slug || session.orgId;
+
+        const expectedPrefix = `logos/${orgSlug}/`;
+        // Also support old legacy prefix for backward compatibility
+        const legacyPrefix = `logo_${session.orgId}_`;
+        if (!key.startsWith(expectedPrefix) && !key.startsWith(legacyPrefix)) {
             return NextResponse.json({ error: "Forbidden" }, { status: 403 });
         }
 
-        const org = await prisma.organization.findUnique({
-            where: { id: session.orgId },
-            select: { logoUrl: true },
-        });
         if (org?.logoUrl && org.logoUrl !== url) {
             return NextResponse.json({ error: "Forbidden" }, { status: 403 });
         }

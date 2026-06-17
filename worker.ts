@@ -1,3 +1,4 @@
+import 'dotenv/config'; // must be FIRST — ensures .env is loaded before any lib reads process.env
 import { Worker, Queue } from 'bullmq';
 import crypto from 'crypto';
 import { join } from 'path';
@@ -14,7 +15,6 @@ import { getPythonExecutable } from "./lib/python-exec";
 import { extractJDFromText } from "./lib/openai";
 import { parseDriveScreeningSettings } from "./lib/screening-criteria";
 import { recordOrgBillingUsage } from "./lib/usage-metrics";
-import { syncCandidateCorpusToPinecone } from "./lib/pinecone";
 import { buildInterviewLink } from "./lib/interview-links";
 import { safeFetch } from "./lib/safe-fetch";
 import { Prisma } from "@prisma/client";
@@ -206,38 +206,45 @@ async function setDriveCandidateStage(
   candidateId: string,
   stage: string,
   progress: number,
-  resumeStatus: string
+  resumeStatus: string,
+  applicationId?: string | null
 ) {
   const payload = JSON.stringify({ processing: { stage, progress } });
 
-  // Always update ResumeCandidates first (never fails)
   await prisma.resumeCandidate.update({
     where: { id: candidateId },
     data: { resumeStatus, aiScore: progress, aiReport: payload },
   });
 
-  // Find linked Application. Upload API stores candidateId inside resumeData JSON.
-  // Search both resumeUrl and resumeData to be resilient across all upload flows.
-  let app: { id: string } | null = null;
-  try {
-    app = await prisma.application.findFirst({
-      where: {
-        OR: [
-          { resumeUrl: { contains: candidateId } },
-          { resumeData: { contains: candidateId } },
-        ],
-      },
-      select: { id: true },
-    });
-  } catch {
-    // Ignore lookup errors — ResumeCandidates is already updated above.
+  // Prefer the applicationId passed directly from resumeData (no extra DB query).
+  // Fall back to a findFirst search for candidates uploaded before this change.
+  let appId = applicationId || null;
+  if (!appId) {
+    try {
+      const found = await prisma.application.findFirst({
+        where: {
+          OR: [
+            { resumeUrl: { contains: candidateId } },
+            { resumeData: { contains: candidateId } },
+          ],
+        },
+        select: { id: true },
+      });
+      appId = found?.id ?? null;
+    } catch (err: any) {
+      console.warn(`[RESUME-WORKER] setDriveCandidateStage: findFirst failed for candidateId=${candidateId}: ${err?.message}`);
+    }
   }
 
-  if (app?.id) {
+  if (appId) {
     await prisma.application.update({
-      where: { id: app.id },
+      where: { id: appId },
       data: { resumeStatus, aiScore: progress, aiReport: payload },
+    }).catch((err: any) => {
+      console.warn(`[RESUME-WORKER] setDriveCandidateStage: application update failed appId=${appId}: ${err?.message}`);
     });
+  } else {
+    console.warn(`[RESUME-WORKER] setDriveCandidateStage: no Application found for candidateId=${candidateId} stage=${stage}`);
   }
 }
 
@@ -481,8 +488,11 @@ async function processRecordingRetentionSweepJob(job: any) {
 
 async function processDriveResumeBatchJob(job: any) {
   const { batchId, driveId, orgId } = job.data || {};
+  console.log(`[RESUME-WORKER] processDriveResumeBatchJob raw job.data:`, JSON.stringify(job.data));
+  // Stale/corrupt job with no payload — discard silently instead of failing permanently
   if (!batchId || !driveId || !orgId) {
-    throw new Error("Invalid drive batch job payload");
+    console.warn(`[RESUME-WORKER] Stale job ${job.id} has no payload — discarding silently. Fields: batchId=${batchId} driveId=${driveId} orgId=${orgId}`);
+    return; // return instead of throw — job completes cleanly, doesn't clog failed queue
   }
   const batchExtractModel = "gpt-4o-mini";
   const batchReportModel = "gpt-4o-mini";
@@ -503,6 +513,37 @@ async function processDriveResumeBatchJob(job: any) {
     );
     return;
   }
+
+  // --- 1-minute empty-batch guard + full candidate load ---
+  // Fetch all candidate fields in one query. If none exist yet (DB lag after upload),
+  // poll every 3s for up to 60s before giving up.
+  let candidates = await prisma.resumeCandidate.findMany({
+    where: { bulkBatchId: batchId },
+    orderBy: { createdAt: "asc" },
+  });
+  if (candidates.length === 0) {
+    console.log(`[RESUME-WORKER] Batch ${batchId}: no candidates yet, waiting up to 60s...`);
+    const deadline = Date.now() + 60_000;
+    while (candidates.length === 0 && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 3000));
+      candidates = await prisma.resumeCandidate.findMany({
+        where: { bulkBatchId: batchId },
+        orderBy: { createdAt: "asc" },
+      });
+    }
+    if (candidates.length === 0) {
+      console.warn(`[RESUME-WORKER] Batch ${batchId}: still no candidates after 60s — marking FAILED and cleaning up.`);
+      await prisma.resumeBatch.update({
+        where: { id: batchId },
+        data: { status: "FAILED", failedCount: 0, processedCount: 0 },
+      }).catch(() => {});
+      return;
+    }
+    console.log(`[RESUME-WORKER] Batch ${batchId}: ${candidates.length} candidate(s) arrived, proceeding.`);
+  }
+
+  console.log(`[RESUME-WORKER] Batch ${batchId}: ${candidates.length} candidate(s) loaded`);
+
 
   await prisma.resumeBatch.update({
     where: { id: batchId },
@@ -530,13 +571,33 @@ async function processDriveResumeBatchJob(job: any) {
 
   // Mark all candidates as "queued" immediately so the frontend stops showing "waiting"
   // while JD extraction runs (which can take several seconds before any per-candidate work starts).
+  const processingReport = JSON.stringify({ processing: { stage: "queued", progress: 5 } });
   await prisma.resumeCandidate.updateMany({
     where: { bulkBatchId: batchId, resumeStatus: "waiting" },
     data: {
       resumeStatus: "processing",
-      aiReport: JSON.stringify({ processing: { stage: "queued", progress: 5 } }),
+      aiReport: processingReport,
     },
   });
+
+  // Also bulk-update the linked Application rows. The upload API embeds candidateId in resumeData,
+  // so we match on that. Fire-and-forget per candidate — failures don't block the batch.
+  const candidateIdsForBatch = await prisma.resumeCandidate.findMany({
+    where: { bulkBatchId: batchId },
+    select: { id: true },
+  });
+  await Promise.allSettled(candidateIdsForBatch.map(({ id: candidateId }) =>
+    prisma.application.updateMany({
+      where: {
+        resumeStatus: "waiting",
+        OR: [
+          { resumeUrl: { contains: candidateId } },
+          { resumeData: { contains: candidateId } },
+        ],
+      },
+      data: { resumeStatus: "processing", aiReport: processingReport },
+    })
+  ));
 
   let structuredJd = parseJsonSafe<Record<string, any>>(drive.extractedDetails, {});
   const jdRawText = buildJdRawText(drive);
@@ -561,12 +622,8 @@ async function processDriveResumeBatchJob(job: any) {
     }
   }
 
-  const candidates = await prisma.resumeCandidate.findMany({
-    where: { bulkBatchId: batchId },
-    orderBy: { createdAt: "asc" },
-  });
 
-  console.log(`[RESUME-WORKER] Batch ${batchId}: ${candidates.length} candidate(s) loaded`);
+
 
   let processedCount = 0;
   let failedCount = 0;
@@ -582,6 +639,7 @@ async function processDriveResumeBatchJob(job: any) {
     const results = await Promise.allSettled(
       chunk.map(async (candidate) => {
         let tmpPdfPath: string | null = null;
+        let linkedAppId: string | null = null;
         try {
           const existingStatus = String(candidate.resumeStatus || "").toLowerCase();
           const existingReport = String(candidate.aiReport || "");
@@ -602,9 +660,10 @@ async function processDriveResumeBatchJob(job: any) {
           const source = parseJsonSafe<any>(candidate.resumeData, {}).source || {};
           const bucket = String(source.bucket || process.env.R2_RESUMES_BUCKET || "resumes");
           const key = String(source.key || "");
+          linkedAppId = String(source.applicationId || "").trim() || null;
           if (!key) throw new Error(`Missing source key for candidate ${candidate.id}`);
 
-          await setDriveCandidateStage(candidate.id, "extracting", 25, "processing");
+          await setDriveCandidateStage(candidate.id, "extracting", 25, "processing", linkedAppId);
 
           // Download PDF from R2 — fast-fail if key was deleted
           let pdfBuffer: Buffer;
@@ -687,32 +746,41 @@ async function processDriveResumeBatchJob(job: any) {
             }
           }
 
-          await setDriveCandidateStage(candidate.id, "finalizing", 80, "processing");
+          await setDriveCandidateStage(candidate.id, "finalizing", 80, "processing", linkedAppId);
 
           const finalScore =
             typeof aiResult.score === "number"
               ? aiResult.score
               : parseInt(String(aiResult.score || "0"), 10) || 0;
           const finalStatus = finalScore >= threshold ? "shortlisted" : "rejected";
-          const app = await prisma.application.findFirst({
-            where: {
-              OR: [
-                { resumeUrl: { contains: candidate.id } },
-                { resumeData: { contains: candidate.id } },
-              ],
-            },
-            select: { id: true },
-          });
+
+          // Resolve appId: prefer the direct link stored in resumeData, fall back to a DB lookup.
+          let appId: string | null = linkedAppId;
+          if (!appId) {
+            const found = await prisma.application.findFirst({
+              where: {
+                OR: [
+                  { resumeUrl: { contains: candidate.id } },
+                  { resumeData: { contains: candidate.id } },
+                ],
+              },
+              select: { id: true },
+            }).catch(() => null);
+            appId = found?.id ?? null;
+          }
+          if (!appId) {
+            console.warn(`[RESUME-WORKER] Candidate ${candidate.id}: no linked Application found — status will NOT update to ${finalStatus}`);
+          }
 
           const completedPayload = JSON.stringify({
-            processing: {
-              stage: "completed",
-              progress: 100,
-            },
-            result: {
-              score: finalScore,
-              status: finalStatus,
-            },
+            processing: { stage: "completed", progress: 100 },
+            result: { score: finalScore, status: finalStatus },
+          });
+
+          const fullScanPayload = JSON.stringify({
+            ...aiResult,
+            score: finalScore,
+            status: finalStatus,
           });
 
           await prisma.resumeCandidate.update({
@@ -723,7 +791,7 @@ async function processDriveResumeBatchJob(job: any) {
               phone: structuredResume?.phone || candidate.phone,
               resumeText: resumeRawText,
               resumeData: JSON.stringify({
-                source: { bucket, key },
+                source: { bucket, key, applicationId: appId },
                 structured: structuredResume,
               }),
               aiScore: finalScore,
@@ -732,9 +800,9 @@ async function processDriveResumeBatchJob(job: any) {
             },
           });
 
-          if (app?.id) {
+          if (appId) {
             await prisma.application.update({
-              where: { id: app.id },
+              where: { id: appId },
               data: {
                 fullName: structuredResume?.full_name || candidate.fullName,
                 email: structuredResume?.email || "",
@@ -743,12 +811,15 @@ async function processDriveResumeBatchJob(job: any) {
                 resumeData: JSON.stringify(structuredResume),
                 aiScore: finalScore,
                 aiReport: completedPayload,
+                fullScanReport: fullScanPayload,
                 resumeStatus: finalStatus,
                 interviewStatus: "pending",
                 hiringStatus: "pending",
               },
+            } as any).catch((err: any) => {
+              console.warn(`[RESUME-WORKER] Candidate ${candidate.id}: final Application update failed appId=${appId}: ${err?.message}`);
             });
-            await appendCandidateActivity(app.id, {
+            await appendCandidateActivity(appId, {
               type: "resume_screened",
               label: finalStatus === "shortlisted" ? "Resume shortlisted" : "Resume rejected",
               details: `AI score ${finalScore} vs threshold ${threshold}`,
@@ -784,31 +855,18 @@ async function processDriveResumeBatchJob(job: any) {
             },
           });
           console.error(`[RESUME-WORKER] Candidate ${candidate.id}: failed -> ${error?.message || error}`);
-          const app = await prisma.application.findFirst({
-            where: {
-              OR: [
-                { resumeUrl: { contains: candidate.id } },
-                { resumeData: { contains: candidate.id } },
-              ],
-            },
-            select: { id: true },
-          });
           await prisma.resumeCandidate.update({
             where: { id: candidate.id },
-            data: {
-              resumeStatus: "failed",
-              aiScore: 0,
-              aiReport: failPayload,
-            },
+            data: { resumeStatus: "failed", aiScore: 0, aiReport: failPayload },
           }).catch(() => {});
-          if (app?.id) {
+          const failAppId = linkedAppId || await prisma.application.findFirst({
+            where: { OR: [{ resumeUrl: { contains: candidate.id } }, { resumeData: { contains: candidate.id } }] },
+            select: { id: true },
+          }).then((r) => r?.id ?? null).catch(() => null);
+          if (failAppId) {
             await prisma.application.update({
-              where: { id: app.id },
-              data: {
-                resumeStatus: "failed",
-                aiScore: 0,
-                aiReport: failPayload,
-              },
+              where: { id: failAppId },
+              data: { resumeStatus: "failed", aiScore: 0, aiReport: failPayload },
             }).catch(() => {});
           }
           throw error;
@@ -943,6 +1001,20 @@ function trackWorker(name: string, worker: Worker) {
   worker.on("error", (error) => {
     console.error(`[${name}] Redis/BullMQ error:`, error);
   });
+  
+  // Log when jobs are cleared (60s after completion/failure as per queue config)
+  worker.on("completed", (job) => {
+    setTimeout(() => {
+      console.log(`[${name}] Job ${job?.id || job?.name || 'unknown'} cleared after 60 seconds (completed)`);
+    }, 60_000);
+  });
+  
+  worker.on("failed", (job) => {
+    setTimeout(() => {
+      console.log(`[${name}] Job ${job?.id || job?.name || 'unknown'} cleared after 60 seconds (failed)`);
+    }, 60_000);
+  });
+
   return worker;
 }
 
@@ -1316,41 +1388,6 @@ if (isQueueEnabled("resume-processing")) {
         }
       });
       console.log(`[SUCCESS] Candidate ${applicantEmail} scored ${currentScore}. Status: ${resumeStatus}`);
-      try {
-        const syncResult = await syncCandidateCorpusToPinecone({
-          applicationId,
-          orgId: latestDrive?.orgId || drive.orgId || "",
-          fullName: applicantName || "",
-          email: applicantEmail || "",
-          jobTitle: latestDrive?.title || drive.title || "",
-          driveId: drive.id,
-          status: resumeStatus === "REJECTED" ? "Not Shortlisted" : (appExists.hiringStatus || "pending"),
-          resumeStatus,
-          aiScore: currentScore,
-          createdAt: appExists.createdAt.toISOString(),
-          documents: [
-            {
-              type: "resume",
-              text: resumeText,
-              createdAt: appExists.createdAt.toISOString(),
-            },
-            {
-              type: "resume_report",
-              text: aiResult,
-              createdAt: appExists.createdAt.toISOString(),
-            },
-          ],
-        });
-        console.log(
-          `[SYNC] Pinecone sync completed for ${applicationId}: ` +
-          `indexed=${syncResult.indexedCount}, skipped=${syncResult.skippedCount}, failed=${syncResult.failedCount}`
-        );
-        if (syncResult.failedCount > 0) {
-          console.warn(`[SYNC WARN] Pinecone sync had ${syncResult.failedCount} document failure(s) for ${applicationId}`);
-        }
-      } catch (err: any) {
-        console.error(`[SYNC ERROR] Failed to sync Pinecone corpus for ${applicationId}:`, err);
-      }
       console.log(
         `[EMAIL] Auto status email disabled for application ${applicationId}. ` +
         "Manual send/resend actions now control interview and rejection emails."
@@ -1363,13 +1400,13 @@ if (isQueueEnabled("resume-processing")) {
     }
   }, {
     connection: redisConnection,
-    concurrency: 1, // Keep one heavy scoring process per worker to avoid lock starvation
-    lockDuration: 15 * 60 * 1000, // Scoring + extraction can exceed 60s on slower machines
-    stalledInterval: 5 * 60 * 1000, // Check for stalled jobs every 5 min to reduce Redis writes
-    maxStalledCount: 1,
-    drainDelay: 300, // Poll every 300ms — ensures jobs are picked up even if pub/sub event missed
-    removeOnComplete: { count: 0 }, // Delete immediately — keeps 0 completed jobs
-    removeOnFail: { count: 10 } // KEEP ONLY 10 FAILURES FOR DEBUGGING
+    concurrency: 3, // Process up to 3 batches concurrently (each batch itself is already chunked)
+    lockDuration: 10 * 60 * 1000, // 10 min — enough for the largest batch chunk
+    stalledInterval: 60 * 1000, // Check for stalled jobs every 60s (faster recovery)
+    maxStalledCount: 2,
+    drainDelay: 200, // Poll every 200ms for snappier job pickup
+    removeOnComplete: { age: 60 },
+    removeOnFail: { age: 60 },
   }));
   void worker.waitUntilReady()
     .then(() => console.log("[resume-processing] Worker ready and waiting for jobs"))
@@ -1512,8 +1549,8 @@ if (isQueueEnabled("invitation-delivery-queue")) {
       lockDuration: 5 * 60 * 1000,
       stalledInterval: 5 * 60 * 1000,
       maxStalledCount: 1,
-      removeOnComplete: { count: 0 },
-      removeOnFail: { count: 10 },
+      removeOnComplete: { age: 60 },
+      removeOnFail: { age: 60 },
     }
   ));
   invitationDeliveryWorker.on("failed", (job, err) => {
@@ -1538,8 +1575,8 @@ if (isQueueEnabled("recording-retention-cleanup")) {
       lockDuration: 5 * 60 * 1000,
       stalledInterval: 2 * 60 * 1000,
       maxStalledCount: 1,
-      removeOnComplete: { count: 0 },
-      removeOnFail: { count: 50 },
+      removeOnComplete: { age: 60 },
+      removeOnFail: { age: 60 },
     }
   ));
   recordingRetentionWorker.on("failed", (job, err) => {
@@ -1569,8 +1606,8 @@ if (isQueueEnabled("interview-start")) {
       lockDuration: 60 * 1000,
       stalledInterval: 30 * 1000,
       maxStalledCount: 1,
-      removeOnComplete: { count: 0 },
-      removeOnFail: { count: 20 },
+      removeOnComplete: { age: 60 },
+      removeOnFail: { age: 60 },
     }
   ));
   interviewStartWorker.on("failed", (job, err) => {
@@ -1641,8 +1678,8 @@ if (isQueueEnabled("backup-queue")) {
       lockDuration: 10 * 60 * 1000,
       stalledInterval: 5 * 60 * 1000, // Check for stalled jobs every 5 min to reduce Redis writes
       maxStalledCount: 1,
-      removeOnComplete: { count: 0 }, // Delete immediately — keeps 0 completed jobs
-      removeOnFail: { count: 3 },
+      removeOnComplete: { age: 60 },
+      removeOnFail: { age: 60 },
     }
   ));
   // Setup Recurring Backup Job (Daily at Midnight)
@@ -1917,101 +1954,15 @@ if (isQueueEnabled("interview-finalization")) {
           const createdAtIso = app.createdAt.toISOString();
           const resumeReportCreatedAtIso = app.updatedAt.toISOString();
           const interviewCreatedAtIso = app.interview?.createdAt?.toISOString() || app.interview?.updatedAt?.toISOString() || createdAtIso;
-          // Pinecone sync expects the full dimension report (now in scoreBreakdown)
           const existingInterviewReport = app.interview?.scoreBreakdown || null;
 
-          const resumeText =
-            app.resumeText?.trim() ||
-            (() => {
-              if (!app.aiReport) return "";
-              try { return String(JSON.parse(app.aiReport)?.text || ""); } catch { return ""; }
-            })();
-
-          try {
-            const syncResult = await syncCandidateCorpusToPinecone({
-              applicationId,
-              orgId: app.drive?.orgId || "",
-              fullName: app.fullName || "Candidate",
-              email: app.email || "",
-              jobTitle: app.drive?.title || "Interview Role",
-              driveId: app.drive?.id || "",
-              status: app.hiringStatus || app.resumeStatus || "pending",
-              resumeStatus: app.resumeStatus || "pending",
-              aiScore: app.aiScore ?? 0,
-              createdAt: createdAtIso,
-              documents: [
-                {
-                  type: "resume",
-                  text: app.resumeText,
-                  createdAt: createdAtIso,
-                },
-                {
-                  type: "resume_report",
-                  text: app.aiReport,
-                  createdAt: resumeReportCreatedAtIso,
-                },
-                ...(finalTranscript ? [{
-                  type: "interview_transcript" as const,
-                  text: finalTranscript,
-                  createdAt: interviewCreatedAtIso,
-                }] : []),
-                ...(existingInterviewReport ? [{
-                  type: "interview_report" as const,
-                  text: existingInterviewReport,
-                  createdAt: interviewCreatedAtIso,
-                }] : []),
-              ],
-            });
-            console.log(
-              `[SYNC] Pinecone sync completed for ${applicationId}: ` +
-              `indexed=${syncResult.indexedCount}, skipped=${syncResult.skippedCount}, failed=${syncResult.failedCount}`
-            );
-            if (syncResult.failedCount > 0) {
-              console.warn(`[SYNC WARN] Pinecone sync had ${syncResult.failedCount} document failure(s) for ${applicationId}`);
-            }
-          } catch (syncError) {
-            console.error(`[SYNC ERROR] Failed to sync interview corpus for ${applicationId}:`, syncError);
-          }
-
           if (!finalTranscript) {
-            console.warn(`[REPORT] No transcript available for ${applicationId} after retries; report generation skipped, base corpus sync completed.`);
+            console.warn(`[REPORT] No transcript available for ${applicationId} after retries; report generation skipped.`);
             return { success: true };
           }
 
-          // Report is generated by the Python agent (agent_persistence.py) as a background
-          // task at session end. If it already exists, sync the corpus to Pinecone and done.
           if (existingInterviewReport) {
-            console.log(`[REPORT] Report already exists for ${applicationId}; syncing corpus.`);
-          }
-
-          try {
-            const syncResult = await syncCandidateCorpusToPinecone({
-              applicationId,
-              orgId: app.drive?.orgId || "",
-              fullName: app.fullName || "Candidate",
-              email: app.email || "",
-              jobTitle: app.drive?.title || "Interview Role",
-              driveId: app.drive?.id || "",
-              status: app.hiringStatus || app.resumeStatus || "pending",
-              resumeStatus: app.resumeStatus || "pending",
-              aiScore: app.aiScore ?? 0,
-              createdAt: createdAtIso,
-              documents: [
-                { type: "resume",               text: app.resumeText,           createdAt: createdAtIso },
-                { type: "resume_report",         text: app.aiReport,             createdAt: resumeReportCreatedAtIso },
-                { type: "interview_transcript",  text: finalTranscript,          createdAt: interviewCreatedAtIso },
-                ...(existingInterviewReport ? [{ type: "interview_report" as const, text: existingInterviewReport, createdAt: interviewCreatedAtIso }] : []),
-              ],
-            });
-            console.log(
-              `[SYNC] Pinecone sync completed for ${applicationId}: ` +
-              `indexed=${syncResult.indexedCount}, skipped=${syncResult.skippedCount}, failed=${syncResult.failedCount}`
-            );
-            if (syncResult.failedCount > 0) {
-              console.warn(`[SYNC WARN] Pinecone sync had ${syncResult.failedCount} document failure(s) for ${applicationId}`);
-            }
-          } catch (syncError) {
-            console.error(`[SYNC ERROR] Failed to sync interview corpus for ${applicationId}:`, syncError);
+            console.log(`[REPORT] Report already exists for ${applicationId}.`);
           }
 
           console.log(`[REPORT] Interview finalization complete for ${applicationId}`);
@@ -2032,8 +1983,8 @@ if (isQueueEnabled("interview-finalization")) {
       lockDuration: 10 * 60 * 1000,    // 10 min lock — report generation can take a while
       stalledInterval: 5 * 60 * 1000,
       maxStalledCount: 1,
-      removeOnComplete: { count: 0 },
-      removeOnFail: { count: 10 }
+      removeOnComplete: { age: 60 },
+      removeOnFail: { age: 60 },
     }
   ));
   interviewFinalizationWorker.on("failed", (job, err) => {
@@ -2231,8 +2182,8 @@ if (isQueueEnabled("interview-recording")) {
         {
           attempts: 3,
           backoff: { type: "exponential", delay: 1000 },
-          removeOnComplete: true,
-          removeOnFail: { count: 20 },
+          removeOnComplete: { age: 60 },
+          removeOnFail: { age: 60 },
         }
       );
       await finalizationQueue.close();
@@ -2253,8 +2204,8 @@ if (isQueueEnabled("interview-recording")) {
       lockDuration: 5 * 60 * 1000,
       stalledInterval: 2 * 60 * 1000,
       maxStalledCount: 1,
-      removeOnComplete: { count: 0 },
-      removeOnFail: { count: 20 },
+      removeOnComplete: { age: 60 },
+      removeOnFail: { age: 60 },
     }
   ));
 
@@ -2288,19 +2239,21 @@ if (isQueueEnabled("interview-snapshots")) {
           where: { id: applicationId },
           select: {
             fullName: true,
-            drive: { select: { title: true } },
+            drive: { select: { title: true, organization: { select: { slug: true } } } },
           },
         });
         // 3. Resolve Folder & Key
-        const rawName = [application?.fullName, application?.drive?.title].filter(Boolean).join(" - ") || candidateName || applicationId;
-        const safeName = rawName
+        const orgSlug = application?.drive?.organization?.slug || "unknown-org";
+        const driveTitle = (application?.drive?.title || "unknown-job").replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+        const candName = (application?.fullName || candidateName || applicationId)
           .replace(/[^a-zA-Z0-9_\- ]/g, "")
           .trim()
           .replace(/\s+/g, "_")
           .toLowerCase();
+
         const timestamp = Date.now();
         const snapshotLabel = label || "snapshot";
-        const key = `candidates/${safeName}/snapshots/${snapshotLabel}_${timestamp}.jpg`;
+        const key = `interview/${orgSlug}/${driveTitle}/${candName}/snapshots/${snapshotLabel}_${timestamp}.jpg`;
         const bucket = process.env.R2_INTERVIEW_BUCKET || "interview";
         // 4. Upload to R2
         const url = await putObject(bucket, key, buffer, "image/jpeg");
@@ -2339,8 +2292,8 @@ if (isQueueEnabled("interview-snapshots")) {
       connection: redisConnection,
       concurrency: 5, // Process snapshots in parallel to clear Redis memory fast
       lockDuration: 30000,
-      removeOnComplete: { count: 0 }, // Delete immediately - keeps 0 completed jobs
-      removeOnFail: { count: 1 }
+      removeOnComplete: { age: 60 },
+      removeOnFail: { age: 60 },
     }
   ));
   interviewSnapshotWorker.on("failed", (job, err) => {
@@ -2376,8 +2329,8 @@ if (isQueueEnabled("jd-upload")) {
     {
       connection: redisConnection,
       concurrency: 5, // Efficient parallel uploads
-      removeOnComplete: { count: 0 }, // Delete immediately — keeps 0 completed jobs
-      removeOnFail: { count: 10 }
+      removeOnComplete: { age: 60 },
+      removeOnFail: { age: 60 },
     }
   ));
   jdUploadWorker.on("failed", (job, err) => {
@@ -2487,8 +2440,8 @@ if (isQueueEnabled("jd-extraction")) {
       connection: redisConnection,
       concurrency: 1,
       lockDuration: 10 * 60 * 1000,
-      removeOnComplete: { count: 0 },
-      removeOnFail: { count: 25 },
+      removeOnComplete: { age: 60 },
+      removeOnFail: { age: 60 },
     }
   ));
   jdExtractionWorker.on("failed", (job, err) => {

@@ -331,14 +331,18 @@ export async function POST(req: Request) {
                 where: { id: applicationId },
                 select: {
                     fullName: true,
-                    drive: { select: { title: true, orgId: true } },
+                    drive: { select: { title: true, orgId: true, organization: { select: { slug: true } } } },
                 },
             });
-            const safeCandidate = buildCandidateRoleFolder(
-                application?.fullName,
-                application?.drive?.title,
-                applicationId
-            );
+            const orgSlug = application?.drive?.organization?.slug || application?.drive?.orgId || "unknown-org";
+            const driveTitle = (application?.drive?.title || "unknown-job").replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+            const candName = (application?.fullName || applicationId)
+                .replace(/[^a-zA-Z0-9_\- ]/g, "")
+                .trim()
+                .replace(/\s+/g, "_")
+                .toLowerCase();
+
+            const safeCandidate = candName;
             const recordingName = buildRecordingName(
                 application?.fullName,
                 application?.drive?.title,
@@ -388,7 +392,7 @@ export async function POST(req: Request) {
                 });
             }
 
-            const recordingKey = `${INTERVIEW_CANDIDATES_PREFIX}/${safeCandidate}/recordings/${Date.now()}-interview-${applicationId}.mp4`;
+            const recordingKey = `interview/${orgSlug}/${driveTitle}/${safeCandidate}/recordings/${Date.now()}-interview-${applicationId}.mp4`;
             const recordingUrl = buildPublicInterviewUrl(recordingKey);
             const startedAt = new Date();
 

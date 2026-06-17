@@ -58,6 +58,7 @@ export async function POST(
         id: true,
         title: true,
         orgId: true,
+        organization: { select: { slug: true } }
       },
     });
 
@@ -72,6 +73,9 @@ export async function POST(
     if (!isSuperAdminRole(session.role) && drive.orgId !== session.orgId) {
       return NextResponse.json({ error: "Drive belongs to a different organization" }, { status: 403 });
     }
+
+    const orgSlug = drive.organization?.slug || drive.orgId;
+    const safeDriveTitle = drive.title.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
 
     const billingStatus = await getOrgBillingStatus(drive.orgId);
     if (billingStatus.interviewQuotaTotal > 0 && !billingStatus.hasSufficientInterviews) {
@@ -101,7 +105,7 @@ export async function POST(
       const file = files[index];
       const buffer = Buffer.from(await file.arrayBuffer());
       const safeName = sanitizeFileName(file.name || `resume_${index + 1}.pdf`);
-      const key = `resumes/intake/${driveId}/${batch.id}/${Date.now()}_${index}_${safeName}`;
+      const key = `resume/${orgSlug}/${safeDriveTitle}/${batch.id}_${Date.now()}_${index}_${safeName}`;
       const uploadedUrl = await putObject(
         RESUME_BUCKET,
         key,
@@ -109,6 +113,9 @@ export async function POST(
         file.type || "application/pdf"
       );
       console.log(`[RESUME-UPLOAD] Stored ${file.name || safeName} in R2 -> ${key}`);
+
+      const applicationId = generateId("app", `${guessNameFromFile(file.name || "")}-${batch.id}-${index}`);
+      const downloadUrl = `/api/drives/${driveId}/resume-screening/download?candidateId=${applicationId}`;
 
       const candidate = await prisma.resumeCandidate.create({
         data: {
@@ -124,16 +131,15 @@ export async function POST(
               bucket: RESUME_BUCKET,
               key,
               url: uploadedUrl,
+              applicationId,
             },
           }),
         },
       });
 
-      const downloadUrl = `/api/drives/${driveId}/resume-screening/download?candidateId=${candidate.id}`;
-
       await prisma.application.create({
         data: {
-          id: generateId("app", `${candidate.fullName}-${batch.id}-${index}`),
+          id: applicationId,
           fullName: candidate.fullName,
           email: "",
           phone: "",
@@ -169,11 +175,11 @@ export async function POST(
         orgId: drive.orgId,
       },
       {
-        attempts: 2,
-        backoff: {
-          type: "exponential",
-          delay: 1500,
-        },
+        jobId: `batch_${batch.id}`,   // deduplication — same batch can only have one job at a time
+        attempts: 1,                  // no retries — if it fails, fix the data, don't re-clog
+
+        removeOnComplete: true,
+        removeOnFail: { count: 5 },
       }
     );
     console.log(`[RESUME-UPLOAD] Worker job enqueued batchId=${batch.id} candidates=${queuedIds.length}`);
