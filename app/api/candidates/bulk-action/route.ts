@@ -36,22 +36,51 @@ export async function POST(request: Request) {
         const validIds = applications.map((a: (typeof applications)[number]) => a.id);
 
         if (action === "delete") {
-            // Clean up storage
+            // -- QUEUE CLEANUP --
             try {
-                const { deleteObject, getKeyFromUrl } = await import("@/lib/s3");
-                const bucket = process.env.R2_RESUMES_BUCKET || "resumes";
-                for (const app of applications) {
-                    if (app.resumeUrl) {
-                        const key = getKeyFromUrl(app.resumeUrl);
-                        if (key) await deleteObject(bucket, key).catch((err) => console.error("[BULK_DELETE_OBJ_ERROR]:", err));
+                const { resumeQueue } = await import("@/lib/queue");
+                const waitingResume = await resumeQueue.getJobs(['waiting', 'delayed', 'active']);
+                for (const job of waitingResume) {
+                    if (validIds.includes(job.data.applicationId)) {
+                        await job.remove();
                     }
                 }
-            } catch (err) {
-                console.error("[BULK_DELETE_STORAGE_ERROR]:", err);
+            } catch (queueErr) {
+                console.warn("[BULK_DELETE] Could not clean queue jobs:", queueErr);
             }
 
-            await prisma.application.deleteMany({ where: { id: { in: validIds } } });
-            return NextResponse.json({ message: `${validIds.length} candidates deleted` });
+            // -- SOFT DELETE: DATABASE CLEANUP (Cascading) ---------------------------
+            await prisma.$transaction(async (tx) => {
+                const timestamp = Date.now().toString();
+
+                if (validIds.length > 0) {
+                    const placeholders = validIds.map(id => `'${id}'`).join(',');
+
+                    // 1. Soft Delete Support Tickets FIRST (before Interview applicationId is renamed)
+                    await tx.$executeRawUnsafe(`
+                        UPDATE "SupportTicket" SET "status" = 'DELETED'
+                        WHERE "interviewId" IN (
+                            SELECT "id" FROM "Interview" WHERE "applicationId" IN (${placeholders})
+                        )
+                    `);
+
+                    // 2. Soft delete interviews (rename unique keys via Raw SQL)
+                    await tx.$executeRawUnsafe(`
+                        UPDATE "Interview" 
+                        SET "isDeleted" = true, 
+                            "applicationId" = 'del_' || ${timestamp} || '_' || "applicationId", 
+                            "accessToken" = 'del_' || ${timestamp} || '_' || "accessToken"
+                        WHERE "applicationId" IN (${placeholders})
+                    `);
+
+                    // 3. Soft delete applications
+                    await tx.application.updateMany({
+                        where: { id: { in: validIds } },
+                        data: { isDeleted: true }
+                    });
+                }
+            });
+            return NextResponse.json({ message: `${validIds.length} candidates soft-deleted` });
         }
 
         if (action === "shortlist") {

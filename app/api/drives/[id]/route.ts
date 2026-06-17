@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { updateDriveSchema } from "@/lib/validation";
-import { deleteDriveEmbeddings } from "@/lib/pinecone";
 import { deleteUrlTargets } from "@/lib/delete-utils";
 import { getRecordingUrl } from "@/lib/recording-state";
 import { normalizeDriveAiConfig } from "@/lib/ai-provider-config";
@@ -289,78 +288,44 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
             return NextResponse.json({ error: "Access Denied: Ownership required to remove drive" }, { status: 403 });
         }
 
-        // -- STORAGE CLEANUP: Purge JD & Resumes from R2 ----------
-        try {
-            // Fetch drive details before deletion to get the R2 links
-            const driveWithApps = await prisma.drive.findUnique({
-                where: { id: driveId },
-                select: {
-                    jdPreviewUrl: true,
-                    applications: {
-                        select: {
-                            resumeUrl: true,
-
-                            interview: {
-                                select: {
-                                    recording: true,
-                                    snapshots: true
-                                } as any
-                            }
-                        }
-                    }
-                }
-            });
-
-            if (driveWithApps) {
-                const urls: string[] = [];
-                if (driveWithApps.jdPreviewUrl) urls.push(driveWithApps.jdPreviewUrl);
-                for (const app of driveWithApps.applications) {
-                    if (app.resumeUrl) urls.push(app.resumeUrl);
-                    const interview = app.interview as any;
-                    const recordingUrl = getRecordingUrl(interview?.recording);
-                    if (recordingUrl) urls.push(recordingUrl);
-                    if (interview?.snapshots?.length) urls.push(...interview.snapshots);
-                }
-                await deleteUrlTargets(urls);
-            }
-        } catch (storageErr) {
-            console.error("[DELETE_SINGLE_DRIVE_STORAGE_ERROR]:", storageErr);
-        }
-
-        // -- VECTOR DB CLEANUP: Purge all Drive candidates from Pinecone ----------
-        try {
-            await deleteDriveEmbeddings(driveId);
-        } catch (pineconeErr) {
-            console.error("[DELETE_SINGLE_DRIVE_PINECONE_ERROR]:", pineconeErr);
-        }
-
+        // -- SOFT DELETE: DATABASE CLEANUP (Cascading) ---------------------------
+        // We use raw SQL to handle appending timestamps to unique columns safely.
         await prisma.$transaction(async (tx) => {
-            // 1. Get all application IDs for this drive
-            const apps = await tx.application.findMany({
-                where: { driveId },
-                select: { id: true }
-            });
-            const appIds = apps.map((a: (typeof apps)[number]) => a.id);
+            const timestamp = Date.now().toString();
 
-            if (appIds.length > 0) {
-                // 2. Delete all Interviews for these applications
-                await tx.interview.deleteMany({
-                    where: { applicationId: { in: appIds } }
-                });
+            // 1. Soft Delete Drive
+            await tx.$executeRaw`UPDATE "Drive" SET "isDeleted" = true WHERE "id" = ${driveId}`;
 
-                // 3. Delete all Applications
-                await tx.application.deleteMany({
-                    where: { id: { in: appIds } }
-                });
-            }
+            // 2. Soft Delete Resume Batches
+            await tx.$executeRaw`UPDATE "ResumeBatch" SET "isDeleted" = true WHERE "driveId" = ${driveId}`;
 
-            // 4. Finally delete the Drive
-            await tx.drive.delete({
-                where: { id: driveId },
-            });
+            // 3. Soft Delete Resume Candidates
+            await tx.$executeRaw`UPDATE "ResumeCandidate" SET "isDeleted" = true WHERE "driveId" = ${driveId}`;
+
+            // 4. Soft Delete Applications
+            await tx.$executeRaw`UPDATE "Application" SET "isDeleted" = true WHERE "driveId" = ${driveId}`;
+
+            // 5. Soft Delete Interviews (rename applicationId and accessToken)
+            await tx.$executeRaw`
+                UPDATE "Interview" 
+                SET "isDeleted" = true, 
+                    "applicationId" = 'del_' || ${timestamp} || '_' || "applicationId", 
+                    "accessToken" = 'del_' || ${timestamp} || '_' || "accessToken"
+                WHERE "applicationId" IN (SELECT "id" FROM "Application" WHERE "driveId" = ${driveId})
+            `;
+
+            // 6. Soft Delete Support Tickets
+            await tx.$executeRaw`
+                UPDATE "SupportTicket" SET "status" = 'DELETED'
+                WHERE "interviewId" IN (
+                    SELECT "id" FROM "Interview" WHERE "applicationId" IN (
+                        SELECT "id" FROM "Application" WHERE "driveId" = ${driveId}
+                    )
+                )
+            `;
         });
 
-        return NextResponse.json({ message: "Drive deleted successfully" });
+        return NextResponse.json({ message: "Drive soft-deleted successfully" });
     } catch (error) {
         console.error("Error deleting drive:", error);
         return NextResponse.json({ error: "Failed to delete drive" }, { status: 500 });

@@ -3,7 +3,6 @@ import { Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { getSession, invalidateUserSessions } from "@/lib/auth";
-import { deleteOrgEmbeddings } from "@/lib/pinecone";
 import { deleteUrlTargets } from "@/lib/delete-utils";
 import { getRecordingUrl } from "@/lib/recording-state";
 import { DEFAULT_ORG_PLAN, isOrgPlan, normalizeOrgPlan } from "@/lib/org-plans";
@@ -409,7 +408,7 @@ export async function PATCH(
     }
 }
 
-// DELETE /api/super-admin/orgs/[id] - remove org and all its data
+// DELETE /api/super-admin/orgs/[id] - soft remove org and all its data
 export async function DELETE(
     _request: Request,
     { params }: { params: Promise<{ id: string }> }
@@ -422,110 +421,63 @@ export async function DELETE(
 
         const { id } = await params;
 
-        // -- STEP 1: DISCOVERY (Find all associated assets) ------------------
-
-        // 1. Get Organization for Logo
-        const org = await prisma.organization.findUnique({
-            where: { id },
-            select: { logoUrl: true }
-        });
-
-        // 2. Get all drives to find associated applications and interviews
-        const drives = await prisma.drive.findMany({ 
-            where: { orgId: id }, 
-            select: { id: true, jdPreviewUrl: true } 
-        });
-        const driveIds = drives.map((d: (typeof drives)[number]) => d.id);
-
-        // 3. Get all applications and their files
-        const applications = await prisma.application.findMany({
-            where: { driveId: { in: driveIds } },
-            select: { id: true, resumeUrl: true }
-        });
-        const appIds = applications.map((app: (typeof applications)[number]) => app.id);
-
-        // 4. Get all interviews and recordings
-        const interviews = await prisma.interview.findMany({
-            where: { applicationId: { in: appIds } },
-            select: { recording: true, snapshots: true } as any
-        });
-
-        // -- STEP 2: EXTERNAL ASSET CLEANUP (R2 & PINECONE) -------------------
-
-        const fileUrlsToDelete: string[] = [];
-        
-        // Collect all file URLs
-        if (org?.logoUrl) fileUrlsToDelete.push(org.logoUrl);
-        drives.forEach(d => { if (d.jdPreviewUrl) fileUrlsToDelete.push(d.jdPreviewUrl); });
-        applications.forEach(app => {
-            if (app.resumeUrl) fileUrlsToDelete.push(app.resumeUrl);
-        });
-        interviews.forEach(intv => {
-            const interview = intv as any;
-            const recordingUrl = getRecordingUrl(interview.recording);
-            if (recordingUrl) fileUrlsToDelete.push(recordingUrl);
-            const snapshots = interview.snapshots;
-            if (snapshots && Array.isArray(snapshots)) {
-                fileUrlsToDelete.push(...snapshots);
-            }
-        });
-
-        await deleteUrlTargets(fileUrlsToDelete);
-
-        // Trigger Pinecone Cleanup
-        try {
-            await deleteOrgEmbeddings(id);
-        } catch (pineconeError) {
-            console.error("Failed to clear Pinecone embeddings for org:", id, pineconeError);
-        }
-
-        // -- STEP 3: DATABASE CLEANUP (Cascading) ---------------------------
+        // -- SOFT DELETE: DATABASE CLEANUP (Cascading) ---------------------------
+        // We use raw SQL to handle appending timestamps to unique columns safely.
         
         await prisma.$transaction(async (tx) => {
-            // 1. Delete Support Tickets
-            await tx.supportTicket.deleteMany({
-                where: {
-                    OR: [
-                        { interview: { application: { drive: { orgId: id } } } },
-                        { applicationId: { in: appIds } }
-                    ]
-                }
-            });
+            const timestamp = Date.now().toString();
 
-            // 2. Delete Interviews
-            await tx.interview.deleteMany({
-                where: { application: { drive: { orgId: id } } }
-            });
+            // 1. Soft Delete Organization (rename slug)
+            await tx.$executeRaw`UPDATE "Organization" SET "isDeleted" = true, "slug" = 'del_' || ${timestamp} || '_' || "slug" WHERE "id" = ${id}`;
 
-            // 3. Delete Applications
-            await tx.application.deleteMany({
-                where: { drive: { orgId: id } }
-            });
+            // 2. Soft Delete Users (rename email)
+            await tx.$executeRaw`UPDATE "User" SET "isDeleted" = true, "email" = 'del_' || ${timestamp} || '_' || "email" WHERE "orgId" = ${id}`;
 
-            // 4. Delete Resume Candidates
-            await tx.resumeCandidate.deleteMany({
-                where: { drive: { orgId: id } }
-            });
+            // 3. Soft Delete Drives
+            await tx.$executeRaw`UPDATE "Drive" SET "isDeleted" = true WHERE "orgId" = ${id}`;
 
-            // 5. Delete Resume Batches
-            await tx.resumeBatch.deleteMany({
-                where: { drive: { orgId: id } }
-            });
+            // 4. Soft Delete Resume Batches
+            await tx.$executeRaw`
+                UPDATE "ResumeBatch" SET "isDeleted" = true 
+                WHERE "driveId" IN (SELECT "id" FROM "Drive" WHERE "orgId" = ${id})
+            `;
 
-            // 6. Delete Drives
-            await tx.drive.deleteMany({
-                where: { orgId: id }
-            });
+            // 5. Soft Delete Resume Candidates
+            await tx.$executeRaw`
+                UPDATE "ResumeCandidate" SET "isDeleted" = true 
+                WHERE "driveId" IN (SELECT "id" FROM "Drive" WHERE "orgId" = ${id})
+            `;
 
-            // 7. Delete Users
-            await tx.user.deleteMany({
-                where: { orgId: id }
-            });
+            // 6. Soft Delete Applications
+            await tx.$executeRaw`
+                UPDATE "Application" SET "isDeleted" = true 
+                WHERE "driveId" IN (SELECT "id" FROM "Drive" WHERE "orgId" = ${id})
+            `;
 
-            // 8. Delete Organization
-            await tx.organization.delete({
-                where: { id }
-            });
+            // 7. Soft Delete Interviews (rename applicationId and accessToken)
+            await tx.$executeRaw`
+                UPDATE "Interview" 
+                SET "isDeleted" = true, 
+                    "applicationId" = 'del_' || ${timestamp} || '_' || "applicationId", 
+                    "accessToken" = 'del_' || ${timestamp} || '_' || "accessToken"
+                WHERE "applicationId" IN (
+                    SELECT "id" FROM "Application" WHERE "driveId" IN (
+                        SELECT "id" FROM "Drive" WHERE "orgId" = ${id}
+                    )
+                )
+            `;
+
+            // 8. Soft Delete Support Tickets
+            await tx.$executeRaw`
+                UPDATE "SupportTicket" SET "status" = 'DELETED'
+                WHERE "interviewId" IN (
+                    SELECT "id" FROM "Interview" WHERE "applicationId" IN (
+                        SELECT "id" FROM "Application" WHERE "driveId" IN (
+                            SELECT "id" FROM "Drive" WHERE "orgId" = ${id}
+                        )
+                    )
+                )
+            `;
         });
 
         return NextResponse.json({ success: true });

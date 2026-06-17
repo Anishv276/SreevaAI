@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { updateCandidateStatusSchema } from "@/lib/validation";
-import { deleteCandidateEmbeddings } from "@/lib/pinecone";
 import { deleteUrlTargets } from "@/lib/delete-utils";
 import { appendCandidateActivity } from "@/lib/candidate-activity";
 import { getRecordingDurationSec, getRecordingMimeType, getRecordingUrl } from "@/lib/recording-state";
@@ -34,6 +33,7 @@ export async function GET(
                 resumeUrl: true,
                 aiScore: true,
                 aiReport: true,
+                fullScanReport: true,
                 resumeText: true,
                 resumeData: true,
                 resumeStatus: true,
@@ -154,35 +154,44 @@ export async function DELETE(
             return NextResponse.json({ error: "Candidate not found or unauthorized" }, { status: 404 });
         }
 
-        // -- STORAGE CLEANUP: Purge Resume from R2 ----------
+        // -- QUEUE CLEANUP --
         try {
-            const urls: string[] = [];
-            if (candidate.resumeUrl) urls.push(candidate.resumeUrl);
-            const interview = candidate.interview as any;
-            const recordingUrl = getRecordingUrl(
-                interview?.recording
-            );
-            if (recordingUrl) urls.push(recordingUrl);
-            if (interview?.snapshots?.length) urls.push(...interview.snapshots);
-            await deleteUrlTargets(urls);
-        } catch (storageErr) {
-            console.error("[DELETE_SINGLE_CANDIDATE_STORAGE_ERROR]:", storageErr);
+            const { resumeQueue } = await import("@/lib/queue");
+            const waitingResume = await resumeQueue.getJobs(['waiting', 'delayed', 'active']);
+            for (const job of waitingResume) {
+                if (job.data.applicationId === id) {
+                    await job.remove();
+                }
+            }
+        } catch (queueErr) {
+            console.warn("[DELETE] Could not clean queue jobs:", queueErr);
         }
 
-        // -- VECTOR DB CLEANUP: Purge from Pinecone ----------
-        try {
-            await deleteCandidateEmbeddings(id);
-        } catch (pineconeErr) {
-            console.error("[DELETE_SINGLE_CANDIDATE_PINECONE_ERROR]:", pineconeErr);
-        }
-
-        // -- DATABASE DELETION -----------------------------
+        // -- SOFT DELETE: DATABASE CLEANUP (Cascading) ---------------------------
         await prisma.$transaction(async (tx) => {
-            await tx.interview.deleteMany({
-                where: { applicationId: id }
-            });
-            await tx.application.delete({
-                where: { id }
+            const timestamp = Date.now().toString();
+
+            // 1. Soft Delete Support Tickets
+            await tx.$executeRawUnsafe(`
+                UPDATE "SupportTicket" SET "status" = 'DELETED'
+                WHERE "interviewId" IN (
+                    SELECT "id" FROM "Interview" WHERE "applicationId" = '${id}'
+                )
+            `);
+
+            // 2. Soft delete the interview (rename unique constraints)
+            await tx.$executeRawUnsafe(`
+                UPDATE "Interview" 
+                SET "isDeleted" = true, 
+                    "applicationId" = 'del_' || ${timestamp} || '_' || "applicationId", 
+                    "accessToken" = 'del_' || ${timestamp} || '_' || "accessToken"
+                WHERE "applicationId" = '${id}'
+            `);
+
+            // 3. Soft delete the application
+            await tx.application.update({
+                where: { id },
+                data: { isDeleted: true }
             });
         });
 

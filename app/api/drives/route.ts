@@ -5,7 +5,6 @@ import { getSession } from "@/lib/auth";
 import { sanitizeObject } from "@/lib/utils";
 import { generateId } from "@/lib/ids";
 import { deleteUrlTargets } from "@/lib/delete-utils";
-import { deleteDriveEmbeddings } from "@/lib/pinecone";
 import { getRecordingUrl } from "@/lib/recording-state";
 import { getOrgBillingStatus } from "@/lib/credits";
 import { isDriveCreationLocked } from "@/lib/drive-limits";
@@ -285,78 +284,58 @@ export async function DELETE(request: Request) {
         const validIds = belongsToOrg.map((d: (typeof belongsToOrg)[number]) => d.id);
         if (validIds.length === 0) return NextResponse.json({ message: "No matching drives found" });
 
-        // -- STORAGE CLEANUP: Purge JDs & Resumes from R2 ----------
-        try {
-            const drivesWithApps = await prisma.drive.findMany({
-                where: { id: { in: validIds } },
-                select: {
-                    jdPreviewUrl: true,
-                    applications: {
-                        select: {
-                            resumeUrl: true,
-                            interview: {
-                                select: {
-                                    recording: true,
-                                    snapshots: true
-                                } as any
-                            }
-                        }
-                    }
-                }
-            });
-
-            const urls: string[] = [];
-            for (const drive of drivesWithApps) {
-                if (drive.jdPreviewUrl) urls.push(drive.jdPreviewUrl);
-                for (const app of drive.applications) {
-                    if (app.resumeUrl) urls.push(app.resumeUrl);
-
-                    const interview = app.interview as any;
-                    const recordingUrl = getRecordingUrl(interview?.recording);
-                    if (recordingUrl) urls.push(recordingUrl);
-                    if (interview?.snapshots?.length) urls.push(...interview.snapshots);
-                }
-            }
-            await deleteUrlTargets(urls);
-        } catch (storageErr) {
-            console.error("[DELETE_DRIVE_STORAGE_ERROR]:", storageErr);
-        }
-
-        // -- CASCADE CLEANUP: Delete Interviews first --
-        const applications = await prisma.application.findMany({
-            where: { driveId: { in: validIds } },
-            select: { id: true }
-        });
-        const appIds = applications.map((a: (typeof applications)[number]) => a.id);
-
-        try {
-            for (const driveId of validIds) {
-                await deleteDriveEmbeddings(driveId);
-            }
-        } catch (pineconeErr) {
-            console.error("[BULK_DELETE_DRIVE_PINECONE_ERROR]:", pineconeErr);
-        }
-
+        // -- SOFT DELETE: DATABASE CLEANUP (Cascading) ---------------------------
         await prisma.$transaction(async (tx) => {
-            if (appIds.length > 0) {
-                // Delete Interviews
-                await tx.interview.deleteMany({
-                    where: { applicationId: { in: appIds } }
-                });
+            const timestamp = Date.now().toString();
 
-                // Delete Applications
-                await tx.application.deleteMany({
-                    where: { id: { in: appIds } }
-                });
-            }
-
-            // Finally delete the Drives
-            await tx.drive.deleteMany({
-                where: { id: { in: validIds } }
+            // 1. Soft Delete Drives
+            await tx.drive.updateMany({
+                where: { id: { in: validIds } },
+                data: { isDeleted: true }
             });
+
+            // 2. Soft Delete Resume Batches
+            await tx.resumeBatch.updateMany({
+                where: { driveId: { in: validIds } },
+                data: { isDeleted: true }
+            });
+
+            // 3. Soft Delete Resume Candidates
+            await tx.resumeCandidate.updateMany({
+                where: { driveId: { in: validIds } },
+                data: { isDeleted: true }
+            });
+
+            // 4. Soft Delete Applications
+            await tx.application.updateMany({
+                where: { driveId: { in: validIds } },
+                data: { isDeleted: true }
+            });
+
+            // 5. Soft Delete Interviews (rename unique keys via Raw SQL)
+            if (validIds.length > 0) {
+                const placeholders = validIds.map(id => `'${id}'`).join(',');
+                await tx.$executeRawUnsafe(`
+                    UPDATE "Interview" 
+                    SET "isDeleted" = true, 
+                        "applicationId" = 'del_' || ${timestamp} || '_' || "applicationId", 
+                        "accessToken" = 'del_' || ${timestamp} || '_' || "accessToken"
+                    WHERE "applicationId" IN (SELECT "id" FROM "Application" WHERE "driveId" IN (${placeholders}))
+                `);
+
+                // 6. Soft Delete Support Tickets
+                await tx.$executeRawUnsafe(`
+                    UPDATE "SupportTicket" SET "status" = 'DELETED'
+                    WHERE "interviewId" IN (
+                        SELECT "id" FROM "Interview" WHERE "applicationId" IN (
+                            SELECT "id" FROM "Application" WHERE "driveId" IN (${placeholders})
+                        )
+                    )
+                `);
+            }
         });
 
-        return NextResponse.json({ message: `${validIds.length} drives deleted successfully` });
+        return NextResponse.json({ message: `${validIds.length} drives soft-deleted successfully` });
     } catch (error) {
         console.error("Error bulk deleting drives:", error);
         return NextResponse.json({ error: "Failed to delete drives" }, { status: 500 });

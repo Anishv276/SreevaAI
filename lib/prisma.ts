@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client'
+import { Prisma, PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
 
 function createPrismaClient() {
@@ -27,10 +27,72 @@ function createPrismaClient() {
         allowExitOnIdle: false,
         ssl: { rejectUnauthorized: false }, // Supabase uses self-signed cert in chain
     })
-    return new PrismaClient({
+    
+    const baseClient = new PrismaClient({
         adapter,
         log: ['error', 'warn'],
-    })
+    });
+
+    const modelsWithIsDeleted = new Set(
+        Prisma.dmmf.datamodel.models
+            .filter(m => m.fields.some(f => f.name === 'isDeleted'))
+            .map(m => m.name)
+    );
+
+    return baseClient.$extends({
+        query: {
+            $allModels: {
+                async findMany({ model, args, query }) {
+                    if (modelsWithIsDeleted.has(model)) {
+                        args.where = { isDeleted: false, ...(args.where as any) } as any;
+                    }
+                    return query(args);
+                },
+                async findFirst({ model, args, query }) {
+                    if (modelsWithIsDeleted.has(model)) {
+                        args.where = { isDeleted: false, ...(args.where as any) } as any;
+                    }
+                    return query(args);
+                },
+                async findFirstOrThrow({ model, args, query }) {
+                    if (modelsWithIsDeleted.has(model)) {
+                        args.where = { isDeleted: false, ...(args.where as any) } as any;
+                    }
+                    return query(args);
+                },
+                async findUnique({ model, args, query }) {
+                    if (modelsWithIsDeleted.has(model)) {
+                        return (baseClient as any)[model].findFirst({
+                            ...args,
+                            where: { isDeleted: false, ...(args.where as any) }
+                        });
+                    }
+                    return query(args);
+                },
+                async findUniqueOrThrow({ model, args, query }) {
+                    if (modelsWithIsDeleted.has(model)) {
+                        return (baseClient as any)[model].findFirstOrThrow({
+                            ...args,
+                            where: { isDeleted: false, ...(args.where as any) }
+                        });
+                    }
+                    return query(args);
+                },
+                async count({ model, args, query }) {
+                    if (modelsWithIsDeleted.has(model)) {
+                        args.where = { isDeleted: false, ...(args.where as any) } as any;
+                    }
+                    return query(args);
+                },
+                async aggregate({ model, args, query }) {
+                    if (modelsWithIsDeleted.has(model)) {
+                        args.where = { isDeleted: false, ...(args.where as any) } as any;
+                    }
+                    return query(args);
+                }
+            }
+        }
+    });
 }
 
 const globalForPrisma = global as unknown as {

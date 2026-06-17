@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { bulkDeleteCandidatesSchema } from "@/lib/validation";
 import { getSession } from "@/lib/auth";
-import { deleteCandidateEmbeddings } from "@/lib/pinecone";
 import { deleteUrlTargets } from "@/lib/delete-utils";
 import { getRecordingUrl } from "@/lib/recording-state";
 
@@ -291,32 +290,9 @@ export async function DELETE(request: Request) {
         const validIds = candidatesToCleanup.map((a: (typeof candidatesToCleanup)[number]) => a.id);
         if (validIds.length === 0) return NextResponse.json({ message: "No matching candidates found" });
 
-        try {
+        // -- STORAGE CLEANUP: Skipped to preserve files for soft delete --
 
-            const urls: string[] = [];
-            for (const cand of candidatesToCleanup) {
-                if (cand.resumeUrl) urls.push(cand.resumeUrl);
-                const interview = cand.interview as any;
-                const recordingUrl = getRecordingUrl(
-                    interview?.recording
-                );
-                if (recordingUrl) urls.push(recordingUrl);
-                if (interview?.snapshots?.length) urls.push(...interview.snapshots);
-            }
-            await deleteUrlTargets(urls);
-        } catch (storageErr) {
-            console.error("[DELETE_CANDIDATE_STORAGE_ERROR]:", storageErr);
-        }
-
-        // -- VECTOR DB CLEANUP: Purge from Pinecone ----------
-        try {
-            for (const cId of validIds) {
-                await deleteCandidateEmbeddings(cId);
-            }
-        } catch (pineconeErr) {
-             console.error("[BULK_DELETE_PINECONE_ERROR]:", pineconeErr);
-        }
-
+        // -- QUEUE CLEANUP --
         try {
             const { resumeQueue } = await import("@/lib/queue");
             const waitingResume = await resumeQueue.getJobs(['waiting', 'delayed', 'active']);
@@ -329,13 +305,36 @@ export async function DELETE(request: Request) {
             console.warn("[DELETE] Could not clean queue jobs:", queueErr);
         }
 
+        // -- SOFT DELETE: DATABASE CLEANUP (Cascading) ---------------------------
         await prisma.$transaction(async (tx) => {
-            await tx.interview.deleteMany({
-                where: { applicationId: { in: validIds } }
-            });
-            await tx.application.deleteMany({
-                where: { id: { in: validIds } }
-            });
+            const timestamp = Date.now().toString();
+
+            if (validIds.length > 0) {
+                const placeholders = validIds.map(id => `'${id}'`).join(',');
+
+                // 1. Soft Delete Support Tickets FIRST (before Interview applicationId is renamed)
+                await tx.$executeRawUnsafe(`
+                    UPDATE "SupportTicket" SET "status" = 'DELETED'
+                    WHERE "interviewId" IN (
+                        SELECT "id" FROM "Interview" WHERE "applicationId" IN (${placeholders})
+                    )
+                `);
+
+                // 2. Soft delete interviews (rename unique keys via Raw SQL)
+                await tx.$executeRawUnsafe(`
+                    UPDATE "Interview" 
+                    SET "isDeleted" = true, 
+                        "applicationId" = 'del_' || ${timestamp} || '_' || "applicationId", 
+                        "accessToken" = 'del_' || ${timestamp} || '_' || "accessToken"
+                    WHERE "applicationId" IN (${placeholders})
+                `);
+
+                // 3. Soft delete applications
+                await tx.application.updateMany({
+                    where: { id: { in: validIds } },
+                    data: { isDeleted: true }
+                });
+            }
         });
 
         return NextResponse.json({ message: `${validIds.length} candidates deleted successfully` });

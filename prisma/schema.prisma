@@ -11,11 +11,9 @@ model Organization {
   name                   String
   slug                   String   @unique
   logoUrl                String?
-  recordingEnabled       Boolean?
-  recordingRetentionDays Int?
   plan                   String   @default("STARTER")
   maxActiveDrives        String   @default("Unlimited")
-  proctoringSignals      Json?    @default("{\"tab_switch\":false,\"camera_disabled\":false,\"microphone_disabled\":false,\"connection_lost\":false,\"face_absence\":false,\"multiple_faces\":false,\"identity_mismatch\":false,\"latency_mismatch\":false,\"complexity_latency_mismatch\":false}")
+  proctoringSignals      Json?    @default("{\"tab_switch\": false, \"face_absence\": false, \"multiple_faces\": false, \"camera_disabled\": false, \"connection_lost\": false, \"latency_mismatch\": false, \"identity_mismatch\": false, \"microphone_disabled\": false, \"complexity_latency_mismatch\": false}")
   status                 String   @default("ACTIVE")
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
@@ -29,9 +27,11 @@ model Organization {
   creditsUsed            Float    @default(0)
   statusControl          String   @default("QUOTA")
   usageMetrics           Json?    @default("{}")
-
-  drives Drive[]
-  users  User[]
+  recordingEnabled       Boolean?
+  recordingRetentionDays Int?
+  isDeleted              Boolean  @default(false)
+  drives                 Drive[]
+  users                  User[]
 
   @@index([status])
   @@index([createdAt(sort: Desc)])
@@ -46,6 +46,7 @@ model SuperAdmin {
   resetOtpExpires DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+  isDeleted       Boolean   @default(false)
 }
 
 model User {
@@ -60,26 +61,9 @@ model User {
   orgRole         String?
   resetOtp        String?
   resetOtpExpires DateTime?
+  isDeleted       Boolean       @default(false)
   drives          Drive[]       @relation("CreatedDrives")
   organization    Organization? @relation(fields: [orgId], references: [id], onDelete: Cascade)
-}
-
-model SupportTicket {
-  id            String     @id @default(cuid())
-  interviewId   String?
-  interview     Interview? @relation(fields: [interviewId], references: [id], onDelete: SetNull)
-  applicationId String?
-  name          String
-  email         String
-  issueAbout    String
-  status        String     @default("OPEN")
-  resolvedAt    DateTime?
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
-
-  @@index([status, createdAt])
-  @@index([interviewId, createdAt])
-  @@index([applicationId])
 }
 
 model Drive {
@@ -101,11 +85,12 @@ model Drive {
   deadline           DateTime?
   aiName             String?           @default("Ishitha")
   voiceId            String?           @default("9626c31c-bec5-4cca-baa8-f8ba9e84c8bc")
+  isDeleted          Boolean           @default(false)
   applications       Application[]
-  resumeCandidates   ResumeCandidate[]
-  resumeBatches      ResumeBatch[]
   creator            User              @relation("CreatedDrives", fields: [creatorId], references: [id], onDelete: Cascade)
   organization       Organization?     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  resumeBatches      ResumeBatch[]
+  resumeCandidates   ResumeCandidate[]
 
   @@index([orgId])
   @@index([orgId, createdAt(sort: Desc)])
@@ -127,6 +112,8 @@ model Application {
   resumeStatus    String     @default("pending")
   interviewStatus String     @default("pending")
   hiringStatus    String     @default("pending")
+  fullScanReport  String?
+  isDeleted       Boolean    @default(false)
   drive           Drive      @relation(fields: [driveId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   interview       Interview?
 
@@ -136,6 +123,7 @@ model Application {
   @@index([updatedAt(sort: Desc)])
 }
 
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
 model Interview {
   id                         String          @id
   applicationId              String          @unique
@@ -152,22 +140,42 @@ model Interview {
   snapshots                  String[]        @default([])
   candidateFeedback          String?
   candidateRating            Json?
-  integritySignals           Json?           @default("[]")
-  scoreBreakdown             Json?           @default("{}")
-  skillRatings               Json?           @default("[]")
-  interviewSummary           Json?           @default("{}")
-  signalAnalysis             Json?           @default("{}")
-  questionByQuestionAnalysis Json?           @default("[]")
-  recording                  Json?           @default("{}")
   billingSnapshot            Json?           @default("{}")
+  integritySignals           Json?           @default("[]")
+  signalAnalysis             Json?           @default("{}")
   linkStatus                 String          @default("ACTIVE")
+  questionByQuestionAnalysis Json?           @default("[]")
+  scoreBreakdown             Json?           @default("{}")
+  interviewSummary           Json?           @default("{}")
+  recording                  Json?           @default("{}")
+  skillRatings               Json?           @default("[]")
+  isDeleted                  Boolean         @default(false)
   application                Application     @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   supportTickets             SupportTicket[]
 
-  @@index([updatedAt(sort: Desc)])
   @@index([status])
   @@index([status, completedAt(sort: Desc)])
   @@index([status, updatedAt(sort: Desc)])
+  @@index([updatedAt(sort: Desc)])
+}
+
+model SupportTicket {
+  id            String     @id @default(cuid())
+  interviewId   String?
+  applicationId String?
+  name          String
+  email         String
+  issueAbout    String
+  status        String     @default("OPEN")
+  resolvedAt    DateTime?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  isDeleted     Boolean    @default(false)
+  interview     Interview? @relation(fields: [interviewId], references: [id])
+
+  @@index([status, createdAt])
+  @@index([interviewId, createdAt])
+  @@index([applicationId])
 }
 
 model ResumeCandidate {
@@ -185,8 +193,9 @@ model ResumeCandidate {
   resumeStatus String      @default("pending")
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
-  drive        Drive       @relation(fields: [driveId], references: [id], onDelete: Cascade)
+  isDeleted    Boolean     @default(false)
   batch        ResumeBatch @relation(fields: [bulkBatchId], references: [id], onDelete: Cascade)
+  drive        Drive       @relation(fields: [driveId], references: [id], onDelete: Cascade)
 
   @@index([driveId, bulkBatchId])
   @@index([driveId, resumeStatus])
@@ -203,6 +212,7 @@ model ResumeBatch {
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
   completedAt    DateTime?
+  isDeleted      Boolean           @default(false)
   drive          Drive             @relation(fields: [driveId], references: [id], onDelete: Cascade)
   candidates     ResumeCandidate[]
 
@@ -221,6 +231,7 @@ model EngineVoice {
   isBuiltIn   Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  isDeleted   Boolean  @default(false)
 
   @@index([isActive])
   @@index([provider])
