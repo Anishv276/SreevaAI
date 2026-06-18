@@ -22,6 +22,7 @@ from interview.interview_brief import (
     generate_interview_brief,
 )
 from interview.agent_providers import (
+    SarvamTTSConnectionManager,
     build_cartesia_tts,
     build_elevenlabs_tts,
     build_llm,
@@ -1497,14 +1498,13 @@ async def entrypoint(ctx: JobContext):
     async def _warm_greeting_tts(plugin) -> None:
         # For Sarvam: open the persistent WS now so the greeting TTS fires on a warm
         # connection instead of paying 200-500ms TLS setup on the first spoken word.
-        ensure_ws = getattr(plugin, "ensure_ws", None)
-        if callable(ensure_ws):
+        if isinstance(plugin, SarvamTTSConnectionManager):
             try:
-                await ensure_ws()
+                await plugin.ensure_ws()
                 logger.info("[FLOW] Sarvam WS pre-warmed for greeting")
-                return
             except Exception as e:
                 logger.warning("[FLOW] Sarvam WS pre-warm failed (non-fatal): %s", e)
+            return
         # Fallback: standard plugin warmup (Cartesia / ElevenLabs)
         warmup_method = getattr(plugin, "warmup", None)
         if callable(warmup_method):
