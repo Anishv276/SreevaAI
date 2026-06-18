@@ -66,44 +66,100 @@ _LANG_MAP: dict[str, str] = {
 def _map_language(language: str, fallback: str | None = None) -> str:
     return _LANG_MAP.get(language, fallback or language)
 class SarvamTTSConnectionManager:
+    """Manages a single persistent Sarvam WebSocket connection for the session lifetime.
+
+    Previous approach opened a new WS per turn to avoid "Cannot write to closing
+    transport" crashes (Sarvam closes idle connections after 60s). The fix was correct
+    for the crash but added 200-500ms TLS+WS setup latency on every turn.
+
+    This implementation keeps one warm WS alive with 20s keepalive pings. If Sarvam
+    closes it anyway (restart, network blip), _ensure_ws() reconnects once transparently
+    before the next turn. The candidate never waits for a cold connection mid-interview.
+    """
+    _KEEPALIVE_INTERVAL_SEC = 20.0
+    _USER_AGENT = "livekit-agents-sarvam-direct/1.0"
+
     def __init__(self, tts_instance):
         self._tts = tts_instance
         self._api_key = tts_instance._api_key
         self._opts = replace(tts_instance._opts)
-        self._session: aiohttp.ClientSession | None = None
         self._ws_timeout = _PROVIDER_DEFAULTS["sarvam_ws_timeout_sec"]
+        self._session: aiohttp.ClientSession | None = None
+        # Persistent warm WebSocket — reused across all turns in this session.
+        self._ws: aiohttp.ClientWebSocketResponse | None = None
+        self._ws_lock = asyncio.Lock()
+        self._keepalive_task: asyncio.Task | None = None
+
     def __getattr__(self, name):
         if name == "synthesize":
             raise AttributeError(name)
         return getattr(self._tts, name)
+
     def stream(
         self,
         *,
         conn_options: APIConnectOptions = DEFAULT_API_CONNECT_OPTIONS,
     ) -> "SarvamDirectSynthesizeStream":
         return SarvamDirectSynthesizeStream(manager=self, conn_options=conn_options)
-    async def _ensure_session(self) -> aiohttp.ClientSession:
+
+    async def _ensure_http_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession()
         return self._session
-    async def aclose(self) -> None:
-        if self._session is not None and not self._session.closed:
-            await self._session.close()
-        if hasattr(self._tts, "aclose"):
-            await self._tts.aclose()
-class SarvamDirectSynthesizeStream(tts.SynthesizeStream):
-    _KEEPALIVE_INTERVAL_SEC = 20.0
-    _USER_AGENT = "livekit-agents-sarvam-direct/1.0"
-    def __init__(
-        self,
-        *,
-        manager: SarvamTTSConnectionManager,
-        conn_options: APIConnectOptions = DEFAULT_API_CONNECT_OPTIONS,
-    ) -> None:
-        super().__init__(tts=manager, conn_options=conn_options)
-        self._manager = manager
-        self._opts = manager._opts
+
+    def _ws_healthy(self) -> bool:
+        return (
+            self._ws is not None
+            and not self._ws.closed
+            and self._ws.close_code is None
+        )
+
+    async def ensure_ws(self) -> aiohttp.ClientWebSocketResponse:
+        """Return the warm WS, reconnecting once if it has been closed by Sarvam."""
+        async with self._ws_lock:
+            if self._ws_healthy():
+                return self._ws
+            # WS is gone — reconnect. This only happens on first call or after
+            # Sarvam closes a connection that our keepalive missed.
+            logger.info("[SARVAM_WS] (Re)connecting persistent WebSocket")
+            session = await self._ensure_http_session()
+            ws_url = (
+                f"{self._opts.ws_url}"
+                f"?model={self._opts.model}&send_completion_event=true"
+            )
+            try:
+                self._ws = await asyncio.wait_for(
+                    session.ws_connect(
+                        ws_url,
+                        headers={
+                            "api-subscription-key": self._api_key,
+                            "User-Agent": self._USER_AGENT,
+                        },
+                        timeout=aiohttp.ClientWSTimeout(
+                            self._ws_timeout, self._ws_timeout
+                        ),
+                    ),
+                    timeout=self._ws_timeout,
+                )
+            except Exception as e:
+                self._ws = None
+                raise APIConnectionError(
+                    f"Sarvam TTS persistent WS connect failed: {e}"
+                ) from e
+            # Send config once after each (re)connect.
+            config_msg = json.dumps({"type": "config", "data": self._build_config_data()})
+            await self._ws.send_str(config_msg)
+            logger.info("[SARVAM_WS] Persistent WS connected and configured")
+            # Start background keepalive if not already running.
+            if self._keepalive_task is None or self._keepalive_task.done():
+                self._keepalive_task = asyncio.create_task(
+                    self._keepalive_loop(),
+                    name="SarvamTTSConnectionManager.keepalive",
+                )
+            return self._ws
+
     def _build_config_data(self) -> dict[str, Any]:
+        """Build Sarvam config payload (identical to SarvamDirectSynthesizeStream)."""
         data: dict[str, Any] = {
             "target_language_code": self._opts.target_language_code,
             "speaker": self._opts.speaker,
@@ -127,13 +183,65 @@ class SarvamDirectSynthesizeStream(tts.SynthesizeStream):
         if self._opts.model == "bulbul:v3" and self._opts.dict_id is not None:
             data["dict_id"] = self._opts.dict_id
         return data
+
+    async def _keepalive_loop(self) -> None:
+        """Ping Sarvam every 20s to prevent 60s idle close."""
+        try:
+            while True:
+                await asyncio.sleep(self._KEEPALIVE_INTERVAL_SEC)
+                if not self._ws_healthy():
+                    logger.debug("[SARVAM_WS] Keepalive: WS gone, loop exiting")
+                    break
+                try:
+                    await self._ws.send_str(json.dumps({"type": "ping"}))
+                    logger.debug("[SARVAM_WS] Keepalive ping sent")
+                except Exception as e:
+                    logger.warning("[SARVAM_WS] Keepalive ping failed: %s", e)
+                    break
+        except asyncio.CancelledError:
+            pass
+
+    async def aclose(self) -> None:
+        if self._keepalive_task is not None and not self._keepalive_task.done():
+            self._keepalive_task.cancel()
+            try:
+                await self._keepalive_task
+            except asyncio.CancelledError:
+                pass
+        if self._ws_healthy():
+            try:
+                await self._ws.close(code=1000)
+                logger.info("[SARVAM_WS] Persistent WS closed cleanly")
+            except Exception as e:
+                logger.warning("[SARVAM_WS] WS close error: %s", e)
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+        if hasattr(self._tts, "aclose"):
+            await self._tts.aclose()
+class SarvamDirectSynthesizeStream(tts.SynthesizeStream):
+    """Per-turn TTS stream that uses the manager's persistent warm WebSocket.
+
+    No connection setup per turn — the manager keeps the WS alive between turns
+    with keepalive pings. This stream only sends text + flush and reads audio back.
+    If the WS was closed by Sarvam (network blip, restart), the manager reconnects
+    once transparently before this stream runs.
+    """
+    def __init__(
+        self,
+        *,
+        manager: SarvamTTSConnectionManager,
+        conn_options: APIConnectOptions = DEFAULT_API_CONNECT_OPTIONS,
+    ) -> None:
+        super().__init__(tts=manager, conn_options=conn_options)
+        self._manager = manager
+        self._opts = manager._opts
+
     async def _run(self, output_emitter: tts.AudioEmitter) -> None:
         request_id = utils.shortuuid()
         timeout_sec = self._conn_options.timeout or self._manager._ws_timeout
-        ws_url = f"{self._opts.ws_url}?model={self._opts.model}&send_completion_event=true"
         completion_event = asyncio.Event()
-        ws: aiohttp.ClientWebSocketResponse | None = None
         tasks: list[asyncio.Task[Any]] = []
+
         output_emitter.initialize(
             request_id=request_id,
             sample_rate=self._opts.speech_sample_rate,
@@ -143,387 +251,155 @@ class SarvamDirectSynthesizeStream(tts.SynthesizeStream):
             frame_size_ms=50,
         )
         output_emitter.start_segment(segment_id=request_id)
+
+        # Reuse the manager's persistent warm WS — reconnects once if closed.
+        try:
+            ws = await self._manager.ensure_ws()
+        except Exception as e:
+            logger.error("[TTS_SARVAM] request_id=%s failed to get WS: %s", request_id, e)
+            raise
+
         logger.info(
-            "[TTS_SARVAM_WS_START] request_id=%s model=%s speaker=%s language=%s ws_url=%s",
-            request_id,
-            self._opts.model,
-            self._opts.speaker,
-            self._opts.target_language_code,
-            self._opts.ws_url,
+            "[TTS_SARVAM_TURN_START] request_id=%s model=%s speaker=%s language=%s",
+            request_id, self._opts.model, self._opts.speaker, self._opts.target_language_code,
         )
+
         async def _send_json(payload: dict[str, Any], stage: str) -> None:
-            if ws is None:
-                raise APIConnectionError("Sarvam websocket is not connected")
             try:
                 await ws.send_str(json.dumps(payload))
             except Exception as e:
                 logger.error(
-                    "[TTS_SARVAM_WS_SEND_ERROR] request_id=%s stage=%s error=%s",
-                    request_id,
-                    stage,
-                    e,
-                    exc_info=True,
+                    "[TTS_SARVAM_SEND_ERROR] request_id=%s stage=%s error=%s",
+                    request_id, stage, e, exc_info=True,
                 )
+                # Mark WS as dead so manager reconnects on next turn.
+                self._manager._ws = None
                 raise APIConnectionError(
-                    f"Sarvam TTS websocket send failed during {stage}: {e}"
+                    f"Sarvam TTS send failed during {stage}: {e}"
                 ) from e
-        try:
-            session = await self._manager._ensure_session()
+
+        async def _send_task() -> None:
             try:
-                ws = await asyncio.wait_for(
-                    session.ws_connect(
-                        ws_url,
-                        headers={
-                            "api-subscription-key": self._manager._api_key,
-                            "User-Agent": self._USER_AGENT,
-                        },
-                        timeout=aiohttp.ClientWSTimeout(timeout_sec, timeout_sec),
-                    ),
-                    timeout=timeout_sec,
-                )
-            except asyncio.TimeoutError as e:
-                logger.error(
-                    "[TTS_SARVAM_WS_CONNECT_TIMEOUT] request_id=%s timeout=%ss ws_url=%s",
-                    request_id,
-                    timeout_sec,
-                    self._opts.ws_url,
-                    exc_info=True,
-                )
-                raise APIConnectionError(
-                    f"Sarvam TTS websocket connect timed out after {timeout_sec}s"
-                ) from e
-            except Exception as e:
-                logger.error(
-                    "[TTS_SARVAM_WS_CONNECT_ERROR] request_id=%s model=%s ws_url=%s error=%s",
-                    request_id,
-                    self._opts.model,
-                    self._opts.ws_url,
-                    e,
-                    exc_info=True,
-                )
-                raise APIConnectionError(f"Failed to connect to Sarvam TTS websocket: {e}") from e
-            config_msg = {"type": "config", "data": self._build_config_data()}
-            logger.debug(
-                "[TTS_SARVAM_WS_CONFIG] request_id=%s payload=%s",
-                request_id,
-                config_msg,
-            )
-            await _send_json(config_msg, "config")
-            async def _send_task() -> None:
+                async for item in self._input_ch:
+                    if isinstance(item, str):
+                        await _send_json({"type": "text", "data": {"text": item}}, "text")
+                    elif isinstance(item, self._FlushSentinel):
+                        await _send_json({"type": "flush"}, "flush")
                 try:
-                    async for item in self._input_ch:
-                        if isinstance(item, str):
-                            await _send_json({"type": "text", "data": {"text": item}}, "text")
-                        elif isinstance(item, self._FlushSentinel):
-                            await _send_json({"type": "flush"}, "flush")
-                        else:
-                            logger.warning(
-                                "[TTS_SARVAM_WS_INPUT] request_id=%s unexpected input type=%s",
-                                request_id,
-                                type(item),
-                            )
-                    try:
-                        await _send_json({"type": "flush"}, "final-flush")
-                    except APIConnectionError as e:
-                        if completion_event.is_set() or (ws is not None and ws.closed):
-                            logger.debug(
-                                "[TTS_SARVAM_WS_FINAL_FLUSH_SKIPPED] request_id=%s error=%s",
-                                request_id,
-                                e,
-                            )
-                            return
-                        raise
-                except asyncio.CancelledError:
+                    await _send_json({"type": "flush"}, "final-flush")
+                except APIConnectionError as e:
+                    if completion_event.is_set() or ws.closed:
+                        return
                     raise
-                except (APIConnectionError, APIStatusError, APITimeoutError):
-                    raise
-                except Exception as e:
-                    logger.error(
-                        "[TTS_SARVAM_WS_SEND_TASK_ERROR] request_id=%s error=%s",
-                        request_id,
-                        e,
-                        exc_info=True,
-                    )
-                    raise APIConnectionError(f"Sarvam TTS send task failed: {e}") from e
-            async def _recv_task() -> None:
-                # Sarvam docs: WS closes after 60s inactivity. Our keepalive pings every 20s
-                # prevent that. But between audio chunks Sarvam can be slow -- use 90s receive
-                # timeout (docs recommend 90s+ for idle timeout on client side).
-                recv_timeout_sec = max(timeout_sec, 90.0)
-                try:
-                    while True:
-                        try:
-                            msg = await ws.receive(timeout=recv_timeout_sec)
-                        except asyncio.TimeoutError as e:
-                            logger.error(
-                                "[TTS_SARVAM_WS_RECEIVE_TIMEOUT] request_id=%s timeout=%ss",
-                                request_id,
-                                recv_timeout_sec,
-                                exc_info=True,
-                            )
-                            raise APITimeoutError(
-                                f"Sarvam TTS websocket receive timed out after {recv_timeout_sec}s"
-                            ) from e
-                        if msg.type in (
-                            aiohttp.WSMsgType.CLOSE,
-                            aiohttp.WSMsgType.CLOSED,
-                            aiohttp.WSMsgType.CLOSING,
-                        ):
-                            close_code = ws.close_code if ws is not None and ws.close_code is not None else msg.data
-                            close_reason = msg.extra
-                            if close_code in (1000, 1001, None):
-                                logger.info(
-                                    "[TTS_SARVAM_WS_CLOSE] request_id=%s code=%s reason=%s",
-                                    request_id,
-                                    close_code,
-                                    close_reason,
-                                )
-                                completion_event.set()
-                                break
-                            raw_close = {
-                                "msg_type": str(msg.type),
-                                "close_code": close_code,
-                                "close_reason": close_reason,
-                            }
-                            logger.error(
-                                "[TTS_SARVAM_WS_CLOSE_ERROR] request_id=%s payload=%s",
-                                request_id,
-                                raw_close,
-                            )
-                            raise APIStatusError(
-                                message=(
-                                    "Sarvam TTS websocket closed with non-graceful status: "
-                                    f"{json.dumps(raw_close, ensure_ascii=False)}"
-                                ),
-                                status_code=int(close_code) if isinstance(close_code, int) else -1,
-                                body=raw_close,
-                            )
-                        if msg.type == aiohttp.WSMsgType.TEXT:
-                            try:
-                                payload = json.loads(msg.data)
-                            except json.JSONDecodeError as e:
-                                logger.error(
-                                    "[TTS_SARVAM_WS_BAD_JSON] request_id=%s raw=%s error=%s",
-                                    request_id,
-                                    msg.data[:200],
-                                    e,
-                                    exc_info=True,
-                                )
-                                raise APIStatusError(
-                                    message=f"Sarvam TTS returned invalid JSON: {e}",
-                                    status_code=500,
-                                    body={"raw_message": msg.data},
-                                ) from e
-                            msg_type = payload.get("type")
-                            if msg_type == "audio":
-                                audio_data = payload.get("data", {}).get("audio", "")
-                                if not audio_data:
-                                    logger.debug(
-                                        "[TTS_SARVAM_WS_AUDIO_EMPTY] request_id=%s payload=%s",
-                                        request_id,
-                                        payload,
-                                    )
-                                    continue
-                                try:
-                                    audio_bytes = base64.b64decode(audio_data, validate=True)
-                                except Exception as e:
-                                    logger.error(
-                                        "[TTS_SARVAM_WS_AUDIO_DECODE_ERROR] request_id=%s error=%s",
-                                        request_id,
-                                        e,
-                                        exc_info=True,
-                                    )
-                                    raise APIStatusError(
-                                        message=f"Sarvam TTS returned invalid base64 audio: {e}",
-                                        status_code=500,
-                                        body=payload,
-                                    ) from e
-                                output_emitter.push(audio_bytes)
-                                continue
-                            if msg_type == "event":
-                                event_data = payload.get("data", {})
-                                event_type = event_data.get("event_type")
-                                if event_type == "final":
-                                    logger.info(
-                                        "[TTS_SARVAM_WS_FINAL] request_id=%s model=%s speaker=%s",
-                                        request_id,
-                                        self._opts.model,
-                                        self._opts.speaker,
-                                    )
-                                    completion_event.set()
-                                    output_emitter.end_input()
-                                    return
-                                logger.debug(
-                                    "[TTS_SARVAM_WS_EVENT] request_id=%s event_type=%s payload=%s",
-                                    request_id,
-                                    event_type,
-                                    payload,
-                                )
-                                continue
-                            if msg_type == "error":
-                                error_data = payload.get("data", {})
-                                error_msg = str(error_data.get("message", "Unknown error"))
-                                error_code = error_data.get("code", "unknown")
-                                raw_error_message = json.dumps(
-                                    payload, ensure_ascii=False, separators=(",", ":")
-                                )
-                                logger.error(
-                                    "[TTS_SARVAM_WS_ERROR] request_id=%s code=%s message=%s payload=%s",
-                                    request_id,
-                                    error_code,
-                                    error_msg,
-                                    payload,
-                                )
-                                if any(
-                                    err in error_msg.lower()
-                                    for err in ("rate_limit", "temporary_unavailable", "timeout")
-                                ):
-                                    raise APIConnectionError(
-                                        f"Recoverable TTS API error from Sarvam: {raw_error_message}"
-                                    )
-                                raise APIStatusError(
-                                    message=f"TTS API error from Sarvam: {raw_error_message}",
-                                    status_code=500,
-                                    body=payload,
-                                )
-                            logger.debug(
-                                "[TTS_SARVAM_WS_UNKNOWN] request_id=%s msg_type=%s payload=%s",
-                                request_id,
-                                msg_type,
-                                payload,
-                            )
-                            continue
-                        if msg.type == aiohttp.WSMsgType.ERROR:
-                            logger.error(
-                                "[TTS_SARVAM_WS_SOCKET_ERROR] request_id=%s error=%s",
-                                request_id,
-                                msg.data,
-                                exc_info=True,
-                            )
-                            raise APIConnectionError(f"Sarvam TTS websocket error: {msg.data}")
-                        logger.debug(
-                            "[TTS_SARVAM_WS_MESSAGE] request_id=%s msg_type=%s data=%s",
-                            request_id,
-                            msg.type,
-                            getattr(msg, "data", None),
-                        )
-                except asyncio.CancelledError:
-                    raise
-                except (APIConnectionError, APIStatusError, APITimeoutError):
-                    raise
-                except Exception as e:
-                    logger.error(
-                        "[TTS_SARVAM_WS_RECV_TASK_ERROR] request_id=%s error=%s",
-                        request_id,
-                        e,
-                        exc_info=True,
-                    )
-                    raise APIConnectionError(f"Sarvam TTS receive task failed: {e}") from e
-            async def _keepalive_task() -> None:
-                try:
-                    while not completion_event.is_set():
-                        try:
-                            await asyncio.wait_for(
-                                completion_event.wait(), timeout=self._KEEPALIVE_INTERVAL_SEC
-                            )
-                            break
-                        except asyncio.TimeoutError:
-                            if completion_event.is_set() or ws is None or ws.closed:
-                                break
-                            try:
-                                await ws.ping()
-                                logger.debug(
-                                    "[TTS_SARVAM_WS_KEEPALIVE] request_id=%s ping_sent",
-                                    request_id,
-                                )
-                            except Exception as e:
-                                if completion_event.is_set() or ws.closed:
-                                    break
-                                logger.warning(
-                                    "[TTS_SARVAM_WS_KEEPALIVE] request_id=%s ping_failed=%s",
-                                    request_id,
-                                    e,
-                                    exc_info=True,
-                                )
-                                break
-                except asyncio.CancelledError:
-                    raise
-                except Exception as e:
-                    logger.warning(
-                        "[TTS_SARVAM_WS_KEEPALIVE] request_id=%s exiting_after_error=%s",
-                        request_id,
-                        e,
-                        exc_info=True,
-                    )
-            tasks = [
-                asyncio.create_task(_send_task(), name="SarvamDirectSynthesizeStream.send"),
-                asyncio.create_task(_recv_task(), name="SarvamDirectSynthesizeStream.recv"),
-                asyncio.create_task(
-                    _keepalive_task(), name="SarvamDirectSynthesizeStream.keepalive"
-                ),
-            ]
-            try:
-                await asyncio.gather(*tasks)
-                logger.info(
-                    "[TTS_SARVAM_WS_DONE] request_id=%s model=%s speaker=%s",
-                    request_id,
-                    self._opts.model,
-                    self._opts.speaker,
-                )
             except asyncio.CancelledError:
-                logger.warning(
-                    "[TTS_SARVAM_WS_CANCELLED] request_id=%s model=%s speaker=%s",
-                    request_id,
-                    self._opts.model,
-                    self._opts.speaker,
-                )
                 raise
             except (APIConnectionError, APIStatusError, APITimeoutError):
-                logger.error(
-                    "[TTS_SARVAM_WS_STREAM_ERROR] request_id=%s model=%s speaker=%s",
-                    request_id,
-                    self._opts.model,
-                    self._opts.speaker,
-                    exc_info=True,
-                )
                 raise
             except Exception as e:
-                logger.error(
-                    "[TTS_SARVAM_WS_STREAM_UNEXPECTED] request_id=%s model=%s speaker=%s error=%s",
-                    request_id,
-                    self._opts.model,
-                    self._opts.speaker,
-                    e,
-                    exc_info=True,
-                )
-                raise APIConnectionError(f"Sarvam TTS stream failed: {e}") from e
-            finally:
-                await utils.aio.gracefully_cancel(*tasks)
+                logger.error("[TTS_SARVAM_SEND_TASK] request_id=%s error=%s", request_id, e, exc_info=True)
+                raise APIConnectionError(f"Sarvam send task failed: {e}") from e
+
+        async def _recv_task() -> None:
+            recv_timeout_sec = max(timeout_sec, 90.0)
+            try:
+                while True:
+                    try:
+                        msg = await ws.receive(timeout=recv_timeout_sec)
+                    except asyncio.TimeoutError as e:
+                        logger.error("[TTS_SARVAM_RECV_TIMEOUT] request_id=%s timeout=%ss", request_id, recv_timeout_sec)
+                        self._manager._ws = None
+                        raise APITimeoutError(f"Sarvam recv timed out after {recv_timeout_sec}s") from e
+
+                    if msg.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.CLOSING):
+                        close_code = ws.close_code if ws.close_code is not None else msg.data
+                        # Mark WS dead so manager reconnects next turn.
+                        self._manager._ws = None
+                        if close_code in (1000, 1001, None):
+                            logger.info("[TTS_SARVAM_WS_CLOSED_BY_SERVER] request_id=%s code=%s", request_id, close_code)
+                            completion_event.set()
+                            break
+                        raise APIStatusError(
+                            message=f"Sarvam WS closed unexpectedly code={close_code}",
+                            status_code=int(close_code) if isinstance(close_code, int) else -1,
+                            body={"close_code": close_code, "reason": msg.extra},
+                        )
+
+                    if msg.type == aiohttp.WSMsgType.ERROR:
+                        self._manager._ws = None
+                        raise APIConnectionError(f"Sarvam WS error: {msg.data}")
+
+                    if msg.type != aiohttp.WSMsgType.TEXT:
+                        continue
+
+                    try:
+                        payload = json.loads(msg.data)
+                    except json.JSONDecodeError as e:
+                        raise APIStatusError(
+                            message=f"Sarvam invalid JSON: {e}",
+                            status_code=500,
+                            body={"raw": msg.data[:200]},
+                        ) from e
+
+                    msg_type = payload.get("type")
+
+                    if msg_type == "audio":
+                        audio_data = payload.get("data", {}).get("audio", "")
+                        if audio_data:
+                            try:
+                                output_emitter.push(base64.b64decode(audio_data, validate=True))
+                            except Exception as e:
+                                raise APIStatusError(
+                                    message=f"Sarvam invalid base64 audio: {e}",
+                                    status_code=500, body=payload,
+                                ) from e
+                        continue
+
+                    if msg_type == "event":
+                        if payload.get("data", {}).get("event_type") == "final":
+                            logger.info("[TTS_SARVAM_TURN_DONE] request_id=%s", request_id)
+                            completion_event.set()
+                            output_emitter.end_input()
+                            return
+                        continue
+
+                    if msg_type == "error":
+                        error_data = payload.get("data", {})
+                        error_msg = str(error_data.get("message", "Unknown error"))
+                        raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+                        logger.error("[TTS_SARVAM_ERROR] request_id=%s msg=%s", request_id, error_msg)
+                        if any(k in error_msg.lower() for k in ("rate_limit", "temporary_unavailable", "timeout")):
+                            raise APIConnectionError(f"Recoverable Sarvam error: {raw}")
+                        raise APIStatusError(message=f"Sarvam TTS error: {raw}", status_code=500, body=payload)
+
+            except asyncio.CancelledError:
+                raise
+            except (APIConnectionError, APIStatusError, APITimeoutError):
+                raise
+            except Exception as e:
+                logger.error("[TTS_SARVAM_RECV_TASK] request_id=%s error=%s", request_id, e, exc_info=True)
+                raise APIConnectionError(f"Sarvam recv task failed: {e}") from e
+
+        tasks = [
+            asyncio.create_task(_send_task(), name="SarvamStream.send"),
+            asyncio.create_task(_recv_task(), name="SarvamStream.recv"),
+        ]
+        try:
+            await asyncio.gather(*tasks)
+        except asyncio.CancelledError:
+            logger.warning("[TTS_SARVAM_CANCELLED] request_id=%s", request_id)
+            raise
+        except (APIConnectionError, APIStatusError, APITimeoutError):
+            logger.error("[TTS_SARVAM_STREAM_ERROR] request_id=%s", request_id, exc_info=True)
+            raise
+        except Exception as e:
+            logger.error("[TTS_SARVAM_STREAM_UNEXPECTED] request_id=%s error=%s", request_id, e, exc_info=True)
+            raise APIConnectionError(f"Sarvam stream failed: {e}") from e
         finally:
+            await utils.aio.gracefully_cancel(*tasks)
             try:
                 output_emitter.end_input()
-            except Exception as e:
-                logger.debug(
-                    "[TTS_SARVAM_WS_END_INPUT_ERROR] request_id=%s error=%s",
-                    request_id,
-                    e,
-                    exc_info=True,
-                )
-            if ws is not None and not ws.closed:
-                try:
-                    await ws.close(code=1000)
-                    logger.info(
-                        "[TTS_SARVAM_WS_CLOSED] request_id=%s close_code=%s",
-                        request_id,
-                        ws.close_code,
-                    )
-                except Exception as e:
-                    logger.warning(
-                        "[TTS_SARVAM_WS_CLOSE_ERROR] request_id=%s error=%s",
-                        request_id,
-                        e,
-                        exc_info=True,
-                    )
+            except Exception:
+                pass
 def build_cartesia_tts(
     language: str = "en",
     model: str = _CARTESIA_DEFAULT_MODEL,

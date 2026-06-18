@@ -108,28 +108,23 @@ def _enforce_single_question(text: str) -> str:
     return text
 async def _single_question_transform(text_stream):
     """
-    TTS text transform: buffers the full LLM output, strips internal directives
-    and markdown artifacts, then yields sentence by sentence for clean TTS synthesis.
+    TTS text transform: applies sanitization and phonetic fixes per chunk as they
+    stream in, rather than buffering the full LLM response first. The sentence-boundary
+    splitting in _push_sentences gives TTS engines full phoneme context per sentence.
+    Suppresses output entirely if all chunks sanitize to empty (LLM echoed a directive).
     """
-    buffer = ""
+    emitted_any = False
     async for chunk in text_stream:
-        buffer += chunk
-    result = polish_candidate_facing_text(buffer)
-    result = _enforce_single_question(result)
-    result = _apply_tts_phonetic_fixes(result)
-    if result:
-        logger.debug(f"[TTS_FINAL] Text sent to TTS: {result[:300]!r}")
-        # Yield the full response as one string so Sarvam/Cartesia have full phoneme
-        # context. Splitting into chunks causes garbled consonant-cluster words
-        # (e.g. "bu..ild", "thr-ough") when those words land at the start of a chunk.
-        yield result
-    else:
-        # LLM output was entirely internal directives -- the eval directive arrived and
-        # the LLM echoed it instead of generating a question. This is a recoverable
-        # state: the directive IS already injected into chat_ctx (that's what the LLM
-        # read), so the next pipeline_reply turn will pick it up correctly.
-        # We suppress output here (don't speak garbage) and let the routing timeout
-        # path trigger a clean second LLM call with the directive already in context.
+        cleaned = polish_candidate_facing_text(chunk)
+        cleaned = _enforce_single_question(cleaned)
+        cleaned = _apply_tts_phonetic_fixes(cleaned)
+        if cleaned:
+            if not emitted_any:
+                logger.debug(f"[TTS_FIRST_CHUNK] First chunk to TTS: {cleaned[:120]!r}")
+            emitted_any = True
+            yield cleaned
+    if not emitted_any:
+        # LLM output was entirely internal directives -- recoverable, suppress output.
         logger.debug(
             "[SINGLE_Q] Transform yielded empty after directive sanitization; suppressing output (expected during STT fragment assembly)."
         )

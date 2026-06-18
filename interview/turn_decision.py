@@ -327,12 +327,31 @@ class OwnershipAmbiguityDetector(BaseDetector):
             recoverable=True,
             recruiter_visible=True,
         )
+_DIRECT_NEGATIVE_RE = re.compile(
+    r"^\s*(no[\.,!?]?\s*)?(i\s+)?"
+    r"(haven'?t|have\s+not|didn'?t|did\s+not|don'?t|do\s+not|never|couldn'?t|could\s+not)"
+    r"(\s+(used|worked|tried|done|built|made|used it|worked with it|worked on it))?"
+    r"[\s.,!?]*$",
+    re.IGNORECASE,
+)
+_SHORT_DENIAL_RE = re.compile(
+    r"^\s*(no[\.,!?\s]*){1,3}\s*$",
+    re.IGNORECASE,
+)
+
 class ExampleEvasionDetector(BaseDetector):
     def detect(self, ctx: DetectionContext) -> Optional[SignalEvent]:
         q_lower = ctx.last_question.lower()
         if not any(p in q_lower for p in _EXAMPLE_REQUEST_PHRASES):
             return None
         a_lower = ctx.answer.lower()
+        # Direct negative confirmation is not evasion — it's an honest answer.
+        # "No. It didn't work." / "No, I haven't." / "No." etc. → suppress signal.
+        word_count_pre = len(ctx.answer.split())
+        if word_count_pre <= 8 and (
+            _DIRECT_NEGATIVE_RE.match(a_lower) or _SHORT_DENIAL_RE.match(a_lower)
+        ):
+            return None
         answer_is_theoretical = any(p in a_lower for p in _THEORY_PHRASES)
         # C3 fix: use the shared _SPECIFICS_RE which covers technical tokens
         # (tool names, action verbs, entity types) in addition to temporal /
@@ -958,6 +977,31 @@ def detect_signal_events(
         response_latency_sec=response_latency_sec,
     )
     return SignalEvaluator.evaluate(ctx)
+async def detect_signal_events_async(
+    *,
+    candidate_answer: str,
+    last_question: str,
+    current_depth: float,
+    prior_depth_scores: list[float],
+    topic_follow_up_count: int,
+    collapse_stage: int = 0,
+    session_score_history: Optional[list[float]] = None,
+    turns_since_last_decay: int = 999,
+    response_latency_sec: Optional[float] = None,
+) -> list[SignalEvent]:
+    """Async parallel variant — runs all 10 detectors concurrently via asyncio.gather."""
+    ctx = DetectionContext(
+        answer=candidate_answer,
+        last_question=last_question,
+        current_depth=current_depth,
+        prior_depth_scores=prior_depth_scores,
+        topic_follow_up_count=topic_follow_up_count,
+        collapse_stage=collapse_stage,
+        session_score_history=session_score_history,
+        turns_since_last_decay=turns_since_last_decay,
+        response_latency_sec=response_latency_sec,
+    )
+    return await SignalEvaluator.evaluate_async(ctx)
 def build_signal_flags(signal_events: list[SignalEvent]) -> SignalFlags:
     names = {event["signal_name"] for event in signal_events}
     return SignalFlags(

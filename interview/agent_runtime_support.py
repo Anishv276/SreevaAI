@@ -162,13 +162,14 @@ FLUX_EOT_THRESHOLD: float = 0.75
 # Set to None to disable. When enabled, agent must handle TurnResumed by cancelling
 # any in-flight eval. Currently disabled — our eval gate is not wired for cancellation.
 FLUX_EAGER_EOT_THRESHOLD: float | None = None
-# Max silence before forced turn end regardless of confidence. 6000ms gives candidates
-# time to think between sentences. Range: 500–10000 (Deepgram default: 5000).
-FLUX_EOT_TIMEOUT_MS: int = 6000
+# Max silence before forced turn end regardless of confidence. 2500ms is sufficient —
+# eot_threshold=0.75 handles real pauses; this guard only fires on true dead air.
+# Range: 500–10000 (Deepgram default: 5000). Reduced from 6000 for lower latency.
+FLUX_EOT_TIMEOUT_MS: int = 2500
 LLM_MODEL = "gpt-4.1-mini"
 INTERVIEW_LLM_MODEL = LLM_MODEL
 INTERVIEW_TEMPERATURE = 0.75
-EVAL_LLM_MODEL = "gpt-4.1-mini"
+EVAL_LLM_MODEL = "gpt-4.1-nano"   # Scoring is deterministic (temp=0) — nano is ~3x faster TTFT than mini for classification tasks
 EVAL_TEMPERATURE = 0.0
 DEFAULT_VOICE_ID = "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"
 # Voice registry -- single source of truth for voice->provider+model mapping.

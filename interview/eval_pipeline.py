@@ -71,6 +71,10 @@ class TopicState:
         # A real interviewer abandons a dead topic fast instead of re-asking. When
         # this hits the band cap, eval forces MOVE_ON regardless of the LLM judge.
         self.consecutive_low_yield = 0
+        # Per-turn quality scores for trajectory detection (used in weak_exit suppression).
+        self.per_turn_scores: list[float] = []
+        # Whether example_given fired on the most recent turn.
+        self.last_turn_example_given: bool = False
         # Fresher: bail after 2 weak turns (breadth-first). Others: 3.
         self.dry_topic_cap = 2 if band == "fresher" else 3
         self.progress_check_turns = 3
@@ -86,7 +90,18 @@ class TopicState:
         raw_base_accumulated = self.base_turn_credit * self.follow_up_turns
         effective_score = max(self.saturation_score, raw_base_accumulated)
         min_expected = self.saturation_threshold * self.progress_check_pct
-        return effective_score < min_expected
+        if effective_score >= min_expected:
+            return False
+        # Suppress weak_exit if the candidate's trajectory is improving:
+        # last turn scored higher than the one before it.
+        if len(self.per_turn_scores) >= 2:
+            if self.per_turn_scores[-1] > self.per_turn_scores[-2]:
+                return False
+        # Always suppress if example_given fired on the most recent turn —
+        # forward progress was just made, exiting now wastes it.
+        if self.last_turn_example_given:
+            return False
+        return True
     def add_response_contribution(
         self,
         response_score: float,
@@ -102,6 +117,7 @@ class TopicState:
         total = effective_base + quality_contribution
         self.saturation_score += total
         self.follow_up_turns += 1
+        self.per_turn_scores.append(quality_contribution)
         self.is_saturated = self.saturation_score >= self.saturation_threshold
         # Track consecutive low-yield turns for the dry-topic exit. Use the
         # visible weighted answer quality, not the saturation contribution, because
@@ -264,6 +280,9 @@ def evaluate_topic_saturation(
         final_contribution = contribution + min(signal_modifier, 0.5)
     score_before = topic_state.saturation_score
     follow_ups_before = topic_state.follow_up_turns
+    topic_state.last_turn_example_given = any(
+        ev.get("signal_name") == "example_given" for ev in signal_events
+    )
     topic_state.add_response_contribution(final_contribution, 0.0, turn=turn, weighted_quality=weighted)
     logger.info(
         "[SAT_CALC] topic=%s | weighted=%.2f contribution=%.2f signal_modifier=%+.2f final_contribution=%.2f",

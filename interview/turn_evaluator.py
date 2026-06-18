@@ -20,7 +20,7 @@ from typing import Any, Optional, TypedDict
 from interview.session_state import is_always_on_signal
 from interview.turn_decision import (
     TurnDecision,
-    detect_signal_events,
+    detect_signal_events_async,
     build_signal_flags,
     build_turn_decision,
 )
@@ -122,7 +122,7 @@ async def _node_llm_evaluate(state: EvalGraphState) -> dict:
 async def _node_detect_signals(state: EvalGraphState) -> dict:
     """Node 2: run signal detectors against the raw answer."""
     try:
-        events = detect_signal_events(
+        events = await detect_signal_events_async(
             candidate_answer=state["candidate_answer"],
             last_question=state["last_question"],
             current_depth=float(state["raw_quality"].get("depth", 5.0)),
@@ -287,7 +287,7 @@ async def run_turn_evaluation(
         topic_importance=topic_importance,
         job_title=job_title,
     )
-    signal_events = detect_signal_events(
+    signal_events = await detect_signal_events_async(
         candidate_answer=candidate_answer,
         last_question=last_question,
         current_depth=float(result.get("depth", 5.0)),

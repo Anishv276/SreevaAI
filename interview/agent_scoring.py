@@ -18,8 +18,7 @@ import json
 import logging
 from typing import Any, Optional
 logger = logging.getLogger("interview-agent")
-EVAL_LLM_MODEL   = "gpt-4.1-mini"
-EVAL_TEMPERATURE = 0.0
+from interview.agent_runtime_support import EVAL_LLM_MODEL, EVAL_TEMPERATURE
 async def evaluate_answer(
     candidate_answer: str,
     last_question: str,
@@ -87,8 +86,7 @@ async def evaluate_answer(
             "reason": "explicit denial / no information provided",
         }
     word_count = len(candidate_answer.strip().split())
-    # Use last 6 lines (3 Q&A pairs) -- enough for LLM to see follow-up context
-    # without pulling in old-topic lines that cause the LLM to conflate answers.
+    # Use last 6 lines (3 Q&A pairs) — sufficient context for scoring, reduces eval LLM prefill.
     recent_context = "\n".join(transcript_lines[-6:]) if transcript_lines else ""
     # Log before the LLM call so you can see it started in the terminal.
     # If this log appears but [EVAL] DONE never follows, the LLM call hung.
@@ -221,6 +219,13 @@ async def evaluate_answer(
                 ],
                 response_format={"type": "json_object"},
                 stream_options={"include_usage": True},
+                store=True,
+                metadata={
+                    "call_type": "eval_scoring",
+                    "band": candidate_band,
+                    "topic_importance": topic_importance,
+                    "org_id": org_id or "",
+                },
             ),
             timeout=8.0,  # Inner LLM call. MUST be < eval wrapper (10s) < LLM gate (12s).
         )
