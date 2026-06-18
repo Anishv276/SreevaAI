@@ -93,7 +93,6 @@ export default function LoginPage() {
                           <span>Sreeva</span>
                           <span style={{ fontStyle: 'italic' }}>AI</span>
                         </h1>
-                        <p className="text-[#6f6862] font-bold text-[10px] uppercase tracking-[0.4em] mt-2 text-center">Identity Management Gateway</p>
                     </div>
                 </div>
                 {/* Premium Card - Matching Admin Dashboard DNA */}
@@ -157,21 +156,15 @@ export default function LoginPage() {
                                 {loading ? "AUTHENTICATING..." : "LOGIN"}
                             </button>
                         </div>
-                        <div className="text-center pt-4">
-                            <p className="text-[11px] text-[#9a938d] font-medium leading-relaxed">
-                                By clicking continue, you agree to our{" "}
-                                <a href="/terms" className="text-[#1c1b1b] underline decoration-[#ececea] underline-offset-4 hover:decoration-[#ff6a00] transition-colors">Terms of Service</a>
-                                {" "}and{" "}
-                                <a href="/privacy" className="text-[#1c1b1b] underline decoration-[#ececea] underline-offset-4 hover:decoration-[#ff6a00] transition-colors">Privacy Policy</a>.
-                            </p>
-                        </div>
                     </form>
                 </div>
-                <div className="text-center space-y-2">
-                    <p className="text-[#6f6862] text-[9px] font-black uppercase tracking-[0.4em]">
-                        Secured by Sreeva AI Network
+                <div className="text-center mt-4 px-4 max-w-sm mx-auto">
+                    <p className="text-[11px] text-[#9a938d] font-medium leading-relaxed">
+                        By clicking continue, you agree to our{" "}
+                        <a href="/terms" className="text-[#1c1b1b] underline decoration-[#ececea] underline-offset-4 hover:decoration-[#ff6a00] transition-colors">Terms of Service</a>
+                        {" "}and{" "}
+                        <a href="/privacy" className="text-[#1c1b1b] underline decoration-[#ececea] underline-offset-4 hover:decoration-[#ff6a00] transition-colors">Privacy Policy</a>.
                     </p>
-                    <div className="h-0.5 w-6 bg-[#ffdbcc] mx-auto rounded-full" />
                 </div>
             </div>
         </div>

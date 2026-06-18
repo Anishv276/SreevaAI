@@ -410,9 +410,9 @@ export default function CandidatesPage() {
         finally { setIsBulkLoading(false); setEmailConfirm(null); }
     };
     return (
-        <div className="space-y-8 pb-10 animate-in fade-in duration-700 font-sans" style={{ zoom: 0.7, transformOrigin: "top center" }}>
+        <div className="flex flex-col min-h-[135vh] space-y-8 pb-10 animate-in fade-in duration-700 font-sans" style={{ zoom: 0.7, transformOrigin: "top center" }}>
             {/* Header */}
-            <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between mb-2">
+            <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between mb-12">
                 <div className="flex items-center gap-5 group">
                     <div className="h-14 w-1.5 bg-gradient-to-b from-[#F97316] to-orange-500 rounded-full shadow-[0_0_15px_rgba(249,115,22,0.4)] transition-all duration-500 group-hover:h-16" />
                     <div className="space-y-1">
@@ -764,7 +764,7 @@ export default function CandidatesPage() {
                 </div>
             </div>
             {/* Pagination */}
-            <div className="flex flex-col gap-4 border-t border-white/20 bg-white/20 px-4 py-5 backdrop-blur-xl rounded-2xl lg:flex-row lg:items-center lg:justify-between">
+            <div className="mt-auto flex flex-col gap-4 border-t border-white/20 bg-white/20 px-4 py-5 backdrop-blur-xl rounded-2xl lg:flex-row lg:items-center lg:justify-between">
                 <div className="flex flex-wrap items-center gap-3">
                     <p className="text-[13px] font-medium text-gray-500">
                         Showing <span className="text-gray-900 font-bold">{pagination.total > 0 ? (pagination.page - 1) * pageSize + 1 : 0}</span> to{" "}

@@ -35,6 +35,37 @@ import type { Room } from "livekit-client";
 interface InterviewPageProps {
     params: Promise<{ id: string }>;
 }
+
+// Global media stream tracker to ensure hardware is fully released when finishing the interview
+if (typeof window !== "undefined") {
+    if (!(window as any).__trackTrackerInjected && navigator.mediaDevices) {
+        (window as any).__trackTrackerInjected = true;
+        (window as any).__activeTracks = new Set<MediaStreamTrack>();
+        const originalGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+        navigator.mediaDevices.getUserMedia = async (constraints) => {
+            const stream = await originalGetUserMedia(constraints);
+            stream.getTracks().forEach(t => {
+                (window as any).__activeTracks.add(t);
+                t.addEventListener('ended', () => {
+                    (window as any).__activeTracks.delete(t);
+                });
+            });
+            return stream;
+        };
+    }
+}
+
+function stopAllHardwareTracksGlobally() {
+    if (typeof window !== "undefined" && (window as any).__activeTracks) {
+        const tracks: Set<MediaStreamTrack> = (window as any).__activeTracks;
+        tracks.forEach(track => {
+            try {
+                track.stop();
+            } catch { }
+        });
+        tracks.clear();
+    }
+}
 function formatDuration(totalSeconds: number) {
     const safe = Math.max(0, totalSeconds);
     const mins = Math.floor(safe / 60);
@@ -517,6 +548,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         }
     }, []);
     const stopInterviewMedia = useCallback(() => {
+        stopAllHardwareTracksGlobally();
         setShouldConnect(false);
         const room = lkRoomRef.current;
         if (!room) return;

@@ -126,7 +126,21 @@
       "PowerShell(python \"C:\\\\Users\\\\vamsi\\\\OneDrive\\\\Desktop\\\\HR-updates\\\\scripts\\\\extract_pdf.py\" --help 2>&1)",
       "PowerShell(npx prisma db push 2>&1)",
       "PowerShell(npx prisma migrate create --name reorder_columns 2>&1)",
-      "PowerShell($env:PGPASSWORD='your-password'; psql -h aws-1-ap-south-1.pooler.supabase.com -U postgres -d postgres -c \"\\\\d Organization\" 2>&1 | head -50)"
+      "PowerShell($env:PGPASSWORD='your-password'; psql -h aws-1-ap-south-1.pooler.supabase.com -U postgres -d postgres -c \"\\\\d Organization\" 2>&1 | head -50)",
+      "PowerShell(Head -30)",
+      "Bash(python -c \"print\\(sum\\(1 for _ in open\\(r'c:\\\\Users\\\\vamsi\\\\OneDrive\\\\Desktop\\\\HR-updates\\\\interview\\\\agent_runtime.py'\\)\\)\\)\")",
+      "Skill(claude-api)",
+      "Skill(claude-api:*)",
+      "WebFetch(domain:openai.com)",
+      "Bash(python -c \"import interview.agent_persistence\")",
+      "Bash(python -c \"import interview.agent_scoring\")",
+      "Bash(.venv\\\\Scripts\\\\python.exe -c \"import interview.agent_persistence\")",
+      "Bash(.venv\\\\Scripts\\\\python.exe -c \"import interview.agent_scoring; import interview.interview_brief; import interview.brief_extraction\")",
+      "WebFetch(domain:deepgram.com)",
+      "Bash(python -c \"import livekit.plugins.deepgram as dg; import inspect; print\\(inspect.getsource\\(dg.STTv2\\)\\)\")",
+      "Bash(python -c \"import livekit.plugins.deepgram as dg; import inspect; src = inspect.getsource\\(dg.STTv2\\); print\\(src[3000:6000]\\)\")",
+      "Bash(python -c \"from interview.agent_scoring import evaluate_answer; print\\('OK'\\)\")",
+      "Bash(python -c \"from interview.agent_runtime import prewarm; print\\('OK'\\)\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\vamsi\\OneDrive\\Desktop\\HR-updates\\scratch",

@@ -960,7 +960,10 @@ export function HardwareCheck({
                                                 <div>
                                                     <p className="text-xs font-black text-green-700">Microphone Verified!</p>
                                                     <p className="text-[10px] text-green-600 font-semibold">
-                                                        {liveTranscript ? `We heard: "${liveTranscript.slice(0, 60)}"` : "Audio signal confirmed - mic is working."}
+                                                        {(() => {
+                                                            const tw = (verifiedPhrase || "").toLowerCase().replace(/[^a-z\s]/g, "").split(/\s+/).filter(Boolean);
+                                                            return `${tw.length}/${tw.length} words matched — mic is working!`;
+                                                        })()}
                                                     </p>
                                                 </div>
                                             </div>
@@ -993,12 +996,21 @@ export function HardwareCheck({
                                                     </div>
                                                 </div>
                                             </div>
-                                            {/* Live transcript — every word shown as spoken */}
+                                            {/* Live transcript — show target words with match highlighting */}
                                             <p className="text-[11px] text-center font-semibold tracking-wide min-h-[18px]">
                                                 {isVerifying ? (
                                                     <span className="text-gray-400 flex items-center justify-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> Verifying voice...</span>
                                                 ) : liveTranscript ? (
-                                                    <span className="text-orange-500 font-bold">&ldquo;{liveTranscript}&rdquo;</span>
+                                                    (() => {
+                                                        const targetWords = (verifiedPhrase || "").toLowerCase().replace(/[^a-z\s]/g, "").split(/\s+/).filter(Boolean);
+                                                        const spokenSet = new Set(liveTranscript.toLowerCase().replace(/[^a-z\s]/g, "").split(/\s+/).filter(Boolean));
+                                                        const matchedCount = targetWords.filter(w => spokenSet.has(w)).length;
+                                                        return (
+                                                            <span className="text-orange-500 font-bold">
+                                                                {matchedCount}/{targetWords.length} words heard
+                                                            </span>
+                                                        );
+                                                    })()
                                                 ) : isRecording ? (
                                                     <span className="text-orange-400 animate-pulse">Listening... read the sentence and click Stop</span>
                                                 ) : (
