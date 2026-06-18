@@ -60,11 +60,11 @@ def build_warmup_directive(job_title: str = "") -> str:
         f"    You MUST answer their question with a REAL sentence before pivoting. 'Good to hear' is NOT an answer.\n"
         f"    REQUIRED STRUCTURE:\n"
         f"      Sentence 1: Answer about YOU specifically. ('Packed with interviews today — good day though.' / 'Doing well, running back-to-back sessions.')\n"
-        f"      Sentence 2: Role + readiness check. ('I'll be conducting your {role_line} interview. Ready to begin?')\n"
+        f"      Sentence 2: Role + readiness check. ('I'll be conducting {role_line} interview. Ready to begin?')\n"
         f"    WRONG: 'Good to hear. So I'll be conducting your interview...' -- 'Good to hear' ignores their question about you.\n"
         f"    WRONG: 'Good. So I'll be conducting...' -- same mistake, you didn't answer them.\n"
-        f"    RIGHT: 'Packed with interviews today — it's been a good one. Ready to get into your {role_line} interview?'\n"
-        f"    RIGHT: 'Doing well, running back-to-back sessions today. I'll be conducting your {role_line} interview. You ready?'\n"
+        f"    RIGHT: 'Packed with interviews today — it's been a good one. Ready to get into {role_line} interview?'\n"
+        f"    RIGHT: 'Doing well, running back-to-back sessions today. I'll be conducting {role_line} interview. You ready?'\n"
         "\n"
         f"  IF they said they're doing well / good / fine / great (WITHOUT asking about you):\n"
         f"    -> 'Good to hear. So I'll be conducting your interview for {role_line} today. Are you ready to begin?'\n"
@@ -85,39 +85,7 @@ def build_warmup_directive(job_title: str = "") -> str:
         "\n"
         "WAIT for them to confirm they are ready before starting the interview."
     )
-def build_warmup_directive(job_title: str = "") -> str:
-    """Clean ASCII warmup directive.
-    This intentionally overrides the earlier definition, which is left in place
-    for minimal diff safety but contains mojibake in example strings. The runtime
-    imports this final definition.
-    """
-    role_line = f"the {job_title} role" if job_title else "the role"
-    return (
-        "[DO NOT SAY ALOUD -- INTERNAL INTERVIEWER INSTRUCTION]\n"
-        "[WARMUP PHASE -- DO NOT START THE INTERVIEW YET]\n\n"
-        "STRICT RULES:\n"
-        "  - Do NOT ask anything about their resume, skills, projects, or experience.\n"
-        "  - Two sentences MAX.\n"
-        "  - Do NOT use: 'Absolutely', 'Great', 'Thanks for sharing', 'Happy to chat', 'Sounds good', 'Certainly'.\n\n"
-        "YOUR ONLY JOB THIS TURN:\n"
-        "  1. React to what they literally just said.\n"
-        f"  2. Mention you'll be conducting their interview for {role_line} today.\n"
-        "  3. Ask if they are ready to begin.\n\n"
-        "PRIORITY RULE:\n"
-        "  If the candidate asks you back 'how about you?', 'how are you?', 'and you?', or 'what about you?',\n"
-        "  answer that question first. This takes priority even if they also said they are doing well.\n"
-        "  'Good to hear' or 'Good' is NOT an answer to their question.\n\n"
-        "REQUIRED RESPONSE FOR 'HOW ABOUT YOU?' CASE:\n"
-        "  Sentence 1: Answer about you specifically, e.g. 'Doing well, packed with interviews today.'\n"
-        f"  Sentence 2: Role + readiness check, e.g. 'I'll be conducting your {role_line} interview. Ready to begin?'\n"
-        f"  Best pattern: 'Doing well, packed with interviews today. I'll be conducting your {role_line} interview. Ready to begin?'\n\n"
-        "IF they only said they are doing well and did NOT ask about you:\n"
-        f"  Say: 'Good to hear. I'll be conducting your interview for {role_line} today. Are you ready to begin?'\n\n"
-        "IF they seem nervous:\n"
-        f"  Say: 'That's completely understandable, just think of this as a conversation. I'll be conducting your interview for {role_line} today. Ready to begin?'\n\n"
-        "TONE: Professional, warm, and concise. This is small talk before work.\n"
-        "WAIT for them to confirm they are ready before starting the interview."
-    )
+
 def _build_custom_questions_block(custom_questions: list[str] | None) -> str:
     cqs = [q.strip() for q in (custom_questions or []) if q.strip()]
     if not cqs:
@@ -137,6 +105,7 @@ def build_interview_directive(
     resume_brief: _BriefType,
     jd_skills: list[str] | None = None,
     custom_questions: list[str] | None = None,
+    interview_brief=None,  # InterviewBrief — when provided, overrides mechanical anchor/skills logic
 ) -> str:
     """
     Build the single system prompt for the full 20-minute interview.
@@ -149,13 +118,23 @@ def build_interview_directive(
       6. Custom recruiter questions (mandatory, woven in anytime)
     """
     # -- Opening move ---------------------------------------------------------
-    # The ANALYST BRIEF (injected in the evaluation layer above this directive)
-    # contains the OPENING ANGLE section with the exact topic, context, and angle.
-    # This directive reinforces it — it does NOT override or duplicate it.
-    if hasattr(resume_brief, "anchor_item"):
-        anchor_name = (resume_brief.anchor_item or "their most recent work").split(" - ")[0].strip()
+    # When an InterviewBrief is provided, use its LLM-curated anchor and strategy.
+    # Otherwise fall back to the mechanical anchor from resume_brief.
+    if interview_brief is not None:
+        anchor_name = interview_brief.anchor_topic.title
+        _brief_strategy_note = (
+            f"ROLE STRATEGY: {interview_brief.interview_strategy}\n"
+            f"ANCHOR CONTEXT: {interview_brief.anchor_topic.full_description[:300]}\n"
+            f"FOCUS AREAS: {', '.join(interview_brief.focus_areas)}\n"
+        )
+        if interview_brief.red_flags:
+            _brief_strategy_note += f"RED FLAGS TO PROBE: {', '.join(interview_brief.red_flags)}\n"
     else:
-        anchor_name = resume_brief.get("anchor_item", "their most recent work").split(" - ")[0].strip()
+        if hasattr(resume_brief, "anchor_item"):
+            anchor_name = (resume_brief.anchor_item or "their most recent work").split(" - ")[0].strip()
+        else:
+            anchor_name = resume_brief.get("anchor_item", "their most recent work").split(" - ")[0].strip()
+        _brief_strategy_note = ""
     _first_q_rule = {
         "fresher": (
             f"FIRST QUESTION RULE: stay surface-level. Ask WHAT they built and what their specific role was.\n"
@@ -175,6 +154,7 @@ def build_interview_directive(
         ),
     }.get(band, "FIRST QUESTION RULE: ask what they personally owned and what decisions were theirs.")
     opening = (
+        f"{_brief_strategy_note}"
         f"Your ANALYST BRIEF (above) contains the exact OPENING ANGLE for this session.\n"
         f"Follow it. Open on: {anchor_name}.\n"
         f"{_first_q_rule}\n"
@@ -204,14 +184,9 @@ def build_interview_directive(
         ),
     }.get(band, "Probe for real ownership and specific decisions, not summaries.")
     cq_block = _build_custom_questions_block(custom_questions)
-    # Skills block -- resume skills + JD skills shown explicitly so the LLM
-    # knows what to probe for and doesn't skip them in favour of only projects.
-    _resume_skills = [str(s).strip() for s in (getattr(resume_brief, "skills", None) or resume_brief.get("skills", [])) if str(s).strip()]
-    _jd_skill_list = [str(s).strip() for s in (jd_skills or []) if str(s).strip()]
-    # Work history for grounding skill questions — pull from resume_brief
-    _work_history = []
-    if hasattr(resume_brief, "work_history"):
-        _work_history = [str(w).strip() for w in (resume_brief.work_history or []) if str(w).strip()]
+    # Skills block — when brief is available, use its skill TopicItems directly
+    # (richer: per-skill probe_focus, source, why_relevant). Fall back to
+    # resume_brief.skills + jd_skills when brief is not provided.
     _skill_probe_style = {
         "fresher": (
             "  -> Ask about real usage: 'Where have you actually used X?' not 'Do you know X?'\n"
@@ -230,31 +205,50 @@ def build_interview_directive(
             "  -> Ask: 'Where did your use of X change how the team or product operated?' Not 'have you used X?'\n"
         ),
     }.get(band, "  -> Ask about real usage grounded in a specific role or project, NOT generic 'do you know X?'\n")
-    if _resume_skills or _jd_skill_list:
-        _resume_part = ", ".join(_resume_skills) if _resume_skills else "none listed"
-        _jd_part = ", ".join(_jd_skill_list) if _jd_skill_list else "none listed"
-        _work_ctx = ""
-        if _work_history:
-            _work_ctx = (
-                f"\n  Work context: {' | '.join(_work_history[:3])}\n"
-                f"  -> When asking about a skill, GROUND it in the role/project where it was used.\n"
-                f"     Example: 'You worked as Python Developer at [Company] -- what did you build there?'\n"
-                f"     NOT: 'You mentioned Python on your resume -- tell me about it.'\n"
-                f"  -> Only name a company when the skill is tied to that employer. A standalone/personal\n"
-                f"     project is NOT linked to any company -- never say '...at <Company>' about it.\n"
+    if interview_brief is not None:
+        _brief_skills = [t for t in interview_brief.topic_pool if t.topic_type in ("skill", "role_topic")]
+        if _brief_skills:
+            _skill_lines = []
+            for _st in _brief_skills:
+                _src_tag = "(JD required)" if _st.is_jd_must_have else "(resume)"
+                _focus = ", ".join(_st.probe_focus[:2]) if _st.probe_focus else ""
+                _line = f"  - {_st.title} {_src_tag}"
+                if _focus:
+                    _line += f"  [probe: {_focus}]"
+                if _st.why_relevant:
+                    _line += f"  — {_st.why_relevant}"
+                _skill_lines.append(_line)
+            skills_block = (
+                f"\nSKILLS TO COVER (ordered by role relevance):\n"
+                + "\n".join(_skill_lines) + "\n"
+                + f"{_skill_probe_style}"
+                + "  -> If a skill already came up naturally in a project story, it's covered — don't ask again.\n"
+                + "  -> If the candidate denies a resume skill, ask once for clarification then move on.\n"
             )
-        skills_block = (
-            f"\nSKILLS TO COVER:\n"
-            f"  Resume skills: {_resume_part}\n"
-            f"  JD must-have skills: {_jd_part}\n"
-            f"{_work_ctx}"
-            f"{_skill_probe_style}"
-            f"  -> If the candidate denies a skill that is on their resume: ask once 'can you help me understand\n"
-            f"     what you meant by listing it?' -- then move on. Do NOT keep asking about it.\n"
-            f"  -> If a skill already came up naturally in a project story, mark it covered -- don't ask again.\n"
-        )
+        else:
+            skills_block = ""
     else:
-        skills_block = ""
+        _resume_skills = [str(s).strip() for s in (getattr(resume_brief, "skills", None) or []) if str(s).strip()]
+        _jd_skill_list = [str(s).strip() for s in (jd_skills or []) if str(s).strip()]
+        _work_history = [str(w).strip() for w in (getattr(resume_brief, "work_history", None) or []) if str(w).strip()]
+        if _resume_skills or _jd_skill_list:
+            _work_ctx = ""
+            if _work_history:
+                _work_ctx = (
+                    f"\n  Work context: {' | '.join(_work_history[:3])}\n"
+                    f"  -> When asking about a skill, GROUND it in the role/project where it was used.\n"
+                    f"  -> Only name a company when the skill is tied to that employer.\n"
+                )
+            skills_block = (
+                f"\nSKILLS TO COVER:\n"
+                f"  Resume skills: {', '.join(_resume_skills) or 'none listed'}\n"
+                f"  JD must-have skills: {', '.join(_jd_skill_list) or 'none listed'}\n"
+                f"{_work_ctx}"
+                f"{_skill_probe_style}"
+                f"  -> If a skill already came up naturally in a project story, mark it covered -- don't ask again.\n"
+            )
+        else:
+            skills_block = ""
     # Band-aware coverage goals and mandatory quota.
     # Research basis: as seniority increases, interviews shift from breadth -> depth.
     # Fresher: cover many topics lightly (5-6), understand how they think.
@@ -284,7 +278,9 @@ def build_interview_directive(
             (
                 "  ☐ All resume projects covered (anchor first, then the rest).\n"
                 "  ☐ Resume skills + JD skills probed for real usage.\n"
-                "  ☐ Work history touched if time allows."
+                "  ☐ Work history touched if time allows.\n"
+                "  ☐ At least 1 situational question woven in naturally (e.g. 'What would you do if...').\n"
+                "  ☐ At least 1 behavioral question woven in naturally (e.g. 'Tell me about a time...')."
             ),
             "  -> BREADTH FIRST -- 2-3 follow-ups per topic. Move on when you have signal.\n"
             "  -> Accept incomplete answers -- they're learning. Note gaps, don't dwell.\n"
@@ -299,7 +295,8 @@ def build_interview_directive(
             ),
             (
                 "  ☐ Anchor + other resume roles/projects -- their specific contribution each time.\n"
-                "  ☐ JD skills -- probe as many as time allows, no fixed minimum."
+                "  ☐ JD skills -- probe as many as time allows, no fixed minimum.\n"
+                "  ☐ At least 1 situational or behavioral question woven in naturally."
             ),
             "  -> BALANCED -- 3-4 follow-ups per topic. Move on when you have clear ownership signal.\n"
             "  -> If they say 'we', always ask: 'What was specifically yours in that?'\n"

@@ -330,13 +330,41 @@ def build_probe_directive(
         "  - 'That's a start -- can you give me a bit more to work with?'\n"
         "  - 'I'd love to hear more than that -- what specifically did you do?'"
     ) if is_short else ""
+    # Detect clarification requests before any other probe logic.
+    # "Which one?", "What do you mean?", "Could you clarify?" etc. are NOT evasion.
+    _is_clarification = prev_answer.strip().endswith("?") or any(
+        w in prev_answer.lower()
+        for w in ("which one", "what do you mean", "can you clarify", "could you clarify",
+                  "what are you", "which project", "which specific", "what exactly")
+    )
+    if _is_clarification:
+        return (
+            "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
+            "DECISION: PROBE (CLARIFY)\n"
+            f"TOPIC CONTEXT: {active_topic}\n"
+            "CANDIDATE ASKED A CLARIFICATION QUESTION -- they are confused, not evading.\n"
+            "DO NOT use the short-answer pushback. DO NOT say 'That's a start'.\n"
+            "Apologise briefly (one short natural phrase) and re-ask your question in simpler, "
+            "more concrete terms. Use a specific example from their background if possible.\n"
+            "ONE question. Ground it in something real about them or this topic."
+            f"{attribution_block}"
+            f"{memory_block}"
+            f"{covered_block}",
+            "clarify",
+        )
     is_early = topic_follow_ups <= 1
     if is_closing_tier:
         depth_guard = _DEPTH_GUARDS["closing"]
         effective_family = "reflection"
     elif is_early:
         depth_guard = _DEPTH_GUARDS["early"]
-        effective_family = probe_family
+        # Authenticity probes require episodic memory ("take me back to a specific time")
+        # which is only valid AFTER the candidate has established the WHAT.
+        # On the first probe, redirect authenticity to ownership/depth to establish context.
+        if probe_family == "authenticity":
+            effective_family = "ownership"
+        else:
+            effective_family = probe_family
     elif band == "fresher":
         depth_guard = _DEPTH_GUARDS["established_fresher"]
         effective_family = probe_family

@@ -150,8 +150,59 @@ def build_evaluation_layer_prompt(
     candidate_name: str,
     job_title: str,
     candidate_band: str = "mid",
+    interview_brief=None,  # InterviewBrief — when provided, structured sections replace text blob
 ) -> str:
-    brief_block = live_prompt_context.strip() if live_prompt_context and live_prompt_context.strip() else "Resume data not available -- probe broadly based on job title."
+    # When InterviewBrief is available, build a structured analyst brief from its fields.
+    # This gives Ishita a formed opinion: what to probe hard, what gaps exist, what to watch.
+    if interview_brief is not None:
+        _strategy = interview_brief.interview_strategy or ""
+        _summary  = interview_brief.candidate_summary or ""
+        _gaps     = interview_brief.candidate_fit_gaps or []
+        _flags    = interview_brief.red_flags or []
+        _focus    = interview_brief.focus_areas or []
+        _anchor   = interview_brief.anchor_topic
+        _role_ctx = interview_brief.role_context
+
+        _must_haves = ", ".join(_role_ctx.must_have_skills[:8]) if _role_ctx.must_have_skills else "see JD"
+
+        _topics_summary = "\n".join(
+            f"  {i+1}. [{t.topic_type.upper()}] {t.title}  (relevance={t.relevance_score:.2f})"
+            f"{('  probe: ' + ', '.join(t.probe_focus[:3])) if t.probe_focus else ''}"
+            f"{('  avoid: ' + ', '.join(t.probe_avoid[:2])) if t.probe_avoid else ''}"
+            for i, t in enumerate(interview_brief.topic_pool)
+        )
+
+        brief_block = f"""CANDIDATE: {candidate_name}
+ROLE: {job_title}  |  BAND: {candidate_band.upper()}
+
+ANALYST READ:
+{_summary}
+
+INTERVIEW STRATEGY:
+{_strategy}
+
+ANCHOR TOPIC (open here):
+  {_anchor.title} — {_anchor.full_description[:200]}
+  Probe focus: {', '.join(_anchor.probe_focus[:3]) if _anchor.probe_focus else 'depth, ownership'}
+  Probe avoid: {', '.join(_anchor.probe_avoid[:2]) if _anchor.probe_avoid else 'none'}
+
+TOPIC POOL (in order of priority):
+{_topics_summary}
+
+JD MUST-HAVES:
+  {_must_haves}
+
+FIT GAPS (probe these specifically):
+{chr(10).join('  - ' + g for g in _gaps) if _gaps else '  (none identified)'}
+
+RED FLAGS (watch for these — do not ignore):
+{chr(10).join('  ⚠ ' + f for f in _flags) if _flags else '  (none)'}
+
+FOCUS AREAS:
+{chr(10).join('  → ' + a for a in _focus) if _focus else '  (standard coverage)'}"""
+    else:
+        brief_block = live_prompt_context.strip() if live_prompt_context and live_prompt_context.strip() else "Resume data not available -- probe broadly based on job title."
+
     # Band-specific evaluation posture -- what "good" looks like at each level
     band_eval = {
         "fresher": (
