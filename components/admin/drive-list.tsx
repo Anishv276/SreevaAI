@@ -1,17 +1,14 @@
 "use client";
-
 import { useJobs } from "@/context/jobs-context";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Briefcase, Calendar, Users, ChevronRight, Plus } from "lucide-react";
-
 export function DriveList() {
     const { jobs } = useJobs();
     const drives = jobs;
     const router = useRouter();
-
     return (
         <div className="space-y-6">
             {/* Header */}
@@ -27,7 +24,6 @@ export function DriveList() {
                     View All <ChevronRight className="h-4 w-4" />
                 </Link>
             </div>
-
             {/* Cards Grid */}
             {drives.length === 0 ? (
                 <Card className="p-12 border-dashed border-2 border-slate-200 bg-slate-50/60 flex flex-col items-center text-center gap-4 group hover:border-slate-300 transition-colors">
@@ -54,7 +50,6 @@ export function DriveList() {
                         >
                             {/* Top Accent Line */}
                             <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-transparent via-slate-900 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                            
                             <div>
                                 {/* Header: Title */}
                                 <div className="flex justify-between items-start gap-4 mb-3">
@@ -66,7 +61,6 @@ export function DriveList() {
                                     {drive.role || drive.title}
                                 </p>
                             </div>
-
                             {/* Footer Section */}
                             <div className="mt-auto space-y-5">
                                 {/* Date & Applicants Row */}
@@ -75,13 +69,11 @@ export function DriveList() {
                                         <Calendar className="h-3.5 w-3.5" />
                                         <span>Posted {new Date(drive.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
                                     </div>
-                                    
                                     <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-700">
                                         <Users className="h-3.5 w-3.5" />
                                         <span className="text-xs font-black">{drive.applicants || 0} Applicants</span>
                                     </div>
                                 </div>
-
                                 {/* Action Button */}
                                 <Button 
                                     className="w-full rounded-xl bg-slate-950 hover:bg-slate-800 text-white font-bold h-10 shadow-sm transition-all group-hover:shadow-md"

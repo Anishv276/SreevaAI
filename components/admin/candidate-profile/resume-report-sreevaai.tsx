@@ -1,5 +1,4 @@
 "use client";
-
 import { useState, useEffect, type ReactNode } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -17,13 +16,10 @@ import {
   SREEVAAI_REPORT_CARD,
   fitLabelFromPct,
 } from "./interview-report-sreevaai";
-
 const card = SREEVAAI_REPORT_CARD;
 const bgPage = "bg-white relative overflow-hidden";
-
 type RadarKey = "must_haves" | "exp_depth" | "domain_fit" | "skill_breadth" | "evidence_quality";
 type RadarNotes = Record<RadarKey, string>;
-
 const RESUME_RADAR_LABELS: { key: RadarKey; label: string }[] = [
   { key: "must_haves", label: "Must-Haves" },
   { key: "exp_depth", label: "Exp Depth" },
@@ -31,7 +27,6 @@ const RESUME_RADAR_LABELS: { key: RadarKey; label: string }[] = [
   { key: "skill_breadth", label: "Skill Breadth" },
   { key: "evidence_quality", label: "Evidence" },
 ];
-
 function ResumeRadarPlot({
   values,
   onHoverChange,
@@ -52,12 +47,10 @@ function ResumeRadarPlot({
   const rOuter = 42;
   const angle = (i: number) => (-90 + (360 / n) * i) * (Math.PI / 180);
   const clamp = (v: number) => Math.max(10, Math.min(100, v));
-
   const pts = RESUME_RADAR_LABELS.map((def, i) => {
     const t = (clamp(values[def.key]) / 100) * r;
     return `${cx + t * Math.cos(angle(i))},${cy + t * Math.sin(angle(i))}`;
   });
-
   return (
     <div className="relative w-full min-h-[250px] sm:min-h-[270px]">
       <svg
@@ -75,7 +68,6 @@ function ResumeRadarPlot({
             <stop offset="100%" stopColor="#F0A12A" />
           </linearGradient>
         </defs>
-
         {/* Radar Rings */}
         {[0.25, 0.5, 0.75, 1].map((f) => (
           <circle
@@ -88,7 +80,6 @@ function ResumeRadarPlot({
             strokeWidth="0.5"
           />
         ))}
-
         {/* Radar Axes */}
         {RESUME_RADAR_LABELS.map((def, i) => (
           <line
@@ -101,7 +92,6 @@ function ResumeRadarPlot({
             strokeWidth={hoveredKey === def.key ? "0.8" : "0.4"}
           />
         ))}
-
         {/* Data Shape */}
         <polygon
           points={pts.join(" ")}
@@ -110,7 +100,6 @@ function ResumeRadarPlot({
           strokeWidth="1.2"
           strokeLinejoin="round"
         />
-
         {/* Interaction Points & Labels */}
         {RESUME_RADAR_LABELS.map((def, i) => {
           const ax = angle(i);
@@ -120,7 +109,6 @@ function ResumeRadarPlot({
           const ox = cx + rOuter * Math.cos(ax);
           const oy = cy + rOuter * Math.sin(ax);
           const pct = Math.round(values[def.key]);
-
           return (
             <g
               key={def.key}
@@ -130,7 +118,6 @@ function ResumeRadarPlot({
             >
               {/* Hit Area */}
               <circle cx={ox} cy={oy} r="10" fill="none" pointerEvents="all" />
-
               <text
                 x={ox}
                 y={oy - 1.5}
@@ -153,7 +140,6 @@ function ResumeRadarPlot({
               >
                 {pct}%
               </text>
-
               {hoveredKey === def.key && (
                 <circle
                   cx={nodeX}
@@ -167,7 +153,6 @@ function ResumeRadarPlot({
             </g>
           );
         })}
-
         {/* Central Display */}
         {hoveredKey && (
           <g style={{ pointerEvents: "none" }}>
@@ -189,13 +174,11 @@ function ResumeRadarPlot({
     </div>
   );
 }
-
 export type SkillRow = {
   name: string;
   bucket: "matched" | "not_matched" | "listed";
   evidenceNote?: string;
 };
-
 export type SreevaAIResumeViewModel = {
   backHref: string;
   processing: boolean;
@@ -217,7 +200,6 @@ export type SreevaAIResumeViewModel = {
   resumeUrl: string | null;
   reviewStrip: string;
 };
-
 function readableSummaryText(text: string, maxLen = 180) {
   const clean = String(text || "")
     .replace(/^flag:\s*/i, "")
@@ -226,11 +208,9 @@ function readableSummaryText(text: string, maxLen = 180) {
   if (!clean) return "";
   return clean.length > maxLen ? `${clean.slice(0, maxLen - 3).trimEnd()}...` : clean;
 }
-
 function asRecord(value: unknown): Record<string, any> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, any>) : {};
 }
-
 function extractStringList(value: unknown, keys = ["skill", "tool", "name", "label", "title", "text", "summary", "claim"]): string[] {
   const toLine = (item: unknown): string => {
     if (item == null) return "";
@@ -247,17 +227,14 @@ function extractStringList(value: unknown, keys = ["skill", "tool", "name", "lab
     }
     return "";
   };
-
   if (Array.isArray(value)) return value.map(toLine).filter(Boolean);
   if (value && typeof value === "object") return Object.values(value as Record<string, unknown>).map(toLine).filter(Boolean);
   if (typeof value === "string") return value.split(/\n+/).map((line) => line.trim()).filter(Boolean);
   return [];
 }
-
 function uniqueNonEmpty(values: Array<string | null | undefined>): string[] {
   return Array.from(new Set(values.map((v) => String(v || "").trim()).filter(Boolean)));
 }
-
 function extractSkillName(item: unknown): string {
   if (!item) return "";
   if (typeof item === "string") return item.trim();
@@ -266,7 +243,6 @@ function extractSkillName(item: unknown): string {
   const candidate = obj.skill ?? obj.tool ?? obj.name ?? obj.label ?? obj.title;
   return typeof candidate === "string" ? candidate.trim() : "";
 }
-
 function normalizeSourceStrength(raw: unknown): "work_history_outcome" | "work_history" | "project" | "listed" | "inferred" {
   const value = String(raw || "").toLowerCase();
   if (value === "work_history_outcome") return "work_history_outcome";
@@ -275,7 +251,6 @@ function normalizeSourceStrength(raw: unknown): "work_history_outcome" | "work_h
   if (value === "inferred") return "inferred";
   return "listed";
 }
-
 function formatExperienceDuration(totalYears: number | null | undefined): string {
   if (totalYears == null || !Number.isFinite(totalYears) || totalYears < 0) return "";
   const years = Math.floor(totalYears);
@@ -284,7 +259,6 @@ function formatExperienceDuration(totalYears: number | null | undefined): string
   const monthPart = `${months} mo${months === 1 ? "" : "s"}`;
   return `${yearPart} ${monthPart}`;
 }
-
 /**
  * Flattens existing candidate-page resume signals into a SreevaAI-mirror view model.
  */
@@ -355,7 +329,6 @@ export function buildSreevaAIResumeViewModel(i: {
   const gS = Number(b?.good_score ?? 0);
   const dM = Math.max(1, Number(b?.domain_max ?? 10));
   const dS = Number(b?.domain_score ?? 0);
-
   const ar = i.aiRadar;
   const resumeStruct = asRecord(i.structuredResumeData);
   const reportSkillMatching = asRecord(i.skillMatching);
@@ -366,7 +339,6 @@ export function buildSreevaAIResumeViewModel(i: {
   const structuredEvidenceItems = Array.isArray(resumeStruct.evidence_items) ? resumeStruct.evidence_items : [];
   const aiSkillRows = Array.isArray(i.aiSkillRows) ? i.aiSkillRows : [];
   const skillMatching = reportSkillMatching;
-
   const workHistoryRows = Array.isArray(i.combinedWorkHistory) ? i.combinedWorkHistory : [];
   const strongWorkHistoryRows = workHistoryRows.filter((row: any) => {
     const ownership = String(row?.ownership_level || "").toLowerCase();
@@ -374,7 +346,6 @@ export function buildSreevaAIResumeViewModel(i: {
     const hasMetrics = Array.isArray(row?.impact_signals) && row.impact_signals.length > 0;
     return ownership === "owner" || impact === "high" || hasMetrics;
   });
-
   const structuredTechEntries = [
     ...(Array.isArray(structuredSkills.technical) ? structuredSkills.technical : []),
     ...(Array.isArray(structuredSkills.tools) ? structuredSkills.tools : []),
@@ -397,7 +368,6 @@ export function buildSreevaAIResumeViewModel(i: {
   const skillsExtractedFallback = structuredSkillNames.length > 0
     ? Math.round((evidenceBackedSkillNames.length / Math.max(1, structuredSkillNames.length)) * 100)
     : Math.min(100, Math.round(((skS + gS) / Math.max(1, skM + gM)) * 100));
-
   const evidenceSignalCount = structuredEvidenceItems.filter((ev: any) => {
     const lvl = Number(ev?.evidence_level ?? 0);
     const ownership = String(ev?.ownership || "").toLowerCase();
@@ -414,7 +384,6 @@ export function buildSreevaAIResumeViewModel(i: {
     : (workHistoryRows.length > 0
       ? Math.round(Math.min(100, ((strongWorkHistoryRows.length * 2) / Math.max(1, workHistoryRows.length)) * 100))
       : 0);
-
   const domainSignals = uniqueNonEmpty([
     ...extractStringList(structuredSkills.domain_skills),
     ...structuredWorkHistory.map((job: any) => String(job?.business_domain || "").trim()),
@@ -424,7 +393,6 @@ export function buildSreevaAIResumeViewModel(i: {
   const domainFallback = domainSignals.length > 0
     ? Math.min(100, 20 * Math.min(5, domainSignals.length))
     : Math.min(100, Math.round((dS / dM) * 100));
-
   const essentialsFallback = aiSkillRows.length > 0
     ? Math.round(
       (
@@ -433,7 +401,6 @@ export function buildSreevaAIResumeViewModel(i: {
       ) / Math.max(1, aiSkillRows.length) * 100,
     )
     : skillsExtractedFallback;
-
   const candidateYears = Number(
     c.experienceYears ?? structuredExperience.total_years ?? (resumeStruct as Record<string, any>)?.experience?.years ?? NaN,
   );
@@ -452,7 +419,6 @@ export function buildSreevaAIResumeViewModel(i: {
     }
     return Math.min(100, Math.round(total / workHistoryRows.length));
   })();
-
   const fitRadarNotes: RadarNotes = {
     must_haves:
       structuredSkillNames.length > 0
@@ -475,7 +441,6 @@ export function buildSreevaAIResumeViewModel(i: {
         ? `Scored from ${structuredEvidenceItems.length} evidence items — ${evidenceSignalCount} carry measurable outcomes, ownership, or repeated use across roles. Measures how much of the resume can be trusted vs. taken at face value.`
         : "No structured evidence items found — falling back to work-history impact signals.",
   };
-
   const clamp = (v: unknown, fb: number) => {
     const n = Number(v);
     return Number.isFinite(n) ? Math.min(100, Math.max(0, Math.round(n))) : fb;
@@ -503,7 +468,6 @@ export function buildSreevaAIResumeViewModel(i: {
     if (an.skill_breadth) fitRadarNotes.skill_breadth = an.skill_breadth;
     if (an.evidence_quality) fitRadarNotes.evidence_quality = an.evidence_quality;
   }
-
   const validTones = new Set(["emerald", "amber", "rose"]);
   const aiSummaryPoints: SreevaAIResumeViewModel["aiSummaryPoints"] =
     i.aiSummaryCards && i.aiSummaryCards.length >= 1
@@ -519,7 +483,6 @@ export function buildSreevaAIResumeViewModel(i: {
       : i.normalizedStatus?.toLowerCase() === "rejected"
         ? "REJECTED"
         : "BORDERLINE";
-
   // ── Skill Signals: 3-bucket build ─────────────────────────────────────────
   // Bucket 1 "matched"     → in JD criteria AND found in resume (scored "meets" by scorer)
   // Bucket 2 "not_matched" → in JD criteria AND missing from resume
@@ -528,11 +491,9 @@ export function buildSreevaAIResumeViewModel(i: {
     const normalizeKey = (v: string) => v.toLowerCase().replace(/[^a-z0-9]+/g, "");
     const seen = new Set<string>(); // dedup by normalised name
     const rows: SkillRow[] = [];
-
     // ── MATCHED (JD criteria that the scorer confirmed) ───────────────────
     const matchedMust: string[] = Array.isArray(skillMatching.matched_must) ? skillMatching.matched_must : [];
     const matchedGood: string[] = Array.isArray(skillMatching.matched_good) ? skillMatching.matched_good : [];
-
     for (const name of [...matchedMust, ...matchedGood]) {
       const clean = String(name || "").trim();
       if (!clean) continue;
@@ -546,7 +507,6 @@ export function buildSreevaAIResumeViewModel(i: {
       const note = detail?.evidence || "";
       rows.push({ name: clean, bucket: "matched", evidenceNote: note || undefined });
     }
-
     // ── NOT MATCHED (JD criteria missing from resume) ─────────────────────
     const missingMust: string[] = Array.isArray(skillMatching.missing_must)
       ? skillMatching.missing_must
@@ -559,7 +519,6 @@ export function buildSreevaAIResumeViewModel(i: {
       seen.add(key);
       rows.push({ name: clean, bucket: "not_matched" });
     }
-
     // ── LISTED IN RESUME (all resume skills not already in matched/not_matched) ──
     // Collect every skill from the structured resume parse
     const resumeSkillNames: string[] = uniqueNonEmpty([
@@ -580,10 +539,8 @@ export function buildSreevaAIResumeViewModel(i: {
       seen.add(key);
       rows.push({ name: clean, bucket: "listed" });
     }
-
     return rows;
   })();
-
   const history = (i.combinedWorkHistory || []) as Array<{
     role?: string;
     company?: string;
@@ -600,7 +557,6 @@ export function buildSreevaAIResumeViewModel(i: {
     responsibilities?: string[];
     impact_signals?: string[];
   }>;
-
   const formatWorkDate = (d?: string): string => {
     if (!d) return "";
     if (d === "Present") return "Present";
@@ -612,7 +568,6 @@ export function buildSreevaAIResumeViewModel(i: {
     }
     return d;
   };
-
   let careerLines: SreevaAIResumeViewModel["careerLines"] = history.slice(0, 8).map((r, idx) => {
     const startFmt = formatWorkDate(r.start_date || r.start_year);
     const endFmt = r.is_current ? "Present" : formatWorkDate(r.end_date || r.end_year);
@@ -643,19 +598,15 @@ export function buildSreevaAIResumeViewModel(i: {
       time: " ",
     });
   }
-
   const sanitizeItems = (raw: { label: string; body: string }[]) =>
     raw.map((item) => ({
       label: String(item.label || "").trim(),
       body: readableSummaryText(String(item.body || ""), 260),
     })).filter((item) => item.label && item.body);
-
   const strengths: SreevaAIResumeViewModel["strengths"] =
     i.aiStrengths && i.aiStrengths.length > 0 ? sanitizeItems(i.aiStrengths).slice(0, 4) : [];
-
   const weaknesses: SreevaAIResumeViewModel["weaknesses"] =
     i.aiWeaknesses && i.aiWeaknesses.length > 0 ? sanitizeItems(i.aiWeaknesses).slice(0, 4) : [];
-
   return {
     backHref: i.backHref || "/admin/candidates",
     processing: !i.hasResumeText && !i.hasAiReport,
@@ -691,14 +642,12 @@ export function buildSreevaAIResumeViewModel(i: {
     })(),
   };
 }
-
 type ResumeReportSreevaAIProps = {
   model: SreevaAIResumeViewModel;
   onBack?: () => void;
   showHeader?: boolean;
   headerActions?: ReactNode;
 };
-
 export function ResumeReportSreevaAI({
   model,
   onBack,
@@ -714,15 +663,12 @@ export function ResumeReportSreevaAI({
   const [openListedSkills, setOpenListedSkills] = useState(false);
   const [openCareer, setOpenCareer] = useState(true);
   const [openAiSummary, setOpenAiSummary] = useState(true);
-
   useEffect(() => {
     document.body.classList.add("reports-mode");
     return () => {
       document.body.classList.remove("reports-mode");
     };
   }, []);
-
-
   const BackButton = () => {
     const className = "mt-2 inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#DDE1E5] bg-white px-3 text-[11px] font-medium text-[#0D4D2E] shadow-sm hover:bg-[#F7FAF8]";
     if (onBack) {
@@ -738,7 +684,6 @@ export function ResumeReportSreevaAI({
       </Link>
     );
   };
-
   if (model.processing) {
     return (
       <div className={cn("w-full", bgPage)}>
@@ -757,14 +702,11 @@ export function ResumeReportSreevaAI({
       </div>
     );
   }
-
   const matchedSkills = model.skillRows.filter((r) => r.bucket === "matched");
   const notMatchedSkills = model.skillRows.filter((r) => r.bucket === "not_matched");
   const listedSkills = model.skillRows.filter((r) => r.bucket === "listed");
-
   return (
     <div className="w-full h-screen flex flex-col overflow-hidden bg-[#F3F4F6]">
-
       {/* ── Header (shrink-0, same pattern as interview report) ── */}
       {showHeader && (
         <div className="shrink-0 flex flex-wrap items-center justify-between gap-3 border-b border-[#DDE1E5] px-4 py-2 bg-white z-10 shadow-sm">
@@ -788,15 +730,12 @@ export function ResumeReportSreevaAI({
           </div>
         </div>
       )}
-
       {/* ── 3-column content area (flex-1, no page scroll) ── */}
       <div className="flex-1 overflow-hidden p-3 lg:p-4">
         <div className="mx-auto max-w-[1600px] h-full grid grid-cols-1 lg:grid-cols-3 gap-3 lg:gap-4 items-stretch">
-
           {/* ── COL 1: Profile · Verdict · Radar ── */}
           <div className="col-span-1 flex flex-col min-h-0 overflow-y-auto" style={{ scrollbarWidth: "thin", scrollbarColor: "#E4E7EB transparent" }}>
             <div className="rounded-2xl bg-white border border-[#E4E7EB] shadow-sm overflow-visible">
-
               {/* Candidate Profile */}
               <div className="px-5 py-4">
                 <div className="flex items-center gap-4">
@@ -824,9 +763,7 @@ export function ResumeReportSreevaAI({
                   </div>
                 </div>
               </div>
-
               <div className="border-t border-[#F0F1F3]" />
-
               {/* Shortlisting Verdict */}
               {(() => {
                 const isHire = model.decisionStamp === "SHORTLISTED";
@@ -862,9 +799,7 @@ export function ResumeReportSreevaAI({
                   </div>
                 );
               })()}
-
               <div className="border-t border-[#F0F1F3]" />
-
               {/* AI Summary */}
               <div className="px-5 py-4">
                 <button type="button" onClick={() => setOpenAiSummary(!openAiSummary)}
@@ -900,19 +835,15 @@ export function ResumeReportSreevaAI({
                   </div>
                 )}
               </div>
-
             </div>
           </div>
-
           {/* ── COL 2: Evidence Highlights · Fit Radar ── */}
           <div className="col-span-1 flex flex-col min-h-0 overflow-y-auto" style={{ scrollbarWidth: "thin", scrollbarColor: "#E4E7EB transparent" }}>
             <div className="rounded-2xl bg-white border border-[#E4E7EB] shadow-sm overflow-visible">
-
               {/* Evidence Highlights */}
               <div className="px-5 py-4">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-[#6B7280] mb-3">Evidence Highlights</p>
                 <div className="flex flex-col gap-1">
-
                   {/* Strengths */}
                   <div>
                     <button type="button" onClick={() => setOpenStrengths(!openStrengths)}
@@ -943,9 +874,7 @@ export function ResumeReportSreevaAI({
                       </div>
                     )}
                   </div>
-
                   <div className="h-px bg-[#F3F4F6] my-1" />
-
                   {/* Weaknesses */}
                   <div>
                     <button type="button" onClick={() => setOpenWeaknesses(!openWeaknesses)}
@@ -976,12 +905,9 @@ export function ResumeReportSreevaAI({
                       </div>
                     )}
                   </div>
-
                 </div>
               </div>
-
               <div className="border-t border-[#F0F1F3]" />
-
               {/* Fit Radar */}
               <div className="px-5 py-4">
                 <div className="flex items-center justify-between mb-3">
@@ -1004,14 +930,11 @@ export function ResumeReportSreevaAI({
                   </div>
                 </div>
               </div>
-
             </div>
           </div>
-
           {/* ── COL 3: Career Timeline · Skill Signals ── */}
           <div className="col-span-1 flex flex-col min-h-0 overflow-y-auto" style={{ scrollbarWidth: "thin", scrollbarColor: "#E4E7EB transparent" }}>
             <div className="rounded-2xl bg-white border border-[#E4E7EB] shadow-sm overflow-visible">
-
               {/* Career Timeline */}
               <div className="px-5 py-4">
                 <button type="button" onClick={() => setOpenCareer(!openCareer)}
@@ -1034,14 +957,11 @@ export function ResumeReportSreevaAI({
                   </div>
                 )}
               </div>
-
               <div className="border-t border-[#F0F1F3]" />
-
               {/* Skill Signals */}
               <div className="px-5 py-4">
                 <p className="text-[13px] font-bold text-[#111827] mb-3">Skill Signals</p>
                 <div className="flex flex-col gap-1">
-
                   {/* Matched — in JD and found in resume */}
                   <div>
                     <button type="button" onClick={() => setOpenMatchedSkills(!openMatchedSkills)}
@@ -1067,9 +987,7 @@ export function ResumeReportSreevaAI({
                       </div>
                     )}
                   </div>
-
                   {notMatchedSkills.length > 0 && <div className="h-px bg-[#F3F4F6] my-1" />}
-
                   {/* Not Matched — JD required but missing from resume */}
                   {notMatchedSkills.length > 0 && (
                     <div>
@@ -1096,9 +1014,7 @@ export function ResumeReportSreevaAI({
                       )}
                     </div>
                   )}
-
                   {listedSkills.length > 0 && <div className="h-px bg-[#F3F4F6] my-1" />}
-
                   {/* Listed in resume — candidate's full stack outside JD scope */}
                   {listedSkills.length > 0 && (
                     <div>
@@ -1125,13 +1041,10 @@ export function ResumeReportSreevaAI({
                       )}
                     </div>
                   )}
-
                 </div>
               </div>
-
             </div>
           </div>
-
         </div>
       </div>
     </div>

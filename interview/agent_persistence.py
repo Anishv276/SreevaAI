@@ -1,18 +1,14 @@
 """
 agent_persistence.py -- Production-level interview data persistence layer.
-
 Architecture (5 layers):
   1. DatabasePool    -- singleton asyncpg pool with health-check
   2. Domain Models   -- Pydantic typed models for DB + LLM responses
   3. BillingEngine   -- Strategy pattern for multi-provider cost estimation
   4. InterviewRepository -- thin async DB wrappers, no business logic
   5. ReportPipeline  -- LangGraph StateGraph: 3 parallel LLM calls + deterministic scoring
-
 External contracts (agent_runtime.py imports) are preserved exactly.
 """
-
 from __future__ import annotations
-
 import asyncio
 import json
 import os
@@ -21,20 +17,16 @@ import time
 from collections import Counter
 from dataclasses import dataclass
 from typing import Any, ClassVar, Literal, Optional, Protocol
-
 import asyncpg
 from pydantic import BaseModel, Field, field_validator
 from typing_extensions import TypedDict
 from urllib.parse import parse_qsl, urlencode, urlunparse, urlparse
-
 # LangChain / LangGraph
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, END
-
 from livekit.agents.metrics import AgentSessionUsage
-
 from behavioral_analysis import generate_signal_analysis
 from interview.agent_utils import _coerce_jsonish, truncate_to_tokens
 from interview.agent_runtime_support import (
@@ -46,25 +38,19 @@ from interview.agent_runtime_support import (
     _PENDING_MANUAL_BILLING,
     logger,
 )
-
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # LAYER 1 -- DatabasePool singleton
 # ═══════════════════════════════════════════════════════════════════════════════
-
 class DatabasePool:
     """Async singleton wrapper around asyncpg.Pool with lazy init and health-check."""
-
     _pool: ClassVar[asyncpg.Pool | None] = None
     _init_task: ClassVar[asyncio.Task | None] = None
     _lock: ClassVar[asyncio.Lock | None] = None
-
     @classmethod
     def _get_lock(cls) -> asyncio.Lock:
         if cls._lock is None:
             cls._lock = asyncio.Lock()
         return cls._lock
-
     @classmethod
     def normalize_dsn(cls, conn_str: str) -> str:
         if conn_str.startswith("postgres://"):
@@ -74,15 +60,12 @@ class DatabasePool:
         for key in ("pgbouncer", "connection_limit", "pool_timeout", "schema"):
             query.pop(key, None)
         return urlunparse(parsed._replace(query=urlencode(query)))
-
     @classmethod
     async def _create(cls) -> asyncpg.Pool:
         if not DATABASE_URL:
             raise RuntimeError("DATABASE_URL is not set")
-
         async def _init_conn(conn: asyncpg.Connection) -> None:
             await conn.execute("SET statement_timeout = '30s'")
-
         return await asyncpg.create_pool(
             cls.normalize_dsn(DATABASE_URL),
             ssl=False,
@@ -92,7 +75,6 @@ class DatabasePool:
             max_inactive_connection_lifetime=60.0,
             init=_init_conn,
         )
-
     @classmethod
     async def _is_healthy(cls, pool: asyncpg.Pool) -> bool:
         if pool._closed:
@@ -103,7 +85,6 @@ class DatabasePool:
             return True
         except Exception:
             return False
-
     @classmethod
     async def get(cls) -> asyncpg.Pool:
         global _DB_POOL, _DB_POOL_INIT_TASK
@@ -132,40 +113,28 @@ class DatabasePool:
             except Exception:
                 cls._init_task = None
                 raise
-
-
 # Public aliases (preserve agent_runtime.py imports)
 async def get_db_pool() -> asyncpg.Pool:
     return await DatabasePool.get()
-
-
 async def _create_db_pool() -> asyncpg.Pool:
     return await DatabasePool._create()
-
-
 def normalize_postgres_dsn(conn_str: str) -> str:
     return DatabasePool.normalize_dsn(conn_str)
-
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # LAYER 2 -- Domain / Pydantic Models
 # ═══════════════════════════════════════════════════════════════════════════════
-
 # -- LLM Response Models ------------------------------------------------------
-
 class SkillRating(BaseModel):
     topic:    str
     score:    int = Field(default=5, ge=1, le=10)
     status:   Literal["PROVED", "PARTIAL", "NOT_PROVED"] = "PARTIAL"
     evidence: str = ""
     gaps:     str = ""
-
     @field_validator("status", mode="before")
     @classmethod
     def _normalize_status(cls, v: Any) -> str:
         s = str(v or "").upper()
         return s if s in {"PROVED", "PARTIAL", "NOT_PROVED"} else "PARTIAL"
-
     @field_validator("score", mode="before")
     @classmethod
     def _clamp_score(cls, v: Any) -> int:
@@ -173,12 +142,9 @@ class SkillRating(BaseModel):
             return max(1, min(10, int(round(float(v)))))
         except (TypeError, ValueError):
             return 5
-
-
 class LLMEvalDimension(BaseModel):
     score:    int = Field(default=0, ge=0, le=100)
     evidence: str = ""
-
     @field_validator("score", mode="before")
     @classmethod
     def _clamp(cls, v: Any) -> int:
@@ -186,8 +152,6 @@ class LLMEvalDimension(BaseModel):
             return max(0, min(100, int(round(float(v)))))
         except (TypeError, ValueError):
             return 0
-
-
 class LLMEvalResponse(BaseModel):
     communication:            LLMEvalDimension = Field(default_factory=LLMEvalDimension)
     technical_knowledge:      LLMEvalDimension = Field(default_factory=LLMEvalDimension)
@@ -196,13 +160,10 @@ class LLMEvalResponse(BaseModel):
     clarity_of_thought:       LLMEvalDimension = Field(default_factory=LLMEvalDimension)
     strengths:                list[str] = Field(default_factory=list)
     concerns:                 list[str] = Field(default_factory=list)
-
-
 class LLMSkillEntry(BaseModel):
     skill:    str = ""
     score:    int = Field(default=5, ge=1, le=10)
     evidence: str = ""
-
     @field_validator("score", mode="before")
     @classmethod
     def _clamp(cls, v: Any) -> int:
@@ -210,14 +171,9 @@ class LLMSkillEntry(BaseModel):
             return max(1, min(10, int(round(float(v)))))
         except (TypeError, ValueError):
             return 5
-
-
 class LLMSkillsResponse(BaseModel):
     skills: list[LLMSkillEntry] = Field(default_factory=list)
-
-
 # -- Billing Models (unchanged from existing Pydantic classes) -----------------
-
 class _ModelBilling(BaseModel):
     provider:        str   = "unknown"
     model:           str   = "unknown"
@@ -229,8 +185,6 @@ class _ModelBilling(BaseModel):
     costUsd:         float = 0.0
     characters:      int   = 0
     audioSeconds:    float = 0.0
-
-
 class _FeatureBilling(BaseModel):
     runs:             int   = 0
     inputTokens:      int   = 0
@@ -247,8 +201,6 @@ class _FeatureBilling(BaseModel):
     byModel:          dict[str, _ModelBilling] = Field(default_factory=dict)
     ttsByModel:       dict[str, _ModelBilling] = Field(default_factory=dict)
     sttByModel:       dict[str, _ModelBilling] = Field(default_factory=dict)
-
-
 class _OrgBilling(BaseModel):
     interview:       _FeatureBilling = Field(default_factory=_FeatureBilling)
     resumeExtraction:_FeatureBilling = Field(default_factory=_FeatureBilling)
@@ -256,10 +208,7 @@ class _OrgBilling(BaseModel):
     chatbot:         _FeatureBilling = Field(default_factory=_FeatureBilling)
     interviewReport: _FeatureBilling = Field(default_factory=_FeatureBilling)
     resumeReport:    _FeatureBilling = Field(default_factory=_FeatureBilling)
-
-
 # -- LangGraph State -----------------------------------------------------------
-
 class ReportState(TypedDict, total=False):
     # Inputs
     app_id:           str
@@ -281,14 +230,10 @@ class ReportState(TypedDict, total=False):
     skills_result:    LLMSkillsResponse
     # Final outputs
     scores_context:   dict | None
-
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # LAYER 3 -- Billing Engine (Strategy Pattern)
 # ═══════════════════════════════════════════════════════════════════════════════
-
 _BILLING_INR_PER_USD = float(os.environ.get("BILLING_INR_PER_USD", "83.0"))
-
 _OPENAI_MODEL_RATES: dict[str, dict[str, float]] = {
     "gpt-5.4-mini": {"input": 0.75,  "cached_input": 0.075, "output": 4.5},
     "gpt-4o-mini":  {"input": 0.15,  "cached_input": 0.075, "output": 0.6},
@@ -296,7 +241,6 @@ _OPENAI_MODEL_RATES: dict[str, dict[str, float]] = {
     "gpt-4o":       {"input": 2.5,   "cached_input": 1.25,  "output": 10.0},
     "gpt-4.1":      {"input": 2.0,   "cached_input": 0.5,   "output": 8.0},
 }
-
 _SARVAM_TTS_INR_PER_10K: dict[str, float] = {"bulbul:v3": 30.0, "bulbul:v2": 15.0}
 _CARTESIA_TTS_USD_PER_M: dict[str, float] = {
     "sonic-3": 15.0, "sonic-2": 15.0, "sonic": 15.0,
@@ -316,7 +260,6 @@ _DEEPGRAM_STT_USD_PER_MIN: dict[str, float] = {
     "flux-general-en":    0.0065,
     "flux-general-multi": 0.0078,
 }
-
 # Usage bucket field mapping (unchanged -- referenced by summarize_session_usage)
 _USAGE_BUCKET_FIELDS: dict[str, tuple[tuple[str, str], ...]] = {
     "llm": (
@@ -350,62 +293,44 @@ _USAGE_TYPE_TO_BUCKET = {
     "llm_usage": "llm", "tts_usage": "tts",
     "stt_usage": "stt", "interruption_usage": "interruption",
 }
-
-
 class _CostStrategy(Protocol):
     def tts_cost(self, model: str, chars: int) -> float: ...
     def stt_cost(self, model: str, seconds: float) -> float: ...
-
-
 @dataclass(frozen=True)
 class _SarvamStrategy:
     def tts_cost(self, model: str, chars: int) -> float:
         rate = _SARVAM_TTS_INR_PER_10K.get(model, _SARVAM_TTS_INR_PER_10K["bulbul:v3"])
         return (chars / 10_000.0) * rate / max(_BILLING_INR_PER_USD, 1e-6)
-
     def stt_cost(self, model: str, seconds: float) -> float:
         rate = _SARVAM_STT_INR_PER_HOUR.get(model, _SARVAM_STT_INR_PER_HOUR["saaras:v3"])
         return (seconds / 3600.0) * rate / max(_BILLING_INR_PER_USD, 1e-6)
-
-
 @dataclass(frozen=True)
 class _CartesiaStrategy:
     def tts_cost(self, model: str, chars: int) -> float:
         rate = _CARTESIA_TTS_USD_PER_M.get(model, _CARTESIA_TTS_DEFAULT)
         return (chars / 1_000_000.0) * rate
-
     def stt_cost(self, model: str, seconds: float) -> float:
         return 0.0
-
-
 @dataclass(frozen=True)
 class _ElevenLabsStrategy:
     def tts_cost(self, model: str, chars: int) -> float:
         rate = _ELEVENLABS_TTS_USD_PER_M.get(model, _ELEVENLABS_TTS_DEFAULT)
         return (chars / 1_000_000.0) * rate
-
     def stt_cost(self, model: str, seconds: float) -> float:
         return 0.0
-
-
 @dataclass(frozen=True)
 class _DeepgramStrategy:
     def tts_cost(self, model: str, chars: int) -> float:
         return 0.0
-
     def stt_cost(self, model: str, seconds: float) -> float:
         rate = _DEEPGRAM_STT_USD_PER_MIN.get(model, _DEEPGRAM_STT_USD_PER_MIN["flux-general-en"])
         return (seconds / 60.0) * rate
-
-
 _PROVIDER_REGISTRY: dict[str, _CostStrategy] = {
     "SARVAM":     _SarvamStrategy(),
     "CARTESIA":   _CartesiaStrategy(),
     "ELEVENLABS": _ElevenLabsStrategy(),
     "DEEPGRAM":   _DeepgramStrategy(),
 }
-
-
 def _normalize_openai_model(model_name: str) -> str:
     """Strip date/version suffixes so 'gpt-4.1-mini-2025-04-14' matches 'gpt-4.1-mini'."""
     import re as _re
@@ -413,16 +338,10 @@ def _normalize_openai_model(model_name: str) -> str:
     m = _re.sub(r"-\d{4}-\d{2}-\d{2}$", "", m)
     m = _re.sub(r":\d{4}-\d{2}-\d{2}$", "", m)
     return m
-
-
 def _normalize_tts_model_name(model_name: str) -> str:
     return str(model_name or "").strip().lower()
-
-
 def _normalize_stt_model_name(model_name: str) -> str:
     return str(model_name or "").strip().lower()
-
-
 def _estimate_openai_cost(model_name: str, input_tokens: int, cached_tokens: int, output_tokens: int) -> float:
     rates = _OPENAI_MODEL_RATES.get(_normalize_openai_model(model_name))
     if not rates:
@@ -436,8 +355,6 @@ def _estimate_openai_cost(model_name: str, input_tokens: int, cached_tokens: int
         + (cached_tokens / 1_000_000.0) * rates["cached_input"]
         + (output_tokens / 1_000_000.0) * rates["output"]
     )
-
-
 def _estimate_tts_cost_usd(provider_name: str, model_name: str, characters: int) -> float:
     chars = max(0, int(characters or 0))
     if chars <= 0:
@@ -449,8 +366,6 @@ def _estimate_tts_cost_usd(provider_name: str, model_name: str, characters: int)
             model = model[len(pfx):]
     strategy = _PROVIDER_REGISTRY.get(provider)
     return strategy.tts_cost(model, chars) if strategy else 0.0
-
-
 def _estimate_stt_cost_usd(provider_name: str, model_name: str, audio_seconds: float) -> float:
     seconds = max(0.0, float(audio_seconds or 0.0))
     if seconds <= 0:
@@ -459,16 +374,12 @@ def _estimate_stt_cost_usd(provider_name: str, model_name: str, audio_seconds: f
     model    = _normalize_stt_model_name(model_name)
     strategy = _PROVIDER_REGISTRY.get(provider)
     return strategy.stt_cost(model, seconds) if strategy else 0.0
-
-
 def _empty_usage_bucket(kind: str) -> dict[str, Any]:
     return {
         "sessions": 0,
         "totals": {public_name: 0 for _, public_name in _USAGE_BUCKET_FIELDS[kind]},
         "byModel": {},
     }
-
-
 def summarize_session_usage(session_usage: AgentSessionUsage | None) -> dict[str, Any]:
     summary: dict[str, Any] = {kind: _empty_usage_bucket(kind) for kind in _USAGE_BUCKET_FIELDS}
     if not session_usage:
@@ -499,8 +410,6 @@ def summarize_session_usage(session_usage: AgentSessionUsage | None) -> dict[str
     for kind in seen_kinds:
         summary[kind]["sessions"] = 1
     return summary
-
-
 def _replace_component_usage_from_plugin_metrics(
     session_summary: dict[str, Any],
     *,
@@ -540,7 +449,6 @@ def _replace_component_usage_from_plugin_metrics(
                 }
             },
         }
-
     if float(stt_audio_seconds or 0.0) > 0:
         provider = str(stt_provider or "").strip().upper()
         model = str(stt_model or "").strip()
@@ -566,8 +474,6 @@ def _replace_component_usage_from_plugin_metrics(
             },
         }
     return summary
-
-
 def _merge_llm_into_bucket(bucket: _FeatureBilling, llm_totals: dict, llm_by_model: dict) -> None:
     """Merge LLM usage from a session into a feature bucket using O(1) hash lookups."""
     has_llm_totals = any(int(llm_totals.get(key, 0) or 0) > 0 for key in ("inputTokens", "inputCachedTokens", "outputTokens", "sessionDuration"))
@@ -598,8 +504,6 @@ def _merge_llm_into_bucket(bucket: _FeatureBilling, llm_totals: dict, llm_by_mod
         mb.runs += 1; mb.inputTokens += input_t; mb.cachedInputTokens += cached_t
         mb.outputTokens += output_t; mb.sessionDuration += session_dur; mb.costUsd += cost
     bucket.costUsd += session_cost
-
-
 def _merge_tts_into_bucket(
     bucket: _FeatureBilling,
     tts_by_model: dict,
@@ -625,13 +529,10 @@ def _merge_tts_into_bucket(
         key = f"{provider.lower()}:{_normalize_tts_model_name(model)}"
         mb  = bucket.ttsByModel.setdefault(key, _ModelBilling(provider=provider, model=model))
         mb.runs += 1; mb.characters += chars; mb.costUsd += cost
-
     if session_chars > 0:
         bucket.ttsRuns += 1
         bucket.ttsCharacters += session_chars
         bucket.ttsCostUsd    += session_cost
-
-
 def _merge_stt_into_bucket(
     bucket: _FeatureBilling,
     stt_by_model: dict,
@@ -657,13 +558,10 @@ def _merge_stt_into_bucket(
         key = f"{provider.lower()}:{_normalize_stt_model_name(model)}"
         mb  = bucket.sttByModel.setdefault(key, _ModelBilling(provider=provider, model=model))
         mb.runs += 1; mb.audioSeconds += secs; mb.costUsd += cost
-
     if session_secs > 0:
         bucket.sttRuns        += 1
         bucket.sttAudioSeconds += session_secs
         bucket.sttCostUsd     += session_cost
-
-
 def merge_feature_billing(
     existing: dict[str, Any],
     feature:  str,
@@ -675,7 +573,6 @@ def merge_feature_billing(
     merged = dict(existing)
     org    = _OrgBilling.model_validate(_coerce_jsonish(merged.get("billing")))
     bucket: _FeatureBilling = getattr(org, feature)
-
     llm_summary = _coerce_jsonish(session_summary.get("llm"))
     llm_totals  = _coerce_jsonish(llm_summary.get("totals"))
     llm_by_model = _coerce_jsonish(llm_summary.get("byModel"))
@@ -685,42 +582,33 @@ def merge_feature_billing(
     stt_summary = _coerce_jsonish(session_summary.get("stt"))
     stt_totals  = _coerce_jsonish(stt_summary.get("totals"))
     stt_by_model = _coerce_jsonish(stt_summary.get("byModel"))
-
     tts_total_chars   = int(tts_totals.get("charactersCount", 0) or tts_totals.get("inputTokens", 0) or 0)
     stt_total_seconds = float(stt_totals.get("audioDuration", 0) or 0.0)
-
     llm_has_usage = bool(llm_by_model) or any(
         int(llm_totals.get(key, 0) or 0) > 0
         for key in ("inputTokens", "inputCachedTokens", "outputTokens", "sessionDuration")
     )
     tts_has_usage = bool(tts_by_model) or tts_total_chars > 0
     stt_has_usage = bool(stt_by_model) or stt_total_seconds > 0
-
     if not llm_has_usage and not tts_has_usage and not stt_has_usage:
         merged["billing"] = org.model_dump()
         return merged
-
     if llm_has_usage:
         _merge_llm_into_bucket(bucket, llm_totals, llm_by_model)
-
     tts_cfg = tts_config or {}
     _merge_tts_into_bucket(
         bucket, tts_by_model, tts_total_chars,
         str(tts_cfg.get("provider", "") or "").strip().upper(),
         str(tts_cfg.get("model",    "") or "").strip(),
     )
-
     stt_cfg = stt_config or {}
     _merge_stt_into_bucket(
         bucket, stt_by_model, stt_total_seconds,
         str(stt_cfg.get("provider", "") or "").strip().upper(),
         str(stt_cfg.get("model",    "") or "").strip(),
     )
-
     merged["billing"] = org.model_dump()
     return merged
-
-
 def merge_interview_billing(
     existing: dict[str, Any],
     session_summary: dict[str, Any],
@@ -729,19 +617,14 @@ def merge_interview_billing(
 ) -> dict[str, Any]:
     """Backward-compat alias -- delegates to merge_feature_billing for 'interview'."""
     return merge_feature_billing(existing, "interview", session_summary, tts_config, stt_config)
-
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # LAYER 4 -- Interview Persistence (thin async DB wrappers)
 # ═══════════════════════════════════════════════════════════════════════════════
-
 async def persist_org_manual_billing_usage(org_id: Optional[str], feature: str, usage: dict[str, Any]) -> None:
     """Accumulate manual billing usage in memory. Flushed to DB once at session end."""
     if not org_id or not DATABASE_URL or not usage:
         return
     _PENDING_MANUAL_BILLING.setdefault(org_id, []).append((feature, usage))
-
-
 async def flush_pending_manual_billing(org_id: Optional[str]) -> None:
     """Write all accumulated manual billing usage to DB in a single transaction."""
     if not org_id or not DATABASE_URL:
@@ -770,8 +653,6 @@ async def flush_pending_manual_billing(org_id: Optional[str]) -> None:
     except Exception as e:
         logger.error(f"[USAGE] Failed to flush manual billing for {org_id}: {e}")
         raise
-
-
 async def persist_org_usage_metrics(
     org_id: Optional[str],
     session_usage: AgentSessionUsage | None,
@@ -813,7 +694,6 @@ async def persist_org_usage_metrics(
                 existing_metrics = _coerce_jsonish(row["usageMetrics"])
                 merged_metrics   = dict(existing_metrics)
                 merged_livekit   = _coerce_jsonish(merged_metrics.get("livekit"))
-
                 for kind, kind_summary in session_summary.items():
                     if not isinstance(kind_summary, dict):
                         continue
@@ -842,7 +722,6 @@ async def persist_org_usage_metrics(
                         existing_by_model[model_key] = cur
                     existing_bucket["updatedAt"] = time.time()
                     merged_livekit[kind] = existing_bucket
-
                 merged_metrics["livekit"]   = merged_livekit
                 merged_metrics["updatedAt"] = time.time()
                 merged_metrics = merge_interview_billing(
@@ -864,8 +743,6 @@ async def persist_org_usage_metrics(
     except Exception as e:
         logger.error(f"[USAGE] Failed to save org usage metrics for {org_id}: {e}")
         raise
-
-
 async def persist_interview_billing_snapshot(
     app_id: str,
     session_usage: AgentSessionUsage | None,
@@ -899,14 +776,12 @@ async def persist_interview_billing_snapshot(
     has_manual_usage  = bool(org_id and _PENDING_MANUAL_BILLING.get(org_id))
     if not has_session_usage and not has_manual_usage and not duration_seconds:
         return
-
     snapshot_billing  = merge_interview_billing(
         {}, session_summary,
         tts_config={"provider": tts_provider or "", "model": tts_model or ""},
         stt_config={"provider": stt_provider or "", "model": stt_model or ""},
     )
     interview_bucket = _coerce_jsonish(_coerce_jsonish(snapshot_billing.get("billing")).get("interview"))
-
     if org_id:
         for feature, usage in _PENDING_MANUAL_BILLING.get(org_id, []):
             if feature != "interview":
@@ -933,7 +808,6 @@ async def persist_interview_billing_snapshot(
             cur["costUsd"]          = float(cur.get("costUsd", 0.0)) + model_cost
             by_model[model_key]     = cur
             interview_bucket["byModel"] = by_model
-
     total_cost = (
         float(interview_bucket.get("costUsd",    0.0))
         + float(interview_bucket.get("ttsCostUsd", 0.0))
@@ -981,8 +855,6 @@ async def persist_interview_billing_snapshot(
     except Exception as e:
         logger.error(f"[USAGE] Failed to save interview billing snapshot for {app_id}: {e}")
         raise
-
-
 def _build_jd_from_extracted(extracted_json: str | None) -> str:
     if not extracted_json:
         return ""
@@ -1005,8 +877,6 @@ def _build_jd_from_extracted(extracted_json: str | None) -> str:
         return "\n\n".join(parts)
     except Exception:
         return ""
-
-
 async def get_interview_context(app_id: str) -> dict:
     """Fetch candidate and JD context from PostgreSQL via asyncpg (5-attempt retry)."""
     if not DATABASE_URL:
@@ -1071,8 +941,6 @@ async def get_interview_context(app_id: str) -> dict:
             if attempt < 5:
                 await asyncio.sleep(0.4 * attempt)
     raise RuntimeError(f"Failed to fetch interview context from DB: {last_error}")
-
-
 async def persist_transcript(
     app_id: str,
     transcript_lines: list,
@@ -1082,7 +950,6 @@ async def persist_transcript(
     partial: bool = False,
 ) -> None:
     """Save transcript, duration, and proctoring report to Interview table.
-
     partial=True -> only update transcript/duration/turns (no status change).
     partial=False -> full update including status and completedAt.
     """
@@ -1133,8 +1000,6 @@ async def persist_transcript(
                 logger.info(f"[TRANSCRIPT] Final save {len(transcript_lines)} lines, {duration}s, status={final_status} for {app_id}")
     except Exception as e:
         logger.error(f"[TRANSCRIPT] DB save failed: {e}")
-
-
 async def mark_interview_started(app_id: str) -> None:
     if not DATABASE_URL:
         return
@@ -1152,8 +1017,6 @@ async def mark_interview_started(app_id: str) -> None:
         logger.info(f"[INTERVIEW] App {app_id} marked as IN_PROGRESS.")
     except Exception as e:
         logger.error(f"[INTERVIEW] Failed to update application status to started: {e}")
-
-
 async def persist_question_by_question_analysis(app_id: str, answer_scores: list[dict]) -> None:
     """Save full turn-by-turn interview analysis to Interview.questionByQuestionAnalysis JSONB."""
     if not app_id or not DATABASE_URL or not answer_scores:
@@ -1192,14 +1055,9 @@ async def persist_question_by_question_analysis(app_id: str, answer_scores: list
         logger.info(f"[SCORE] Saved {len(normalized)} question-by-question rows for {app_id}")
     except Exception as e:
         logger.error(f"[SCORE] Failed to persist question-by-question analysis for {app_id}: {e}")
-
-
 async def persist_answer_scores(app_id: str, answer_scores: list[dict]) -> None:
     """Backward-compatible wrapper."""
     await persist_question_by_question_analysis(app_id, answer_scores)
-
-
-
 async def deduct_interview_billing(app_id: str, duration_seconds: Optional[float] = None) -> None:
     """Atomically deduct one interview quota slot. Idempotent via billingSnapshot.billedAt guard."""
     if not DATABASE_URL:
@@ -1224,13 +1082,11 @@ async def deduct_interview_billing(app_id: str, duration_seconds: Optional[float
             if not org_id:
                 logger.warning(f"[BILLING] No orgId for {app_id} -- skipping billing")
                 return
-
             dur = duration_seconds
             if not dur or dur <= 0:
                 dur = float(row["interviewDuration"] or 0)
             if not dur or dur <= 0:
                 dur = float(row["recordingDurationSec"] or 0)
-
             marked = await conn.fetch(
                 """UPDATE "Interview"
                    SET "billingSnapshot" = jsonb_set(
@@ -1246,7 +1102,6 @@ async def deduct_interview_billing(app_id: str, duration_seconds: Optional[float
             if not marked:
                 logger.info(f"[BILLING] Already billed for {app_id} -- skipping")
                 return
-
             await conn.execute(
                 'UPDATE "Organization" SET "interviewQuotaUsed" = COALESCE("interviewQuotaUsed", 0) + 1, "updatedAt" = NOW() WHERE id = $1',
                 org_id,
@@ -1265,8 +1120,6 @@ async def deduct_interview_billing(app_id: str, duration_seconds: Optional[float
                 logger.warning(f"[BILLING] Deducted 1 quota but duration unknown for {app_id} org={org_id}")
     except Exception as e:
         logger.error(f"[BILLING] Failed to deduct billing for {app_id}: {e}")
-
-
 async def update_interview_status(app_id: str, duration_seconds: Optional[float] = None) -> None:
     """Mark the application as COMPLETED via asyncpg and deduct billing."""
     if not DATABASE_URL:
@@ -1304,12 +1157,9 @@ async def update_interview_status(app_id: str, duration_seconds: Optional[float]
         await deduct_interview_billing(app_id, duration_seconds)
     except Exception as e:
         logger.error(f"[INTERVIEW] Failed to update interview status for {app_id}: {e}")
-
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # LAYER 5A -- Deterministic Scorers (pure functions, O(n) DSA)
 # ═══════════════════════════════════════════════════════════════════════════════
-
 # Integrity signal weights (negative = risk, positive = mitigating)
 _INTEGRITY_NEG: dict[str, float] = {
     "ownership_ambiguity":         -5.0,
@@ -1329,7 +1179,6 @@ _INTEGRITY_POS: dict[str, float] = {
     "strong_under_pressure":  +3.0,
     "inconsistency_resolved": +8.0,
 }
-
 # Skills noise filter -- single-word tools and libraries are never valid topics
 _TOOL_KEYWORDS: frozenset[str] = frozenset({
     "google sheets", "google calendar", "instagram", "facebook", "n8n", "zapier",
@@ -1338,20 +1187,16 @@ _TOOL_KEYWORDS: frozenset[str] = frozenset({
     "openai", "chatgpt", "langchain", "react", "nextjs", "postgresql",
     "mysql", "mongodb", "redis", "aws", "gcp", "azure",
 })
-
-
 def _compute_integrity_score(
     signal_events: list[dict],
     proctoring_events: list[dict],
     inconsistencies: list[dict],
 ) -> dict:
     """Deterministic integrity score 0-100 using signal-weighted formula.
-
     Uses Counter (O(n)) for signal aggregation -- no nested loops.
     """
     score: float = 100.0
     sig_counts: Counter[str] = Counter()
-
     for evt in (signal_events or []):
         name = str(evt.get("signal_name") or evt.get("signal") or "").strip()
         if name:
@@ -1362,7 +1207,6 @@ def _compute_integrity_score(
             sig_counts[name] += 1
     for _ in (inconsistencies or []):
         sig_counts["inconsistency"] += 1
-
     fired: list[str] = []
     for sig_name, count in sig_counts.items():
         if sig_name in _INTEGRITY_NEG:
@@ -1370,13 +1214,9 @@ def _compute_integrity_score(
             fired.append(sig_name)
         elif sig_name in _INTEGRITY_POS:
             score += _INTEGRITY_POS[sig_name]
-
     final = max(0, min(100, int(round(score))))
     band  = "HIGH" if final >= 80 else "MODERATE" if final >= 55 else "LOW"
     return {"score": final, "band": band, "signals_used": fired, "methodology": "signal_weighted_deterministic"}
-
-
-
 def _filter_skills_evaluated(raw_skills: list[str]) -> list[str]:
     """Remove tool/library keywords. Keep only topic-level domain names (O(n) set lookup)."""
     seen: set[str] = set()
@@ -1391,8 +1231,6 @@ def _filter_skills_evaluated(raw_skills: list[str]) -> list[str]:
             seen.add(key)
             result.append(topic)
     return result[:8]
-
-
 def _build_qa_block(idx: int, score: dict) -> dict:
     q_text      = str(score.get("question") or "").strip()
     overall_val = round(float(score.get("overall") or 0), 1)
@@ -1413,8 +1251,6 @@ def _build_qa_block(idx: int, score: dict) -> dict:
         "tags":      [score["topic"]] if score.get("topic") else [],
         "is_warmup": bool(score.get("is_warmup", False)),
     }
-
-
 def _extract_openai_completion_usage(completion: Any) -> dict[str, Any]:
     usage           = getattr(completion, "usage", None)
     usage_metadata_raw = getattr(completion, "usage_metadata", None) or {}
@@ -1450,50 +1286,37 @@ def _extract_openai_completion_usage(completion: Any) -> dict[str, Any]:
         "cachedInputTokens": cached_tokens,
         "outputTokens":    completion_tokens,
     }
-
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # LAYER 5B -- LangChain Prompt Templates + Chains
 # ═══════════════════════════════════════════════════════════════════════════════
-
 # -- Unified 5-Dimension Evaluation Prompt ------------------------------------
-
 _EVAL_SYSTEM = """You are a senior recruiter and talent evaluator. You have just reviewed a complete AI-conducted interview for the '{job_title}' role.
 {jd_context}
-
 BACKGROUND SIGNALS (do NOT echo these numbers — use them as context only):
   Integrity Score: {integrity_score}/100 ({integrity_band})
   Behavioral flags observed: {signal_context}
-
 ---
-
 STEP 1 — BEFORE YOU SCORE ANYTHING, read the entire transcript and form these opinions:
-
 "strengths": Every genuine strength you observed — written like you're telling a colleague what stood out.
   - Name the specific moment, tool, question, or answer. Not "good communicator" — but "walked through the Zapier workflow trigger-to-action without being prompted."
   - If nothing genuine stands out, return an empty array. Do NOT invent. Do NOT pad.
   - No floor. Zero is honest. Four is the max.
   - Each item is ONE sentence. Sharp. Specific. Could not apply to any other candidate.
-
 "concerns": Every genuine concern — written with the same directness you'd use in a debrief call.
   - If they contradicted their resume, name what they claimed and what they couldn't explain.
   - If they went blank on a follow-up, say which topic.
   - If every answer was surface-level with no depth, say that.
   - No floor. Zero means no concerns. Four is the max.
   - Do NOT soften. Do NOT hedge. A concern written weakly is useless to the hiring manager.
-
 ---
-
 STEP 2 — SCORE exactly 5 dimensions. For each produce:
 - "score": integer 0–100
 - "evidence": ONE sentence — written like a recruiter's verbal note, not a bot summary. Must name something SPECIFIC from this interview. If they were weak, the sentence must sound like it.
-
 SCORING PHILOSOPHY:
 - Do NOT inflate. Weak candidate = weak scores. Use the full 0–100 range.
 - Refused to answer / went blank / pure filler → 0–20.
 - Textbook answer, no personal evidence → 21–45.
 - 76–100 only when there is real, verifiable, specific depth in the transcript.
-
 DIMENSION 1 — communication (weight: 15%)
 Score: How clearly and confidently did they express themselves across the ENTIRE interview?
 Look at: sentence structure, directness, filler words, hesitation, confidence under challenge.
@@ -1503,7 +1326,6 @@ Look at: sentence structure, directness, filler words, hesitation, confidence un
   66–80: Good — clear and direct, minor slips
   81–100: Excellent — precise, structured, confident under every challenge
 Evidence: name a specific moment or pattern where communication succeeded or failed.
-
 DIMENSION 2 — technical_knowledge (weight: 30%)
 Score: Did they show REAL hands-on knowledge — or just vocabulary?
 Look at: named tools + explained HOW, real numbers, real steps, real decisions, held up under probing.
@@ -1513,7 +1335,6 @@ Look at: named tools + explained HOW, real numbers, real steps, real decisions, 
   66–80: Solid — concrete examples, named tools, process explained
   81–100: Deep — specific details, real numbers, step-by-step, held every probe
 Evidence: name the specific tool/concept/project and whether they showed real depth.
-
 DIMENSION 3 — resume_credibility (weight: 20%)
 Score: Did their live answers hold up against their resume claims?
 NOT about JD fit — about whether what they WROTE matches what they SAID.
@@ -1524,7 +1345,6 @@ Look at: could they explain their listed projects? Did probing reveal gaps or co
   66–80: Credible — most backed with real detail, minor gaps
   81–100: Fully credible — every claim explained with evidence, nothing contradicted
 Evidence: name a specific resume claim that was tested and whether it held or collapsed.
-
 DIMENSION 4 — problem_solving (weight: 25%)
 Score: Can they think through a problem — or do they recite answers?
 Look at: did they frame before answering? Name tradeoffs? Engage reasoning when probed? Or restate the same answer twice?
@@ -1534,7 +1354,6 @@ Look at: did they frame before answering? Name tradeoffs? Engage reasoning when 
   66–80: Logical — named tradeoffs, handled probes clearly
   81–100: Sophisticated — framed independently, named tradeoffs unprompted, engaged every probe
 Evidence: name a specific probe and how they handled or failed it.
-
 DIMENSION 5 — clarity_of_thought (weight: 10%)
 Score: Was their thinking organized — or did they dump everything and hope?
 DIFFERENT from communication — a fluent candidate can still be completely unstructured.
@@ -1545,26 +1364,17 @@ Look at: did they lead with a point? Stay on topic? Answer what was asked, or dr
   66–80: Clear — most answers structured, minor drift
   81–100: Sharp — framed every answer, landed a clear point, nothing wasted
 Evidence: name a specific pattern — how they opened answers, whether they drifted.
-
 ---
-
 OUTPUT ONLY valid JSON. No markdown. No explanation. No extra keys:
 {{"strengths":[],"concerns":[],"communication":{{"score":0,"evidence":""}},"technical_knowledge":{{"score":0,"evidence":""}},"resume_credibility":{{"score":0,"evidence":""}},"problem_solving":{{"score":0,"evidence":""}},"clarity_of_thought":{{"score":0,"evidence":""}}}}"""
-
 _EVAL_PROMPT = ChatPromptTemplate.from_messages([
     ("system", _EVAL_SYSTEM),
     ("human", "Full Interview Transcript for '{job_title}':\n\n{transcript}"),
 ])
-
-
 # -- Per-question skill extraction (fallback — used only when no topic_records available) -------
-
 _SKILLS_SYSTEM = """You are a senior technical interviewer writing a skill-by-skill breakdown for the hiring team after an interview for the '{job_title}' role.
-
 You will receive every question-answer pair from the interview with pre-scored dimensions (clarity, depth, specificity, grounding — each 0-10).
-
 YOUR TASK: Identify every distinct skill, tool, or domain the candidate actually spoke about during the interview — then rate how well they demonstrated it.
-
 SKILL NAMING — name what the candidate actually discussed, specifically:
 - If they talked about n8n workflows → "n8n Workflow Automation"
 - If they talked about lead qualification logic → "Lead Qualification"
@@ -1572,27 +1382,20 @@ SKILL NAMING — name what the candidate actually discussed, specifically:
 - Name the actual thing they discussed — do NOT use vague labels like "Project Execution" or "Data Analysis"
 - Tools ARE valid skill names: "DuckDB", "n8n", "Zapier", "Meta API", "Apollo.io"
 - Soft skills only if candidate gave clear evidence
-
 SCORING (1-10):
 - Base: avg(clarity, depth, specificity, grounding)
 - Adjust UP: specific project names, real numbers, step-by-step process, personal decisions
 - Adjust DOWN: vague, refused, "I don't know", or denied skill exists
 - evidence: ONE sharp sentence quoting or closely paraphrasing what the candidate said — not a generic summary
-
 DEDUPLICATION: merge entries for the same skill, use the best answer's score and evidence.
-
 OUTPUT ONLY valid JSON. No markdown:
 {{"skills":[{{"skill":"","score":5,"evidence":""}}]}}"""
-
 _SKILLS_PROMPT = ChatPromptTemplate.from_messages([
     ("system", _SKILLS_SYSTEM),
     ("human", "{qa_block}"),
 ])
-
 # -- Anchored skills extraction from topic_records (primary path) --------------
-
 _SKILLS_FROM_RECORDS_SYSTEM = """You are writing a skill-by-skill breakdown for the hiring team after an interview for the '{job_title}' role.
-
 You will receive structured topic records captured by the interviewer at the moment each topic was closed. Each record contains:
 - topic: what was discussed (project name, skill area, or tool)
 - topic_type: "project" or "skill"
@@ -1604,10 +1407,8 @@ You will receive structured topic records captured by the interviewer at the mom
 - tech_skills: list of tools/technologies associated with this topic (from the candidate's resume)
 - candidate_answers: actual things the candidate said during this topic (last 6 responses)
 - denied: true if candidate explicitly said they don't know / don't remember
-
 YOUR TASK:
 Produce one skill entry per meaningful skill or tool discussed. For project-type topics, extract the specific skills the project demonstrates (use tech_skills + the candidate's actual answers). For skill-type topics, the topic IS the skill.
-
 SCORING RULES (1–10, anchored to avg_overall):
 - Start from avg_overall as base.
 - exit_reason penalties:
@@ -1618,44 +1419,28 @@ SCORING RULES (1–10, anchored to avg_overall):
     saturated / eval_moveon → no penalty
 - probe_count bonus: probe_count <= 1 and avg_overall >= 7 → add 0.5
 - Round to nearest integer, clamp 1–10.
-
 EVIDENCE — ONE sharp sentence using the candidate's actual words from candidate_answers. Not a generic summary. Quote specifics.
-
 OUTPUT ONLY valid JSON. No markdown:
 {{"skills":[{{"skill":"","score":5,"evidence":""}}]}}"""
-
 _SKILLS_FROM_RECORDS_PROMPT = ChatPromptTemplate.from_messages([
     ("system", _SKILLS_FROM_RECORDS_SYSTEM),
     ("human", "{records_block}"),
 ])
-
-
-
-
 # -- Summary Prompt ------------------------------------------------------------
-
 _SUMMARY_SYSTEM = """You are a senior talent partner writing a confidential post-interview brief for the hiring team.
-
 Role: {job_title}
 Integrity: {integrity_band}
 Behavioral signals: {signal_summary}
-
 DIMENSION SCORES + EVIDENCE (what the evaluator observed):
 {dimension_block}
-
 SKILL BREAKDOWN (what was tested and how they performed):
 {skill_block}
-
 STRENGTHS OBSERVED:
 {strengths_block}
-
 CONCERNS FLAGGED:
 {concerns_block}
-
 ---
-
 Write 3–5 bullet points. Each bullet is ONE clear sentence.
-
 Rules for what to cover:
 - Cover only what actually mattered in THIS interview. If communication was unremarkable, skip it.
 - If they were strong in one specific area, name it with the exact thing they said or did.
@@ -1663,7 +1448,6 @@ Rules for what to cover:
 - If a skill or dimension was clearly the deciding factor, lead with it.
 - If integrity was flagged, name it explicitly in one bullet.
 - Do NOT write a bullet for every dimension — write bullets for what STOOD OUT.
-
 Rules for how to write:
 - Sound like a recruiter giving a verbal debrief, not a bot writing a report.
 - Never write a sentence that could apply to any other candidate.
@@ -1672,55 +1456,38 @@ Rules for how to write:
 - Never invent positives not visible in the evidence above.
 - Never use gender-biased language.
 - Each bullet starts with a dash (-)."""
-
 _SUMMARY_PROMPT = ChatPromptTemplate.from_messages([
     ("system", _SUMMARY_SYSTEM),
     ("human", "Full Interview Transcript:\n{transcript}"),
 ])
-
-
 # -- Verdict Prompt ------------------------------------------------------------
-
 _VERDICT_SYSTEM = """You are a senior hiring manager writing a final verdict for a '{job_title}' interview. You have the full evaluation in front of you.
-
 DIMENSION SCORES + EVIDENCE:
 {dimension_block}
-
 SKILL BREAKDOWN:
 {skill_block}
-
 STRENGTHS:
 {strengths_block}
-
 CONCERNS:
 {concerns_block}
-
 INTEGRITY: {integrity_band} ({integrity_score}/100)
-
 ---
-
 Write ONE paragraph. 80–120 words. No more.
-
 Rules:
 - Start with exactly one of: STRONG HIRE / HIRE / MAYBE / REJECT — then a colon, then your reasoning.
 - Name the single strongest signal and the single biggest concern — from the evidence above, not generic.
 - End with exactly one action sentence: what should happen next (hire, pass, bring back for technical round, etc.).
 - No scores, no numbers, no hedging. You have a strong opinion and you are accountable for it.
 - Write like you are telling this to the hiring manager face to face — not filing a report."""
-
 _VERDICT_PROMPT = ChatPromptTemplate.from_messages([
     ("system", _VERDICT_SYSTEM),
     ("human", "Job Title: {job_title}"),
 ])
-
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # LAYER 5C -- LangGraph Report Pipeline (4 nodes + parallel LLM calls)
 # ═══════════════════════════════════════════════════════════════════════════════
-
 async def _node_deterministic_signals(state: ReportState) -> dict:
     """Node 1 (sync): Compute integrity score + signal context deterministically.
-
     Merges agent-side behavioral signals (proctoring_data["events"]) with
     browser-side integrity signals stored in DB integritySignals (tab_switch,
     face_absence, camera_disabled, etc.)  so the integrity score reflects both.
@@ -1728,11 +1495,9 @@ async def _node_deterministic_signals(state: ReportState) -> dict:
     proctoring_data  = state.get("proctoring_data") or {}
     transcript_lines = state.get("transcript_lines", [])
     app_id           = state.get("app_id", "")
-
     # Agent-side behavioral signals (ownership_ambiguity, follow_up_collapse, etc.)
     agent_proctoring_events = list(proctoring_data.get("events", []) or [])
     inconsistencies         = list(proctoring_data.get("inconsistencies", []) or [])
-
     # Browser-side integrity signals (tab_switch, face_absence, camera_disabled, etc.)
     # These are stored in DB "integritySignals" by /api/interview/proctoring.
     # They were never fetched here before, so they never affected the integrity score.
@@ -1759,37 +1524,30 @@ async def _node_deterministic_signals(state: ReportState) -> dict:
                 )
         except Exception as _e:
             logger.warning("[REPORT] Failed to fetch integritySignals from DB for %s: %s", app_id, _e)
-
     # Merge: agent signals + browser signals; update proctoring_data events so the
     # rest of the pipeline (signal_analysis, signalAnalysis DB column) also sees them.
     all_proctoring_events = agent_proctoring_events + db_integrity_events
     proctoring_data = {**proctoring_data, "events": all_proctoring_events}
-
     # _compute_integrity_score(signal_events, proctoring_events, inconsistencies)
     # signal_events = behavioral signals from eval pipeline (passed as first arg)
     # proctoring_events = browser-side events (passed as second arg)
     # Both are now merged in all_proctoring_events; pass agent signals as first arg
     # and browser signals as second so the weight table applies correctly.
     integrity_result = _compute_integrity_score(agent_proctoring_events, db_integrity_events, inconsistencies)
-
     sig_counts = Counter(
         str(evt.get("signal_name") or evt.get("signal") or evt.get("event") or "").strip()
         for evt in all_proctoring_events
         if evt.get("signal_name") or evt.get("signal") or evt.get("event")
     )
     signal_context = ", ".join(f"{k}x{v}" for k, v in sig_counts.items()) if sig_counts else "none"
-
     jd_json = state.get("jd_json") or {}
     if jd_json:
         jd_context = "JOB DESCRIPTION:\n" + json.dumps(jd_json, ensure_ascii=False)[:2000]
     else:
         jd_context = "No JD provided — assess based on role title only."
-
     lines_to_use    = transcript_lines[4:] if len(transcript_lines) > 4 else transcript_lines
     transcript_text = truncate_to_tokens("\n".join(lines_to_use), 3500)
-
     logger.info(f"[REPORT] Signals computed: app={state['app_id']} integrity={integrity_result['score']}")
-
     return {
         "integrity_result": integrity_result,
         "signal_context":   signal_context,
@@ -1799,20 +1557,14 @@ async def _node_deterministic_signals(state: ReportState) -> dict:
         # the full event list (agent signals + browser signals).
         "proctoring_data":  proctoring_data,
     }
-
-
 def _qa_question(s: dict) -> str:
     """Question text from a score entry, tolerant of both shapes:
     raw answer_scores use 'question'/'answer'; DB-persisted rows use
     'ai_question'/'candidate_answer'. The report graph is fed RAW answer_scores,
     so 'question' is the real key -- but accept either so neither path breaks."""
     return str(s.get("question") or s.get("ai_question") or "").strip()
-
-
 def _qa_answer(s: dict) -> str:
     return str(s.get("answer") or s.get("candidate_answer") or "").strip()
-
-
 def _build_qa_block_for_skills(idx: int, s: dict) -> dict:
     """Return a minimal Q&A dict suitable for the skills prompt."""
     sb = s.get("score_breakdown") or {}
@@ -1828,8 +1580,6 @@ def _build_qa_block_for_skills(idx: int, s: dict) -> dict:
         "grounding":   sb.get("grounding",   s.get("grounding",   0)),
         "is_warmup":   s.get("is_warmup", False),
     }
-
-
 async def _node_eval_llm_call(state: ReportState) -> dict:
     """Node 2 (async): Run eval + skills LLM calls in parallel."""
     llm_model        = state.get("llm_model", LLM_MODEL)
@@ -1837,9 +1587,7 @@ async def _node_eval_llm_call(state: ReportState) -> dict:
     org_id           = state.get("org_id")
     integrity_result = state["integrity_result"]
     all_scores       = state.get("all_scores", [])
-
     llm = ChatOpenAI(model=llm_model, temperature=0.0)
-
     # ── Eval call ──────────────────────────────────────────────────────────────
     eval_chain = _EVAL_PROMPT | llm
     eval_input = {
@@ -1850,7 +1598,6 @@ async def _node_eval_llm_call(state: ReportState) -> dict:
         "signal_context":  state["signal_context"],
         "transcript":      state["transcript_text"],
     }
-
     # ── Skills call ────────────────────────────────────────────────────────────
     topic_records = state.get("topic_records") or []
     if topic_records:
@@ -1893,17 +1640,14 @@ async def _node_eval_llm_call(state: ReportState) -> dict:
         ) or "No interview questions found."
         skills_input = {"job_title": job_title, "qa_block": qa_block_text}
         logger.info("[REPORT] topic_records empty — falling back to QA-block skills path")
-
     # ── Run both in parallel ───────────────────────────────────────────────────
     eval_msg, skills_msg = await asyncio.gather(
         asyncio.wait_for(eval_chain.ainvoke(eval_input),   timeout=45.0),
         asyncio.wait_for(skills_chain.ainvoke(skills_input), timeout=45.0),
     )
-
     if org_id:
         await persist_org_manual_billing_usage(org_id, "interviewReport", _extract_openai_completion_usage(eval_msg))
         await persist_org_manual_billing_usage(org_id, "interviewReport", _extract_openai_completion_usage(skills_msg))
-
     def _parse_llm_json(content: str) -> dict:
         """Strip markdown fences then parse JSON."""
         text = (content or "").strip()
@@ -1911,29 +1655,23 @@ async def _node_eval_llm_call(state: ReportState) -> dict:
         text = re.sub(r"^```(?:json)?\s*", "", text)
         text = re.sub(r"\s*```$", "", text)
         return json.loads(text.strip() or "{}")
-
     try:
         eval_result = LLMEvalResponse.model_validate(_parse_llm_json(eval_msg.content))
     except Exception as e:
         logger.warning(f"[REPORT] eval parse failed: {e} | raw={str(eval_msg.content)[:200]}")
         eval_result = LLMEvalResponse()
-
     try:
         skills_result = LLMSkillsResponse.model_validate(_parse_llm_json(skills_msg.content))
     except Exception as e:
         logger.warning(f"[REPORT] skills parse failed: {e} | raw={str(skills_msg.content)[:200]}")
         skills_result = LLMSkillsResponse()
-
     logger.info(
         f"[REPORT] Eval complete: app={state['app_id']} "
         f"comm={eval_result.communication.score} tech={eval_result.technical_knowledge.score} "
         f"cred={eval_result.resume_credibility.score} ps={eval_result.problem_solving.score} "
         f"cot={eval_result.clarity_of_thought.score} skills={len(skills_result.skills)}"
     )
-
     return {"eval_result": eval_result, "skills_result": skills_result}
-
-
 async def _node_assemble_and_persist(state: ReportState) -> dict:
     """Node 3 (async): Assemble final blob and write to DB."""
     app_id           = state["app_id"]
@@ -1941,11 +1679,9 @@ async def _node_assemble_and_persist(state: ReportState) -> dict:
     proctoring_data  = state.get("proctoring_data") or {}
     interview_scores = state.get("interview_scores", [])
     engagement_score = state.get("engagement_score", 0)
-
     eval_result      = state["eval_result"]
     skills_result    = state.get("skills_result") or LLMSkillsResponse()
     integrity_result = state["integrity_result"]
-
     # Signal analysis — LLM narrative points
     signal_analysis_raw, signal_llm_usages = await generate_signal_analysis(
         transcript_lines=state.get("transcript_lines", []),
@@ -1956,26 +1692,22 @@ async def _node_assemble_and_persist(state: ReportState) -> dict:
     )
     for _bu in signal_llm_usages:
         await persist_org_manual_billing_usage(org_id, "interviewReport", _bu)
-
     # Merge LLM narrative + raw behavioral signals into one blob
     behavioral_signals = proctoring_data.get("events", [])
     signal_analysis = {
         "points":  signal_analysis_raw.get("points", []) if isinstance(signal_analysis_raw, dict) else [],
         "signals": behavioral_signals,
     }
-
     # Extract dimension scores
     comm  = eval_result.communication.score
     tech  = eval_result.technical_knowledge.score
     cred  = eval_result.resume_credibility.score
     ps    = eval_result.problem_solving.score
     cot   = eval_result.clarity_of_thought.score
-
     # Overall score: weighted average — technical_knowledge + problem_solving are the heavy hitters
     overall_score = max(0, min(100, int(round(
         comm * 0.15 + tech * 0.30 + cred * 0.20 + ps * 0.25 + cot * 0.10
     ))))
-
     # Skill ratings: name + score + one evidence line
     skill_ratings_list = [
         {
@@ -1987,7 +1719,6 @@ async def _node_assemble_and_persist(state: ReportState) -> dict:
         if r.skill
     ]
     skills_evaluated = [r["skill"] for r in skill_ratings_list]
-
     # Final scoreBreakdown blob — dimension scores, overall, engagement, integrity
     # NOTE: skill_ratings are now stored separately in the "skillRatings" column
     score_breakdown_report = {
@@ -2009,12 +1740,10 @@ async def _node_assemble_and_persist(state: ReportState) -> dict:
         "skills_evaluated": skills_evaluated,
         # verdict / decision_note comes from interviewSummary, not stored here
     }
-
     interview_summary_report = {
         "strengths": eval_result.strengths,
         "concerns":  eval_result.concerns,
     }
-
     # Write to DB — scoreBreakdown and skillRatings are now separate columns
     try:
         pool = await DatabasePool.get()
@@ -2040,7 +1769,6 @@ async def _node_assemble_and_persist(state: ReportState) -> dict:
         )
     except Exception as e:
         logger.error(f"[REPORT] DB write failed for {app_id}: {e}", exc_info=True)
-
     scores_context = {
         "overall":               overall_score,
         "communication":         comm,
@@ -2059,10 +1787,7 @@ async def _node_assemble_and_persist(state: ReportState) -> dict:
         "concerns":              eval_result.concerns,
     }
     return {"scores_context": scores_context}
-
-
 # -- Build the LangGraph pipeline (compiled once at module load) ----------------
-
 def _build_report_graph() -> Any:
     builder = StateGraph(ReportState)
     builder.add_node("signals",   _node_deterministic_signals)
@@ -2073,15 +1798,10 @@ def _build_report_graph() -> Any:
     builder.add_edge("llm_calls", "assemble")
     builder.add_edge("assemble",  END)
     return builder.compile()
-
-
 _REPORT_GRAPH = _build_report_graph()
-
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # PUBLIC API -- generate_interview_report + generate_interview_summary
 # ═══════════════════════════════════════════════════════════════════════════════
-
 async def generate_interview_report(
     app_id: str,
     transcript_lines: list,
@@ -2094,9 +1814,7 @@ async def generate_interview_report(
     topic_records: Optional[list] = None,
 ) -> Optional[dict]:
     """Generate the complete structured interview report via LangGraph pipeline.
-
     Returns a scores_context dict for generate_interview_summary(), or None on failure.
-
     topic_records: per-topic ground-truth records built by the agent at MOVE_ON time.
     When provided, skill extraction uses these instead of re-reading the transcript cold.
     """
@@ -2106,9 +1824,7 @@ async def generate_interview_report(
     if not os.environ.get("OPENAI_API_KEY"):
         logger.warning("[REPORT] Skipping: missing OPENAI_API_KEY")
         return None
-
     interview_scores = [s for s in answer_scores if not s.get("is_warmup", False)]
-
     initial_state: ReportState = {
         "app_id":            app_id,
         "transcript_lines":  transcript_lines,
@@ -2121,7 +1837,6 @@ async def generate_interview_report(
         "jd_json":           jd_json,
         "topic_records":     topic_records or [],
     }
-
     try:
         final_state = await _REPORT_GRAPH.ainvoke(initial_state)
         return final_state.get("scores_context")
@@ -2131,8 +1846,6 @@ async def generate_interview_report(
     except Exception as e:
         logger.error(f"[REPORT] Pipeline failed for {app_id}: {e}", exc_info=True)
         return None
-
-
 async def generate_interview_summary(
     app_id: str,
     transcript_lines: list,
@@ -2148,16 +1861,13 @@ async def generate_interview_summary(
     if not os.environ.get("OPENAI_API_KEY"):
         logger.warning("[SUMMARY] Skipping: missing OPENAI_API_KEY")
         return
-
     try:
         lines_to_use       = transcript_lines[4:] if len(transcript_lines) > 4 else transcript_lines
         summary_transcript = truncate_to_tokens("\n".join(lines_to_use), 3000)
-
         ctx             = scores_context or {}
         integrity_band  = ctx.get("integrity_band", "HIGH")
         integrity_score = ctx.get("integrity_score", 100)
         signal_summary  = ctx.get("signal_summary", "No signals flagged")
-
         # Build rich dimension block: name + score + evidence per dimension
         dimensions = ctx.get("dimensions", [])
         if dimensions:
@@ -2167,7 +1877,6 @@ async def generate_interview_summary(
             )
         else:
             dimension_block = "  Not available"
-
         # Build skill block: skill name + score + evidence
         skills = ctx.get("skill_ratings", [])
         if skills:
@@ -2177,13 +1886,11 @@ async def generate_interview_summary(
             )
         else:
             skill_block = "  Not available"
-
         # Strengths and concerns from eval
         strengths = ctx.get("strengths", [])
         concerns  = ctx.get("concerns", [])
         strengths_block = "\n".join(f"  - {s}" for s in strengths) if strengths else "  None identified"
         concerns_block  = "\n".join(f"  - {c}" for c in concerns)  if concerns  else "  None flagged"
-
         shared_vars = {
             "job_title":       job_title,
             "integrity_band":  integrity_band,
@@ -2194,13 +1901,10 @@ async def generate_interview_summary(
             "strengths_block": strengths_block,
             "concerns_block":  concerns_block,
         }
-
         llm = ChatOpenAI(model=llm_model, temperature=0.1, max_tokens=500)
-
         # Run summary bullets and verdict in parallel
         summary_chain = _SUMMARY_PROMPT | llm
         verdict_chain = _VERDICT_PROMPT | llm
-
         summary_msg, verdict_msg = await asyncio.gather(
             asyncio.wait_for(
                 summary_chain.ainvoke({**shared_vars, "transcript": summary_transcript}),
@@ -2211,19 +1915,15 @@ async def generate_interview_summary(
                 timeout=60.0,
             ),
         )
-
         await asyncio.gather(
             persist_org_manual_billing_usage(org_id, "interviewReport", _extract_openai_completion_usage(summary_msg)),
             persist_org_manual_billing_usage(org_id, "interviewReport", _extract_openai_completion_usage(verdict_msg)),
         )
-
         summary_text = (getattr(summary_msg, "content", "") or "").strip()
         verdict_text = (getattr(verdict_msg, "content", "") or "").strip()
-
         if not summary_text and not verdict_text:
             logger.warning(f"[SUMMARY] Both outputs empty for {app_id}; skipping save")
             return
-
         pool = await DatabasePool.get()
         async with pool.acquire() as conn:
             await conn.execute(
@@ -2234,17 +1934,13 @@ async def generate_interview_summary(
                 app_id,
             )
         logger.info(f"[SUMMARY] Generated summary + verdict for {app_id}")
-
     except asyncio.TimeoutError:
         logger.warning(f"[SUMMARY] Timed out for {app_id}")
     except Exception as e:
         logger.error(f"[SUMMARY] Generation failed for {app_id}: {e}")
-
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # Billing helpers (public API, used by agent_runtime.py)
 # ═══════════════════════════════════════════════════════════════════════════════
-
 def merge_manual_billing_usage(existing: dict[str, Any], feature: str, usage: dict[str, Any]) -> dict[str, Any]:
     """Merge a manual LLM usage record for a given feature into the org billing dict."""
     _VALID = {"interview", "resumeExtraction", "jdExtraction", "chatbot", "interviewReport", "resumeReport"}

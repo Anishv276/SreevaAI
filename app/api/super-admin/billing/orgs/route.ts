@@ -1,14 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-
 export async function GET() {
   try {
     const session = await getSession();
     if (!session || session.role !== "SUPER_ADMIN") {
       return NextResponse.json({ error: "Unauthorized access" }, { status: 403 });
     }
-
     const orgs = (await prisma.organization.findMany({
       orderBy: { createdAt: "desc" },
         select: {
@@ -24,7 +22,6 @@ export async function GET() {
             createdAt: true,
         } as any,
     } as any)) as any[];
-
     return NextResponse.json({
         orgs: orgs.map((org) => ({
         ...org,

@@ -1,11 +1,9 @@
 "use client";
-
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, ChevronDown, Loader2, Plus, Search, Trash2, X, Zap, AudioWaveform, Mic2, Play, Pause } from "lucide-react";
 import { toast } from "@/components/ui/toast-custom";
 import { cn } from "@/lib/utils";
-
 type BuiltInVoice = {
   id: string;
   name: string;
@@ -16,7 +14,6 @@ type BuiltInVoice = {
   tags?: string[];
   isSelectable: boolean;
 };
-
 type VoiceRegistry = {
   selectableVoices: BuiltInVoice[];
   customVoices: Array<{
@@ -33,9 +30,7 @@ type VoiceRegistry = {
   }>;
   builtInVoices: BuiltInVoice[];
 };
-
 type Provider = "CARTESIA" | "SARVAM" | "ELEVENLABS";
-
 const PROVIDER_META: Record<Provider, { label: string; color: string; bg: string; border: string; dot: string; activeBg: string; activeText: string }> = {
   CARTESIA: {
     label: "Cartesia",
@@ -65,7 +60,6 @@ const PROVIDER_META: Record<Provider, { label: string; color: string; bg: string
     activeText: "text-white",
   },
 };
-
 export default function SuperAdminVoicesPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -76,13 +70,11 @@ export default function SuperAdminVoicesPage() {
   const [selectedSarvamIds, setSelectedSarvamIds] = useState<string[]>([]);
   const [registry, setRegistry] = useState<VoiceRegistry | null>(null);
   const [form, setForm] = useState({ provider: "CARTESIA" as Provider, id: "" });
-
   // Preview state
   const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const activeAudioRef = useRef<HTMLAudioElement | null>(null);
   const previewUrlRef = useRef<string | null>(null);
-
   const loadRegistry = async () => {
     setLoading(true);
     try {
@@ -95,9 +87,7 @@ export default function SuperAdminVoicesPage() {
       setLoading(false);
     }
   };
-
   useEffect(() => { void loadRegistry(); }, []);
-
   const stopPreview = () => {
     if (activeAudioRef.current) {
       activeAudioRef.current.pause();
@@ -110,7 +100,6 @@ export default function SuperAdminVoicesPage() {
     }
     setPlayingVoiceId(null);
   };
-
   const playSample = async (voice: BuiltInVoice) => {
     if (playingVoiceId === voice.id) { stopPreview(); return; }
     setPreviewLoading(true);
@@ -140,13 +129,11 @@ export default function SuperAdminVoicesPage() {
       setPreviewLoading(false);
     }
   };
-
   const builtInMatch = useMemo(() => {
     const id = form.id.trim();
     if (!id || !registry) return null;
     return registry.builtInVoices.find((v) => v.id === id) ?? null;
   }, [form.id, registry]);
-
   const byProvider = useMemo(() => {
     if (!registry) return { CARTESIA: [], SARVAM: [], ELEVENLABS: [] } as Record<Provider, BuiltInVoice[]>;
     const term = search.trim().toLowerCase();
@@ -161,15 +148,12 @@ export default function SuperAdminVoicesPage() {
       ELEVENLABS: voices.filter((v) => v.provider === "ELEVENLABS"),
     } as Record<Provider, BuiltInVoice[]>;
   }, [registry, search]);
-
   const missingSarvam = useMemo(
     () => registry?.builtInVoices.filter((v) => v.provider === "SARVAM" && !v.isSelectable) ?? [],
     [registry]
   );
-
   const isCustom = (id: string) =>
     Boolean(registry?.customVoices.some((r) => r.id === id && !r.isBuiltIn));
-
   const submitAction = async (action: "add" | "remove" | "delete", payload: Record<string, unknown>) => {
     setSaving(true);
     try {
@@ -192,14 +176,12 @@ export default function SuperAdminVoicesPage() {
       setSaving(false);
     }
   };
-
   const onAdd = async () => {
     const id = form.id.trim();
     if (!id) { toast.error("Voice ID is required"); return; }
     await submitAction("add", { id, provider: form.provider });
     setForm((p) => ({ ...p, id: "" }));
   };
-
   const addSarvam = async () => {
     if (!selectedSarvamIds.length) { toast.error("Select at least one voice"); return; }
     setSaving(true);
@@ -223,9 +205,7 @@ export default function SuperAdminVoicesPage() {
       setSaving(false);
     }
   };
-
   const totalActive = registry?.selectableVoices.length ?? 0;
-
   if (loading && !registry) {
     return (
       <div className="flex min-h-[70vh] items-center justify-center">
@@ -238,10 +218,8 @@ export default function SuperAdminVoicesPage() {
       </div>
     );
   }
-
   return (
     <div className="mx-auto max-w-5xl space-y-4 px-4 py-4 sm:px-6 lg:px-0">
-
       {/* Back */}
       <button
         type="button"
@@ -251,7 +229,6 @@ export default function SuperAdminVoicesPage() {
         <ArrowLeft className="h-4 w-4" />
         Back
       </button>
-
       {/* Page header */}
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
@@ -263,7 +240,6 @@ export default function SuperAdminVoicesPage() {
             <p className="text-xs font-medium text-slate-500">Manage TTS voices across Cartesia, Sarvam, and ElevenLabs</p>
           </div>
         </div>
-
         {/* Quick stats — always visible in header */}
         <div className="flex items-center gap-2">
           {(["CARTESIA", "SARVAM", "ELEVENLABS"] as Provider[]).map((p) => {
@@ -284,10 +260,8 @@ export default function SuperAdminVoicesPage() {
           </div>
         </div>
       </div>
-
       {/* Main grid */}
       <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
-
         {/* ── Left: Add Voice panel ── */}
         <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
           {/* Panel header */}
@@ -300,7 +274,6 @@ export default function SuperAdminVoicesPage() {
               <p className="text-[11px] font-medium text-slate-400">Register a new voice to the engine</p>
             </div>
           </div>
-
           <div className="space-y-3 p-4">
             {/* Provider selector */}
             <div className="space-y-1">
@@ -331,7 +304,6 @@ export default function SuperAdminVoicesPage() {
                 })}
               </div>
             </div>
-
             {/* Voice ID or Sarvam picker */}
             {form.provider !== "SARVAM" ? (
               <div className="space-y-1">
@@ -408,7 +380,6 @@ export default function SuperAdminVoicesPage() {
                 </div>
               </div>
             )}
-
             {/* Built-in match hint — only shown when there IS a match */}
             {form.provider !== "SARVAM" && form.id.trim() && builtInMatch && (
               <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-2.5">
@@ -416,7 +387,6 @@ export default function SuperAdminVoicesPage() {
                 <p className="mt-0.5 text-[11px] text-emerald-600">{builtInMatch.model} · {builtInMatch.provider}</p>
               </div>
             )}
-
             {/* Add button */}
             <button
               type="button"
@@ -433,7 +403,6 @@ export default function SuperAdminVoicesPage() {
             </button>
           </div>
         </div>
-
         {/* ── Right: Active Registry ── */}
         <div className="flex flex-col rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden" style={{ maxHeight: "calc(100vh - 180px)" }}>
           {/* Header */}
@@ -462,7 +431,6 @@ export default function SuperAdminVoicesPage() {
               )}
             </div>
           </div>
-
           {/* Provider tabs */}
           <div className="flex shrink-0 border-b border-slate-100 px-4">
             {(["CARTESIA", "SARVAM", "ELEVENLABS"] as Provider[]).map((p) => {
@@ -493,7 +461,6 @@ export default function SuperAdminVoicesPage() {
               );
             })}
           </div>
-
           {/* Voice list — scrollable */}
           <div className="flex-1 overflow-y-auto p-3">
             {byProvider[activeTab].length === 0 ? (
@@ -542,7 +509,6 @@ export default function SuperAdminVoicesPage() {
                           <p className="truncate font-mono text-[10px] text-slate-400">{voice.id}</p>
                         </div>
                       </div>
-
                       {/* Action buttons — always visible */}
                       <div className="flex shrink-0 items-center gap-1">
                         {/* Preview */}
@@ -567,7 +533,6 @@ export default function SuperAdminVoicesPage() {
                             <Play className="h-3 w-3 fill-current ml-0.5" />
                           )}
                         </button>
-
                         {/* Remove */}
                         <button
                           type="button"
@@ -578,7 +543,6 @@ export default function SuperAdminVoicesPage() {
                         >
                           Remove
                         </button>
-
                         {/* Delete (custom only) */}
                         {custom && (
                           <button

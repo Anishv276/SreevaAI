@@ -1,17 +1,14 @@
 "use client";
-
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, Check, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-
 interface PremiumFilterOption {
     value: string;
     label: string;
     icon?: LucideIcon;
     colorClass?: string;
 }
-
 interface PremiumFilterProps {
     value: string;
     onChange: (value: string) => void;
@@ -19,20 +16,17 @@ interface PremiumFilterProps {
     placeholder: string;
     icon: LucideIcon;
 }
-
 export function PremiumFilter({ value, onChange, options, placeholder, icon: Icon }: PremiumFilterProps) {
     const [open, setOpen] = useState(false);
     const [rect, setRect] = useState<DOMRect | null>(null);
     const triggerRef = useRef<HTMLButtonElement>(null);
     const menuRef = useRef<HTMLDivElement>(null);
-
     const handleOpen = () => {
         if (!open && triggerRef.current) {
             setRect(triggerRef.current.getBoundingClientRect());
         }
         setOpen(o => !o);
     };
-
     useEffect(() => {
         if (!open) return;
         const h = (e: MouseEvent) => {
@@ -44,10 +38,8 @@ export function PremiumFilter({ value, onChange, options, placeholder, icon: Ico
         document.addEventListener("mousedown", h);
         return () => document.removeEventListener("mousedown", h);
     }, [open]);
-
     const activeOption = options.find(o => o.value === value);
     const label = activeOption ? activeOption.label : placeholder;
-
     const dropdown = open && rect ? (
         <div
             ref={menuRef}
@@ -87,7 +79,6 @@ export function PremiumFilter({ value, onChange, options, placeholder, icon: Ico
             </div>
         </div>
     ) : null;
-
     return (
         <div className="relative">
             <button
@@ -108,4 +99,3 @@ export function PremiumFilter({ value, onChange, options, placeholder, icon: Ico
         </div>
     );
 }
-

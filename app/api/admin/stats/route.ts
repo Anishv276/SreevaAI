@@ -3,25 +3,20 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { getRangeWindow } from "@/lib/date-utils";
-
-
 export async function GET(req: NextRequest) {
     try {
         const session = await getSession();
         if (!session?.orgId) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
-
         const orgId = session.orgId;
         const { searchParams } = new URL(req.url);
         const range = searchParams.get("range") ?? "month";
         const from = searchParams.get("from") ?? undefined;
         const to = searchParams.get("to") ?? undefined;
-
         const { start, prevStart, prevEnd } = getRangeWindow(range, from, to);
         const now = new Date();
         const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
         type AppStatsRow = {
             applications: number;
             applicationsToday: number;
@@ -41,7 +36,6 @@ export async function GET(req: NextRequest) {
             activeDrives: number;
             closingSoon: number;
         };
-
         const appStats = await prisma.$queryRaw<AppStatsRow[]>`
             SELECT
                 COUNT(*) FILTER (WHERE a."createdAt" >= ${start})::INT AS applications,
@@ -101,17 +95,13 @@ export async function GET(req: NextRequest) {
               AND i."status" = 'COMPLETED'
               AND i."completedAt" >= ${start}
         `);
-
         const s = appStats[0];
         const d = driveStats[0];
-
         function safeRound(val: number | string | null | undefined) {
             return val != null ? Math.round(Number(val)) : null;
         }
-
         const avgTimeToHire = safeRound(s.avgTimeToHire);
         const avgTimeToHirePrev = safeRound(s.avgTimeToHirePrev);
-
         const applications = Number(s.applications);
         const applicationsPrev = Number(s.applicationsPrev);
         const interviewed = Number(s.interviewed);
@@ -119,7 +109,6 @@ export async function GET(req: NextRequest) {
         const shortlisted = Number(s.shortlisted);
         const liveInterviews = Number(s.liveInterviews);
         const avgRating = Number(ratingStats[0]?.avgRating || 0);
-
         const response = NextResponse.json({
             activeDrives: Number(d.activeDrives),
             closingSoon: Number(d.closingSoon),

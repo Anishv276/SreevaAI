@@ -1,17 +1,13 @@
 const fs = require('fs');
 const path = 'c:\\Users\\vamsi\\OneDrive\\Desktop\\HR-updates\\components\\admin\\candidate-profile\\resume-report-sreevaai.tsx';
 let lines = fs.readFileSync(path, 'utf8').split('\n');
-
 const startIdx = 1286 - 1;
 const endIdx = 1778 - 1;
-
 const newContent = `
         {/* Main 3-Panel Bento Architecture */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 min-h-[calc(100vh-8rem)]">
-          
           {/* PANEL 1: Left (Profile, Verdict, Radar, Summary) */}
           <div className="lg:col-span-4 flex flex-col gap-4 min-h-0 overflow-y-auto" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
-            
             {/* Candidate Profile Compact */}
             <div className={cn("rounded-2xl border border-[#E4E7EB] bg-white p-5 shadow-sm")}>
               <div className="flex items-center gap-4 mb-4">
@@ -41,7 +37,6 @@ const newContent = `
                 ) : null}
               </div>
             </div>
-
             {/* Hiring Verdict Box */}
             {(() => {
               const isHire = model.decisionStamp === "SHORTLISTED";
@@ -89,7 +84,6 @@ const newContent = `
                 </div>
               );
             })()}
-
             {/* Fit Radar */}
             <div className="rounded-2xl border border-[#E4E7EB] bg-white overflow-hidden shadow-sm">
               <div className="px-5 py-4 border-b border-[#F3F4F6]">
@@ -99,7 +93,6 @@ const newContent = `
                 <ResumeRadarPlot values={model.fitRadar} notes={model.fitRadarNotes} onHoverChange={setRadarHovered} />
               </div>
             </div>
-
             {/* AI Summary */}
             <div className="rounded-2xl border border-[#E4E7EB] bg-white overflow-hidden shadow-sm">
               <div className="px-5 py-4 border-b border-[#F3F4F6]">
@@ -123,12 +116,9 @@ const newContent = `
                 ))}
               </div>
             </div>
-            
           </div>
-
           {/* PANEL 2: Middle (Evidence Highlights, Skill Signals) */}
           <div className="lg:col-span-4 flex flex-col gap-4 min-h-0 overflow-y-auto" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
-            
             {/* Evidence Highlights */}
             <div className="rounded-2xl border border-[#E4E7EB] bg-white shadow-sm overflow-hidden">
               <div className="px-5 py-4 border-b border-[#F3F4F6]">
@@ -165,9 +155,7 @@ const newContent = `
                       </div>
                     )}
                   </div>
-
                   <div className="h-px bg-[#F3F4F6] my-1" />
-
                   {/* Weaknesses */}
                   <div className="flex flex-col">
                     <button type="button" onClick={() => setOpenWeaknesses(!openWeaknesses)}
@@ -200,7 +188,6 @@ const newContent = `
                 </div>
               </div>
             </div>
-
             {/* Skill Signals */}
             <div className="rounded-2xl border border-[#E4E7EB] bg-white shadow-sm overflow-hidden flex-1 flex flex-col min-h-0">
               <div className="px-5 py-4 border-b border-[#F3F4F6] shrink-0">
@@ -259,7 +246,6 @@ const newContent = `
               </div>
             </div>
           </div>
-
           {/* PANEL 3: Right (Career Timeline) */}
           <div className="lg:col-span-4 flex flex-col gap-4 min-h-0 overflow-y-auto" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
             <div className="rounded-2xl border border-[#E4E7EB] bg-white shadow-sm overflow-hidden flex-1 flex flex-col min-h-0">
@@ -282,10 +268,8 @@ const newContent = `
               </div>
             </div>
           </div>
-
         </div>
 `
-
 lines.splice(startIdx, endIdx - startIdx + 1, ...newContent.split('\n'));
 fs.writeFileSync(path, lines.join('\n'), 'utf8');
 console.log('Successfully replaced layout!');

@@ -1,16 +1,13 @@
 "use client";
-
 import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, UserCircle2, Filter, Search, Loader2 } from "lucide-react";
-
 export default function OrgCandidatesPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params);
     const router = useRouter();
     const [org, setOrg] = useState<any>(null);
     const [candidates, setCandidates] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
-
     useEffect(() => {
         const load = async () => {
             try {
@@ -18,10 +15,8 @@ export default function OrgCandidatesPage({ params }: { params: Promise<{ id: st
                     fetch(`/api/super-admin/orgs/${id}`),
                     fetch(`/api/candidates?orgId=${id}`)
                 ]);
-                
                 const orgData = await orgRes.json();
                 const candidatesData = await candidatesRes.json();
-                
                 setOrg(orgData);
                 setCandidates(candidatesData);
             } catch (err) {
@@ -32,7 +27,6 @@ export default function OrgCandidatesPage({ params }: { params: Promise<{ id: st
         };
         load();
     }, [id]);
-
     if (loading) {
         return (
             <div className="p-20 text-center flex items-center justify-center">
@@ -40,7 +34,6 @@ export default function OrgCandidatesPage({ params }: { params: Promise<{ id: st
             </div>
         );
     }
-
     return (
         <div className="p-8 lg:p-12 space-y-12 animate-fade-slide text-gray-900 font-medium">
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-8">
@@ -61,7 +54,6 @@ export default function OrgCandidatesPage({ params }: { params: Promise<{ id: st
                     </div>
                 </div>
             </div>
-
             <div className="bg-white border border-gray-100 rounded-[3rem] shadow-[0_20px_50px_rgba(0,0,0,0.02)] overflow-hidden">
                 {/* Table Header */}
                 <div className="grid grid-cols-[2fr_1.5fr_1fr_1fr_auto] gap-4 px-10 py-6 border-b border-gray-50 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] bg-gray-50/10">
@@ -71,7 +63,6 @@ export default function OrgCandidatesPage({ params }: { params: Promise<{ id: st
                     <span className="text-center">STATUS</span>
                     <span className="text-right">DATE APPLIED</span>
                 </div>
-
                 {candidates.length === 0 ? (
                     <div className="py-40 text-center space-y-6">
                         <div className="h-20 w-20 bg-gray-50 rounded-full flex items-center justify-center mx-auto text-gray-200">
@@ -110,4 +101,3 @@ export default function OrgCandidatesPage({ params }: { params: Promise<{ id: st
         </div>
     );
 }
-

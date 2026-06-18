@@ -3,16 +3,12 @@ import { prisma } from "@/lib/prisma";
 import { getSession, invalidateUserSessions } from "@/lib/auth";
 import bcrypt from "bcryptjs";
 import { validatePasswordStrength } from "@/lib/validation";
-
 export async function GET() {
     try {
         const session = await getSession();
         if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
-
         console.log(`[Profile API] Fetching profile for userId: ${session.userId}, role: ${session.role}`);
-
         let user: any = null;
-
         if (session.role === "SUPER_ADMIN") {
             user = await prisma.superAdmin.findUnique({
                 where: { id: session.userId },
@@ -25,71 +21,56 @@ export async function GET() {
                 select: { name: true, email: true }
             });
         }
-
         if (!user) {
             console.error(`[Profile API] User record not found for ID: ${session.userId}`);
             return NextResponse.json({ error: "User not found" }, { status: 404 });
         }
-
         return NextResponse.json(user);
     } catch (error) {
         console.error("[Profile API GET Error]:", error);
         return NextResponse.json({ error: "Failed to fetch profile" }, { status: 500 });
     }
 }
-
 export async function PATCH(request: Request) {
     try {
         const session = await getSession();
         if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
-
         const body = await request.json();
         const { name, email, newPassword, currentPassword, otp } = body;
-
         console.log(`[Profile API] Updating profile for userId: ${session.userId}, role: ${session.role}`);
-
         const updateData: any = {};
         if (name !== undefined) updateData.name = name;
         if (email !== undefined && session.role === "SUPER_ADMIN") updateData.email = email;
-        
         // 1. Password Update Logic
         if (newPassword) {
             const { isValid, error: strengthError } = validatePasswordStrength(newPassword);
             if (!isValid) return NextResponse.json({ error: strengthError }, { status: 400 });
-
             // -- SECURITY: OTP Verification Required for Password Changes --
             if (!otp) return NextResponse.json({ error: "Security code (OTP) required" }, { status: 400 });
-
             let currentUser: any = null;
             if (session.role === "SUPER_ADMIN") {
                 currentUser = await prisma.superAdmin.findUnique({ where: { id: session.userId } });
-
                 // Verify Super Admin OTP
                 if (!currentUser || currentUser.resetOtp !== otp || (currentUser.resetOtpExpires && currentUser.resetOtpExpires < new Date())) {
                     return NextResponse.json({ error: "Invalid or expired security code" }, { status: 400 });
                 }
-
                 await prisma.superAdmin.update({
                     where: { id: session.userId },
                     data: { resetOtp: null, resetOtpExpires: null }
                 });
             } else {
                 currentUser = await prisma.user.findUnique({ where: { id: session.userId } });
-
                 // Verify regular Admin/User OTP
                 if (!currentUser || currentUser.resetOtp !== otp || (currentUser.resetOtpExpires && currentUser.resetOtpExpires < new Date())) {
                     return NextResponse.json({ error: "Invalid or expired security code" }, { status: 400 });
                 }
-                
                 // Clear OTP for User
                 await prisma.user.update({
                     where: { id: session.userId },
                     data: { resetOtp: null, resetOtpExpires: null }
                 });
             }
-
             if (!currentUser) return NextResponse.json({ error: "User not found" }, { status: 404 });
-
             // -- Verify current password if it exists --
             if (currentUser.password) {
                 if (!currentPassword) return NextResponse.json({ error: "Current password required to authorize changes" }, { status: 400 });
@@ -101,13 +82,10 @@ export async function PATCH(request: Request) {
                     error: "Security Check: Account has no password. To establish one, please use the password recovery protocol via email." 
                 }, { status: 403 });
             }
-
             updateData.password = await bcrypt.hash(newPassword, 10);
             await invalidateUserSessions(session.userId);
         }
-
         if (Object.keys(updateData).length === 0) return NextResponse.json({ message: "No changes provided" });
-
         // 2. Execute Update
         if (session.role === "SUPER_ADMIN") {
             await prisma.superAdmin.update({
@@ -120,7 +98,6 @@ export async function PATCH(request: Request) {
                 data: updateData
             });
         }
-
         return NextResponse.json({ success: true, message: "Profile updated successfully" });
     } catch (error) {
         console.error("[Profile API PATCH Error]:", error);

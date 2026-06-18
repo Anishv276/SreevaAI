@@ -1,19 +1,14 @@
 """
 Interview phase helpers -- single unified 20-minute interview.
-
 Flow: greeting -> warmup -> unified interview stage (full 20min)
 The single stage covers resume projects/work and JD skills. Hard moments
 (pressure/situational/behavioral) emerge naturally via the probe system's
 "pressure" family -- not scheduled as a separate quota.
 """
-
 from __future__ import annotations
 import random
 from typing import Any
-
 _BriefType = Any
-
-
 # Lightweight, human-feeling greeting templates.
 # - No project/role/anchor reference -- keeps the opener generic so it never
 #   makes the candidate feel "researched" before the interview even starts.
@@ -25,11 +20,8 @@ _GREETING_VARIANTS: list[str] = [
     "Hello {name}, I'm {ai_name}. Hope you're doing well. How has your day been?",
     "Hi {name}, I'm {ai_name}. How's your day going so far?",
 ]
-
-
 def build_greeting_text(candidate_name: str, ai_name: str, job_title: str) -> str:
     """Build a short, varied, human-feeling greeting.
-
     `job_title` is intentionally unused; we keep it in the signature for
     backwards compatibility with the existing call site. The greeting stays
     role-agnostic so the opener does not sound rehearsed.
@@ -39,8 +31,6 @@ def build_greeting_text(candidate_name: str, ai_name: str, job_title: str) -> st
     ai = (ai_name or "").strip() or "your interviewer"
     template = random.choice(_GREETING_VARIANTS)
     return template.format(name=name, ai_name=ai)
-
-
 def build_warmup_directive(job_title: str = "") -> str:
     role_line = f"the {job_title} role" if job_title else "the role"
     return (
@@ -95,11 +85,8 @@ def build_warmup_directive(job_title: str = "") -> str:
         "\n"
         "WAIT for them to confirm they are ready before starting the interview."
     )
-
-
 def build_warmup_directive(job_title: str = "") -> str:
     """Clean ASCII warmup directive.
-
     This intentionally overrides the earlier definition, which is left in place
     for minimal diff safety but contains mojibake in example strings. The runtime
     imports this final definition.
@@ -131,8 +118,6 @@ def build_warmup_directive(job_title: str = "") -> str:
         "TONE: Professional, warm, and concise. This is small talk before work.\n"
         "WAIT for them to confirm they are ready before starting the interview."
     )
-
-
 def _build_custom_questions_block(custom_questions: list[str] | None) -> str:
     cqs = [q.strip() for q in (custom_questions or []) if q.strip()]
     if not cqs:
@@ -142,13 +127,10 @@ def _build_custom_questions_block(custom_questions: list[str] | None) -> str:
         f"\nCUSTOM QUESTIONS (recruiter-mandated -- weave naturally into the conversation, "
         f"but ALL must be asked before the interview ends):\n{items}\n"
     )
-
-
 # ---------------------------------------------------------------------------
 # Unified Interview Stage -- full 20 minutes
 # Covers: resume projects/work/internships, JD skills, situational, behavioral
 # ---------------------------------------------------------------------------
-
 def build_interview_directive(
     *,
     band: str,
@@ -158,7 +140,6 @@ def build_interview_directive(
 ) -> str:
     """
     Build the single system prompt for the full 20-minute interview.
-
     Priority order:
       1. Resume anchor project -- open here, probe personal ownership
       2. Other resume projects, work history
@@ -175,7 +156,6 @@ def build_interview_directive(
         anchor_name = (resume_brief.anchor_item or "their most recent work").split(" - ")[0].strip()
     else:
         anchor_name = resume_brief.get("anchor_item", "their most recent work").split(" - ")[0].strip()
-
     _first_q_rule = {
         "fresher": (
             f"FIRST QUESTION RULE: stay surface-level. Ask WHAT they built and what their specific role was.\n"
@@ -194,14 +174,12 @@ def build_interview_directive(
             f"Do NOT start with basics -- probe the WHY behind their biggest initiative immediately."
         ),
     }.get(band, "FIRST QUESTION RULE: ask what they personally owned and what decisions were theirs.")
-
     opening = (
         f"Your ANALYST BRIEF (above) contains the exact OPENING ANGLE for this session.\n"
         f"Follow it. Open on: {anchor_name}.\n"
         f"{_first_q_rule}\n"
         f"ONE question only. Stay on {anchor_name} until a [NEXT_TURN_DIRECTIVE] tells you to move."
     )
-
     # -- Band-aware instinct ---------------------------------------------------
     band_instinct = {
         "fresher": (
@@ -225,14 +203,11 @@ def build_interview_directive(
             "Challenge their decisions -- seniors should defend them confidently."
         ),
     }.get(band, "Probe for real ownership and specific decisions, not summaries.")
-
     cq_block = _build_custom_questions_block(custom_questions)
-
     # Skills block -- resume skills + JD skills shown explicitly so the LLM
     # knows what to probe for and doesn't skip them in favour of only projects.
     _resume_skills = [str(s).strip() for s in (getattr(resume_brief, "skills", None) or resume_brief.get("skills", [])) if str(s).strip()]
     _jd_skill_list = [str(s).strip() for s in (jd_skills or []) if str(s).strip()]
-
     # Work history for grounding skill questions — pull from resume_brief
     _work_history = []
     if hasattr(resume_brief, "work_history"):
@@ -255,7 +230,6 @@ def build_interview_directive(
             "  -> Ask: 'Where did your use of X change how the team or product operated?' Not 'have you used X?'\n"
         ),
     }.get(band, "  -> Ask about real usage grounded in a specific role or project, NOT generic 'do you know X?'\n")
-
     if _resume_skills or _jd_skill_list:
         _resume_part = ", ".join(_resume_skills) if _resume_skills else "none listed"
         _jd_part = ", ".join(_jd_skill_list) if _jd_skill_list else "none listed"
@@ -281,7 +255,6 @@ def build_interview_directive(
         )
     else:
         skills_block = ""
-
     # Band-aware coverage goals and mandatory quota.
     # Research basis: as seniority increases, interviews shift from breadth -> depth.
     # Fresher: cover many topics lightly (5-6), understand how they think.
@@ -372,7 +345,6 @@ def build_interview_directive(
         ),
         "",
     ))
-
     _dry_run_questions = {
         "fresher": (
             "  'What are you learning or building right now outside of work?'\n"
@@ -404,7 +376,6 @@ def build_interview_directive(
         "  'What drew you to this specific role?'\n"
         "  'What does your best work look like -- give me one example.'"
     ))
-
     return (
         f"[DO NOT SAY ALOUD]\n\n"
         f"GOAL: In the next ~19 minutes, understand who this candidate really is --\n"

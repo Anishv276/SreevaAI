@@ -1,9 +1,7 @@
 import type { NextConfig } from "next";
-
 const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim())
   : ['geophagous-delicately-augustus.ngrok-free.app'];
-
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   images: {
@@ -43,5 +41,4 @@ const nextConfig: NextConfig = {
     proxyClientMaxBodySize: '20mb',
   },
 };
-
 export default nextConfig;

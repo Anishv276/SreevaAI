@@ -1,13 +1,10 @@
 "use client";
-
 import { useEffect, useRef, useState } from "react";
 import { UserPlus, FileCheck, XCircle, TriangleAlert, ChevronRight, Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { type DateRange } from "./date-filter";
-
 type ActivityType = "application" | "interview_completed" | "rejection";
-
 interface FeedItem {
     id: string;
     type: ActivityType;
@@ -17,7 +14,6 @@ interface FeedItem {
     timestamp: number;
     isDemo?: boolean;
 }
-
 function getIconProps(type: ActivityType) {
     switch (type) {
         case "application":
@@ -28,17 +24,14 @@ function getIconProps(type: ActivityType) {
             return { icon: XCircle,    color: "#EF4444", bg: "bg-red-50",      border: "border-red-100" };
     }
 }
-
 function useActivityFeed(dateRange: DateRange) {
     const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const fetchRef = useRef<(() => Promise<void>) | null>(null);
-
     useEffect(() => {
         const controller = new AbortController();
         const { signal } = controller;
-
         const fetchFeed = async () => {
             setError(null);
             setLoading(true);
@@ -66,24 +59,19 @@ function useActivityFeed(dateRange: DateRange) {
                 if (!signal.aborted) setLoading(false);
             }
         };
-
         fetchRef.current = fetchFeed;
         fetchFeed();
-
         // Pause polling when tab is hidden
         const interval = setInterval(() => {
             if (!document.hidden) fetchFeed();
         }, 30_000);
-
         return () => {
             controller.abort();
             clearInterval(interval);
         };
     }, [dateRange]);
-
     return { feedItems, loading, error, retry: () => fetchRef.current?.() };
 }
-
 function summarize(items: FeedItem[]) {
     return {
         uploads:    items.filter((i) => i.type === "application").length,
@@ -91,15 +79,12 @@ function summarize(items: FeedItem[]) {
         rejections: items.filter((i) => i.type === "rejection").length,
     };
 }
-
 interface LiveFeedProps {
     dateRange: DateRange;
 }
-
 export function LiveFeed({ dateRange }: LiveFeedProps) {
     const { feedItems, loading, error, retry } = useActivityFeed(dateRange);
     const summary = summarize(feedItems);
-
     return (
         <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
             {/* Header */}
@@ -121,7 +106,6 @@ export function LiveFeed({ dateRange }: LiveFeedProps) {
                     {loading && <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-400" />}
                 </div>
             </div>
-
             {/* Feed */}
             <div className="px-5 py-4 max-h-[420px] overflow-y-auto">
                 {error ? (

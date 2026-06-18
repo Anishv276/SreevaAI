@@ -1,17 +1,14 @@
 "use client";
-
 import * as React from "react";
 import { useState, useMemo } from "react";
 import { Eye, EyeOff, CheckCircle2, XCircle, ShieldCheck, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
-
 interface PasswordInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
     label?: string;
     showChecklist?: boolean;
     onValidationChange?: (isValid: boolean) => void;
 }
-
 export function PasswordInput({ 
     className, 
     label, 
@@ -23,21 +20,17 @@ export function PasswordInput({
 }: PasswordInputProps) {
     const [showPassword, setShowPassword] = useState(false);
     const password = typeof value === 'string' ? value : '';
-
     const requirements = useMemo(() => [
         { label: "8+ characters", met: password.length >= 8 },
         { label: "Lower & Uppercase", met: /[a-z]/.test(password) && /[A-Z]/.test(password) },
         { label: "Number & Special", met: /[0-9]/.test(password) && /[^a-zA-Z0-9]/.test(password) },
     ], [password]);
-
     const isValid = useMemo(() => requirements.every(r => r.met), [requirements]);
-
     React.useEffect(() => {
         if (onValidationChange) {
             onValidationChange(isValid);
         }
     }, [isValid, onValidationChange]);
-
     return (
         <div className="space-y-2">
             {label && (
@@ -67,7 +60,6 @@ export function PasswordInput({
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
             </div>
-
             {showChecklist && password.length > 0 && (
                 <div className="p-3 rounded-xl bg-gray-50/50 border border-gray-100 flex flex-wrap gap-x-4 gap-y-2 animate-in-fade duration-300">
                     {requirements.map((req, i) => (

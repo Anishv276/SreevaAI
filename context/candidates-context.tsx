@@ -1,5 +1,4 @@
 "use client";
-
 import React, {
     createContext,
     useCallback,
@@ -9,7 +8,6 @@ import React, {
     useState,
 } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-
 export type Candidate = {
     id: string;
     fullName?: string;
@@ -42,14 +40,12 @@ export type Candidate = {
     experience_list?: any[];
     certifications?: any[];
 };
-
 interface Pagination {
     total: number;
     page: number;
     limit: number;
     totalPages: number;
 }
-
 type CandidateFetchParams = {
     page: number;
     limit: number;
@@ -62,7 +58,6 @@ type CandidateFetchParams = {
     search?: string;
     sort?: "default" | "score_desc" | "score_asc";
 };
-
 export interface CandidateStats {
     shortlisted: number;
     rejected: number;
@@ -71,7 +66,6 @@ export interface CandidateStats {
     interviewPending: number;
     interviewCompleted: number;
 }
-
 interface CandidatesContextType {
     candidates: Candidate[];
     pagination: Pagination;
@@ -95,13 +89,10 @@ interface CandidatesContextType {
     clearError: () => void;
     bulkDeleteCandidates: (ids: string[]) => Promise<void>;
 }
-
 const CandidatesContext = createContext<CandidatesContextType | undefined>(undefined);
-
 const DEFAULT_LIMIT = 10;
 const FETCH_REUSE_WINDOW_MS = 4000;
 const STREAM_REFRESH_DEBOUNCE_MS = 1200;
-
 export function CandidatesProvider({ children }: { children: React.ReactNode }) {
     const [candidates, setCandidates] = useState<Candidate[]>([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -120,7 +111,6 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
         interviewPending: 0,
         interviewCompleted: 0
     });
-
     const [isHydrated, setIsHydrated] = useState(false);
     const pathname = usePathname();
     const searchParams = useSearchParams();
@@ -128,7 +118,6 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
     const isCandidatesRoute =
         pathname.startsWith("/admin/candidates") ||
         /^\/super-admin\/orgs\/[^/]+\/(candidates|view)$/.test(pathname);
-
     const eventSourceRef = useRef<EventSource | null>(null);
     const paginationRef = useRef<Pagination>(pagination);
     const refreshTimerRef = useRef<number | null>(null);
@@ -137,15 +126,12 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
     const inFlightRequestsRef = useRef<Map<string, Promise<void>>>(new Map());
     const lastFetchParamsRef = useRef<CandidateFetchParams | null>(null);
     const fetchSequenceRef = useRef(0);
-
     useEffect(() => {
         setIsHydrated(true);
     }, []);
-
     useEffect(() => {
         paginationRef.current = pagination;
     }, [pagination]);
-
     const buildFetchKey = (
         page: number,
         limit: number,
@@ -171,7 +157,6 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
             sort || "default",
         ].join("|");
     };
-
     const fetchCandidatesInternal = useCallback(async (
         page: number = 1,
         limit: number = DEFAULT_LIMIT,
@@ -199,26 +184,21 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
         };
         const key = buildFetchKey(page, limit, driveId, resumeStatus, interviewStatus, hiringStatus, startDate, endDate, search, sort);
         const now = Date.now();
-
         const inFlight = inFlightRequestsRef.current.get(key);
         if (inFlight) {
             await inFlight;
             return;
         }
-
         const lastFetch = lastFetchRef.current;
         const canReuseRecentFetch =
             !options?.force &&
             lastFetch?.key === key &&
             now - lastFetch.at < FETCH_REUSE_WINDOW_MS &&
             hasFetchedAdminDataRef.current;
-
         if (canReuseRecentFetch) {
             return;
         }
-
         const requestId = ++fetchSequenceRef.current;
-
         const fetchWithRetry = async (url: string, retries = 3, backoff = 1000): Promise<Response> => {
             try {
                 const res = await fetch(url);
@@ -235,23 +215,19 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
                 throw err;
             }
         };
-
         const requestPromise = (async () => {
             if (!options?.background) {
                 setIsLoading(true);
                 setError(null);
             }
-
             try {
                 const params = new URLSearchParams({
                     page: String(page),
                     limit: String(limit),
                 });
-
                 if (orgIdFromUrl) {
                     params.set("orgId", orgIdFromUrl);
                 }
-
                 if (driveId && driveId !== "all") {
                     params.set("driveId", driveId);
                 }
@@ -278,7 +254,6 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
                     params.set("sortBy", sortBy);
                     params.set("sortDir", sortDir);
                 }
-
                 const res = await fetchWithRetry(`/api/candidates?${params.toString()}`);
                 if (!res.ok) {
                     if (requestId !== fetchSequenceRef.current) return;
@@ -286,14 +261,11 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
                     setError(data.error || "Failed to load candidates. Partial recovery active.");
                     return;
                 }
-
                 const result = await res.json();
                 const { candidates: rawCandidates, pagination: pagData, stats: statsData } = result;
-
                 if (requestId !== fetchSequenceRef.current) {
                     return;
                 }
-
                 const mappedCandidates = Array.isArray(rawCandidates)
                     ? rawCandidates.map((c: any) => ({
                         id: c.id.toString(),
@@ -316,7 +288,6 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
                         relevantYears: c.relevantYears
                     }))
                     : [];
-
                 setCandidates(mappedCandidates);
                 if (pagData) {
                     setPagination({
@@ -329,7 +300,6 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
                 if (statsData) {
                     setStats(statsData);
                 }
-
                 hasFetchedAdminDataRef.current = true;
                 lastFetchRef.current = { key, at: Date.now() };
                 lastFetchParamsRef.current = currentFetchParams;
@@ -345,16 +315,13 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
                 }
             }
         })();
-
         inFlightRequestsRef.current.set(key, requestPromise);
-
         try {
             await requestPromise;
         } finally {
             inFlightRequestsRef.current.delete(key);
         }
     }, []);
-
     const fetchCandidates = useCallback(async (
         page: number = 1,
         limit: number = DEFAULT_LIMIT,
@@ -370,15 +337,12 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
     ) => {
         await fetchCandidatesInternal(page, limit, driveId, resumeStatus, interviewStatus, hiringStatus, startDate, endDate, search, sort, options);
     }, [fetchCandidatesInternal]);
-
     const scheduleStreamRefresh = useCallback(() => {
         if (refreshTimerRef.current !== null) {
             return;
         }
-
         refreshTimerRef.current = window.setTimeout(() => {
             refreshTimerRef.current = null;
-
             const current = paginationRef.current;
             const lastParams = lastFetchParamsRef.current;
             void fetchCandidatesInternal(
@@ -396,21 +360,17 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
             );
         }, STREAM_REFRESH_DEBOUNCE_MS);
     }, [fetchCandidatesInternal]);
-
     // REAL-TIME ARCHITECTURE: Establish stable stream only for candidates route
     useEffect(() => {
         if (!isHydrated || !isCandidatesRoute) {
             return;
         }
-
         // PERSISTENT STREAM: Don't recreate if already live
         if (eventSourceRef.current) {
             return;
         }
-
         const eventSource = new EventSource("/api/stream");
         eventSourceRef.current = eventSource;
-
         eventSource.onmessage = (event: MessageEvent<string>) => {
             try {
                 const data = JSON.parse(event.data);
@@ -425,11 +385,9 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
                 // Ignore transient parsing errors
             }
         };
-
         eventSource.onerror = () => {
             // Connection lost - SSE will auto-retry
         };
-
         // Refresh immediately when user switches back to this tab
         const handleVisibility = () => {
             if (document.visibilityState === "visible" && hasFetchedAdminDataRef.current) {
@@ -437,7 +395,6 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
             }
         };
         document.addEventListener("visibilitychange", handleVisibility);
-
         return () => {
             document.removeEventListener("visibilitychange", handleVisibility);
             if (eventSourceRef.current) {
@@ -450,23 +407,19 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
             }
         };
     }, [isHydrated, isCandidatesRoute, fetchCandidatesInternal, scheduleStreamRefresh]);
-
     useEffect(() => {
         if (isCandidatesRoute) {
             return;
         }
-
         if (eventSourceRef.current) {
             eventSourceRef.current.close();
             eventSourceRef.current = null;
         }
-
         if (refreshTimerRef.current !== null) {
             window.clearTimeout(refreshTimerRef.current);
             refreshTimerRef.current = null;
         }
     }, [isCandidatesRoute]);
-
     useEffect(() => {
         return () => {
             if (eventSourceRef.current) {
@@ -479,14 +432,12 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
             }
         };
     }, []);
-
     const addCandidate = async (newCandidateData: Omit<Candidate, "id" | "date" | "status" | "score">) => {
         try {
             const fullName =
                 (newCandidateData as Candidate).name ||
                 (newCandidateData as any).fullName ||
                 "";
-
             const response = await fetch("/api/candidates", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -495,11 +446,9 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
                     fullName,
                 }),
             });
-
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
                 const errorMessage = errorData.error || "Failed to create application";
-
                 // Formulate detailed error message
                 let detailMsg = "";
                 if (errorData.details) {
@@ -511,16 +460,13 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
                         detailMsg = `\n\nDetails: ${errorData.details}`;
                     }
                 }
-
                 // Throw error with status code so frontend can handle duplicates specifically
                 const error = new Error(detailMsg ? `${errorMessage}${detailMsg}` : errorMessage);
                 (error as any).status = response.status;
                 (error as any).details = errorData.details;
                 throw error;
             }
-
             const savedCandidate = await response.json();
-
             // Refetch to ensure we have the correct paginated state
             const current = paginationRef.current;
             const lastParams = lastFetchParamsRef.current;
@@ -541,7 +487,6 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
             throw error;
         }
     };
-
     const bulkDeleteCandidates = async (ids: string[]) => {
         try {
             const response = await fetch("/api/candidates", {
@@ -549,7 +494,6 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ ids }),
             });
-
             if (response.ok) {
                 // Refetch to ensure we have the correct paginated state after deletion
                 const current = paginationRef.current;
@@ -575,9 +519,7 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
             throw error;
         }
     };
-
     const clearError = useCallback(() => setError(null), []);
-
     return (
         <CandidatesContext.Provider value={{
             candidates,
@@ -594,7 +536,6 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
         </CandidatesContext.Provider>
     );
 }
-
 export function useCandidates() {
     const context = useContext(CandidatesContext);
     if (context === undefined) {

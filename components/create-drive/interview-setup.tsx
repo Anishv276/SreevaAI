@@ -1,20 +1,16 @@
 "use client";
-
 import { useState, useRef, useEffect, type MouseEvent as ReactMouseEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Plus, Trash2, BrainCircuit, ChevronDown, Globe, Play, Pause, RefreshCw, AudioLines, Search } from "lucide-react";
 import { toast } from "@/components/ui/toast-custom";
 import { ALL_VOICES, DEFAULT_VOICE_ID, type Voice } from "@/lib/constants/voices";
-
 interface InterviewProps {
     formData: any;
     updateFormData: (fn: (prev: any) => any) => void;
     allowLanguageSelection?: boolean;
 }
-
 const LANGUAGES = [
     "English", "Hindi"
 ];
-
 function safeArray(val: any): string[] {
     if (Array.isArray(val)) return val;
     if (typeof val === "string") {
@@ -22,7 +18,6 @@ function safeArray(val: any): string[] {
     }
     return [];
 }
-
 export function InterviewSetup({ formData, updateFormData, allowLanguageSelection = true }: InterviewProps) {
     const [newQuestion, setNewQuestion] = useState("");
     const [showLangDropdown, setShowLangDropdown] = useState(false);
@@ -41,7 +36,6 @@ export function InterviewSetup({ formData, updateFormData, allowLanguageSelectio
     const bufferSourceRef = useRef<AudioBufferSourceNode | null>(null);
     const mediaSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
     const currentPreviewUrlRef = useRef<string | null>(null);
-
     const stopCurrentPreview = () => {
         if (audioRef.current) {
             audioRef.current.pause();
@@ -88,7 +82,6 @@ export function InterviewSetup({ formData, updateFormData, allowLanguageSelectio
         setActiveAudio(null);
         setPlayingVoiceId(null);
     };
-
     useEffect(() => {
         const loadVoices = async () => {
             try {
@@ -103,7 +96,6 @@ export function InterviewSetup({ formData, updateFormData, allowLanguageSelectio
             }
         };
         void loadVoices();
-
         const handleClickOutside = (event: globalThis.MouseEvent) => {
             if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
                 setShowLangDropdown(false);
@@ -122,35 +114,28 @@ export function InterviewSetup({ formData, updateFormData, allowLanguageSelectio
             }
         };
     }, []);
-
     const getAiNameForVoice = (voiceId: string) => {
         const selected = voices.find(v => v.id === voiceId);
         if (!selected) return "Ishitha";
         return selected.gender === "male" ? "Ishaan" : "Ishitha";
     };
-
     const currentVoiceId = formData.voiceId || DEFAULT_VOICE_ID;
-
     const getAvailableVoices = () => {
         const whitelist: string[] = Array.isArray(formData.allowedVoices) ? formData.allowedVoices : [];
         if (whitelist.length === 0) return voices;
         return voices.filter(v => whitelist.includes(v.id));
     };
-
     const handleVoiceChange = (voiceId: string) => {
         const newName = getAiNameForVoice(voiceId);
         updateFormData((prev: any) => ({ ...prev, voiceId, aiName: newName }));
     };
-
     const playSample = async (e?: ReactMouseEvent, overrideVoiceId?: string, overrideName?: string) => {
         if (e) {
             e.preventDefault();
             e.stopPropagation();
         }
-
         const voiceId = overrideVoiceId || currentVoiceId;
         const aiName = overrideName || formData.aiName || "Ishitha";
-
         if (activeAudio && overrideVoiceId && overrideVoiceId === playingVoiceId) {
             stopCurrentPreview();
             return;
@@ -159,30 +144,23 @@ export function InterviewSetup({ formData, updateFormData, allowLanguageSelectio
             stopCurrentPreview();
             return;
         }
-
         const transcript = `Hi, I'm ${aiName}, are you ready for the interview?`;
-
         setPreviewLoading(true);
         if (overrideVoiceId) setLoadingVoiceId(overrideVoiceId);
-
         try {
             stopCurrentPreview();
-
             const res = await fetch("/api/admin/voice/preview", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ voiceId, transcript })
             });
-
             if (!res.ok) {
                 const errData = await res.json().catch(() => null);
                 throw new Error(errData?.error || "Preview failed");
             }
-
             const arrayBuffer = await res.arrayBuffer();
             const voice = voices.find(v => v.id === voiceId);
             const mimeType = voice?.provider === "SARVAM" ? "audio/wav" : "audio/mpeg";
-
             try {
                 const blob = new Blob([arrayBuffer], { type: mimeType });
                 const url = URL.createObjectURL(blob);
@@ -201,11 +179,9 @@ export function InterviewSetup({ formData, updateFormData, allowLanguageSelectio
                 gainNodeRef.current = gainNode;
                 source.connect(gainNode);
                 gainNode.connect(ctx.destination);
-
                 audio.onended = () => {
                     stopCurrentPreview();
                 };
-
                 audioRef.current = audio;
                 await ctx.resume().catch(() => { });
                 await audio.play();
@@ -217,13 +193,11 @@ export function InterviewSetup({ formData, updateFormData, allowLanguageSelectio
                 if (!AudioContextClass) {
                     throw audioErr;
                 }
-
                 const ctx = audioContextRef.current || new AudioContextClass();
                 audioContextRef.current = ctx;
                 if (ctx.state === "suspended") {
                     await ctx.resume();
                 }
-
                 const decoded = await ctx.decodeAudioData(arrayBuffer.slice(0));
                 const source = ctx.createBufferSource();
                 const gainNode = ctx.createGain();
@@ -251,7 +225,6 @@ export function InterviewSetup({ formData, updateFormData, allowLanguageSelectio
             setLoadingVoiceId(null);
         }
     };
-
     const addQuestion = (e?: ReactMouseEvent | ReactKeyboardEvent) => {
         if (e) { e.preventDefault(); e.stopPropagation(); }
         if (!newQuestion.trim()) return;
@@ -261,18 +234,15 @@ export function InterviewSetup({ formData, updateFormData, allowLanguageSelectio
         }));
         setNewQuestion("");
     };
-
     const removeQuestion = (index: number) => {
         updateFormData((prev: any) => ({
             ...prev,
             interviewQuestions: safeArray(prev.interviewQuestions).filter((_: any, i: number) => i !== index)
         }));
     };
-
     const setField = (key: string, value: any) => {
         updateFormData((prev: any) => ({ ...prev, [key]: value }));
     };
-
     return (
         <div className="space-y-6">
             {/* Language */}
@@ -313,16 +283,13 @@ export function InterviewSetup({ formData, updateFormData, allowLanguageSelectio
                     )}
                 </div>
             </div>
-
             <div className="border-t border-gray-100" />
-
             {/* Interviewer Persona */}
             <div className="space-y-4">
                 <div className="flex items-center gap-2">
                     <AudioLines className="w-4 h-4 text-[#F97316]" />
                     <p className="text-[12px] font-bold text-gray-500 uppercase tracking-widest">Interviewer Persona</p>
                 </div>
-
                 <div className="flex flex-col md:flex-row items-center gap-6">
                     {/* Avatar */}
                     <div className="flex flex-col items-center justify-center p-4 rounded-xl bg-orange-50/50 border border-orange-100 w-full md:w-44 text-center space-y-2 flex-shrink-0">
@@ -342,7 +309,6 @@ export function InterviewSetup({ formData, updateFormData, allowLanguageSelectio
                             <p className="text-[10px] uppercase font-bold text-[#F97316] tracking-widest mt-0.5">AI Interviewer</p>
                         </div>
                     </div>
-
                     {/* Voice selector */}
                     <div className="flex-1 w-full space-y-2">
                         <label className="text-[12px] font-bold text-gray-500 uppercase tracking-widest block">Voice</label>
@@ -384,7 +350,6 @@ export function InterviewSetup({ formData, updateFormData, allowLanguageSelectio
                                     <ChevronDown className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform ${showVoiceDropdown ? 'rotate-180' : ''}`} />
                                 </button>
                             </div>
-
                             {showVoiceDropdown && (
                                 <div className="absolute bottom-full mb-2 left-0 w-full bg-white border border-gray-100 rounded-2xl shadow-2xl z-50 overflow-hidden flex flex-col max-h-80 animate-in fade-in zoom-in-95 duration-200">
                                     <div className="p-3 border-b border-gray-50 bg-gray-50/50">
@@ -460,9 +425,7 @@ export function InterviewSetup({ formData, updateFormData, allowLanguageSelectio
                     </div>
                 </div>
             </div>
-
             <div className="border-t border-gray-100" />
-
             {/* Interview Questions */}
             <div className="space-y-3">
                 <div className="flex items-center gap-2">
@@ -504,4 +467,3 @@ export function InterviewSetup({ formData, updateFormData, allowLanguageSelectio
         </div>
     );
 }
-

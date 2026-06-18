@@ -1,5 +1,4 @@
 import { Skeleton } from "@/components/ui/skeleton";
-
 export default function DrivesLoading() {
     return (
         <div className="space-y-8 pb-12 animate-in-fade">
@@ -13,7 +12,6 @@ export default function DrivesLoading() {
                 </div>
                 <Skeleton className="h-12 w-48 rounded-xl" />
             </div>
-
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8 p-1">
                 {[1, 2, 3, 4, 5, 6].map((i) => (
                     <div key={i} className="bg-white rounded-[2.5rem] border border-gray-100 p-8 space-y-6 shadow-sm">
@@ -39,4 +37,3 @@ export default function DrivesLoading() {
         </div>
     );
 }
-

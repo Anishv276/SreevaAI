@@ -2,9 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { generateId } from "../lib/ids";
 import { normalizeEmail } from "../lib/email";
-
 const prisma = new PrismaClient();
-
 async function main() {
     const oldEmail = normalizeEmail("lumoscale@gmail.com");
     const newEmail = normalizeEmail("support@sreevaai.com");
@@ -16,11 +14,8 @@ async function main() {
         process.exit(1);
     }
     const name = "Super Administrator";
-
     console.log(`\n🚀 Migrating Super Admin credentials from ${oldEmail} to ${newEmail}...`);
-    
     const hashedPassword = await bcrypt.hash(password, 10);
-
     // 1. Resolve conflict & Update existing SuperAdmin record
     const existingOld = await prisma.superAdmin.findFirst({
         where: {
@@ -38,16 +33,13 @@ async function main() {
             },
         },
     });
-    
     if (existingOld) {
         console.log(`Found legacy account ${oldEmail}. migrating...`);
-        
         // If a new one was already created, delete it first to avoid unique constraint error
         if (existingNew && existingOld.id !== existingNew.id) {
             console.log(`Deleting temporary account ${newEmail} to resolve conflict...`);
             await prisma.superAdmin.delete({ where: { id: existingNew.id } });
         }
-
         await prisma.superAdmin.update({
             where: { id: existingOld.id },
             data: {
@@ -63,7 +55,6 @@ async function main() {
             create: { email: newEmail, password: hashedPassword, name },
         });
     }
-
     // 2. Sync User record
     const existingUserOld = await prisma.user.findFirst({
         where: {
@@ -81,12 +72,10 @@ async function main() {
             },
         },
     });
-
     if (existingUserOld) {
         if (existingUserNew && existingUserOld.id !== existingUserNew.id) {
             await prisma.user.delete({ where: { id: existingUserNew.id } });
         }
-
         await prisma.user.update({
             where: { id: existingUserOld.id },
             data: {
@@ -109,13 +98,11 @@ async function main() {
             },
         });
     }
-
     console.log(`\n✅ SUCCESS: Super Admin Credentials Migrated!`);
     console.log(`📧 Email: ${newEmail}`);
     console.log(`🔐 Password: (set from SUPERADMIN_PASSWORD env var, stored as bcrypt hash)`);
     console.log(`\n👉 You can now log in at your deployment URL or https://sreevaai.com/login\n`);
 }
-
 main()
     .catch((e) => {
         console.error("❌ ERROR during deployment:", e.message);

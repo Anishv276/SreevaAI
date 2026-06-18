@@ -1,17 +1,12 @@
 "use client";
-
 import { useEffect, useRef, useCallback } from "react";
 import type { RefObject } from "react";
-
 // ms a track must remain muted before flagging — rules out brief OS permission re-checks
 const MUTE_GRACE_MS = 4_000;
-
 // Minimum gap between repeated violations for the same track
 const COOLDOWN_MS = 30_000;
-
 // Polling interval to catch cases where browsers don't reliably fire unmute
 const POLL_INTERVAL_MS = 5_000;
-
 interface TrackMonitor {
   track: MediaStreamTrack;
   kind: "video" | "audio";
@@ -19,7 +14,6 @@ interface TrackMonitor {
   lastFired: number;
   cleanup: () => void;
 }
-
 interface HardwareHeartbeatProps {
   isActive: boolean;
   interviewStartedAt: RefObject<number | null>;
@@ -30,7 +24,6 @@ interface HardwareHeartbeatProps {
     metadata?: Record<string, unknown>,
   ) => void;
 }
-
 export function HardwareHeartbeat({
   isActive,
   interviewStartedAt,
@@ -41,9 +34,7 @@ export function HardwareHeartbeat({
   const streamRef    = useRef<MediaStream | null>(null);
   const monitorsRef  = useRef<TrackMonitor[]>([]);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
   useEffect(() => { isActiveRef.current = isActive; }, [isActive]);
-
   const elapsedMeta = useCallback((now: number) => {
     const start = interviewStartedAt.current;
     if (!start) return { label: null, seconds: null };
@@ -51,31 +42,24 @@ export function HardwareHeartbeat({
     const label = `${Math.floor(seconds / 60)}m ${seconds % 60}s into interview`;
     return { label, seconds };
   }, [interviewStartedAt]);
-
   const fire = useCallback((monitor: TrackMonitor, cause: "muted" | "ended") => {
     const now = Date.now();
     if (now - monitor.lastFired < COOLDOWN_MS) return;
     monitor.lastFired = now;
-
     const label = monitor.kind === "video" ? "Camera" : "Microphone";
     const eventType = monitor.kind === "video" ? "camera_disabled" : "microphone_disabled";
     const { label: elapsedLabel, seconds: elapsedSeconds } = elapsedMeta(now);
-
     const baseReason = cause === "ended"
       ? `${label} disconnected or permission revoked`
       : `${label} disabled at OS/hardware level`;
-
     const reason = elapsedLabel ? `${baseReason} (${elapsedLabel})` : baseReason;
     const metadata: Record<string, unknown> = {};
     if (elapsedSeconds !== null) { metadata.elapsedSeconds = elapsedSeconds; metadata.elapsedLabel = elapsedLabel; }
-
     onViolation(eventType, reason, "high", metadata);
   }, [elapsedMeta, onViolation]);
-
   const attachMonitor = useCallback((track: MediaStreamTrack, kind: "video" | "audio") => {
     const monitor: TrackMonitor = { track, kind, graceTimer: null, lastFired: 0, cleanup: () => {} };
     monitorsRef.current.push(monitor);
-
     const onMute = () => {
       if (!isActiveRef.current || !mountedRef.current || monitor.graceTimer) return;
       monitor.graceTimer = setTimeout(() => {
@@ -83,21 +67,17 @@ export function HardwareHeartbeat({
         if (track.muted && track.readyState === "live") fire(monitor, "muted");
       }, MUTE_GRACE_MS);
     };
-
     const onUnmute = () => {
       if (monitor.graceTimer) { clearTimeout(monitor.graceTimer); monitor.graceTimer = null; }
     };
-
     const onEnded = () => {
       if (!isActiveRef.current || !mountedRef.current) return;
       if (monitor.graceTimer) { clearTimeout(monitor.graceTimer); monitor.graceTimer = null; }
       fire(monitor, "ended");
     };
-
     track.addEventListener("mute",   onMute);
     track.addEventListener("unmute", onUnmute);
     track.addEventListener("ended",  onEnded);
-
     monitor.cleanup = () => {
       track.removeEventListener("mute",   onMute);
       track.removeEventListener("unmute", onUnmute);
@@ -105,7 +85,6 @@ export function HardwareHeartbeat({
       if (monitor.graceTimer) { clearTimeout(monitor.graceTimer); monitor.graceTimer = null; }
     };
   }, [fire]);
-
   const startPolling = useCallback(() => {
     pollTimerRef.current = setInterval(() => {
       if (!isActiveRef.current || !mountedRef.current) return;
@@ -121,21 +100,17 @@ export function HardwareHeartbeat({
       }
     }, POLL_INTERVAL_MS);
   }, [fire]);
-
   useEffect(() => {
     if (!isActive) return;
     mountedRef.current = true;
     let cancelled = false;
-
     const bootstrap = async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { width: 1, height: 1, frameRate: 1 },
           audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, sampleRate: 8_000, channelCount: 1 },
         });
-
         if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
-
         streamRef.current = stream;
         const videoTrack = stream.getVideoTracks()[0];
         const audioTrack = stream.getAudioTracks()[0];
@@ -161,9 +136,7 @@ export function HardwareHeartbeat({
         }
       }
     };
-
     void bootstrap();
-
     return () => {
       cancelled = true;
       mountedRef.current = false;
@@ -174,6 +147,5 @@ export function HardwareHeartbeat({
       streamRef.current = null;
     };
   }, [isActive]);
-
   return null;
 }

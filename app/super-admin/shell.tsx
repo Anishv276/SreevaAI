@@ -1,5 +1,4 @@
 "use client";
-
 import { useAuth } from "@/context/auth-context";
 import Link from "next/link";
 import { useState } from "react";
@@ -18,13 +17,11 @@ import {
     MessageSquare
 } from "lucide-react";
 import { Toaster } from "@/components/ui/toast-custom";
-
 export default function SuperAdminShell({ children }: { children: React.ReactNode }) {
     const { logout } = useAuth();
     const pathname = usePathname();
     const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
     const [isLoggingOut, setIsLoggingOut] = useState(false);
-
     const handleLogout = async () => {
         setIsLoggingOut(true);
         try {
@@ -34,10 +31,8 @@ export default function SuperAdminShell({ children }: { children: React.ReactNod
             setShowLogoutConfirm(false);
         }
     };
-
     return (
         <div className="min-h-screen bg-white selection:bg-orange-50 selection:text-orange-950 font-medium text-gray-900 overflow-visible">
-
             {/* LOGOUT CONFIRMATION OVERLAY */}
             {showLogoutConfirm && (
                 <div
@@ -57,7 +52,6 @@ export default function SuperAdminShell({ children }: { children: React.ReactNod
                                     <X className="h-4 w-4" />
                                 </button>
                             )}
-
                             <div className="flex justify-center">
                                 <div className="h-16 w-16 rounded-2xl bg-red-50 text-red-500 flex items-center justify-center">
                                     <ShieldAlert className="h-8 w-8" />
@@ -75,7 +69,6 @@ export default function SuperAdminShell({ children }: { children: React.ReactNod
                                 >
                                     {isLoggingOut ? <Loader2 className="h-4 w-4 animate-spin" /> : "Confirm Sign Out"}
                                 </button>
-
                                 {!isLoggingOut && (
                                     <button
                                         onClick={() => setShowLogoutConfirm(false)}
@@ -89,7 +82,6 @@ export default function SuperAdminShell({ children }: { children: React.ReactNod
                     </div>
                 </div>
             )}
-
             {/* Sidebar */}
             <aside className="fixed top-0 left-0 h-full w-64 bg-white border-r border-gray-100 flex flex-col z-50 shadow-[4px_0_24px_rgba(0,0,0,0.02)]">
                 {/* Logo */}
@@ -104,7 +96,6 @@ export default function SuperAdminShell({ children }: { children: React.ReactNod
                         </div>
                     </div>
                 </div>
-
                 {/* Nav */}
                 <nav className="flex-1 p-4 space-y-1 mt-4">
                     {[
@@ -133,7 +124,6 @@ export default function SuperAdminShell({ children }: { children: React.ReactNod
                         );
                     })}
                 </nav>
-
                 {/* User */}
                 <div className="p-4 border-t border-gray-50 bg-white">
                     <div className="flex items-center gap-4 p-4 rounded-2xl bg-gray-50 border border-gray-100 mb-3 overflow-hidden shadow-sm">
@@ -145,7 +135,6 @@ export default function SuperAdminShell({ children }: { children: React.ReactNod
                             <p className="text-gray-500 text-xs font-medium truncate mt-1 leading-tight">support@sreevaai.co</p>
                         </div>
                     </div>
-
                     <button
                         onClick={() => setShowLogoutConfirm(true)}
                         className="w-full h-12 flex items-center gap-3 px-6 rounded-xl text-[11px] text-gray-900 hover:text-rose-600 hover:bg-rose-50 font-black uppercase tracking-[0.2em] transition-all group"
@@ -155,7 +144,6 @@ export default function SuperAdminShell({ children }: { children: React.ReactNod
                     </button>
                 </div>
             </aside>
-
             {/* Main content */}
             <main className="ml-64 min-h-screen">
                 <div className="max-w-[1600px] mx-auto p-8 md:p-12 lg:p-16">

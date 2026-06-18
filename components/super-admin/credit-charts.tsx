@@ -1,33 +1,26 @@
 "use client";
-
 import { useState, useEffect, useRef } from "react";
 import { Loader2, Coins, TrendingUp, Activity } from "lucide-react";
 import { cn } from "@/lib/utils";
-
 // 5 named colours + gray for "Other"
 const COLORS = ["#F97316", "#3B82F6", "#8B5CF6", "#EC4899", "#10B981", "#9CA3AF"];
-
 function getColor(index: number, name: string) {
     if (name === "Other") return "#9CA3AF";
     return COLORS[index % COLORS.length];
 }
-
 interface OrgCreditStat {
     name: string;
     creditsUsed: number;
 }
-
 interface OrgInterviewStat {
     name: string;
     count: number;
 }
-
 interface OrgQuotaStat {
     name: string;
     used: number;
     total: number;
 }
-
 // Animated donut chart — animates strokeDashoffset from 0 to final value on mount
 function DonutChart({
     segments,
@@ -45,12 +38,10 @@ function DonutChart({
     const radius = 78;
     const strokeWidth = 22;
     const circumference = 2 * Math.PI * radius;
-
     useEffect(() => {
         const t = requestAnimationFrame(() => setAnimated(true));
         return () => cancelAnimationFrame(t);
     }, []);
-
     const arcs = segments.map((seg, index) => {
         const offsetPct = segments
             .slice(0, index)
@@ -63,7 +54,6 @@ function DonutChart({
         const dashOffset = -offsetPct * circumference;
         return { ...seg, dashArray, dashOffset };
     });
-
     return (
         <div className="flex flex-col items-center gap-6">
             <div className="relative h-[200px] w-[200px]">
@@ -101,7 +91,6 @@ function DonutChart({
                     )}
                 </div>
             </div>
-
             {/* Legend */}
             <div className="w-full grid grid-cols-2 gap-x-4 gap-y-2">
                 {segments.map((seg, i) => (
@@ -120,11 +109,9 @@ function DonutChart({
         </div>
     );
 }
-
 export function OrgCreditPieChart({ stats = [], loading = false }: { stats?: OrgCreditStat[]; loading?: boolean }) {
     const total = Math.round(stats.reduce((s, o) => s + o.creditsUsed, 0));
     const segments = stats.map((o, i) => ({ name: o.name, value: Math.round(o.creditsUsed), color: getColor(i, o.name) }));
-
     return (
         <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm flex flex-col">
             <div className="flex items-start justify-between mb-5">
@@ -136,7 +123,6 @@ export function OrgCreditPieChart({ stats = [], loading = false }: { stats?: Org
                     <TrendingUp className="h-4 w-4" />
                 </div>
             </div>
-
             {loading ? (
                 <div className="flex-1 flex items-center justify-center py-12">
                     <Loader2 className="h-6 w-6 text-orange-500 animate-spin" />
@@ -151,11 +137,9 @@ export function OrgCreditPieChart({ stats = [], loading = false }: { stats?: Org
         </div>
     );
 }
-
 export function OrgInterviewPieChart({ stats = [], loading = false }: { stats?: OrgInterviewStat[]; loading?: boolean }) {
     const total = stats.reduce((s, o) => s + o.count, 0);
     const segments = stats.map((o, i) => ({ name: o.name, value: o.count, color: getColor(i, o.name) }));
-
     return (
         <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm flex flex-col">
             <div className="flex items-start justify-between mb-5">
@@ -167,7 +151,6 @@ export function OrgInterviewPieChart({ stats = [], loading = false }: { stats?: 
                     <TrendingUp className="h-4 w-4" />
                 </div>
             </div>
-
             {loading ? (
                 <div className="flex-1 flex items-center justify-center py-12">
                     <Loader2 className="h-6 w-6 text-blue-500 animate-spin" />
@@ -182,16 +165,13 @@ export function OrgInterviewPieChart({ stats = [], loading = false }: { stats?: 
         </div>
     );
 }
-
 // Quota consumption: horizontal progress bars per org
 export function OrgQuotaConsumption({ stats = [], loading = false }: { stats?: OrgQuotaStat[]; loading?: boolean }) {
     const [animated, setAnimated] = useState(false);
-
     useEffect(() => {
         const t = setTimeout(() => setAnimated(true), 80);
         return () => clearTimeout(t);
     }, [stats]);
-
     return (
         <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm flex flex-col">
             <div className="flex items-start justify-between mb-5">
@@ -203,7 +183,6 @@ export function OrgQuotaConsumption({ stats = [], loading = false }: { stats?: O
                     <Activity className="h-4 w-4" />
                 </div>
             </div>
-
             {loading ? (
                 <div className="flex-1 flex items-center justify-center py-12">
                     <Loader2 className="h-6 w-6 text-orange-500 animate-spin" />

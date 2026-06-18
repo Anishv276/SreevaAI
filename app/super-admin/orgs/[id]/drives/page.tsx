@@ -1,17 +1,14 @@
 "use client";
-
 import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Building2, Briefcase, Filter, Search, Loader2 } from "lucide-react";
 // Missing JobCard replaced inline
-
 export default function OrgDrivesPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params);
     const router = useRouter();
     const [org, setOrg] = useState<any>(null);
     const [drives, setDrives] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
-
     useEffect(() => {
         const load = async () => {
             try {
@@ -19,10 +16,8 @@ export default function OrgDrivesPage({ params }: { params: Promise<{ id: string
                     fetch(`/api/super-admin/orgs/${id}`),
                     fetch(`/api/drives?orgId=${id}`)
                 ]);
-
                 const orgData = await orgRes.json();
                 const drivesData = await drivesRes.json();
-
                 setOrg(orgData);
                 setDrives(drivesData);
             } catch (err) {
@@ -33,7 +28,6 @@ export default function OrgDrivesPage({ params }: { params: Promise<{ id: string
         };
         load();
     }, [id]);
-
     if (loading) {
         return (
             <div className="p-20 text-center flex items-center justify-center">
@@ -41,7 +35,6 @@ export default function OrgDrivesPage({ params }: { params: Promise<{ id: string
             </div>
         );
     }
-
     return (
         <div className="p-8 lg:p-12 space-y-12 animate-fade-slide">
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-8">
@@ -62,7 +55,6 @@ export default function OrgDrivesPage({ params }: { params: Promise<{ id: string
                     </div>
                 </div>
             </div>
-
             {drives.length === 0 ? (
                 <div className="py-20 text-center space-y-6 bg-white border border-gray-100 rounded-[3rem]">
                     <div className="h-20 w-20 bg-gray-50 rounded-full flex items-center justify-center mx-auto text-gray-200">
@@ -89,4 +81,3 @@ export default function OrgDrivesPage({ params }: { params: Promise<{ id: string
         </div>
     );
 }
-

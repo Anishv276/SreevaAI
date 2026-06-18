@@ -3,7 +3,6 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { Suspense } from "react";
 import { getSession, isAdminRole, isSuperAdminRole } from "@/lib/auth";
 import { redirect } from "next/navigation";
-
 export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
@@ -15,14 +14,11 @@ import { LowCreditsBanner } from "../../components/admin/LowCreditsBanner";
 import { prisma } from "@/lib/prisma";
 import { AdminOrgProvider } from "@/context/admin-org-context";
 import "../editorial.css";
-
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
     const session = await getSession();
-
     if (!session) {
         redirect("/login?from=admin");
     }
-
     // Fetch all org data server-side so the client context is pre-seeded (zero client fetches on load)
     let orgData: Record<string, any> = { status: "ACTIVE", onboardingComplete: session.onboardingComplete === true };
     if (session.orgId) {
@@ -46,7 +42,6 @@ export default async function AdminLayout({ children }: { children: React.ReactN
                     _count: { select: { drives: true } },
                 },
             });
-
             if (org) {
                 // Derive effective status inline — same logic as getEffectiveOrgStatus but no extra DB round-trip
                 let effectiveStatus = String(org.status || "ACTIVE").toUpperCase();
@@ -63,8 +58,6 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             console.error("[admin/layout] Failed to load org state:", error);
         }
     }
-
-
     // Allow Super Admins to access admin routes for "inspections"
     if (isSuperAdminRole(session.role)) {
         // We skip the redirect to /super-admin here to allow viewing admin dashboards
@@ -74,7 +67,6 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     // Real-time synchronization: prioritize DB state over session cookie for onboarding UI
     const needsOnboarding = orgData.onboardingComplete !== true;
     const showSidebar = !needsOnboarding;
-
     return (
         <>
         <AdminOrgProvider
@@ -112,17 +104,14 @@ export default async function AdminLayout({ children }: { children: React.ReactN
                     className="absolute top-[20%] right-[10%] w-[25%] h-[25%] rounded-full bg-purple-50/20 blur-[80px] animate-[aurora-float_25s_infinite_ease-in-out]" 
                 />
             </div>
-
             {/* Real-time State Synchronization */}
             <OnboardingRedirect needsOnboarding={needsOnboarding} />
-            
                 <div className="relative z-10 flex w-full">
                     {showSidebar && (
                         <Suspense fallback={<div className="w-64 bg-white/50 animate-pulse" />}>
                             <Sidebar />
                         </Suspense>
                     )}
-
                     <div id="admin-main-wrapper" className={cn(
                         "flex-1 min-w-0 transition-all duration-500 ease-in-out",
                         showSidebar && "md:pl-[240px]"
@@ -140,7 +129,6 @@ export default async function AdminLayout({ children }: { children: React.ReactN
                     </main>
                 </div>
             </div>
-
         </div>
         </AdminStatusGate>
         </AdminOrgProvider>

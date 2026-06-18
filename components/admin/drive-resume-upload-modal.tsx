@@ -1,5 +1,4 @@
 "use client";
-
 import { useEffect, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
@@ -8,7 +7,6 @@ import { toast } from "@/components/ui/toast-custom";
 import { AlertTriangle, CheckCircle2, FileText, Loader2, Lock, Minus, Plus, UploadCloud } from "lucide-react";
 import { getInterviewActionBlockedMessage, isInterviewQuotaLocked, isOrgRestrictedStatus } from "@/lib/interview-quota";
 import { useAdminOrg } from "@/context/admin-org-context";
-
 interface DriveResumeUploadModalProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
@@ -16,13 +14,11 @@ interface DriveResumeUploadModalProps {
     driveName: string;
     onUploaded?: () => void;
 }
-
 function fmt(bytes: number) {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
-
 export function DriveResumeUploadModal({ open, onOpenChange, driveId, driveName, onUploaded }: DriveResumeUploadModalProps) {
     const [files, setFiles] = useState<File[]>([]);
     const [dragging, setDragging] = useState(false);
@@ -30,13 +26,11 @@ export function DriveResumeUploadModal({ open, onOpenChange, driveId, driveName,
     const [done, setDone] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const inputRef = useRef<HTMLInputElement>(null);
-
     const adminOrg = useAdminOrg();
     const quotaLocked = isInterviewQuotaLocked(adminOrg ?? {});
     const isSuspended = isOrgRestrictedStatus(String(adminOrg?.status || "ACTIVE"));
     const locked = quotaLocked || isSuspended;
     const totalSize = files.reduce((s, f) => s + f.size, 0);
-
     const reset = () => { setFiles([]); setDragging(false); setUploading(false); setDone(false); setError(null); };
     const close = () => {
         if (uploading && !window.confirm("Upload in progress. Close anyway?")) return;
@@ -64,24 +58,18 @@ export function DriveResumeUploadModal({ open, onOpenChange, driveId, driveName,
             setError(msg); toast.error(msg); setUploading(false);
         }
     };
-
     useEffect(() => { if (!open) reset(); }, [open]);
-
     return (
         <Dialog open={open} onOpenChange={close}>
             <DialogContent className="flex w-full max-w-lg flex-col gap-0 overflow-hidden rounded-2xl border border-zinc-100 bg-white p-0 shadow-xl">
-
                 <VisuallyHidden><DialogTitle>Upload Resumes</DialogTitle></VisuallyHidden>
-
                 {/* Header */}
                 <div className="px-6 py-4 border-b border-zinc-100">
                     <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Upload Resumes</p>
                     <h2 className="mt-0.5 text-[15px] font-semibold text-zinc-800 truncate max-w-[340px]">{driveName}</h2>
                 </div>
-
                 {/* Body */}
                 <div className="overflow-y-auto px-6 py-5 space-y-3">
-
                     {/* Drop zone */}
                     <div
                         onDragOver={e => { e.preventDefault(); setDragging(true); }}
@@ -97,7 +85,6 @@ export function DriveResumeUploadModal({ open, onOpenChange, driveId, driveName,
                     >
                         <input ref={inputRef} type="file" multiple accept=".pdf" className="hidden"
                             onChange={e => { add(Array.from(e.target.files || [])); e.target.value = ""; }} />
-
                         {files.length === 0 ? (
                             <div className="flex flex-col items-center justify-center py-10 text-center select-none">
                                 <div className={cn("mb-3 flex h-12 w-12 items-center justify-center rounded-xl transition-colors",
@@ -131,7 +118,6 @@ export function DriveResumeUploadModal({ open, onOpenChange, driveId, driveName,
                                         <Plus className="h-3 w-3" /> Add more
                                     </button>
                                 </div>
-
                                 {/* File list */}
                                 <div className="max-h-48 overflow-y-auto space-y-1 rounded-lg border border-zinc-100 bg-white p-1.5">
                                     {files.map((file, i) => (
@@ -152,7 +138,6 @@ export function DriveResumeUploadModal({ open, onOpenChange, driveId, driveName,
                             </div>
                         )}
                     </div>
-
                     {/* Locked */}
                     {locked && (
                         <div className="flex items-start gap-2.5 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3">
@@ -163,7 +148,6 @@ export function DriveResumeUploadModal({ open, onOpenChange, driveId, driveName,
                             </div>
                         </div>
                     )}
-
                     {/* Error */}
                     {error && (
                         <div className="flex items-start gap-2.5 rounded-xl border border-red-100 bg-red-50 px-4 py-3">
@@ -172,7 +156,6 @@ export function DriveResumeUploadModal({ open, onOpenChange, driveId, driveName,
                         </div>
                     )}
                 </div>
-
                 {/* Footer */}
                 <div className="flex items-center justify-between border-t border-zinc-100 px-6 py-4">
                     <p className="text-[11px] text-zinc-400">
@@ -194,7 +177,6 @@ export function DriveResumeUploadModal({ open, onOpenChange, driveId, driveName,
                         </button>
                     </div>
                 </div>
-
             </DialogContent>
         </Dialog>
     );

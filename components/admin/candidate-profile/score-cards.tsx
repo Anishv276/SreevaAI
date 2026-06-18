@@ -1,8 +1,6 @@
 "use client";
-
 import { memo } from "react";
 import { cn } from "@/lib/utils";
-
 export const ScoreCard = memo(function ScoreCard({ label, value, status, color = "orange" }: { label: string; value: string; status: string; color?: "orange" | "red" | "emerald" | "slate" }) {
     const bgStyles = {
         orange: "bg-[#FDF9F3] border-[#F5E6D3] text-[#8B5E3C]",
@@ -26,7 +24,6 @@ export const ScoreCard = memo(function ScoreCard({ label, value, status, color =
         </div>
     );
 });
-
 export const VerdictScoreCard = memo(function VerdictScoreCard({ label, value, color }: { label: string; value: string; color: "red" | "orange" | "green" | "blue" | "indigo" | "slate" }) {
     const colors = {
         red: "text-slate-950",
@@ -43,7 +40,6 @@ export const VerdictScoreCard = memo(function VerdictScoreCard({ label, value, c
         </div>
     );
 });
-
 export const VerdictScoreBox = memo(function VerdictScoreBox({ label, value, color = "rose" }: { label: string; value: string; color?: "rose" | "orange" | "amber" }) {
     const colors = {
         rose: "text-rose-600 bg-rose-50/30 border-rose-100",

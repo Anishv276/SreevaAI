@@ -10,8 +10,6 @@ _CONTROL_PHRASES = (
     "TOPIC:NEW",
     "TOPIC:FOLLOWUP",
 )
-
-
 def sanitize_candidate_facing_text(text: str) -> str:
     """
     Remove internal control directives from any model-generated text that can be
@@ -35,7 +33,6 @@ def sanitize_candidate_facing_text(text: str) -> str:
             continue
         cleaned_lines.append(line)
     result = "\n".join(cleaned_lines).strip()
-
     # Remove bracketed control blocks anywhere in the sentence.
     result = re.sub(r"\[(?:[^\[\]]|\[[^\]]*\]){0,2000}\]", " ", result)
     # Remove known control phrases if they leak unbracketed.
@@ -43,8 +40,6 @@ def sanitize_candidate_facing_text(text: str) -> str:
         result = re.sub(re.escape(phrase), " ", result, flags=re.IGNORECASE)
     result = re.sub(r"\s{2,}", " ", result).strip()
     return result
-
-
 _BANNED_ACK_REPLACEMENTS: tuple[tuple[re.Pattern[str], str], ...] = (
     # Prompt-only bans are not enough in long voice sessions. Keep the spoken
     # line natural and short without letting forbidden "thanks for ..." phrasing
@@ -55,16 +50,12 @@ _BANNED_ACK_REPLACEMENTS: tuple[tuple[re.Pattern[str], str], ...] = (
     # bad transition, convert it into a real human answer before the readiness check.
     (re.compile(r"^\s*good\.\s+so\s+i['’]?ll\s+be\s+conducting\b", re.I), "Doing well, packed with interviews today. I'll be conducting"),
 )
-
 _TRAILING_FILLER_RE = re.compile(
     r"(?:[,.\s]+)(?:um+|uh+|hmm+|mm+|ah+|oh+)\s*[.!?]*\s*$",
     re.I,
 )
-
-
 def polish_candidate_facing_text(text: str) -> str:
     """Final deterministic cleanup before text is spoken or tracked.
-
     LiveKit text transforms run before TTS, and Sarvam receives plain text. This
     keeps the final text sentence-safe: no banned acknowledgements, no fillers
     dangling at the end, and a guarded warmup answer for the common "how about
@@ -84,17 +75,11 @@ def polish_candidate_facing_text(text: str) -> str:
     result = _TRAILING_FILLER_RE.sub("", result)
     result = re.sub(r"\s{2,}", " ", result).strip()
     return result
-
-
 from interview.tts_phonetic_processor import TTSPhoneticProcessor
 tts_phonetic_processor = TTSPhoneticProcessor().initialize_defaults()
-
-
 async def _tts_acronym_transform(text_stream):
     async for chunk in text_stream:
         yield tts_phonetic_processor.transform(chunk)
-
-
 _TTS_PHONETIC_FIXES = [
     # Remove em/en dashes that cause TTS to pause-split surrounding words
     (re.compile(r"\s*-{2,}\s*"), ", "),
@@ -109,25 +94,18 @@ _TTS_PHONETIC_FIXES = [
     # Collapse any resulting double spaces
     (re.compile(r" {2,}"), " "),
 ]
-
-
 def _apply_tts_phonetic_fixes(text: str) -> str:
     for pattern, replacement in _TTS_PHONETIC_FIXES:
         text = pattern.sub(replacement, text)
     return text
-
-
 def _enforce_single_question(text: str) -> str:
     """Legacy hook retained for call-site compatibility.
-
     We no longer trim valid compound interview openers before TTS. The fresh
     logs showed this created a worse bug: Sarvam spoke only the first sentence
     while transcript/eval tracked the unspoken tail. The interviewer prompt
     still asks for one focused turn, but final speech must not be silently cut.
     """
     return text
-
-
 async def _single_question_transform(text_stream):
     """
     TTS text transform: buffers the full LLM output, strips internal directives
@@ -198,7 +176,6 @@ def remove_system_messages(chat_ctx, marker: str) -> None:
     items = getattr(chat_ctx, "items", None)
     if items is None:
         return
-
     def _contains_marker(msg: object) -> bool:
         if getattr(msg, "role", "") != "system":
             return False
@@ -206,16 +183,11 @@ def remove_system_messages(chat_ctx, marker: str) -> None:
         if isinstance(content, list):
             content = " ".join(str(part) for part in content)
         return marker in str(content)
-
     items[:] = [msg for msg in list(items) if not _contains_marker(msg)]
-
-
 def remove_system_messages_multi(chat_ctx, markers: tuple) -> None:
     """Remove system messages matching ANY of the given markers in a single scan.
-
     Replaces calling remove_system_messages() N times, which did N separate
     linear scans over chat_ctx.items. One scan, same result.
-
     Example:
         remove_system_messages_multi(chat_ctx,
             ("[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT"))
@@ -223,7 +195,6 @@ def remove_system_messages_multi(chat_ctx, markers: tuple) -> None:
     items = getattr(chat_ctx, "items", None)
     if items is None:
         return
-
     def _matches_any(msg: object) -> bool:
         if getattr(msg, "role", "") != "system":
             return False
@@ -232,10 +203,7 @@ def remove_system_messages_multi(chat_ctx, markers: tuple) -> None:
             content = " ".join(str(part) for part in content)
         content_str = str(content)
         return any(m in content_str for m in markers)
-
     items[:] = [msg for msg in list(items) if not _matches_any(msg)]
-
-
 def append_transcript_line(transcript_lines: list[str], speaker: str, text: str) -> None:
     text = re.sub(r"<[^>]+>", "", text).strip()
     clean = " ".join(text.split()).strip()

@@ -1,5 +1,4 @@
 "use client";
-
 import { useEffect, useState, useCallback } from "react";
 import {
     Users, Briefcase, Video, UserCheck,
@@ -8,7 +7,6 @@ import {
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
 import type { DateRange } from "./date-filter";
-
 interface StatsData {
     activeDrives: number;
     totalCandidates: number;
@@ -24,31 +22,25 @@ interface StatsData {
     liveInterviews: number;
     avgRating: number;
 }
-
 interface StatsGridProps {
     dateRange: DateRange;
 }
-
 function buildUrl(range: DateRange) {
     const base = "/api/admin/stats";
     if (range.type === "custom") return `${base}?range=custom&from=${range.from}&to=${range.to}`;
     return `${base}?range=${range.type}`;
 }
-
 export function StatsGrid({ dateRange }: StatsGridProps) {
     const [stats, setStats] = useState<StatsData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [retryKey, setRetryKey] = useState(0);
-
     useEffect(() => {
         const controller = new AbortController();
         const { signal } = controller;
-
         const loadStats = async () => {
             setLoading(true);
             setError(null);
-
             try {
                 const res = await fetch(buildUrl(dateRange), { signal });
                 if (signal.aborted) return;
@@ -63,12 +55,9 @@ export function StatsGrid({ dateRange }: StatsGridProps) {
                 if (!signal.aborted) setLoading(false);
             }
         };
-
         void loadStats();
-
         return () => controller.abort();
     }, [dateRange, retryKey]);
-
     if (error) {
         return (
             <div className="rounded-2xl border border-red-100 bg-red-50 px-6 py-4 flex items-center justify-between">
@@ -82,7 +71,6 @@ export function StatsGrid({ dateRange }: StatsGridProps) {
             </div>
         );
     }
-
     if (loading || !stats) {
         return (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -92,10 +80,8 @@ export function StatsGrid({ dateRange }: StatsGridProps) {
             </div>
         );
     }
-
     const s = stats;
     const hiredDelta = s.hiredThisMonth - s.hiredPrevMonth;
-
     const cards = [
         {
             label: "Active Jobs",
@@ -175,7 +161,6 @@ export function StatsGrid({ dateRange }: StatsGridProps) {
             iconBg: "bg-amber-50",
         },
     ];
-
     return (
         <motion.div
             initial="hidden"

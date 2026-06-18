@@ -3,25 +3,21 @@ import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ALL_VOICES } from "@/lib/constants/voices";
 import { listSelectableVoices } from "@/lib/engine-voices";
-
 function asProvider(value: unknown): "CARTESIA" | "SARVAM" | "ELEVENLABS" | null {
   const normalized = String(value || "").trim().toUpperCase();
   if (normalized === "CARTESIA" || normalized === "SARVAM" || normalized === "ELEVENLABS") return normalized;
   return null;
 }
-
 function defaultModelForProvider(provider: "CARTESIA" | "SARVAM" | "ELEVENLABS") {
   if (provider === "ELEVENLABS") return "eleven_turbo_v2_5";
   return provider === "SARVAM" ? "bulbul:v3" : "cartesia/sonic-3";
 }
-
 function normalizeGender(value: unknown): "male" | "female" | null {
   const raw = String(value || "").trim().toLowerCase();
   if (raw === "male" || raw === "masculine") return "male";
   if (raw === "female" || raw === "feminine") return "female";
   return null;
 }
-
 async function fetchCartesiaVoiceMetadata(id: string): Promise<{
   name: string;
   description: string | null;
@@ -31,7 +27,6 @@ async function fetchCartesiaVoiceMetadata(id: string): Promise<{
   if (!apiKey) {
     throw new Error("CARTESIA_API_KEY is missing");
   }
-
   const response = await fetch(`https://api.cartesia.ai/voices/${encodeURIComponent(id)}`, {
     method: "GET",
     headers: {
@@ -40,7 +35,6 @@ async function fetchCartesiaVoiceMetadata(id: string): Promise<{
       "Content-Type": "application/json",
     },
   });
-
   if (!response.ok) {
     if (response.status === 404) {
       // Fallback: some accounts only resolve voice IDs from the catalog list.
@@ -69,7 +63,6 @@ async function fetchCartesiaVoiceMetadata(id: string): Promise<{
           }
         }
       }
-
       throw new Error("Please check your voice ID and try again.");
     }
     let reason = response.statusText || "Unable to fetch voice from Cartesia";
@@ -81,14 +74,12 @@ async function fetchCartesiaVoiceMetadata(id: string): Promise<{
     }
     throw new Error(`Cartesia voice lookup failed: ${reason}`);
   }
-
   const payload = await response.json();
   const name = String(payload?.name || "").trim() || id;
   const description = payload?.description ? String(payload.description) : null;
   const gender = normalizeGender(payload?.gender);
   return { name, description, gender };
 }
-
 async function fetchElevenLabsVoiceMetadata(id: string): Promise<{
   name: string;
   description: string | null;
@@ -98,7 +89,6 @@ async function fetchElevenLabsVoiceMetadata(id: string): Promise<{
   if (!apiKey) {
     throw new Error("ELEVENLABS_API_KEY is missing");
   }
-
   const response = await fetch(`https://api.elevenlabs.io/v1/voices/${encodeURIComponent(id)}`, {
     method: "GET",
     headers: {
@@ -106,7 +96,6 @@ async function fetchElevenLabsVoiceMetadata(id: string): Promise<{
       "Content-Type": "application/json",
     },
   });
-
   if (!response.ok) {
     if (response.status === 404) {
       throw new Error("Please check your voice ID and try again.");
@@ -120,25 +109,21 @@ async function fetchElevenLabsVoiceMetadata(id: string): Promise<{
     }
     throw new Error(`ElevenLabs voice lookup failed: ${reason}`);
   }
-
   const payload = await response.json();
   const name = String(payload?.name || "").trim() || id;
   const description = payload?.description ? String(payload.description) : null;
   const gender = normalizeGender(payload?.labels?.gender);
   return { name, description, gender };
 }
-
 export async function GET() {
   try {
     const session = await getSession();
     if (!session || session.role !== "SUPER_ADMIN") {
       return NextResponse.json({ error: "Unauthorized access" }, { status: 403 });
     }
-
     const selectableVoices = await listSelectableVoices();
     const selectableIds = new Set(selectableVoices.map((voice) => voice.id));
     const rows = await prisma.engineVoice.findMany({ orderBy: [{ provider: "asc" }, { name: "asc" }] });
-
     return NextResponse.json({
       selectableVoices,
       customVoices: rows.map((row) => ({
@@ -160,29 +145,23 @@ export async function GET() {
     return NextResponse.json({ error: "Failed to load voice registry" }, { status: 500 });
   }
 }
-
 export async function POST(request: Request) {
   try {
     const session = await getSession();
     if (!session || session.role !== "SUPER_ADMIN") {
       return NextResponse.json({ error: "Unauthorized access" }, { status: 403 });
     }
-
     const body = await request.json();
     const action = String(body?.action || "").trim().toLowerCase();
     const id = String(body?.id || "").trim();
     const provider = asProvider(body?.provider);
-
     if (!id) {
       return NextResponse.json({ error: "Voice ID is required" }, { status: 400 });
     }
-
     if (action !== "add" && action !== "remove" && action !== "delete") {
       return NextResponse.json({ error: "action must be add, remove, or delete" }, { status: 400 });
     }
-
     const builtIn = ALL_VOICES.find((voice) => voice.id === id);
-
     if (action === "delete") {
       if (builtIn) {
         return NextResponse.json(
@@ -190,11 +169,9 @@ export async function POST(request: Request) {
           { status: 400 }
         );
       }
-
       await prisma.engineVoice.deleteMany({ where: { id } });
       return NextResponse.json({ success: true });
     }
-
     if (action === "remove") {
       if (builtIn) {
         await prisma.engineVoice.upsert({
@@ -229,10 +206,8 @@ export async function POST(request: Request) {
           },
         });
       }
-
       return NextResponse.json({ success: true });
     }
-
     if (builtIn) {
       await prisma.engineVoice.upsert({
         where: { id },
@@ -251,15 +226,12 @@ export async function POST(request: Request) {
       });
       return NextResponse.json({ success: true });
     }
-
     if (!provider) {
       return NextResponse.json({ error: "provider must be CARTESIA, SARVAM, or ELEVENLABS for custom voices" }, { status: 400 });
     }
-
     let name = id;
     let description: string | null = null;
     let gender: "male" | "female" | null = null;
-
     if (provider === "CARTESIA") {
       const metadata = await fetchCartesiaVoiceMetadata(id);
       name = metadata.name;
@@ -271,7 +243,6 @@ export async function POST(request: Request) {
       description = metadata.description;
       gender = metadata.gender;
     }
-
     await prisma.engineVoice.upsert({
       where: { id },
       update: {
@@ -296,7 +267,6 @@ export async function POST(request: Request) {
         isActive: true,
       },
     });
-
     return NextResponse.json({ success: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to update voice registry";
@@ -305,11 +275,9 @@ export async function POST(request: Request) {
       message.includes("lookup failed") ||
       message.includes("Voice ID is required") ||
       message.includes("provider must be");
-
     if (isValidationError) {
       return NextResponse.json({ error: message }, { status: 400 });
     }
-
     console.error("Voice admin update error:", error);
     return NextResponse.json({ error: "Failed to update voice registry" }, { status: 500 });
   }

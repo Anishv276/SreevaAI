@@ -1,13 +1,10 @@
 "use client";
-
 import { useState } from "react";
 import Link from "next/link";
 import { Plus, Lock, ArrowRight } from "lucide-react";
-
 import { useJobs } from "@/context/jobs-context";
 import { getActiveDriveCount, isDriveCreationLocked } from "@/lib/drive-limits";
 import { getInterviewQuotaSupportMessage, getSupportComposeUrl, isInterviewQuotaLocked, isOrgRestrictedStatus } from "@/lib/interview-quota";
-
 import { DateFilter, type DateRange } from "@/components/admin/date-filter";
 import { StatsGrid } from "@/components/admin/stats-grid";
 import { HiringFunnel } from "@/components/admin/hiring-funnel";
@@ -16,19 +13,15 @@ import { NeedsAction } from "@/components/admin/needs-action";
 import { TopCandidates } from "@/components/admin/top-candidates";
 import { LiveFeed } from "@/components/admin/live-feed";
 import { useAdminOrg } from "@/context/admin-org-context";
-
 export default function DashboardPage() {
     const [dateRange, setDateRange] = useState<DateRange>({ type: "month" });
-
     const adminOrg = useAdminOrg();
     const quotaLocked = isInterviewQuotaLocked(adminOrg ?? {});
     const orgStatus = String(adminOrg?.status || "ACTIVE").toUpperCase();
-
     const { jobs } = useJobs();
     const activeDriveCount = adminOrg?.activeDriveCount ?? getActiveDriveCount(jobs);
     const isSuspended = isOrgRestrictedStatus(orgStatus);
     const driveCreationLocked = isDriveCreationLocked(adminOrg?.maxActiveDrives, activeDriveCount) || quotaLocked || isSuspended;
-
     return (
         <div className="space-y-7 pb-10 animate-in fade-in duration-700" style={{ zoom: 0.78, transformOrigin: "top center" }}>
             {/* Header — matches other admin pages */}
@@ -45,10 +38,8 @@ export default function DashboardPage() {
                         </div>
                     </div>
                 </div>
-
                 <div className="flex items-center gap-3 flex-wrap">
                     <DateFilter value={dateRange} onChange={setDateRange} />
-
                     {driveCreationLocked ? (
                         <div className="flex items-center gap-3">
                             <button
@@ -91,22 +82,18 @@ export default function DashboardPage() {
                     )}
                 </div>
             </div>
-
             {/* Stats Cards */}
             <StatsGrid dateRange={dateRange} />
-
             {/* Funnel + Score Distribution */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
                 <HiringFunnel dateRange={dateRange} />
                 <ScoreDistribution dateRange={dateRange} />
             </div>
-
             {/* Needs Action + Top Talent */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
                 <NeedsAction />
                 <TopCandidates dateRange={dateRange} />
             </div>
-
             {/* Activity Feed */}
             <LiveFeed dateRange={dateRange} />
         </div>

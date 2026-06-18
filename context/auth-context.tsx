@@ -1,11 +1,8 @@
 "use client";
-
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-
 // Define User type based on server SessionUser
 export type UserRole = "SUPER_ADMIN" | "ADMIN" | "CANDIDATE";
-
 export interface User {
     id: string;
     name: string;
@@ -14,7 +11,6 @@ export interface User {
     orgId: string | null;
     avatar?: string;
 }
-
 interface AuthContextType {
     user: User | null;
     isAuthenticated: boolean;
@@ -22,14 +18,11 @@ interface AuthContextType {
     refreshUser: () => Promise<void>;
     logout: () => Promise<void>;
 }
-
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const router = useRouter();
-
     const refreshUser = useCallback(async () => {
         setIsLoading(true);
         try {
@@ -57,7 +50,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setIsLoading(false);
         }
     }, []);
-
     // Only listen for multi-tab logout — do NOT auto-fetch on mount.
     // Admin pages get session server-side via layout; callers invoke refreshUser() explicitly when needed.
     useEffect(() => {
@@ -68,21 +60,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 router.refresh();
             }
         };
-
         window.addEventListener("storage", handleStorageChange);
         return () => window.removeEventListener("storage", handleStorageChange);
     }, [router]);
-
     // Background sliding session ping
     useEffect(() => {
         let lastActivity = Date.now();
         const updateActivity = () => { lastActivity = Date.now(); };
-        
         // Track basic user interactions
         window.addEventListener("mousemove", updateActivity, { passive: true });
         window.addEventListener("keydown", updateActivity, { passive: true });
         window.addEventListener("click", updateActivity, { passive: true });
-
         // Check every 5 minutes
         const interval = setInterval(() => {
             const timeSinceLastActivity = Date.now() - lastActivity;
@@ -91,7 +79,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 fetch("/api/auth/me", { cache: "no-store" }).catch(() => {});
             }
         }, 5 * 60 * 1000);
-
         return () => {
             window.removeEventListener("mousemove", updateActivity);
             window.removeEventListener("keydown", updateActivity);
@@ -99,25 +86,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             clearInterval(interval);
         };
     }, []);
-
     const logout = async () => {
         // Clear local state first for instant UI response
         setUser(null);
-        
         // Trigger multi-tab logout
         localStorage.setItem("logout-event", Date.now().toString());
-        
         try {
             await fetch("/api/auth/logout", { method: "POST" });
         } catch {
             // Ignore network logout errors
         }
-        
         // Clean URL redirect
         router.push("/");
         router.refresh();
     };
-
     return (
         <AuthContext.Provider value={{
             user,
@@ -130,7 +112,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         </AuthContext.Provider>
     );
 }
-
 export function useAuth() {
     const context = useContext(AuthContext);
     if (context === undefined) {

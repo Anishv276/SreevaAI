@@ -1,5 +1,4 @@
 export type InterviewStatus = "completed" | "in-progress" | "no-show" | "abandoned" | "pending";
-
 export type InterviewRow = {
   id: string;
   candidate: string;
@@ -10,7 +9,6 @@ export type InterviewRow = {
   date: string;
   time?: string;
 };
-
 export type CreditPack = {
   id: string;
   credits: number;
@@ -20,5 +18,4 @@ export type CreditPack = {
   popular?: boolean;
   save?: string;
 };
-
 export type HistorySort = { key: keyof InterviewRow; dir: "asc" | "desc" };

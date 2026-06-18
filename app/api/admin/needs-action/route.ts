@@ -1,11 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-
 function daysSince(date: Date): number {
     return Math.floor((Date.now() - date.getTime()) / 86_400_000);
 }
-
 export async function GET() {
     try {
         const session = await getSession();
@@ -13,7 +11,6 @@ export async function GET() {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
         const orgId = session.orgId;
-
         const awaitingReview = await prisma.application.findMany({
             where: {
                 drive: { orgId },
@@ -32,7 +29,6 @@ export async function GET() {
             orderBy: { updatedAt: "asc" },
             take: 5,
         });
-
         const inviteNotSent = await prisma.application.findMany({
             where: {
                 drive: { orgId },
@@ -52,7 +48,6 @@ export async function GET() {
             orderBy: { createdAt: "asc" },
             take: 5,
         });
-
         const shortlistedNoDecision = await prisma.application.findMany({
             where: {
                 drive: { orgId },
@@ -68,7 +63,6 @@ export async function GET() {
             orderBy: { updatedAt: "asc" },
             take: 5,
         });
-
         return NextResponse.json({
             awaitingReview: awaitingReview.map((a) => ({
                 id: a.id,

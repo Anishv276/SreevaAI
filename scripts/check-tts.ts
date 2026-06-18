@@ -1,5 +1,4 @@
 import { prisma } from "../lib/prisma";
-
 async function main() {
     const orgs = await prisma.organization.findMany({
         select: { id: true, name: true, voiceId: true, allowedVoices: true }
@@ -7,5 +6,4 @@ async function main() {
     console.log(JSON.stringify(orgs, null, 2));
     await prisma.$disconnect();
 }
-
 main().catch(console.error);

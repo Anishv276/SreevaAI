@@ -1,5 +1,4 @@
 "use client";
-
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { AlertCircle, CheckCircle2, Loader2, ShieldAlert, Zap } from "lucide-react";
@@ -7,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/toast-custom";
 import { PasswordInput } from "@/components/ui/password-input";
-
 function SettingsCard({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
     return (
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-500">
@@ -19,7 +17,6 @@ function SettingsCard({ title, description, children }: { title: string; descrip
         </div>
     );
 }
-
 export default function SuperAdminSettingsPage() {
     const [currentPassword, setCurrentPassword] = useState("");
     const [newPassword, setNewPassword] = useState("");
@@ -33,11 +30,9 @@ export default function SuperAdminSettingsPage() {
     const [otpError, setOtpError] = useState("");
     const [success, setSuccess] = useState("");
     const [isNewPasswordValid, setIsNewPasswordValid] = useState(false);
-
     const handleInitialSubmit = async (e: { preventDefault: () => void }) => {
         e.preventDefault();
         setError("");
-
         if (newPassword !== confirmPassword) {
             setError("New passwords do not match");
             return;
@@ -46,7 +41,6 @@ export default function SuperAdminSettingsPage() {
             setError("New password must be at least 8 characters");
             return;
         }
-
         setSendingOtp(true);
         try {
             const res = await fetch("/api/auth/otp/send", { method: "POST" });
@@ -64,13 +58,11 @@ export default function SuperAdminSettingsPage() {
             setSendingOtp(false);
         }
     };
-
     const handleVerifyAndSave = async () => {
         if (!otp || otp.length < 6) {
             setOtpError("6-digit code required.");
             return;
         }
-
         setLoading(true);
         setOtpError("");
         try {
@@ -79,7 +71,6 @@ export default function SuperAdminSettingsPage() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ currentPassword, newPassword, otp }),
             });
-
             if (!res.ok) {
                 const nextAttempts = attempts + 1;
                 setAttempts(nextAttempts);
@@ -92,7 +83,6 @@ export default function SuperAdminSettingsPage() {
                 }
                 return;
             }
-
             setSuccess("Password updated successfully.");
             setCurrentPassword("");
             setNewPassword("");
@@ -107,7 +97,6 @@ export default function SuperAdminSettingsPage() {
             setLoading(false);
         }
     };
-
     return (
         <div className="min-h-screen bg-[#FDFDFD] p-8 lg:p-12 text-gray-900 font-medium pb-24">
             <div className="max-w-6xl mx-auto space-y-2 mb-8">
@@ -117,7 +106,6 @@ export default function SuperAdminSettingsPage() {
                 </div>
                 <p className="text-gray-500 font-medium ml-5">Manage your super-admin account</p>
             </div>
-
             <div className="max-w-6xl mx-auto space-y-8">
                 <SettingsCard title="Update Password" description="Change your super-admin password with OTP verification.">
                     <form onSubmit={handleInitialSubmit} className="space-y-8">
@@ -137,7 +125,6 @@ export default function SuperAdminSettingsPage() {
                                 onValidationChange={setIsNewPasswordValid}
                             />
                         </div>
-
                         <div className="max-w-2xl space-y-4">
                             <PasswordInput
                                 label="Confirm New Password"
@@ -145,7 +132,6 @@ export default function SuperAdminSettingsPage() {
                                 value={confirmPassword}
                                 onChange={e => setConfirmPassword(e.target.value)}
                             />
-
                             <div className="pt-1">
                                 <button
                                     type="button"
@@ -157,21 +143,18 @@ export default function SuperAdminSettingsPage() {
                                 </button>
                             </div>
                         </div>
-
                         {error && (
                             <div className="p-4 rounded-xl bg-red-50 border border-red-100 text-red-600 flex items-center gap-3">
                                 <AlertCircle className="h-5 w-5" />
                                 <span className="text-sm font-medium">{error}</span>
                             </div>
                         )}
-
                         {success && (
                             <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-700 flex items-center gap-3">
                                 <CheckCircle2 className="h-5 w-5" />
                                 <span className="text-sm font-medium">{success}</span>
                             </div>
                         )}
-
                         <div className="flex justify-end">
                             <Button type="submit" disabled={sendingOtp || !currentPassword || !isNewPasswordValid || newPassword !== confirmPassword} className="bg-[#F97316] text-white hover:bg-orange-600 font-bold px-8 h-11">
                                 {sendingOtp ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
@@ -181,7 +164,6 @@ export default function SuperAdminSettingsPage() {
                     </form>
                 </SettingsCard>
             </div>
-
             {showOtpModal && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 backdrop-blur-xl bg-white/30">
                     <div className="w-full max-w-lg bg-white border border-gray-100 rounded-[2rem] shadow-[0_50px_150px_rgba(0,0,0,0.15)] overflow-hidden">

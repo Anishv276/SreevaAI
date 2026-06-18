@@ -1,5 +1,4 @@
 import { Search } from "lucide-react";
-
 export function Header() {
     return (
         <header className="sticky top-0 z-40 flex h-16 items-center gap-4 border-b bg-white/50 px-6 backdrop-blur-xl">
@@ -19,4 +18,3 @@ export function Header() {
         </header>
     );
 }
-

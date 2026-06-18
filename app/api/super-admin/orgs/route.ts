@@ -13,7 +13,6 @@ import { normalizeOrgLimitInput } from "@/lib/org-limits";
 import { normalizeOrgStatusControl, ORG_STATUS_CONTROL_MANUAL } from "@/lib/credits";
 import { normalizeEmail } from "@/lib/email";
 import { normalizeRecordingRetentionDays } from "@/lib/recording-retention";
-
 // GET /api/super-admin/orgs - list organizations with stats, pagination, and search
 export async function GET(request: Request) {
     try {
@@ -21,18 +20,15 @@ export async function GET(request: Request) {
         if (!session || session.role !== "SUPER_ADMIN") {
             return NextResponse.json({ error: "Unauthorized access" }, { status: 403 });
         }
-
         const { searchParams } = new URL(request.url);
         const page = Math.max(1, parseInt(searchParams.get("page") || "1"));
         const limit = Math.min(50, Math.max(1, parseInt(searchParams.get("limit") || "20")));
         const search = searchParams.get("q")?.trim() || "";
         const offset = (page - 1) * limit;
-
         const from = searchParams.get("from");
         const to = searchParams.get("to");
         const fromDate = from ? new Date(from) : null;
         const toDate = to ? new Date(to) : null;
-
         // -- Phase 1: Total Count (Filtered) -------------------
         const whereClause: Prisma.OrganizationWhereInput = search ? {
             OR: [
@@ -40,20 +36,16 @@ export async function GET(request: Request) {
                 { slug: { contains: search, mode: "insensitive" as const } },
             ]
         } : {};
-
         if (fromDate && toDate) {
             (whereClause as Prisma.OrganizationWhereInput).createdAt = {
                 gte: fromDate,
                 lte: toDate
             };
         }
-
         const total = await prisma.organization.count({ where: whereClause });
         const totalPages = Math.ceil(total / limit);
-
         // -- Phase 2: Paginated Org Data (Unified SQL) --------------
         const sqlSearch = search ? `%${search}%` : "%";
-        
         // We use queryRaw for complex subcounts
         const orgs = (await prisma.$queryRaw`
             SELECT 
@@ -85,12 +77,10 @@ export async function GET(request: Request) {
             interviewQuotaTotal: number;
             interviewQuotaUsed: number;
         }>;
-
         const lastWeek = new Date();
         lastWeek.setDate(lastWeek.getDate() - 7);
         const twoWeeksAgo = new Date();
         twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
-
         const [
             totalOrgs,
             activeOrgs,
@@ -208,15 +198,12 @@ export async function GET(request: Request) {
                     (SELECT COUNT(*)::INT FROM "Application" WHERE "createdAt" >= ${twoWeeksAgo} AND "createdAt" < ${lastWeek}) as "candidatesPrev"
             `,
         ]);
-
         const calculateTrend = (curr: number, prev: number) => {
             if (prev === 0) return curr > 0 ? 100 : 0;
             return Math.round(((curr - prev) / prev) * 100);
         };
-
         const t = trends[0] || {};
         const c = counts[0] || {};
-        
         const stats = {
             totalOrgs,
             activeOrgs,
@@ -248,7 +235,6 @@ export async function GET(request: Request) {
                 credits: 0
             }
         };
-
         const toEffectiveStatus = (org: {
             status?: string | null;
             statusControl?: string | null;
@@ -270,7 +256,6 @@ export async function GET(request: Request) {
             if (total > 0 && remaining > 0) return "ACTIVE";
             return status;
         };
-
         return NextResponse.json({
             orgs: orgs.map((org) => ({
                 ...org,
@@ -284,7 +269,6 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: "Failed to fetch organizations" }, { status: 500 });
     }
 }
-
 // POST /api/super-admin/orgs - create new org + HR admin user
 export async function POST(request: Request) {
     try {
@@ -292,7 +276,6 @@ export async function POST(request: Request) {
         if (!session || session.role !== "SUPER_ADMIN") {
             return NextResponse.json({ error: "Unauthorized access" }, { status: 403 });
         }
-
         const body = await request.json();
         const {
             orgName, slug, plan, logoUrl, adminEmail, adminName, adminPassword,
@@ -305,23 +288,19 @@ export async function POST(request: Request) {
             deepgramModel,
             location
         } = body;
-
         if (!orgName || !slug || !adminEmail || !adminPassword) {
             return NextResponse.json({ error: "orgName, slug, adminEmail, and adminPassword are required" }, { status: 400 });
         }
-
         // Plan Validation
         if (plan && !isOrgPlan(plan)) {
             return NextResponse.json({ error: "Invalid organization plan" }, { status: 400 });
         }
-
         // Email Validation
         const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!EMAIL_REGEX.test(adminEmail)) {
             return NextResponse.json({ error: "Invalid admin email format" }, { status: 400 });
         }
         const normalizedAdminEmail = normalizeEmail(adminEmail);
-
         const [existingSuperAdmin, existingUser] = await Promise.all([
             prisma.superAdmin.findFirst({
                 where: {
@@ -342,32 +321,26 @@ export async function POST(request: Request) {
                 select: { id: true },
             }),
         ]);
-
         if (existingSuperAdmin || existingUser) {
             return NextResponse.json({ error: "Email already exists. Choose another one." }, { status: 409 });
         }
-
         // Admin Password Validation
         const { isValid: isPasswordValid, error: passwordError } = validatePasswordStrength(adminPassword);
         if (!isPasswordValid) {
             return NextResponse.json({ error: passwordError }, { status: 400 });
         }
-
         const normalizedSlug = String(slug || "")
             .trim()
             .toLowerCase()
             .replace(/\s+/g, "-");
-
         if (!normalizedSlug) {
             return NextResponse.json({ error: "slug is required" }, { status: 400 });
         }
-
         // Check slug uniqueness against the exact value that will be stored.
         const existing = await prisma.organization.findUnique({ where: { slug: normalizedSlug } });
         if (existing) {
             return NextResponse.json({ error: `Slug "${normalizedSlug}" is already taken. Choose another.` }, { status: 409 });
         }
-
         const hashedPassword = await bcrypt.hash(adminPassword, 10);
         const normalizedPlan = normalizeOrgPlan(plan) || DEFAULT_ORG_PLAN;
         const resolvedSignals =
@@ -376,16 +349,13 @@ export async function POST(request: Request) {
                 : undefined;
         const resolvedRecordingEnabled = recordingEnabled === true || recordingEnabled === "true";
         const resolvedRecordingRetentionDays = normalizeRecordingRetentionDays(recordingRetentionDays);
-
         if (resolvedRecordingEnabled && resolvedRecordingRetentionDays === null) {
             return NextResponse.json(
                 { error: "Recording retention days are required when recording is enabled" },
                 { status: 400 }
             );
         }
-
         console.log("[SuperAdmin] Provisioning Org with AI Config:", { voiceId, deepgramModel });
-
         // Create org + admin in a transaction
         const result = await prisma.$transaction(async (tx) => {
             // Build org data explicitly to ensure exclusivity
@@ -410,25 +380,20 @@ export async function POST(request: Request) {
                 usageMetrics: {},
                 location: location || null,
             };
-
             if (resolvedSignals !== undefined) {
                 orgData.proctoringSignals = resolvedSignals;
             }
-
             Object.assign(
                 orgData,
                 normalizeOrgAiConfig({
                     next: { voiceId, allowedVoices, deepgramModel },
                 })
             );
-
             const userName = adminName || normalizedAdminEmail.split("@")[0];
             const userId = generateId("usr", userName);
-
             const org = await tx.organization.create({
                 data: orgData,
             });
-
             const admin = await tx.user.create({
                 data: {
                     id: userId,
@@ -440,17 +405,14 @@ export async function POST(request: Request) {
                     orgId: org.id,
                 },
             });
-
             return { org, admin };
         });
-
         // -- Phase 4: Send Welcome Email (Non-blocking) --------------
         sendWelcomeViaResend({
             email: result.admin.email,
             orgName: result.org.name,
             adminName: result.admin.name || adminName
         }).catch(err => console.error("[WELCOME EMAIL ERROR]", err));
-
         return NextResponse.json({
             success: true,
             org: result.org,

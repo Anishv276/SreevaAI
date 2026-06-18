@@ -82,10 +82,8 @@ function getAttachableTrack(trackRef: TrackReference): AttachableTrack | null {
     }
     return candidate;
 }
-
 function InterviewContent({ id, params }: { id: string, params: Promise<{ id: string }> }) {
     const [phase, setPhase] = useState<"loading" | "check" | "launching" | "interview" | "finalizing" | "completed">("loading");
-
     const [endMode, setEndMode] = useState<"normal" | "timeout">("normal");
     const [token, setToken] = useState<string | null>(null);
     const [serverUrl, setServerUrl] = useState<string | null>(null);
@@ -171,9 +169,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             if (snap) setReferenceSnapshotUrl(snap);
         } catch { }
     }, []);
-
     const [isInitiallyLocked, setIsInitiallyLocked] = useState(false);
-
     useEffect(() => {
         let active = true;
         (async () => {
@@ -183,7 +179,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 const res = await fetch(url.toString(), { cache: "no-store" });
                 const data = await res.json();
                 if (!active) return;
-
                 if (!res.ok && data.error) {
                     setBlockedAccessTitle(data.code === "DRIVE_CLOSED" ? "Job Closed" : "Access Restricted");
                     setBlockedAccessMessage(data.error);
@@ -198,7 +193,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         })();
         return () => { active = false; };
     }, [id, interviewToken]);
-
     //  Face violation handler 
     const handleFaceViolation = useCallback((
         eventType: string,
@@ -372,7 +366,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             window.removeEventListener("pagehide", handleExit);
         };
     }, [id, phase]);
-
     useEffect(() => {
         if (phase !== "launching") return;
         if (!isAgentReady || agentReadyCommittedRef.current) return;
@@ -394,7 +387,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     type WarmConnectionResult =
         | { ok: true }
         | { ok: false; message: string; title?: string };
-
     const ensureWarmConnection = useCallback(async (): Promise<WarmConnectionResult> => {
         const requestAttempt = connectionAttemptRef.current;
         if (token && serverUrl && typeof sessionDurationRef.current === "number" && sessionDurationRef.current > 0) {
@@ -599,17 +591,14 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         if (phase !== "interview") return;
         if (interviewStartSyncQueuedRef.current) return;
         interviewStartSyncQueuedRef.current = true;
-
         const startedAtMs = Date.now();
         interviewStartedAtRef.current = startedAtMs;
-
         const dur = sessionDurationRef.current;
         if (typeof dur === "number" && Number.isFinite(dur) && dur > 0) {
             setInterviewEndsAt(startedAtMs + dur * 1000);
             setRemainingSeconds(dur);
             setTimerExpired(false);
         }
-
         let cancelled = false;
         const persistInterviewStart = async (attempt = 0) => {
             if (cancelled) return;
@@ -626,7 +615,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 const data = await res.json().catch(() => ({}));
                 if (cancelled) return;
                 if (res.ok) return;
-
                 const errorCode = String(data?.code || "").toUpperCase();
                 const errorMessage = String(data?.error || data?.message || "Unable to record interview start.");
                 if (res.status === 401 || res.status === 403 || errorCode === "LINK_EXPIRED" || errorCode === "DRIVE_CLOSED") {
@@ -651,7 +639,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 console.error("[Interview Start] Failed to enqueue start time:", err);
             }
         };
-
         void persistInterviewStart();
         return () => {
             cancelled = true;
@@ -726,7 +713,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             tabSwitchInFlightRef.current = false;
             return;
         }
-
         // Log a tab-switch violation. visibilitychange is the authoritative source;
         // blur is a fallback for browsers/VMs that don't fire visibilitychange reliably.
         // tabSwitchInFlightRef prevents the same physical event from logging twice.
@@ -772,7 +758,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 }).catch(() => { });
             }, 1500);
         };
-
         const onVisibilityChange = () => {
             if (document.hidden) {
                 tabSwitchInFlightRef.current = true;
@@ -782,19 +767,16 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 clearDelayedViolation(tabViolationTimerRef);
             }
         };
-
         const onWindowBlur = () => {
             // Skip if visibilitychange already handled this event
             if (tabSwitchInFlightRef.current) return;
             tabSwitchInFlightRef.current = true;
             logTabSwitchViolation("Window Lost Focus", "medium");
         };
-
         const onWindowFocus = () => {
             tabSwitchInFlightRef.current = false;
             clearDelayedViolation(tabViolationTimerRef);
         };
-
         const onFullscreenChange = () => {
             const isFS = !!(document.fullscreenElement || (document as any).webkitFullscreenElement || (document as any).mozFullScreenElement || (document as any).msFullscreenElement);
             if (!isFS) {
@@ -833,7 +815,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 clearDelayedViolation(tabViolationTimerRef);
             }
         };
-
         document.addEventListener("visibilitychange", onVisibilityChange);
         window.addEventListener("blur", onWindowBlur);
         window.addEventListener("focus", onWindowFocus);
@@ -949,7 +930,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
                     </motion.div>
                 )}
-
                 {phase === "check" && (
                     <motion.div
                         key="check"
@@ -990,7 +970,6 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                             applicationId={id}
                             interviewToken={interviewToken}
                             title={`${organizationName ? `${organizationName} - ` : ""}${interviewRoleLabel} Interview Check`}
-
                         />
                     </motion.div>
                 )}
@@ -2247,7 +2226,6 @@ function VideoTrack({ trackRef }: { trackRef: TrackReference }) {
         />
     );
 }
-
 function TimeoutThankYouView({ candidateName }: { candidateName: string }) {
     return (
         <div className="w-full max-w-xl mx-auto px-6 text-center">

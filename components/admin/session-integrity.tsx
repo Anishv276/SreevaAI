@@ -1,14 +1,11 @@
 "use client";
-
 import { useEffect, useState, useCallback } from "react";
 import { Loader2, ArrowUpRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import type { DateRange } from "./date-filter";
-
 import { motion, AnimatePresence } from "framer-motion";
 import { ErrorState } from "./error-state";
-
 interface Violation {
     key: string;
     abbr: string;
@@ -17,7 +14,6 @@ interface Violation {
     count: number;
     severity: "high" | "medium" | "low";
 }
-
 interface IntegrityData {
     total: number;
     flagged: number;
@@ -27,17 +23,14 @@ interface IntegrityData {
     integrityScore: number;
     violations: Violation[];
 }
-
 interface SessionIntegrityProps {
     dateRange: DateRange;
 }
-
 function buildUrl(range: DateRange) {
     const base = "/api/admin/integrity";
     if (range.type === "custom") return `${base}?range=custom&from=${range.from}&to=${range.to}`;
     return `${base}?range=${range.type}`;
 }
-
 // Donut ring SVG
 function IntegrityDonut({ score }: { score: number }) {
     const r = 38;
@@ -46,9 +39,7 @@ function IntegrityDonut({ score }: { score: number }) {
     const circumference = 2 * Math.PI * r;
     const filled = (score / 100) * circumference;
     const gap = circumference - filled;
-
     const color = score >= 85 ? "#10B981" : score >= 70 ? "#F59E0B" : "#EF4444";
-
     return (
         <div className="relative flex items-center justify-center group">
             <svg width="100" height="100" viewBox="0 0 100 100" className="transform -rotate-90">
@@ -70,7 +61,6 @@ function IntegrityDonut({ score }: { score: number }) {
                 <span className="text-xl font-black text-gray-900 leading-none">{score}%</span>
                 <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">Health</span>
             </div>
-
             {/* Soft Glow */}
             <div
                 className="absolute inset-0 rounded-full blur-xl opacity-20 transition-opacity duration-700 group-hover:opacity-40"
@@ -79,22 +69,18 @@ function IntegrityDonut({ score }: { score: number }) {
         </div>
     );
 }
-
 const SEVERITY_COLORS: Record<string, { bg: string, bar: string, text: string }> = {
     high: { bg: "bg-red-50", bar: "#EF4444", text: "text-red-500" },
     medium: { bg: "bg-amber-50", bar: "#F59E0B", text: "text-amber-600" },
     low: { bg: "bg-gray-50", bar: "#9CA3AF", text: "text-gray-400" },
 };
-
 export function SessionIntegrity({ dateRange }: SessionIntegrityProps) {
     const [data, setData] = useState<IntegrityData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-
     useEffect(() => {
         const controller = new AbortController();
         const signal = controller.signal;
-
         const fetchData = async () => {
             setLoading(true);
             setError(null);
@@ -114,20 +100,16 @@ export function SessionIntegrity({ dateRange }: SessionIntegrityProps) {
                 if (!signal.aborted) setLoading(false);
             }
         };
-
         fetchData();
         return () => controller.abort();
     }, [dateRange]);
-
     const handleRetry = () => {
         setLoading(true);
         setError(null);
         // Effective retry via useEffect dependency is handled by simply resetting error/loading 
         // if we were to force a re-render or similar.
     };
-
     const maxCount = data ? Math.max(...data.violations.map(v => v.count), 1) : 1;
-
     return (
         <div className="bg-white/40 backdrop-blur-xl rounded-[2.5rem] border border-white/60 shadow-[0_8px_32px_rgba(0,0,0,0.02)] overflow-hidden transition-all duration-700 hover:shadow-[0_20px_60px_rgba(0,0,0,0.06)] h-full flex flex-col">
             {/*  Header  */}
@@ -150,7 +132,6 @@ export function SessionIntegrity({ dateRange }: SessionIntegrityProps) {
                     </motion.div>
                 )}
             </div>
-
             {loading ? (
                 <div className="flex-1 flex items-center justify-center min-h-[300px]">
                     <Loader2 className="h-8 w-8 text-orange-200 animate-spin" />
@@ -169,7 +150,6 @@ export function SessionIntegrity({ dateRange }: SessionIntegrityProps) {
                     {/*  Score Overview  */}
                     <div className="flex items-center gap-10 flex-wrap lg:flex-nowrap">
                         <IntegrityDonut score={data.integrityScore} />
-
                         <div className="flex-1 min-w-[200px]">
                             <div className="grid grid-cols-3 gap-4">
                                 {[
@@ -185,7 +165,6 @@ export function SessionIntegrity({ dateRange }: SessionIntegrityProps) {
                             </div>
                         </div>
                     </div>
-
                 </div>
             )}
         </div>

@@ -1,8 +1,6 @@
 "use client";
-
 import { Clock, ArrowRight, Calendar } from "lucide-react";
 import Link from "next/link";
-
 const actions = [
     {
         id: 1,
@@ -29,7 +27,6 @@ const actions = [
         href: "/admin/drives",
     },
 ];
-
 export function ActionRequired() {
     return (
         <div className="space-y-4">
@@ -40,7 +37,6 @@ export function ActionRequired() {
                     {actions.length}
                 </span>
             </div>
-
             {/* Action cards */}
             <div className="bg-white border border-[#EAEAEA] rounded-xl shadow-[0_2px_8px_rgba(0,0,0,0.06)] overflow-hidden">
                 {actions.length === 0 ? (
@@ -63,13 +59,11 @@ export function ActionRequired() {
                                         <Clock className="h-3.5 w-3.5 text-[#F97316]" />
                                     )}
                                 </div>
-
                                 {/* Text */}
                                 <div className="flex-1 min-w-0">
                                     <p className="text-[13px] font-semibold text-[#111827] leading-snug">{action.text}</p>
                                     <p className="text-[11.5px] text-[#6B7280] mt-0.5 truncate">{action.sub}</p>
                                 </div>
-
                                 {/* Button */}
                                 <Link href={action.href}>
                                     <button
@@ -86,4 +80,3 @@ export function ActionRequired() {
         </div>
     );
 }
-

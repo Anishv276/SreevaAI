@@ -1,5 +1,4 @@
 "use client";
-
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, CheckCircle2, Clock3, Loader2, Mail, MessageSquare, Search, Sparkles } from "lucide-react";
@@ -13,14 +12,12 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog";
-
 type CandidateRating = {
     overallFeeling: string | null;
     aiQuestions: string[];
     understanding: string | null;
     notes: string;
 };
-
 type InterviewFeedbackRow = {
     id: string;
     applicationId: string;
@@ -52,18 +49,15 @@ type InterviewFeedbackRow = {
         } | null;
     } | null;
 };
-
 type OverallMeta = {
     label: string;
     tone: string;
     badgeClass: string;
 };
-
 function parseCandidateRating(value: unknown): CandidateRating {
     if (!value || typeof value !== "object" || Array.isArray(value)) {
         return { overallFeeling: null, aiQuestions: [], understanding: null, notes: "" };
     }
-
     const source = value as Record<string, unknown>;
     const overallFeeling = typeof source.overallFeeling === "string" ? source.overallFeeling.trim() : null;
     const aiQuestions = Array.isArray(source.aiQuestions)
@@ -71,24 +65,20 @@ function parseCandidateRating(value: unknown): CandidateRating {
         : [];
     const understanding = typeof source.understanding === "string" ? source.understanding.trim() : null;
     const notes = typeof source.notes === "string" ? source.notes.trim() : "";
-
     return { overallFeeling, aiQuestions, understanding, notes };
 }
-
 function formatDateTime(value: string | null | undefined) {
     if (!value) return "N/A";
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return "N/A";
     return date.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 }
-
 function formatDuration(seconds: number | null) {
     if (!seconds || seconds <= 0) return "N/A";
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}m ${String(secs).padStart(2, "0")}s`;
 }
-
 function overallMeta(label: string | null): OverallMeta {
     const normalized = label?.trim().toLowerCase() || "";
     switch (normalized) {
@@ -106,23 +96,18 @@ function overallMeta(label: string | null): OverallMeta {
             return { label: "Not rated", tone: "text-gray-500", badgeClass: "bg-gray-50 text-gray-500 border-gray-100" };
     }
 }
-
 function candidateName(row: InterviewFeedbackRow) {
     return row.application?.fullName?.trim() || "Unknown candidate";
 }
-
 function candidateEmail(row: InterviewFeedbackRow) {
     return row.application?.email?.trim() || "Unknown email";
 }
-
 function orgName(row: InterviewFeedbackRow) {
     return row.application?.drive?.organization?.name?.trim() || "No organization";
 }
-
 function jobTitle(row: InterviewFeedbackRow) {
     return row.application?.drive?.title?.trim() || "Interview";
 }
-
 export default function SuperAdminFeedbackPage() {
     const [feedbacks, setFeedbacks] = useState<InterviewFeedbackRow[]>([]);
     const [loading, setLoading] = useState(true);
@@ -132,7 +117,6 @@ export default function SuperAdminFeedbackPage() {
     const [searchInput, setSearchInput] = useState("");
     const [search, setSearch] = useState("");
     const [viewFeedback, setViewFeedback] = useState<InterviewFeedbackRow | null>(null);
-
     const fetchFeedback = async (currentPage = page, currentSearch = search) => {
         setLoading(true);
         try {
@@ -141,10 +125,8 @@ export default function SuperAdminFeedbackPage() {
                 limit: "20",
                 ...(currentSearch ? { q: currentSearch } : {}),
             });
-
             const res = await fetch(`/api/super-admin/interview-feedback?${params.toString()}`);
             const data = await res.json();
-
             if (res.ok) {
                 setFeedbacks(Array.isArray(data.feedbacks) ? data.feedbacks : []);
                 setTotalPages(Number(data.pagination?.totalPages || 1));
@@ -159,12 +141,10 @@ export default function SuperAdminFeedbackPage() {
             setLoading(false);
         }
     };
-
     useEffect(() => {
         void fetchFeedback();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [page, search]);
-
     const visibleStats = useMemo(
         () => [
             { label: "Total Feedback", value: stats.total, icon: MessageSquare, color: "text-blue-600", bg: "bg-blue-50" },
@@ -174,7 +154,6 @@ export default function SuperAdminFeedbackPage() {
         ],
         [stats]
     );
-
     return (
         <div className="max-w-6xl mx-auto space-y-5 pb-8">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between animate-fade-slide">
@@ -185,7 +164,6 @@ export default function SuperAdminFeedbackPage() {
                         <p className="text-gray-400 font-medium text-[10px] uppercase tracking-wider">Review post-interview responses in detail</p>
                     </div>
                 </div>
-
                 <Link href="/super-admin">
                     <button className="flex items-center gap-1.5 bg-white border border-gray-100 hover:border-gray-200 text-gray-500 text-[11px] font-bold px-3 py-1.5 rounded-lg transition-all">
                         <ArrowRight className="h-3 w-3 rotate-180" />
@@ -193,7 +171,6 @@ export default function SuperAdminFeedbackPage() {
                     </button>
                 </Link>
             </div>
-
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 {visibleStats.map((item) => (
                     <div key={item.label} className="flex items-center gap-3 p-3.5 bg-white rounded-xl border border-gray-100 shadow-sm transition-all hover:border-gray-200">
@@ -207,11 +184,9 @@ export default function SuperAdminFeedbackPage() {
                     </div>
                 ))}
             </div>
-
             <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
                 <div className="px-5 py-4 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <h2 className="text-sm font-bold text-gray-900">Recent Feedback</h2>
-
                     <div className="flex items-center gap-2">
                         <div className="relative">
                             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
@@ -237,7 +212,6 @@ export default function SuperAdminFeedbackPage() {
                         </Button>
                     </div>
                 </div>
-
                 {loading ? (
                     <div className="py-16 flex justify-center">
                         <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
@@ -273,7 +247,6 @@ export default function SuperAdminFeedbackPage() {
                                                         <span className="text-[10px] text-gray-400 truncate">{candidateEmail(feedback)}</span>
                                                     </div>
                                                 </td>
-
                                                 <td className="px-4 py-4">
                                                     <span
                                                         className="text-[10px] font-medium text-gray-500 tabular-nums truncate whitespace-nowrap max-w-[180px] inline-block"
@@ -282,19 +255,16 @@ export default function SuperAdminFeedbackPage() {
                                                         {feedback.applicationId}
                                                     </span>
                                                 </td>
-
                                                 <td className="px-4 py-4">
                                                     <span className="text-[11px] font-bold text-gray-700 truncate max-w-[140px] inline-block">
                                                         {orgName(feedback)}
                                                     </span>
                                                 </td>
-
                                                 <td className="px-4 py-4">
                                                     <span className="text-[10px] font-medium text-gray-400 truncate uppercase max-w-[140px] inline-block">
                                                         {jobTitle(feedback)}
                                                     </span>
                                                 </td>
-
                                                 <td className="px-4 py-4 text-center">
                                                     <div className="flex flex-col items-center min-w-[120px]">
                                                         <span className="text-[10px] font-bold text-gray-700 tabular-nums">
@@ -305,7 +275,6 @@ export default function SuperAdminFeedbackPage() {
                                                         </span>
                                                     </div>
                                                 </td>
-
                                                 <td className="pr-5 py-4 text-right">
                                                     <button
                                                         onClick={() => setViewFeedback(feedback)}
@@ -320,7 +289,6 @@ export default function SuperAdminFeedbackPage() {
                                 </tbody>
                             </table>
                         </div>
-
                         <div className="px-5 py-3.5 border-t border-gray-100 bg-gray-50/20 flex items-center justify-between">
                             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
                                 Page <span className="text-gray-900">{page}</span> of <span className="text-gray-900">{totalPages}</span>
@@ -345,7 +313,6 @@ export default function SuperAdminFeedbackPage() {
                     </>
                 )}
             </div>
-
             <Dialog open={!!viewFeedback} onOpenChange={(open) => !open && setViewFeedback(null)}>
                 <DialogContent className="max-w-4xl rounded-[2rem] border border-gray-100 bg-white p-0 shadow-2xl overflow-hidden">
                     <div className="max-h-[88vh] overflow-y-auto">
@@ -359,7 +326,6 @@ export default function SuperAdminFeedbackPage() {
                             </DialogDescription>
                         </DialogHeader>
                         </div>
-
                         <div className="px-8 py-6">
                             {viewFeedback && (() => {
                                 const parsed = parseCandidateRating(viewFeedback.candidateRating);
@@ -381,7 +347,6 @@ export default function SuperAdminFeedbackPage() {
                                                 <p className="mt-2 text-xs text-gray-500 tabular-nums">Application: {viewFeedback.applicationId}</p>
                                             </div>
                                         </div>
-
                                         <div className="grid gap-3 sm:grid-cols-3">
                                             <div className="rounded-2xl border border-gray-100 bg-white p-4">
                                                 <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Overall Feeling</p>
@@ -405,7 +370,6 @@ export default function SuperAdminFeedbackPage() {
                                                 </p>
                                             </div>
                                         </div>
-
                                         <div className="rounded-3xl border border-gray-100 bg-gray-50/50 p-5">
                                             <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">AI Questions</p>
                                             <div className="mt-3 flex flex-wrap gap-2">
@@ -423,7 +387,6 @@ export default function SuperAdminFeedbackPage() {
                                                 )}
                                             </div>
                                         </div>
-
                                         <div className="rounded-3xl border border-gray-100 bg-white p-5">
                                             <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Candidate Notes</p>
                                             <div className="mt-3 rounded-2xl bg-gray-50/70 border border-gray-100 p-4">
@@ -432,7 +395,6 @@ export default function SuperAdminFeedbackPage() {
                                                 </p>
                                             </div>
                                         </div>
-
                                         <div className="grid gap-3 sm:grid-cols-3">
                                             <div className="rounded-2xl border border-gray-100 bg-white p-4">
                                                 <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Interview ID</p>
@@ -447,7 +409,6 @@ export default function SuperAdminFeedbackPage() {
                                                 <p className="mt-2 text-sm font-bold text-gray-900">{formatDuration(viewFeedback.interviewDuration)}</p>
                                             </div>
                                         </div>
-
                                         <div className="flex justify-end pt-2">
                                             <Button
                                                 onClick={() => setViewFeedback(null)}

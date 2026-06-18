@@ -1,23 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-
 export async function GET(req: NextRequest) {
     try {
         const session = await getSession();
         if (!session?.orgId) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
-
         const orgId = session.orgId;
         const { searchParams } = new URL(req.url);
         const range = searchParams.get("range") ?? "month";
         const from = searchParams.get("from") ?? undefined;
         const to = searchParams.get("to") ?? undefined;
-
         let startTime = new Date(0);
         const now = new Date();
-
         if (range === "today") startTime = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         else if (range === "week") {
             startTime = new Date(now);
@@ -28,7 +24,6 @@ export async function GET(req: NextRequest) {
         } else if (range === "custom" && from) {
             startTime = new Date(from);
         }
-
         const interviews = await (prisma.interview as any).findMany({
             where: {
                 status: "COMPLETED",
@@ -61,7 +56,6 @@ export async function GET(req: NextRequest) {
                 completedAt: "desc"
             }
         });
-
         // Filter and format for the audit log
         type FormattedLog = {
             id: string;
@@ -73,10 +67,8 @@ export async function GET(req: NextRequest) {
             snapshots: string[];
             events: any[];
         };
-
         const formattedLogs = interviews.map((iv: (typeof interviews)[number]): FormattedLog => {
             const rawEvents = iv.integritySignals as any[] || [];
-
             // Re-map event types using similar logic as main integrity API
             return {
                 id: iv.id,

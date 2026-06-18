@@ -4,7 +4,6 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { ArrowDown, GripVertical, Trash2 } from "lucide-react";
 import { useState } from "react";
-
 export function WorkflowTimeline() {
     const [rounds, setRounds] = useState([
         { id: 1, name: "AI Resume Screening", type: "Automated", passCriteria: "Top 50%" },
@@ -12,7 +11,6 @@ export function WorkflowTimeline() {
         { id: 3, name: "Video Interview", type: "Video", passCriteria: "AI Score > 60%" },
         { id: 4, name: "Final HR Round", type: "Manual", passCriteria: "Selection" },
     ]);
-
     return (
         <div className="grid gap-10 lg:grid-cols-3">
             <div className="lg:col-span-2 space-y-6">
@@ -20,7 +18,6 @@ export function WorkflowTimeline() {
                     <h3 className="text-lg font-semibold">Hiring Rounds</h3>
                     <Button variant="outline" size="sm">Add Custom Round</Button>
                 </div>
-
                 <div className="space-y-2">
                     {rounds.map((round, index) => (
                         <div key={round.id} className="relative group">
@@ -28,7 +25,6 @@ export function WorkflowTimeline() {
                             {index < rounds.length - 1 && (
                                 <div className="absolute left-6 top-10 bottom-0 w-0.5 bg-gray-200 -z-10 h-10" />
                             )}
-
                             <div className="flex items-center gap-4 p-4 bg-white border rounded-xl shadow-sm hover:shadow-md transition-all">
                                 <div className="cursor-grab text-gray-400 hover:text-gray-600">
                                     <GripVertical className="h-5 w-5" />
@@ -58,10 +54,8 @@ export function WorkflowTimeline() {
                     ))}
                 </div>
             </div>
-
             <div className="space-y-6">
                 <h3 className="text-lg font-semibold">Timeline & Notifications</h3>
-
                 <div className="bg-gray-50 p-6 rounded-xl border space-y-4">
                     <div className="space-y-2">
                         <Label>Application Open Date</Label>
@@ -76,7 +70,6 @@ export function WorkflowTimeline() {
                         <Input type="date" />
                     </div>
                 </div>
-
                 <div className="space-y-4 pt-4">
                     <h4 className="font-medium text-sm text-gray-500 uppercase tracking-wider">Notifications</h4>
                     <div className="flex items-center justify-between">
@@ -96,4 +89,3 @@ export function WorkflowTimeline() {
         </div>
     );
 }
-

@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSession, isAdminRole, isSuperAdminRole } from "@/lib/auth";
-
 function getRequestedOrgId(request: Request) {
     const url = new URL(request.url);
     const explicitOrgId = url.searchParams.get("orgId")?.trim() || "";
@@ -15,14 +14,12 @@ function getRequestedOrgId(request: Request) {
         return "";
     }
 }
-
 export async function GET(request: Request) {
     try {
         const session = await getSession();
         if (!session?.orgId && !getRequestedOrgId(request)) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
-
         const requestedOrgId = getRequestedOrgId(request);
         const sessionOrgId = session?.orgId || "";
         const isSuperAdminContext = isSuperAdminRole(session?.role);
@@ -30,7 +27,6 @@ export async function GET(request: Request) {
         if (!orgId) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
-
         const orgRows = await prisma.$queryRaw<Array<{
             name: string | null;
             plan: string | null;
@@ -74,17 +70,14 @@ export async function GET(request: Request) {
                 LIMIT 1
             `
         );
-
         const org = orgRows[0];
         if (!org) {
             return NextResponse.json({ error: "Organization not found" }, { status: 404 });
         }
-
         let effectiveStatus = String(org.status || "ACTIVE").toUpperCase();
         if ((org as any).statusControl === "QUOTA" && (org as any).interviewQuotaTotal > 0 && (org as any).interviewQuotaUsed >= (org as any).interviewQuotaTotal) {
             effectiveStatus = "QUOTA_EXCEEDED";
         }
-
         return NextResponse.json({
             ...org,
             status: effectiveStatus,
@@ -97,21 +90,17 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
     }
 }
-
 export async function PATCH(req: Request) {
     try {
         const session = await getSession();
         if (!session?.orgId || !isAdminRole(session.role)) {
             return NextResponse.json({ error: "Unauthorized: administrator access required" }, { status: 403 });
         }
-
         const body = await req.json();
         const { name, website, logoUrl } = body;
-
         const data: Record<string, any> = {};
         if (name !== undefined) data.name = name;
         if (website !== undefined) data.website = website;
-
         if (logoUrl !== undefined) {
             const currentOrg = await prisma.organization.findUnique({
                 where: { id: session.orgId },
@@ -129,12 +118,10 @@ export async function PATCH(req: Request) {
             }
             if (!logoUrl?.startsWith("blob:")) data.logoUrl = logoUrl;
         }
-
         const updatedOrg = await prisma.organization.update({
             where: { id: session.orgId },
             data
         });
-
         return NextResponse.json(updatedOrg);
     } catch (error) {
         console.error("Error updating organization:", error);

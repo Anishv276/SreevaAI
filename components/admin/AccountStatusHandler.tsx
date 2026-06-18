@@ -1,21 +1,16 @@
 "use client";
-
 import React from "react";
 import { motion } from "framer-motion";
 import { Lock, ArrowRight, Phone } from "lucide-react";
 import Link from "next/link";
 import { getSupportComposeUrl, isOrgRestrictedStatus } from "@/lib/interview-quota";
-
 interface AccountStatusHandlerProps {
     status?: string;
 }
-
 export function AccountStatusHandler({ status }: AccountStatusHandlerProps) {
     const normalizedStatus = String(status || "").trim().toUpperCase();
     const isRestricted = isOrgRestrictedStatus(normalizedStatus);
-
     if (!isRestricted || normalizedStatus === "SUSPENDED") return null;
-
     if (normalizedStatus === "CLOSED") {
         return (
             <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
@@ -35,7 +30,6 @@ export function AccountStatusHandler({ status }: AccountStatusHandlerProps) {
                             This account has been closed by a super admin. Please return to login to sign in with another account or contact support if this was unexpected.
                         </p>
                     </div>
-
                     <div className="space-y-4 px-8 py-8">
                         <Link
                             href="/login?from=admin"
@@ -64,7 +58,5 @@ export function AccountStatusHandler({ status }: AccountStatusHandlerProps) {
             </div>
         );
     }
-
     return null;
 }
-

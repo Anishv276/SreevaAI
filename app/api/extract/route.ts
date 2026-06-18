@@ -5,7 +5,6 @@ import { enqueueJdExtraction } from "@/lib/jd-extraction";
 import { resumeQueue } from "@/lib/queue";
 import { safeFetch, SsrfBlockedError } from "@/lib/safe-fetch";
 import { prisma } from "@/lib/prisma";
-
 export async function POST(request: Request) {
     try {
         // -- AUTH: this route enqueues billable extraction work and (for JDs)
@@ -16,11 +15,9 @@ export async function POST(request: Request) {
         if (!session || (!isAdminRole(session.role) && !isSuperAdminRole(session.role))) {
             return NextResponse.json({ error: "Not authorized" }, { status: 401 });
         }
-
         // -- RATE LIMITING -------------------
         const ip = request.headers.get("x-forwarded-for") || "unknown";
         const { success, remaining, reset } = await extractionLimiter.check(ip);
-
         if (!success) {
             return NextResponse.json({
                 error: "Too many extraction attempts. Please try again later.",
@@ -35,10 +32,8 @@ export async function POST(request: Request) {
                 }
             });
         }
-
         const contentLength = request.headers.get("content-length");
         console.log(`[API_EXTRACT] Processing request. Header Content-Length: ${contentLength} bytes`);
-
         const maxBufferedBody = 20 * 1024 * 1024;
         const reportedLength = contentLength ? Number(contentLength) : NaN;
         if (!Number.isNaN(reportedLength) && reportedLength > maxBufferedBody) {
@@ -48,7 +43,6 @@ export async function POST(request: Request) {
                 details: `Request size ${reportedLength} bytes exceeds supported limit of ${maxBufferedBody} bytes.`,
             }, { status: 413 });
         }
-
         let formData: FormData;
         try {
             formData = await request.formData();
@@ -68,24 +62,19 @@ export async function POST(request: Request) {
         // is pinned to their session org and the client value is ignored.
         const explicitOrgId = (formData.get("orgId") as string | null)?.trim() || null;
         const orgId = session.role === "SUPER_ADMIN" ? (explicitOrgId || session.orgId) : session.orgId;
-
         if (!orgId) {
             return NextResponse.json({ error: "Organization context is required" }, { status: 400 });
         }
-
         if (!file && !url) {
             return NextResponse.json({ error: "Missing file or URL" }, { status: 400 });
         }
-
         if (!typeRaw || !["JD", "RESUME"].includes(typeRaw)) {
             return NextResponse.json({ error: "Invalid type. Must be JD or RESUME" }, { status: 400 });
         }
-
         const type = typeRaw as "JD" | "RESUME";
         const isJd = typeRaw === "JD";
         // Fixed model policy per document type.
         const orgOpenAIModel = isJd ? "gpt-4.1-mini" : "gpt-5.4-mini";
-
         if (isJd) {
             if (url) {
                 console.log("[SCRAPE_START]: Fetching URL:", url);
@@ -111,16 +100,13 @@ export async function POST(request: Request) {
                     console.error("[SCRAPE_FATAL_ERROR]:", { error: err.message });
                     return NextResponse.json({ error: "Failed to scrape JD from URL" }, { status: 500 });
                 }
-
                 const jobId = await enqueueJdExtraction({ kind: "text", text, orgOpenAIModel, orgId });
                 console.log(`[JD-EXTRACT] Enqueued URL extraction job ${jobId}`);
                 return NextResponse.json({ jobId }, { status: 202 });
             }
-
             if (!file) {
                 return NextResponse.json({ error: "File required" }, { status: 400 });
             }
-
             const MAX_SIZE = 20 * 1024 * 1024;
             if (file.size > MAX_SIZE) {
                 return NextResponse.json({
@@ -128,7 +114,6 @@ export async function POST(request: Request) {
                     code: "FILE_TOO_LARGE",
                 }, { status: 413 });
             }
-
             const allowedTypes = [
                 "application/pdf",
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -144,11 +129,9 @@ export async function POST(request: Request) {
                     }, { status: 415 });
                 }
             }
-
             const bytes = await file.arrayBuffer();
             const buffer = Buffer.from(bytes);
             console.log("[FILE_EXTRACT_START]:", { name: file.name, size: buffer.length, type });
-
             // Upload to R2 and enqueue extraction concurrently
             const [jobId, fileUrl] = await Promise.all([
                 enqueueJdExtraction({ kind: "file", fileName: file.name, buffer, orgOpenAIModel, orgId }),
@@ -167,17 +150,13 @@ export async function POST(request: Request) {
                     }
                 })()
             ]);
-
             console.log(`[JD-EXTRACT] Enqueued file extraction job ${jobId}`);
             return NextResponse.json({ jobId, url: fileUrl }, { status: 202 });
         }
-
         // -- RESUME path: upload to R2, then hand off extraction to the worker --
-
         if (!file) {
             return NextResponse.json({ error: "File required" }, { status: 400 });
         }
-
         const MAX_SIZE = 20 * 1024 * 1024;
         if (file.size > MAX_SIZE) {
             return NextResponse.json({
@@ -185,15 +164,12 @@ export async function POST(request: Request) {
                 code: "FILE_TOO_LARGE"
             }, { status: 413 });
         }
-
         const allowedTypes = {
             JD: ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain"],
             RESUME: ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain"],
         };
-
         const currentAllowed = allowedTypes[type as keyof typeof allowedTypes] || [];
         const isMimeAllowed = currentAllowed.some(t => file.type.includes(t) || (t.endsWith("/*") && file.type.startsWith(t.split("/")[0])));
-
         if (!isMimeAllowed) {
             const validExts = /\.(pdf|docx|txt)$/i;
             if (!file.name.match(validExts)) {
@@ -203,23 +179,18 @@ export async function POST(request: Request) {
                 }, { status: 415 });
             }
         }
-
         const bytes = await file.arrayBuffer();
         const buffer = Buffer.from(bytes);
         const byteLength = buffer.length;
-
         console.log("[FILE_EXTRACT_START]:", { name: file.name, size: byteLength, type });
-
         const bucket = process.env.R2_RESUMES_BUCKET || "resumes";
         const orgForSlug = await prisma.organization.findUnique({ where: { id: orgId }, select: { slug: true } });
         const orgSlug = orgForSlug?.slug || orgId;
         const fileName = `resume/${orgSlug}/general_extraction/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_').toLowerCase()}`;
-
         console.log("[STORAGE_PUSH]: Uploading to R2", fileName);
         const { putObject } = await import("@/lib/s3");
         const fileUrl = await putObject(bucket, fileName, buffer, file.type);
         console.log("[STORAGE_SUCCESS]:", { type, fileName, url: fileUrl });
-
         const jobId = await resumeQueue.add(
             "resume-file-extract",
             {
@@ -235,14 +206,12 @@ export async function POST(request: Request) {
                 backoff: { type: "exponential", delay: 1500 },
             }
         );
-
         console.log(`[RESUME-EXTRACT] Enqueued resume extraction job ${jobId.id}`);
         return NextResponse.json({
             jobId: jobId.id,
             url: fileUrl,
             status: "queued",
         }, { status: 202 });
-
     } catch (error: any) {
         console.error("General Extraction Error:", error);
         return NextResponse.json({

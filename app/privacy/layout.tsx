@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-
 export const metadata: Metadata = {
   title: "Privacy Policy",
   description: "Learn how Sreeva AI collects, uses, stores, and protects your data when you use the platform. Covers candidate data, interview recordings, biometric data, and your rights.",
@@ -22,7 +21,6 @@ export const metadata: Metadata = {
     follow: true,
   },
 };
-
 export default function PrivacyLayout({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }

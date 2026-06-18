@@ -1,15 +1,12 @@
 "use client";
-
 import { AlertCircle, RefreshCw, WifiOff } from "lucide-react";
 import { cn } from "@/lib/utils";
-
 interface ErrorStateProps {
     message?: string;
     onRetry?: () => void;
     className?: string;
     compact?: boolean;
 }
-
 export function ErrorState({ 
     message = "Failed to load data", 
     onRetry, 
@@ -32,7 +29,6 @@ export function ErrorState({
                     <AlertCircle className={compact ? "h-5 w-5" : "h-7 w-7"} />
                 )}
             </div>
-            
             <div className="space-y-1 mb-6">
                 <h4 className={cn("font-black text-gray-900 uppercase tracking-tighter leading-none", compact ? "text-sm" : "text-lg")}>
                     {compact ? "Load Error" : "Data Connection Lost"}
@@ -41,7 +37,6 @@ export function ErrorState({
                     {message}
                 </p>
             </div>
-
             {onRetry && (
                 <button
                     onClick={onRetry}
@@ -54,4 +49,3 @@ export function ErrorState({
         </div>
     );
 }
-

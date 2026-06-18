@@ -7,19 +7,15 @@ import { getOrgBillingStatus } from "@/lib/credits";
 import { getInterviewQuotaSupportMessage } from "@/lib/interview-quota";
 import { getSession, isAdminRole, isSuperAdminRole } from "@/lib/auth";
 import { authorizeDriveAccess } from "@/lib/drive-access";
-
 const RESUME_BUCKET = process.env.R2_RESUMES_BUCKET || "resumes";
-
 function sanitizeFileName(fileName: string) {
   return fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
-
 function guessNameFromFile(fileName: string) {
   const noExt = fileName.replace(/\.[^/.]+$/, "");
   const readable = noExt.replace(/[_-]+/g, " ").trim();
   return readable || "Unknown";
 }
-
 function buildProgressState(progress: number, stage: string, extra?: Record<string, unknown>) {
   return JSON.stringify({
     processing: {
@@ -29,7 +25,6 @@ function buildProgressState(progress: number, stage: string, extra?: Record<stri
     },
   });
 }
-
 // POST /api/drives/[id]/resume-screening -> queue worker batch
 export async function POST(
   request: Request,
@@ -42,16 +37,13 @@ export async function POST(
     if (!session || (!isAdminRole(session.role) && !isSuperAdminRole(session.role))) {
       return NextResponse.json({ error: "Not authorized" }, { status: 401 });
     }
-
     const { id: driveId } = await params;
     const formData = await request.formData();
     const files = formData.getAll("files") as File[];
     console.log(`[RESUME-UPLOAD] Received ${files.length} file(s) for drive=${driveId}`);
-
     if (!files.length) {
       return NextResponse.json({ error: "No files provided" }, { status: 400 });
     }
-
     const drive = await prisma.drive.findUnique({
       where: { id: driveId },
       select: {
@@ -61,7 +53,6 @@ export async function POST(
         organization: { select: { slug: true } }
       },
     });
-
     if (!drive) {
       return NextResponse.json({ error: "Drive not found" }, { status: 404 });
     }
@@ -73,10 +64,8 @@ export async function POST(
     if (!isSuperAdminRole(session.role) && drive.orgId !== session.orgId) {
       return NextResponse.json({ error: "Drive belongs to a different organization" }, { status: 403 });
     }
-
     const orgSlug = drive.organization?.slug || drive.orgId;
     const safeDriveTitle = drive.title.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
-
     const billingStatus = await getOrgBillingStatus(drive.orgId);
     if (billingStatus.interviewQuotaTotal > 0 && !billingStatus.hasSufficientInterviews) {
       return NextResponse.json(
@@ -87,7 +76,6 @@ export async function POST(
         { status: 402 }
       );
     }
-
     const batch = await prisma.resumeBatch.create({
       data: {
         driveId,
@@ -99,7 +87,6 @@ export async function POST(
       },
     });
     console.log(`[RESUME-UPLOAD] Created batch ${batch.id} for drive=${driveId}`);
-
     const queuedIds: string[] = [];
     for (let index = 0; index < files.length; index += 1) {
       const file = files[index];
@@ -113,10 +100,8 @@ export async function POST(
         file.type || "application/pdf"
       );
       console.log(`[RESUME-UPLOAD] Stored ${file.name || safeName} in R2 -> ${key}`);
-
       const applicationId = generateId("app", `${guessNameFromFile(file.name || "")}-${batch.id}-${index}`);
       const downloadUrl = `/api/drives/${driveId}/resume-screening/download?candidateId=${applicationId}`;
-
       const candidate = await prisma.resumeCandidate.create({
         data: {
           driveId,
@@ -136,7 +121,6 @@ export async function POST(
           }),
         },
       });
-
       await prisma.application.create({
         data: {
           id: applicationId,
@@ -162,11 +146,9 @@ export async function POST(
           hiringStatus: "pending",
         },
       });
-
       queuedIds.push(candidate.id);
       console.log(`[RESUME-UPLOAD] Candidate queued id=${candidate.id} name=${candidate.fullName}`);
     }
-
     await resumeQueue.add(
       "drive-resume-batch",
       {
@@ -177,13 +159,11 @@ export async function POST(
       {
         jobId: `batch_${batch.id}`,   // deduplication — same batch can only have one job at a time
         attempts: 1,                  // no retries — if it fails, fix the data, don't re-clog
-
         removeOnComplete: true,
         removeOnFail: { count: 5 },
       }
     );
     console.log(`[RESUME-UPLOAD] Worker job enqueued batchId=${batch.id} candidates=${queuedIds.length}`);
-
     return NextResponse.json({
       batchId: batch.id,
       totalCount: files.length,
@@ -194,7 +174,6 @@ export async function POST(
     return NextResponse.json({ error: (err as Error).message }, { status: 500 });
   }
 }
-
 // GET /api/drives/[id]/resume-screening -> poll batch or fetch all
 export async function GET(
   request: Request,
@@ -206,10 +185,8 @@ export async function GET(
     if (!access.ok) {
       return NextResponse.json({ error: access.error }, { status: access.status });
     }
-
     const { searchParams } = new URL(request.url);
     const batchId = searchParams.get("batchId");
-
     if (batchId) {
       const batch = await prisma.resumeBatch.findFirst({
         where: { id: batchId, driveId, orgId: access.orgId },
@@ -233,7 +210,6 @@ export async function GET(
         headers: { "Cache-Control": "private, no-store" },
       });
     }
-
     const [batches, candidates] = await Promise.all([
       prisma.resumeBatch.findMany({
         where: { driveId, orgId: access.orgId },
@@ -271,7 +247,6 @@ export async function GET(
         },
       }),
     ]);
-
     return NextResponse.json(
       { batches, candidates },
       { headers: { "Cache-Control": "private, no-store" } }

@@ -1,5 +1,4 @@
 "use client";
-
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -9,7 +8,6 @@ import {
     Rocket
 } from "lucide-react";
 import { useAdminOrg } from "@/context/admin-org-context";
-
 export default function WelcomePage() {
     const router = useRouter();
     const adminOrg = useAdminOrg();
@@ -19,13 +17,11 @@ export default function WelcomePage() {
         company: adminOrg?.name || "Your Organization",
         logoUrl: adminOrg?.logoUrl || "",
     });
-
     useEffect(() => {
         const fetchData = async () => {
             try {
                 const profRes = await fetch("/api/admin/profile");
                 const prof = profRes.ok ? await profRes.json().catch(() => ({})) : {};
-                
                 setData({
                     name: prof.name || "Admin",
                     company: adminOrg?.name || "Your Organization",
@@ -37,14 +33,11 @@ export default function WelcomePage() {
                 setIsLoading(false);
             }
         };
-
         fetchData();
     }, [adminOrg?.logoUrl, adminOrg?.name]);
-
     const handleGoToDashboard = () => {
         router.push("/admin");
     };
-
     if (isLoading) {
         return (
             <div className="h-screen w-full flex items-center justify-center bg-white">
@@ -59,7 +52,6 @@ export default function WelcomePage() {
             </div>
         );
     }
-
     return (
         <main className="relative h-screen w-full overflow-hidden bg-white flex items-center justify-center font-sans tracking-tight">
             {/* --- Background Mesh Gradients --- */}
@@ -68,7 +60,6 @@ export default function WelcomePage() {
                 <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-indigo-500/10 rounded-full blur-[120px] animate-pulse delay-700" />
                 <div className="absolute top-[20%] right-[10%] w-[30%] h-[30%] bg-orange-200/20 rounded-full blur-[100px]" />
             </div>
-
             {/* --- Content --- */}
             <div className="relative z-10 w-full max-w-2xl px-6">
                 <AnimatePresence>
@@ -81,7 +72,6 @@ export default function WelcomePage() {
                         <div className="bg-white border border-gray-100 rounded-3xl p-10 shadow-xl relative overflow-hidden group">
                             {/* Subtle Texture Overlay */}
                             <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-[0.02] pointer-events-none" />
-                            
                             {/* Success Indicator */}
                             <motion.div 
                                 initial={{ opacity: 0, scale: 0.8 }}
@@ -90,7 +80,6 @@ export default function WelcomePage() {
                             >
                                 <Rocket className="h-8 w-8" />
                             </motion.div>
-
                             {/* Text Header */}
                             <div className="text-center space-y-2 mb-10">
                                 <motion.h1 
@@ -111,7 +100,6 @@ export default function WelcomePage() {
                                     <div className="h-[1px] w-6 bg-gray-200" />
                                 </motion.div>
                             </div>
-
                             {/* Branding Info */}
                             <motion.div 
                                 initial={{ opacity: 0, y: 10 }}
@@ -136,7 +124,6 @@ export default function WelcomePage() {
                                     <CheckCircle2 className="h-5 w-5" />
                                 </div>
                             </motion.div>
-
                             {/* Action Button */}
                             <motion.button
                                 whileHover={{ y: -2 }}
@@ -150,10 +137,8 @@ export default function WelcomePage() {
                         </div>
                     </motion.div>
                 </AnimatePresence>
-
                 {/* Footer removed */}
             </div>
         </main>
     );
 }
-

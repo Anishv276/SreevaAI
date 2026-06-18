@@ -1,9 +1,7 @@
 "use client";
-
 import React from "react";
 import { cn } from "@/lib/utils";
 import { Label } from "@/components/ui/label";
-
 /*  Reusable card wrapper  */
 export function SettingsCard({ 
     title, 
@@ -35,7 +33,6 @@ export function SettingsCard({
         </div>
     );
 }
-
 /*  Field wrapper  */
 export function Field({ label, children, className }: { label: string; children: React.ReactNode; className?: string }) {
     return (
@@ -45,7 +42,6 @@ export function Field({ label, children, className }: { label: string; children:
         </div>
     );
 }
-
 /*  Toggle  */
 export function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: () => void; disabled?: boolean }) {
     return (

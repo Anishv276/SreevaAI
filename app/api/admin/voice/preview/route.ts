@@ -1,7 +1,6 @@
 import { NextRequest } from "next/server";
 import { createVoicePreviewResponse } from "@/lib/voice-preview";
 import { getSession, isAdminRole, isSuperAdminRole } from "@/lib/auth";
-
 export async function POST(req: NextRequest) {
   try {
     const session = await getSession();
@@ -11,12 +10,10 @@ export async function POST(req: NextRequest) {
         headers: { "Content-Type": "application/json" },
       });
     }
-
     const { voiceId, transcript, orgId } = await req.json();
     const billingOrgId = isAdminRole(session.role)
       ? session.orgId || null
       : typeof orgId === "string" ? orgId.trim() : null;
-
     return await createVoicePreviewResponse({ voiceId, transcript, orgId: billingOrgId });
   } catch (err) {
     console.error("[VoicePreview] Internal error:", err);

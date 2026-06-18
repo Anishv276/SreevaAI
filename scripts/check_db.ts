@@ -1,20 +1,16 @@
 import { PrismaClient } from '@prisma/client';
-
 const prisma = new PrismaClient();
-
 async function main() {
     console.log("--- Checking Database State ---");
     try {
         const appCount = await prisma.application.count();
         console.log(`Applications: ${appCount}`);
-        
         if (appCount > 0) {
             const latestApp = await prisma.application.findFirst({
                 orderBy: { createdAt: 'desc' },
                 select: { id: true, email: true }
             });
             console.log("Latest Application:", latestApp);
-            
             const interview = await prisma.interview.findUnique({
                 where: { applicationId: latestApp?.id }
             });
@@ -33,5 +29,4 @@ async function main() {
         await prisma.$disconnect();
     }
 }
-
 main();

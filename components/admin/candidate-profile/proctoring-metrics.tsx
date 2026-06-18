@@ -1,8 +1,6 @@
 "use client";
-
 import { memo } from "react";
 import { cn } from "@/lib/utils";
-
 export const DeepDiveLog = memo(function DeepDiveLog({ label, description, time, type = "error" }: { label: string; description: string; time: string; type?: "error" | "warning" | "success" }) {
     const styles = {
         error: "bg-red-50 border-red-100 text-red-600",
@@ -19,7 +17,6 @@ export const DeepDiveLog = memo(function DeepDiveLog({ label, description, time,
         </div>
     );
 });
-
 export const IntegrityRow = memo(function IntegrityRow({ label, value, status }: { label: string; value: string; status: string }) {
     return (
         <div className="p-6 rounded-[32px] bg-white border border-gray-100 flex flex-col items-center justify-center gap-2 flex-1 shadow-sm">
@@ -31,7 +28,6 @@ export const IntegrityRow = memo(function IntegrityRow({ label, value, status }:
         </div>
     );
 });
-
 export const ProctoringMetric = memo(function ProctoringMetric({ value, label, risk }: { value: string; label: string; risk: "NO RISK" | "MEDIUM RISK" | "HIGH RISK" }) {
     const riskStyles = {
         "NO RISK": "bg-[#F0FDF4] text-emerald-600 border-[#DCFCE7]",

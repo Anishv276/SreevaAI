@@ -1,5 +1,4 @@
 "use client";
-
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -15,13 +14,11 @@ import { useAuth } from "@/context/auth-context";
 import { motion } from "framer-motion";
 import { isInterviewQuotaLocked, isOrgRestrictedStatus } from "@/lib/interview-quota";
 import { useAdminOrg } from "@/context/admin-org-context";
-
 interface NavItem {
     icon: any;
     label: string;
     href: string;
 }
-
 const NAV_GROUPS: { items: NavItem[] }[] = [
     {
         items: [
@@ -38,7 +35,6 @@ const NAV_GROUPS: { items: NavItem[] }[] = [
         ]
     }
 ];
-
 export function Sidebar() {
     const pathname = usePathname();
     const router = useRouter();
@@ -48,7 +44,6 @@ export function Sidebar() {
     const [isLoggingOut, setIsLoggingOut] = useState(false);
     const { logout, user } = useAuth();
     const isSuperAdmin = user?.role === "SUPER_ADMIN";
-
     // ⚡ Read from shared context — no fetch needed (was 2 API calls per page load)
     const adminOrg = useAdminOrg();
     const orgInfo = (adminOrg?.name || adminOrg?.logoUrl)
@@ -56,22 +51,16 @@ export function Sidebar() {
         : null;
     const orgStatus = adminOrg?.status || "ACTIVE";
     const quotaLocked = isInterviewQuotaLocked(adminOrg ?? {});
-
     const modalRef = useRef<HTMLDivElement>(null);
     const isSuspended = isOrgRestrictedStatus(orgStatus);
-
     useEffect(() => {
         if (!showLogoutConfirm) return;
-
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key !== "Tab") return;
-
             const focusableElements = modalRef.current?.querySelectorAll("button:not([disabled])");
             if (!focusableElements || focusableElements.length === 0) return;
-
             const firstElement = focusableElements[0] as HTMLElement;
             const lastElement = focusableElements[focusableElements.length - 1] as HTMLElement;
-
             if (e.shiftKey) {
                 if (document.activeElement === firstElement) {
                     lastElement.focus();
@@ -84,17 +73,14 @@ export function Sidebar() {
                 }
             }
         };
-
         window.addEventListener("keydown", handleKeyDown);
         // Focus the first button on mount
         setTimeout(() => {
             const firstButton = modalRef.current?.querySelector("button");
             firstButton?.focus();
         }, 50);
-
         return () => window.removeEventListener("keydown", handleKeyDown);
     }, [showLogoutConfirm]);
-
     const handleLogout = async () => {
         setIsLoggingOut(true);
         try {
@@ -104,7 +90,6 @@ export function Sidebar() {
             setShowLogoutConfirm(false);
         }
     };
-
     return (
         <>
             {/* LOGOUT CONFIRMATION MODAL */}
@@ -150,7 +135,6 @@ export function Sidebar() {
                     </div>
                 </div>
             )}
-
             <aside
                 id="global-admin-sidebar"
                 className="hidden md:flex h-screen w-[240px] flex-col fixed left-0 top-0 z-50 bg-[#F9FAFB]/80 backdrop-blur-xl border-r border-gray-200/50 font-inter"
@@ -176,7 +160,6 @@ export function Sidebar() {
                         </div>
                     </div>
                 </div>
-
                 {/* Nav Menu */}
                 <nav className="flex-1 overflow-y-auto px-4 pt-10 pb-4 space-y-6 select-none custom-scrollbar">
                     {/* Inspection Banner */}
@@ -203,13 +186,11 @@ export function Sidebar() {
                             </div>
                         </motion.div>
                     )}
-
                     {NAV_GROUPS.map((group, gIdx) => (
                         <div key={gIdx} className="space-y-1">
                             {group.items.map((item) => {
                                 const isActive = pathname === item.href;
                                 const hrefWithOrg = orgId ? `${item.href}?orgId=${orgId}` : item.href;
-                                
                                 return (
                                     <div key={item.label} className="space-y-1">
                                         <div
@@ -230,7 +211,6 @@ export function Sidebar() {
                                                 />
                                                 <span className="tracking-tight">{item.label}</span>
                                             </div>
-                                            
                                             {isActive && (
                                                 <div className="w-1.5 h-1.5 rounded-full bg-[#F97316] shadow-[0_0_8px_rgba(249,115,22,0.4)]" />
                                             )}
@@ -241,9 +221,7 @@ export function Sidebar() {
                             {gIdx < NAV_GROUPS.length - 1 && <div className="h-px bg-gray-100/60 mx-4 my-2" />}
                         </div>
                     ))}
-
                 </nav>
-
                 {/* Footer Section */}
                 <div className="px-4 pb-6 pt-4 border-t border-gray-100/50">
                     <button

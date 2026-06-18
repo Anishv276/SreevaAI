@@ -1,7 +1,5 @@
 import { normalizeOrgPlan, type OrgPlanId } from "@/lib/org-plans";
-
 export type LandingPackageId = "STARTER" | "GROWTH" | "SCALE" | "BUSINESS";
-
 export type LandingPackage = {
   id: LandingPackageId;
   name: string;
@@ -14,7 +12,6 @@ export type LandingPackage = {
   featured: boolean;
   features: string[];
 };
-
 export const LANDING_PACKAGES: LandingPackage[] = [
   {
     id: "STARTER",
@@ -81,31 +78,26 @@ export const LANDING_PACKAGES: LandingPackage[] = [
     ],
   },
 ];
-
 const ORG_PLAN_TO_LANDING_PACKAGE: Record<OrgPlanId, LandingPackageId> = {
   STARTER: "STARTER",
   PRO: "GROWTH",
   BUSINESS: "SCALE",
   ENTERPRISE: "BUSINESS",
 };
-
 export function getLandingPackageById(id?: LandingPackageId | null): LandingPackage | null {
   if (!id) return null;
   return LANDING_PACKAGES.find((pkg) => pkg.id === id) || null;
 }
-
 export function getLandingPackageByName(name?: string | null): LandingPackage | null {
   const normalized = String(name || "").trim().toLowerCase();
   if (!normalized) return null;
   return LANDING_PACKAGES.find((pkg) => pkg.name.toLowerCase() === normalized) || null;
 }
-
 export function getLandingPackageForOrgPlan(plan?: string | null): LandingPackage | null {
   const normalized = normalizeOrgPlan(plan);
   if (!normalized) return null;
   return getLandingPackageById(ORG_PLAN_TO_LANDING_PACKAGE[normalized]);
 }
-
 export function formatLandingPackageForOrgPlan(plan?: string | null): string {
   return getLandingPackageForOrgPlan(plan)?.name || "";
 }

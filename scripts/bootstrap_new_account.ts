@@ -1,8 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
-
 const prisma = new PrismaClient();
-
 async function main() {
     const orgId = "sreeva-org-id";
     const email = "support@sreevaai.com";
@@ -13,17 +11,13 @@ async function main() {
         console.error("❌ SUPERADMIN_PASSWORD env var is required (min 12 chars). Aborting.");
         process.exit(1);
     }
-
     console.log("🚀 Performing full database wipe...");
-
     // 0. Clear existing data
     await prisma.superAdmin.deleteMany({});
     await prisma.user.deleteMany({});
     await prisma.organization.deleteMany({});
     console.log("✅ Database cleared.");
-
     const hashedPassword = await bcrypt.hash(password, 10);
-
     // 1. Create SuperAdmin Profille
     const superAdmin = await prisma.superAdmin.upsert({
         where: { email },
@@ -38,7 +32,6 @@ async function main() {
         }
     });
     console.log("✅ SuperAdmin profile created:", email);
-
     // 2. Create Organization
     const org = await prisma.organization.upsert({
         where: { id: orgId },
@@ -54,7 +47,6 @@ async function main() {
         }
     });
     console.log("✅ Organization created:", org.name);
-
     // 3. Create Admin User (for the organization)
     const user = await prisma.user.upsert({
         where: { email },
@@ -79,7 +71,6 @@ async function main() {
     console.log(`Password: (set from SUPERADMIN_PASSWORD env var)`);
     console.log("---------------------------\n");
 }
-
 main()
     .catch((e) => {
         console.error("❌ ERROR during bootstrap:", e.message);

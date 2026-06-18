@@ -1,7 +1,5 @@
 "use client";
-
 import { useEffect, useRef, useState, forwardRef } from "react";
-
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -23,7 +21,6 @@ import {
   User,
   XCircle,
 } from "lucide-react";
-
 const Plyr = dynamic(
   () => import("plyr-react").then((m) => {
     const Wrapper = forwardRef<any, any>((props, ref) => {
@@ -39,7 +36,6 @@ const Plyr = dynamic(
   }),
   { ssr: false }
 );
-
 export type IntelBadgeTone = "rose" | "sky" | "amber" | "emerald" | "slate";
 export type IntelSignalRow = {
   id: string;
@@ -48,10 +44,8 @@ export type IntelSignalRow = {
   tone: IntelBadgeTone;
   details?: string[];
 };
-
 type IntelId = "raw_signals" | "signal_analysis";
 type QBadge = "FAIR" | "AVERAGE" | "STRONG" | "PENDING";
-
 export type SreevaAIInterviewViewModel = {
   backHref: string;
   fullName: string;
@@ -100,13 +94,11 @@ export type SreevaAIInterviewViewModel = {
   proctoringEventsFull: { time: string; eventType: string; reason: string; severity: string; elapsedSeconds: number }[];
   answerScores: { question: string; answer: string; depth: number; clarity: number; specificity: number; grounding: number; overall: number; signals: string[] }[];
 };
-
 function formatDurationM(totalSeconds: number) {
   const m = Math.floor((totalSeconds || 0) * 0.0166666);
   const s = Math.floor((totalSeconds || 0) % 60);
   return `${m}:${s.toString().padStart(2, "0")} min`;
 }
-
 function inferVideoMimeType(url: string, mimeType?: string | null): string {
   const explicit = String(mimeType || "").trim().toLowerCase();
   if (explicit === "video/webm" || explicit === "video/mp4") return explicit;
@@ -116,7 +108,6 @@ function inferVideoMimeType(url: string, mimeType?: string | null): string {
   // Recording pipeline defaults to webm chunks/merge output.
   return "video/webm";
 }
-
 function normalizeAiPunctuation(s: string): string {
   return String(s || "")
     .replace(/\u00e2\u20ac\u201d|\u2014|\u00e2\u20ac\u201c|\u2013/g, ", ")
@@ -132,7 +123,6 @@ function normalizeAiPunctuation(s: string): string {
     .replace(/\u00e2\u20ac\u00a6/g, "...")
     .replace(/\u00c2/g, "");
 }
-
 function cleanAiText(s: string): string {
   return normalizeAiPunctuation(s)
     .replace(/\*{1,2}/g, "")
@@ -141,7 +131,6 @@ function cleanAiText(s: string): string {
     .replace(/\s{2,}/g, " ")
     .trim();
 }
-
 // Parse an AI bullet like "[Title] - [Evidence] - [Why it matters for role]"
 // into { title, description } for the two-line card format
 function parseBulletCard(raw: string): { title: string; description: string } {
@@ -162,7 +151,6 @@ function parseBulletCard(raw: string): { title: string; description: string } {
   const sentences = clean.split(/\.\s+/);
   return { title: sentences[0]?.trim() || clean, description: sentences.slice(1).join(". ").trim() };
 }
-
 function scoreToBadge(scoreStr: string): { q: QBadge; bad: boolean } {
   const t = String(scoreStr).toLowerCase();
   const n = parseFloat(t.replace(/[^\d.]/g, ""));
@@ -176,14 +164,12 @@ function scoreToBadge(scoreStr: string): { q: QBadge; bad: boolean } {
   if (t.includes("fail") || t.includes("low") || t.includes("weak")) return { q: "FAIR", bad: true };
   return { q: "PENDING", bad: false };
 }
-
 export function fitLabelFromPct(p: number) {
   if (p >= 80) return "STRONG FIT";
   if (p >= 60) return "MODERATE FIT";
   if (p >= 40) return "BORDERLINE FIT";
   return "LOW FIT";
 }
-
 const _ARC_LEN = Math.PI * 80;
 export function SemicircleGauge({ value, fitLabel }: { value: number; fitLabel: string }) {
   const pct = Math.max(0, Math.min(100, value));
@@ -208,7 +194,6 @@ export function SemicircleGauge({ value, fitLabel }: { value: number; fitLabel: 
     </div>
   );
 }
-
 function recommendationFromAI(aiRec: string, pct: number): { label: string; color: "green" | "amber" | "red" | "blue" } {
   const r = String(aiRec || "").toLowerCase().trim();
   if (r === "strong yes") return { label: "Strong Hire", color: "green" };
@@ -221,8 +206,6 @@ function recommendationFromAI(aiRec: string, pct: number): { label: string; colo
   if (pct >= 40) return { label: "Review", color: "amber" };
   return { label: "No Hire", color: "red" };
 }
-
-
 const BADGE_PILL: Record<IntelBadgeTone, string> = {
   rose: "border-rose-200/90 bg-rose-100 text-rose-800",
   sky: "border-sky-200/90 bg-sky-100 text-sky-800",
@@ -230,10 +213,6 @@ const BADGE_PILL: Record<IntelBadgeTone, string> = {
   emerald: "border-emerald-200/90 bg-emerald-100 text-emerald-800",
   slate: "border-slate-200/90 bg-slate-100 text-slate-700",
 };
-
-
-
-
 const PROCTORING_DISPLAY: Record<string, { title: string; why: string; risk: string }> = {
   face_absence: { title: "Face not visible", why: "Camera detected no face during the interview. The candidate may have looked away, turned off the camera, or left the frame.", risk: "High - indicates the candidate was not actively present in front of the camera." },
   multiple_faces: { title: "Multiple faces detected", why: "More than one person was detected in the camera frame, suggesting someone else may have been present or assisting.", risk: "High - potential coaching or collaboration violation." },
@@ -243,14 +222,12 @@ const PROCTORING_DISPLAY: Record<string, { title: string; why: string; risk: str
   tab_switch: { title: "Tab / app switch", why: "The candidate switched away from the interview tab to another browser tab or application. This is commonly associated with looking up answers.", risk: "Medium - cross-check with answer quality; sudden improvement after a tab switch is a red flag." },
   connection_lost: { title: "Connection dropped", why: "The candidate's internet connection was interrupted during the session. This may be genuine or deliberate.", risk: "Low-Medium - check whether audio and video resumed cleanly and whether answers were affected." },
 };
-
 function buildIntegritySignals(
   rows: { key: string; label: string; value: string; bad: boolean }[],
   _integrityScore: number,
 ): IntelSignalRow[] {
   // Only include events that actually occurred (exclude the "No flags" clean placeholder)
   const realRows = rows.filter(r => r.key !== "clean");
-
   const signals: IntelSignalRow[] = realRows.map((r) => {
     const countMatch = r.value.match(/^(\d+)/);
     const count = countMatch ? parseInt(countMatch[1], 10) : 0;
@@ -274,7 +251,6 @@ function buildIntegritySignals(
       details,
     };
   });
-
   // If no real events, add a single clean signal (no integrity score row — shown in header)
   if (realRows.length === 0) {
     signals.push({
@@ -285,10 +261,8 @@ function buildIntegritySignals(
       details: ["No proctoring events raised during this session.", "Candidate completed the interview without any integrity flags."],
     });
   }
-
   return signals;
 }
-
 function buildTopStrengthsRisks(args: {
   behavioralAnalysis: Record<string, any>;
 }): { topStrengths: string[]; topRisks: string[] } {
@@ -306,7 +280,6 @@ function buildTopStrengthsRisks(args: {
     : [];
   return { topStrengths, topRisks };
 }
-
 export function buildSreevaAIInterviewViewModel(i: {
   backHref?: string;
   candidate: { fullName?: string; createdAt?: string; location?: string; interview?: any; assessment?: any; drive?: { role?: string; title?: string } };
@@ -345,7 +318,6 @@ export function buildSreevaAIInterviewViewModel(i: {
   const behavAnalysis = i.interviewReportBehavioralAnalysis || {};
   const scores = i.interviewReportScores || {};
   const verdict = i.interviewReportVerdict || {};
-
   const toPct = (v: unknown, fallback: number) => {
     const n = Number(v);
     return Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : fallback;
@@ -363,7 +335,6 @@ export function buildSreevaAIInterviewViewModel(i: {
   const psScore = _dimScore("problem") || Number(scores.problem_solving ?? 0);
   const ownScore = _dimScore("ownership") || 0;
   const overallPct = Number(scores.overall ?? scores.combined_score ?? 0);
-
   // Legacy alias kept for fitPercent computation
   const technicalPct = dkScore || (() => {
     const qaRows = i.interviewQaRows || [];
@@ -379,10 +350,8 @@ export function buildSreevaAIInterviewViewModel(i: {
     if (blockAvgs.length > 0) return Math.min(100, Math.round(blockAvgs.reduce((a: number, b: number) => a + b, 0) / blockAvgs.length));
     return i.isFallbackReport ? 0 : Math.min(100, Math.max(0, i.interviewScore)) || 0;
   })();
-
   const questionsAsked = Math.max(1, (i.interviewQaRows?.length || i.interviewSessionRows.length) || 1);
   const techTag: "GOOD" | "AVERAGE" | "WEAK" = technicalPct >= 70 ? "GOOD" : technicalPct >= 45 ? "AVERAGE" : "WEAK";
-
   // a"a" Derive comm scores from transcript when AI report values are missing a"a"
   const derivedComm = (() => {
     const answers = i.interviewSessionRows.map((r) => r.answer).filter(Boolean);
@@ -409,7 +378,6 @@ export function buildSreevaAIInterviewViewModel(i: {
     const confidenceScore = Math.round(Math.max(30, Math.min(90, 85 - hedgeRatio * 20)));
     return { clarityScore, grammarScore, fluencyScore, vocabScore, confidenceScore };
   })();
-
   const commFallback = commScore > 0 ? commScore : 50;
   const comm = {
     pronunciation: toPct(com.pronunciation, derivedComm?.clarityScore ?? commFallback),
@@ -422,9 +390,7 @@ export function buildSreevaAIInterviewViewModel(i: {
     commSummary: cleanAiText(String(com.summary || "").trim()),
     hasNewSchema: false,
   };
-
   const commAvg = commScore > 0 ? commScore : commFallback;
-
   // a"a" Proctoring rows a"a"
   const proctoringRows: { key: string; label: string; value: string; bad: boolean }[] =
     (i.groupedProctoringSignals || []).slice(0, 8).map((g) => ({
@@ -436,7 +402,6 @@ export function buildSreevaAIInterviewViewModel(i: {
   if (proctoringRows.length === 0) {
     proctoringRows.push({ key: "clean", label: "Session telemetry", value: "No flags", bad: false });
   }
-
   // Grab integrity score from the raw report if available
   const rawIntegrityScore = (() => {
     // Access via isFallbackReport check
@@ -449,9 +414,7 @@ export function buildSreevaAIInterviewViewModel(i: {
       return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : (proctoringRows.some((r) => r.bad) ? 65 : 95);
     } catch { return 95; }
   })();
-
   const integritySignals = buildIntegritySignals(proctoringRows, rawIntegrityScore);
-
   // Skills — sourced only from skillRatings DB column (agent_persistence.py)
   const skills = (i.interviewReportSkills || [])
     .map((s: any) => {
@@ -466,20 +429,16 @@ export function buildSreevaAIInterviewViewModel(i: {
     })
     .filter(Boolean)
     .sort((a: any, b: any) => b.score - a.score) as SreevaAIInterviewViewModel["skills"];
-
   // a"a" Transcript a"a" Parse turns from DB transcript with timestamps
   const secToLabel = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   const transcript: SreevaAIInterviewViewModel["transcript"] = (() => {
     if (!i.interviewTranscript) return [{ from: "ai" as const, text: "No transcript available for this session.", time: "--" }];
-
     const rawTurns: SreevaAIInterviewViewModel["transcript"] = [];
     const lines = i.interviewTranscript.split(/\n/);
     let currentTurn: SreevaAIInterviewViewModel["transcript"][number] | null = null;
-
     for (const line of lines) {
       const t = line.trim();
       if (!t) continue;
-
       // Match speaker with timestamp: Interviewer[123]: or Candidate[123]:
       const m = t.match(/^(interviewer|candidate)\[(\d+)\]:\s*/i);
       if (m) {
@@ -514,12 +473,10 @@ export function buildSreevaAIInterviewViewModel(i: {
         currentTurn.text = `${currentTurn.text} ${t}`.trim();
       }
     }
-
     // Don't forget the last turn
     if (currentTurn && currentTurn.text.trim()) {
       rawTurns.push(currentTurn);
     }
-
     // Merge consecutive turns from same speaker within 10 seconds
     const turns: SreevaAIInterviewViewModel["transcript"] = [];
     for (const turn of rawTurns) {
@@ -537,23 +494,19 @@ export function buildSreevaAIInterviewViewModel(i: {
         turns.push(turn);
       }
     }
-
     if (turns.length > 0) {
       return turns;
     }
-
     const fallbackText = String(i.interviewTranscript || "").trim();
     if (!fallbackText) {
       return [{ from: "ai" as const, text: "No transcript available for this session.", time: "--" }];
     }
-
     return [{
       from: "ai" as const,
       text: fallbackText,
       time: "--",
     }];
   })();
-
   // a"a" Question Analysis a"a"
   // ? Question Analysis ?
   const questionAnalysis: SreevaAIInterviewViewModel["questionAnalysis"] = [];
@@ -591,14 +544,12 @@ export function buildSreevaAIInterviewViewModel(i: {
       scoreBreakdown,
     });
   }
-
   const fitPct = (() => {
     const rawComb = Number(scores.combined_score);
     if (Number.isFinite(rawComb) && rawComb > 0) return Math.min(100, Math.max(0, Math.round(rawComb)));
     // Fallback: combinedScore is already 0-100 from the page
     return Math.min(100, Math.max(0, i.combinedScore));
   })();
-
   // a"a" Recommendation from AI verdict (not from fitPct) a"a"
   const { label: recommendation, color: recommendationColor } = recommendationFromAI(verdict.recommendation, fitPct);
   // a"a" Verdict summary - generate a sharp 1-2 sentence decision note a"a"
@@ -617,19 +568,15 @@ export function buildSreevaAIInterviewViewModel(i: {
     : buildDecisionNote();
   const verdictRecommendationReason = cleanAiText(String(verdict.recommendation_reason || "").trim());
   const aiSummaryConcise = String((verdict as any).ai_summary_concise || "").trim();
-
   // Proctoring signal (needed before aiBullets to reference flagCount)
   const flagCount = proctoringRows.filter((row) => row.bad).length;
-
   // a"a" Strengths / Risks a" needed before aiBullets fallback a"a"
   const { topStrengths, topRisks } = buildTopStrengthsRisks({
     behavioralAnalysis: behavAnalysis,
   });
-
   // Primary: use interviewAiSummary — the new 4-bullet evidence-based summary generated by generate_interview_summary
   const aiBullets: string[] = (() => {
     const bullets: string[] = [];
-
     // Source 1: aiSummary from DB (4-bullet evidence-based format from new generate_interview_summary)
     const aiSummaryText = String(i.interviewAiSummary || "").trim();
     if (aiSummaryText) {
@@ -643,7 +590,6 @@ export function buildSreevaAIInterviewViewModel(i: {
           if (cleaned.length > 10) bullets.push(cleaned);
         });
     }
-
     // Source 2: verdict concise AI summary
     if (bullets.length === 0 && aiSummaryConcise) {
       aiSummaryConcise
@@ -661,11 +607,9 @@ export function buildSreevaAIInterviewViewModel(i: {
       const provedSkills = skills.filter(s => s.score >= 5).slice(0, 2);
       const topSkillNames = provedSkills.map(s => `**${s.name}**`).join(" and ") || "**their primary domain**";
       bullets.push(cleanAiText(`Candidate demonstrated practical hands-on exposure to ${topSkillNames} through specific project descriptions and implementation context.`));
-
       const gapSkills = skills.filter(s => s.score < 5).slice(0, 2);
       const gapNames = gapSkills.map(s => `**${s.name}**`).join(" and ") || "**advanced technical depth**";
       bullets.push(cleanAiText(`Depth was ${technicalPct >= 60 ? "solid in core areas but surface-level" : "limited"} on ${gapNames} - answers stayed at concept level without implementation detail when probed.`));
-
       const behavioralSummary = String(behavAnalysis?.summary || "").trim();
       const engagementLine = behavioralSummary
         ? behavioralSummary.split(".")[0].trim() + "."
@@ -673,16 +617,12 @@ export function buildSreevaAIInterviewViewModel(i: {
           ? "Candidate maintained consistent engagement with no behavioral anomalies across the session."
           : `${flagCount} behavioral signal${flagCount !== 1 ? "s" : ""} triggered during the session - review proctoring timeline for context.`;
       bullets.push(cleanAiText(engagementLine));
-
       const topStrength = topStrengths[0]?.replace(/\*\*/g, "") || "";
       const topRisk = topRisks[0]?.replace(/\*\*/g, "") || "";
       if (topStrength) bullets.push(cleanAiText(`Strongest observed signal: ${topStrength.toLowerCase()}${topRisk ? ` - primary area to validate further: ${topRisk.toLowerCase()}` : ""}.`));
     }
-
     return bullets.slice(0, 4);
   })();
-
-
   // a"a" Timestamps a"a"
   const doneAt = c.interview?.completedAt || c.interview?.endedAt;
   const interviewedOn = doneAt
@@ -690,10 +630,8 @@ export function buildSreevaAIInterviewViewModel(i: {
     : c.createdAt && i.mounted
       ? new Date(c.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
       : "--";
-
   const totalTime = (i.recordingDurationSec ? (i.formatDuration || formatDurationM)(i.recordingDurationSec) : i.interviewTranscript
     ? `${Math.max(1, Math.round((i.wordCount / 150) * 5))} mins (est.)` : "--");
-
   return {
     backHref: i.backHref || "/admin/candidates",
     fullName: c.fullName || "Candidate",
@@ -750,23 +688,17 @@ export function buildSreevaAIInterviewViewModel(i: {
     answerScores: i.answerScoresParsed || [],
   };
 }
-
 /* a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-
    SUB-COMPONENTS
 a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a- */
-
-
-
 function ScrollFade({ children, className, style }: { children: React.ReactNode; className?: string; style?: React.CSSProperties }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [canScrollDown, setCanScrollDown] = useState(false);
-
   const check = () => {
     const el = scrollRef.current;
     if (!el) return;
     setCanScrollDown(el.scrollHeight - el.scrollTop - el.clientHeight > 8);
   };
-
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
       <div
@@ -795,24 +727,17 @@ function ScrollFade({ children, className, style }: { children: React.ReactNode;
     </div>
   );
 }
-
-
-
-
-
 /* Compact signal analysis — each point truncates to 1 line with dropdown to expand */
 function SignalAnalysisPanelCompact({ analysis }: { analysis: Record<string, any> }) {
   const [openIdx, setOpenIdx] = useState<number | null>(null);
   const points: string[] = Array.isArray(analysis?.points)
     ? (analysis.points as string[]).filter((p) => typeof p === "string" && p.trim())
     : [];
-
   if (points.length === 0) {
     return (
       <p className="text-[10.5px] text-[#9AA0AC] italic py-2">Signal analysis not available for this session.</p>
     );
   }
-
   return (
     <ul className="divide-y divide-[#F0F1F3]">
       {points.map((text, idx) => {
@@ -838,9 +763,6 @@ function SignalAnalysisPanelCompact({ analysis }: { analysis: Record<string, any
     </ul>
   );
 }
-
-
-
 const DIMENSION_CONFIG = [
   { key: "communication",          label: "Communication",    color: "#6366F1" },
   { key: "technical_knowledge",    label: "Tech & Knowledge", color: "#0EA5E9" },
@@ -848,7 +770,6 @@ const DIMENSION_CONFIG = [
   { key: "problem_solving",        label: "Problem Solving",  color: "#10B981" },
   { key: "clarity_of_thought",     label: "Clarity",          color: "#F59E0B" },
 ] as const;
-
 export function EvaluationScoresCard({
   scores,
   overall,
@@ -859,10 +780,8 @@ export function EvaluationScoresCard({
   const [hovered, setHovered] = useState<string | null>(null);
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-
   const dims: { name: string; score: number; evidence: string }[] =
     Array.isArray(scores?.dimensions) ? scores.dimensions : [];
-
   const DIM_KEYWORDS: Record<string, string> = {
     communication:         "communication",
     technical_knowledge:   "technical",
@@ -870,19 +789,16 @@ export function EvaluationScoresCard({
     problem_solving:       "problem",
     clarity_of_thought:    "clarity",
   };
-
   const getValue = (key: string): number => {
     const kw = DIM_KEYWORDS[key] ?? key;
     const d = dims.find((d) => d.name.toLowerCase().includes(kw));
     if (d) return Math.max(0, Math.min(100, Math.round(d.score)));
     return Math.max(0, Math.min(100, Math.round(Number((scores as any)?.[key] ?? 0))));
   };
-
   const getEvidence = (key: string): string => {
     const kw = DIM_KEYWORDS[key] ?? key;
     return dims.find((d) => d.name.toLowerCase().includes(kw))?.evidence ?? "";
   };
-
   const values = DIMENSION_CONFIG.map((d) => getValue(d.key));
   const N = DIMENSION_CONFIG.length;
   const PAD = 64;
@@ -890,22 +806,17 @@ export function EvaluationScoresCard({
   const SIZE = R * 2 + PAD * 2;
   const cx = SIZE / 2;
   const cy = SIZE / 2;
-
   const angle = (i: number) => (Math.PI * 2 * i) / N - Math.PI / 2;
   const point = (i: number, r: number) => ({
     x: cx + r * Math.cos(angle(i)),
     y: cy + r * Math.sin(angle(i)),
   });
-
   const rings = [50, 100];
-
   const shapePoints = values
     .map((v, i) => point(i, (v / 100) * R))
     .map((p) => `${p.x},${p.y}`)
     .join(" ");
-
   const hoveredEvidence = hovered ? getEvidence(hovered) : null;
-
   const hoveredDim = hovered ? DIMENSION_CONFIG.find((d) => d.key === hovered) ?? null : null;
   const hoveredVal = hovered ? getValue(hovered) : null;
   const tag = (v: number) => v >= 70 ? "STRONG" : v >= 45 ? "AVERAGE" : v > 0 ? "WEAK" : null;
@@ -913,7 +824,6 @@ export function EvaluationScoresCard({
     ? "bg-emerald-100 text-emerald-700"
     : v >= 45 ? "bg-amber-100 text-amber-700"
       : "bg-rose-100 text-rose-700";
-
   const handleEnter = (key: string, e: React.MouseEvent) => {
     setHovered(key);
     const rect = containerRef.current?.getBoundingClientRect();
@@ -925,7 +835,6 @@ export function EvaluationScoresCard({
     if (rect) setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
   };
   const handleLeave = () => { setHovered(null); setMousePos(null); };
-
   // Position tooltip: clamp inside container bounds
   const tooltipStyle = (() => {
     if (!mousePos || !containerRef.current) return {};
@@ -941,7 +850,6 @@ export function EvaluationScoresCard({
     if (top < 0) top = 4;
     return { top, left };
   })();
-
   return (
     <div ref={containerRef} className="relative w-full flex flex-col items-center gap-4" onMouseMove={handleMove}>
       {/* ── Radar SVG ── */}
@@ -956,7 +864,6 @@ export function EvaluationScoresCard({
             <feComposite in="SourceGraphic" in2="blur" operator="over" />
           </filter>
         </defs>
-
         {/* Grid rings — 4 levels */}
         {[25, 50, 75, 100].map((pct) => {
           const r = (pct / 100) * R;
@@ -969,26 +876,21 @@ export function EvaluationScoresCard({
             />
           );
         })}
-
         {/* Spokes */}
         {DIMENSION_CONFIG.map((dim, i) => {
           const o = point(i, R);
           return <line key={i} x1={cx} y1={cy} x2={o.x} y2={o.y} stroke="#C7D2FE" strokeWidth="0.8" />;
         })}
-
         {/* Glow layer behind shape */}
         <polygon points={shapePoints} fill="url(#evalRadarGrad)" stroke="none" filter="url(#radarGlow)" opacity="0.6" />
-
         {/* Main data shape */}
         <polygon points={shapePoints} fill="url(#evalRadarGrad)" stroke="url(#radarStroke)" strokeWidth="2" strokeLinejoin="round" />
-
         <defs>
           <linearGradient id="radarStroke" x1="0%" y1="0%" x2="100%" y2="100%">
             <stop offset="0%" stopColor="#6366F1" />
             <stop offset="100%" stopColor="#8B5CF6" />
           </linearGradient>
         </defs>
-
         {/* Dots on data points */}
         {values.map((v, i) => {
           const p = point(i, (v / 100) * R);
@@ -1007,7 +909,6 @@ export function EvaluationScoresCard({
             </g>
           );
         })}
-
         {/* Axis labels */}
         {DIMENSION_CONFIG.map((dim, i) => {
           const lp = point(i, R + 28);
@@ -1041,7 +942,6 @@ export function EvaluationScoresCard({
           );
         })}
       </svg>
-
       {/* ── Hover tooltip ── */}
       {hoveredDim && hoveredVal !== null && mousePos && (
         <div className="pointer-events-none absolute z-50 rounded-2xl border bg-white shadow-2xl overflow-hidden"
@@ -1073,13 +973,7 @@ export function EvaluationScoresCard({
     </div>
   );
 }
-
-
-
-
-
 type AnswerScoreRow = { question: string; answer: string; depth: number; clarity: number; specificity: number; grounding: number; overall: number; signals: string[] };
-
 function QuestionAnalysisCard({ transcript, questions, answerScores, onTranscriptSeek, recordingDurationSec }: {
   transcript?: SreevaAIInterviewViewModel["transcript"];
   questions?: SreevaAIInterviewViewModel["questionAnalysis"];
@@ -1090,7 +984,6 @@ function QuestionAnalysisCard({ transcript, questions, answerScores, onTranscrip
   const transcriptSafe = Array.isArray(transcript) ? transcript : [];
   const questionsSafe = Array.isArray(questions) ? questions : [];
   const answerScoresSafe = Array.isArray(answerScores) ? answerScores : [];
-
   const findSeekTime = (qText: string, aText: string, fallbackTime: number): number => {
     if (qText) {
       const cleanQ = qText.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -1115,7 +1008,6 @@ function QuestionAnalysisCard({ transcript, questions, answerScores, onTranscrip
     }
     return fallbackTime;
   };
-
   // Prefer answerScores (live DB data) over AI report qa_blocks
   const rows: { question: string; answer: string; depth: number; clarity: number; specificity: number; grounding: number; overall: number; signals: string[]; reasoning?: string; tags?: string[] }[] = (() => {
     if (answerScoresSafe.length > 0) {
@@ -1147,7 +1039,6 @@ function QuestionAnalysisCard({ transcript, questions, answerScores, onTranscrip
         tags: q.tags,
       }));
   })();
-
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
       <Tabs defaultValue="transcript" className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
@@ -1161,7 +1052,6 @@ function QuestionAnalysisCard({ transcript, questions, answerScores, onTranscrip
             </TabsTrigger>
           </TabsList>
         </div>
-
         <TabsContent value="analysis" className="mt-0 flex h-full min-h-0 flex-1 overflow-hidden">
           <ScrollFade className="flex h-full min-h-0 flex-1 flex-col gap-3 overflow-y-scroll p-3 pr-2 overscroll-contain" style={{ scrollbarWidth: "thin", scrollbarColor: "#CBD5E1 transparent" }}>
             {rows.length === 0 ? (
@@ -1201,7 +1091,6 @@ function QuestionAnalysisCard({ transcript, questions, answerScores, onTranscrip
                       )}>{overall > 0 ? `${overall}/10` : qBadge}</span>
                     </div>
                   </div>
-
                   {/* Candidate answer */}
                   {item.answer && (
                     <div className="mt-3 rounded-xl bg-[#F4F8FF] border border-[#D4E5FF] p-3">
@@ -1209,7 +1098,6 @@ function QuestionAnalysisCard({ transcript, questions, answerScores, onTranscrip
                       <p className="text-[11px] leading-5 text-[#1A1D22]">{item.answer}</p>
                     </div>
                   )}
-
                   {/* Score breakdown rings */}
                   {(item.depth > 0 || item.clarity > 0 || item.specificity > 0 || item.grounding > 0) && (
                     <div className="mt-2 grid grid-cols-4 gap-2 rounded-xl bg-[#FAFBFC] border border-[#F0F1F3] p-3">
@@ -1234,7 +1122,6 @@ function QuestionAnalysisCard({ transcript, questions, answerScores, onTranscrip
                       ))}
                     </div>
                   )}
-
                   {/* Overall score bar */}
                   {overall > 0 && (
                     <div className="mt-2 flex items-center gap-2 px-1">
@@ -1253,7 +1140,6 @@ function QuestionAnalysisCard({ transcript, questions, answerScores, onTranscrip
             })}
           </ScrollFade>
         </TabsContent>
-
         <TabsContent value="transcript" className="mt-0 flex h-full min-h-0 flex-1 overflow-hidden">
           <ScrollFade className="flex h-full min-h-0 flex-1 flex-col space-y-3 overflow-y-scroll p-3 pr-2 overscroll-contain" style={{ scrollbarWidth: "thin", scrollbarColor: "#CBD5E1 transparent" }}>
             {transcriptSafe.map((line, i) => {
@@ -1285,7 +1171,6 @@ function QuestionAnalysisCard({ transcript, questions, answerScores, onTranscrip
     </div>
   );
 }
-
 function TabStrip({ value, onChange }: { value: IntelId; onChange: (v: IntelId) => void }) {
   const base = "flex-1 rounded-full py-1 text-[10px] font-semibold transition-colors flex items-center justify-center";
   return (
@@ -1295,22 +1180,18 @@ function TabStrip({ value, onChange }: { value: IntelId; onChange: (v: IntelId) 
     </div>
   );
 }
-
 export const SREEVAAI_REPORT_PAGE_BG = "bg-[#EEF0F3]";
 export const SREEVAAI_REPORT_CARD = "rounded-2xl border border-[#DDE1E5] bg-white shadow-sm";
 const bgPage = SREEVAAI_REPORT_PAGE_BG;
-
 const REC_COLOR: Record<string, string> = {
   green: "border-emerald-200 bg-emerald-50 text-emerald-800",
   amber: "border-amber-200 bg-amber-50 text-amber-800",
   red: "border-rose-200 bg-rose-50 text-rose-800",
   blue: "border-blue-200 bg-blue-50 text-blue-800",
 };
-
 /* a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-
    MAIN REPORT COMPONENT
 a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a- */
-
 export function InterviewReportSreevaAI({
   model,
   showHeader = true,
@@ -1325,26 +1206,20 @@ export function InterviewReportSreevaAI({
   const [expandedVerdict, setExpandedVerdict] = useState(false);
   const [openStrengths, setOpenStrengths] = useState(false);
   const [openRisks, setOpenRisks] = useState(false);
-
   useEffect(() => {
     document.body.classList.add("reports-mode");
     return () => {
       document.body.classList.remove("reports-mode");
     };
   }, []);
-
   useEffect(() => {
     if (!model.videoUrl) return;
-
     let cancelled = false;
     let attempts = 0;
-
     const forceUnmute = () => {
       if (cancelled) return;
-
       const player = plyrRef.current?.plyr || null;
       const media = player?.media || plyrRef.current?.querySelector?.("video") || document.querySelector("video");
-
       try {
         if (player) {
           player.muted = false;
@@ -1354,7 +1229,6 @@ export function InterviewReportSreevaAI({
             player.media.volume = 1;
           }
         }
-
         if (media) {
           media.muted = false;
           media.volume = 1;
@@ -1362,14 +1236,12 @@ export function InterviewReportSreevaAI({
       } catch (err) {
         console.debug("Failed to force unmute playback:", err);
       }
-
       attempts += 1;
       const stillMuted = Boolean(player?.muted || player?.media?.muted || media?.muted);
       if (!cancelled && attempts < 12 && stillMuted) {
         window.setTimeout(forceUnmute, 250);
       }
     };
-
     const timer = window.setTimeout(forceUnmute, 0);
     return () => {
       cancelled = true;
@@ -1378,7 +1250,6 @@ export function InterviewReportSreevaAI({
   }, [model.videoUrl]);
   const handleSeek = (seconds: number) => {
     if (typeof seconds !== "number" || !Number.isFinite(seconds)) return;
-
     try {
       const setCurrentTime = (el: any) => {
         try {
@@ -1389,13 +1260,11 @@ export function InterviewReportSreevaAI({
           console.debug("Failed to set currentTime:", e);
         }
       };
-
       // Try Plyr API first
       if (plyrRef.current?.plyr?.currentTime !== undefined) {
         setCurrentTime(plyrRef.current.plyr);
         return;
       }
-
       // Try direct video element within the ref
       if (plyrRef.current) {
         const videoEl = plyrRef.current.querySelector?.("video");
@@ -1404,7 +1273,6 @@ export function InterviewReportSreevaAI({
           return;
         }
       }
-
       // Try finding video in document as fallback
       const videoEl = document.querySelector("video");
       if (videoEl) {
@@ -1414,7 +1282,6 @@ export function InterviewReportSreevaAI({
       console.debug("Seek operation failed silently:", err);
     }
   };
-
   return (
     <div className={cn("w-full h-screen flex flex-col overflow-hidden bg-[#F3F4F6] font-[family-name:var(--font-geist-sans,var(--font-inter,system-ui,sans-serif))]", bgPage)}>
       {/* a"a" Fallback Banner a"a" */}
@@ -1430,7 +1297,6 @@ export function InterviewReportSreevaAI({
           </div>
         </div>
       )}
-
       {/* a"a" Header a"a" */}
       {showHeader && (
         <div className="shrink-0 flex flex-wrap items-center justify-between gap-3 border-b border-[#DDE1E5] px-4 py-2 bg-white z-10 shadow-sm">
@@ -1444,14 +1310,12 @@ export function InterviewReportSreevaAI({
           </div>
         </div>
       )}
-
       {/* 3-column report layout */}
       <div className="flex-1 overflow-hidden p-3 lg:p-4">
         <div className="mx-auto max-w-[1600px] h-full grid grid-cols-1 lg:grid-cols-3 gap-3 lg:gap-4 items-stretch">
           {/* ── COL 1 · Candidate · Verdict · Radar · Summary ── single card */}
           <div className="col-span-1 flex flex-col min-h-0 overflow-y-auto" style={{ scrollbarWidth: "thin", scrollbarColor: "#E4E7EB transparent" }}>
             <div className="rounded-2xl bg-white border border-[#E4E7EB] shadow-sm overflow-visible">
-
               {/* Candidate Profile section */}
               <div className="px-5 py-4">
                 <div className="flex items-center gap-4">
@@ -1474,7 +1338,6 @@ export function InterviewReportSreevaAI({
                   </div>
                 </div>
               </div>
-
               {/* Hiring Verdict section */}
               {!model.isFallback && (() => {
                 const isHire = model.recommendationColor === "green";
@@ -1517,9 +1380,7 @@ export function InterviewReportSreevaAI({
                   </div>
                 );
               })()}
-
               <div className="border-t border-[#F0F1F3]" />
-
               {/* Competency Radar section */}
               <div className="px-5 py-4">
                 <p className="text-[13px] font-bold text-[#111827] mb-3">Evaluation Radar Chart</p>
@@ -1527,9 +1388,7 @@ export function InterviewReportSreevaAI({
                   <EvaluationScoresCard scores={model.technical.scores} overall={model.technical.percent} />
                 </div>
               </div>
-
               <div className="border-t border-[#F0F1F3]" />
-
               {/* AI Summary section */}
               <div className="px-5 py-4">
                 <p className="text-[13px] font-bold text-[#111827] mb-2.5">Summary</p>
@@ -1548,16 +1407,11 @@ export function InterviewReportSreevaAI({
                   </ul>
                 )}
               </div>
-
             </div>
           </div>
-
-
           {/* ── COL 2 · Highlights · Skills · Integrity ── single card */}
           <div className="col-span-1 flex flex-col min-h-0 overflow-y-auto" style={{ scrollbarWidth: "thin", scrollbarColor: "#E4E7EB transparent" }}>
-
             <div className="rounded-2xl bg-white border border-[#E4E7EB] shadow-sm overflow-visible">
-
               {/* Interview Highlights section */}
               <div className="px-5 py-4">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-[#6B7280] mb-3">Interview Highlights</p>
@@ -1590,9 +1444,7 @@ export function InterviewReportSreevaAI({
                       </div>
                     )}
                   </div>
-
                   <div className="h-px bg-[#F3F4F6] my-1" />
-
                   <div className="flex flex-col">
                     <button
                       type="button"
@@ -1623,10 +1475,8 @@ export function InterviewReportSreevaAI({
                   </div>
                 </div>
               </div>
-
               {/* Divider */}
               <div className="border-t border-[#F0F1F3]" />
-
               {/* Skill Ratings section */}
               <div className="px-5 py-4">
                 <p className="text-[13px] font-bold text-[#111827] mb-3">Skill Ratings</p>
@@ -1648,10 +1498,8 @@ export function InterviewReportSreevaAI({
                   <p className="text-[12px] text-[#9CA3AF]">No skills evaluated.</p>
                 )}
               </div>
-
               {/* Divider */}
               <div className="border-t border-[#F0F1F3]" />
-
               {/* Integrity Signals section */}
               <div className="px-5 py-4">
                 <div className="flex items-center justify-between mb-3">
@@ -1697,16 +1545,11 @@ export function InterviewReportSreevaAI({
                   )}
                 </div>
               </div>
-
             </div>
-
           </div>
-
-
           {/* ── COL 3 · Recording · Transcript ── single card */}
           <div className="col-span-1 flex flex-col min-h-0 overflow-hidden">
             <div className="rounded-2xl bg-white border border-[#E4E7EB] shadow-sm flex flex-col overflow-hidden flex-1 min-h-0">
-
               {/* Recording section */}
               <div className="px-5 py-4 shrink-0">
                 <p className="text-[13px] font-bold text-[#111827] mb-3">Recording</p>
@@ -1727,20 +1570,15 @@ export function InterviewReportSreevaAI({
                   )}
                 </div>
               </div>
-
               <div className="border-t border-[#F0F1F3]" />
-
               {/* Transcript section */}
               <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
                 <QuestionAnalysisCard transcript={model.transcript} questions={model.questionAnalysis} answerScores={model.answerScores} onTranscriptSeek={handleSeek} recordingDurationSec={model.recordingDurationSec} />
               </div>
-
             </div>
           </div>
-
         </div>
       </div>
     </div>
   );
 }
-

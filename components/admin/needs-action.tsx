@@ -1,11 +1,9 @@
 "use client";
-
 import { useEffect, useState } from "react";
 import { Loader2, Clock, MailOpen, CheckCircle, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
-
 interface ActionItem {
     id: string;
     name: string;
@@ -14,13 +12,11 @@ interface ActionItem {
     score?: number | null;
     daysWaiting: number;
 }
-
 interface NeedsActionData {
     awaitingReview: ActionItem[];
     inviteNotSent: ActionItem[];
     shortlistedNoDecision: ActionItem[];
 }
-
 const SECTIONS = [
     {
         key: "awaitingReview" as const,
@@ -53,26 +49,21 @@ const SECTIONS = [
         dayLabel: (n: number) => `${n}d since shortlist`,
     },
 ] as const;
-
 function initials(name: string) {
     return name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase();
 }
-
 export function NeedsAction() {
     const [data, setData] = useState<NeedsActionData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [retryKey, setRetryKey] = useState(0);
     const router = useRouter();
-
     useEffect(() => {
         const controller = new AbortController();
         const { signal } = controller;
-
         const loadNeedsAction = async () => {
             setLoading(true);
             setError(null);
-
             try {
                 const res = await fetch("/api/admin/needs-action", { signal });
                 if (signal.aborted) return;
@@ -87,16 +78,12 @@ export function NeedsAction() {
                 if (!signal.aborted) setLoading(false);
             }
         };
-
         void loadNeedsAction();
-
         return () => controller.abort();
     }, [retryKey]);
-
     const total = data
         ? data.awaitingReview.length + data.inviteNotSent.length + data.shortlistedNoDecision.length
         : 0;
-
     return (
         <div className="bg-white rounded-2xl border border-gray-200 flex flex-col overflow-hidden">
             {/* Header */}
@@ -113,7 +100,6 @@ export function NeedsAction() {
                     <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">Your daily action list</p>
                 </div>
             </div>
-
             {/* Body */}
             <div className="flex-1 px-5 py-4">
                 {loading ? (
@@ -143,7 +129,6 @@ export function NeedsAction() {
                         {SECTIONS.map((section) => {
                             const items = data![section.key];
                             if (items.length === 0) return null;
-
                             return (
                                 <div key={section.key}>
                                     {/* Section header */}
@@ -159,7 +144,6 @@ export function NeedsAction() {
                                             {items.length}
                                         </span>
                                     </div>
-
                                     {/* Items */}
                                     <motion.div
                                         initial="hidden"
@@ -181,7 +165,6 @@ export function NeedsAction() {
                                                 >
                                                     {initials(item.name)}
                                                 </div>
-
                                                 {/* Info */}
                                                 <div className="flex-1 min-w-0">
                                                     <p className="text-sm font-bold text-gray-900 truncate leading-tight group-hover:text-gray-700">
@@ -191,7 +174,6 @@ export function NeedsAction() {
                                                         {item.role} · {item.driveTitle}
                                                     </p>
                                                 </div>
-
                                                 {/* Right side */}
                                                 <div className="shrink-0 flex items-center gap-2">
                                                     {item.score != null && (

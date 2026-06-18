@@ -1,22 +1,18 @@
 "use client";
-
 import { useEffect, useRef, useCallback } from "react";
 import type { RefObject } from "react";
 import type { FaceLandmarker, FaceLandmarkerResult } from "@mediapipe/tasks-vision";
-
 const ABSENCE_GRACE_MS = 3_000;
 const DETECTION_INTERVAL_MS = 250;
 const IDENTITY_CHECK_INTERVAL = 60_000;
 const IDENTITY_FACE_SIZE = 64;
 const MIN_IDENTITY_PIXEL_DIFF = 0.22;
 const MULTI_FACE_CONFIRM_FRAMES = 3;
-
 const COOLDOWNS: Record<string, number> = {
   face_absence: 10_000,
   multiple_faces: 8_000,
   identity_mismatch: 60_000,
 };
-
 interface FaceProctoringProps {
   isActive: boolean;
   referenceSnapshotUrl: string | null;
@@ -28,7 +24,6 @@ interface FaceProctoringProps {
     metadata?: Record<string, unknown>,
   ) => void;
 }
-
 export function FaceProctoring({
   isActive,
   referenceSnapshotUrl,
@@ -49,14 +44,11 @@ export function FaceProctoring({
   const refCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const lastIdentityCheck = useRef(0);
   const identityCheckCount = useRef(0);
-
   useEffect(() => { isActiveRef.current = isActive; }, [isActive]);
-
   const canFire = useCallback((type: string): boolean => {
     const last = lastFiredRef.current[type] ?? 0;
     return Date.now() - last > (COOLDOWNS[type] ?? 15_000);
   }, []);
-
   const elapsedLabel = useCallback((now: number): { label: string; seconds: number } | null => {
     const start = interviewStartedAt.current;
     if (!start) return null;
@@ -65,7 +57,6 @@ export function FaceProctoring({
     const secs = seconds % 60;
     return { label: `${mins}m ${secs}s into interview`, seconds };
   }, [interviewStartedAt]);
-
   const fire = useCallback((
     type: string,
     reason: string,
@@ -81,7 +72,6 @@ export function FaceProctoring({
       : {};
     onViolation(type, fullReason, severity, metadata);
   }, [canFire, elapsedLabel, onViolation]);
-
   const toNormalisedGrayscale = useCallback((data: Uint8ClampedArray, pixels: number): Float32Array => {
     const gray = new Float32Array(pixels);
     let sum = 0;
@@ -94,7 +84,6 @@ export function FaceProctoring({
     for (let i = 0; i < pixels; i++) gray[i] = Math.min(1, Math.max(0, gray[i] + shift));
     return gray;
   }, []);
-
   const cropAndResize = useCallback((
     src: ImageData,
     sx: number, sy: number, sw: number, sh: number,
@@ -116,7 +105,6 @@ export function FaceProctoring({
       return null;
     }
   }, []);
-
   const verifyIdentity = useCallback(async (
     currentFrame: ImageData,
     faceBox: { x: number; y: number; w: number; h: number },
@@ -156,7 +144,6 @@ export function FaceProctoring({
       // identity check is best-effort
     }
   }, [referenceSnapshotUrl, fire, cropAndResize, toNormalisedGrayscale]);
-
   const detectFrame = useCallback(() => {
     if (!mountedRef.current) return;
     rafRef.current = requestAnimationFrame(detectFrame);
@@ -174,11 +161,9 @@ export function FaceProctoring({
       return;
     }
     const numFaces = result.faceLandmarks?.length ?? 0;
-
     faceCountHistoryRef.current.push(numFaces);
     if (faceCountHistoryRef.current.length > 5) faceCountHistoryRef.current.shift();
     const isIdentityLocked = faceCountHistoryRef.current.filter(c => c === 1).length >= 3;
-
     // 1. Face Absence
     if (numFaces === 0) {
       if (!absenceStartRef.current) absenceStartRef.current = now;
@@ -189,7 +174,6 @@ export function FaceProctoring({
       return;
     }
     absenceStartRef.current = null;
-
     // 2. Multiple Faces
     if (numFaces > 1) {
       multiFaceCountRef.current += 1;
@@ -199,12 +183,9 @@ export function FaceProctoring({
     } else {
       multiFaceCountRef.current = 0;
     }
-
     if (!isIdentityLocked) return;
-
     const landmarks = result.faceLandmarks[0];
     if (!landmarks || landmarks.length < 478) return;
-
     // 3. Periodic Identity Verification
     if (referenceSnapshotUrl && now - lastIdentityCheck.current > IDENTITY_CHECK_INTERVAL) {
       lastIdentityCheck.current = now;
@@ -230,12 +211,10 @@ export function FaceProctoring({
       }
     }
   }, [verifyIdentity, fire, referenceSnapshotUrl]);
-
   useEffect(() => {
     if (!isActive) return;
     mountedRef.current = true;
     let cancelled = false;
-
     const bootstrap = async () => {
       try {
         const { FaceLandmarker: FL, FilesetResolver } = await import("@mediapipe/tasks-vision");
@@ -286,9 +265,7 @@ export function FaceProctoring({
         }
       }
     };
-
     void bootstrap();
-
     return () => {
       cancelled = true;
       mountedRef.current = false;
@@ -301,6 +278,5 @@ export function FaceProctoring({
       videoRef.current = null;
     };
   }, [isActive]);
-
   return null;
 }

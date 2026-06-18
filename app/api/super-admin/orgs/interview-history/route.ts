@@ -1,20 +1,17 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession, isSuperAdminRole } from "@/lib/auth";
-
 export async function GET(request: Request) {
   try {
     const session = await getSession();
     if (!session || !isSuperAdminRole(session.role)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-
     const { searchParams } = new URL(request.url);
     const orgId = searchParams.get("orgId")?.trim();
     if (!orgId) {
       return NextResponse.json({ error: "Organization required" }, { status: 400 });
     }
-
     const rows = await prisma.$queryRaw<
       Array<{
         id: string;
@@ -47,7 +44,6 @@ export async function GET(request: Request) {
       ORDER BY COALESCE(i."completedAt", i."updatedAt") DESC
       LIMIT 100
     `;
-
     const result = rows
       .map((row) => {
         const snapshot = (row.billingSnapshot && typeof row.billingSnapshot === "object" ? row.billingSnapshot : {}) as Record<string, unknown>;
@@ -65,7 +61,6 @@ export async function GET(request: Request) {
         const totalCostUsd = hasBillingSnapshot
           ? Number(snapshot.totalCostUsd ?? (Number(llmCostUsd || 0) + Number(ttsCostUsd || 0) + Number(sttCostUsd || 0)))
           : null;
-
         return {
           id: row.id,
           interviewName: String(snapshot.interviewName || `${row.fullName || "Unknown Candidate"} - ${row.driveTitle || row.driveRole || "Interview"}`),
@@ -82,7 +77,6 @@ export async function GET(request: Request) {
         };
       })
       .filter((row) => row.status.toUpperCase() !== "PENDING");
-
     return NextResponse.json({ rows: result });
   } catch (error) {
     console.error("[SUPER_ADMIN_INTERVIEW_HISTORY] GET error:", error);

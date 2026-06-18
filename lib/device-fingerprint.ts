@@ -19,7 +19,6 @@
  *   Two sessions where the SAME laptop is reused will match BOTH ipHash AND
  *   deviceHash -> simultaneous match = high, sequential match = medium.
  */
-
 export interface DeviceFingerprint {
   /** e.g. "1920x1080x24" - width × height × colorDepth */
   screen: string;
@@ -32,7 +31,6 @@ export interface DeviceFingerprint {
   /** browser timezone offset in minutes - same campus -> same timezone */
   tzOffset: number;
 }
-
 /**
  * Collect the device fingerprint synchronously.
  * Safe to call from any client component (returns empty values on SSR).
@@ -42,7 +40,6 @@ export function collectDeviceFingerprint(): DeviceFingerprint {
     // SSR-safe fallback - should never reach the token API in this state
     return { screen: "unknown", cpuCores: 0, platform: "unknown", dpr: 1, tzOffset: 0 };
   }
-
   const s = window.screen;
   return {
     screen:    `${s.width}x${s.height}x${s.colorDepth}`,
@@ -52,7 +49,6 @@ export function collectDeviceFingerprint(): DeviceFingerprint {
     tzOffset:  new Date().getTimezoneOffset(),
   };
 }
-
 /**
  * Returns a coarse platform family string.
  * We deliberately keep this coarse - we want to distinguish LAPTOPS,
@@ -71,13 +67,11 @@ function getPlatformFamily(ua: string): string {
     /android/i.test(ua) ? "Android" :
     /iphone|ipad|ipod/i.test(ua) ? "iOS"   :
     /linux/i.test(ua) ? "Linux"   : "Unknown";
-
   const browser =
     /edg\//i.test(ua)     ? "Edge"    :
     /opr\/|opera/i.test(ua) ? "Opera"   :
     /chrome/i.test(ua)    ? "Chrome"  :
     /firefox/i.test(ua)   ? "Firefox" :
     /safari/i.test(ua)    ? "Safari"  : "Unknown";
-
   return `${os} / ${browser}`;
 }

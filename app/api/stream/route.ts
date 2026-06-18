@@ -1,9 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
 export async function GET(request: Request) {
     // -- AUTH + TENANT SCOPE -----------------------------------------------
     // This SSE stream broadcasts new/updated application activity. Without a
@@ -19,9 +17,7 @@ export async function GET(request: Request) {
     // SUPER_ADMIN has no single org; the activity feed is an org-scoped feature,
     // so a non-org session simply gets an empty (heartbeat-only) stream.
     const sessionOrgId = session.role === "SUPER_ADMIN" ? null : (session.orgId ?? null);
-
     const encoder = new TextEncoder();
-
     const stream = new ReadableStream({
         async start(controller) {
             const send = (data: any) => {
@@ -31,22 +27,17 @@ export async function GET(request: Request) {
                     // Stream closed
                 }
             };
-
             let lastCheck = new Date();
             let closed = false;
-
             // Open the SSE connection immediately so the client gets a stable stream.
             send({ type: "CONNECTED" });
-
             const checkForUpdates = async () => {
                 if (closed) return;
-                
                 try {
                     // A SUPER_ADMIN (no single org) gets a heartbeat-only stream;
                     // everyone else is scoped strictly to their own org's drives.
                     if (!sessionOrgId) return;
                     const orgScope = { drive: { orgId: sessionOrgId } };
-
                     // Check for NEW applications
                     const newApps = await prisma.application.findMany({
                         where: { ...orgScope, createdAt: { gt: lastCheck } },
@@ -54,7 +45,6 @@ export async function GET(request: Request) {
                         orderBy: { createdAt: "desc" },
                         take: 5
                     });
-
                     // Check for UPDATED applications (status changes by AI worker etc.)
                     const updatedApps = await prisma.application.findMany({
                         where: {
@@ -66,15 +56,12 @@ export async function GET(request: Request) {
                         orderBy: { updatedAt: "desc" },
                         take: 10
                     });
-
                     if (newApps.length > 0) {
                         send({ type: "NEW_APPLICATIONS", count: newApps.length });
                     }
-
                     if (updatedApps.length > 0) {
                         send({ type: "UPDATED_APPLICATIONS", count: updatedApps.length });
                     }
-
                     if (newApps.length > 0 || updatedApps.length > 0) {
                         lastCheck = new Date();
                     }
@@ -82,20 +69,16 @@ export async function GET(request: Request) {
                     // Ignore errors during high load
                 }
             };
-
             // START: Fire and forget initial check to avoid blocking the stream response
             checkForUpdates();
-
             // Poll every 90 seconds to reduce DB connection pool pressure
             const interval = setInterval(checkForUpdates, 90000);
-
             request.signal.addEventListener("abort", () => {
                 closed = true;
                 clearInterval(interval);
             });
         }
     });
-
     return new Response(stream, {
         headers: {
             "Content-Type": "text/event-stream",

@@ -4,10 +4,8 @@ import {
     getAuditTrailFromAiReport,
     normalizeAuditTrail,
 } from "@/lib/candidate-activity.shared";
-
 export type { CandidateActivityEvent };
 export { getAuditTrailFromAiReport, normalizeAuditTrail };
-
 function parseJsonObject(value: unknown): Record<string, any> {
     if (value && typeof value === "object" && !Array.isArray(value)) {
         return value as Record<string, any>;
@@ -20,7 +18,6 @@ function parseJsonObject(value: unknown): Record<string, any> {
         return {};
     }
 }
-
 export async function appendCandidateActivity(
     applicationId: string,
     event: CandidateActivityEvent
@@ -29,21 +26,16 @@ export async function appendCandidateActivity(
         where: { id: applicationId },
         select: { aiReport: true },
     });
-
     if (!application) return;
-
     const parsed = parseJsonObject(application.aiReport);
     const auditTrail = normalizeAuditTrail(parsed.auditTrail);
-
     auditTrail.push({
         ...event,
         timestamp: event.timestamp || new Date().toISOString(),
     });
-
     parsed.auditTrail = auditTrail.sort(
         (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
     );
-
     await prisma.application.update({
         where: { id: applicationId },
         data: { aiReport: JSON.stringify(parsed) },

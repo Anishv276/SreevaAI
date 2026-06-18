@@ -1,40 +1,33 @@
 "use client";
-
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Calendar, ChevronDown, Check, Clock, CalendarDays } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PremiumDatePicker } from "@/components/ui/premium-date-picker";
-
 export type DateRange =
     | { type: "all" }
     | { type: "today" }
     | { type: "week" }
     | { type: "month" }
     | { type: "custom"; from: string; to: string };
-
 interface DateFilterProps {
     value: DateRange;
     onChange: (range: DateRange) => void;
 }
-
 const PRESETS = [
     { key: "all", label: "All Time", icon: CalendarDays },
     { key: "today", label: "Today", icon: Clock },
     { key: "week", label: "This Week", icon: CalendarDays },
     { key: "month", label: "This Month", icon: Calendar },
 ] as const;
-
 export function DateFilter({ value, onChange }: DateFilterProps) {
     const [open, setOpen] = useState(false);
     const [view, setView] = useState<"presets" | "custom">("presets");
     const [rect, setRect] = useState<DOMRect | null>(null);
     const triggerRef = useRef<HTMLButtonElement>(null);
     const menuRef = useRef<HTMLDivElement>(null);
-
     const [customFrom, setCustomFrom] = useState("");
     const [customTo, setCustomTo] = useState("");
-
     const handleOpen = () => {
         if (!open && triggerRef.current) {
             setRect(triggerRef.current.getBoundingClientRect());
@@ -48,13 +41,11 @@ export function DateFilter({ value, onChange }: DateFilterProps) {
             }
         }
     };
-
     useEffect(() => {
         if (!open) return;
         const h = (e: MouseEvent) => {
             const target = e.target as HTMLElement;
             const isInsidePicker = target.closest('[data-picker-portal="true"]');
-            
             if (!triggerRef.current?.contains(target) &&
                 !menuRef.current?.contains(target) &&
                 !isInsidePicker) {
@@ -64,12 +55,10 @@ export function DateFilter({ value, onChange }: DateFilterProps) {
         document.addEventListener("mousedown", h);
         return () => document.removeEventListener("mousedown", h);
     }, [open]);
-
     const getLabel = () => {
         if (value.type === "custom") return `${value.from} – ${value.to}`;
         return PRESETS.find(p => p.key === value.type)?.label || "All Time";
     };
-
     const dropdown = open && rect ? (
         <div
             ref={menuRef}
@@ -159,7 +148,6 @@ export function DateFilter({ value, onChange }: DateFilterProps) {
             )}
         </div>
     ) : null;
-
     return (
         <div className="relative">
             <button
@@ -180,4 +168,3 @@ export function DateFilter({ value, onChange }: DateFilterProps) {
         </div>
     );
 }
-

@@ -1,11 +1,9 @@
 "use client";
-
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
 import type { DateRange } from "./date-filter";
 import { ErrorState } from "./error-state";
-
 interface Band {
     label: string;
     min: number;
@@ -14,39 +12,32 @@ interface Band {
     tier: string;
     count: number;
 }
-
 interface DistributionData {
     total: number;
     distribution: Band[];
 }
-
 interface ScoreDistributionProps {
     dateRange: DateRange;
 }
-
 function buildUrl(range: DateRange) {
     const base = "/api/admin/score-distribution";
     if (range.type === "custom") return `${base}?range=custom&from=${range.from}&to=${range.to}`;
     return `${base}?range=${range.type}`;
 }
-
 const TIER_COLORS: Record<string, string> = {
     "Excellent": "#10B981",
     "Good": "#3B82F6",
     "Average": "#F59E0B",
     "Below threshold": "#EF4444",
 };
-
 export function ScoreDistribution({ dateRange }: ScoreDistributionProps) {
     const [data, setData] = useState<DistributionData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [retryKey, setRetryKey] = useState(0);
-
     useEffect(() => {
         const controller = new AbortController();
         const signal = controller.signal;
-
         const fetchData = async () => {
             setLoading(true);
             setError(null);
@@ -66,25 +57,20 @@ export function ScoreDistribution({ dateRange }: ScoreDistributionProps) {
                 if (!signal.aborted) setLoading(false);
             }
         };
-
         fetchData();
         return () => controller.abort();
     }, [dateRange, retryKey]);
-
     const handleRetry = () => {
         setLoading(true);
         setError(null);
         setData(null);
         setRetryKey((k) => k + 1);
     };
-
     const maxCount = data
         ? Math.max(...data.distribution.map((b) => b.count), 1)
         : 1;
-
     const yMax = Math.ceil(maxCount / 20) * 20 || 20;
     const CHART_H = 220; 
-
     return (
         <div className="bg-white/40 backdrop-blur-xl rounded-[2.5rem] border border-white/60 shadow-[0_8px_32px_rgba(0,0,0,0.02)] p-8 flex flex-col h-full overflow-hidden hover:shadow-[0_20px_60px_rgba(0,0,0,0.06)] transition-all duration-700">
             {/* Header */}
@@ -102,7 +88,6 @@ export function ScoreDistribution({ dateRange }: ScoreDistributionProps) {
                     )}
                 </div>
             </div>
-
             {/* Chart Area */}
             {loading ? (
                 <div className="flex-1 flex items-center justify-center min-h-[250px]">
@@ -128,12 +113,10 @@ export function ScoreDistribution({ dateRange }: ScoreDistributionProps) {
                                 </div>
                             ))}
                         </div>
-
                         {/* Bars with Staggered Motion */}
                         {data?.distribution.map((band, idx) => {
                             const barH = (band.count / yMax) * (CHART_H - 32);
                             const color = TIER_COLORS[band.tier] || band.color;
-                            
                             return (
                                 <div key={band.label} className="flex-1 flex flex-col items-center justify-end group relative h-full">
                                     {/* Tooltip */}
@@ -143,7 +126,6 @@ export function ScoreDistribution({ dateRange }: ScoreDistributionProps) {
                                         </div>
                                         <div className="w-2 h-2 bg-gray-900 rotate-45 mx-auto -mt-1" />
                                     </div>
-
                                     {/* Bar Pillar */}
                                     <motion.div
                                         initial={{ height: 0, opacity: 0 }}
@@ -153,7 +135,6 @@ export function ScoreDistribution({ dateRange }: ScoreDistributionProps) {
                                         style={{ backgroundColor: color }}
                                     >
                                         <div className="absolute top-0 left-0 right-0 h-1/2 bg-white/10 rounded-t-2xl" />
-                                        
                                         {/* Label on bar if tall enough */}
                                         {barH > 40 && (
                                             <div className="absolute inset-x-0 bottom-2 flex justify-center">
@@ -161,7 +142,6 @@ export function ScoreDistribution({ dateRange }: ScoreDistributionProps) {
                                             </div>
                                         )}
                                     </motion.div>
-
                                     {/* X-Label */}
                                     <div className="absolute top-full mt-2 flex flex-col items-center">
                                         <span className="text-[10px] font-black text-gray-400 uppercase tracking-tighter whitespace-nowrap">{band.label}</span>
@@ -170,7 +150,6 @@ export function ScoreDistribution({ dateRange }: ScoreDistributionProps) {
                             );
                         })}
                     </div>
-
                     {/* Legend Chips */}
                     <div className="mt-8 flex flex-wrap gap-4 pt-4 border-t border-gray-100/50">
                         {Object.entries(TIER_COLORS).map(([tier, color]) => (
@@ -185,4 +164,3 @@ export function ScoreDistribution({ dateRange }: ScoreDistributionProps) {
         </div>
     );
 }
-

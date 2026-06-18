@@ -1,7 +1,5 @@
 import React from "react";
-
 export type IconProps = { s?: number };
-
 export const Icon: Record<string, (p: IconProps) => React.ReactElement> = {
   clock: (p) => (
     <svg width={p.s ?? 16} height={p.s ?? 16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

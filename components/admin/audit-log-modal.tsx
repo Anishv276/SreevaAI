@@ -1,5 +1,4 @@
 "use client";
-
 import { useState, useMemo, useEffect, useRef } from "react";
 import {
     Dialog,
@@ -15,7 +14,6 @@ import {
     Camera, ChevronRight, Hash, X
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-
 interface ProctoringEvent {
     eventType: string;
     severity?: string;
@@ -24,7 +22,6 @@ interface ProctoringEvent {
     metadata?: Record<string, unknown>;
     timestamp?: number;
 }
-
 interface AuditLogModalProps {
     isOpen: boolean;
     onClose: () => void;
@@ -35,7 +32,6 @@ interface AuditLogModalProps {
     snapshots: string[];
     interviewStartedAt?: string | Date;
 }
-
 function inferVideoMimeType(url: string, mimeType?: string): string {
     const explicit = String(mimeType || "").trim().toLowerCase();
     if (explicit === "video/webm" || explicit === "video/mp4") return explicit;
@@ -43,7 +39,6 @@ function inferVideoMimeType(url: string, mimeType?: string): string {
     if (normalized.includes(".mp4")) return "video/mp4";
     return "video/webm";
 }
-
 const EVENT_LABELS: Record<string, string> = {
     face_absence: "Face Absence",
     multiple_faces: "Multiple Faces",
@@ -53,7 +48,6 @@ const EVENT_LABELS: Record<string, string> = {
     camera_disabled: "Camera Disabled",
     microphone_disabled: "Microphone Disabled"
 };
-
 export function AuditLogModal({ 
     isOpen, 
     onClose, 
@@ -66,12 +60,10 @@ export function AuditLogModal({
 }: AuditLogModalProps) {
     const [selectedEvent, setSelectedEvent] = useState<string | null>(null);
     const [selectedOccurrence, setSelectedOccurrence] = useState(0);
-
     const occurrenceListRef = useRef<HTMLDivElement>(null);
     const recordingRef = useRef<HTMLVideoElement>(null);
     const pendingSeekRef = useRef<number | null>(null);
     const resolvedRecordingMimeType = inferVideoMimeType(recordingUrl, recordingMimeType);
-
     // Auto-scroll to selected occurrence
     useEffect(() => {
         if (occurrenceListRef.current) {
@@ -81,7 +73,6 @@ export function AuditLogModal({
             }
         }
     }, [selectedOccurrence]);
-
     // Group events by type
     const groupedEvents = useMemo(() => {
         const groups: Record<string, {
@@ -92,7 +83,6 @@ export function AuditLogModal({
             severity: string;
             events: ProctoringEvent[];
         }> = {};
-
         events.forEach((ev, idx) => {
             const label = EVENT_LABELS[ev.eventType] || ev.eventType;
             if (!groups[ev.eventType]) {
@@ -109,22 +99,17 @@ export function AuditLogModal({
             if (ev.timestamp) groups[ev.eventType].timestamps.push(ev.timestamp);
             groups[ev.eventType].events.push({ ...ev, metadata: { ...(ev.metadata || {}), __index: idx } });
         });
-
         return Object.values(groups).sort((a, b) => b.count - a.count);
     }, [events]);
-
     const selectedGroup = useMemo(
         () => groupedEvents.find(group => group.type === selectedEvent) || groupedEvents[0] || null,
         [groupedEvents, selectedEvent]
     );
-
     const selectedOccurrenceEvent = useMemo(() => {
         if (!selectedGroup || !selectedGroup.events.length) return null;
         return selectedGroup.events[Math.min(selectedOccurrence, selectedGroup.events.length - 1)] || null;
     }, [selectedGroup, selectedOccurrence]);
-
     const fallbackSnapshots = useMemo(() => snapshots.slice(0, 6), [snapshots]);
-
     const getOccurrenceOffsetSeconds = (timestamp?: number) => {
         if (!timestamp || !interviewStartedAt) return null;
         const start = new Date(interviewStartedAt).getTime();
@@ -132,11 +117,9 @@ export function AuditLogModal({
         const diffSec = Math.max(0, (timestamp - start) / 1000);
         return Number.isFinite(diffSec) ? diffSec : null;
     };
-
     const seekRecording = (seconds: number) => {
         const video = recordingRef.current;
         if (!video) return;
-
         const safeSeconds = Math.max(0, seconds);
         const trySeek = () => {
             try {
@@ -153,7 +136,6 @@ export function AuditLogModal({
                 pendingSeekRef.current = safeSeconds;
             }
         };
-
         if (video.readyState >= 1) {
             trySeek();
         } else {
@@ -161,7 +143,6 @@ export function AuditLogModal({
             video.load();
         }
     };
-
     const formatRelativeTime = (ts: number) => {
         if (!interviewStartedAt) return "N/A";
         const start = new Date(interviewStartedAt).getTime();
@@ -171,7 +152,6 @@ export function AuditLogModal({
         const secs = diffSec % 60;
         return `${mins}:${secs.toString().padStart(2, '0')} into session`;
     };
-
     const formatAbsoluteTime = (ts: number) => {
         if (!ts) return "";
         try {
@@ -185,7 +165,6 @@ export function AuditLogModal({
             return "";
         }
     };
-
     const handleRecordingLoadedMetadata = () => {
         if (pendingSeekRef.current == null || !recordingRef.current) return;
         const seconds = pendingSeekRef.current;
@@ -196,7 +175,6 @@ export function AuditLogModal({
             // ignore seek timing errors on media load
         }
     };
-
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
             <DialogContent className="max-w-[1500px] h-[92vh] p-0 overflow-hidden bg-[#F8FAFF] border border-slate-200 shadow-[0_30px_100px_rgba(15,23,42,0.12)] rounded-[3rem] font-inter">
@@ -221,7 +199,6 @@ export function AuditLogModal({
                                     </DialogDescription>
                                 </div>
                             </div>
-
                             <div className="flex items-center gap-10">
                                 <div className="text-right">
                                     <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1.5">Total Signals</p>
@@ -240,7 +217,6 @@ export function AuditLogModal({
                             </div>
                         </div>
                     </DialogHeader>
-
                     {/* Main Content Area */}
                     <div className="flex-1 flex min-h-0 overflow-hidden">
                         {/* Sidebar: Signals List */}
@@ -289,7 +265,6 @@ export function AuditLogModal({
                                 )}
                             </div>
                         </div>
-
                         {/* Main Detail View */}
                         <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-white">
                             {!selectedGroup ? (
@@ -312,7 +287,6 @@ export function AuditLogModal({
                                             <p className="text-sm font-bold text-gray-500">Found {selectedGroup.count} identified frames.</p>
                                         </div>
                                     </div>
-
                                     {/* Workspace Area - Explicit Height Limit */}
                                     <div className="flex-1 grid grid-cols-[0.92fr_1.08fr] gap-6 min-h-0 items-stretch">
                                         {/* Occurrences Col */}
@@ -352,7 +326,6 @@ export function AuditLogModal({
                                                 ))}
                                             </div>
                                         </div>
-
                                         {/* Visual Evidence Col */}
                                         <div className="flex flex-col min-h-0 gap-5 overflow-hidden">
                                             <div className="flex-none rounded-[2.5rem] overflow-hidden border border-slate-200 bg-slate-950 shadow-2xl">
@@ -426,7 +399,6 @@ export function AuditLogModal({
                                                         </div>
                                                     ) : null}
                                                 </div>
-
                                         </div>
                                     </div>
                                 </div>
@@ -438,4 +410,3 @@ export function AuditLogModal({
         </Dialog>
     );
 }
-

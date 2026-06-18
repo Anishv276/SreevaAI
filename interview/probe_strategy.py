@@ -1,21 +1,15 @@
 """
 Probe strategy data -- family definitions, signal routing table, and mode aliases.
-
 These three dicts are imported directly by eval_pipeline.py to drive inline
 probe family selection. All routing/directive-building functions have been
 removed -- eval_pipeline builds directives itself.
 """
 import random
-
-
 def _pick(options: list[str]) -> str:
     return random.choice(options)
-
-
 # Each family has a "goals" list -- one is picked randomly per turn so the
 # same signal type produces different question angles across sessions.
 _PROBE_FAMILIES: dict[str, dict] = {
-
     # -- 1. OWNERSHIP -- who built it and how ----------------------------------
     "ownership": {
         "goals": [
@@ -47,7 +41,6 @@ _PROBE_FAMILIES: dict[str, dict] = {
             "Feel: curious colleague, not HR form."
         ),
     },
-
     # -- 2. DEPTH -- prove it with numbers, tradeoffs, constraints -------------
     "depth": {
         "goals": [
@@ -81,7 +74,6 @@ _PROBE_FAMILIES: dict[str, dict] = {
             "'What would have broken if you'd gone the other way?'"
         ),
     },
-
     # -- 3. AUTHENTICITY -- real memory vs rehearsed answer --------------------
     "authenticity": {
         "goals": [
@@ -113,7 +105,6 @@ _PROBE_FAMILIES: dict[str, dict] = {
             "Example: 'Take me back to that moment -- what was going on right before that decision?'"
         ),
     },
-
     # -- 4. PRESSURE -- hard moments, mistakes, judgment calls -----------------
     "pressure": {
         "goals": [
@@ -145,7 +136,6 @@ _PROBE_FAMILIES: dict[str, dict] = {
             "Example: 'What broke along the way -- or what almost did?'"
         ),
     },
-
     # -- 5. CLARIFICATION -- inconsistency or answer collapsing ----------------
     "clarification": {
         "goals": [
@@ -176,7 +166,6 @@ _PROBE_FAMILIES: dict[str, dict] = {
             "Example: 'I lost the thread a bit -- can you walk me through that part again from the start?'"
         ),
     },
-
     # -- 6. REFLECTION -- last question on a project; surface judgment/learning
     # Only fired when the agent's CLOSING tier explicitly forces this family
     # (resume project, follow_ups >= N, sat >= ~60%, not yet fired on this topic).
@@ -206,15 +195,12 @@ _PROBE_FAMILIES: dict[str, dict] = {
             "not interrogating. Example: 'If you rebuilt this today, what would you change first?'"
         ),
     },
-
     # -- Sentinel: move on ----------------------------------------------------
     "normal": {
         "goals": ["Topic sufficiently covered. Move to the next uncovered area from your interview plan."],
         "style": "No special probe needed.",
     },
 }
-
-
 _CANT_REMEMBER_MARKERS: tuple[str, ...] = (
     "not sure", "i forgot", "long time ago", "old project", "not really",
     "didn't build", "did not build", "i wasn't", "i was not",
@@ -222,7 +208,6 @@ _CANT_REMEMBER_MARKERS: tuple[str, ...] = (
     "haven't used", "havent used", "haven't done", "havent done",
     "no experience",
 )
-
 _DEPTH_GUARDS: dict[str, str] = {
     "closing": (
         "\nTOPIC DEPTH: CLOSING -- this is the LAST probe on this project before MOVE_ON.\n"
@@ -254,8 +239,6 @@ _DEPTH_GUARDS: dict[str, str] = {
         "into mechanics, decisions, or tradeoffs."
     ),
 }
-
-
 def build_probe_directive(
     *,
     probe_family: str,
@@ -275,17 +258,14 @@ def build_probe_directive(
     covered_topics: list[str] | None = None,
 ) -> tuple[str, str]:
     """Build the complete PROBE [NEXT_TURN_DIRECTIVE] string.
-
     Returns (directive_string, effective_family) tuple.
     Called from agent_runtime.py.
     """
     prev_a_gist = " ".join(prev_answer.split()[:40])
     is_cant_remember = topic_denied or any(m in prev_answer.lower() for m in _CANT_REMEMBER_MARKERS)
     is_short = overall_score <= 0.5 and depth_score == 0.0 and len(prev_answer.split()) < 8
-
     memory = "\n".join(discussed_log[-5:])
     memory_block = f"\n[INTERVIEW MEMORY -- DO NOT RE-ASK THESE]\n{memory}\n" if memory else ""
-
     # Compact list of topics already finished -- keeps the LLM from drifting back
     # into something covered earlier (a major source of repeated questions).
     covered_block = ""
@@ -295,7 +275,6 @@ def build_probe_directive(
         covered_block = (
             f"\n[ALREADY COVERED -- DO NOT RE-OPEN OR ASK ABOUT THESE AGAIN]\n{_cov}\n"
         )
-
     # Attribution guard -- a STANDALONE project must never be tied to an employer.
     # This is the per-turn enforcement of the PROJECT-vs-WORK rule (the static system
     # prompt alone was not enough: across a long context the LLM fused a [standalone]
@@ -309,14 +288,12 @@ def build_probe_directive(
             "NEVER attach an employer name to it (no '...at <Company>').\n"
             "Ask about the project on its own terms.\n"
         )
-
     recent_q_block = ""
     if asked_questions_log:
         ql = "\n".join(f"  - {q}" for q in asked_questions_log[-6:])
         recent_q_block = (
             f"\n[QUESTIONS ALREADY ASKED -- DO NOT REPEAT OR CLOSELY REPHRASE ANY OF THESE]\n{ql}\n"
         )
-
     skill_denial_block = ""
     if skill_denial_count >= 3:
         skill_denial_block = (
@@ -326,7 +303,6 @@ def build_probe_directive(
             "Instead ask ONE open question: 'Of the skills on your resume, which one "
             "are you most confident in, and why?' -- then accept whatever they say and move on.\n"
         )
-
     if is_cant_remember:
         return (
             "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
@@ -348,14 +324,12 @@ def build_probe_directive(
             f"{covered_block}",
             "redirect",
         )
-
     short_nudge = (
         "\nCANDIDATE GAVE A VERY SHORT ANSWER -- push back warmly but directly.\n"
         "Don't just re-ask. React like a real interviewer who expected more:\n"
         "  - 'That's a start -- can you give me a bit more to work with?'\n"
         "  - 'I'd love to hear more than that -- what specifically did you do?'"
     ) if is_short else ""
-
     is_early = topic_follow_ups <= 1
     if is_closing_tier:
         depth_guard = _DEPTH_GUARDS["closing"]
@@ -369,16 +343,13 @@ def build_probe_directive(
     else:
         depth_guard = _DEPTH_GUARDS["established"]
         effective_family = probe_family
-
     # For fresher band at established tier, depth-family goals contain tradeoff/alternatives
     # angles which the depth_guard explicitly bans. Reroute to ownership goals instead,
     # which focus on HOW they built it -- consistent with the guard.
     if depth_guard is _DEPTH_GUARDS["established_fresher"] and effective_family == "depth":
         effective_family = "ownership"
-
     goal = get_probe_goal(effective_family, rotation_index)
     style = get_probe_style(effective_family)
-
     return (
         "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
         f"DECISION: PROBE ({effective_family.upper()})\n"
@@ -402,11 +373,8 @@ def build_probe_directive(
         f"{recent_q_block}"
         f"{skill_denial_block}"
     ), effective_family
-
-
 def get_probe_goal(family: str, rotation_index: int = 0) -> str:
     """Return a goal string for the given probe family.
-
     H5 fix: accepts an explicit rotation_index so the agent advances through
     the goal list deterministically (one step per PROBE turn) instead of
     picking randomly each turn.  The agent reads probe_rotation_index from
@@ -416,13 +384,9 @@ def get_probe_goal(family: str, rotation_index: int = 0) -> str:
     fam = _PROBE_FAMILIES.get(family, _PROBE_FAMILIES["normal"])
     goals = fam.get("goals", [fam.get("goal", "Probe the candidate.")])
     return goals[rotation_index % len(goals)]
-
-
 def get_probe_style(family: str) -> str:
     fam = _PROBE_FAMILIES.get(family, _PROBE_FAMILIES["normal"])
     return fam.get("style", "")
-
-
 # Signal-to-probe-family routing table. Ordered by priority -- when multiple
 # signals fire on the same turn, the first match in this list wins.
 #
@@ -444,8 +408,6 @@ _SIGNAL_TO_FAMILY: list[tuple[str, str]] = [
     ("depth_decay",                 "pressure"),
     ("depth_decay_mild_pressure",   "pressure"),
 ]
-
-
 _MODE_ALIASES = {
     # LLM probe_mode values -> merged family names
     "compression":     "clarification",
@@ -461,5 +423,3 @@ _MODE_ALIASES = {
     "specificity":     "ownership",
     "depth":           "authenticity",
 }
-
-

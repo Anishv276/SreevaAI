@@ -9,11 +9,8 @@ import {
     normalizeRecordingRetentionDays,
 } from "@/lib/recording-retention";
 import { mergeRecordingState, normalizeRecordingState, parseJsonRecord, type RecordingState } from "@/lib/recording-state";
-
 export const runtime = "nodejs";
-
 type EgressAction = "start" | "stop" | "status";
-
 type EgressManifest = {
     mode?: "livekit_egress";
     roomName?: string;
@@ -26,21 +23,17 @@ type EgressManifest = {
     lastStatus?: string;
     lastError?: string | null;
 };
-
 type EgressRequestBody = {
     action?: EgressAction;
     applicationId?: string;
     interviewToken?: string;
 };
-
 const INTERVIEW_CANDIDATES_PREFIX = "candidates";
-
 function cleanEnv(value: string | undefined): string {
     return String(value || "")
         .trim()
         .replace(/^"+|"+$/g, "");
 }
-
 function toHttpUrl(rawUrl: string): string {
     const trimmed = cleanEnv(rawUrl);
     if (!trimmed) return "";
@@ -49,7 +42,6 @@ function toHttpUrl(rawUrl: string): string {
     if (trimmed.startsWith("ws://")) return trimmed.replace("ws://", "http://");
     return `https://${trimmed}`;
 }
-
 function normalizeManifest(raw: unknown): EgressManifest {
     if (!raw) return {};
     if (typeof raw === "string") {
@@ -63,7 +55,6 @@ function normalizeManifest(raw: unknown): EgressManifest {
     if (typeof raw === "object") return raw as EgressManifest;
     return {};
 }
-
 function buildCandidateRoleFolder(fullName?: string | null, roleTitle?: string | null, fallbackId?: string): string {
     const raw = [fullName, roleTitle].filter(Boolean).join(" - ") || fallbackId || "candidate";
     return raw
@@ -72,17 +63,14 @@ function buildCandidateRoleFolder(fullName?: string | null, roleTitle?: string |
         .replace(/\s+/g, "_")
         .toLowerCase();
 }
-
 function buildRecordingName(fullName?: string | null, roleTitle?: string | null, fallbackId?: string) {
     return [fullName, roleTitle].filter(Boolean).join(" - ") || fallbackId || "Interview recording";
 }
-
 function buildPublicInterviewUrl(recordingKey: string): string {
     const base = cleanEnv(process.env.NEXT_PUBLIC_R2_INTERVIEW_URL);
     if (!base) return "";
     return `${base.replace(/\/$/, "")}/${recordingKey}`;
 }
-
 function statusToLabel(status: EgressStatus | number | undefined): string {
     switch (status) {
         case EgressStatus.EGRESS_STARTING:
@@ -103,18 +91,15 @@ function statusToLabel(status: EgressStatus | number | undefined): string {
             return "UNKNOWN";
     }
 }
-
 function isTerminalRecordingStatus(status: string) {
     return ["COMPLETE", "COMPLETED", "FAILED", "ABORTED", "LIMIT_REACHED"].includes(
         String(status || "").trim().toUpperCase()
     );
 }
-
 function addSeconds(base: Date | null, seconds: number | null | undefined) {
     if (!base || !Number.isFinite(base.getTime()) || !seconds || seconds <= 0) return null;
     return new Date(base.getTime() + Math.round(seconds) * 1000);
 }
-
 async function getRetentionDaysForApplication(applicationId: string) {
     const application = await prisma.application.findUnique({
         where: { id: applicationId },
@@ -125,7 +110,6 @@ async function getRetentionDaysForApplication(applicationId: string) {
     const settings = await getOrgRecordingSettings(orgId);
     return settings.recordingEnabled ? settings.recordingRetentionDays : null;
 }
-
 async function authenticateInterview(applicationId: string, interviewToken: string, requireInterviewToken: boolean) {
     const interviewRecord = await prisma.interview.findUnique({
         where: { applicationId },
@@ -136,7 +120,6 @@ async function authenticateInterview(applicationId: string, interviewToken: stri
     }
     return true;
 }
-
 async function getInterviewManifest(applicationId: string): Promise<EgressManifest> {
     const row = await prisma.interview.findUnique({
         where: { applicationId },
@@ -145,7 +128,6 @@ async function getInterviewManifest(applicationId: string): Promise<EgressManife
     const recording = normalizeRecordingState((row as any)?.recording);
     return normalizeManifest(recording.manifest);
 }
-
 async function persistRecordingState(params: {
     applicationId: string;
     status: string;
@@ -172,7 +154,6 @@ async function persistRecordingState(params: {
         recordingKey = null,
         retentionDays = undefined,
     } = params;
-
     const currentRow = await prisma.interview.findUnique({
         where: { applicationId },
         select: { recording: true },
@@ -225,7 +206,6 @@ async function persistRecordingState(params: {
             },
         } : {}),
     } as RecordingState);
-
     await prisma.$executeRawUnsafe(
         `UPDATE "Interview"
          SET "recording" = $2::jsonb,
@@ -235,7 +215,6 @@ async function persistRecordingState(params: {
         JSON.stringify(nextRecording)
     );
 }
-
 function requiredEnv() {
     const livekitUrl = cleanEnv(process.env.LIVEKIT_URL || process.env.NEXT_PUBLIC_LIVEKIT_URL);
     const livekitKey = cleanEnv(process.env.LIVEKIT_API_KEY);
@@ -244,7 +223,6 @@ function requiredEnv() {
     const r2AccessKey = cleanEnv(process.env.R2_ACCESS_KEY_ID);
     const r2SecretKey = cleanEnv(process.env.R2_SECRET_ACCESS_KEY);
     const r2InterviewBucket = cleanEnv(process.env.R2_INTERVIEW_BUCKET || "interview");
-
     return {
         livekitUrl,
         livekitHost: toHttpUrl(livekitUrl),
@@ -256,7 +234,6 @@ function requiredEnv() {
         r2InterviewBucket,
     };
 }
-
 async function findActiveEgressForRoom(egressClient: EgressClient, roomName: string) {
     const list = await egressClient.listEgress({ roomName, active: true });
     const active = list.find((item) =>
@@ -264,7 +241,6 @@ async function findActiveEgressForRoom(egressClient: EgressClient, roomName: str
     );
     return active || null;
 }
-
 export async function POST(req: Request) {
     try {
         const body = await req.json().catch(() => ({})) as EgressRequestBody;
@@ -272,18 +248,15 @@ export async function POST(req: Request) {
         const applicationId = String(body.applicationId || "").trim();
         const interviewToken = String(body.interviewToken || "").trim();
         const requireInterviewToken = isInterviewTokenRequired();
-
         if (!applicationId || (requireInterviewToken && !interviewToken)) {
             return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
         }
         if (!["start", "stop", "status"].includes(action)) {
             return NextResponse.json({ error: "Unsupported egress action" }, { status: 400 });
         }
-
         if (!(await authenticateInterview(applicationId, interviewToken, requireInterviewToken))) {
             return NextResponse.json({ error: "Unauthorized: Invalid session token" }, { status: 401 });
         }
-
         const {
             livekitHost,
             livekitKey,
@@ -293,15 +266,12 @@ export async function POST(req: Request) {
             r2SecretKey,
             r2InterviewBucket,
         } = requiredEnv();
-
         if (!livekitHost || !livekitKey || !livekitSecret) {
             return NextResponse.json({ error: "LiveKit server configuration missing in .env" }, { status: 500 });
         }
-
         const egressClient = new EgressClient(livekitHost, livekitKey, livekitSecret);
         const roomName = `interview_${applicationId}`;
         const manifest = await getInterviewManifest(applicationId);
-
         if (action === "status") {
             let active = null;
             try {
@@ -319,14 +289,12 @@ export async function POST(req: Request) {
                 recordingKey: manifest.recordingKey || null,
             });
         }
-
         if (action === "start") {
             if (!r2Endpoint || !r2AccessKey || !r2SecretKey) {
                 return NextResponse.json({
                     error: "R2 credentials are missing. Set R2_ENDPOINT, R2_ACCESS_KEY_ID, and R2_SECRET_ACCESS_KEY."
                 }, { status: 500 });
             }
-
             const application = await prisma.application.findUnique({
                 where: { id: applicationId },
                 select: {
@@ -341,7 +309,6 @@ export async function POST(req: Request) {
                 .trim()
                 .replace(/\s+/g, "_")
                 .toLowerCase();
-
             const safeCandidate = candName;
             const recordingName = buildRecordingName(
                 application?.fullName,
@@ -358,7 +325,6 @@ export async function POST(req: Request) {
                     }, { status: 403 });
                 }
             }
-
             // Idempotency: if an egress is already active, do not create another.
             let active = null;
             try {
@@ -391,11 +357,9 @@ export async function POST(req: Request) {
                     status: statusToLabel(active.status),
                 });
             }
-
             const recordingKey = `interview/${orgSlug}/${driveTitle}/${safeCandidate}/recordings/${Date.now()}-interview-${applicationId}.mp4`;
             const recordingUrl = buildPublicInterviewUrl(recordingKey);
             const startedAt = new Date();
-
             try {
                 const encodedOutput: any = {
                     file: {
@@ -419,7 +383,6 @@ export async function POST(req: Request) {
                     encodedOutput,
                     { layout: "speaker-light" }
                 );
-
                 await persistRecordingState({
                     applicationId,
                     status: statusToLabel(info.status),
@@ -441,7 +404,6 @@ export async function POST(req: Request) {
                         lastError: null,
                     },
                 });
-
                 return NextResponse.json({
                     success: true,
                     action,
@@ -474,14 +436,12 @@ export async function POST(req: Request) {
                 }, { status: 500 });
             }
         }
-
         // action === "stop"
         const manifestEgressId = String(manifest.egressId || "").trim();
         const recordingKey = String(manifest.recordingKey || "").trim();
         const recordingUrl = String(manifest.recordingUrl || "").trim();
         const startedAt = manifest.startedAt ? new Date(manifest.startedAt) : null;
         const now = new Date();
-
         if (!manifestEgressId) {
             // Idempotent no-op when start was never completed.
             await persistRecordingState({
@@ -505,7 +465,6 @@ export async function POST(req: Request) {
                 reason: "No active egress id on record",
             });
         }
-
         try {
             const stopInfo = await egressClient.stopEgress(manifestEgressId);
             const statusLabel = statusToLabel(stopInfo.status);
@@ -525,7 +484,6 @@ export async function POST(req: Request) {
                     lastError: stopInfo.error || null,
                 },
             });
-
             // Background finalize job: verify file landed in R2 and persist final status/url.
             let jobId: string | number | undefined;
             try {
@@ -552,7 +510,6 @@ export async function POST(req: Request) {
             } catch (queueErr) {
                 console.warn("[EGRESS] finalize queue enqueue failed:", queueErr);
             }
-
             return NextResponse.json({
                 success: true,
                 action,

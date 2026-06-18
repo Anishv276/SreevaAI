@@ -1,5 +1,4 @@
 "use client";
-
 import { useRef, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
@@ -9,7 +8,6 @@ import {
     Briefcase, Layers, Building2, ChevronDown, Check,
     ChevronLeft, ChevronRight,
 } from "lucide-react";
-
 function PremiumSelect({
     label,
     icon: Icon,
@@ -31,14 +29,12 @@ function PremiumSelect({
     const [rect, setRect] = useState<DOMRect | null>(null);
     const triggerRef = useRef<HTMLButtonElement>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
-
     const handleOpen = () => {
         if (!open && triggerRef.current) {
             setRect(triggerRef.current.getBoundingClientRect());
         }
         setOpen(o => !o);
     };
-
     // Close on outside click
     useEffect(() => {
         if (!open) return;
@@ -51,7 +47,6 @@ function PremiumSelect({
         document.addEventListener("mousedown", handler);
         return () => document.removeEventListener("mousedown", handler);
     }, [open]);
-
     // Update position on scroll so dropdown stays anchored, close on resize
     useEffect(() => {
         if (!open) return;
@@ -71,7 +66,6 @@ function PremiumSelect({
             window.removeEventListener("resize", closeOnResize);
         };
     }, [open]);
-
     const dropdown = open && rect ? (
         <div
             ref={dropdownRef}
@@ -99,7 +93,6 @@ function PremiumSelect({
             </div>
         </div>
     ) : null;
-
     return (
         <div className="space-y-2">
             <Label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest">
@@ -128,8 +121,6 @@ function PremiumSelect({
         </div>
     );
 }
-
-
 /*  Premium text input  */
 function PremiumInput({
     label,
@@ -161,12 +152,10 @@ function PremiumInput({
         </div>
     );
 }
-
 /*  Premium Calendar Date Picker  */
 const DAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 const MONTHS = ["January","February","March","April","May","June",
     "July","August","September","October","November","December"];
-
 function PremiumDatePicker({ label, icon: Icon, id, value, onChange, error }: {
     label: string; icon: React.ElementType; id: string;
     value: string; onChange: (v: string) => void;
@@ -176,14 +165,11 @@ function PremiumDatePicker({ label, icon: Icon, id, value, onChange, error }: {
     const [rect, setRect] = useState<DOMRect | null>(null);
     const triggerRef = useRef<HTMLButtonElement>(null);
     const calRef = useRef<HTMLDivElement>(null);
-
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-
     const parsed = value ? new Date(value + "T00:00:00") : null;
     const [viewYear, setViewYear] = useState(parsed?.getFullYear() ?? today.getFullYear());
     const [viewMonth, setViewMonth] = useState(parsed?.getMonth() ?? today.getMonth());
-
     const handleOpen = () => {
         if (!open && triggerRef.current) {
             const r = triggerRef.current.getBoundingClientRect();
@@ -191,7 +177,6 @@ function PremiumDatePicker({ label, icon: Icon, id, value, onChange, error }: {
         }
         setOpen(o => !o);
     };
-
     // Close on outside click
     useEffect(() => {
         if (!open) return;
@@ -202,7 +187,6 @@ function PremiumDatePicker({ label, icon: Icon, id, value, onChange, error }: {
         document.addEventListener("mousedown", h);
         return () => document.removeEventListener("mousedown", h);
     }, [open]);
-
     // Reposition on scroll
     useEffect(() => {
         if (!open) return;
@@ -211,7 +195,6 @@ function PremiumDatePicker({ label, icon: Icon, id, value, onChange, error }: {
         t = setTimeout(() => window.addEventListener("scroll", update, true), 100);
         return () => { clearTimeout(t); window.removeEventListener("scroll", update, true); };
     }, [open]);
-
     // Build calendar grid
     const firstDay = new Date(viewYear, viewMonth, 1).getDay();
     const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
@@ -221,7 +204,6 @@ function PremiumDatePicker({ label, icon: Icon, id, value, onChange, error }: {
     ];
     // Pad to full rows
     while (cells.length % 7 !== 0) cells.push(null);
-
     const selectDay = (day: number) => {
         const d = new Date(viewYear, viewMonth, day);
         d.setHours(0, 0, 0, 0);
@@ -230,7 +212,6 @@ function PremiumDatePicker({ label, icon: Icon, id, value, onChange, error }: {
         onChange(iso);
         setOpen(false);
     };
-
     const prevMonth = () => {
         if (viewMonth === 0) { setViewMonth(11); setViewYear(y => y - 1); }
         else setViewMonth(m => m - 1);
@@ -239,13 +220,10 @@ function PremiumDatePicker({ label, icon: Icon, id, value, onChange, error }: {
         if (viewMonth === 11) { setViewMonth(0); setViewYear(y => y + 1); }
         else setViewMonth(m => m + 1);
     };
-
     const displayValue = parsed
         ? parsed.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
         : null;
-
     const CAL_HEIGHT = 320; // approximate calendar height in px
-
     const calendar = open && rect ? (
         <div
             ref={calRef}
@@ -275,7 +253,6 @@ function PremiumDatePicker({ label, icon: Icon, id, value, onChange, error }: {
                     <ChevronRight className="h-4 w-4" />
                 </button>
             </div>
-
             {/* Day-of-week headers */}
             <div className="px-3 pt-3">
                 <div className="grid grid-cols-7 mb-1">
@@ -283,7 +260,6 @@ function PremiumDatePicker({ label, icon: Icon, id, value, onChange, error }: {
                         <div key={d} className="text-center text-[10px] font-black uppercase tracking-widest text-gray-400 py-1">{d}</div>
                     ))}
                 </div>
-
                 {/* Day grid */}
                 <div className="grid grid-cols-7 gap-y-1 pb-3">
                     {cells.map((day, i) => {
@@ -293,7 +269,6 @@ function PremiumDatePicker({ label, icon: Icon, id, value, onChange, error }: {
                         const isPast = cellDate < today;
                         const isToday = cellDate.getTime() === today.getTime();
                         const isSelected = parsed && cellDate.getTime() === parsed.getTime();
-
                         return (
                             <button
                                 key={i}
@@ -319,7 +294,6 @@ function PremiumDatePicker({ label, icon: Icon, id, value, onChange, error }: {
             </div>
         </div>
     ) : null;
-
     return (
         <div className="space-y-2">
             <Label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest">
@@ -349,25 +323,20 @@ function PremiumDatePicker({ label, icon: Icon, id, value, onChange, error }: {
         </div>
     );
 }
-
 /*  Main component  */
 interface BasicInfoProps {
     formData: any;
     updateFormData: (data: any) => void;
     isAnalyzing?: boolean;
 }
-
 export function BasicInfo({ formData, updateFormData, isAnalyzing }: BasicInfoProps) {
     const [touched, setTouched] = useState<Record<string, boolean>>({});
-
     const handleChange = (field: string, value: any) => {
         updateFormData({ ...formData, [field]: value });
     };
-
     const handleBlur = (field: string) => {
         setTouched(prev => ({ ...prev, [field]: true }));
     };
-
     const getError = (field: string) => {
         if (!touched[field]) return undefined;
         if (!formData[field] || (typeof formData[field] === 'string' && !formData[field].trim())) {
@@ -375,7 +344,6 @@ export function BasicInfo({ formData, updateFormData, isAnalyzing }: BasicInfoPr
         }
         return undefined;
     };
-
     return (
         <div className="space-y-6">
             {isAnalyzing && (
@@ -422,8 +390,6 @@ export function BasicInfo({ formData, updateFormData, isAnalyzing }: BasicInfoPr
                     />
                 </div>
             </section>
-
         </div>
     );
 }
-

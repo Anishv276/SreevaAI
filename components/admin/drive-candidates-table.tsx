@@ -104,7 +104,6 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
         else if (timeline.type === "custom") { startDate = timeline.from; endDate = timeline.to; }
         return { startDate, endDate };
     };
-
     // Filter/search change — show skeleton, reset to page 1
     useEffect(() => {
         let cancelled = false;
@@ -118,7 +117,6 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
         return () => { cancelled = true; clearTimeout(handler); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [driveId, resumeFilter, interviewFilter, hiringFilter, timeline, searchTerm, fetchCandidates, scoreSort, refreshKey]);
-
     // Page size change — no skeleton, just refetch silently
     const pageSizeRef = useRef(pageSize);
     useEffect(() => {
@@ -128,7 +126,6 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
         void fetchCandidates(1, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm, scoreSort);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [pageSize]);
-
     // Auto-poll while any candidate is waiting/processing so progress shows without a manual refresh
     useEffect(() => {
         const hasPending = candidates.some((c: any) => {
@@ -143,7 +140,6 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
         return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [candidates, pagination.page, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, searchTerm, scoreSort]);
-
     const handlePageChange = (newPage: number) => {
         if (newPage < 1 || newPage > pagination.totalPages) return;
         let startDate: string | undefined;
@@ -355,7 +351,6 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
             setEmailConfirm(null);
         }
     };
-
     const openSendEmailConfirm = (candidate: { id: string; name: string; resumeStatus?: string }) => {
         if (isSuspended) {
             toast.error(interviewActionBlockedMessage);
@@ -368,7 +363,6 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
         }
         setEmailConfirm({ mode: "single", candidateId: candidate.id, candidateName: candidate.name, resumeStatus: candidate.resumeStatus });
     };
-
     const openBulkSendEmailConfirm = () => {
         if (!selectedCount) return;
         const selected = filteredCandidates.filter((c: any) => selectedIds.has(c.id));
@@ -380,9 +374,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
         }
         setEmailConfirm({ mode: "bulk" });
     };
-
     const driveTitle = jobs.find((job) => job.id === driveId)?.title || "Job";
-
     if (!isDriveViewReady) {
         return (
             <div className="flex min-h-[40vh] items-center justify-center rounded-2xl border border-white/40 bg-white/60 backdrop-blur-xl shadow-[0_8px_24px_rgba(15,23,42,0.03)]">
@@ -395,7 +387,6 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
             </div>
         );
     }
-
     return (
         <div className="space-y-4">
             <div className="rounded-[1.75rem] border border-white/40 bg-white/50 p-2.5 backdrop-blur-xl shadow-[0_8px_24px_rgba(15,23,42,0.03)]">
@@ -487,7 +478,6 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                             </Button>
                         </div>
                     </div>
-
                     {/* Group 2: Hiring */}
                     <div className="rounded-2xl border border-indigo-100 bg-indigo-50/40 px-3 py-2.5">
                         <p className="text-[9px] font-black uppercase tracking-[0.22em] text-indigo-600 mb-2">Hire</p>
@@ -510,7 +500,6 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                             </Button>
                         </div>
                     </div>
-
                     {/* Interview Link group: locked when suspended/quota, not hidden */}
                     <div className="rounded-2xl border border-orange-100 bg-orange-50/40 px-3 py-2.5">
                         <p className="text-[9px] font-black uppercase tracking-[0.22em] text-orange-600 mb-2">Interview Link</p>
@@ -529,7 +518,6 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                             </Button>
                         </div>
                     </div>
-
                     {/* Group 4: Delete */}
                     <div className="rounded-2xl border border-red-100 bg-red-50/40 px-3 py-2.5">
                         <p className="text-[9px] font-black uppercase tracking-[0.22em] text-red-500 mb-2">Remove</p>

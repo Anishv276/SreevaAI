@@ -1,7 +1,5 @@
 "use client";
-
 import React from "react";
-
 export function useCount(target: number, deps: React.DependencyList, duration = 800) {
   const [v, setV] = React.useState(target);
   const first = React.useRef(true);

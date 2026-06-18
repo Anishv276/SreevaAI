@@ -1,7 +1,6 @@
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ResumeUpload } from "./resume-upload";
-
 interface ResumeReviewProps {
     formData: any;
     updateFormData: (data: any) => void;
@@ -12,7 +11,6 @@ interface ResumeReviewProps {
     agreedToTerms: boolean;
     onAgreedToTermsChange: (checked: boolean) => void;
 }
-
 export function ResumeReview({ 
     formData, 
     updateFormData, 
@@ -44,4 +42,3 @@ export function ResumeReview({
         </div>
     );
 }
-

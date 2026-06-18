@@ -1,24 +1,19 @@
 "use client";
-
 import { useState, useRef, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { ChevronDown } from "lucide-react";
-
 const CURRENCIES = ["INR", "USD", "EUR", "GBP", "AED", "SGD", "AUD"];
-
 function InlineCurrencySelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
     const [open, setOpen] = useState(false);
     const ref = useRef<HTMLDivElement>(null);
-
     useEffect(() => {
         const h = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
         document.addEventListener("mousedown", h);
         return () => document.removeEventListener("mousedown", h);
     }, []);
-
     return (
         <div ref={ref} className="relative flex-shrink-0">
             <button
@@ -45,16 +40,13 @@ function InlineCurrencySelect({ value, onChange }: { value: string; onChange: (v
         </div>
     );
 }
-
 function parseCTC(raw: string): { amount: string; currency: string } {
     const parts = raw?.split("||") || [];
     return { amount: parts[0] || "", currency: parts[1] || "INR" };
 }
-
 function formatCTC(amount: string, currency: string): string {
     return amount ? `${amount}||${currency}` : "";
 }
-
 function ExperienceCounter({
     value,
     onChange,
@@ -66,12 +58,10 @@ function ExperienceCounter({
 }) {
     const numericValue = Number.parseFloat(String(value));
     const safeValue = Number.isNaN(numericValue) ? 0 : Math.max(0, numericValue);
-
     const adjust = (delta: number) => {
         const next = Math.max(0, Math.round((safeValue + delta) * 10) / 10);
         onChange(String(next));
     };
-
     return (
         <div className="flex h-12 items-center rounded-2xl border border-gray-100 bg-gray-50/30 shadow-sm hover:border-orange-300 hover:shadow-md transition-all duration-150 overflow-hidden">
             <button
@@ -109,12 +99,10 @@ function ExperienceCounter({
         </div>
     );
 }
-
 function CTCInput({ label, id, value, onChange, inputClass }: { label: string; id: string; value: string; onChange: (v: string) => void; inputClass: string; }) {
     const { amount, currency } = parseCTC(value);
     const placeholder = currency === "INR" ? "e.g. 12 LPA INR" : `e.g. 120,000`;
     const suffix = currency === "INR" ? "LPA INR" : currency;
-
     return (
         <div className="space-y-3">
             <Label htmlFor={id} className="text-[11px] font-black text-gray-500 uppercase tracking-widest ml-1">
@@ -139,7 +127,6 @@ function CTCInput({ label, id, value, onChange, inputClass }: { label: string; i
         </div>
     );
 }
-
 export function ProfessionalDetails({ 
     formData, 
     updateFormData,
@@ -150,7 +137,6 @@ export function ProfessionalDetails({
     isAnalyzing?: boolean
 }) {
     const inputClass = "h-12 rounded-2xl border-gray-100 bg-gray-50/30 px-4 text-sm font-medium transition-all focus:bg-white focus:border-[#F97316] focus:ring-4 focus:ring-orange-500/10 placeholder:text-gray-300";
-
     return (
         <div className="space-y-10 animate-in-fade">
             <div className="space-y-3">
@@ -164,7 +150,6 @@ export function ProfessionalDetails({
                     inputClass={cn(inputClass, isAnalyzing && !formData.experience && "bg-orange-50/50")}
                 />
             </div>
-
             <div className="grid gap-8 md:grid-cols-2">
                 <div className="space-y-3">
                     <Label htmlFor="current-company" className="text-[11px] font-black text-gray-500 uppercase tracking-widest ml-1">Current Company</Label>
@@ -184,7 +169,6 @@ export function ProfessionalDetails({
                     inputClass={inputClass}
                 />
             </div>
-
             <div className="grid gap-8 md:grid-cols-2">
                 <div className="space-y-3">
                     <Label htmlFor="notice-period" className="text-[11px] font-black text-gray-500 uppercase tracking-widest ml-1">Notice Period *</Label>
@@ -215,4 +199,3 @@ export function ProfessionalDetails({
         </div>
     );
 }
-

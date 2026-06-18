@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { authorizeDriveAccess } from "@/lib/drive-access";
-
 export async function GET(
     request: Request,
     { params }: { params: Promise<{ id: string }> }
@@ -14,24 +13,19 @@ export async function GET(
         }
         const { searchParams } = new URL(request.url);
         const candidateId = searchParams.get("candidateId");
-
         if (!candidateId) {
             return NextResponse.json({ error: "Missing candidateId" }, { status: 400 });
         }
-
         const candidate = await prisma.resumeCandidate.findUnique({
             where: { id: candidateId },
             include: { drive: true },
         });
-
         if (!candidate) {
             return NextResponse.json({ error: "Candidate not found" }, { status: 404 });
         }
-
         if (candidate.driveId !== driveId) {
             return NextResponse.json({ error: "Candidate not in this drive" }, { status: 403 });
         }
-
         // Return the resume text as a downloadable file
         const resumeText = candidate.resumeText || "";
         return new NextResponse(resumeText, {

@@ -1,5 +1,4 @@
 "use client";
-
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
@@ -10,7 +9,6 @@ import { DriveResumeUploadModal } from "@/components/admin/drive-resume-upload-m
 import { toast } from "@/components/ui/toast-custom";
 import { getInterviewQuotaSupportMessage, isInterviewQuotaLocked } from "@/lib/interview-quota";
 import { useAdminOrg } from "@/context/admin-org-context";
-
 interface DriveDetails {
     id: string;
     title: string;
@@ -28,7 +26,6 @@ interface DriveDetails {
     jdPreviewUrl?: string | null;
     screeningCriteria?: Record<string, any> | string | null;
 }
-
 export default function DriveCandidatesPage() {
     const params = useParams<{ driveId: string }>();
     const driveId = typeof params?.driveId === "string" ? params.driveId : Array.isArray(params?.driveId) ? params.driveId[0] : "";
@@ -36,16 +33,12 @@ export default function DriveCandidatesPage() {
     const [loading, setLoading] = useState(true);
     const [uploadOpen, setUploadOpen] = useState(false);
     const [refreshKey, setRefreshKey] = useState(0);
-
     // ⚡ Read from shared context — no fetch needed (was 1 API call per load)
     const adminOrg = useAdminOrg();
     const quotaLocked = isInterviewQuotaLocked(adminOrg ?? {});
-
     useEffect(() => {
         if (!driveId) return;
-
         let ignore = false;
-
         const loadDrive = async () => {
             try {
                 setLoading(true);
@@ -53,7 +46,6 @@ export default function DriveCandidatesPage() {
                 if (!res.ok) throw new Error("Failed to fetch drive");
                 const data = await res.json();
                 if (ignore) return;
-
                 setDrive({
                     id: data.id,
                     title: data.title,
@@ -77,16 +69,11 @@ export default function DriveCandidatesPage() {
                 if (!ignore) setLoading(false);
             }
         };
-
         void loadDrive();
-
         return () => {
             ignore = true;
         };
     }, [driveId, refreshKey]);
-
-
-
     if (!driveId) {
         return (
             <div className="min-h-[50vh] flex items-center justify-center">
@@ -94,7 +81,6 @@ export default function DriveCandidatesPage() {
             </div>
         );
     }
-
     if (loading && !drive) {
         return (
             <div className="min-h-[50vh] flex items-center justify-center">
@@ -105,7 +91,6 @@ export default function DriveCandidatesPage() {
             </div>
         );
     }
-
     return (
         <div className="space-y-3 pb-6 animate-in fade-in duration-700" style={{ zoom: 0.7, transformOrigin: "top center" }}>
             <section className="rounded-xl border border-gray-200 bg-white px-3 py-3 shadow-sm sm:px-4">
@@ -135,7 +120,6 @@ export default function DriveCandidatesPage() {
                             </p>
                         </div>
                     </div>
-
                     <div className="flex flex-wrap gap-2 lg:justify-end">
                         <button
                             onClick={() => {
@@ -168,9 +152,7 @@ export default function DriveCandidatesPage() {
                     </div>
                 </div>
             </section>
-
             <DriveCandidatesTable driveId={driveId} refreshKey={refreshKey} />
-
             <DriveResumeUploadModal
                 open={uploadOpen}
                 onOpenChange={setUploadOpen}

@@ -66,17 +66,14 @@ console.error = (...args: any[]) => {
   }
   _origError(...args);
 };
-
 if (!process.env.REDIS_URL) {
   console.error('FATAL: REDIS_URL is missing from environment variables!');
   process.exit(1);
 }
 void redisConnection.connect().catch(() => {}); // force-connect before BullMQ workers start
 const pythonCmd = getPythonExecutable();
-
 const DRIVE_BATCH_SIZE = 5;
 const DEFAULT_R2_PUBLIC_URL = "https://pub-e4a8b24775c741f6a650def856cfec9f.r2.dev";
-
 function parseJsonSafe<T = Record<string, any>>(raw: unknown, fallback: T): T {
   try {
     if (!raw) return fallback;
@@ -87,15 +84,12 @@ function parseJsonSafe<T = Record<string, any>>(raw: unknown, fallback: T): T {
     return fallback;
   }
 }
-
 function isAllowedResumeFetchUrl(rawUrl: string): boolean {
   try {
     const url = new URL(rawUrl);
     if (url.protocol !== "https:") return false;
-
     const baseUrl = new URL(process.env.NEXT_PUBLIC_R2_RESUMES_URL || DEFAULT_R2_PUBLIC_URL);
     if (url.origin !== baseUrl.origin) return false;
-
     const basePath = baseUrl.pathname.replace(/\/$/, "");
     if (basePath && basePath !== "" && basePath !== "/") {
       return url.pathname.startsWith(`${basePath}/`);
@@ -105,13 +99,11 @@ function isAllowedResumeFetchUrl(rawUrl: string): boolean {
     return false;
   }
 }
-
 function hasJdMustHaves(jd: Record<string, any>): boolean {
   if (Array.isArray(jd?.criteria) && jd.criteria.length > 0) return true;
   const mustHave = jd?.skills?.must_have;
   return Array.isArray(mustHave) && mustHave.length > 0;
 }
-
 function buildJdRawText(drive: {
   title?: string | null;
   role?: string | null;
@@ -137,7 +129,6 @@ function buildJdRawText(drive: {
   } catch { /* ignore parse errors */ }
   return parts.join("\n\n").trim();
 }
-
 async function runPythonJson(args: string[], timeoutMs = 180000): Promise<any> {
   return new Promise((resolve, reject) => {
     let out = "";
@@ -167,7 +158,6 @@ async function runPythonJson(args: string[], timeoutMs = 180000): Promise<any> {
     });
   });
 }
-
 // Like runPythonJson but writes `stdinPayload` to the process stdin.
 // Used for RESUME_AND_SCORE mode to pass the JD payload without a temp file.
 async function runPythonJsonWithStdin(args: string[], stdinPayload: string, timeoutMs = 180000): Promise<any> {
@@ -201,7 +191,6 @@ async function runPythonJsonWithStdin(args: string[], stdinPayload: string, time
     p.stdin.end();
   });
 }
-
 async function setDriveCandidateStage(
   candidateId: string,
   stage: string,
@@ -210,12 +199,10 @@ async function setDriveCandidateStage(
   applicationId?: string | null
 ) {
   const payload = JSON.stringify({ processing: { stage, progress } });
-
   await prisma.resumeCandidate.update({
     where: { id: candidateId },
     data: { resumeStatus, aiScore: progress, aiReport: payload },
   });
-
   // Prefer the applicationId passed directly from resumeData (no extra DB query).
   // Fall back to a findFirst search for candidates uploaded before this change.
   let appId = applicationId || null;
@@ -235,7 +222,6 @@ async function setDriveCandidateStage(
       console.warn(`[RESUME-WORKER] setDriveCandidateStage: findFirst failed for candidateId=${candidateId}: ${err?.message}`);
     }
   }
-
   if (appId) {
     await prisma.application.update({
       where: { id: appId },
@@ -247,7 +233,6 @@ async function setDriveCandidateStage(
     console.warn(`[RESUME-WORKER] setDriveCandidateStage: no Application found for candidateId=${candidateId} stage=${stage}`);
   }
 }
-
 async function processInterviewStartJob(job: any) {
   const prismaAny = prisma as any;
   const {
@@ -255,11 +240,9 @@ async function processInterviewStartJob(job: any) {
     startedAt: startedAtRaw,
     accessToken,
   } = job.data || {};
-
   if (!applicationId) {
     throw new Error("Missing applicationId in interview-start job");
   }
-
   const application = await prismaAny.application.findUnique({
     where: { id: applicationId },
     select: { id: true },
@@ -268,12 +251,10 @@ async function processInterviewStartJob(job: any) {
     console.warn(`[INTERVIEW-START] Application ${applicationId} no longer exists. Skipping.`);
     return { skipped: true, reason: "missing_application" };
   }
-
   const startedAtCandidate = startedAtRaw ? new Date(String(startedAtRaw)) : new Date();
   if (!Number.isFinite(startedAtCandidate.getTime())) {
     throw new Error(`Invalid startedAt timestamp for ${applicationId}`);
   }
-
   const existingInterview = await prismaAny.interview.findUnique({
     where: { applicationId },
     select: {
@@ -283,7 +264,6 @@ async function processInterviewStartJob(job: any) {
       linkStatus: true,
     },
   });
-
   if (existingInterview?.startedAt) {
     console.log(
       `[INTERVIEW-START] Interview already started for ${applicationId} at ${existingInterview.startedAt.toISOString()}`
@@ -299,9 +279,7 @@ async function processInterviewStartJob(job: any) {
       startedAt: existingInterview.startedAt.toISOString(),
     };
   }
-
   const interviewAccessToken = existingInterview?.accessToken || accessToken || crypto.randomUUID();
-
   await prismaAny.interview.upsert({
     where: { applicationId },
     update: {
@@ -318,12 +296,10 @@ async function processInterviewStartJob(job: any) {
       linkStatus: "ACTIVE",
     },
   });
-
   await prismaAny.application.update({
     where: { id: applicationId },
     data: { interviewStatus: "IN_PROGRESS" },
   });
-
   console.log(
     `[INTERVIEW-START] Persisted start time for ${applicationId} at ${startedAtCandidate.toISOString()}`
   );
@@ -335,7 +311,6 @@ async function processInterviewStartJob(job: any) {
     interviewStatus: "IN_PROGRESS",
   };
 }
-
 async function processRecordingRetentionSweepJob(job: any) {
   const rows = await prisma.$queryRaw<Array<{
     applicationId: string;
@@ -394,7 +369,6 @@ async function processRecordingRetentionSweepJob(job: any) {
       LIMIT 100
     `
   );
-
   let deleted = 0;
   let failed = 0;
   for (const row of rows) {
@@ -408,7 +382,6 @@ async function processRecordingRetentionSweepJob(job: any) {
       recordingManifest,
       recording: row.recording,
     });
-
     await (prisma as any).interview.update({
       where: { applicationId: row.applicationId },
       data: {
@@ -421,7 +394,6 @@ async function processRecordingRetentionSweepJob(job: any) {
         }),
       },
     }).catch(() => {});
-
     const deleteResult = await deleteRecordingAsset({
       recordingUrl,
       recordingKey,
@@ -431,7 +403,6 @@ async function processRecordingRetentionSweepJob(job: any) {
       attempts: 2,
       baseDelayMs: 1000,
     });
-
     if (!deleteResult.success) {
       const lastError = deleteResult.lastError || "Failed to delete recording asset from Cloudflare R2";
       failed += 1;
@@ -450,7 +421,6 @@ async function processRecordingRetentionSweepJob(job: any) {
       console.error(`[RETENTION] Sweep failed to delete recording for ${row.applicationId}: ${lastError}`);
       continue;
     }
-
     const deletedAt = new Date();
     deleted += 1;
     await (prisma as any).interview.update({
@@ -475,7 +445,6 @@ async function processRecordingRetentionSweepJob(job: any) {
       },
     });
   }
-
   if (deleted > 0 || failed > 0) {
     console.log(`[RETENTION] Sweep deleted ${deleted} expired recording(s), failed ${failed}.`);
   }
@@ -485,7 +454,6 @@ async function processRecordingRetentionSweepJob(job: any) {
     failed,
   };
 }
-
 async function processDriveResumeBatchJob(job: any) {
   const { batchId, driveId, orgId } = job.data || {};
   console.log(`[RESUME-WORKER] processDriveResumeBatchJob raw job.data:`, JSON.stringify(job.data));
@@ -496,15 +464,12 @@ async function processDriveResumeBatchJob(job: any) {
   }
   const batchExtractModel = "gpt-4o-mini";
   const batchReportModel = "gpt-4o-mini";
-
   console.log(`[RESUME-WORKER] Batch queued -> starting batchId=${batchId} driveId=${driveId}`);
-
   const batch = await prisma.resumeBatch.findUnique({ where: { id: batchId } });
   if (!batch) {
     console.warn(`[RESUME-WORKER] Batch ${batchId} not found. It may have been cleaned up already; skipping stale job.`);
     return;
   }
-
   // Idempotency guard: if this batch already reached a terminal state, don't process it again.
   const normalizedBatchStatus = String(batch.status || "").toUpperCase();
   if (normalizedBatchStatus === "COMPLETED" || normalizedBatchStatus === "FAILED") {
@@ -513,7 +478,6 @@ async function processDriveResumeBatchJob(job: any) {
     );
     return;
   }
-
   // --- 1-minute empty-batch guard + full candidate load ---
   // Fetch all candidate fields in one query. If none exist yet (DB lag after upload),
   // poll every 3s for up to 60s before giving up.
@@ -541,15 +505,11 @@ async function processDriveResumeBatchJob(job: any) {
     }
     console.log(`[RESUME-WORKER] Batch ${batchId}: ${candidates.length} candidate(s) arrived, proceeding.`);
   }
-
   console.log(`[RESUME-WORKER] Batch ${batchId}: ${candidates.length} candidate(s) loaded`);
-
-
   await prisma.resumeBatch.update({
     where: { id: batchId },
     data: { status: "PROCESSING", processedCount: 0, failedCount: 0 },
   });
-
   const drive = await prisma.drive.findUnique({
     where: { id: driveId },
     select: {
@@ -561,14 +521,12 @@ async function processDriveResumeBatchJob(job: any) {
     },
   });
   if (!drive) throw new Error(`Drive ${driveId} not found`);
-
   const parsedSettings = parseDriveScreeningSettings(
     drive.screeningCriteria,
     Number(drive.screeningThreshold ?? 60)
   );
   const threshold = parsedSettings.threshold;
   const screeningCriteria = parsedSettings.criteria;
-
   // Mark all candidates as "queued" immediately so the frontend stops showing "waiting"
   // while JD extraction runs (which can take several seconds before any per-candidate work starts).
   const processingReport = JSON.stringify({ processing: { stage: "queued", progress: 5 } });
@@ -579,7 +537,6 @@ async function processDriveResumeBatchJob(job: any) {
       aiReport: processingReport,
     },
   });
-
   // Also bulk-update the linked Application rows. The upload API embeds candidateId in resumeData,
   // so we match on that. Fire-and-forget per candidate — failures don't block the batch.
   const candidateIdsForBatch = await prisma.resumeCandidate.findMany({
@@ -598,7 +555,6 @@ async function processDriveResumeBatchJob(job: any) {
       data: { resumeStatus: "processing", aiReport: processingReport },
     })
   ));
-
   let structuredJd = parseJsonSafe<Record<string, any>>(drive.extractedDetails, {});
   const jdRawText = buildJdRawText(drive);
   if (!hasJdMustHaves(structuredJd) && jdRawText.length >= 80) {
@@ -621,14 +577,9 @@ async function processDriveResumeBatchJob(job: any) {
       }
     }
   }
-
-
-
-
   let processedCount = 0;
   let failedCount = 0;
   const totalChunks = Math.max(1, Math.ceil(candidates.length / DRIVE_BATCH_SIZE));
-
   for (let i = 0; i < candidates.length; i += DRIVE_BATCH_SIZE) {
     const chunk = candidates.slice(i, i + DRIVE_BATCH_SIZE);
     const chunkIndex = Math.floor(i / DRIVE_BATCH_SIZE) + 1;
@@ -655,16 +606,13 @@ async function processDriveResumeBatchJob(job: any) {
             );
             return;
           }
-
           console.log(`[RESUME-WORKER] Candidate ${candidate.id}: waiting -> extracting (25%)`);
           const source = parseJsonSafe<any>(candidate.resumeData, {}).source || {};
           const bucket = String(source.bucket || process.env.R2_RESUMES_BUCKET || "resumes");
           const key = String(source.key || "");
           linkedAppId = String(source.applicationId || "").trim() || null;
           if (!key) throw new Error(`Missing source key for candidate ${candidate.id}`);
-
           await setDriveCandidateStage(candidate.id, "extracting", 25, "processing", linkedAppId);
-
           // Download PDF from R2 — fast-fail if key was deleted
           let pdfBuffer: Buffer;
           try {
@@ -679,18 +627,15 @@ async function processDriveResumeBatchJob(job: any) {
           }
           tmpPdfPath = join(tmpdir(), `drive_resume_${candidate.id}_${Date.now()}.pdf`);
           await writeFile(tmpPdfPath, pdfBuffer);
-
           // Use cached parse result if already stored — avoids LLM non-determinism on retries
           const cachedResumeData = parseJsonSafe<any>(candidate.resumeData, {});
           const cachedStructured = cachedResumeData?.structured || {};
           const cachedText = String(candidate.resumeText || "");
           const hasCachedParse = cachedText.length > 50 && Object.keys(cachedStructured).length > 0;
-
           let resumeRawText: string;
           let structuredResume: Record<string, any>;
           let aiResult: Record<string, any>;
           let scoreUsage: Record<string, any> | null = null;
-
           if (hasCachedParse) {
             // Already have parsed resume — only need to score it (single subprocess)
             console.log(`[RESUME-WORKER] Candidate ${candidate.id}: using cached parse, running score only`);
@@ -728,7 +673,6 @@ async function processDriveResumeBatchJob(job: any) {
             structuredResume = combined?.data || {};
             aiResult = combined?.score || {};
             scoreUsage = combined?.usage_score || null;
-
             // Bill extraction usage separately
             const usageExtract = combined?.usage_extract || {};
             if (usageExtract?.inputTokens || usageExtract?.outputTokens) {
@@ -745,15 +689,12 @@ async function processDriveResumeBatchJob(job: any) {
               });
             }
           }
-
           await setDriveCandidateStage(candidate.id, "finalizing", 80, "processing", linkedAppId);
-
           const finalScore =
             typeof aiResult.score === "number"
               ? aiResult.score
               : parseInt(String(aiResult.score || "0"), 10) || 0;
           const finalStatus = finalScore >= threshold ? "shortlisted" : "rejected";
-
           // Resolve appId: prefer the direct link stored in resumeData, fall back to a DB lookup.
           let appId: string | null = linkedAppId;
           if (!appId) {
@@ -771,18 +712,15 @@ async function processDriveResumeBatchJob(job: any) {
           if (!appId) {
             console.warn(`[RESUME-WORKER] Candidate ${candidate.id}: no linked Application found — status will NOT update to ${finalStatus}`);
           }
-
           const completedPayload = JSON.stringify({
             processing: { stage: "completed", progress: 100 },
             result: { score: finalScore, status: finalStatus },
           });
-
           const fullScanPayload = JSON.stringify({
             ...aiResult,
             score: finalScore,
             status: finalStatus,
           });
-
           await prisma.resumeCandidate.update({
             where: { id: candidate.id },
             data: {
@@ -799,7 +737,6 @@ async function processDriveResumeBatchJob(job: any) {
               resumeStatus: finalStatus,
             },
           });
-
           if (appId) {
             await prisma.application.update({
               where: { id: appId },
@@ -827,11 +764,9 @@ async function processDriveResumeBatchJob(job: any) {
               source: "system",
             }).catch(() => {});
           }
-
           console.log(
             `[RESUME-WORKER] Candidate ${candidate.id}: completed score=${finalScore} status=${finalStatus}`
           );
-
           // Bill score/report usage — populated from combined.usage_score or scoreOnly.usage above
           if (scoreUsage?.inputTokens || scoreUsage?.outputTokens) {
             await recordOrgBillingUsage({
@@ -875,7 +810,6 @@ async function processDriveResumeBatchJob(job: any) {
         }
       })
     );
-
     for (const result of results) {
       if (result.status === "fulfilled") {
         processedCount += 1;
@@ -883,13 +817,11 @@ async function processDriveResumeBatchJob(job: any) {
         failedCount += 1;
       }
     }
-
     await prisma.resumeBatch.update({
       where: { id: batchId },
       data: { processedCount, failedCount },
     });
   }
-
   if (failedCount > 0 && processedCount === 0) {
     await prisma.resumeBatch.update({
       where: { id: batchId },
@@ -897,7 +829,6 @@ async function processDriveResumeBatchJob(job: any) {
     });
     return;
   }
-
   await prisma.resumeBatch.update({
     where: { id: batchId },
     data: {
@@ -956,7 +887,6 @@ async function persistInterviewUpdateRaw(params: {
     recordingToPersist ? JSON.stringify(recordingToPersist) : null
   );
 }
-
 async function waitForInterviewTranscript(
   applicationId: string,
   initialTranscript: string,
@@ -964,7 +894,6 @@ async function waitForInterviewTranscript(
   delayMs = 2000
 ): Promise<string> {
   if (initialTranscript.trim()) return initialTranscript.trim();
-
   for (let attempt = 1; attempt <= retries; attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, delayMs));
     const row = await prisma.interview.findUnique({
@@ -991,33 +920,27 @@ const requestedQueues = new Set(
     .filter(Boolean)
 );
 console.log("[Worker] Enabled queues:", Array.from(requestedQueues).join(", "));
-
 function isQueueEnabled(queueName: string) {
   return requestedQueues.has("all") || requestedQueues.has(queueName);
 }
-
 function trackWorker(name: string, worker: Worker) {
   managedWorkers.push(worker);
   worker.on("error", (error) => {
     console.error(`[${name}] Redis/BullMQ error:`, error);
   });
-  
   // Log when jobs are cleared (60s after completion/failure as per queue config)
   worker.on("completed", (job) => {
     setTimeout(() => {
       console.log(`[${name}] Job ${job?.id || job?.name || 'unknown'} cleared after 60 seconds (completed)`);
     }, 60_000);
   });
-  
   worker.on("failed", (job) => {
     setTimeout(() => {
       console.log(`[${name}] Job ${job?.id || job?.name || 'unknown'} cleared after 60 seconds (failed)`);
     }, 60_000);
   });
-
   return worker;
 }
-
 async function closeWorkerResources(reason: string) {
   if (shutdownInProgress) return;
   shutdownInProgress = true;
@@ -1044,14 +967,12 @@ async function closeWorkerResources(reason: string) {
   await prisma.$disconnect().catch(() => { });
   console.log("[Worker] Shutdown complete.");
 }
-
 process.once("SIGINT", () => {
   void closeWorkerResources("SIGINT");
 });
 process.once("SIGTERM", () => {
   void closeWorkerResources("SIGTERM");
 });
-
 async function getRedisMemoryStatus() {
   try {
     const info = await redisConnection.info("memory");
@@ -1095,7 +1016,6 @@ async function shouldSkipCronRegistration() {
   }
   return false;
 }
-
 async function processResumeFileExtractJob(job: any) {
   const {
     bucket = process.env.R2_RESUMES_BUCKET || "resumes",
@@ -1105,29 +1025,24 @@ async function processResumeFileExtractJob(job: any) {
     orgId = null,
     orgOpenAIModel = "gpt-4o-mini",
   } = job.data || {};
-
   if (!key) {
     throw new Error("Invalid resume extraction job payload");
   }
-
   console.log(`[RESUME-WORKER] File extraction job ${job.id} started`, {
     fileName,
     bucket,
     key,
   });
-
   const tempExt = (() => {
     const match = String(fileName).match(/\.[a-z0-9]+$/i);
     return match?.[0] || ".pdf";
   })();
-
   const sourceBuffer = await getObjectBuffer(bucket, key);
   const tempFilePath = join(
     tmpdir(),
     `resume_extract_${String(job.id)}_${Date.now()}${tempExt}`
   );
   await writeFile(tempFilePath, sourceBuffer);
-
   try {
     const extracted = await runPythonJson([
       "scripts/extract_pdf.py",
@@ -1135,11 +1050,9 @@ async function processResumeFileExtractJob(job: any) {
       "RESUME",
       orgOpenAIModel,
     ]);
-
     if (extracted?.error) {
       throw new Error(extracted.error);
     }
-
     if (orgId && extracted?.usage) {
       await recordOrgBillingUsage({
         orgId,
@@ -1153,7 +1066,6 @@ async function processResumeFileExtractJob(job: any) {
         },
       });
     }
-
     console.log(`[RESUME-WORKER] File extraction job ${job.id} completed`);
     return {
       text: extracted?.text || "",
@@ -1178,7 +1090,6 @@ if (isQueueEnabled("resume-processing")) {
     if (job.name === "resume-file-extract") {
       return await processResumeFileExtractJob(job);
     }
-
     const {
       applicationId,
       resumeText: initialResumeText,
@@ -1426,7 +1337,6 @@ if (isQueueEnabled("invitation-delivery-queue")) {
         applicationId?: string;
         action?: "shortlist" | "reject" | "nothired";
       } = job.data || {};
-
       console.log(`[Invitation Worker] Job received: action=${action}, applicationId=${applicationId}`);
       if (!applicationId || !action) {
         throw new Error("Missing applicationId or action in invitation-delivery-queue job");
@@ -1557,7 +1467,6 @@ if (isQueueEnabled("invitation-delivery-queue")) {
     console.log(`[FATAL] Invitation Delivery Job ${job?.id} failed permanently: ${err.message}`);
   });
 }
-
 if (isQueueEnabled("recording-retention-cleanup")) {
   const recordingRetentionWorker = trackWorker("recording-retention-cleanup", new Worker(
     "recording-retention-cleanup",
@@ -1565,7 +1474,6 @@ if (isQueueEnabled("recording-retention-cleanup")) {
       if (job.name === RECORDING_RETENTION_SWEEP_JOB) {
         return await processRecordingRetentionSweepJob(job);
       }
-
       console.warn(`[RETENTION] Skipping unsupported job name: ${job.name}`);
       return { skipped: true, reason: "unsupported_job_name" };
     },
@@ -1585,7 +1493,6 @@ if (isQueueEnabled("recording-retention-cleanup")) {
     );
   });
 }
-
 /**
  * ðŸ’¾ DATABASE BACKUP WORKER (Phase 5 - Persistent Backups to R2)
  * Runs daily at midnight to export core hiring data.
@@ -1708,7 +1615,6 @@ if (isQueueEnabled("backup-queue")) {
     backupQueue = null;
   };
 }
-
 if (isQueueEnabled("recording-retention-cleanup")) {
   setupRetentionCronJobs = async function setupRetentionCronJobs() {
     const retentionQueue = recordingRetentionQueue;
@@ -1775,7 +1681,6 @@ if (isQueueEnabled("interview-finalization")) {
             );
           });
         }
-
         const updateData: any = { updatedAt: new Date() };
         const existingInterview = await (prisma as any).interview.findUnique({
           where: { applicationId },
@@ -1837,11 +1742,9 @@ if (isQueueEnabled("interview-finalization")) {
             interviewStatus,
           });
         }
-
         if (recordingDisabled) {
           console.log(`[FINALIZE] Recording disabled for ${applicationId}; stored disabled state in recording JSON.`);
         }
-
         if (recordingUrlToPersist && interviewStatus === "COMPLETED") {
           const persistedInterview = await prisma.interview.findUnique({
             where: { applicationId },
@@ -1856,7 +1759,6 @@ if (isQueueEnabled("interview-finalization")) {
             console.warn(`[RETENTION] Failed to schedule cleanup for ${applicationId}:`, error);
           });
         }
-
         if (appStatus) {
           await prisma.$executeRawUnsafe(
             'UPDATE "Application" SET "resumeStatus" = $1, "updatedAt" = NOW() WHERE id = $2',
@@ -1865,7 +1767,6 @@ if (isQueueEnabled("interview-finalization")) {
           );
         }
         console.log(`[SUCCESS] Interview finalization persisted for ${applicationId}`);
-
         // ── 1b. Notify org admins that the interview is complete ──────────────
         if (interviewStatus === "COMPLETED") {
           try {
@@ -1912,7 +1813,6 @@ if (isQueueEnabled("interview-finalization")) {
             console.warn(`[MAIL] Failed to send interview completed notifications for ${applicationId}:`, notifyError);
           }
         }
-
         // ── 2. Generate AI interview report (no timeout — we're in a worker) ──
         try {
           // Fetch all data needed for report generation
@@ -1942,35 +1842,28 @@ if (isQueueEnabled("interview-finalization")) {
               },
             },
           });
-
           if (!app) {
             console.warn(`[REPORT] Application not found for ${applicationId}, skipping report.`);
             return { success: true };
           }
-
           const initialTranscript = transcript || app.interview?.interviewTranscript || "";
           const finalTranscript = await waitForInterviewTranscript(applicationId, initialTranscript);
-
           const createdAtIso = app.createdAt.toISOString();
           const resumeReportCreatedAtIso = app.updatedAt.toISOString();
           const interviewCreatedAtIso = app.interview?.createdAt?.toISOString() || app.interview?.updatedAt?.toISOString() || createdAtIso;
           const existingInterviewReport = app.interview?.scoreBreakdown || null;
-
           if (!finalTranscript) {
             console.warn(`[REPORT] No transcript available for ${applicationId} after retries; report generation skipped.`);
             return { success: true };
           }
-
           if (existingInterviewReport) {
             console.log(`[REPORT] Report already exists for ${applicationId}.`);
           }
-
           console.log(`[REPORT] Interview finalization complete for ${applicationId}`);
         } catch (reportError) {
           // Report failure must NOT fail the job — transcript/recording is already safe
           console.error(`[REPORT] Failed to generate report for ${applicationId}:`, reportError);
         }
-
         return { success: true };
       } catch (error) {
         console.error(`[Interview Finalization Worker Error]:`, error);
@@ -1991,7 +1884,6 @@ if (isQueueEnabled("interview-finalization")) {
     console.log(`[FATAL] Interview Finalization Job ${job?.id} failed permanently: ${err.message}`);
   });
 }
-
 /**
  * INTERVIEW RECORDING WORKER
  * Finalizes server-side LiveKit egress recordings after stop is requested.
@@ -2006,7 +1898,6 @@ if (isQueueEnabled("interview-recording")) {
         console.warn(`[RECORDING_WORKER] Skipping unsupported job name: ${job.name}`);
         return { skipped: true, reason: "unsupported_job_name" };
       }
-
       const {
         applicationId,
         egressId,
@@ -2015,11 +1906,9 @@ if (isQueueEnabled("interview-recording")) {
         startedAt: startedAtRaw,
         mimeType = "video/mp4",
       } = job.data || {};
-
       if (!applicationId) {
         throw new Error("Missing applicationId in finalize-egress-recording job");
       }
-
       const bucket = process.env.R2_INTERVIEW_BUCKET || "interview";
       const publicBase = String(process.env.NEXT_PUBLIC_R2_INTERVIEW_URL || "").trim().replace(/\/$/, "");
       const application = await prisma.application.findUnique({
@@ -2039,14 +1928,12 @@ if (isQueueEnabled("interview-recording")) {
       const recordingSettings = orgId
         ? await getOrgRecordingSettings(orgId)
           : { recordingEnabled: false, recordingRetentionDays: null };
-
       const interviewRow = await (prisma as any).interview.findUnique({
         where: { applicationId },
         select: {
           recording: true,
         },
       });
-
       const existingRecording = normalizeRecordingState((interviewRow as any)?.recording);
       const manifest = parseJsonRecord(existingRecording.manifest);
       const resolvedKey = String(recordingKey || existingRecording.key || manifest.recordingKey || "").trim();
@@ -2056,11 +1943,9 @@ if (isQueueEnabled("interview-recording")) {
           || manifest.recordingUrl
           || (resolvedKey && publicBase ? `${publicBase}/${resolvedKey}` : "")
       ).trim();
-
       if (!resolvedKey && !resolvedUrl) {
         throw new Error(`[RECORDING_WORKER] Missing recording key/url for ${applicationId}`);
       }
-
       if (resolvedKey) {
         try {
           await headObjectStrict(bucket, resolvedKey);
@@ -2070,7 +1955,6 @@ if (isQueueEnabled("interview-recording")) {
           );
         }
       }
-
       const completedAt = new Date();
       const startedFromPayload = startedAtRaw ? new Date(String(startedAtRaw)) : null;
       const startedFromManifest = manifest.startedAt ? new Date(String(manifest.startedAt)) : null;
@@ -2085,7 +1969,6 @@ if (isQueueEnabled("interview-recording")) {
           : null;
       const retentionDays = recordingSettings.recordingRetentionDays;
       const retentionDueAt = computeRecordingRetentionDueAt(completedAt, retentionDays);
-
       const nextManifest = {
         ...manifest,
         mode: "livekit_egress",
@@ -2099,7 +1982,6 @@ if (isQueueEnabled("interview-recording")) {
         lastStatus: "COMPLETED",
         lastError: null,
       };
-
       const shouldStoreRecording = Boolean(recordingSettings.recordingEnabled);
       if (!shouldStoreRecording) {
         const deleteResult = await deleteRecordingAsset({
@@ -2114,7 +1996,6 @@ if (isQueueEnabled("interview-recording")) {
           throw new Error(deleteResult.lastError || `[RECORDING_WORKER] Failed to delete disabled recording for ${applicationId}`);
         }
       }
-
       const recordingUrlToPersist = shouldStoreRecording ? (resolvedUrl || null) : null;
       const recordingRetentionDaysToPersist = shouldStoreRecording ? retentionDays : null;
       const recordingRetentionDueAtToPersist = shouldStoreRecording ? retentionDueAt : null;
@@ -2146,7 +2027,6 @@ if (isQueueEnabled("interview-recording")) {
           deletedAt: recordingDeletedAtToPersist ? recordingDeletedAtToPersist.toISOString() : null,
         },
       });
-
       await prisma.$executeRawUnsafe(
         `UPDATE "Interview"
          SET "interviewDuration" = CASE WHEN $1::integer IS NOT NULL THEN $1::integer ELSE "interviewDuration" END,
@@ -2157,7 +2037,6 @@ if (isQueueEnabled("interview-recording")) {
         JSON.stringify(recordingToPersist),
         applicationId
       );
-
       if (shouldStoreRecording) {
         await scheduleRecordingRetentionDeletion({
           applicationId,
@@ -2170,7 +2049,6 @@ if (isQueueEnabled("interview-recording")) {
           console.warn(`[RECORDING_RETENTION] Failed to schedule cleanup for ${applicationId}:`, error);
         });
       }
-
       const finalizationQueue = new Queue("interview-finalization", { connection: redisConnection });
       await finalizationQueue.add(
         "finalize-interview",
@@ -2187,7 +2065,6 @@ if (isQueueEnabled("interview-recording")) {
         }
       );
       await finalizationQueue.close();
-
       console.log(`[RECORDING_WORKER] Egress finalized for ${applicationId} (egress=${egressId || "unknown"})`);
       return {
         success: true,
@@ -2208,7 +2085,6 @@ if (isQueueEnabled("interview-recording")) {
       removeOnFail: { age: 60 },
     }
   ));
-
   interviewRecordingWorker.on("failed", (job, err) => {
     console.error(
       `[FATAL] Egress Finalize Job ${job?.id} failed permanently for ${job?.data?.applicationId}: ${err.message}`
@@ -2216,7 +2092,6 @@ if (isQueueEnabled("interview-recording")) {
   });
 }
 /**
-
  * ðŸ“¸ INTERVIEW SNAPSHOT WORKER
  * Handles proctoring snapshot uploads to R2 and DB persistence.
  * Optimized for low-memory Redis (32MB).
@@ -2250,7 +2125,6 @@ if (isQueueEnabled("interview-snapshots")) {
           .trim()
           .replace(/\s+/g, "_")
           .toLowerCase();
-
         const timestamp = Date.now();
         const snapshotLabel = label || "snapshot";
         const key = `interview/${orgSlug}/${driveTitle}/${candName}/snapshots/${snapshotLabel}_${timestamp}.jpg`;
@@ -2347,7 +2221,6 @@ if (isQueueEnabled("jd-extraction")) {
     async (job) => {
       const { kind, orgOpenAIModel = "gpt-4.1-mini" } = job.data || {};
       console.log(`[JD-EXTRACTION] Job ${job.id} started`, { kind, model: orgOpenAIModel });
-
       if (kind === "text") {
         const { text } = job.data as { text: string };
         if (!text || !text.trim()) {
@@ -2358,7 +2231,6 @@ if (isQueueEnabled("jd-extraction")) {
         console.log(`[JD-EXTRACTION] Job ${job.id} completed text extraction`);
         return result;
       }
-
       if (kind === "url") {
         const { url } = job.data as { url: string };
         if (!url) {
@@ -2379,7 +2251,6 @@ if (isQueueEnabled("jd-extraction")) {
         console.log(`[JD-EXTRACTION] Job ${job.id} completed URL extraction`);
         return result;
       }
-
       if (kind === "file") {
         const { buffer, fileName } = job.data as {
           buffer: Buffer | { type?: string; data?: number[] };
@@ -2433,7 +2304,6 @@ if (isQueueEnabled("jd-extraction")) {
           await unlink(tempFilePath).catch(() => { });
         }
       }
-
       throw new Error(`Unsupported JD extraction job kind: ${String(kind)}`);
     },
     {

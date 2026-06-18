@@ -1,6 +1,5 @@
 """
 agent_scoring.py
-
 AFTER (1 merged LLM call, ~700ms total):
   Call AB -> evaluate_answer()          -> {clarity:7, depth:4, ..., action: PROBE, probe_mode: ownership}
   One round-trip returns BOTH quality scores AND routing decision.
@@ -14,17 +13,13 @@ AFTER (1 merged LLM call, ~700ms total):
 # -----------------------------------------------------------------------------
 """
 from __future__ import annotations
-
 import asyncio
 import json
 import logging
 from typing import Any, Optional
-
 logger = logging.getLogger("interview-agent")
-
 EVAL_LLM_MODEL   = "gpt-4.1-mini"
 EVAL_TEMPERATURE = 0.0
-
 async def evaluate_answer(
     candidate_answer: str,
     last_question: str,
@@ -41,7 +36,6 @@ async def evaluate_answer(
 ) -> dict:
     """
     Single merged LLM call: scores answer quality AND decides PROBE/MOVE_ON.
-
     Returns:
       Quality scores: clarity, depth, specificity, grounding, overall
       Routing:        action, probe_mode, reason
@@ -55,7 +49,6 @@ async def evaluate_answer(
             "action": "MOVE_ON", "probe_mode": None,
             "reason": "warmup turn",
         }
-
     # Empty answer -- no LLM call needed
     if not candidate_answer or not candidate_answer.strip():
         return {
@@ -64,7 +57,6 @@ async def evaluate_answer(
             "action": "MOVE_ON", "probe_mode": None,
             "reason": "empty answer",
         }
-
     # Explicit denial / zero-information utterance -- short-circuit scoring.
     # Feeding these to the LLM causes clarity=10 for grammatically clean denials
     # ("No. I don't remember anything.") which inflates saturation by ~36%.
@@ -94,25 +86,20 @@ async def evaluate_answer(
             "action": "MOVE_ON", "probe_mode": None,
             "reason": "explicit denial / no information provided",
         }
-
     word_count = len(candidate_answer.strip().split())
-
     # Use last 6 lines (3 Q&A pairs) -- enough for LLM to see follow-up context
     # without pulling in old-topic lines that cause the LLM to conflate answers.
     recent_context = "\n".join(transcript_lines[-6:]) if transcript_lines else ""
-
     # Log before the LLM call so you can see it started in the terminal.
     # If this log appears but [EVAL] DONE never follows, the LLM call hung.
     logger.info(
         "[EVAL] > merged evaluate_answer | model=%s words=%d follow_ups=%d topic=%s",
         llm_model, word_count, topic_follow_up_count, active_topic or "?",
     )
-
     # Band-aware follow-up cutoff: how many turns before the LLM judge biases to MOVE_ON.
     # Saturation system is the primary gatekeeper, but the LLM judge needs a matching signal.
     # Fresher: move after 2 (breadth). Mid: 3. Experienced: 5. Senior: 6.
     _followup_cutoff = {"fresher": 2, "mid": 3, "experienced": 5, "senior": 6}.get(candidate_band, 3)
-
     # Band-aware scoring bar: what counts as "good enough" to MOVE_ON at each level.
     _band_scoring_note = {
         "fresher": (
@@ -136,7 +123,6 @@ async def evaluate_answer(
             "MOVE_ON only when you have evidence of real judgment under pressure, not just competence."
         ),
     }.get(candidate_band, "Probe for real ownership and specific decisions.")
-
     try:
         # Stream to get first token in ~50-100ms instead of waiting for full response
         stream = await asyncio.wait_for(
@@ -160,7 +146,6 @@ async def evaluate_answer(
                             '  "probe_mode": "ownership"|"depth"|"authenticity"|"pressure"|"clarification"|null,\n'
                             '  "reason": "one short phrase from their answer that drove your call"\n'
                             "}\n\n"
-
                             f"-- INTERVIEW CONTEXT --\n"
                             f"Role being hired for: {job_title or 'not specified'}\n"
                             f"Topic being evaluated: {active_topic or 'general'}\n"
@@ -168,23 +153,19 @@ async def evaluate_answer(
                             "Use this context to judge whether the candidate's answer is appropriate for the role and topic.\n"
                             "A strong answer on a CRITICAL topic must show real domain knowledge -- not just communication skill.\n"
                             "If the answer is technically incorrect or misunderstands the topic, penalise depth and grounding.\n\n"
-
                             "-- THE 4 SCORES --\n"
                             "All 4 scores feed directly into the saturation system that decides when to change topics.\n"
                             "Score what they actually said -- not what they could have said.\n\n"
-
                             "clarity (0-10) -- Is the answer easy to follow?\n"
                             "  0-2: disconnected, hard to parse\n"
                             "  3-5: followable but jumps around or trails off\n"
                             "  6-8: clear structure, logical flow\n"
                             "  9-10: precise, concise, logically tight\n\n"
-
                             "depth (0-10) -- Did they explain WHY or HOW, not just WHAT?\n"
                             "  0-2: stated a fact with zero reasoning\n"
                             "  3-5: some reasoning, no tradeoffs\n"
                             "  6-8: explained a real decision or tradeoff\n"
                             "  9-10: cause-effect chain, edge cases, consequences named\n\n"
-
                             "specificity (0-10) -- Real names, tools, numbers, dates?\n"
                             "  0-2: completely generic ('we used a tool', 'some time ago')\n"
                             "  3-5: vague references, no real names or numbers\n"
@@ -193,7 +174,6 @@ async def evaluate_answer(
                             "  IMPORTANT: count EVERY real named tool/technology/product even in a messy or\n"
                             "  rambling answer. 'DuckDB vs MySQL and Supabase' = three real tools = specificity >= 6.\n"
                             "  A named comparison ('X over Y because...') is concrete -- score it 6+, not 1-2.\n\n"
-
                             "grounding (0-10) -- Does this sound like real lived work?\n"
                             "  0-2: pure theory, could be copied from docs\n"
                             "  3-5: plausible but could be anyone\n"
@@ -201,34 +181,28 @@ async def evaluate_answer(
                             "  9-10: rich imperfect detail only someone who did it would know\n"
                             "  IMPORTANT: a real opinion formed from usage ('DuckDB used less storage than MySQL')\n"
                             "  is lived experience -- score grounding >= 5 even if phrased clumsily.\n\n"
-
                             "SCORING FAIRNESS (CRITICAL -- this is voice-transcribed speech):\n"
                             "  - Do NOT penalise specificity or grounding for bad grammar, filler words, or\n"
                             "    transcription noise ('the thing is why I use the activity'). Score the CONTENT.\n"
                             "  - If the candidate clearly names real tools or gives a real reason, the messy\n"
                             "    delivery only lowers CLARITY -- not specificity or grounding.\n"
                             "  - Extract the substance from disfluent speech before scoring.\n\n"
-
                             "-- ROUTING --\n"
                             "Your action tells the system whether this answer gave enough signal or needs more digging.\n"
                             "The saturation system handles when to change topics -- your job is to say what to do NEXT.\n\n"
-
                             "PROBE -- when more can be pulled from this answer. Pick probe_mode based on what is weakest:\n"
                             "  ownership     -- grounding or specificity low, heavy 'we' language, HOW is unknown\n"
                             "  depth         -- specificity ok but depth low, no tradeoff, metric, or real reasoning\n"
                             "  authenticity  -- sounds rehearsed, shallower than their first answer, claimed skill not shown\n"
                             "  pressure      -- story is too clean, no friction, mistake, or hard moment mentioned\n"
                             "  clarification -- contradicts something said earlier, or answers are getting shorter each turn\n\n"
-
                             "MOVE_ON -- only when this answer genuinely covered the topic:\n"
                             "  - depth >= 7 AND specificity >= 7 AND grounding >= 6 (real, specific, reasoned answer)\n"
                             "  - For CRITICAL topics: require depth >= 8 -- a polished answer is not enough, need real domain knowledge\n"
                             "  - OR the candidate clearly cannot answer this (said I don't know / I didn't do that)\n"
                             "  probe_mode must be null when action=MOVE_ON\n\n"
-
                             f"-- BAND: {candidate_band.upper()} --\n"
                             f"{_band_scoring_note}\n\n"
-
                             "RULES:\n"
                             "  - Score THIS answer only -- not the candidate overall\n"
                             "  - reason must quote actual words from their answer (max 8 words)\n"
@@ -250,7 +224,6 @@ async def evaluate_answer(
             ),
             timeout=8.0,  # Inner LLM call. MUST be < eval wrapper (10s) < LLM gate (12s).
         )
-
         # Collect streamed chunks and capture final usage
         raw = ""
         _usage = None
@@ -259,7 +232,6 @@ async def evaluate_answer(
                 raw += chunk.choices[0].delta.content
             if chunk.usage:
                 _usage = chunk.usage
-
         _eval_llm_usage = {
             "model": llm_model,
             "inputTokens": int(getattr(_usage, "prompt_tokens", 0) or 0) if _usage else 0,
@@ -267,13 +239,11 @@ async def evaluate_answer(
             "cachedInputTokens": int(getattr(getattr(_usage, "prompt_tokens_details", None), "cached_tokens", 0) or 0) if _usage else 0,
         }
         data: dict[str, Any] = json.loads(raw)
-
         def _clamp(v: Any, lo: float = 0.0, hi: float = 10.0) -> float:
             try:
                 return max(lo, min(hi, float(v)))
             except (TypeError, ValueError):
                 return 0.0
-
         clarity     = _clamp(data.get("clarity", 0))
         depth       = _clamp(data.get("depth", 0))
         specificity = _clamp(data.get("specificity", 0))
@@ -286,11 +256,9 @@ async def evaluate_answer(
             + specificity * 0.30
             + grounding * 0.15
         )
-
         action = str(data.get("action", "PROBE")).upper()
         if action not in ("PROBE", "MOVE_ON"):
             action = "PROBE"
-
         # Validate probe_mode against our 5 families + legacy aliases
         _VALID_FAMILIES = {"ownership", "depth", "authenticity", "pressure", "clarification"}
         _LEGACY_MAP = {
@@ -308,9 +276,7 @@ async def evaluate_answer(
             probe_mode = None
         else:
             probe_mode = "ownership"  # safe default
-
         reason = str(data.get("reason", ""))[:120]
-
         logger.info(
             "[EVAL] [OK] action=%s probe=%s | "
             "clarity=%d depth=%d specificity=%d grounding=%d | reason=%s",
@@ -318,7 +284,6 @@ async def evaluate_answer(
             int(clarity), int(depth), int(specificity), int(grounding),
             repr(reason),
         )
-
         return {
             "clarity": clarity, "depth": depth,
             "specificity": specificity, "grounding": grounding,
@@ -327,7 +292,6 @@ async def evaluate_answer(
             "reason": reason,
             "_llm_usage": _eval_llm_usage,
         }
-
     except (asyncio.TimeoutError, Exception) as e:
         # RECOVERY OWNED BY EVAL -- never raise to the agent.
         # The agent depends ONLY on eval's return value; it has no fallback path.

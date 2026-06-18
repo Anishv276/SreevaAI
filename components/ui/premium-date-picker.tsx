@@ -1,16 +1,13 @@
 "use client";
-
 import { useRef, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Calendar, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
-
 const DAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 const MONTHS = [
     "January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December"
 ];
-
 interface PremiumDatePickerProps {
     value: string; // ISO format: YYYY-MM-DD
     onChange: (date: string) => void;
@@ -18,7 +15,6 @@ interface PremiumDatePickerProps {
     className?: string;
     disabledBeforeToday?: boolean;
 }
-
 export function PremiumDatePicker({
     value,
     onChange,
@@ -30,21 +26,17 @@ export function PremiumDatePicker({
     const [rect, setRect] = useState<DOMRect | null>(null);
     const triggerRef = useRef<HTMLButtonElement>(null);
     const calRef = useRef<HTMLDivElement>(null);
-
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-
     const parsed = value ? new Date(value + "T00:00:00") : null;
     const [viewYear, setViewYear] = useState(parsed?.getFullYear() ?? today.getFullYear());
     const [viewMonth, setViewMonth] = useState(parsed?.getMonth() ?? today.getMonth());
-
     const handleOpen = () => {
         if (!open && triggerRef.current) {
             setRect(triggerRef.current.getBoundingClientRect());
         }
         setOpen(o => !o);
     };
-
     // Close on outside click
     useEffect(() => {
         if (!open) return;
@@ -55,7 +47,6 @@ export function PremiumDatePicker({
         document.addEventListener("mousedown", h);
         return () => document.removeEventListener("mousedown", h);
     }, [open]);
-
     // Reposition on scroll
     useEffect(() => {
         if (!open) return;
@@ -64,7 +55,6 @@ export function PremiumDatePicker({
         t = setTimeout(() => window.addEventListener("scroll", update, true), 100);
         return () => { clearTimeout(t); window.removeEventListener("scroll", update, true); };
     }, [open]);
-
     // Build calendar grid
     const firstDay = new Date(viewYear, viewMonth, 1).getDay();
     const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
@@ -73,7 +63,6 @@ export function PremiumDatePicker({
         ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
     ];
     while (cells.length % 7 !== 0) cells.push(null);
-
     const selectDay = (day: number) => {
         const d = new Date(viewYear, viewMonth, day);
         d.setHours(0, 0, 0, 0);
@@ -82,7 +71,6 @@ export function PremiumDatePicker({
         onChange(iso);
         setOpen(false);
     };
-
     const prevMonth = () => {
         if (viewMonth === 0) { setViewMonth(11); setViewYear(y => y - 1); }
         else setViewMonth(m => m - 1);
@@ -91,13 +79,10 @@ export function PremiumDatePicker({
         if (viewMonth === 11) { setViewMonth(0); setViewYear(y => y + 1); }
         else setViewMonth(m => m + 1);
     };
-
     const displayValue = parsed
         ? parsed.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
         : null;
-
     const CAL_HEIGHT = 320;
-
     const calendar = open && rect ? (
         <div
             ref={calRef}
@@ -126,14 +111,12 @@ export function PremiumDatePicker({
                     <ChevronRight className="h-4 w-4" />
                 </button>
             </div>
-
             <div className="px-3 pt-3">
                 <div className="grid grid-cols-7 mb-1">
                     {DAYS.map(d => (
                         <div key={d} className="text-center text-[10px] font-black uppercase tracking-widest text-gray-400 py-1">{d}</div>
                     ))}
                 </div>
-
                 <div className="grid grid-cols-7 gap-y-1 pb-3">
                     {cells.map((day, i) => {
                         if (!day) return <div key={i} />;
@@ -142,7 +125,6 @@ export function PremiumDatePicker({
                         const isPast = disabledBeforeToday && cellDate < today;
                         const isToday = cellDate.getTime() === today.getTime();
                         const isSelected = parsed && cellDate.getTime() === parsed.getTime();
-
                         return (
                             <button
                                 key={i}
@@ -168,7 +150,6 @@ export function PremiumDatePicker({
             </div>
         </div>
     ) : null;
-
     return (
         <div className={cn("relative", className)}>
             <button
@@ -189,4 +170,3 @@ export function PremiumDatePicker({
         </div>
     );
 }
-

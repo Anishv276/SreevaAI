@@ -8,14 +8,12 @@ import { AuthProvider } from "@/context/auth-context";
 import { CandidatesProvider } from "@/context/candidates-context";
 import { Toaster } from "@/components/ui/toast-custom";
 import ClarityAnalytics from "@/components/clarity-analytics";
-
 const inter = Inter({
   subsets: ["latin"],
   weight: ["400", "500", "600", "700", "800", "900"],
   variable: "--font-inter",
   display: "swap",
 });
-
 export const metadata: Metadata = {
   title: {
     default: "Sreeva AI - AI-Powered Recruitment Platform",
@@ -65,7 +63,6 @@ export const metadata: Metadata = {
     },
   },
 };
-
 export default function RootLayout({
   children,
 }: {
@@ -73,7 +70,6 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning className={inter.variable}>
-
       <head>
         <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Instrument+Serif:ital@0;1&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap" />
       </head>
@@ -87,7 +83,6 @@ export default function RootLayout({
             window.dataLayer = window.dataLayer || [];
             function gtag(){dataLayer.push(arguments);}
             gtag('js', new Date());
-
             gtag('config', 'G-LRB7QT4RJR');
           `}
         </Script>

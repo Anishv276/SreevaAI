@@ -1,5 +1,4 @@
 "use client";
-
 import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,53 +13,43 @@ import { useSearchParams } from "next/navigation";
 import { toast } from "@/components/ui/toast-custom";
 import { PasswordInput } from "@/components/ui/password-input";
 import { SettingsCard, Field } from "@/components/admin/settings/settings-shared";
-
 const sections = [
     { id: "account", icon: User, label: "Account" },
     { id: "password", icon: Lock, label: "Password" },
 ];
-
 export default function SettingsPage() {
     const adminOrg = useAdminOrg();
     const searchParams = useSearchParams();
     const [activeSection, setActiveSection] = useState("account");
-
     useEffect(() => {
         const section = searchParams.get("section");
         // map legacy "profile" / "company" deep-links to "account"
         const mapped = section === "profile" || section === "company" ? "account" : section;
         if (mapped && sections.some(s => s.id === mapped)) setActiveSection(mapped);
     }, [searchParams]);
-
     const [isLoading, setIsLoading] = useState(true);
     const logoInputRef = useRef<HTMLInputElement>(null);
     const [isUploadingLogo, setIsUploadingLogo] = useState(false);
-
     const [profile, setProfile] = useState({ name: "", email: "" });
     const [company, setCompany] = useState({
         name: adminOrg?.name || "",
         website: adminOrg?.website || "",
         logoUrl: adminOrg?.logoUrl || "",
     });
-
     const [isLogoModalOpen, setIsLogoModalOpen] = useState(false);
     const [isLogoPreviewOpen, setIsLogoPreviewOpen] = useState(false);
     const [isProcessingAction, setIsProcessingAction] = useState(false);
-
     const [passwords, setPasswords] = useState({ current: "", next: "", confirm: "" });
     const [isNewPasswordValid, setIsNewPasswordValid] = useState(false);
     const [pwError, setPwError] = useState("");
     const [pwSaved, setPwSaved] = useState(false);
-
     const [otp, setOtp] = useState("");
     const [showOtpModal, setShowOtpModal] = useState(false);
     const [sendingOtp, setSendingOtp] = useState(false);
     const [otpError, setOtpError] = useState("");
     const [otpAttempts, setOtpAttempts] = useState(0);
-
     const [isSaving, setIsSaving] = useState(false);
     const [saved, setSaved] = useState(false);
-
     useEffect(() => {
         const fetchAll = async () => {
             try {
@@ -77,7 +66,6 @@ export default function SettingsPage() {
         };
         fetchAll();
     }, []);
-
     const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -104,7 +92,6 @@ export default function SettingsPage() {
             setIsUploadingLogo(false);
         }
     };
-
     const confirmLogoDelete = async () => {
         if (!company.logoUrl) return;
         setIsProcessingAction(true);
@@ -130,7 +117,6 @@ export default function SettingsPage() {
             setIsProcessingAction(false);
         }
     };
-
     const handleSave = async () => {
         setIsSaving(true);
         try {
@@ -156,7 +142,6 @@ export default function SettingsPage() {
             setIsSaving(false);
         }
     };
-
     const handlePasswordSave = async () => {
         if (!passwords.current) { setPwError("Current password is required."); return; }
         if (passwords.next.length < 8) { setPwError("New password must be at least 8 characters."); return; }
@@ -182,7 +167,6 @@ export default function SettingsPage() {
             setSendingOtp(false);
         }
     };
-
     const handleVerifyAndSavePassword = async () => {
         if (!otp || otp.length < 6) { setOtpError("6-digit code required."); return; }
         setIsSaving(true);
@@ -213,7 +197,6 @@ export default function SettingsPage() {
             setIsSaving(false);
         }
     };
-
     if (isLoading) {
         return (
             <div className="flex h-[450px] items-center justify-center">
@@ -221,11 +204,9 @@ export default function SettingsPage() {
             </div>
         );
     }
-
     return (
         <div style={{ zoom: 0.72, transformOrigin: "top center" }}>
             <div className="space-y-8 pb-16">
-
                 {/* Header */}
                 <div className="flex items-center gap-4 group">
                     <div className="h-12 w-1.5 bg-gradient-to-b from-[#F97316] to-orange-400 rounded-full shadow-[0_0_12px_rgba(249,115,22,0.4)] transition-all duration-300 group-hover:h-14" />
@@ -234,9 +215,7 @@ export default function SettingsPage() {
                         <p className="text-gray-500 font-medium mt-1 text-base">Manage your account & preferences</p>
                     </div>
                 </div>
-
                 <div className="flex gap-8 items-start">
-
                     {/* Left Nav */}
                     <aside className="w-56 flex-shrink-0 sticky top-8">
                         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-2 space-y-0.5">
@@ -257,14 +236,11 @@ export default function SettingsPage() {
                             ))}
                         </div>
                     </aside>
-
                     {/* Content */}
                     <div className="flex-1 min-w-0 space-y-6">
-
                         {/* ACCOUNT — profile + company merged */}
                         {activeSection === "account" && (
                             <div className="space-y-6">
-
                                 {/* Personal */}
                                 <SettingsCard title="Personal Information" description="Your name and login email.">
                                     <div className="grid grid-cols-1 gap-5">
@@ -291,11 +267,9 @@ export default function SettingsPage() {
                                         </Field>
                                     </div>
                                 </SettingsCard>
-
                                 {/* Company */}
                                 <SettingsCard title="Company Details" description="Your organization name, website, and branding.">
                                     <div className="grid grid-cols-1 gap-5">
-
                                         {/* Logo */}
                                         <Field label="Company Logo">
                                             <div className="flex items-center gap-6">
@@ -342,7 +316,6 @@ export default function SettingsPage() {
                                                 </div>
                                             </div>
                                         </Field>
-
                                         <Field label="Company Name">
                                             <div className="relative">
                                                 <Building2 className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -353,7 +326,6 @@ export default function SettingsPage() {
                                                 />
                                             </div>
                                         </Field>
-
                                         <Field label="Website URL">
                                             <div className="relative">
                                                 <Globe className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -365,10 +337,8 @@ export default function SettingsPage() {
                                                 />
                                             </div>
                                         </Field>
-
                                     </div>
                                 </SettingsCard>
-
                                 {/* Save */}
                                 <div className="flex justify-end pt-2">
                                     <Button onClick={handleSave} disabled={isSaving} className={cn("h-11 px-12 rounded-lg font-bold shadow-md transition-all", saved ? "bg-emerald-500 text-white" : "bg-[#F97316] text-white")}>
@@ -378,7 +348,6 @@ export default function SettingsPage() {
                                 </div>
                             </div>
                         )}
-
                         {/* PASSWORD */}
                         {activeSection === "password" && (
                             <div className="space-y-6">
@@ -427,7 +396,6 @@ export default function SettingsPage() {
                                         </div>
                                     </div>
                                 </SettingsCard>
-
                                 <div className="flex justify-end pt-4">
                                     <Button onClick={handlePasswordSave} disabled={sendingOtp} className={cn("h-10 px-8 rounded-lg font-bold shadow-sm", pwSaved ? "bg-emerald-500 text-white" : "bg-[#F97316] text-white")}>
                                         {sendingOtp && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
@@ -436,10 +404,8 @@ export default function SettingsPage() {
                                 </div>
                             </div>
                         )}
-
                     </div>
                 </div>
-
                 {/* Modals */}
                 <ActionConfirmModal
                     isOpen={isLogoModalOpen}
@@ -450,7 +416,6 @@ export default function SettingsPage() {
                     confirmText="Confirm Remove"
                     isLoading={isProcessingAction}
                 />
-
                 {isLogoPreviewOpen && company.logoUrl && (
                     <div className="fixed inset-0 z-[100] flex items-center justify-center p-8 backdrop-blur-xl bg-white/40">
                         <div className="absolute inset-0" onClick={() => setIsLogoPreviewOpen(false)} />
@@ -467,7 +432,6 @@ export default function SettingsPage() {
                         </div>
                     </div>
                 )}
-
                 {showOtpModal && (
                     <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 backdrop-blur-xl bg-white/30">
                         <div className="w-full max-w-lg bg-white border border-gray-100 rounded-[2rem] shadow-[0_50px_150px_rgba(0,0,0,0.15)] overflow-hidden">
@@ -508,7 +472,6 @@ export default function SettingsPage() {
                         </div>
                     </div>
                 )}
-
             </div>
         </div>
     );

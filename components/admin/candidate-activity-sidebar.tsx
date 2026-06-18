@@ -1,5 +1,4 @@
 "use client";
-
 import { useEffect, useMemo, useState } from "react";
 import {
     Activity,
@@ -15,7 +14,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { getAuditTrailFromAiReport, type CandidateActivityEvent } from "@/lib/candidate-activity.shared";
-
 type CandidateDetails = {
     fullName?: string;
     createdAt?: string;
@@ -25,7 +23,6 @@ type CandidateDetails = {
         inviteSentAt?: string | null;
     } | null;
 };
-
 type Props = {
     open: boolean;
     candidateId: string | null;
@@ -33,7 +30,6 @@ type Props = {
     backHref?: string;
     onClose: () => void;
 };
-
 function colorForType(type: CandidateActivityEvent["type"]) {
     switch (type) {
         case "resume_screened":
@@ -53,7 +49,6 @@ function colorForType(type: CandidateActivityEvent["type"]) {
             return "bg-slate-50 text-slate-700 border-slate-200";
     }
 }
-
 function iconForType(type: CandidateActivityEvent["type"]) {
     switch (type) {
         case "resume_screened":
@@ -73,28 +68,22 @@ function iconForType(type: CandidateActivityEvent["type"]) {
             return CheckCircle2;
     }
 }
-
 function formatTimestamp(timestamp: string) {
     const date = new Date(timestamp);
     if (Number.isNaN(date.getTime())) return timestamp;
-
     return date.toLocaleString("en-IN", {
         dateStyle: "medium",
         timeStyle: "medium",
         timeZone: "Asia/Kolkata",
     });
 }
-
 export function CandidateActivitySidebar({ open, candidateId, candidateName, backHref, onClose }: Props) {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [candidate, setCandidate] = useState<CandidateDetails | null>(null);
-
     useEffect(() => {
         if (!open || !candidateId) return;
-
         let cancelled = false;
-
         const load = async () => {
             setLoading(true);
             setError(null);
@@ -111,20 +100,15 @@ export function CandidateActivitySidebar({ open, candidateId, candidateName, bac
                 if (!cancelled) setLoading(false);
             }
         };
-
         void load();
-
         return () => {
             cancelled = true;
         };
     }, [open, candidateId]);
-
     const trail = useMemo(() => {
         if (!candidate) return [];
-
         const parsedTrail = getAuditTrailFromAiReport(candidate.aiReport);
         const fallback: CandidateActivityEvent[] = [];
-
         if (candidate.createdAt) {
             fallback.push({
                 type: "resume_screened",
@@ -134,7 +118,6 @@ export function CandidateActivitySidebar({ open, candidateId, candidateName, bac
                 source: "system",
             });
         }
-
         if (candidate.updatedAt && candidate.updatedAt !== candidate.createdAt) {
             fallback.push({
                 type: "status_changed",
@@ -144,7 +127,6 @@ export function CandidateActivitySidebar({ open, candidateId, candidateName, bac
                 source: "system",
             });
         }
-
         if (candidate.interview?.inviteSentAt) {
             fallback.push({
                 type: "interview_invite_sent",
@@ -154,24 +136,18 @@ export function CandidateActivitySidebar({ open, candidateId, candidateName, bac
                 source: "system",
             });
         }
-
         const merged = [...parsedTrail, ...fallback].sort(
             (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
         );
-
         const dedup = new Map<string, CandidateActivityEvent>();
         for (const item of merged) {
             const key = `${item.type}|${item.label}|${item.timestamp}`;
             if (!dedup.has(key)) dedup.set(key, item);
         }
-
         return Array.from(dedup.values());
     }, [candidate]);
-
     const candidateTitle = candidate?.fullName || candidateName || "Candidate";
-
     if (!open) return null;
-
     return (
         <div className="fixed inset-0 z-[1000] font-sans">
             <button
@@ -179,7 +155,6 @@ export function CandidateActivitySidebar({ open, candidateId, candidateName, bac
                 className="absolute inset-0 bg-slate-950/30 backdrop-blur-[2px]"
                 onClick={onClose}
             />
-
             <aside className="absolute right-0 top-0 h-full w-full max-w-2xl overflow-hidden border-l border-slate-200 bg-gradient-to-b from-white via-white to-slate-50 shadow-[0_20px_80px_rgba(15,23,42,0.18)]">
                 <div className="flex h-full flex-col">
                     <div className="border-b border-slate-200 bg-white/90 px-6 py-5 backdrop-blur">
@@ -196,7 +171,6 @@ export function CandidateActivitySidebar({ open, candidateId, candidateName, bac
                                     Exact timestamps for status changes, emails, interview actions, and record updates.
                                 </p>
                             </div>
-
                             <div className="flex shrink-0 items-center gap-2">
                                 {backHref ? (
                                     <Button asChild variant="outline" className="h-11 rounded-2xl border-slate-200 bg-white px-5 text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-50">
@@ -213,7 +187,6 @@ export function CandidateActivitySidebar({ open, candidateId, candidateName, bac
                             </div>
                         </div>
                     </div>
-
                     <div className="flex-1 overflow-y-auto px-6 py-6">
                         {loading ? (
                             <div className="flex h-full items-center justify-center">
@@ -244,7 +217,6 @@ export function CandidateActivitySidebar({ open, candidateId, candidateName, bac
                                 {trail.map((item, index) => {
                                     const Icon = iconForType(item.type);
                                     const isLast = index === trail.length - 1;
-
                                     return (
                                         <div key={`${item.type}-${item.timestamp}-${index}`} className="flex gap-4">
                                             <div className="flex flex-col items-center pt-1">
@@ -260,7 +232,6 @@ export function CandidateActivitySidebar({ open, candidateId, candidateName, bac
                                                     <div className="mt-2 h-full w-px flex-1 rounded-full bg-gradient-to-b from-slate-200 via-slate-200 to-transparent" />
                                                 ) : null}
                                             </div>
-
                                             <div className="min-w-0 flex-1 pb-2">
                                                 <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_6px_20px_rgba(15,23,42,0.06)]">
                                                     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -271,13 +242,11 @@ export function CandidateActivitySidebar({ open, candidateId, candidateName, bac
                                                             {formatTimestamp(item.timestamp)}
                                                         </p>
                                                     </div>
-
                                                     {item.details ? (
                                                         <p className="mt-2 text-sm font-medium leading-6 text-slate-600">
                                                             {item.details}
                                                         </p>
                                                     ) : null}
-
                                                     <div className="mt-4 flex flex-wrap items-center gap-2 text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">
                                                         <span>{String(item.source || "system")}</span>
                                                         <span className="text-slate-300">-</span>

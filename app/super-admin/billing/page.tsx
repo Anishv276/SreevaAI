@@ -1,12 +1,10 @@
 "use client";
-
 import React from "react";
 import { Building2, Search, RefreshCw, ChevronRight } from "lucide-react";
 import { BillingContent } from "@/components/admin/billing/billing-content";
 import { formatOrgPlan } from "@/lib/org-plans";
 import { formatLandingPackageForOrgPlan } from "@/lib/landing-packages";
 import { cn } from "@/lib/utils";
-
 type OrgSummary = {
   id: string;
   name: string;
@@ -17,17 +15,14 @@ type OrgSummary = {
   interviewQuotaTotal: number;
   interviewQuotaUsed: number;
 };
-
 export default function SuperAdminBillingPage() {
   const [orgs, setOrgs] = React.useState<OrgSummary[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [search, setSearch] = React.useState("");
   const [selectedOrgId, setSelectedOrgId] = React.useState<string | null>(null);
-
   React.useEffect(() => {
     let cancelled = false;
-
     const loadOrgs = async () => {
       try {
         setLoading(true);
@@ -50,14 +45,11 @@ export default function SuperAdminBillingPage() {
         if (!cancelled) setLoading(false);
       }
     };
-
     loadOrgs();
-
     return () => {
       cancelled = true;
     };
   }, []);
-
   const filteredOrgs = React.useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return orgs;
@@ -65,25 +57,20 @@ export default function SuperAdminBillingPage() {
       [org.name, org.slug, formatOrgPlan(org.plan), org.status].join(" ").toLowerCase().includes(q)
     );
   }, [orgs, search]);
-
   React.useEffect(() => {
     if (!selectedOrgId && filteredOrgs[0]?.id) {
       setSelectedOrgId(filteredOrgs[0].id);
     }
   }, [filteredOrgs, selectedOrgId]);
-
   const selectedOrg = React.useMemo(
     () => orgs.find((org) => org.id === selectedOrgId) || null,
     [orgs, selectedOrgId]
   );
-
   const creditsUrl = selectedOrgId ? `/api/admin/credits?orgId=${encodeURIComponent(selectedOrgId)}` : "/api/admin/credits";
   const historyUrl = selectedOrgId
     ? `/api/admin/billing/history?orgId=${encodeURIComponent(selectedOrgId)}`
     : "/api/admin/billing/history";
-
   const interviewRemaining = selectedOrg ? Math.max(0, selectedOrg.interviewQuotaTotal - selectedOrg.interviewQuotaUsed) : 0;
-
   return (
     <div
       className="space-y-8 pb-12 font-sans animate-in fade-in duration-500"
@@ -101,7 +88,6 @@ export default function SuperAdminBillingPage() {
             </p>
           </div>
         </div>
-
         <div className="flex flex-wrap items-center gap-3">
           <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
             <div className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Selected org</div>
@@ -113,7 +99,6 @@ export default function SuperAdminBillingPage() {
           </div>
         </div>
       </div>
-
       <div className="grid grid-cols-1 gap-3 xl:grid-cols-[214px_minmax(0,1fr)] items-start">
         <aside className="sticky top-5 overflow-hidden rounded-2xl border border-gray-200 bg-white">
           <div className="border-b border-gray-100 p-3">
@@ -126,7 +111,6 @@ export default function SuperAdminBillingPage() {
                 <p className="text-[10px] font-medium text-gray-700">{orgs.length} total</p>
               </div>
             </div>
-
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-2.5 w-2.5 -translate-y-1/2 text-gray-400" />
               <input
@@ -137,7 +121,6 @@ export default function SuperAdminBillingPage() {
               />
             </div>
           </div>
-
           <div className="max-h-[calc(100vh-240px)] overflow-y-auto p-1.25 custom-scrollbar">
             {loading ? (
               <div className="p-5 text-center">
@@ -175,7 +158,6 @@ export default function SuperAdminBillingPage() {
                             {org.name[0]?.toUpperCase()}
                           </div>
                         )}
-
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center justify-between gap-2">
                             <h3 className="truncate text-[12px] font-semibold text-gray-900 group-hover:text-[#F97316]">{org.name}</h3>
@@ -208,7 +190,6 @@ export default function SuperAdminBillingPage() {
             )}
           </div>
         </aside>
-
         <section className="min-w-0">
           {selectedOrg ? (
               <BillingContent

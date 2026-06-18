@@ -7,7 +7,6 @@ export interface Voice {
   gender: "male" | "female";
   tags?: string[];
 }
-
 export const ALL_VOICES: Voice[] = [
   // Cartesia
   { id: "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc", name: "Jacqueline", provider: "CARTESIA", model: "cartesia/sonic-3", gender: "female", description: "Refined & Professional", tags: ["Verified", "Stable", "Corporate"] },
@@ -39,13 +38,10 @@ export const ALL_VOICES: Voice[] = [
   { id: "tanya",   name: "Tanya",   provider: "SARVAM", model: "bulbul:v3", gender: "female", description: "Clear Female",                   tags: ["Concise"] },
   { id: "sunny",   name: "Sunny",   provider: "SARVAM", model: "bulbul:v3", gender: "male",   description: "Friendly Youth",                 tags: ["Casual"] },
 ];
-
 export const DEFAULT_VOICE_ID = "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc";
-
 export function getVoiceById(id: string): Voice | undefined {
   return ALL_VOICES.find(v => v.id === id);
 }
-
 export function getProviderForVoice(id: string): "CARTESIA" | "SARVAM" | "ELEVENLABS" {
   return getVoiceById(id)?.provider ?? "CARTESIA";
 }

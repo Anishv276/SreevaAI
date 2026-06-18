@@ -1,5 +1,4 @@
 import { INK, INK_2, LINE_2, ORANGE_DEEP } from "./tokens";
-
 export function injectBillingAnimStyles() {
   if (typeof document === "undefined" || document.getElementById("billing-anim")) return;
   const s = document.createElement("style");

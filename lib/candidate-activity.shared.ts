@@ -6,7 +6,6 @@ export type CandidateActivityType =
     | "interview_invite_sent"
     | "interview_link_resent"
     | "bulk_action";
-
 export interface CandidateActivityEvent {
     type: CandidateActivityType;
     label: string;
@@ -14,7 +13,6 @@ export interface CandidateActivityEvent {
     timestamp: string;
     source?: "system" | "hr" | "worker";
 }
-
 function parseJsonObject(value: unknown): Record<string, any> {
     if (value && typeof value === "object" && !Array.isArray(value)) {
         return value as Record<string, any>;
@@ -27,7 +25,6 @@ function parseJsonObject(value: unknown): Record<string, any> {
         return {};
     }
 }
-
 export function normalizeAuditTrail(value: unknown): CandidateActivityEvent[] {
     if (!Array.isArray(value)) return [];
     return value
@@ -40,7 +37,6 @@ export function normalizeAuditTrail(value: unknown): CandidateActivityEvent[] {
         }))
         .filter((entry) => Boolean(entry.label) && Boolean(entry.timestamp));
 }
-
 export function getAuditTrailFromAiReport(aiReport: unknown): CandidateActivityEvent[] {
     const parsed = parseJsonObject(aiReport);
     return normalizeAuditTrail(parsed.auditTrail);

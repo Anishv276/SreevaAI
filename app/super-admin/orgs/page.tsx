@@ -182,13 +182,10 @@ export default function OrgsPage() {
             setHistoryLoading(false);
             return;
         }
-
         let cancelled = false;
-
         const loadHistory = async () => {
             setHistoryLoading(true);
             setHistoryError("");
-
             try {
                 const res = await fetch(`/api/super-admin/orgs/interview-history?orgId=${encodeURIComponent(metricsOrg.id)}`, {
                     cache: "no-store",
@@ -212,9 +209,7 @@ export default function OrgsPage() {
                 }
             }
         };
-
         loadHistory();
-
         return () => {
             cancelled = true;
         };

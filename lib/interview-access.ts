@@ -7,7 +7,6 @@ export function isInterviewTokenRequired() {
     // egress, finalize and snapshot-upload endpoints in any non-prod deploy.
     return process.env.INTERVIEW_TOKEN_REQUIRED !== "false";
 }
-
 export function isInterviewReopenAllowed() {
     // Temporary QA bypass:
     // - In non-production, allow reopening previously finalized interviews by default.

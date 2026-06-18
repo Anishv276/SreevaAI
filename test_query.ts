@@ -1,11 +1,9 @@
 import { config } from "dotenv";
 config();
-
 async function main() {
   const { prisma } = await import("./lib/prisma");
   const now = new Date();
   const mergedEvents = [{ eventType: "tab_switch", timestamp: Date.now() }];
-  
   try {
     const res = await prisma.$executeRawUnsafe(
         `
@@ -23,5 +21,4 @@ async function main() {
     console.error("Error:", e);
   }
 }
-
 main().catch(console.error);

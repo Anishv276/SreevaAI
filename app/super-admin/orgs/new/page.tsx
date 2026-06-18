@@ -1,5 +1,4 @@
 "use client";
-
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentType, FormEvent, ReactNode } from "react";
 import { useRouter } from "next/navigation";
@@ -33,7 +32,6 @@ import { ALL_VOICES, DEFAULT_VOICE_ID, getVoiceById, type Voice } from "@/lib/co
 import { DEFAULT_ORG_PLAN, ORG_PLAN_OPTIONS, type OrgPlanId } from "@/lib/org-plans";
 import { getProctoringSignalsForPlan, type ProctoringSignalToggles } from "@/lib/proctoring-signals";
 import { cn } from "@/lib/utils";
-
 type OrgFormState = {
   orgName: string;
   slug: string;
@@ -51,7 +49,6 @@ type OrgFormState = {
   allowedVoices: string[];
   deepgramModel: string;
 };
-
 function SectionHeader({ title, description }: { title: string; description?: string }) {
   return (
     <div className="space-y-1.5">
@@ -63,7 +60,6 @@ function SectionHeader({ title, description }: { title: string; description?: st
     </div>
   );
 }
-
 function Field({
   label,
   icon: Icon,
@@ -83,7 +79,6 @@ function Field({
     </div>
   );
 }
-
 function TextInput({
   label,
   icon,
@@ -138,7 +133,6 @@ function TextInput({
     </Field>
   );
 }
-
 function SelectInput({
   label,
   icon,
@@ -169,7 +163,6 @@ function SelectInput({
     </Field>
   );
 }
-
 function LimitControl({
   label,
   value,
@@ -182,7 +175,6 @@ function LimitControl({
   const isUnlimited = String(value).toLowerCase() === "unlimited" || Number(value) === 0;
   const [localValue, setLocalValue] = useState(isUnlimited ? "" : String(value));
   useEffect(() => { if (!isUnlimited) setLocalValue(String(value)); }, [value, isUnlimited]);
-
   return (
     <Field label={label} icon={Coins}>
       <div className="flex items-center gap-2">
@@ -226,7 +218,6 @@ function LimitControl({
     </Field>
   );
 }
-
 export default function NewOrgPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -241,7 +232,6 @@ export default function NewOrgPage() {
   const audioContextRef = useRef<AudioContext | null>(null);
   const gainNodeRef = useRef<GainNode | null>(null);
   const previewUrlRef = useRef<string | null>(null);
-
   const [form, setForm] = useState<OrgFormState>(() => ({
     orgName: "",
     slug: "",
@@ -259,10 +249,8 @@ export default function NewOrgPage() {
     allowedVoices: [DEFAULT_VOICE_ID],
     deepgramModel: "flux-general-en",
   }));
-
   const primaryVoiceId = form.voiceId || form.allowedVoices[0] || DEFAULT_VOICE_ID;
   const selectedVoice = useMemo(() => getVoiceById(primaryVoiceId) ?? getVoiceById(DEFAULT_VOICE_ID), [primaryVoiceId]);
-
   useEffect(() => {
     const loadVoices = async () => {
       try {
@@ -278,12 +266,10 @@ export default function NewOrgPage() {
     };
     void loadVoices();
   }, []);
-
   const selectedVoiceFromCatalog = useMemo(
     () => voices.find((voice) => voice.id === primaryVoiceId) || selectedVoice,
     [voices, primaryVoiceId, selectedVoice]
   );
-
   const filteredVoices = useMemo(() => {
     const term = voiceSearch.trim().toLowerCase();
     if (!term) return voices;
@@ -291,11 +277,9 @@ export default function NewOrgPage() {
       [voice.name, voice.provider, voice.model, voice.description, voice.id].join(" ").toLowerCase().includes(term)
     );
   }, [voices, voiceSearch]);
-
   const updateForm = (patch: Partial<OrgFormState>) => {
     setForm((prev) => ({ ...prev, ...patch }));
   };
-
   const setAllowedVoices = (nextAllowedVoices: string[]) => {
     const normalized = Array.from(
       new Set(nextAllowedVoices.map((id) => String(id || "").trim()).filter(Boolean))
@@ -306,7 +290,6 @@ export default function NewOrgPage() {
       voiceId: allowedVoices[0] || DEFAULT_VOICE_ID,
     });
   };
-
   const toggleVoice = (voiceId: string) => {
     const current = form.allowedVoices;
     const nextAllowed = current.includes(voiceId)
@@ -314,7 +297,6 @@ export default function NewOrgPage() {
       : [...current, voiceId];
     setAllowedVoices(nextAllowed);
   };
-
   const stopCurrentPreview = () => {
     if (activeAudioRef.current) {
       activeAudioRef.current.pause();
@@ -333,13 +315,11 @@ export default function NewOrgPage() {
     }
     setPlayingVoiceId(null);
   };
-
   const playSample = async (voiceId: string) => {
     if (playingVoiceId === voiceId) {
       stopCurrentPreview();
       return;
     }
-
     setPreviewLoading(true);
     try {
       stopCurrentPreview();
@@ -387,13 +367,11 @@ export default function NewOrgPage() {
       setPreviewLoading(false);
     }
   };
-
   useEffect(() => {
     return () => {
       stopCurrentPreview();
     };
   }, []);
-
   const makeSlug = (value: string) => {
     const base = value
       .toLowerCase()
@@ -402,7 +380,6 @@ export default function NewOrgPage() {
       .replace(/^-+|-+$/g, "");
     return base ? `${base}-${slugSuffix}` : "";
   };
-
   const validate = () => {
     if (!form.orgName.trim()) {
       toast.error("Client Name is required");
@@ -437,11 +414,9 @@ export default function NewOrgPage() {
     }
     return true;
   };
-
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!validate()) return;
-
     setLoading(true);
     try {
       const res = await fetch("/api/super-admin/orgs", {
@@ -465,12 +440,10 @@ export default function NewOrgPage() {
           deepgramModel: form.deepgramModel,
         }),
       });
-
       if (!res.ok) {
         const data = await res.json().catch(() => null);
         throw new Error(data?.error || "Failed to create organization");
       }
-
       setSuccess({
         orgName: form.orgName.trim(),
         adminEmail: form.adminEmail.trim(),
@@ -481,7 +454,6 @@ export default function NewOrgPage() {
       setLoading(false);
     }
   };
-
   if (success) {
     return (
       <div className="min-h-[70vh] px-4 py-8">
@@ -500,7 +472,6 @@ export default function NewOrgPage() {
       </div>
     );
   }
-
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 lg:px-0">
       <button
@@ -511,7 +482,6 @@ export default function NewOrgPage() {
         <ArrowLeft className="h-4 w-4" />
         Back to Organizations
       </button>
-
       <div className="mb-8">
         <div className="flex items-center gap-4">
           <div className="h-12 w-1.5 rounded-full bg-gradient-to-b from-[#F97316] to-orange-400 shadow-[0_0_12px_rgba(249,115,22,0.35)]" />
@@ -523,7 +493,6 @@ export default function NewOrgPage() {
           </div>
         </div>
       </div>
-
       <form onSubmit={handleSubmit} className="space-y-8">
         <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
           <SectionHeader title="Organization Profile" description="Core client metadata and URL slug." />
@@ -563,7 +532,6 @@ export default function NewOrgPage() {
             </div>
           </div>
         </section>
-
         <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
           <SectionHeader title="Administrative Access" description="Primary login credentials for the new organization." />
           <div className="mt-6 grid gap-6 md:grid-cols-3">
@@ -596,7 +564,6 @@ export default function NewOrgPage() {
             />
           </div>
         </section>
-
         <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
           <SectionHeader title="AI Engine" description="The defaults that will be saved to the organization." />
           <div className="mt-6 grid gap-6 lg:grid-cols-2">
@@ -696,7 +663,6 @@ export default function NewOrgPage() {
             </div>
           </div>
         </section>
-
         <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
           <SectionHeader title="Billing and Quotas" description="Usage guardrails for the organization." />
           <div className="mt-6 grid gap-6 md:grid-cols-2">
@@ -715,7 +681,6 @@ export default function NewOrgPage() {
             />
           </div>
         </section>
-
         <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
           <SectionHeader title="Recording Retention" description="Control whether interviews are recorded and how long Cloudflare recordings stay available." />
           <div className="mt-6 grid gap-6 md:grid-cols-2">
@@ -775,7 +740,6 @@ export default function NewOrgPage() {
             </div>
           </div>
         </section>
-
         <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
           <SectionHeader title="Plan and Safety" description="Choose a plan and enable proctoring signals." />
           <div className="mt-6 grid gap-6 lg:grid-cols-4">
@@ -819,7 +783,6 @@ export default function NewOrgPage() {
             </div>
           </div>
         </section>
-
         <div className="flex items-center justify-end gap-3 pb-4">
           <Button
             type="button"

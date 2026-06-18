@@ -1,22 +1,17 @@
 "use client";
-
 import { useState } from "react";
 import { AlertTriangle, X } from "lucide-react";
 import { INTERVIEW_SUPPORT_EMAIL, getSupportComposeUrl, isOrgRestrictedStatus } from "@/lib/interview-quota";
 import { useAdminOrg } from "@/context/admin-org-context";
-
 type BannerState = "low" | "empty" | null;
-
 export function LowCreditsBanner({ orgStatus }: { orgStatus?: string }) {
     const adminOrg = useAdminOrg();
     const [dismissed, setDismissed] = useState(false);
-
     // ⚡ Read from shared context — no fetch needed (was 2 API calls per page load)
     const liveStatus = adminOrg?.status || String(orgStatus || "").trim().toUpperCase();
     const isSuspended = isOrgRestrictedStatus(liveStatus);
     const total = Number(adminOrg?.interviewQuotaTotal ?? 0);
     const remaining = Number(adminOrg?.interviewQuotaRemaining ?? 0);
-
     let state: BannerState = null;
     if (isSuspended) {
         state = "empty";
@@ -25,11 +20,8 @@ export function LowCreditsBanner({ orgStatus }: { orgStatus?: string }) {
     } else if (total > 0 && remaining > 0 && remaining <= Math.max(1, Math.ceil(total * 0.1))) {
         state = "low";
     }
-
     if (!state || dismissed) return null;
-
     const isEmpty = state === "empty";
-
     return (
         <div
             className={`sticky top-0 z-50 w-full border-b ${
@@ -56,7 +48,6 @@ export function LowCreditsBanner({ orgStatus }: { orgStatus?: string }) {
                         </p>
                     </div>
                 </div>
-
                 <div className="flex items-center gap-3">
                     <a
                         href={getSupportComposeUrl({

@@ -1,5 +1,4 @@
 "use client";
-
 import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -18,39 +17,32 @@ import {
 import Link from "next/link";
 import { toast } from "@/components/ui/toast-custom";
 import { cn } from "@/lib/utils";
-
 type Step = "EMAIL" | "OTP" | "RESET" | "SUCCESS";
-
 function ForgotPasswordContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const from = searchParams.get("from");
-
     // Dynamic back routing
     const backLink = from === "settings" 
         ? "/admin/settings?section=password" 
         : from === "super-settings" 
         ? "/super-admin/settings" 
         : "/login";
-    
     const backText = (from === "settings" || from === "super-settings") ? "Back to Settings" : "Back to Login";
     const [step, setStep] = useState<Step>("EMAIL");
     const [loading, setLoading] = useState(false);
-
     const [email, setEmail] = useState("");
     const [otp, setOtp] = useState("");
     const [newPassword, setNewPassword] = useState("");
     const [confirmPassword, setConfirmPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
     const [resendTimer, setResendTimer] = useState(0);
-
     useEffect(() => {
         if (resendTimer > 0) {
             const timer = setTimeout(() => setResendTimer(resendTimer - 1), 1000);
             return () => clearTimeout(timer);
         }
     }, [resendTimer]);
-
     // Step 1: Send OTP
     const handleSendOTP = async (e?: React.FormEvent) => {
         if (e) e.preventDefault();
@@ -75,7 +67,6 @@ function ForgotPasswordContent() {
             setLoading(false);
         }
     };
-
     // Step 2: Verify OTP
     const handleVerifyOTP = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -102,7 +93,6 @@ function ForgotPasswordContent() {
             setLoading(false);
         }
     };
-
     // Step 3: Reset Password
     const handleResetPassword = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -134,18 +124,15 @@ function ForgotPasswordContent() {
             setLoading(false);
         }
     };
-
     return (
         <div className="min-h-screen bg-[#F7F6F3] flex items-center justify-center p-6 font-medium selection:bg-orange-100">
             <div className="w-full max-w-md space-y-8 animate-fade-slide">
-
                 {/* Header Section */}
                 <div className="flex flex-col items-center gap-6 text-center">
                     <Link href={backLink} className="group flex items-center gap-2 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] hover:text-gray-900 transition-colors">
                         <ArrowLeft className="w-3 h-3 group-hover:-translate-x-1 transition-transform" />
                         {backText}
                     </Link>
-
                     <div className="h-16 w-16 rounded-2xl bg-white border border-gray-100 flex items-center justify-center shadow-sm relative group">
                         <div className="absolute inset-0 bg-orange-50 rounded-2xl scale-0 group-hover:scale-100 transition-transform duration-500" />
                         {step === "EMAIL" && <Mail className="w-6 h-6 text-gray-400 group-hover:text-[#F97316] transition-colors relative z-10" />}
@@ -153,7 +140,6 @@ function ForgotPasswordContent() {
                         {step === "RESET" && <Lock className="w-6 h-6 text-gray-400 group-hover:text-[#F97316] transition-colors relative z-10" />}
                         {step === "SUCCESS" && <ShieldCheck className="w-6 h-6 text-emerald-500 relative z-10" />}
                     </div>
-
                     <div className="space-y-1">
                         <h1 className="text-xl font-black text-gray-900 tracking-tight uppercase">
                             {step === "EMAIL" && "Account Recovery"}
@@ -169,7 +155,6 @@ function ForgotPasswordContent() {
                         </p>
                     </div>
                 </div>
-
                 {/* Progress Indicator */}
                 <div className="flex justify-center gap-1.5 h-1">
                     {["EMAIL", "OTP", "RESET", "SUCCESS"].map((s, idx) => (
@@ -181,11 +166,9 @@ function ForgotPasswordContent() {
                         />
                     ))}
                 </div>
-
                 {/* Content Area */}
                 <div className="bg-white border border-gray-100 rounded-3xl p-8 shadow-[0_40px_100px_rgba(0,0,0,0.03)] overflow-hidden relative group">
                     <div className="absolute top-0 left-0 w-1 h-full bg-[#F97316]/50 opacity-0 group-hover:opacity-100 transition-all" />
-
                     <AnimatePresence mode="wait">
                         {step === "EMAIL" && (
                             <motion.form
@@ -221,7 +204,6 @@ function ForgotPasswordContent() {
                                 </button>
                             </motion.form>
                         )}
-
                         {step === "OTP" && (
                             <motion.form
                                 key="step-otp"
@@ -246,7 +228,6 @@ function ForgotPasswordContent() {
                                             Change Email
                                         </button>
                                     </div>
-
                                     <div className="relative h-14">
                                         <div className="flex justify-between gap-2 px-2 absolute inset-0 pointer-events-none">
                                             {[...Array(6)].map((_, i) => (
@@ -261,7 +242,6 @@ function ForgotPasswordContent() {
                                                 </div>
                                             ))}
                                         </div>
-
                                         <input
                                             autoFocus
                                             type="text"
@@ -271,7 +251,6 @@ function ForgotPasswordContent() {
                                             className="absolute inset-0 opacity-0 cursor-text text-center focus:outline-none tracking-[2em]"
                                         />
                                     </div>
-
                                     <div className="text-center mt-4">
                                         {resendTimer > 0 ? (
                                             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
@@ -288,7 +267,6 @@ function ForgotPasswordContent() {
                                         )}
                                     </div>
                                 </div>
-                                
                                 <button
                                     type="submit"
                                     disabled={loading}
@@ -298,7 +276,6 @@ function ForgotPasswordContent() {
                                 </button>
                             </motion.form>
                         )}
-
                         {step === "RESET" && (
                             <motion.form
                                 key="step-reset"
@@ -350,7 +327,6 @@ function ForgotPasswordContent() {
                                 </button>
                             </motion.form>
                         )}
-
                         {step === "SUCCESS" && (
                             <motion.div
                                 key="step-success"
@@ -379,7 +355,6 @@ function ForgotPasswordContent() {
                         )}
                     </AnimatePresence>
                 </div>
-
                 <div className="text-center space-y-3">
                     <p className="text-gray-400 text-[8px] font-black uppercase tracking-[0.4em] leading-relaxed">
                         Secured by Sreeva AI Network <br />
@@ -395,7 +370,6 @@ function ForgotPasswordContent() {
         </div>
     );
 }
-
 export default function ForgotPasswordPage() {
     return (
         <Suspense fallback={

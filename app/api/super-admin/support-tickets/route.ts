@@ -2,21 +2,18 @@ import { NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-
 export async function GET(request: Request) {
     try {
         const session = await getSession();
         if (!session || session.role !== "SUPER_ADMIN") {
             return NextResponse.json({ error: "Unauthorized access" }, { status: 403 });
         }
-
         const { searchParams } = new URL(request.url);
         const page = Math.max(1, parseInt(searchParams.get("page") || "1"));
         const limit = Math.min(50, Math.max(1, parseInt(searchParams.get("limit") || "20")));
         const status = searchParams.get("status")?.trim().toUpperCase() || "";
         const q = searchParams.get("q")?.trim() || "";
         const offset = (page - 1) * limit;
-
         const where: Prisma.SupportTicketWhereInput = {};
         if (status && status !== "ALL") {
             where.status = status;
@@ -45,7 +42,6 @@ export async function GET(request: Request) {
                 },
             ];
         }
-
         const [total, tickets, openCount, resolvedCount, closedCount] = await prisma.$transaction([
             prisma.supportTicket.count({ where }),
             prisma.supportTicket.findMany({
@@ -75,11 +71,9 @@ export async function GET(request: Request) {
             prisma.supportTicket.count({ where: { ...where, status: "RESOLVED" } }),
             prisma.supportTicket.count({ where: { ...where, status: "CLOSED" } }),
         ]);
-
         const missingApplicationIds = tickets
             .filter((ticket) => !ticket.interview && ticket.applicationId)
             .map((ticket) => ticket.applicationId as string);
-
         const applications = missingApplicationIds.length > 0
             ? await prisma.application.findMany({
                 where: { id: { in: missingApplicationIds } },
@@ -94,9 +88,7 @@ export async function GET(request: Request) {
                 },
             })
             : [];
-
         const applicationsById = new Map(applications.map((application) => [application.id, application]));
-
         const enrichedTickets = tickets.map((ticket) => {
             if (!ticket.interview && ticket.applicationId) {
                 const application = applicationsById.get(ticket.applicationId);
@@ -106,7 +98,6 @@ export async function GET(request: Request) {
             }
             return ticket;
         });
-
         return NextResponse.json({
             tickets: enrichedTickets,
             pagination: {
@@ -127,26 +118,21 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: "Failed to fetch support tickets" }, { status: 500 });
     }
 }
-
 export async function PATCH(request: Request) {
     try {
         const session = await getSession();
         if (!session || session.role !== "SUPER_ADMIN") {
             return NextResponse.json({ error: "Unauthorized access" }, { status: 403 });
         }
-
         const body = await request.json();
         const { id, status } = body;
-
         if (!id || !status) {
             return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
         }
-
         const validStatuses = ["OPEN", "RESOLVED", "CLOSED"];
         if (!validStatuses.includes(status)) {
             return NextResponse.json({ error: "Invalid status" }, { status: 400 });
         }
-
         const ticket = await prisma.supportTicket.update({
             where: { id },
             data: { 
@@ -154,7 +140,6 @@ export async function PATCH(request: Request) {
                 resolvedAt: status === "RESOLVED" || status === "CLOSED" ? new Date() : null
             },
         });
-
         return NextResponse.json(ticket);
     } catch (error) {
         console.error("Support ticket update error:", error);

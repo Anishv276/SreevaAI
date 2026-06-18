@@ -1,5 +1,4 @@
 "use client";
-
 import { useState, useEffect, use } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "@/components/ui/toast-custom";
@@ -16,20 +15,15 @@ import { useJobs } from "@/context/jobs-context";
 import { useAdminOrg } from "@/context/admin-org-context";
 import { cn } from "@/lib/utils";
 import { ResumeScreening } from "@/components/admin/resume-screening";
-
 export default function DriveDetailPage({ params }: { params: Promise<{ id: string }> }) {
     const router = useRouter();
     const { id: driveId } = use(params);
-
     const { jobs } = useJobs();
-    
     // ⚡ Read from shared context — no fetch needed
     const adminOrg = useAdminOrg();
     const quotaLocked = isInterviewQuotaLocked(adminOrg ?? {});
-
     const [drive, setDrive] = useState<any>(null);
     const [loading, setLoading] = useState(true);
-
     useEffect(() => {
         const loadDrive = async () => {
             try {
@@ -41,7 +35,6 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
                 }
                 const data = await res.json();
                 setDrive(data);
-                
             } catch (err) {
                 console.error("Load drive error:", err);
                 toast.error("An error occurred");
@@ -51,7 +44,6 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
         };
         loadDrive();
     }, [driveId]);
-
     if (loading || !drive) {
         return (
             <div className="flex items-center justify-center min-h-screen">
@@ -59,7 +51,6 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
             </div>
         );
     }
-
     return (
         <div className="min-h-screen bg-slate-50">
             {/* Header */}
@@ -86,7 +77,6 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
                                 </p>
                             </div>
                         </div>
-
                         <div className="flex flex-wrap items-center gap-3 pt-1">
                             <button
                                 onClick={() => router.back()}
@@ -118,7 +108,6 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
                     </div>
                 </div>
             </div>
-
             {/* Main Content */}
             <div className="max-w-7xl mx-auto px-6 py-8">
                 {/* Tab Content */}
@@ -161,7 +150,6 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
                     </div>
                 </div>
             </div>
-
         </div>
     );
 }

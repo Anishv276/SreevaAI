@@ -12,14 +12,12 @@ import { normalizeDriveAiConfig } from "@/lib/ai-provider-config";
 import { getInterviewQuotaSupportMessage, isOrgRestrictedStatus } from "@/lib/interview-quota";
 import { parseOrgLimitValue } from "@/lib/org-limits";
 import { parseDriveScreeningSettings, sanitizeScreeningCriteria } from "@/lib/screening-criteria";
-
 function normalizeDeadlineDate(deadline?: string | null) {
     if (!deadline) return null;
     const parsed = new Date(`${deadline}T23:59:59.999`);
     if (Number.isNaN(parsed.getTime())) return null;
     return parsed;
 }
-
 export async function GET(request: Request) {
     try {
         const session = await getSession();
@@ -32,9 +30,7 @@ export async function GET(request: Request) {
         const orgId = searchParams.get("orgId");
         const startDate = searchParams.get("startDate");
         const endDate = searchParams.get("endDate");
-
         const where: any = {};
-
         if (startDate) {
             where.createdAt = {
                 ...where.createdAt,
@@ -49,14 +45,12 @@ export async function GET(request: Request) {
                 lte: end
             };
         }
-
         // -- ADMIN ACCESS: Filter by Role & Org -----------
         if ((session as any).role === "SUPER_ADMIN") {
             if (orgId) where.orgId = orgId;
         } else {
             where.orgId = (session as any).orgId;
         }
-
         // Search filters
         if (search) {
             where.OR = [
@@ -64,7 +58,6 @@ export async function GET(request: Request) {
                 { role: { contains: search, mode: "insensitive" } }
             ];
         }
-
         const [drives, total] = await Promise.all([
             (prisma.drive as any).findMany({
                 where,
@@ -95,14 +88,12 @@ export async function GET(request: Request) {
             }),
             prisma.drive.count({ where })
         ]);
-
         const formattedDrives = drives.map((drive: any) => {
             const screeningThreshold = Number(drive.screeningThreshold ?? 60);
             const parsedScreening = parseDriveScreeningSettings(
                 drive.screeningCriteria,
                 screeningThreshold,
             );
-
             return {
                 ...drive,
                 applicants: drive._count?.applications || 0,
@@ -117,7 +108,6 @@ export async function GET(request: Request) {
                 interviewQuestions: drive.interviewQuestions ? JSON.parse(drive.interviewQuestions) : []
             };
         });
-
         return NextResponse.json({
             drives: formattedDrives,
             pagination: {
@@ -136,12 +126,10 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: "Failed to fetch drives" }, { status: 500 });
     }
 }
-
 export async function POST(request: Request) {
     try {
         const session = await getSession();
         if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
-
         if (session.orgId) {
             const org = await prisma.organization.findUnique({
                 where: { id: session.orgId },
@@ -150,7 +138,6 @@ export async function POST(request: Request) {
             if (isOrgRestrictedStatus(org?.status)) {
                 return NextResponse.json({ error: "Drive creation is blocked because your organization is restricted." }, { status: 403 });
             }
-
             const billingStatus = await getOrgBillingStatus(session.orgId);
             if (billingStatus.interviewQuotaTotal > 0 && !billingStatus.hasSufficientInterviews) {
                 return NextResponse.json(
@@ -161,13 +148,11 @@ export async function POST(request: Request) {
                     { status: 402 }
                 );
             }
-
             const maxActiveDrives = parseOrgLimitValue(org?.maxActiveDrives);
             if (maxActiveDrives !== null) {
                 const activeDriveCount = await prisma.drive.count({
                     where: { orgId: session.orgId }
                 });
-
                 if (isDriveCreationLocked(maxActiveDrives, activeDriveCount)) {
                     return NextResponse.json(
                         {
@@ -181,10 +166,8 @@ export async function POST(request: Request) {
                 }
             }
         }
-
         const rawBody = await request.json();
         const body = sanitizeObject(rawBody);
-
         const result = createDriveSchema.safeParse(body);
         if (!result.success) {
             console.error("[POST /api/drives] Validation failed:", JSON.stringify(result.error.flatten().fieldErrors, null, 2));
@@ -193,7 +176,6 @@ export async function POST(request: Request) {
                 { status: 400 }
             );
         }
-
         const data = result.data;
         const aiConfig = normalizeDriveAiConfig({
             next: { voiceId: data.voiceId },
@@ -215,38 +197,27 @@ export async function POST(request: Request) {
             ...normalizedScreeningCriteria,
             ...(data.screeningThreshold !== undefined ? { threshold: data.screeningThreshold } : {}),
         };
-
         const driveId = generateId("drv", data.title);
-
-
         const drive = await (prisma.drive as any).create({
             data: {
                 id: driveId,
                 title: data.title,
                 role: data.role || null,
                 extractedDetails: data.extractedDetails || null,
-
                 jdFileName: data.jdFileName || null,
                 jdPreviewUrl: data.jdPreviewUrl?.startsWith("blob:") ? null : (data.jdPreviewUrl || null),
                 screeningCriteria: JSON.stringify(mergedScreeningCriteria),
                 screeningThreshold: data.screeningThreshold ?? 60,
                 deadline: normalizeDeadlineDate(data.deadline as string | null | undefined),
-
                 // Interview configuration
                 interviewLanguage: data.interviewLanguage || "English",
-
                 interviewQuestions: data.interviewQuestions ? JSON.stringify(data.interviewQuestions) : "[]",
-
                 aiName: data.aiName || "Ishitha",
-
-
-
                 orgId: (session as any).orgId,
                 creatorId: (session as any).userId,
                 ...aiConfig,
             } as any,
         });
-
         return NextResponse.json(drive);
     } catch (error: any) {
         console.error("Error creating drive:", error);
@@ -257,14 +228,11 @@ export async function POST(request: Request) {
         }, { status: 500 });
     }
 }
-
 export async function DELETE(request: Request) {
     try {
         const session = await getSession();
         if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
-
         const body = await request.json();
-
         const result = bulkDeleteSchema.safeParse(body);
         if (!result.success) {
             return NextResponse.json(
@@ -272,46 +240,37 @@ export async function DELETE(request: Request) {
                 { status: 400 }
             );
         }
-
         const { ids } = result.data;
-
         // -- SECURITY: Ensure IDs belong to the Org -----------
         const belongsToOrg = await prisma.drive.findMany({
             where: { id: { in: ids }, orgId: session.orgId },
             select: { id: true },
         });
-
         const validIds = belongsToOrg.map((d: (typeof belongsToOrg)[number]) => d.id);
         if (validIds.length === 0) return NextResponse.json({ message: "No matching drives found" });
-
         // -- SOFT DELETE: DATABASE CLEANUP (Cascading) ---------------------------
         await prisma.$transaction(async (tx) => {
             const timestamp = Date.now().toString();
-
             // 1. Soft Delete Drives
             await tx.drive.updateMany({
                 where: { id: { in: validIds } },
                 data: { isDeleted: true }
             });
-
             // 2. Soft Delete Resume Batches
             await tx.resumeBatch.updateMany({
                 where: { driveId: { in: validIds } },
                 data: { isDeleted: true }
             });
-
             // 3. Soft Delete Resume Candidates
             await tx.resumeCandidate.updateMany({
                 where: { driveId: { in: validIds } },
                 data: { isDeleted: true }
             });
-
             // 4. Soft Delete Applications
             await tx.application.updateMany({
                 where: { driveId: { in: validIds } },
                 data: { isDeleted: true }
             });
-
             // 5. Soft Delete Interviews (rename unique keys via Raw SQL)
             if (validIds.length > 0) {
                 const placeholders = validIds.map(id => `'${id}'`).join(',');
@@ -322,7 +281,6 @@ export async function DELETE(request: Request) {
                         "accessToken" = 'del_' || ${timestamp} || '_' || "accessToken"
                     WHERE "applicationId" IN (SELECT "id" FROM "Application" WHERE "driveId" IN (${placeholders}))
                 `);
-
                 // 6. Soft Delete Support Tickets
                 await tx.$executeRawUnsafe(`
                     UPDATE "SupportTicket" SET "status" = 'DELETED'
@@ -334,7 +292,6 @@ export async function DELETE(request: Request) {
                 `);
             }
         });
-
         return NextResponse.json({ message: `${validIds.length} drives soft-deleted successfully` });
     } catch (error) {
         console.error("Error bulk deleting drives:", error);

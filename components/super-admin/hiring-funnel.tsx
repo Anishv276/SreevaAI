@@ -1,28 +1,23 @@
 "use client";
-
 import { useEffect, useState } from "react";
 import { Loader2, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
-
 interface FunnelData {
     totalCandidates: number;
     totalShortlisted: number;
     totalInterviewed: number;
     totalHired: number;
 }
-
 const STAGES = [
     { key: "applied",      label: "Applied",      color: "#3B82F6" },
     { key: "shortlisted",  label: "Shortlisted",   color: "#15803D" },
     { key: "interviewed",  label: "Interviewed",   color: "#16A34A" },
     { key: "hired",        label: "Hired",         color: "#F97316" },
 ] as const;
-
 export function SuperAdminHiringFunnel() {
     const [data, setData] = useState<FunnelData | null>(null);
     const [loading, setLoading] = useState(true);
-
     useEffect(() => {
         const fetchData = async () => {
             try {
@@ -44,19 +39,16 @@ export function SuperAdminHiringFunnel() {
         };
         fetchData();
     }, []);
-
     const stages = data ? [
         { key: "applied",     label: "Applied",     value: data.totalCandidates },
         { key: "shortlisted", label: "Shortlisted",  value: data.totalShortlisted },
         { key: "interviewed", label: "Interviewed",  value: data.totalInterviewed },
         { key: "hired",       label: "Hired",        value: data.totalHired },
     ] : [];
-
     const maxVal = stages.length ? Math.max(...stages.map(s => s.value), 1) : 1;
     const conversionRate = data && data.totalCandidates > 0 
         ? ((data.totalHired / data.totalCandidates) * 100).toFixed(1) 
         : "0.0";
-
     return (
         <div className="bg-white border border-gray-100 rounded-[2.5rem] p-8 shadow-sm flex flex-col h-full group hover:shadow-[0_20px_60px_rgba(0,0,0,0.04)] transition-all duration-500">
             <div className="flex items-start justify-between mb-8">
@@ -72,7 +64,6 @@ export function SuperAdminHiringFunnel() {
                     </div>
                 </div>
             </div>
-
             {loading ? (
                 <div className="flex-1 flex items-center justify-center py-12">
                     <Loader2 className="h-8 w-8 text-orange-500 animate-spin" />
@@ -82,7 +73,6 @@ export function SuperAdminHiringFunnel() {
                     {stages.map((stage, i) => {
                         const pct = Math.round((stage.value / maxVal) * 100);
                         const accentColor = STAGES[i].color;
-
                         return (
                             <div key={stage.key} className="flex items-center gap-4">
                                 <div className="w-24 shrink-0">

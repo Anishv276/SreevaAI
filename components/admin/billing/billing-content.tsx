@@ -1,5 +1,4 @@
 "use client";
-
 import React from "react";
 import { ReceiptText, Sparkles, BarChart3 } from "lucide-react";
 import { HistoryTable } from "./internal/billing-history";
@@ -14,7 +13,6 @@ import { getSupportComposeUrl } from "@/lib/interview-quota";
 import { useAdminOrg } from "@/context/admin-org-context";
 import { useJobs } from "@/context/jobs-context";
 import { getActiveDriveCount } from "@/lib/drive-limits";
-
 type BillingStatus = {
   interviewQuotaTotal: number;
   interviewQuotaUsed: number;
@@ -23,7 +21,6 @@ type BillingStatus = {
   hasSufficientInterviews: boolean;
   usageMetrics?: Record<string, unknown> | null;
 };
-
 type BillingContentProps = {
   creditsEndpoint?: string;
   historyEndpoint?: string;
@@ -33,14 +30,12 @@ type BillingContentProps = {
   showCreditInternals?: boolean;
   showCreditsUsedInHistory?: boolean;
 };
-
 const card: React.CSSProperties = {
   background: "#fff",
   border: `1px solid ${LINE}`,
   borderRadius: 18,
   overflow: "hidden",
 };
-
 export function BillingContent({
   creditsEndpoint = "/api/admin/credits",
   historyEndpoint = "/api/admin/billing/history",
@@ -68,14 +63,11 @@ export function BillingContent({
   const [resolvedPlan, setResolvedPlan] = React.useState<LandingPackage | null>(
     getLandingPackageByName(orgPlanLabel) || null,
   );
-
   React.useEffect(() => {
     injectBillingAnimStyles();
   }, []);
-
   React.useEffect(() => {
     let cancelled = false;
-
     const loadStatus = async () => {
       try {
         setStatusLoading(true);
@@ -100,17 +92,13 @@ export function BillingContent({
         if (!cancelled) setStatusLoading(false);
       }
     };
-
     loadStatus();
-
     return () => {
       cancelled = true;
     };
   }, [creditsEndpoint]);
-
   React.useEffect(() => {
     let cancelled = false;
-
     const loadHistory = async () => {
       try {
         setHistoryLoading(true);
@@ -129,22 +117,17 @@ export function BillingContent({
         if (!cancelled) setHistoryLoading(false);
       }
     };
-
     loadHistory();
-
     return () => {
       cancelled = true;
     };
   }, [historyEndpoint]);
-
   React.useEffect(() => {
     if (orgPlanLabel) {
       setResolvedPlan(getLandingPackageByName(orgPlanLabel) || null);
       return;
     }
-
     let cancelled = false;
-
     const loadOrgPlan = async () => {
       try {
         const res = await fetch("/api/admin/organization", { cache: "no-store" });
@@ -156,42 +139,34 @@ export function BillingContent({
         // ignore
       }
     };
-
     loadOrgPlan();
-
     return () => {
       cancelled = true;
     };
   }, [orgPlanLabel]);
-
   const interviewRemaining = Math.max(0, status.interviewQuotaRemaining);
   const interviewUsed = Math.max(0, status.interviewQuotaUsed);
   const interviewTotal = Math.max(0, status.interviewQuotaTotal);
   const interviewUsedPct = interviewTotal > 0 ? (interviewUsed / interviewTotal) * 100 : 0;
-
   const animRemaining = useCount(interviewRemaining, [interviewRemaining]);
   const animUsed = useCount(interviewUsed, [interviewUsed]);
   const animTotal = useCount(interviewTotal, [interviewTotal]);
   const animPct = useCount(interviewUsedPct, [interviewUsedPct]);
-
   const maxDrivesRaw = adminOrg?.maxActiveDrives;
   const isJobsUnlimited = String(maxDrivesRaw) === "-1";
   const jobsTotal = isJobsUnlimited ? 0 : Number(maxDrivesRaw || 0);
   const jobsUsed = adminOrg?.activeDriveCount ?? getActiveDriveCount(jobs);
   const jobsRemaining = isJobsUnlimited ? 0 : Math.max(0, jobsTotal - jobsUsed);
   const jobsUsedPct = jobsTotal > 0 ? (jobsUsed / jobsTotal) * 100 : 0;
-
   const animJobsRemaining = useCount(jobsRemaining, [jobsRemaining]);
   const animJobsUsed = useCount(jobsUsed, [jobsUsed]);
   const animJobsTotal = useCount(jobsTotal, [jobsTotal]);
   const animJobsPct = useCount(jobsUsedPct, [jobsUsedPct]);
-
   const animCreditUsed = useCount(status.creditsUsed, [status.creditsUsed]);
   const ringR = 56;
   const ringC = 2 * Math.PI * ringR;
   const ringDash = ringC * (animPct / 100);
   const jobsRingDash = ringC * (animJobsPct / 100);
-
   return (
     <div className="font-sans" style={{ maxWidth: "100%", margin: "0 auto", padding: "8px 0 56px" }}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 20, marginBottom: 32 }}>
@@ -244,14 +219,12 @@ export function BillingContent({
           </div>
         </div>
       </div>
-
       <div style={{ display: "grid", gridTemplateColumns: showCreditInternals ? "1.35fr 1fr" : "1.35fr .95fr", gap: 20 }}>
         <div style={{ ...card, borderTop: `4px solid ${ORANGE}`, padding: 28 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
             <div>
               <Eyebrow>Interview quota</Eyebrow>
               <div style={{ fontSize: 13, color: MUTED, marginTop: 6 }}>1 interview is deducted after each completed session.</div>
-
             </div>
             <div
               style={{
@@ -270,7 +243,6 @@ export function BillingContent({
               All systems operational
             </div>
           </div>
-
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 24 }}>
             <div style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 24, padding: 28, boxShadow: "0 4px 20px rgba(0,0,0,0.03)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
@@ -282,7 +254,6 @@ export function BillingContent({
                   <p style={{ fontSize: 12, fontWeight: 500, color: MUTED, margin: 0 }}>Available AI screening sessions</p>
                 </div>
               </div>
-              
               <div style={{ display: "flex", alignItems: "flex-end", gap: 8, marginBottom: 24 }}>
                 <span style={{ fontSize: 48, fontWeight: 800, color: INK, lineHeight: 1, letterSpacing: "-0.03em" }}>
                   {statusLoading ? "..." : animRemaining.toFixed(0)}
@@ -291,17 +262,14 @@ export function BillingContent({
                   remaining of {statusLoading ? "..." : animTotal.toFixed(0)}
                 </span>
               </div>
-
               <div style={{ height: 8, background: LINE, borderRadius: 4, overflow: "hidden", marginBottom: 16 }}>
                 <div style={{ height: "100%", width: `${animPct}%`, background: ORANGE, borderRadius: 4, transition: "width 1s ease-out" }} />
               </div>
-
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 600 }}>
                 <span style={{ color: MUTED }}>{animUsed.toFixed(0)} used</span>
                 <span style={{ color: ORANGE }}>{animPct.toFixed(1)}% consumed</span>
               </div>
             </div>
-
             <div style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 24, padding: 28, boxShadow: "0 4px 20px rgba(0,0,0,0.03)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
                 <div style={{ width: 40, height: 40, borderRadius: 12, background: "#F3F4F6", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -312,7 +280,6 @@ export function BillingContent({
                   <p style={{ fontSize: 12, fontWeight: 500, color: MUTED, margin: 0 }}>Concurrent recruitment drives</p>
                 </div>
               </div>
-              
               <div style={{ display: "flex", alignItems: "flex-end", gap: 8, marginBottom: 24 }}>
                 <span style={{ fontSize: 48, fontWeight: 800, color: INK, lineHeight: 1, letterSpacing: "-0.03em" }}>
                   {isJobsUnlimited ? "∞" : Number(animJobsRemaining).toFixed(0)}
@@ -321,21 +288,17 @@ export function BillingContent({
                   {isJobsUnlimited ? "unlimited jobs available" : `remaining of ${Number(animJobsTotal).toFixed(0)}`}
                 </span>
               </div>
-
               <div style={{ height: 8, background: LINE, borderRadius: 4, overflow: "hidden", marginBottom: 16 }}>
                 <div style={{ height: "100%", width: `${isJobsUnlimited ? 0 : Number(animJobsPct)}%`, background: "#4B5563", borderRadius: 4, transition: "width 1s ease-out" }} />
               </div>
-
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 600 }}>
                 <span style={{ color: MUTED }}>{Number(animJobsUsed).toFixed(0)} active currently</span>
                 {!isJobsUnlimited && <span style={{ color: "#4B5563" }}>{Number(animJobsPct).toFixed(1)}% utilized</span>}
               </div>
             </div>
           </div>
-
           {statusError ? <div style={{ marginTop: 12, fontSize: 12.5, color: "#B45309" }}>{statusError}</div> : null}
         </div>
-
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           {showCreditInternals ? (
             <div style={{ ...card, borderTop: `4px solid ${ORANGE}`, padding: 24 }}>
@@ -407,14 +370,12 @@ export function BillingContent({
                     Current package
                   </div>
                 </div>
-
                 <div style={{ marginTop: 16 }}>
                   <div style={{ fontSize: 28, fontWeight: 900, color: INK, lineHeight: 1 }}>
                     {resolvedPlan?.price || "$99"}
                     <span style={{ fontSize: 14, fontWeight: 700, color: MUTED }}>{resolvedPlan?.suffix || "/mo"}</span>
                   </div>
                 </div>
-
                 <div style={{ display: "grid", gap: 10, marginTop: 16 }}>
                   {(resolvedPlan?.features?.slice(0, 4) || ["30 interviews included", "Price per interview: $3.30", "Topup: $4.5/interview"]).map((feature) => (
                     <div
@@ -440,7 +401,6 @@ export function BillingContent({
               </div>
             </div>
           )}
-
           {showRechargeHelp ? (
             <div style={{ ...card, padding: 20, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -473,8 +433,6 @@ export function BillingContent({
           ) : null}
         </div>
       </div>
-
-
       <div style={{ marginTop: 28 }}>
         <div style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
           <BarChart3 size={16} color={ORANGE} />

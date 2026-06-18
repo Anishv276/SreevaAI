@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { getRecordingUrl, normalizeRecordingState } from "@/lib/recording-state";
-
 function buildSearchClause(query: string): Prisma.InterviewWhereInput {
     return {
         OR: [
@@ -60,31 +59,26 @@ function buildSearchClause(query: string): Prisma.InterviewWhereInput {
         ],
     };
 }
-
 export async function GET(request: Request) {
     try {
         const session = await getSession();
         if (!session || session.role !== "SUPER_ADMIN") {
             return NextResponse.json({ error: "Unauthorized access" }, { status: 403 });
         }
-
         const { searchParams } = new URL(request.url);
         const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
         const limit = Math.min(50, Math.max(1, parseInt(searchParams.get("limit") || "20", 10)));
         const q = searchParams.get("q")?.trim() || "";
         const offset = (page - 1) * limit;
-
         const baseWhere: Prisma.InterviewWhereInput = {
             OR: [
                 { candidateRating: { not: Prisma.JsonNull } },
                 { candidateFeedback: { not: null } },
             ],
         };
-
         const where: Prisma.InterviewWhereInput = q
             ? { AND: [baseWhere, buildSearchClause(q)] }
             : baseWhere;
-
         const notesWhere: Prisma.InterviewWhereInput = {
             AND: [
                 where,
@@ -92,14 +86,12 @@ export async function GET(request: Request) {
                 { candidateFeedback: { not: "" } },
             ],
         };
-
         const ratingWhere: Prisma.InterviewWhereInput = {
             AND: [
                 where,
                 { candidateRating: { not: Prisma.JsonNull } },
             ],
         };
-
         const todayStart = new Date();
         todayStart.setHours(0, 0, 0, 0);
         const todayWhere: Prisma.InterviewWhereInput = {
@@ -108,7 +100,6 @@ export async function GET(request: Request) {
                 { updatedAt: { gte: todayStart } },
             ],
         };
-
         const [total, feedbacks, withNotesCount, withRatingCount, todayCount] = await prisma.$transaction([
             prisma.interview.count({ where }),
             prisma.interview.findMany({
@@ -156,7 +147,6 @@ export async function GET(request: Request) {
             prisma.interview.count({ where: ratingWhere }),
             prisma.interview.count({ where: todayWhere }),
         ]);
-
         const normalizedFeedbacks = feedbacks.map((feedback: any) => {
             const recording = normalizeRecordingState(feedback.recording);
             return {
@@ -166,7 +156,6 @@ export async function GET(request: Request) {
                 recordingCompletedAt: recording.completedAt || null,
             };
         });
-
         return NextResponse.json({
             feedbacks: normalizedFeedbacks,
             pagination: {

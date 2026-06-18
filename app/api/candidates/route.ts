@@ -4,7 +4,6 @@ import { bulkDeleteCandidatesSchema } from "@/lib/validation";
 import { getSession } from "@/lib/auth";
 import { deleteUrlTargets } from "@/lib/delete-utils";
 import { getRecordingUrl } from "@/lib/recording-state";
-
 /**
  * GET handler to fetch and filter candidates for a specific drive.
  * Supports various query filters like status variants, date ranges, and sorting rules.
@@ -16,7 +15,6 @@ export async function GET(request: Request) {
     try {
         const session = await getSession();
         if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
-
         const { searchParams } = new URL(request.url);
         const driveId = searchParams.get("driveId");
         const startDate = searchParams.get("startDate");
@@ -30,7 +28,6 @@ export async function GET(request: Request) {
         const offset = (page - 1) * limit;
         const sortBy = searchParams.get("sortBy") || "updatedAt";
         const sortDir = searchParams.get("sortDir") === "asc" ? "asc" : "desc";
-
         const statusVariants = (value: string) => {
             const normalized = value.trim().toLowerCase().replace(/[_-]+/g, " ");
             switch (normalized) {
@@ -63,32 +60,26 @@ export async function GET(request: Request) {
                     return [value, normalized];
             }
         };
-
         const baseSelect = `
             SELECT a.*, d.title AS "driveTitle"
             FROM "Application" a
             JOIN "Drive" d ON d.id = a."driveId"
         `;
-
         // -- Security & Filtering -------------------
         const isSuperAdmin = session?.role === "SUPER_ADMIN";
         const orgId = isSuperAdmin 
             ? (searchParams.get("orgId") || session?.orgId) 
             : session?.orgId;
-
         if (!orgId) {
             return NextResponse.json({ candidates: [], pagination: { total: 0, pages: 0, page, limit } });
         }
-
         // -- PRISMA QUERY BUILDER -------------------
         const where: any = {
             drive: { orgId }
         };
-
         if (driveId && driveId !== "all") {
             where.driveId = driveId;
         }
-
         if (startDate || endDate) {
             where.createdAt = {};
             if (startDate) where.createdAt.gte = new Date(startDate);
@@ -98,19 +89,15 @@ export async function GET(request: Request) {
                 where.createdAt.lte = end;
             }
         }
-
         if (resumeStatus && resumeStatus !== "all") {
             where.resumeStatus = { in: statusVariants(resumeStatus) };
         }
-
         if (interviewStatus && interviewStatus !== "all") {
             where.interviewStatus = { in: statusVariants(interviewStatus) };
         }
-
         if (hiringStatus && hiringStatus !== "all") {
             where.hiringStatus = { in: statusVariants(hiringStatus) };
         }
-
         if (search) {
             where.OR = [
                 { fullName: { contains: search, mode: "insensitive" } },
@@ -118,7 +105,6 @@ export async function GET(request: Request) {
                 { drive: { title: { contains: search, mode: "insensitive" } } }
             ];
         }
-
         const [candidates, total, statsResult] = await Promise.all([
             prisma.application.findMany({
                 where,
@@ -144,7 +130,6 @@ export async function GET(request: Request) {
                 _count: { _all: true }
             }),
         ]);
-
         // Aggregate stats manually from groupBy result
         const statsRow = {
             shortlisted: 0,
@@ -155,13 +140,11 @@ export async function GET(request: Request) {
             interviewPending: 0,
             interviewCompleted: 0
         };
-
         statsResult.forEach((group: any) => {
             const count = group._count._all;
             const resStatus = (group.resumeStatus || "").toLowerCase();
             const hiStatus = (group.hiringStatus || "").toLowerCase();
             const intStatus = String(group.interviewStatus || "").toLowerCase().replace(/[_-]+/g, " ");
-
             if (resStatus === 'shortlisted') statsRow.shortlisted += count;
             if (resStatus === 'rejected') statsRow.rejected += count;
             if (hiStatus === 'hired') statsRow.hired += count;
@@ -170,7 +153,6 @@ export async function GET(request: Request) {
             if (intStatus === 'pending') statsRow.interviewPending += count;
             if (intStatus === 'finished' || intStatus === 'completed') statsRow.interviewCompleted += count;
         });
-
         const formattedCandidates = (candidates as any[]).map((app: any) => {
             let progress = null as number | null;
             let stage = null as string | null;
@@ -201,7 +183,6 @@ export async function GET(request: Request) {
                 date: new Date(app.createdAt).toLocaleDateString(),
             };
         });
-
         return NextResponse.json({
             candidates: formattedCandidates,
             pagination: {
@@ -228,7 +209,6 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: "Failed to fetch candidates" }, { status: 500 });
     }
 }
-
 /**
  * DELETE handler to purge candidate records in bulk.
  * Safeguards integrity constraints across external search clusters.
@@ -240,7 +220,6 @@ export async function DELETE(request: Request) {
     try {
         const session = await getSession();
         if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
-
         const { searchParams } = new URL(request.url);
         // -- TENANT ISOLATION: only SUPER_ADMIN may target another org via query.
         // A regular admin is always scoped to their own org so they cannot pass
@@ -249,7 +228,6 @@ export async function DELETE(request: Request) {
         const orgId = isSuperAdmin
             ? (searchParams.get("orgId") || session.orgId)
             : session.orgId;
-
         let ids: string[] = [];
         try {
             const body = await request.json();
@@ -260,19 +238,15 @@ export async function DELETE(request: Request) {
         } catch (e) {
             // No body provided
         }
-
         if (ids.length === 0 && !orgId) {
             return NextResponse.json({ error: "No candidates or organization specified for deletion" }, { status: 400 });
         }
-
         const whereClause: any = {
             drive: { orgId }
         };
-
         if (ids.length > 0) {
             whereClause.id = { in: ids };
         }
-
         const candidatesToCleanup = await prisma.application.findMany({
             where: whereClause,
             select: {
@@ -286,12 +260,9 @@ export async function DELETE(request: Request) {
                 }
             }
         });
-
         const validIds = candidatesToCleanup.map((a: (typeof candidatesToCleanup)[number]) => a.id);
         if (validIds.length === 0) return NextResponse.json({ message: "No matching candidates found" });
-
         // -- STORAGE CLEANUP: Skipped to preserve files for soft delete --
-
         // -- QUEUE CLEANUP --
         try {
             const { resumeQueue } = await import("@/lib/queue");
@@ -304,14 +275,11 @@ export async function DELETE(request: Request) {
         } catch (queueErr) {
             console.warn("[DELETE] Could not clean queue jobs:", queueErr);
         }
-
         // -- SOFT DELETE: DATABASE CLEANUP (Cascading) ---------------------------
         await prisma.$transaction(async (tx) => {
             const timestamp = Date.now().toString();
-
             if (validIds.length > 0) {
                 const placeholders = validIds.map(id => `'${id}'`).join(',');
-
                 // 1. Soft Delete Support Tickets FIRST (before Interview applicationId is renamed)
                 await tx.$executeRawUnsafe(`
                     UPDATE "SupportTicket" SET "status" = 'DELETED'
@@ -319,7 +287,6 @@ export async function DELETE(request: Request) {
                         SELECT "id" FROM "Interview" WHERE "applicationId" IN (${placeholders})
                     )
                 `);
-
                 // 2. Soft delete interviews (rename unique keys via Raw SQL)
                 await tx.$executeRawUnsafe(`
                     UPDATE "Interview" 
@@ -328,7 +295,6 @@ export async function DELETE(request: Request) {
                         "accessToken" = 'del_' || ${timestamp} || '_' || "accessToken"
                     WHERE "applicationId" IN (${placeholders})
                 `);
-
                 // 3. Soft delete applications
                 await tx.application.updateMany({
                     where: { id: { in: validIds } },
@@ -336,7 +302,6 @@ export async function DELETE(request: Request) {
                 });
             }
         });
-
         return NextResponse.json({ message: `${validIds.length} candidates deleted successfully` });
     } catch (error) {
         console.error("Error bulk deleting candidates:", error);

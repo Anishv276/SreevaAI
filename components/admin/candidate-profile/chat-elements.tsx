@@ -1,9 +1,7 @@
 "use client";
-
 import { memo } from "react";
 import { cn } from "@/lib/utils";
 import { ArrowRight } from "lucide-react";
-
 export const RecommendedActionItem = memo(function RecommendedActionItem({ text }: { text: string }) {
     return (
         <div className="flex gap-4 items-start group">
@@ -16,7 +14,6 @@ export const RecommendedActionItem = memo(function RecommendedActionItem({ text 
         </div>
     );
 });
-
 export const ChatEntry = memo(function ChatEntry({ role, text, name }: { role: "ai" | "candidate"; text: string; name: string }) {
     const isAi = role === "ai";
     return (
@@ -53,7 +50,6 @@ export const ChatEntry = memo(function ChatEntry({ role, text, name }: { role: "
         </div>
     );
 });
-
 export const MomentEntry = memo(function MomentEntry({ time, type, observation, comment }: { time: string; type: "CONTEXT" | "FLAG" | "CRITICAL"; observation: string; comment: string }) {
     const typeStyles = {
         CONTEXT: "text-slate-400 bg-slate-50 border-slate-100",
@@ -78,7 +74,6 @@ export const MomentEntry = memo(function MomentEntry({ time, type, observation, 
         </div>
     );
 });
-
 export const TimelineEvent = memo(function TimelineEvent({ time, event, risk, desc, subNote, isSuccess = false }: { time: string; event: string; risk: "CLEAN" | "MEDIUM RISK" | "HIGH RISK"; desc: string; subNote?: string; isSuccess?: boolean }) {
     const riskStyles = {
         CLEAN: "bg-emerald-50 text-emerald-700 border-emerald-100",

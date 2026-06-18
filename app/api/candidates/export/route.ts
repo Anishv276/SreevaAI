@@ -1,12 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-
 export async function GET(request: Request) {
     try {
         const session = await getSession();
         if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
-
         const { searchParams } = new URL(request.url);
         const driveId = searchParams.get("driveId");
         // -- TENANT ISOLATION: only a SUPER_ADMIN may export another org via the
@@ -17,11 +15,9 @@ export async function GET(request: Request) {
             session.role === "SUPER_ADMIN"
                 ? (searchParams.get("orgId") || session.orgId)
                 : session.orgId;
-
         if (!orgId) {
             return NextResponse.json({ error: "Organization required" }, { status: 400 });
         }
-
         // Fetch all candidates for the export
         const candidates = await prisma.application.findMany({
             where: {
@@ -35,7 +31,6 @@ export async function GET(request: Request) {
             },
             orderBy: { updatedAt: "desc" }
         });
-
         // -- CSV INJECTION DEFENSE ------------------------------------------
         // Candidate-controlled fields (name, email, phone) can begin with a
         // formula trigger (= + - @, or tab/CR). Spreadsheet apps execute those
@@ -47,7 +42,6 @@ export async function GET(request: Request) {
             if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
             return `"${s.replace(/"/g, '""')}"`;
         };
-
         // Convert to CSV
         const headers = ["Candidate ID", "Name", "Email", "Phone", "Role", "AI Score", "Resume Status", "Interview Status", "Hiring Status"];
         const rows = candidates.map((c: (typeof candidates)[number]) => [
@@ -60,11 +54,8 @@ export async function GET(request: Request) {
             csvCell(c.resumeStatus || "pending"),
             csvCell(c.interviewStatus || "pending"),
             csvCell(c.hiringStatus || "pending")
-
         ]);
-
         const csvContent = [headers.join(","), ...rows.map((r: (typeof rows)[number]) => r.join(","))].join("\n");
-
         // Return as a downloadable CSV file
         return new Response(csvContent, {
             status: 200,

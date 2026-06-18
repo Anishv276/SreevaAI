@@ -1,15 +1,12 @@
 "use client";
-
 import { useEffect, useMemo, useState } from "react";
 import { Brain, Mic, Languages } from "lucide-react";
 import { ScreeningConfig } from "./screening-settings";
 import { ALL_VOICES, type Voice } from "@/lib/constants/voices";
-
 interface FinalPreviewProps {
     formData: any;
     weights?: ScreeningConfig;
 }
-
 function countQuestions(value: any) {
     if (Array.isArray(value)) return value.length;
     if (typeof value === "string" && value.trim()) {
@@ -22,10 +19,8 @@ function countQuestions(value: any) {
     }
     return 0;
 }
-
 export function FinalPreview({ formData, weights }: FinalPreviewProps) {
     const [voices, setVoices] = useState<Voice[]>(ALL_VOICES);
-
     useEffect(() => {
         const loadVoices = async () => {
             try {
@@ -41,14 +36,11 @@ export function FinalPreview({ formData, weights }: FinalPreviewProps) {
         };
         void loadVoices();
     }, []);
-
     const selectedVoice = useMemo(
         () => voices.find((v) => v.id === formData.voiceId),
         [voices, formData.voiceId]
     );
-
     const interviewQuestionsCount = countQuestions(formData.interviewQuestions);
-
     return (
         <div className="space-y-6">
             <div className="rounded-2xl border border-orange-200 bg-orange-50/80 p-6 text-center shadow-sm">
@@ -64,7 +56,6 @@ export function FinalPreview({ formData, weights }: FinalPreviewProps) {
                     Review the summary below. Once you create the job, you can upload resumes and start screening.
                 </p>
             </div>
-
             <div className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
                 <div className="space-y-5">
                     <div>
@@ -89,7 +80,6 @@ export function FinalPreview({ formData, weights }: FinalPreviewProps) {
                             </div>
                         </div>
                     </div>
-
                     <div>
                         <h3 className="mb-3 text-[11px] font-black uppercase tracking-[0.22em] text-gray-400">
                             Screening Setup
@@ -107,7 +97,6 @@ export function FinalPreview({ formData, weights }: FinalPreviewProps) {
                                             Configured
                                         </span>
                                     </div>
-
                                     <div className="rounded-xl border border-emerald-100 bg-emerald-50/40 px-4 py-3">
                                         <div className="flex items-center justify-between gap-4">
                                             <span className="text-xs font-bold uppercase tracking-widest text-gray-400">
@@ -127,7 +116,6 @@ export function FinalPreview({ formData, weights }: FinalPreviewProps) {
                         </div>
                     </div>
                 </div>
-
                 <div className="space-y-5">
                     <div>
                         <h3 className="mb-3 text-[11px] font-black uppercase tracking-[0.22em] text-gray-400">
@@ -144,7 +132,6 @@ export function FinalPreview({ formData, weights }: FinalPreviewProps) {
                                         <span>{selectedVoice ? selectedVoice.name : "Select a voice"}</span>
                                     </p>
                                 </div>
-
                                 <div className="rounded-xl border border-gray-100 bg-gray-50/70 px-4 py-3">
                                     <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">
                                         Language
@@ -157,7 +144,6 @@ export function FinalPreview({ formData, weights }: FinalPreviewProps) {
                                         Interview duration is fixed at 20 minutes.
                                     </p>
                                 </div>
-
                                 <div className="rounded-xl border border-gray-100 bg-gray-50/70 px-4 py-3">
                                     <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">
                                         Question Bank
@@ -170,7 +156,6 @@ export function FinalPreview({ formData, weights }: FinalPreviewProps) {
                             </div>
                         </div>
                     </div>
-
                     <div className="rounded-2xl border border-dashed border-orange-200 bg-orange-50/40 px-5 py-4">
                         <p className="text-[10px] font-black uppercase tracking-[0.22em] text-orange-500">
                             Summary

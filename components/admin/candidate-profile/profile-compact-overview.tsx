@@ -1,11 +1,8 @@
 "use client";
-
 import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-
 export type MetricTileVariant = "amber" | "white" | "emerald" | "sky" | "violet";
-
 const tileVariantClass: Record<MetricTileVariant, string> = {
   amber: "bg-amber-50/95 border-amber-100/90",
   white: "bg-white border-slate-200/90",
@@ -13,7 +10,6 @@ const tileVariantClass: Record<MetricTileVariant, string> = {
   sky: "bg-sky-50/90 border-sky-100/90",
   violet: "bg-violet-50/90 border-violet-100/80",
 };
-
 export function ProfileHeroShell({
   children,
   className,
@@ -35,7 +31,6 @@ export function ProfileHeroShell({
     </div>
   );
 }
-
 export function ProfileAccentHeading({
   title,
   subtitle,
@@ -58,7 +53,6 @@ export function ProfileAccentHeading({
     </div>
   );
 }
-
 export function MetricTileRow({
   tiles,
 }: {
@@ -94,7 +88,6 @@ export function MetricTileRow({
     </div>
   );
 }
-
 export function ReadinessProgressBar({
   left,
   right,
@@ -122,7 +115,6 @@ export function ReadinessProgressBar({
     </div>
   );
 }
-
 export function TripleInsightRow({
   items,
 }: {

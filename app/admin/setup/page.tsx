@@ -1,5 +1,4 @@
 "use client";
-
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -11,7 +10,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { validatePasswordStrength } from "@/lib/validation";
 import { toast } from "@/components/ui/toast-custom";
-
 function Field({ label, required, children, hint }: { label: string; required?: boolean; children: React.ReactNode; hint?: string }) {
     return (
         <div className="space-y-1.5">
@@ -23,7 +21,6 @@ function Field({ label, required, children, hint }: { label: string; required?: 
         </div>
     );
 }
-
 function InputIcon({ icon, ...props }: { icon: React.ReactNode } & React.InputHTMLAttributes<HTMLInputElement>) {
     return (
         <div className="relative">
@@ -40,22 +37,18 @@ function InputIcon({ icon, ...props }: { icon: React.ReactNode } & React.InputHT
         </div>
     );
 }
-
 export default function OnboardingPage() {
     const router = useRouter();
     const [isLoading, setIsLoading] = useState(true);
     const hasLoaded = useRef(false);
-
     const [profile, setProfile] = useState({ name: "", email: "" });
     const [passwords, setPasswords] = useState({ current: "", next: "" });
     const [showPw, setShowPw] = useState({ current: false, next: false });
     const [pwError, setPwError] = useState<string | null>(null);
     const [company, setCompany] = useState({ name: "", website: "", logoUrl: "" });
-
     const [isSaving, setIsSaving] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
     const [showWelcomeCard, setShowWelcomeCard] = useState(false);
-
     useEffect(() => {
         if (hasLoaded.current) return;
         hasLoaded.current = true;
@@ -89,7 +82,6 @@ export default function OnboardingPage() {
         };
         load();
     }, []);
-
     useEffect(() => {
         if (isLoading) return;
         const t = setTimeout(() => {
@@ -97,7 +89,6 @@ export default function OnboardingPage() {
         }, 800);
         return () => clearTimeout(t);
     }, [company, profile, isLoading]);
-
     const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -120,7 +111,6 @@ export default function OnboardingPage() {
             e.target.value = "";
         }
     };
-
     const handleRemoveLogo = async () => {
         if (!company.logoUrl) return;
         setIsUploading(true);
@@ -129,7 +119,6 @@ export default function OnboardingPage() {
             setCompany(prev => ({ ...prev, logoUrl: "" }));
         } finally { setIsUploading(false); }
     };
-
     const handleActivate = async () => {
         if (!profile.name) { toast.error("Full name is required."); return; }
         if (!company.name || !company.website) { toast.error("Company name and website are required."); return; }
@@ -154,19 +143,15 @@ export default function OnboardingPage() {
             toast.error(err.message);
         } finally { setIsSaving(false); }
     };
-
     const canActivate = !!(profile.name && company.name && company.website);
-
     if (isLoading) return (
         <div className="h-screen flex items-center justify-center bg-gray-50">
             <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
         </div>
     );
-
     return (
         <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4 font-sans">
             <div className="w-full max-w-4xl">
-
                 {/* Header */}
                 <div className="text-center mb-8">
                     <div className="inline-flex items-center justify-center h-14 w-14 rounded-2xl bg-orange-500 shadow-lg shadow-orange-200 mb-4">
@@ -175,9 +160,7 @@ export default function OnboardingPage() {
                     <h1 className="text-2xl font-bold text-gray-900">Set up your workspace</h1>
                     <p className="text-gray-500 text-sm mt-1">Takes less than 2 minutes</p>
                 </div>
-
                 <div className="grid md:grid-cols-2 gap-5">
-
                     {/* LEFT — Profile */}
                     <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
                         <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-3">
@@ -206,7 +189,6 @@ export default function OnboardingPage() {
                                     readOnly
                                 />
                             </Field>
-
                             <div className="pt-2 border-t border-gray-100">
                                 <div className="flex items-center gap-2 mb-3">
                                     <KeyRound className="h-3.5 w-3.5 text-gray-400" />
@@ -247,7 +229,6 @@ export default function OnboardingPage() {
                             </div>
                         </div>
                     </div>
-
                     {/* RIGHT — Company */}
                     <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
                         <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-3">
@@ -260,7 +241,6 @@ export default function OnboardingPage() {
                             </div>
                         </div>
                         <div className="p-6 space-y-4">
-
                             {/* Logo upload */}
                             <Field label="Company Logo">
                                 <div className="flex items-center gap-4">
@@ -301,7 +281,6 @@ export default function OnboardingPage() {
                                     </div>
                                 </div>
                             </Field>
-
                             <Field label="Company Name" required>
                                 <InputIcon
                                     icon={<Building2 className="h-3.5 w-3.5" />}
@@ -310,7 +289,6 @@ export default function OnboardingPage() {
                                     onChange={e => setCompany({ ...company, name: e.target.value })}
                                 />
                             </Field>
-
                             <Field label="Official Website" required>
                                 <InputIcon
                                     icon={<Globe className="h-3.5 w-3.5" />}
@@ -322,7 +300,6 @@ export default function OnboardingPage() {
                         </div>
                     </div>
                 </div>
-
                 {/* Footer */}
                 <div className="mt-5 flex items-center justify-between">
                     <button
@@ -332,7 +309,6 @@ export default function OnboardingPage() {
                         <LogOut className="h-3.5 w-3.5" />
                         Back to Login
                     </button>
-
                     <button
                         onClick={handleActivate}
                         disabled={isSaving || isUploading || !canActivate}
@@ -346,10 +322,8 @@ export default function OnboardingPage() {
                         {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <>Activate Workspace <ChevronRight className="h-3.5 w-3.5" /></>}
                     </button>
                 </div>
-
                 <p className="text-center text-[10px] text-gray-300 mt-6 font-medium tracking-widest uppercase">Secured by Sreeva AI</p>
             </div>
-
             {/* Welcome modal */}
             <AnimatePresence>
                 {showWelcomeCard && (

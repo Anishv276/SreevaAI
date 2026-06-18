@@ -1,5 +1,4 @@
 "use client";
-
 import { useMemo } from "react";
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
@@ -9,7 +8,6 @@ import { InterviewReportSreevaAI, buildSreevaAIInterviewViewModel } from "@/comp
 import { ResumeReportSreevaAI, buildSreevaAIResumeViewModel } from "@/components/admin/candidate-profile/resume-report-sreevaai";
 import { useAdminOrg } from "@/context/admin-org-context";
 import { isOrgRestrictedStatus } from "@/lib/interview-quota";
-
 function toTextList(value: unknown): string[] {
     const toLine = (item: unknown): string => {
         if (item == null) return "";
@@ -31,18 +29,15 @@ function toTextList(value: unknown): string[] {
             return "";
         }
     };
-
     if (Array.isArray(value)) return value.map(toLine).filter(Boolean);
     if (value && typeof value === "object") return Object.values(value as Record<string, unknown>).map(toLine).filter(Boolean);
     if (typeof value === "string") return value.split(/\n+/).map((line) => line.trim()).filter(Boolean);
     return [];
 }
-
 function firstText(value: unknown, fallback = ""): string {
     const list = toTextList(value);
     return list[0] || fallback;
 }
-
 function safeJsonParse(value: unknown, fallback: any = {}): any {
     if (!value) return fallback;
     if (typeof value === "object") return value;
@@ -53,7 +48,6 @@ function safeJsonParse(value: unknown, fallback: any = {}): any {
         return fallback;
     }
 }
-
 export default function CandidateProfilePage() {
     const params = useParams<{ id: string }>();
     const searchParams = useSearchParams();
@@ -71,11 +65,9 @@ export default function CandidateProfilePage() {
     const [confirmDialog, setConfirmDialog] = useState<{ action: string; title: string; description: string } | null>(null);
     const orgStatus = String(adminOrg?.status || candidate?.organization?.status || "").trim().toUpperCase();
     const isSuspended = isOrgRestrictedStatus(orgStatus);
-
     useEffect(() => {
         setMounted(true);
     }, []);
-
     const fetchCandidate = useCallback(async () => {
         try {
             const res = await fetch(`/api/candidates/${id}`);
@@ -99,20 +91,16 @@ export default function CandidateProfilePage() {
             setLoading(false);
         }
     }, [id]);
-
     useEffect(() => {
         if (!id) {
             setError("Missing candidate ID");
             setLoading(false);
             return;
         }
-
         fetchCandidate();
     }, [id, fetchCandidate]);
-
     useEffect(() => {
         if (!id) return;
-
         const eventSource = new EventSource("/api/stream");
         eventSource.onmessage = (event) => {
             try {
@@ -124,14 +112,12 @@ export default function CandidateProfilePage() {
                 // Ignore transient stream parse issues.
             }
         };
-
         return () => {
             eventSource.onmessage = null;
             eventSource.onerror = null;
             eventSource.close();
         };
     }, [id, fetchCandidate]);
-
 const interviewReportData: any = (() => {
     try {
         const raw = candidate?.interview?.scoreBreakdown;
@@ -151,7 +137,6 @@ const interviewReportData: any = (() => {
         return {};
     }
 })()
-
 const interviewRecordingUrl = candidate?.interview?.interviewRecordingUrl || "";
 const interviewTranscript = candidate?.interview?.interviewTranscript || "";
 const interviewSummaryData: any = (() => {
@@ -159,10 +144,7 @@ const interviewSummaryData: any = (() => {
     if (!raw) return {};
     try { return typeof raw === "string" ? JSON.parse(raw) : raw; } catch { return {}; }
 })();
-
-
 const isFallbackReport = !interviewReportData?.dimensions;
-
 // -- 5-dimension scores --------------------------------------------------------
 const _dims: { name: string; score: number; evidence: string }[] =
     Array.isArray(interviewReportData?.dimensions) ? interviewReportData.dimensions : [
@@ -173,7 +155,6 @@ const _dims: { name: string; score: number; evidence: string }[] =
         { name: "Ownership & Credibility", score: Number(interviewReportData?.ownership_credibility?.score || 0), evidence: String(interviewReportData?.ownership_credibility?.evidence || "") },
     ].filter(d => d.score > 0 || d.evidence);
 const _dimByName = (name: string) => _dims.find((d) => d.name.toLowerCase().includes(name.toLowerCase()))?.score ?? 0;
-
 const interviewReportScores = {
     overall:               candidate?.aiScore ? Number(candidate.aiScore) : Number(interviewReportData?.overall ?? 0),
     engagement:            Number(interviewReportData?.engagement ?? 0),
@@ -184,7 +165,6 @@ const interviewReportScores = {
     ownership_credibility: _dimByName("ownership"),
     dimensions:            _dims,
 };
-
 // -- Communication: from dimensions evidence -----------------------------------
 const interviewReportCommunication = {
     overall:       interviewReportScores.communication,
@@ -195,12 +175,10 @@ const interviewReportCommunication = {
     summary:       _dims.find((d) => d.name.toLowerCase().includes("communication"))?.evidence ?? "",
     pronunciation: interviewReportScores.communication,
 };
-
 // -- Integrity -----------------------------------------------------------------
 const _integrity = interviewReportData?.integrity || {};
 const integrityScore = Number(_integrity.score ?? 100);
 const integrityBand  = String(_integrity.band ?? "HIGH");
-
 // -- Skills: now read directly from the dedicated skillRatings column (flat array)
 const skillRatingsList: any[] = (() => {
     const raw = (candidate?.interview as any)?.skillRatings;
@@ -211,20 +189,17 @@ const skillRatingsList: any[] = (() => {
     // Backward-compat: old rows still have skill_ratings nested inside scoreBreakdown
     return Array.isArray(interviewReportData?.skill_ratings) ? interviewReportData.skill_ratings : [];
 })();
-
 const skillsEvaluated: string[] = (
     Array.isArray(interviewReportData?.skills_evaluated)
         ? interviewReportData.skills_evaluated.filter((s: any) => typeof s === "string" && s.trim())
         : skillRatingsList.map((r: any) => String(r?.skill || "").trim()).filter(Boolean)
 );
-
 const interviewReportBehavioralAnalysis = {
     ...(interviewReportData?.signal_analysis || {}),
     strengths_observed: interviewSummaryData?.strengths || [],
     concerns_noted:     interviewSummaryData?.concerns  || [],
 };
 const interviewReportVerdict = interviewReportData?.verdict || {};
-
     // -- interviewReportSkills: from skill_ratings (skill key, 1-10 score) ------
     const interviewReportSkills: any[] = skillRatingsList
         .filter((r: any) => r?.skill && typeof r.skill === "string")
@@ -236,7 +211,6 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
             what_they_showed: String(r.evidence || "").trim(),
             what_was_missing: String(r.gaps || "").trim(),
         }));
-
     const interviewReportSummary = interviewSummaryData?.decision_note || interviewSummaryData?.summary || "";
     const interviewStatusNormalized = String(candidate?.interview?.status || candidate?.interviewStatus || "").trim().toUpperCase();
     const interviewIsFinished =
@@ -244,7 +218,6 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
         interviewStatusNormalized === "FINISHED" ||
         Boolean(candidate?.interview?.completedAt);
     const interviewReportLocked = !interviewIsFinished;
-
     // ── Parse integritySignals — frontend tab-switch/proctoring events ──
     const rawProctoringEvents: any[] = (() => {
         const raw = candidate?.interview?.integritySignals;
@@ -254,7 +227,6 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
         }
         return [];
     })();
-
     const groupedProctoringSignals = rawProctoringEvents.reduce((acc: any[], ev: any) => {
         const key = String(ev?.eventType || ev?.type || "signal");
         const severity = String(ev?.severity || "low").toLowerCase();
@@ -268,7 +240,6 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
         acc.push({ key, label: key.replace(/_/g, " "), count: 1, severity });
         return acc;
     }, []);
-
     // Parse org-enabled proctoring signal keys (from super-admin config)
     const enabledProctoringSignals: Set<string> = (() => {
         const raw = adminOrg?.proctoringSignals;
@@ -282,7 +253,6 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
             );
         } catch { return new Set<string>(); }
     })();
-
     // Full proctoring event list — filtered to org-enabled signals only
     const proctoringEventsFull: { time: string; eventType: string; reason: string; severity: string; elapsedSeconds: number }[] =
         rawProctoringEvents
@@ -302,7 +272,6 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
                 elapsedSeconds: elapsed,
             };
         });
-
     const signalTimeline = rawProctoringEvents
         .filter((e: any) => e?.signal_name || e?.eventType || e?.event)
         .map((e: any) => {
@@ -319,7 +288,6 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
         })
         // Show only org-enabled proctoring signals — exclude behavioral/evaluation signals
         .filter((e) => enabledProctoringSignals.size === 0 || enabledProctoringSignals.has(e.signal_name));
-
     // ── Parse answerScores — stored as JSON string in DB ──
     const answerScoresParsed: { question: string; answer: string; depth: number; clarity: number; specificity: number; grounding: number; overall: number; signals: string[] }[] = (() => {
         const raw = candidate?.interview?.questionByQuestionAnalysis;
@@ -356,7 +324,6 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
                 };
             });
     })();
-
     const interviewSessionRows = answerScoresParsed.map((score: any, i: number) => ({
         q: Number(score?.turn || i + 1),
         question: String(score?.ai_question || score?.question || "").trim(),
@@ -364,7 +331,6 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
         score: String(score?.overall ? `${Math.round(score.overall)}/10` : "--"),
         reasoning: "",
     }));
-
     const interviewQaRows = answerScoresParsed.map((score: any, idx: number) => ({
         q: Number(score?.turn || idx + 1),
         question: String(score?.ai_question || score?.question || `Question ${idx + 1}`).trim(),
@@ -380,9 +346,7 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
         tags: Array.isArray(score?.signals) ? score.signals : [],
         confidence: "",
     }));
-
     const wordCount = interviewTranscript ? interviewTranscript.split(/\s+/).filter(Boolean).length : 0;
-
     const interviewScore = (() => {
         const overall = Number(interviewReportScores.overall);
         if (Number.isFinite(overall) && overall > 0) return Math.max(0, Math.min(100, Math.round(overall)));
@@ -398,7 +362,6 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
         return 0;
     })();
     const combinedScore = interviewScore; // 0-100, no normalization needed
-
     // ── Proctoring verdict — if fallback report but real events exist, say so ──
     const proctoringVerdictSummary = (() => {
         const aiSummary = String(interviewReportData?.integrity?.summary || "").trim();
@@ -408,13 +371,11 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
         if (groupedProctoringSignals.length > 0) return `${groupedProctoringSignals.length} proctoring event type(s) logged — all low severity.`;
         return "No proctoring flags detected during this session.";
     })();
-
     const recordingDurationSec = typeof candidate?.interview?.recordingDurationSec === "number"
         ? candidate.interview.recordingDurationSec
         : typeof candidate?.interview?.interviewDuration === "number"
             ? candidate.interview.interviewDuration
             : null;
-
     const communicationStatus = (() => {
         const commScore = interviewReportScores.communication;
         if (commScore > 0) {
@@ -506,7 +467,6 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
             firstText(report.decision_reason) ||
             firstText(report.recruiter_snapshot) ||
             "No top gap listed yet.";
-
         // AI-direct fields from gpt-4o report
         const aiRadar = report.fit_radar || null;
         const aiRadarNotes = report.fit_radar_notes || null;
@@ -528,7 +488,6 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
         const aiStrengths = Array.isArray(report.strengths) && report.strengths.length > 0 ? report.strengths : null;
         const aiWeaknesses = Array.isArray(report.weaknesses) && report.weaknesses.length > 0 ? report.weaknesses : null;
         const humanLayer = report.human_layer || null;
-
         return buildSreevaAIResumeViewModel({
             candidate: {
                 fullName,
@@ -571,14 +530,11 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
                 : null,
         });
     }, [backHref, candidate, candidatePhotoSrc, mounted, resumeReportPayload, structuredResumeData, structuredJdData]);
-
-
     const formatDuration = (totalSeconds: number) => {
         const m = Math.floor(totalSeconds * 0.0166666);
         const s = Math.floor(totalSeconds % 60);
         return `${m}:${s.toString().padStart(2, "0")}min`;
     };
-
     const handleHiringAction = useCallback(async (action: "hire" | "not_hired") => {
         if (!candidate?.id) return;
         setIsUpdating(true);
@@ -599,7 +555,6 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
             setIsUpdating(false);
         }
     }, [candidate?.id, orgIdParam, fetchCandidate]);
-
     const handleResendInterviewLink = useCallback(async () => {
         if (!candidate?.id) return;
         if (isSuspended) {
@@ -626,15 +581,12 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
             setIsUpdating(false);
         }
     }, [candidate?.id, orgIdParam, fetchCandidate, isSuspended]);
-
     const handleConfirmAction = useCallback(async () => {
         if (!confirmDialog) return;
-
         if (confirmDialog.action === "resend_link" && isSuspended) {
             setConfirmDialog(null);
             return;
         }
-
         if (confirmDialog.action === "hire") {
             await handleHiringAction("hire");
         } else if (confirmDialog.action === "not_hired") {
@@ -642,10 +594,8 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
         } else if (confirmDialog.action === "resend_link") {
             await handleResendInterviewLink();
         }
-
         setConfirmDialog(null);
     }, [confirmDialog, handleHiringAction, handleResendInterviewLink, isSuspended]);
-
     if (loading) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -658,7 +608,6 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
             </div>
         );
     }
-
     if (!candidate) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -671,7 +620,6 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
             </div>
         );
     }
-
     if (reportMode === "resume") {
         return (
             <div className="min-h-screen bg-slate-50">
@@ -679,7 +627,6 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
             </div>
         );
     }
-
     if (reportMode === "interview" && interviewReportLocked) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
@@ -701,8 +648,6 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
             </div>
         );
     }
-
-
     return (
         <>
             <InterviewReportSreevaAI
@@ -728,7 +673,6 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
                     mounted,
                     displayAvatar: candidatePhotoSrc,
                     interviewReportScores,
-
                     interviewReportCommunication,
                     interviewReportBehavioralAnalysis,
                     interviewReportVerdict,
@@ -756,11 +700,8 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
                     integrityBand,
                     skillsEvaluated,
                     skillRatingsList,
-
                 })}
             />
-
-
             {confirmDialog && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
                     <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden">

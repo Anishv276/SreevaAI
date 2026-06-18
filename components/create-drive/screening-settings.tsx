@@ -1,40 +1,32 @@
 "use client";
-
 import { useState } from "react";
 import { Slider } from "@/components/ui/slider";
 import { Plus, X, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ScreeningCriteria } from "@/lib/screening-criteria";
-
 export interface ScreeningConfig {
     threshold: number;
     criteria?: ScreeningCriteria;
 }
-
 interface ScreeningSettingsProps {
     config: ScreeningConfig;
     setConfig: (w: ScreeningConfig | ((prev: ScreeningConfig) => ScreeningConfig)) => void;
 }
-
 type SkillItem = { name: string; weight?: number };
 type CustomCheckItem = { text: string; required?: boolean };
-
 export function ScreeningSettings({ config, setConfig }: ScreeningSettingsProps) {
     const threshold = config?.threshold ?? 60;
     const criteria = config?.criteria ?? {};
-
     const [newSkill, setNewSkill] = useState("");
     const [newSkillMustHave, setNewSkillMustHave] = useState(true);
     const [newCustomCheck, setNewCustomCheck] = useState("");
     const [newCustomRequired, setNewCustomRequired] = useState(true);
-
     const updateCriteria = (updates: Partial<ScreeningCriteria>) => {
         setConfig((prev) => ({
             ...prev,
             criteria: { ...(prev.criteria || {}), ...updates },
         }));
     };
-
     const addSkill = () => {
         const label = newSkill.trim();
         if (!label) return;
@@ -48,12 +40,10 @@ export function ScreeningSettings({ config, setConfig }: ScreeningSettingsProps)
         });
         setNewSkill("");
     };
-
     const removeSkill = (kind: "mustHave" | "optional", index: number) => {
         const current = criteria.skills?.[kind] || [];
         updateCriteria({ skills: { ...criteria.skills, [kind]: current.filter((_, i) => i !== index) } });
     };
-
     const toggleSkillMustHave = (kind: "mustHave" | "optional", index: number) => {
         const currentMustHave = criteria.skills?.mustHave || [];
         const currentOptional = criteria.skills?.optional || [];
@@ -79,18 +69,15 @@ export function ScreeningSettings({ config, setConfig }: ScreeningSettingsProps)
             });
         }
     };
-
     const addCustomCheck = () => {
         const text = newCustomCheck.trim();
         if (!text) return;
         updateCriteria({ customChecks: [...(criteria.customChecks || []), { text, required: newCustomRequired }] });
         setNewCustomCheck("");
     };
-
     const removeCustomCheck = (index: number) => {
         updateCriteria({ customChecks: (criteria.customChecks || []).filter((_, i) => i !== index) });
     };
-
     const toggleCustomRequired = (index: number) => {
         updateCriteria({
             customChecks: (criteria.customChecks || []).map((item, i) =>
@@ -98,19 +85,15 @@ export function ScreeningSettings({ config, setConfig }: ScreeningSettingsProps)
             ),
         });
     };
-
     const mustHaveSkills = criteria.skills?.mustHave || [];
     const optionalSkills = criteria.skills?.optional || [];
     const customChecks = criteria.customChecks || [];
-
     const thresholdColor =
         threshold < 40 ? "#3B82F6" :
         threshold < 65 ? "#22C55E" :
         threshold < 85 ? "#F97316" : "#EF4444";
-
     return (
         <div className="space-y-6">
-
             {/* ── Threshold ── */}
             <div className="space-y-3">
                 <div className="flex items-center justify-between">
@@ -135,9 +118,7 @@ export function ScreeningSettings({ config, setConfig }: ScreeningSettingsProps)
                     <span>Strict</span>
                 </div>
             </div>
-
             <div className="border-t border-gray-100" />
-
             {/* ── Skills ── */}
             <div className="space-y-3">
                 <div className="flex items-center justify-between">
@@ -148,7 +129,6 @@ export function ScreeningSettings({ config, setConfig }: ScreeningSettingsProps)
                         </span>
                     )}
                 </div>
-
                 {/* Skill tags */}
                 {(mustHaveSkills.length > 0 || optionalSkills.length > 0) && (
                     <div className="flex flex-wrap gap-1.5">
@@ -189,7 +169,6 @@ export function ScreeningSettings({ config, setConfig }: ScreeningSettingsProps)
                         ))}
                     </div>
                 )}
-
                 {/* Add skill row */}
                 <div className="flex gap-2">
                     <input
@@ -225,9 +204,7 @@ export function ScreeningSettings({ config, setConfig }: ScreeningSettingsProps)
                     Orange tags are <span className="text-orange-500 font-semibold">must-have</span> and weighted higher. Click a tag name to toggle.
                 </p>
             </div>
-
             <div className="border-t border-gray-100" />
-
             {/* ── Custom Checks ── */}
             <div className="space-y-3">
                 <div className="flex items-center justify-between">
@@ -239,7 +216,6 @@ export function ScreeningSettings({ config, setConfig }: ScreeningSettingsProps)
                         <span className="text-[11px] font-semibold text-gray-400">{customChecks.length} added</span>
                     )}
                 </div>
-
                 {customChecks.length > 0 && (
                     <div className="space-y-1.5">
                         {customChecks.map((item, i) => (
@@ -281,7 +257,6 @@ export function ScreeningSettings({ config, setConfig }: ScreeningSettingsProps)
                         ))}
                     </div>
                 )}
-
                 <div className="flex gap-2">
                     <input
                         type="text"

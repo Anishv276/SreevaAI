@@ -57,7 +57,6 @@ export function ResumeScreening({ driveId, driveName }: { driveId: string; drive
         }
     }, [driveId]);
     useEffect(() => { refresh(); }, [refresh]);
-
     // Auto-poll while any batch or candidate is still in-flight
     useEffect(() => {
         const hasActiveBatch = batches.some((b) => {
@@ -221,10 +220,8 @@ function UploadModal({
         const batchCandidates = Array.isArray(data.candidates)
             ? data.candidates.filter((candidate: any) => candidate.bulkBatchId === nextBatchId)
             : [];
-
         const normalizedStatus = (value: unknown) =>
             String(value || "").trim().toLowerCase().replace(/[_-]+/g, " ");
-
         return {
             shortlisted: batchCandidates.filter((candidate: any) => normalizedStatus(candidate.resumeStatus) === "shortlisted").length,
             rejected: batchCandidates.filter((candidate: any) => normalizedStatus(candidate.resumeStatus) === "rejected").length,
@@ -270,7 +267,6 @@ function UploadModal({
             const totalFiles = files.length;
             setProgress({ processed: 0, total: totalFiles });
             setPhase("processing");
-
             // Poll batch + candidates until all are done
             pollRef.current = setInterval(async () => {
                 try {
@@ -470,7 +466,6 @@ function UploadModal({
                                 {summary.shortlisted} shortlisted and {summary.rejected} rejected from {summary.total} screened resumes.
                             </p>
                         </div>
-
                         <div className="grid grid-cols-3 gap-3">
                             <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4 text-center">
                                 <p className="text-2xl font-black text-emerald-700">{summary.shortlisted}</p>
@@ -485,14 +480,12 @@ function UploadModal({
                                 <p className="mt-1 text-[11px] font-bold uppercase tracking-widest text-slate-500">Total</p>
                             </div>
                         </div>
-
                         <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 text-sm text-slate-600">
                             <p className="font-semibold text-slate-900">Send follow-up emails now?</p>
                             <p className="mt-1">
                                 Rejection emails will be sent immediately. Shortlisted emails will be queued and delivered through the invitation queue.
                             </p>
                         </div>
-
                         <div className="flex items-center justify-end gap-3 pt-1">
                             <Button variant="ghost" onClick={() => { reset(); onComplete(); }} className="h-11 rounded-2xl border border-gray-200 bg-white px-5 font-bold text-gray-600 hover:bg-gray-50">
                                 Skip

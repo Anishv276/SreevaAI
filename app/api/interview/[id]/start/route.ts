@@ -2,14 +2,11 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
 import { interviewStartQueue } from "@/lib/queue";
-
 export const runtime = "nodejs";
-
 type StartInterviewBody = {
   token?: string;
   startedAtMs?: number;
 };
-
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -21,7 +18,6 @@ export async function POST(
     const interviewToken = String(body.token || "").trim();
     const startedAtMs = Number(body.startedAtMs);
     const requireInterviewToken = isInterviewTokenRequired();
-
     if (!applicationId) {
       return NextResponse.json({ error: "Application ID required" }, { status: 400 });
     }
@@ -31,7 +27,6 @@ export async function POST(
     if (requireInterviewToken && !interviewToken) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
-
     const interview = await prismaAny.interview.findUnique({
       where: { applicationId },
       select: {
@@ -42,27 +37,22 @@ export async function POST(
         linkStatus: true,
       },
     });
-
     if (!interview) {
       return NextResponse.json({ error: "Interview session not found" }, { status: 404 });
     }
-
     if (requireInterviewToken && interview.accessToken !== interviewToken) {
       return NextResponse.json({ error: "Invalid interview token" }, { status: 401 });
     }
-
     const startNow = Date.now();
     const startExpiresAtMs = interview.expiresAt ? interview.expiresAt.getTime() : null;
     const startIsExpiredByTime = startExpiresAtMs !== null && startNow > startExpiresAtMs;
     const interviewRecordStatus = String(interview.status || "").toUpperCase();
-
     if (interviewRecordStatus === "COMPLETED" || interviewRecordStatus === "NO_SHOW") {
       return NextResponse.json({
         error: "Interview has been completed.",
         code: "INTERVIEW_COMPLETED",
       }, { status: 409 });
     }
-
     if (interview.startedAt) {
       if (interview.linkStatus === "EXPIRED" || startIsExpiredByTime) {
         if (startIsExpiredByTime && interview.linkStatus !== "EXPIRED") {
@@ -84,11 +74,9 @@ export async function POST(
         startedAt: interview.startedAt,
       });
     }
-
     const now = Date.now();
     const expiresAtMs = interview.expiresAt ? interview.expiresAt.getTime() : null;
     const isExpiredByTime = expiresAtMs !== null && now > expiresAtMs;
-
     // Reset EXPIRED status if the deadline hasn't passed — handles re-attempts after
     // a previous session completed or timed out with startedAt set.
     if (interview.linkStatus === "EXPIRED" && !isExpiredByTime) {
@@ -104,7 +92,6 @@ export async function POST(
           data: { linkStatus: "EXPIRED" },
         }).catch(() => {});
       }
-
       if (interview.linkStatus === "EXPIRED" || isExpiredByTime) {
         if (isExpiredByTime) {
           return NextResponse.json({
@@ -118,7 +105,6 @@ export async function POST(
         }, { status: 403 });
       }
     }
-
     await interviewStartQueue.add(
       "mark-interview-started",
       {
@@ -127,7 +113,6 @@ export async function POST(
         accessToken: interview.accessToken,
       },
     );
-
     return NextResponse.json({
       success: true,
       queued: true,

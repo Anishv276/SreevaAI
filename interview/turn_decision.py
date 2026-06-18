@@ -1,7 +1,6 @@
 """
 TurnDecision schema and signal detection logic.
 Consumed by evaluate_answer_and_decide() in agent.py via turn_evaluator.py.
-
 Refactor additions (all non-breaking):
   - Pydantic models: QualityScoresModel, SignalEventModel, DecisionOutputModel,
     -- runtime validation + dot-access alongside TypedDicts.
@@ -14,27 +13,21 @@ Refactor additions (all non-breaking):
   All existing public function signatures unchanged.
 """
 from __future__ import annotations
-
 import asyncio
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Callable, ClassVar, Optional, TypedDict
-
 from pydantic import BaseModel, Field, field_validator
-
 # LangChain -- optional; graceful fallback if not installed
 try:
     from langchain_core.runnables import RunnableLambda, RunnableParallel
     _LANGCHAIN_AVAILABLE = True
 except ImportError:  # pragma: no cover
     _LANGCHAIN_AVAILABLE = False
-
-
 # ===========================================================================
 # Schema TypedDicts -- preserved exactly for all existing callers
 # ===========================================================================
-
 class QualityScores(TypedDict):
     clarity: float      # 0-10: how clear the answer is
     depth: float        # 0-10: reasoning shown
@@ -42,7 +35,6 @@ class QualityScores(TypedDict):
     grounding: float    # 0-10: tied to lived experience
     fluency: float      # 0-10: smooth natural delivery
     confidence: float   # 0-10: assertiveness and decisiveness
-
 class SignalFlags(TypedDict):
     ownership_ambiguity: bool
     example_evasion: bool
@@ -54,18 +46,15 @@ class SignalFlags(TypedDict):
     ownership_clarified: bool
     example_given: bool
     strong_under_pressure: bool      # [BUG FIX] was missing from original TypedDict
-
 class DecisionOutput(TypedDict):
     action: str         # "MOVE_ON" | "PROBE" | "VERIFY"
     mode: str
     next_goal: str
-
 class TurnDecision(TypedDict):
     quality: QualityScores
     signals: SignalFlags
     signal_events: list[SignalEvent]
     decision: DecisionOutput
-
 class SignalEvent(TypedDict):
     signal_name: str
     signal_layer: str
@@ -76,7 +65,6 @@ class SignalEvent(TypedDict):
     probe_mode: str
     recoverable: bool
     recruiter_visible: bool
-
 class SignalRule(TypedDict):
     signal_layer: str
     trust_bucket_affected: str
@@ -87,11 +75,9 @@ class SignalRule(TypedDict):
         [str, str, float, list[float], int, bool],
         Optional[SignalEvent],
     ]
-
 # ===========================================================================
 # Pydantic Models -- dot-access + validation wrappers (alongside TypedDicts)
 # ===========================================================================
-
 class QualityScoresModel(BaseModel):
     """Validated quality scores -- all fields clamped 0.0-10.0."""
     clarity: float = Field(default=5.0, ge=0.0, le=10.0)
@@ -101,24 +87,18 @@ class QualityScoresModel(BaseModel):
     fluency: float = Field(default=5.0, ge=0.0, le=10.0)
     confidence: float = Field(default=5.0, ge=0.0, le=10.0)
     model_config = {"extra": "ignore"}
-
     @field_validator("clarity","depth","specificity","grounding","fluency","confidence", mode="before")
     @classmethod
     def _clamp(cls, v: Any) -> float:
         return max(0.0, min(10.0, float(v or 0.0)))
-
     @property
     def overall(self) -> float:
         return (self.clarity + self.depth + self.specificity + self.grounding) / 4.0
-
     def to_dict(self) -> dict:
         return self.model_dump()
-
     @classmethod
     def from_dict(cls, d: dict) -> "QualityScoresModel":
         return cls.model_validate(d)
-
-
 class SignalEventModel(BaseModel):
     """Validated signal event -- confidence clamped to [0.0, 1.0]."""
     signal_name: str
@@ -131,37 +111,28 @@ class SignalEventModel(BaseModel):
     recoverable: bool = Field(default=True)
     recruiter_visible: bool = Field(default=False)
     model_config = {"extra": "ignore"}
-
     @field_validator("confidence", mode="before")
     @classmethod
     def _clamp_conf(cls, v: Any) -> float:
         return max(0.0, min(1.0, float(v or 0.0)))
-
     def to_signal_event(self) -> SignalEvent:
         return SignalEvent(**self.model_dump())
-
     @classmethod
     def from_signal_event(cls, ev: SignalEvent) -> "SignalEventModel":
         return cls.model_validate(ev)
-
-
 class DecisionOutputModel(BaseModel):
     action: str = Field(default="MOVE_ON")
     mode: str = Field(default="normal")
     next_goal: str = Field(default="")
     model_config = {"extra": "ignore"}
-
     @field_validator("action", mode="before")
     @classmethod
     def _normalize_action(cls, v: Any) -> str:
         s = str(v or "MOVE_ON").strip().upper()
         return s if s in ("MOVE_ON", "PROBE", "VERIFY") else "MOVE_ON"
-
-
 # ===========================================================================
 # Signal detection helpers -- unchanged from original
 # ===========================================================================
-
 _WE_TOKENS = {"we", "our", "team", "they", "everyone"}
 _I_TOKENS = {"i", "me", "my", "myself", "i'd", "i've"}
 _THEORY_PHRASES = {
@@ -169,7 +140,6 @@ _THEORY_PHRASES = {
     "you should", "one would", "the idea is", "ideally", "the approach is",
     "you can", "the way to", "it depends",
 }
-
 # C3/C4 fix: shared regex used by BOTH ExampleEvasionDetector and
 # ExampleGivenDetector so their "has specifics" threshold is identical and
 # the two signals can never fire simultaneously.  Covers temporal markers
@@ -209,11 +179,9 @@ _COMPRESSION_REQUEST_PHRASES = {
     "what was the process", "what was the logic",
     "what were you responsible", "what exactly did you", "what specifically did you",
 }
-
 # ===========================================================================
 # Builder helper -- unchanged
 # ===========================================================================
-
 def _build_signal_event(
     *,
     signal_name: str,
@@ -237,16 +205,12 @@ def _build_signal_event(
         recoverable=recoverable,
         recruiter_visible=recruiter_visible,
     )
-
-
 # ===========================================================================
 # DSA: CollapseRule -- replaces nested if/elif in FollowUpCollapseDetector
 # ===========================================================================
-
 @dataclass(frozen=True)
 class CollapseRule:
     """Declarative collapse classification rule.
-
     Evaluated in order; first matching rule wins (replaces the if/elif chain).
     Frozen dataclass -- rules are immutable config, never mutated at runtime.
     """
@@ -260,35 +224,26 @@ class CollapseRule:
     # Score deltas
     delta_normal: float = -0.20
     delta_partial: float = -0.12
-
     def matches(self, current_depth: float, drop: float) -> bool:
         return current_depth <= self.max_depth and drop >= self.min_drop
-
     def compute_confidence(self, drop: float, escalated: bool) -> float:
         if escalated:
             return min(0.97, 0.80 + drop * 0.04)
         return min(self.max_conf, self.base_conf + drop * self.drop_weight)
-
     def score_delta(self, escalated: bool) -> float:
         if escalated:
             return -0.38
         return self.delta_normal if self.label == "complete" else self.delta_partial
-
-
 # Ordered -- first match wins (mirrors original if/elif evaluation order)
 _COLLAPSE_RULES: tuple[CollapseRule, ...] = (
     CollapseRule(label="complete", max_depth=3.0, min_drop=0.0),  # depth ≤ 3.0
     CollapseRule(label="partial",  max_depth=5.0, min_drop=2.0),  # depth ≤ 5.0 AND drop ≥ 2.0
 )
-
-
 # ===========================================================================
 # DetectionContext -- Pydantic BaseModel (same attrs, validated, no positional args)
 # ===========================================================================
-
 class DetectionContext(BaseModel):
     """Per-turn context passed to every signal detector.
-
     Migrated from a plain __init__ class to Pydantic BaseModel:
       - depth clamped to [0, 10]
       - latency normalized (None if negative)
@@ -305,17 +260,14 @@ class DetectionContext(BaseModel):
     turns_since_last_decay: int = Field(default=999, ge=0)
     response_latency_sec: Optional[float] = Field(default=None)
     model_config = {"extra": "forbid"}
-
     @field_validator("current_depth", mode="before")
     @classmethod
     def _clamp_depth(cls, v: Any) -> float:
         return max(0.0, min(10.0, float(v or 0.0)))
-
     @field_validator("prior_depth_scores", "session_score_history", mode="before")
     @classmethod
     def _norm_list(cls, v: Any) -> list[float]:
         return [float(x) for x in (v or []) if x is not None]
-
     @field_validator("response_latency_sec", mode="before")
     @classmethod
     def _norm_latency(cls, v: Any) -> Optional[float]:
@@ -323,22 +275,16 @@ class DetectionContext(BaseModel):
             return None
         f = float(v)
         return f if f >= 0.0 else None
-
-
 # ===========================================================================
 # Abstract detector base -- unchanged interface
 # ===========================================================================
-
 class BaseDetector(ABC):
     @abstractmethod
     def detect(self, ctx: DetectionContext) -> Optional[SignalEvent]:
         pass
-
-
 # ===========================================================================
 # All detectors -- logic unchanged; CollapseRule used in FollowUpCollapseDetector
 # ===========================================================================
-
 class OwnershipAmbiguityDetector(BaseDetector):
     _SHORT_EVASION_THRESHOLD = 12
     # M5 fix: separate the "counts as we-language" tokens from the "triggers
@@ -347,7 +293,6 @@ class OwnershipAmbiguityDetector(BaseDetector):
     # contradict the any() check.  Now: short-evasion only fires on neutral
     # topic/project/personal words that carry no pronoun count weight.
     _SHORT_EVASION_TRIGGER_WORDS = frozenset({"personal", "project", "developed"})
-
     def detect(self, ctx: DetectionContext) -> Optional[SignalEvent]:
         tokens = ctx.answer.lower().split()
         clean = [t.strip(".,!?;:\"'()") for t in tokens]
@@ -382,8 +327,6 @@ class OwnershipAmbiguityDetector(BaseDetector):
             recoverable=True,
             recruiter_visible=True,
         )
-
-
 class ExampleEvasionDetector(BaseDetector):
     def detect(self, ctx: DetectionContext) -> Optional[SignalEvent]:
         q_lower = ctx.last_question.lower()
@@ -426,17 +369,13 @@ class ExampleEvasionDetector(BaseDetector):
             recoverable=True,
             recruiter_visible=False,
         )
-
-
 class WeakTechnicalHedgeDetector(BaseDetector):
     """Detects hedging language ('I've worked with', 'I'm familiar with') combined
     with weak depth — indicates resume-padding rather than real experience.
-
     H3 fix: renamed from ResumeClaimMismatchDetector.  The original name implied
     a comparison against actual resume data (which was never done).  The signal
     fires on hedging language + low depth, so 'weak_technical_hedge' is accurate.
     """
-
     def detect(self, ctx: DetectionContext) -> Optional[SignalEvent]:
         q_lower = ctx.last_question.lower()
         if not any(p in q_lower for p in _EXAMPLE_REQUEST_PHRASES | _COMPRESSION_REQUEST_PHRASES):
@@ -459,15 +398,11 @@ class WeakTechnicalHedgeDetector(BaseDetector):
             recoverable=True,
             recruiter_visible=True,
         )
-
-
 class FollowUpCollapseDetector(BaseDetector):
     """Detects sharp quality drop from first to follow-up answer.
-
     Uses the CollapseRule dispatch table instead of nested if/elif:
     new collapse types -> add a rule to _COLLAPSE_RULES, no method changes needed.
     """
-
     def detect(self, ctx: DetectionContext) -> Optional[SignalEvent]:
         if ctx.topic_follow_up_count < 1 or not ctx.prior_depth_scores:
             return None
@@ -475,7 +410,6 @@ class FollowUpCollapseDetector(BaseDetector):
         drop = first_answer_depth - ctx.current_depth
         if first_answer_depth < 6.0:
             return None
-
         # Dispatch table replaces: if current_depth <= 3.0 / elif current_depth <= 5.0 ...
         rule = next(
             (r for r in _COLLAPSE_RULES if r.matches(ctx.current_depth, drop)),
@@ -483,7 +417,6 @@ class FollowUpCollapseDetector(BaseDetector):
         )
         if rule is None:
             return None
-
         escalated = ctx.collapse_stage >= 1
         return _build_signal_event(
             signal_name="follow_up_collapse",
@@ -499,8 +432,6 @@ class FollowUpCollapseDetector(BaseDetector):
             recoverable=not escalated,
             recruiter_visible=True,
         )
-
-
 class LatencyMismatchDetector(BaseDetector):
     def detect(self, ctx: DetectionContext) -> Optional[SignalEvent]:
         if ctx.topic_follow_up_count < 1 or not ctx.prior_depth_scores:
@@ -528,15 +459,11 @@ class LatencyMismatchDetector(BaseDetector):
             recoverable=True,
             recruiter_visible=False,
         )
-
-
 _DECAY_MIN_TOPIC_TURNS = 4
 _DECAY_WINDOW = 4
 _DECAY_MILD_THRESHOLD = 1.0
 _DECAY_SEVERE_THRESHOLD = 1.8
 _DECAY_COOLDOWN = 3
-
-
 class DepthDecayDetector(BaseDetector):
     def detect(self, ctx: DetectionContext) -> Optional[SignalEvent]:
         if ctx.topic_follow_up_count < _DECAY_MIN_TOPIC_TURNS:
@@ -571,8 +498,6 @@ class DepthDecayDetector(BaseDetector):
             recoverable=True,
             recruiter_visible=True,
         )
-
-
 _CLM_COMPLEX_PHRASES = {
     "tell me about a time", "walk me through", "describe a situation",
     "give me an example", "how did you handle", "what was the hardest",
@@ -590,21 +515,16 @@ _CLM_SIMPLE_PHRASES = {
 _CLM_FAST_COMPLEX_SEC = 5.5
 _CLM_SLOW_SIMPLE_SEC = 22.0
 _CLM_MIN_WORDS = 20
-
-
 # ===========================================================================
 # OOP: QuestionComplexityScorer -- class-level LRU cache (max 256 entries)
 # ===========================================================================
-
 class QuestionComplexityScorer:
     """Complexity classifier for interview questions.
-
     M6 fix: replaced the hand-rolled class-level dict cache (not thread-safe
     under concurrent evals from multiple simultaneous interviews) with
     functools.lru_cache on the static compute method.  lru_cache uses an
     internal lock and is safe for concurrent access from multiple threads.
     """
-
     @staticmethod
     @__import__("functools").lru_cache(maxsize=256)
     def _compute(question: str) -> str:
@@ -617,21 +537,15 @@ class QuestionComplexityScorer:
         if simple_hits >= 1 or word_count <= 8:
             return "simple"
         return "moderate"
-
     @classmethod
     def score(cls, question: str) -> str:
         return cls._compute(question)
-
     @classmethod
     def clear_cache(cls) -> None:
         cls._compute.cache_clear()
-
-
 def _score_question_complexity(question: str) -> str:
     """Classify question complexity. Delegates to QuestionComplexityScorer (cached)."""
     return QuestionComplexityScorer.score(question)
-
-
 class ComplexityLatencyMismatchDetector(BaseDetector):
     def detect(self, ctx: DetectionContext) -> Optional[SignalEvent]:
         if ctx.response_latency_sec is None:
@@ -677,8 +591,6 @@ class ComplexityLatencyMismatchDetector(BaseDetector):
                 recruiter_visible=True,
             )
         return None
-
-
 class OwnershipClarifiedDetector(BaseDetector):
     def detect(self, ctx: DetectionContext) -> Optional[SignalEvent]:
         a_lower = ctx.answer.lower()
@@ -704,8 +616,6 @@ class OwnershipClarifiedDetector(BaseDetector):
                 recruiter_visible=True,
             )
         return None
-
-
 class ExampleGivenDetector(BaseDetector):
     def detect(self, ctx: DetectionContext) -> Optional[SignalEvent]:
         a_lower = ctx.answer.lower()
@@ -732,16 +642,12 @@ class ExampleGivenDetector(BaseDetector):
                 recruiter_visible=True,
             )
         return None
-
-
 class StrongUnderPressureDetector(BaseDetector):
     """Fires when a probed candidate still delivers a high-quality answer.
-
     Mirrors trust_engine inline check (topic_follow_up_count >= 1, overall >= 6.5)
     and produces a recruiter-visible SignalEvent (the inline path never emitted one).
     """
     _QUALITY_THRESHOLD = 6.5
-
     def detect(self, ctx: DetectionContext) -> Optional[SignalEvent]:
         if ctx.topic_follow_up_count < 1:
             return None
@@ -764,21 +670,16 @@ class StrongUnderPressureDetector(BaseDetector):
             recoverable=False,
             recruiter_visible=True,
         )
-
-
 # ===========================================================================
 # OOP: SignalEvaluator -- Registry + Orchestrator (extended, unchanged evaluate())
 # ===========================================================================
-
 class SignalEvaluator:
     """OOP Registry and orchestrator for all BaseDetector subclasses.
-
     Adds over original:
       register() / unregister() -- dynamic per-org detector management
       evaluate_async()           -- parallel execution via asyncio.gather
       langchain_pipeline()       -- optional RunnableParallel composable path
     """
-
     _DETECTORS: ClassVar[dict[str, BaseDetector]] = {
         "ownership_ambiguity":          OwnershipAmbiguityDetector(),
         "example_evasion":              ExampleEvasionDetector(),
@@ -791,23 +692,18 @@ class SignalEvaluator:
         "example_given":                ExampleGivenDetector(),
         "strong_under_pressure":        StrongUnderPressureDetector(),
     }
-
     # -- Registry API --------------------------------------------------------
-
     @classmethod
     def register(cls, name: str, detector: BaseDetector, *, replace: bool = False) -> None:
         """Register a new detector. Raises if name exists and replace=False."""
         if name in cls._DETECTORS and not replace:
             raise ValueError(f"Detector '{name}' already registered. Use replace=True to override.")
         cls._DETECTORS[name] = detector
-
     @classmethod
     def unregister(cls, name: str) -> None:
         """Remove a detector by name (no-op if not found)."""
         cls._DETECTORS.pop(name, None)
-
     # -- Synchronous path -- original, unchanged ------------------------------
-
     @classmethod
     def evaluate(cls, ctx: DetectionContext) -> list[SignalEvent]:
         events: list[SignalEvent] = []
@@ -818,13 +714,10 @@ class SignalEvaluator:
                     event["signal_name"] = name
                 events.append(event)
         return events
-
     # -- Async parallel path -- new -------------------------------------------
-
     @classmethod
     async def evaluate_async(cls, ctx: DetectionContext) -> list[SignalEvent]:
         """Run all detectors in parallel via asyncio.gather + thread executor.
-
         Total latency ≈ slowest single detector (not sum of all).
         Falls back to synchronous evaluate() if no running loop is found.
         """
@@ -837,7 +730,6 @@ class SignalEvaluator:
             )
         except RuntimeError:
             return cls.evaluate(ctx)
-
         events: list[SignalEvent] = []
         for (name, _), event in zip(detectors, raw):
             if event is not None:
@@ -845,15 +737,11 @@ class SignalEvaluator:
                     event["signal_name"] = name
                 events.append(event)
         return events
-
     # -- LangChain composable path -- optional --------------------------------
-
     @classmethod
     def langchain_pipeline(cls):
         """Build a LangChain RunnableParallel over all registered detectors.
-
         Returns None if langchain-core is not installed.
-
         Usage::
             pipe = SignalEvaluator.langchain_pipeline()
             if pipe:
@@ -868,12 +756,9 @@ class SignalEvaluator:
                 for name, det in cls._DETECTORS.items()
             }
         )
-
-
 # ===========================================================================
 # Public facade endpoints -- all signatures unchanged
 # ===========================================================================
-
 def _legacy_detection_context(
     *,
     answer: str = "",
@@ -897,16 +782,10 @@ def _legacy_detection_context(
         turns_since_last_decay=turns_since_last_decay,
         response_latency_sec=response_latency_sec,
     )
-
-
 def detect_ownership_ambiguity(answer: str) -> bool:
     return _detect_ownership_ambiguity_event(answer=answer) is not None
-
-
 def detect_example_evasion(answer: str, last_question: str) -> bool:
     return _detect_example_evasion_event(answer=answer, last_question=last_question) is not None
-
-
 def detect_follow_up_collapse(
     current_depth: float,
     prior_depth_scores: list[float],
@@ -919,8 +798,6 @@ def detect_follow_up_collapse(
         prior_depth_scores=prior_depth_scores,
         topic_follow_up_count=topic_follow_up_count,
     ) is not None
-
-
 def _detect_ownership_ambiguity_event(
     answer: str,
     last_question: str = "",
@@ -935,8 +812,6 @@ def _detect_ownership_ambiguity_event(
         prior_depth_scores=prior_depth_scores,
         topic_follow_up_count=topic_follow_up_count,
     ))
-
-
 def _detect_example_evasion_event(
     answer: str,
     last_question: str,
@@ -951,8 +826,6 @@ def _detect_example_evasion_event(
         prior_depth_scores=prior_depth_scores,
         topic_follow_up_count=topic_follow_up_count,
     ))
-
-
 def _detect_weak_technical_hedge_event(
     answer: str,
     last_question: str,
@@ -967,8 +840,6 @@ def _detect_weak_technical_hedge_event(
         prior_depth_scores=prior_depth_scores,
         topic_follow_up_count=topic_follow_up_count,
     ))
-
-
 def _detect_follow_up_collapse_event(
     answer: str,
     last_question: str,
@@ -985,8 +856,6 @@ def _detect_follow_up_collapse_event(
         topic_follow_up_count=topic_follow_up_count,
         collapse_stage=collapse_stage,
     ))
-
-
 def _detect_latency_mismatch_event(
     answer: str,
     last_question: str,
@@ -1001,8 +870,6 @@ def _detect_latency_mismatch_event(
         prior_depth_scores=prior_depth_scores,
         topic_follow_up_count=topic_follow_up_count,
     ))
-
-
 def _detect_resume_claim_mismatch_event(
     answer: str,
     last_question: str,
@@ -1020,8 +887,6 @@ def _detect_resume_claim_mismatch_event(
     if event is None:
         return None
     return {**event, "signal_name": "resume_claim_mismatch"}
-
-
 def _detect_depth_decay_event(
     answer: str,
     last_question: str,
@@ -1042,8 +907,6 @@ def _detect_depth_decay_event(
         session_score_history=session_score_history,
         turns_since_last_decay=turns_since_last_decay,
     ))
-
-
 def _detect_complexity_latency_mismatch_event(
     answer: str,
     last_question: str,
@@ -1060,22 +923,16 @@ def _detect_complexity_latency_mismatch_event(
         topic_follow_up_count=topic_follow_up_count,
         response_latency_sec=response_latency_sec,
     ))
-
-
 def _detect_ownership_clarified_event(answer: str, last_question: str = "") -> Optional[SignalEvent]:
     return OwnershipClarifiedDetector().detect(_legacy_detection_context(
         answer=answer,
         last_question=last_question,
     ))
-
-
 def _detect_example_given_event(answer: str, last_question: str = "") -> Optional[SignalEvent]:
     return ExampleGivenDetector().detect(_legacy_detection_context(
         answer=answer,
         last_question=last_question,
     ))
-
-
 def detect_signal_events(
     *,
     candidate_answer: str,
@@ -1101,8 +958,6 @@ def detect_signal_events(
         response_latency_sec=response_latency_sec,
     )
     return SignalEvaluator.evaluate(ctx)
-
-
 def build_signal_flags(signal_events: list[SignalEvent]) -> SignalFlags:
     names = {event["signal_name"] for event in signal_events}
     return SignalFlags(
@@ -1117,11 +972,8 @@ def build_signal_flags(signal_events: list[SignalEvent]) -> SignalFlags:
         example_given="example_given" in names,
         strong_under_pressure="strong_under_pressure" in names,
     )
-
-
 def compute_trust_delta(signal_events: list[SignalEvent], quality: dict) -> dict[str, Any]:
     """Compute the legacy trust delta summary from quality + signals.
-
     This compatibility helper preserves the older test-facing API that
     returned a simple delta/reason pair. The current runtime uses the richer
     TrustEngine instead, so this stays intentionally lightweight.
@@ -1131,7 +983,6 @@ def compute_trust_delta(signal_events: list[SignalEvent], quality: dict) -> dict
     specificity = float(quality.get("specificity", 5.0))
     grounding = float(quality.get("grounding", 5.0))
     overall = (clarity + depth + specificity + grounding) / 4.0
-
     if overall >= 8.0:
         return {"delta": 0.20, "reason": "high-quality answer"}
     if overall >= 6.5:
@@ -1139,8 +990,6 @@ def compute_trust_delta(signal_events: list[SignalEvent], quality: dict) -> dict
     if overall >= 4.5:
         return {"delta": 0.00, "reason": "mixed answer"}
     return {"delta": -0.10, "reason": "low-quality answer"}
-
-
 def build_turn_decision(
     quality: dict,
     signals: SignalFlags,

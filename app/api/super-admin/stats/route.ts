@@ -2,32 +2,27 @@ import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
-
 type OrgStatusRow = {
     status: string;
     statusControl: string | null;
     interviewQuotaTotal: number | null;
     interviewQuotaUsed: number | null;
 };
-
 type CreditRow = { name: string; creditsUsed: number };
 type InterviewRow = { name: string; count: number };
 type RecentActivityRow = { type: string; detail: string; org: string; at: Date };
-
 export async function GET() {
     try {
         const session = await getSession();
         if (!session || session.role !== "SUPER_ADMIN") {
             return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
         }
-
         const lastWeek = new Date();
         lastWeek.setDate(lastWeek.getDate() - 7);
         const twoWeeksAgo = new Date();
         twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
         const thirtyDaysAgo = new Date();
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
         const [
             totalOrgs,
             counts,
@@ -174,40 +169,32 @@ export async function GET() {
                 WHERE i."status" = 'COMPLETED' AND i."completedAt" >= ${thirtyDaysAgo}
             `,
         ]);
-
         let activeOrgs = 0;
         let suspendedOrgs = 0;
         let closedOrgs = 0;
-
         for (const org of allOrgStatuses) {
             const status = String(org.status || "ACTIVE").toUpperCase();
             if (status === "CLOSED") {
                 closedOrgs++;
                 continue;
             }
-
             const statusControl = String(org.statusControl || "").toUpperCase();
             if (statusControl === "MANUAL") {
                 suspendedOrgs++;
                 continue;
             }
-
             const total = Math.max(0, Number(org.interviewQuotaTotal || 0));
             const used = Math.max(0, Number(org.interviewQuotaUsed || 0));
             if (total > 0 && used >= total) {
                 suspendedOrgs++;
                 continue;
             }
-
             activeOrgs++;
         }
-
         const calc = (curr: number, prev: number) =>
             prev === 0 ? (curr > 0 ? 100 : 0) : Math.round(((curr - prev) / prev) * 100);
-
         const t = trends[0] || {};
         const c = counts[0] || {};
-
         const creditTotal = Number(creditTotalRows[0]?.totalCreditsUsed || 0);
         const top4Credits = creditTopRows.slice(0, 4);
         const otherCredits = Math.max(
@@ -218,7 +205,6 @@ export async function GET() {
             ...top4Credits.map((row) => ({ name: row.name, creditsUsed: Number(row.creditsUsed || 0) })),
             ...(otherCredits > 0 ? [{ name: "Other", creditsUsed: otherCredits }] : []),
         ];
-
         const interviewTotal = Number(interviewTotalRows[0]?.totalInterviews || 0);
         const top4Interviews = interviewTopRows.slice(0, 4);
         const otherInterviews = Math.max(
@@ -229,12 +215,10 @@ export async function GET() {
             ...top4Interviews.map((row) => ({ name: row.name, count: Number(row.count || 0) })),
             ...(otherInterviews > 0 ? [{ name: "Other", count: otherInterviews }] : []),
         ];
-
         const engagedOrgs = Number(recentlyActiveOrgs[0]?.count || 0);
         const engagedPct = totalOrgs > 0 ? (engagedOrgs / totalOrgs) * 100 : 0;
         const activePct = totalOrgs > 0 ? (activeOrgs / totalOrgs) * 100 : 0;
         const platformHealth = Math.round(activePct * 0.6 + engagedPct * 0.4);
-
         return NextResponse.json({
             totalOrgs,
             activeOrgs,

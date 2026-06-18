@@ -1,5 +1,4 @@
 import { Skeleton } from "@/components/ui/skeleton";
-
 export default function CandidatesLoading() {
     return (
         <div className="space-y-8 pb-12 animate-in-fade">
@@ -16,7 +15,6 @@ export default function CandidatesLoading() {
                     <Skeleton className="h-11 w-32 rounded-xl" />
                 </div>
             </div>
-
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
                 <div className="p-6 border-b border-gray-50 flex flex-col sm:flex-row gap-6 justify-between items-center bg-white/50">
                     <Skeleton className="h-11 w-full sm:max-w-lg rounded-xl" />
@@ -25,7 +23,6 @@ export default function CandidatesLoading() {
                         <Skeleton className="h-10 w-24 rounded-lg" />
                     </div>
                 </div>
-
                 <div className="p-8 space-y-6">
                     {[1, 2, 3, 4, 5, 6].map((i) => (
                         <div key={i} className="flex items-center justify-between py-4 border-b border-gray-50 last:border-0">
@@ -47,4 +44,3 @@ export default function CandidatesLoading() {
         </div>
     );
 }
-

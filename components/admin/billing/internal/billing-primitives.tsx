@@ -1,5 +1,4 @@
 "use client";
-
 import React from "react";
 import {
   DANGER,
@@ -17,7 +16,6 @@ import {
   WARN_SOFT,
 } from "./tokens";
 import type { InterviewStatus } from "./types";
-
 export function Toggle({
   on,
   onChange,
@@ -69,7 +67,6 @@ export function Toggle({
     </div>
   );
 }
-
 export function Eyebrow({ children, color = MUTED }: { children: React.ReactNode; color?: string }) {
   return (
     <div
@@ -85,7 +82,6 @@ export function Eyebrow({ children, color = MUTED }: { children: React.ReactNode
     </div>
   );
 }
-
 export function Avatar({ name, size = 28 }: { name: string; size?: number }) {
   const initials = name
     .split(" ")
@@ -115,7 +111,6 @@ export function Avatar({ name, size = 28 }: { name: string; size?: number }) {
     </div>
   );
 }
-
 export function StatusPill({ status }: { status: InterviewStatus }) {
   const map: Record<InterviewStatus, { bg: string; fg: string; label: string }> = {
     completed: { bg: SUCCESS_SOFT, fg: SUCCESS, label: "Completed" },
@@ -144,7 +139,6 @@ export function StatusPill({ status }: { status: InterviewStatus }) {
     </span>
   );
 }
-
 export function RingStat({ label, value, hint, accent }: { label: string; value: React.ReactNode; hint: string; accent?: boolean }) {
   return (
     <div>
@@ -156,7 +150,6 @@ export function RingStat({ label, value, hint, accent }: { label: string; value:
     </div>
   );
 }
-
 export function Fact({ label, value, sub, divider }: { label: string; value: string; sub: string; divider?: boolean }) {
   return (
     <div

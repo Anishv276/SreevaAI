@@ -1,8 +1,6 @@
 """
 Turn evaluation orchestrator.
-
 Consumed by eval_pipeline.py to produce a TurnDecision from one candidate answer.
-
 Refactor additions (all non-breaking):
   - EvalGraphState TypedDict: typed state for the LangGraph state machine
   - Five LangGraph nodes: llm_evaluate, detect_signals, filter_signals,
@@ -17,10 +15,8 @@ Refactor additions (all non-breaking):
   Public API signature (run_turn_evaluation) unchanged.
 """
 from __future__ import annotations
-
 import logging
 from typing import Any, Optional, TypedDict
-
 from interview.session_state import is_always_on_signal
 from interview.turn_decision import (
     TurnDecision,
@@ -28,9 +24,7 @@ from interview.turn_decision import (
     build_signal_flags,
     build_turn_decision,
 )
-
 logger = logging.getLogger("interview-agent")
-
 # LangGraph -- optional; graceful fallback to sequential await if not installed
 try:
     from langgraph.graph import StateGraph, END
@@ -39,20 +33,15 @@ except ImportError:  # pragma: no cover
     _LANGGRAPH_AVAILABLE = False
     StateGraph = None  # type: ignore[assignment,misc]
     END = "__end__"    # type: ignore[assignment]
-
-
 # ===========================================================================
 # Signal toggle helper -- single source of truth (no more duplicate function)
 # ===========================================================================
-
 def _is_signal_enabled(signal_toggles: Optional[dict[str, Any]], signal_name: str) -> bool:
     """Return True iff the named signal is enabled (default: True when absent).
-
     Always-on signals (see ALWAYS_ON_PROCTORING_SIGNALS in session_state.py)
     bypass the toggle check entirely -- they MUST fire regardless of whether
     the org's stored JSON has them set to false. This mirrors the TS-layer
     isProctoringSignalEnabled override.
-
     For togglable signals, default to True when the key is absent and honor
     any explicit truthy/falsy value otherwise.
     """
@@ -71,15 +60,11 @@ def _is_signal_enabled(signal_toggles: Optional[dict[str, Any]], signal_name: st
     if isinstance(raw, (int, float)):
         return bool(raw)
     return True
-
-
 # ===========================================================================
 # LangGraph: EvalGraphState -- typed state for all graph nodes
 # ===========================================================================
-
 class EvalGraphState(TypedDict):
     """Typed state dict threaded through the LangGraph evaluation graph.
-
     Each node reads from and writes to this shared state.
     LangGraph merges node outputs back into state automatically.
     """
@@ -102,20 +87,15 @@ class EvalGraphState(TypedDict):
     active_topic: str
     topic_importance: str
     job_title: str
-
     # Intermediate results (filled by nodes)
     raw_quality: dict                # output of evaluate_answer_fn
     signal_events: list              # detected + filtered signal events
     turn_decision: dict              # final TurnDecision dict
-
     # Error channel
     error: Optional[str]             # set by any node on exception
-
-
 # ===========================================================================
 # LangGraph nodes -- each does exactly one thing
 # ===========================================================================
-
 async def _node_llm_evaluate(state: EvalGraphState) -> dict:
     """Node 1: call the LLM evaluation function to score the answer."""
     try:
@@ -139,8 +119,6 @@ async def _node_llm_evaluate(state: EvalGraphState) -> dict:
             "raw_quality": {},
             "error": f"llm_evaluate: {exc}",
         }
-
-
 async def _node_detect_signals(state: EvalGraphState) -> dict:
     """Node 2: run signal detectors against the raw answer."""
     try:
@@ -159,8 +137,6 @@ async def _node_detect_signals(state: EvalGraphState) -> dict:
     except Exception as exc:
         logger.error("[EVAL_GRAPH] node_detect_signals failed: %s", exc, exc_info=True)
         return {"signal_events": [], "error": f"detect_signals: {exc}"}
-
-
 async def _node_filter_signals(state: EvalGraphState) -> dict:
     """Node 3: apply per-org signal toggles to the detected events."""
     toggles = state.get("signal_toggles") or {}
@@ -169,8 +145,6 @@ async def _node_filter_signals(state: EvalGraphState) -> dict:
         if _is_signal_enabled(toggles, str(ev.get("signal_name", "")))
     ]
     return {"signal_events": filtered}
-
-
 async def _node_build_decision(state: EvalGraphState) -> dict:
     """Node 4: assemble the final TurnDecision from quality + filtered signals."""
     try:
@@ -188,8 +162,6 @@ async def _node_build_decision(state: EvalGraphState) -> dict:
     except Exception as exc:
         logger.error("[EVAL_GRAPH] node_build_decision failed: %s", exc, exc_info=True)
         return {"turn_decision": None, "error": f"build_decision: {exc}"}
-
-
 async def _node_handle_error(state: EvalGraphState) -> dict:
     """Error reporting node -- preserve the failure for the runtime recovery path."""
     logger.error(
@@ -201,32 +173,24 @@ async def _node_handle_error(state: EvalGraphState) -> dict:
         "signal_events": [],
         "error": state.get("error") or "eval_graph_error",
     }
-
-
 # ===========================================================================
 # LangGraph: EvalGraph -- compiled once at module level
 # ===========================================================================
-
 def _build_eval_graph():
     """Build and compile the LangGraph StateGraph for turn evaluation.
-
     Graph topology:
         llm_evaluate --(ok)--> detect_signals --> filter_signals --> build_decision --> END
                      --(err)-> handle_error -------------------------------------------> END
     """
     if not _LANGGRAPH_AVAILABLE:
         return None
-
     graph: StateGraph = StateGraph(EvalGraphState)
-
     graph.add_node("llm_evaluate",    _node_llm_evaluate)
     graph.add_node("detect_signals",  _node_detect_signals)
     graph.add_node("filter_signals",  _node_filter_signals)
     graph.add_node("build_decision",  _node_build_decision)
     graph.add_node("handle_error",    _node_handle_error)
-
     graph.set_entry_point("llm_evaluate")
-
     # Conditional edge: route to error recovery if LLM call failed
     graph.add_conditional_edges(
         "llm_evaluate",
@@ -237,22 +201,16 @@ def _build_eval_graph():
     graph.add_edge("filter_signals", "build_decision")
     graph.add_edge("build_decision", END)
     graph.add_edge("handle_error",   END)
-
     return graph.compile()
-
-
 # Compiled once at import time -- reused across all evaluation calls
 # NOTE: there is intentionally NO local error-recovery default here. Recovery is
 # owned by eval (agent_scoring.evaluate_answer returns low-confidence scores on
 # failure; eval_pipeline builds a recovery decision as a last resort). The agent
 # has no fallback path -- it depends only on eval's return.
 eval_graph = _build_eval_graph()
-
-
 # ===========================================================================
 # Public API -- signature identical to original
 # ===========================================================================
-
 async def run_turn_evaluation(
     *,
     candidate_answer: str,
@@ -275,11 +233,9 @@ async def run_turn_evaluation(
     job_title: str = "",
 ) -> tuple[TurnDecision, str]:
     """Evaluate one candidate answer and produce a TurnDecision.
-
     Routes through the LangGraph EvalGraph when langgraph is installed:
       llm_evaluate -> detect_signals -> filter_signals -> build_decision
     Falls back to the original sequential await chain if LangGraph is absent.
-
     Returns (TurnDecision, directive) -- directive is always "" here, as it is
     overwritten by eval_pipeline before being injected into the chat context.
     """
@@ -317,7 +273,6 @@ async def run_turn_evaluation(
         if not td:
             raise RuntimeError("eval graph completed without a turn decision")
         return td, ""
-
     # -- Fallback: original sequential await chain ---------------------------
     result = await evaluate_answer_fn(
         candidate_answer=candidate_answer,
@@ -332,7 +287,6 @@ async def run_turn_evaluation(
         topic_importance=topic_importance,
         job_title=job_title,
     )
-
     signal_events = detect_signal_events(
         candidate_answer=candidate_answer,
         last_question=last_question,
@@ -348,7 +302,6 @@ async def run_turn_evaluation(
         ev for ev in signal_events
         if _is_signal_enabled(signal_toggles, str(ev.get("signal_name", "")))
     ]
-
     td = build_turn_decision(
         result,
         build_signal_flags(signal_events),

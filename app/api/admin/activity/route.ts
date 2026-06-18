@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { getRangeStart } from "@/lib/date-utils";
-
 function timeAgo(date: Date): string {
     const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
     if (seconds < 60) return `${seconds}s ago`;
@@ -13,20 +12,17 @@ function timeAgo(date: Date): string {
     const days = Math.floor(hours / 24);
     return `${days}d ago`;
 }
-
 export async function GET(req: Request) {
     try {
         const session = await getSession();
         if (!session?.orgId) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
-
         const orgId = session.orgId;
         const { searchParams } = new URL(req.url);
         const range = searchParams.get("range") ?? "month";
         const from = searchParams.get("from") ?? undefined;
         const start = getRangeStart(range, from);
-
         // --- Core Fetcher Function ---
         async function fetchActivity(dateCutoff: Date | null): Promise<[
             Array<{ id: string; createdAt: Date; drive: { title: string | null } | null }>,
@@ -43,7 +39,6 @@ export async function GET(req: Request) {
                 drive: { orgId },
                 ...(dateCutoff ? { createdAt: { gte: dateCutoff } } : {}),
             };
-
             const recentApplications = await prisma.application.findMany({
                 where: applicationWhere,
                 select: { id: true, createdAt: true, drive: { select: { title: true } } },
@@ -72,18 +67,14 @@ export async function GET(req: Request) {
                 orderBy: { updatedAt: "desc" },
                 take: 20
             });
-
             return [recentApplications, recentInterviews, recentRejections];
         }
-
         // Fetch activity within range; if nothing found, widen to 90 days instead of all-time
         let [recentApplications, recentInterviews, recentRejections] = await fetchActivity(start);
-
         if (recentApplications.length === 0 && recentInterviews.length === 0 && recentRejections.length === 0) {
             const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
             [recentApplications, recentInterviews, recentRejections] = await fetchActivity(ninetyDaysAgo);
         }
-
         // --- Build activity items ---
         type ActivityItem = {
             id: string;
@@ -93,9 +84,7 @@ export async function GET(req: Request) {
             time: string;
             timestamp: number;
         };
-
         const activities: ActivityItem[] = [];
-
         // Group new uploads by drive + time window (10-min buckets)
         const appsByDriveBucket: Record<string, { count: number; drive: string; time: Date }> = {};
         for (const app of recentApplications) {
@@ -117,7 +106,6 @@ export async function GET(req: Request) {
                 timestamp: val.time.getTime(),
             });
         }
-
         // Completed interviews
         const completedByDrive: Record<string, { scores: number[]; drive: string; time: Date }> = {};
         for (const iv of recentInterviews) {
@@ -144,7 +132,6 @@ export async function GET(req: Request) {
                 timestamp: val.time.getTime(),
             });
         }
-
         // Rejections grouped by drive
         const rejByDrive: Record<string, { count: number; drive: string; time: Date }> = {};
         for (const rej of recentRejections) {
@@ -165,10 +152,8 @@ export async function GET(req: Request) {
                 timestamp: val.time.getTime(),
             });
         }
-
         // Sort by most recent first
         activities.sort((a, b) => b.timestamp - a.timestamp);
-
         const feed = activities.slice(0, 20);
         return NextResponse.json({ feed }, {
             headers: { 'Cache-Control': 'private, max-age=60' }

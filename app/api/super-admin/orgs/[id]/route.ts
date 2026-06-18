@@ -13,7 +13,6 @@ import { normalizeOrgLimitInput } from "@/lib/org-limits";
 import { normalizeEmail } from "@/lib/email";
 import { validatePasswordStrength } from "@/lib/validation";
 import { normalizeRecordingRetentionDays } from "@/lib/recording-retention";
-
 // GET /api/super-admin/orgs/[id] - fetch org for editing
 export async function GET(
     _request: Request,
@@ -24,7 +23,6 @@ export async function GET(
         if (!session || session.role !== "SUPER_ADMIN") {
             return NextResponse.json({ error: "Unauthorized access" }, { status: 403 });
         }
-
         const { id } = await params;
         const org = await prisma.organization.findUnique({
             where: { id },
@@ -47,12 +45,10 @@ export async function GET(
                 LIMIT 1
             `
         );
-
         if (!org) {
             return NextResponse.json({ error: "Organization not found" }, { status: 404 });
         }
         const effectiveStatus = await getEffectiveOrgStatus(id);
-
         return NextResponse.json({
             ...org,
             status: String(effectiveStatus || org.status || "ACTIVE").toUpperCase(),
@@ -65,7 +61,6 @@ export async function GET(
         return NextResponse.json({ error: "Failed to fetch organization" }, { status: 500 });
     }
 }
-
 // PATCH /api/super-admin/orgs/[id] - update org (suspend, change plan, etc.)
 export async function PATCH(
     request: Request,
@@ -76,7 +71,6 @@ export async function PATCH(
         if (!session || session.role !== "SUPER_ADMIN") {
             return NextResponse.json({ error: "Unauthorized access" }, { status: 403 });
         }
-
         const { id } = await params;
         const rawBody = await request.text();
         const body = rawBody.trim() ? JSON.parse(rawBody) : {};
@@ -90,7 +84,6 @@ export async function PATCH(
             usageMetrics,
             interviewQuotaTotal,
             interviewQuotaTopUp,
-
         } = body;
         const parsedInterviewQuotaTopUp =
             interviewQuotaTopUp !== undefined ? Math.max(0, Math.round(Number(interviewQuotaTopUp) || 0)) : undefined;
@@ -98,7 +91,6 @@ export async function PATCH(
             interviewQuotaTotal !== undefined ? Math.max(0, Math.round(Number(interviewQuotaTotal) || 0)) : undefined;
         const shouldApplyInterviewQuotaTopUp =
             parsedInterviewQuotaTopUp !== undefined && parsedInterviewQuotaTopUp > 0;
-
         const existingOrg = await (prisma.organization as any).findUnique({
             where: { id },
             select: {
@@ -112,11 +104,9 @@ export async function PATCH(
                 recordingRetentionDays: true,
             },
         });
-
         if (!existingOrg) {
             return NextResponse.json({ error: "Organization not found" }, { status: 404 });
         }
-
         const statusControlRows = await prisma.$queryRaw<Array<{ statusControl: string | null }>>(
             Prisma.sql`
                 SELECT "statusControl"
@@ -126,7 +116,6 @@ export async function PATCH(
             `
         );
         const currentStatusControl = normalizeOrgStatusControl(statusControlRows[0]?.statusControl);
-
         const directStatus = status !== undefined ? String(status || "").trim().toUpperCase() : undefined;
         const nextStatusControl =
             directStatus === "SUSPENDED"
@@ -134,7 +123,6 @@ export async function PATCH(
                 : directStatus === "ACTIVE"
                     ? ORG_STATUS_CONTROL_QUOTA
                     : undefined;
-
         // -- INPUT VALIDATION --------------------------------
         if (plan && !isOrgPlan(plan)) {
             return NextResponse.json({ error: "Invalid organization plan" }, { status: 400 });
@@ -171,7 +159,6 @@ export async function PATCH(
             allowedVoices === undefined &&
             interviewQuotaTopUp === undefined;
         const shouldSyncQuotaStatus = shouldUpdateInterviewQuotaTotal || shouldApplyInterviewQuotaTopUp;
-
         if (statusOnlyFieldsPresent && !shouldSyncQuotaStatus) {
             await prisma.$executeRaw(
                 Prisma.sql`
@@ -188,7 +175,6 @@ export async function PATCH(
             });
         }
         const normalizedPlan = plan !== undefined ? (normalizeOrgPlan(plan) || DEFAULT_ORG_PLAN) : null;
-
         // Build update - only write fields that were sent
         const updateData: any = {};
         if (name !== undefined) updateData.name = name;
@@ -216,14 +202,12 @@ export async function PATCH(
         const nextRecordingRetentionDays = recordingRetentionProvided
             ? normalizeRecordingRetentionDays(recordingRetentionDays)
             : currentRecordingRetentionDays;
-
         if ((recordingEnabledProvided || recordingRetentionProvided) && nextRecordingEnabled && nextRecordingRetentionDays === null) {
             return NextResponse.json(
                 { error: "Recording retention days are required when recording is enabled" },
                 { status: 400 }
             );
         }
-
         if (recordingEnabledProvided || recordingRetentionProvided) {
             updateData.recordingEnabled = nextRecordingEnabled ? true : null;
             updateData.recordingRetentionDays = nextRecordingEnabled ? nextRecordingRetentionDays : null;
@@ -231,7 +215,6 @@ export async function PATCH(
         if (shouldUpdateInterviewQuotaTotal) {
             updateData.interviewQuotaTotal = parsedInterviewQuotaTotal;
         }
-
         Object.assign(
             updateData,
             normalizeOrgAiConfig({
@@ -239,7 +222,6 @@ export async function PATCH(
                 next: { voiceId, allowedVoices },
             })
         );
-
         // Usage metrics — internal API cost tracking, untouched by billing
         if (usageMetrics !== undefined) {
             if (typeof usageMetrics === "string") {
@@ -257,7 +239,6 @@ export async function PATCH(
                 updateData.usageMetrics = usageMetrics ?? {};
             }
         }
-
         // -- EMAIL CONFLICT CHECK ----------------------------
         if (adminEmail) {
             const normalizedEmail = normalizeEmail(adminEmail);
@@ -279,20 +260,17 @@ export async function PATCH(
                     }
                 }),
             ]);
-
             if (existingSuperAdmin) {
                 return NextResponse.json({
                     error: `The email "${normalizedEmail}" is already registered with another account. Please use a different one.`
                 }, { status: 400 });
             }
-
             if (existingUser) {
                 // Find the actual primary admin for this org
                 const currentAdmin = await prisma.user.findFirst({
                     where: { orgId: id, role: "ORG_ADMIN" },
                     orderBy: { createdAt: "asc" }
                 });
-
                 // Conflict: Email belongs to SOMEONE ELSE
                 if (currentAdmin && existingUser.id !== currentAdmin.id) {
                     return NextResponse.json({ 
@@ -307,8 +285,6 @@ export async function PATCH(
                 return NextResponse.json({ error: passwordError }, { status: 400 });
             }
         }
-
-
         // -- TRANSACTION: Update Org & Admin ------------------
         let primaryAdminId: string | null = null;
         const updated = await prisma.$transaction(async (tx) => {
@@ -317,7 +293,6 @@ export async function PATCH(
                 where: { id },
                 data: updateData,
             });
-
             if (status !== undefined) {
                 await tx.$executeRaw(
                     Prisma.sql`
@@ -327,8 +302,6 @@ export async function PATCH(
                     `
                 );
             }
-
-
             if (shouldApplyInterviewQuotaTopUp) {
                 await tx.$executeRaw(
                     Prisma.sql`
@@ -338,7 +311,6 @@ export async function PATCH(
                     `
                 );
             }
-
             // 2. Update Primary Admin if name/email/password provided
             if (adminName !== undefined || adminEmail !== undefined || (adminPassword !== undefined && String(adminPassword).trim())) {
                 // Find the first ORG_ADMIN
@@ -346,7 +318,6 @@ export async function PATCH(
                     where: { orgId: id, role: "ORG_ADMIN" },
                     orderBy: { createdAt: "asc" }
                 });
-
                 if (admin) {
                     primaryAdminId = admin.id;
                     const adminUpdate: any = {};
@@ -355,7 +326,6 @@ export async function PATCH(
                     if (adminPassword !== undefined && String(adminPassword).trim()) {
                         adminUpdate.password = await bcrypt.hash(String(adminPassword).trim(), 10);
                     }
-
                     if (Object.keys(adminUpdate).length > 0) {
                         await tx.user.update({
                             where: { id: admin.id },
@@ -364,7 +334,6 @@ export async function PATCH(
                     }
                 }
             }
-
             const billingRows = await tx.$queryRaw<Array<{
                 interviewQuotaTotal: number | null;
                 interviewQuotaUsed: number | null;
@@ -377,7 +346,6 @@ export async function PATCH(
                     LIMIT 1
                 `
             );
-
             return {
                 ...org,
                 interviewQuotaTotal: billingRows[0]?.interviewQuotaTotal ?? 0,
@@ -385,7 +353,6 @@ export async function PATCH(
                 creditsUsed: billingRows[0]?.creditsUsed ?? 0,
             };
         });
-
         if (shouldSyncQuotaStatus || directStatus === "ACTIVE") {
             const syncedStatus = await syncOrgStatusWithInterviewQuota(id);
             if (syncedStatus) {
@@ -396,18 +363,15 @@ export async function PATCH(
                     ? ORG_STATUS_CONTROL_QUOTA
                     : nextStatusControl ?? currentStatusControl;
         }
-
         if (primaryAdminId && adminPassword !== undefined && String(adminPassword).trim()) {
             await invalidateUserSessions(primaryAdminId);
         }
-
         return NextResponse.json(updated);
     } catch (error) {
         console.error("Error updating org:", error);
         return NextResponse.json({ error: "Failed to update organization" }, { status: 500 });
     }
 }
-
 // DELETE /api/super-admin/orgs/[id] - soft remove org and all its data
 export async function DELETE(
     _request: Request,
@@ -418,42 +382,32 @@ export async function DELETE(
         if (!session || session.role !== "SUPER_ADMIN") {
             return NextResponse.json({ error: "Unauthorized access" }, { status: 403 });
         }
-
         const { id } = await params;
-
         // -- SOFT DELETE: DATABASE CLEANUP (Cascading) ---------------------------
         // We use raw SQL to handle appending timestamps to unique columns safely.
-        
         await prisma.$transaction(async (tx) => {
             const timestamp = Date.now().toString();
-
             // 1. Soft Delete Organization (rename slug)
             await tx.$executeRaw`UPDATE "Organization" SET "isDeleted" = true, "slug" = 'del_' || ${timestamp} || '_' || "slug" WHERE "id" = ${id}`;
-
             // 2. Soft Delete Users (rename email)
             await tx.$executeRaw`UPDATE "User" SET "isDeleted" = true, "email" = 'del_' || ${timestamp} || '_' || "email" WHERE "orgId" = ${id}`;
-
             // 3. Soft Delete Drives
             await tx.$executeRaw`UPDATE "Drive" SET "isDeleted" = true WHERE "orgId" = ${id}`;
-
             // 4. Soft Delete Resume Batches
             await tx.$executeRaw`
                 UPDATE "ResumeBatch" SET "isDeleted" = true 
                 WHERE "driveId" IN (SELECT "id" FROM "Drive" WHERE "orgId" = ${id})
             `;
-
             // 5. Soft Delete Resume Candidates
             await tx.$executeRaw`
                 UPDATE "ResumeCandidate" SET "isDeleted" = true 
                 WHERE "driveId" IN (SELECT "id" FROM "Drive" WHERE "orgId" = ${id})
             `;
-
             // 6. Soft Delete Applications
             await tx.$executeRaw`
                 UPDATE "Application" SET "isDeleted" = true 
                 WHERE "driveId" IN (SELECT "id" FROM "Drive" WHERE "orgId" = ${id})
             `;
-
             // 7. Soft Delete Interviews (rename applicationId and accessToken)
             await tx.$executeRaw`
                 UPDATE "Interview" 
@@ -466,7 +420,6 @@ export async function DELETE(
                     )
                 )
             `;
-
             // 8. Soft Delete Support Tickets
             await tx.$executeRaw`
                 UPDATE "SupportTicket" SET "status" = 'DELETED'
@@ -479,7 +432,6 @@ export async function DELETE(
                 )
             `;
         });
-
         return NextResponse.json({ success: true });
     } catch (error) {
         console.error("Error deleting org:", error);

@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-
 /**
  * GET /api/super-admin/exchange-rate
  * Returns live USD → INR rate from Frankfurter (free, no API key).
@@ -25,7 +24,6 @@ export async function GET() {
     } catch (e) {
         console.warn("[EXCHANGE-RATE] Frankfurter failed, trying backup:", e);
     }
-
     try {
         // Fallback: open.er-api.com — free, no key
         const res = await fetch("https://open.er-api.com/v6/latest/USD");
@@ -42,7 +40,6 @@ export async function GET() {
     } catch (e) {
         console.warn("[EXCHANGE-RATE] Backup also failed:", e);
     }
-
     // Hard fallback — last known rate
     return NextResponse.json(
         { rate: 84.5, source: "fallback", updatedAt: "cached" },

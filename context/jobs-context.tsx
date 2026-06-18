@@ -1,9 +1,7 @@
 "use client";
-
 import React, { createContext, useContext, useState, useEffect, useRef } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { formatOrgLimitValue } from "@/lib/org-limits";
-
 // Define the Job type
 export type Job = {
     id: string;
@@ -23,21 +21,18 @@ export type Job = {
     interviewLanguage?: string;
     aiName?: string;
 };
-
 interface Pagination {
     total: number;
     page: number;
     limit: number;
     totalPages: number;
 }
-
 interface OrganizationSettings {
     status?: string;
     plan?: string;
     maxActiveDrives?: string;
     activeDriveCount?: number;
 }
-
 interface JobsContextType {
     jobs: Job[];
     pagination: Pagination;
@@ -48,9 +43,7 @@ interface JobsContextType {
     updateJob: (id: string, data: any) => Promise<Job>;
     bulkDeleteJobs: (ids: string[]) => Promise<void>;
 }
-
 const JobsContext = createContext<JobsContextType | undefined>(undefined);
-
 export function JobsProvider({ children }: { children: React.ReactNode }) {
     const [jobs, setJobs] = useState<Job[]>([]);
     const [pagination, setPagination] = useState<Pagination>({
@@ -69,13 +62,11 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     const isCareersRoute = pathname.startsWith("/careers");
     const hasLoadedOnceRef = useRef({ admin: false, careers: false });
     const inFlightRef = useRef<Promise<void> | null>(null);
-
     const fetchJobs = async (page: number = 1, limit: number = 10, search: string = "", startDate: string = "", endDate: string = "") => {
         if (inFlightRef.current) {
             await inFlightRef.current;
             return;
         }
-
         const requestPromise = (async () => {
             try {
                 let url = `/api/drives?page=${page}&limit=${limit}&search=${encodeURIComponent(search)}&startDate=${startDate}&endDate=${endDate}`;
@@ -90,7 +81,6 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
                     setPagination(pagData);
                     return;
                 }
-
                 if (res.status === 401 || res.status === 403) {
                     setJobs([]);
                     return;
@@ -103,16 +93,13 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
                 setJobs([]);
             }
         })();
-
         inFlightRef.current = requestPromise;
-
         try {
             await requestPromise;
         } finally {
             inFlightRef.current = null;
         }
     };
-
     // Load jobs once per section (admin/careers), no re-fetch per sub-route click
     // NOTE: refreshOrganization() removed — org data is now server-seeded via AdminOrgContext
     useEffect(() => {
@@ -121,13 +108,11 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
             fetchJobs().catch(() => undefined);
             return;
         }
-
         if (isCareersRoute && !hasLoadedOnceRef.current.careers) {
             hasLoadedOnceRef.current.careers = true;
             fetchJobs().catch(() => undefined);
         }
     }, [isAdminRoute, isCareersRoute]);
-
     const addJob = async (newJobData: Omit<Job, "id" | "applicants" | "createdAt">): Promise<Job> => {
         try {
             const res = await fetch("/api/drives", {
@@ -135,7 +120,6 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(newJobData),
             });
-
             if (res.ok) {
                 const data = await res.json();
                 fetchJobs(); // Refresh list
@@ -154,13 +138,11 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
             throw error;
         }
     };
-
     const deleteJob = async (id: string) => {
         try {
             const res = await fetch(`/api/drives/${id}`, {
                 method: "DELETE",
             });
-
             if (res.ok) {
                 setJobs((prev) => prev.filter((job) => job.id !== id));
             } else {
@@ -171,7 +153,6 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
             throw error;
         }
     };
-
     const updateJob = async (id: string, data: any): Promise<Job> => {
         try {
             const res = await fetch(`/api/drives/${id}`, {
@@ -179,7 +160,6 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(data),
             });
-
             if (res.ok) {
                 const data = await res.json();
                 fetchJobs(); // Refresh list
@@ -196,7 +176,6 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
             throw error;
         }
     };
-
     const bulkDeleteJobs = async (ids: string[]) => {
         try {
             const res = await fetch("/api/drives", {
@@ -204,7 +183,6 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ ids }),
             });
-
             if (res.ok) {
                 setJobs(prev => prev.filter(job => !ids.includes(job.id)));
             } else {
@@ -215,14 +193,12 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
             throw error;
         }
     };
-
     return (
         <JobsContext.Provider value={{ jobs, pagination, organization, addJob, deleteJob, fetchJobs, updateJob, bulkDeleteJobs }}>
             {children}
         </JobsContext.Provider>
     );
 }
-
 export function useJobs() {
     const context = useContext(JobsContext);
     if (context === undefined) {

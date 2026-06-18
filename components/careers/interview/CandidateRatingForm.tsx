@@ -1,13 +1,10 @@
 "use client";
-
 import { useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { CheckCircle2, Loader2, MessageSquare, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-
 type UnderstandingLevel = "Always understood me" | "Mostly understood me" | "Sometimes missed my point" | "Rarely understood me";
-
 const overallOptions = [
     { value: 1, emoji: "😞", label: "Terrible" },
     { value: 2, emoji: "😐", label: "Okay" },
@@ -15,7 +12,6 @@ const overallOptions = [
     { value: 4, emoji: "😄", label: "Great" },
     { value: 5, emoji: "🤩", label: "Loved it" },
 ];
-
 const questionChips = [
     "Relevant to my resume",
     "Repetitive",
@@ -24,21 +20,18 @@ const questionChips = [
     "Felt robotic",
     "Well structured",
 ];
-
 const understandingOptions: UnderstandingLevel[] = [
     "Always understood me",
     "Mostly understood me",
     "Sometimes missed my point",
     "Rarely understood me",
 ];
-
 export type CandidateRatingPayload = {
     overallFeeling: string | null;
     aiQuestions: string[];
     understanding: UnderstandingLevel | null;
     notes: string;
 };
-
 export function CandidateRatingForm({
     title = "Candidate Rating",
     subtitle = "Tell us how the interview felt so we can improve the AI.",
@@ -58,17 +51,14 @@ export function CandidateRatingForm({
     const [notes, setNotes] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [submitted, setSubmitted] = useState(false);
-
     const canSubmit = useMemo(() => {
         return mode === "preview" || overallFeeling !== null;
     }, [mode, overallFeeling]);
-
     const toggleQuestionTag = (tag: string) => {
         setSelectedQuestionTags((prev) =>
             prev.includes(tag) ? prev.filter((item) => item !== tag) : [...prev, tag]
         );
     };
-
     const submit = async () => {
         if (!canSubmit || isSubmitting) return;
         if (mode === "preview") {
@@ -76,7 +66,6 @@ export function CandidateRatingForm({
             onSubmitted?.();
             return;
         }
-
         setIsSubmitting(true);
         try {
             await onSubmit?.({
@@ -91,7 +80,6 @@ export function CandidateRatingForm({
             setIsSubmitting(false);
         }
     };
-
     return (
         <div className="w-full max-w-2xl mx-auto px-6 font-sans">
             <AnimatePresence mode="wait">
@@ -112,7 +100,6 @@ export function CandidateRatingForm({
                                 {subtitle}
                             </p>
                         </div>
-
                         <div className="space-y-8">
                             <section className="space-y-4">
                                 <div>
@@ -143,7 +130,6 @@ export function CandidateRatingForm({
                                     })}
                                 </div>
                             </section>
-
                             <section className="space-y-4">
                                 <div>
                                     <h3 className="text-base font-black text-gray-900">2. How were the AI's questions?</h3>
@@ -170,7 +156,6 @@ export function CandidateRatingForm({
                                     })}
                                 </div>
                             </section>
-
                             <section className="space-y-4">
                                 <div>
                                     <h3 className="text-base font-black text-gray-900">3. Did the AI understand what you were saying?</h3>
@@ -198,7 +183,6 @@ export function CandidateRatingForm({
                                     })}
                                 </div>
                             </section>
-
                             <section className="space-y-4">
                                 <div>
                                     <h3 className="text-base font-black text-gray-900">4. Anything we should know?</h3>
@@ -217,7 +201,6 @@ export function CandidateRatingForm({
                                     </div>
                                 </div>
                             </section>
-
                             <Button
                                 type="button"
                                 onClick={submit}

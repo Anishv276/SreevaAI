@@ -16,9 +16,7 @@ export type ManagedProctoringSignal =
   | "follow_up_collapse"
   | "depth_decay"
   | "complexity_latency_mismatch";
-
 export type ProctoringSignalToggles = Record<ManagedProctoringSignal, boolean>;
-
 export const MANAGED_PROCTORING_SIGNALS: ManagedProctoringSignal[] = [
   "tab_switch",
   "camera_disabled",
@@ -38,11 +36,9 @@ export const MANAGED_PROCTORING_SIGNALS: ManagedProctoringSignal[] = [
   "depth_decay",
   "complexity_latency_mismatch",
 ];
-
 function createSignalMap(value: boolean): ProctoringSignalToggles {
   return Object.fromEntries(MANAGED_PROCTORING_SIGNALS.map((signal) => [signal, value])) as ProctoringSignalToggles;
 }
-
 // Behavioral signals that are FORCED ON for every plan and every org.
 // These are the signals an interview cannot be scored fairly without --
 // ownership, example/evidence, and pressure/reasoning checks.
@@ -70,14 +66,11 @@ export const ALWAYS_ON_PROCTORING_SIGNALS: ManagedProctoringSignal[] = [
   "follow_up_collapse",
   "depth_decay",
 ];
-
 // O(1) lookup; built once at module load.
 const ALWAYS_ON_SET: ReadonlySet<ManagedProctoringSignal> = new Set(ALWAYS_ON_PROCTORING_SIGNALS);
-
 export function isAlwaysOnSignal(key: string): boolean {
   return ALWAYS_ON_SET.has(key as ManagedProctoringSignal);
 }
-
 /**
  * Force the always-on signals to true on top of any base toggle map.
  * Used by plan-default builders below; safe to call on any partial input.
@@ -89,7 +82,6 @@ function withAlwaysOn(base: ProctoringSignalToggles): ProctoringSignalToggles {
   }
   return out;
 }
-
 export const DEFAULT_PROCTORING_SIGNALS: ProctoringSignalToggles = {
   tab_switch: true,
   camera_disabled: true,
@@ -109,11 +101,9 @@ export const DEFAULT_PROCTORING_SIGNALS: ProctoringSignalToggles = {
   depth_decay: true,
   complexity_latency_mismatch: true,
 };
-
 // BASIC / STARTER plan: only the always-on behavioral signals are enabled.
 // All optional environment / device / identity signals stay off until plan upgrade.
 export const BASIC_PLAN_SIGNALS: ProctoringSignalToggles = withAlwaysOn(createSignalMap(false));
-
 // GROWTH plan: always-on behavioral signals + light environment/device signals.
 // "answer_compression" is represented here by the existing latency_mismatch signal.
 export const GROWTH_PLAN_SIGNALS: ProctoringSignalToggles = withAlwaysOn({
@@ -125,7 +115,6 @@ export const GROWTH_PLAN_SIGNALS: ProctoringSignalToggles = withAlwaysOn({
   latency_mismatch: true,
   complexity_latency_mismatch: true,
 });
-
 // SCALE / ENTERPRISE adds the heavier vision checks on top of GROWTH.
 export const SCALE_PLAN_SIGNALS: ProctoringSignalToggles = withAlwaysOn({
   ...GROWTH_PLAN_SIGNALS,
@@ -133,7 +122,6 @@ export const SCALE_PLAN_SIGNALS: ProctoringSignalToggles = withAlwaysOn({
   multiple_faces: true,
   identity_mismatch: true,
 });
-
 export function getProctoringSignalsForPlan(planId: string): ProctoringSignalToggles {
   const pid = planId.toUpperCase();
   if (pid === "STARTER" || pid === "BASIC") return { ...BASIC_PLAN_SIGNALS };
@@ -142,7 +130,6 @@ export function getProctoringSignalsForPlan(planId: string): ProctoringSignalTog
   // Default for unknown: nothing enabled as requested
   return { ...BASIC_PLAN_SIGNALS };
 }
-
 function toBoolean(value: unknown, fallback: boolean): boolean {
   if (typeof value === "boolean") return value;
   if (typeof value === "string") {
@@ -153,7 +140,6 @@ function toBoolean(value: unknown, fallback: boolean): boolean {
   if (typeof value === "number") return value !== 0;
   return fallback;
 }
-
 export function normalizeProctoringSignals(raw: unknown): ProctoringSignalToggles {
   const source = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   const normalized: ProctoringSignalToggles = {
@@ -182,11 +168,9 @@ export function normalizeProctoringSignals(raw: unknown): ProctoringSignalToggle
   }
   return normalized;
 }
-
 export function isManagedProctoringSignal(eventType: string): eventType is ManagedProctoringSignal {
   return MANAGED_PROCTORING_SIGNALS.includes(eventType as ManagedProctoringSignal);
 }
-
 export function isProctoringSignalEnabled(
   toggles: ProctoringSignalToggles,
   eventType: string,

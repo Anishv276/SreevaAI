@@ -12,15 +12,11 @@ import {
 } from "@/lib/credits";
 import { getOrgRecordingSettings, scheduleRecordingRetentionDeletion } from "@/lib/recording-retention";
 import { mergeRecordingState, type RecordingState } from "@/lib/recording-state";
-
 export const runtime = "nodejs";
-
 function roundCredits(value: number) {
   if (!Number.isFinite(value)) return 0;
   return Math.round(value * 100) / 100;
 }
-
-
 async function persistInterviewUpdateRaw(params: {
   applicationId: string;
   recordingUrl?: string;
@@ -40,7 +36,6 @@ async function persistInterviewUpdateRaw(params: {
     recordingDurationSec 
   } = params;
   const finalStatus = interviewStatus || "IN_PROGRESS";
-
   const app = await prisma.application.findUnique({
     where: { id: applicationId },
     select: { fullName: true, drive: { select: { title: true, role: true } } }
@@ -61,7 +56,6 @@ async function persistInterviewUpdateRaw(params: {
     durationSec: recordingDurationSec || null,
   } : {};
   const nextRecording = mergeRecordingState(existingInterview?.recording, recordingPatch);
-
   await prisma.$executeRawUnsafe(
     `
     INSERT INTO "Interview" (id, "applicationId", "accessToken", status, "interviewTranscript", "snapshots", "recording", "completedAt", "createdAt", "updatedAt")
@@ -85,12 +79,9 @@ async function persistInterviewUpdateRaw(params: {
     JSON.stringify(nextRecording)
   );
 }
-
-
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-
     const result = interviewFinalizeSchema.safeParse(body);
     if (!result.success) {
       return NextResponse.json(
@@ -98,7 +89,6 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
-
     const {
       applicationId,
       interviewToken,
@@ -114,7 +104,6 @@ export async function POST(req: Request) {
     } = result.data;
     const finalInterviewStatus = interviewStatus || status || "IN_PROGRESS";
     const requireInterviewToken = isInterviewTokenRequired();
-
     // -- AUTHENTICATION --------------------------------
     const interview = await prisma.interview.findUnique({
       where: { applicationId },
@@ -151,9 +140,7 @@ export async function POST(req: Request) {
       recordingSettingsForOrg = { recordingEnabled: false, recordingRetentionDays: null };
       recordingUrlForPersist = undefined;
     }
-
     console.log(`[FINALIZE] ${applicationId} | status=${finalInterviewStatus} | duration=${finalDuration}s`);
-
     await persistInterviewUpdateRaw({
       applicationId,
       recordingUrl: recordingUrlForPersist,
@@ -179,7 +166,6 @@ export async function POST(req: Request) {
       where: { applicationId },
       select: { completedAt: true },
     });
-
     // Duration: use client-sent value, else compute from startedAt
     let resolvedDuration = finalDuration;
     if ((resolvedDuration === null || isNaN(resolvedDuration as number))) {
@@ -198,14 +184,12 @@ export async function POST(req: Request) {
         applicationId
       );
     }
-
     const finalAppStatus = appStatus || "COMPLETED";
     await prisma.$executeRawUnsafe(
       'UPDATE "Application" SET "interviewStatus" = $1, "updatedAt" = NOW() WHERE id = $2',
       finalAppStatus,
       applicationId
     );
-
     // Deduct one interview quota and record minute-based credit usage.
     // Uses an atomic "mark-and-deduct" to prevent double-billing regardless of
     // whether the agent already set completedAt before this endpoint was called.
@@ -220,7 +204,6 @@ export async function POST(req: Request) {
           }
         });
         const orgId = appForOrg?.drive?.orgId;
-
         if (recordingUrlForPersist && orgId) {
           const recordingSettings = recordingSettingsForOrg || await getOrgRecordingSettings(orgId);
           if (recordingSettings.recordingEnabled && recordingSettings.recordingRetentionDays !== null) {
@@ -238,7 +221,6 @@ export async function POST(req: Request) {
             );
           }
         }
-
         if (orgId) {
           const interviewForBilling = await prisma.interview.findUnique({
             where: { applicationId },
@@ -289,10 +271,8 @@ export async function POST(req: Request) {
         console.error("[FINALIZE] Billing deduction failed:", creditError);
       }
     }
-
     // Report generation is handled by the interview-finalization worker via Redis.
     // No synchronous LLM call here — the candidate is not blocked and no timeout occurs.
-
   let jobId: string | number | undefined;
   try {
       const job = await interviewFinalizationQueue.add(
@@ -309,7 +289,6 @@ export async function POST(req: Request) {
   } catch (e) {
     console.warn("[INTERVIEW FINALIZE] Queue unavailable, persisted synchronously", e);
   }
-
   return NextResponse.json({ success: true, persisted: true, queued: !!jobId, jobId });
 } catch (error) {
   console.error("[INTERVIEW FINALIZE QUEUE ERROR]", error);

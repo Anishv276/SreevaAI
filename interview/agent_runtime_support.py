@@ -8,7 +8,6 @@ from dotenv import load_dotenv
 load_dotenv(override=False)  # override=False: skip if env vars already set (avoids redundant disk reads)
 logger = logging.getLogger("interview-agent")
 logger.setLevel(logging.DEBUG)
-
 _SESSION_CONTEXT_KEYS = (
     "session_id",
     "app_id",
@@ -27,14 +26,10 @@ _SESSION_CONTEXT_KEYS = (
     "job_title",
     "time_limit_mins",
 )
-
-
 def _sanitize_context_value(value: Any) -> Any:
     if isinstance(value, (str, int, float, bool)) or value is None:
         return value
     return str(value)
-
-
 class JsonFormatter(logging.Formatter):
     def format(self, record):
         log_record = {
@@ -90,24 +85,16 @@ handler.setFormatter(JsonFormatter())
 logger.addHandler(handler)
 logger.propagate = False
 _LOG_CONTEXT_FIELDS: ContextVar[dict[str, Any]] = ContextVar("log_context_fields", default={})
-
-
 def set_log_context(fields: dict[str, Any]):
     sanitized = {key: _sanitize_context_value(value) for key, value in fields.items()}
     return _LOG_CONTEXT_FIELDS.set(sanitized)
-
-
 def reset_log_context(token) -> None:
     try:
         _LOG_CONTEXT_FIELDS.reset(token)
     except ValueError:
         # Can happen during shutdown when callback executes in a different async context.
         logger.debug("[SESSION] reset_log_context skipped due to cross-context token")
-
-
 _LOG_SESSION_FILTER = os.environ.get("LOG_SESSION_FILTER", "").strip().lower()
-
-
 class _SessionLogContextFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         ctx = _LOG_CONTEXT_FIELDS.get({})
@@ -168,27 +155,22 @@ for logger_name in ("livekit.plugins.cartesia", "livekit.plugins.silero", "livek
 # replaces endpointing_ms. Thresholds tuned for 20-min interviews where candidates
 # give 30s–2min answers with thinking pauses and fillers.
 STT_MODEL = "flux-general-en"
-
 # EndOfTurn confidence threshold. 0.75 is patient enough for thinking pauses without
 # cutting candidates mid-sentence. Range: 0.5–0.9 (Deepgram default: 0.7).
 FLUX_EOT_THRESHOLD: float = 0.75
-
 # EagerEndOfTurn fires ~200ms early to warm up LLM. Must be <= FLUX_EOT_THRESHOLD.
 # Set to None to disable. When enabled, agent must handle TurnResumed by cancelling
 # any in-flight eval. Currently disabled — our eval gate is not wired for cancellation.
 FLUX_EAGER_EOT_THRESHOLD: float | None = None
-
 # Max silence before forced turn end regardless of confidence. 6000ms gives candidates
 # time to think between sentences. Range: 500–10000 (Deepgram default: 5000).
 FLUX_EOT_TIMEOUT_MS: int = 6000
-
 LLM_MODEL = "gpt-4.1-mini"
 INTERVIEW_LLM_MODEL = LLM_MODEL
 INTERVIEW_TEMPERATURE = 0.75
 EVAL_LLM_MODEL = "gpt-4.1-mini"
 EVAL_TEMPERATURE = 0.0
 DEFAULT_VOICE_ID = "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"
-
 # Voice registry -- single source of truth for voice->provider+model mapping.
 # Provider is "CARTESIA" or "SARVAM". Model is the TTS model string for that provider.
 VOICE_REGISTRY: dict[str, dict[str, str]] = {
@@ -234,7 +216,6 @@ _DB_POOL: Any = None
 _DB_POOL_INIT_TASK: Any = None
 _PENDING_MANUAL_BILLING: dict[str, list[tuple[str, dict]]] = {}
 _TOOL_ALIAS_CATALOG: dict[str, str] = {}
-
 PROCTORING_WEIGHTS: dict[str, int] = {
     "tab_switch": 5,
     "face_absence": 3,
@@ -244,7 +225,6 @@ _COMPOSITE_RISK_WEIGHTS = {
     "integrity": 0.60,
     "depth": 0.40,
 }
-
 def compose_risk_score(
     integrity_risk: int,
     depth_risk: int,
@@ -254,6 +234,3 @@ def compose_risk_score(
         + depth_risk * _COMPOSITE_RISK_WEIGHTS["depth"]
     )
     return max(0, min(100, int(round(weighted))))
-
-
-

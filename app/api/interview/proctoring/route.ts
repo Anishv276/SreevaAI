@@ -6,10 +6,8 @@ import { getProctoringCategory, normalizeProctoringEvents, type ProctoringEvent 
 import { DEFAULT_PROCTORING_SIGNALS, isProctoringSignalEnabled, normalizeProctoringSignals } from "@/lib/proctoring-signals";
 import { z } from "zod";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
-
 export const runtime = "nodejs";
 const JOIN_WINDOW_MS = 5 * 60 * 1000;
-
 const proctoringSignalSchema = z.object({
   applicationId: z.string().min(1, "Application ID required"),
   interviewToken: z.string().optional().default(""),
@@ -23,7 +21,6 @@ const proctoringSignalSchema = z.object({
     timestamp: z.number().int().nonnegative().optional(),
   })).min(1, "At least one event is required"),
 });
-
 function parseStoredEvents(raw: unknown): ProctoringEvent[] {
   if (!raw) return [];
   if (Array.isArray(raw)) return raw as ProctoringEvent[];
@@ -37,7 +34,6 @@ function parseStoredEvents(raw: unknown): ProctoringEvent[] {
   }
   return [];
 }
-
 export async function POST(req: Request) {
   try {
     let body;
@@ -53,10 +49,8 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
-
     const { applicationId, interviewToken } = result.data;
     const requireInterviewToken = isInterviewTokenRequired();
-
     // -- AUTHENTICATION & LIFECYCLE --------------------
     const authCheck = await prisma.interview.findUnique({
       where: { applicationId },
@@ -65,7 +59,6 @@ export async function POST(req: Request) {
     if (requireInterviewToken && (!authCheck || authCheck.accessToken !== interviewToken)) {
       return NextResponse.json({ error: "Unauthorized: Invalid security token" }, { status: 401 });
     }
-
     if (authCheck) {
       const now = Date.now();
       const expiresAtMs = authCheck.expiresAt ? authCheck.expiresAt.getTime() : null;
@@ -74,26 +67,22 @@ export async function POST(req: Request) {
       // joinWindow only blocks active sessions — not already-completed/no-show ones
       const joinWindowExpired = startedAtMs !== null && (now - startedAtMs) >= JOIN_WINDOW_MS;
       const isExpiredByTime = deadlineExpired || joinWindowExpired;
-
       if (isExpiredByTime && authCheck.linkStatus !== "EXPIRED") {
         await prisma.interview.update({
           where: { applicationId },
           data: { linkStatus: "EXPIRED" },
         }).catch(() => { });
       }
-
       if (authCheck.linkStatus === "EXPIRED" || isExpiredByTime) {
         return NextResponse.json({ error: "Access Denied: Interview link has expired. Please contact support." }, { status: 403 });
       }
     }
-
     const requestedEvents = normalizeProctoringEvents(result.data.events);
     const interview = await (prisma.interview as any).findUnique({
       where: { applicationId },
       select: { id: true, integritySignals: true },
     });
     const currentEvents = parseStoredEvents(interview?.integritySignals);
-
     const app = await prisma.application.findUnique({
       where: { id: applicationId },
       select: {
@@ -123,7 +112,6 @@ export async function POST(req: Request) {
     }
     const mergedEvents = [...currentEvents, ...events].slice(-400);
     const now = new Date();
-
     if (interview) {
       await (prisma.interview as any).update({
         where: { applicationId },
@@ -150,7 +138,6 @@ export async function POST(req: Request) {
         },
       });
     }
-
     return NextResponse.json({
       success: true,
       saved: events.length,

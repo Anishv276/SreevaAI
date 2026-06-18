@@ -1,9 +1,7 @@
 import * as React from "react"
 import { cn } from "@/lib/utils"
-
 export interface InputProps
     extends React.InputHTMLAttributes<HTMLInputElement> { }
-
 const Input = React.forwardRef<HTMLInputElement, InputProps>(
     ({ className, type, ...props }, ref) => {
         const handleWheel: React.WheelEventHandler<HTMLInputElement> = (event) => {
@@ -12,7 +10,6 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
             }
             props.onWheel?.(event);
         };
-
         return (
             <input
                 type={type}
@@ -28,6 +25,4 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
     }
 )
 Input.displayName = "Input"
-
 export { Input }
-

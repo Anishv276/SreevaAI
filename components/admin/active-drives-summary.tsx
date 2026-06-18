@@ -1,5 +1,4 @@
 "use client";
-
 import { useEffect, useState, useCallback } from "react";
 import { Loader2, ChevronRight, Plus, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -7,7 +6,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { type DateRange } from "./date-filter";
-
 interface DriveSummary {
     id: string;
     title: string;
@@ -18,32 +16,26 @@ interface DriveSummary {
     interviewed: number;
     shortlisted: number;
 }
-
 function barColor(pct: number, threshold: number) {
     if (pct >= threshold) return "#10B981";
     if (pct >= threshold * 0.75) return "#475569";
     return "#CBD5E1";
 }
-
 interface ActiveDrivesSummaryProps {
     dateRange: DateRange;
 }
-
 export function ActiveDrivesSummary({ dateRange }: ActiveDrivesSummaryProps) {
     const [drives, setDrives] = useState<DriveSummary[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [retryKey, setRetryKey] = useState(0);
     const router = useRouter();
-
     useEffect(() => {
         const controller = new AbortController();
         const { signal } = controller;
-
         const loadDrives = async () => {
             setLoading(true);
             setError(null);
-
             const params = new URLSearchParams();
             if (dateRange.type === "custom") {
                 params.set("range", "custom");
@@ -53,7 +45,6 @@ export function ActiveDrivesSummary({ dateRange }: ActiveDrivesSummaryProps) {
                 params.set("range", dateRange.type);
             }
             params.set("limit", "3");
-
             try {
                 const res = await fetch(`/api/admin/drives-summary?${params.toString()}`, { signal });
                 if (signal.aborted) return;
@@ -68,12 +59,9 @@ export function ActiveDrivesSummary({ dateRange }: ActiveDrivesSummaryProps) {
                 if (!signal.aborted) setLoading(false);
             }
         };
-
         void loadDrives();
-
         return () => controller.abort();
     }, [dateRange, retryKey]);
-
     return (
         <div className="bg-white rounded-2xl border border-gray-200 flex flex-col overflow-hidden">
             {/* Header */}
@@ -89,7 +77,6 @@ export function ActiveDrivesSummary({ dateRange }: ActiveDrivesSummaryProps) {
                     View All Jobs <ArrowRight className="h-3 w-3" />
                 </Link>
             </div>
-
             {/* Body */}
             <div className="flex-1 px-5 py-4">
                 {loading ? (
@@ -154,7 +141,6 @@ export function ActiveDrivesSummary({ dateRange }: ActiveDrivesSummaryProps) {
                                             View <ChevronRight className="h-3 w-3" />
                                         </button>
                                     </div>
-
                                     {/* Metrics */}
                                     <div className="grid grid-cols-4 gap-2 mb-3">
                                         {[
@@ -169,7 +155,6 @@ export function ActiveDrivesSummary({ dateRange }: ActiveDrivesSummaryProps) {
                                             </div>
                                         ))}
                                     </div>
-
                                     {/* Progress bar */}
                                     <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
                                         <motion.div

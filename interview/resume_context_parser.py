@@ -1,9 +1,7 @@
 from __future__ import annotations
-
 import re
 from dataclasses import dataclass
 from typing import Any, Optional
-
 from interview.agent_utils import (
     _as_list,
     _coerce_jsonish,
@@ -14,7 +12,6 @@ from interview.agent_utils import (
     _safe_float,
     build_interview_turns,  # re-exported for backward compat
 )
-
 # Re-export so existing call sites (agent_profile_context, recruiter_summary, etc.) don't break
 __all__ = [
     "ResumeContext",
@@ -22,12 +19,9 @@ __all__ = [
     "ensure_resume_context",
     "build_interview_turns",
 ]
-
-
 @dataclass(slots=True)
 class ResumeContext:
     """Normalized resume view used by downstream interview logic."""
-
     resume_data: dict[str, Any]
     resume_text: str
     years_of_experience: Optional[float]
@@ -41,15 +35,11 @@ class ResumeContext:
     education: list[str]
     hobbies: list[str]
     ownership_risks: list[str]
-
-
 @dataclass(slots=True)
 class _ResumeContextParser:
     """Break resume parsing into small, named steps for readability."""
-
     parsed_resume: dict[str, Any]
     resume_text: str
-
     def build(self) -> ResumeContext:
         years_of_experience = self._extract_years_of_experience()
         years_label = self._format_years_label(years_of_experience)
@@ -72,7 +62,6 @@ class _ResumeContextParser:
         internships: list[str] = []   # kept for schema compat -- always empty now
         experiences = _extract_text_items(projects + work_history)
         ownership_risks = self._build_ownership_risks()
-
         return ResumeContext(
             resume_data=self.parsed_resume,
             resume_text=self.resume_text,
@@ -88,7 +77,6 @@ class _ResumeContextParser:
             hobbies=hobbies,
             ownership_risks=ownership_risks,
         )
-
     def _extract_years_of_experience(self) -> Optional[float]:
         years = _safe_float(_deep_get(self.parsed_resume, "experience.total_years"))
         if years is None:
@@ -100,7 +88,6 @@ class _ResumeContextParser:
         lower = self.resume_text.lower()
         match = re.search(r"(\d+(?:\.\d+)?)\s*\+?\s*(?:years|year|yrs|yr)\b", lower)
         return _safe_float(match.group(1)) if match else None
-
     @staticmethod
     def _format_years_label(years: Optional[float]) -> str:
         if years is None:
@@ -108,7 +95,6 @@ class _ResumeContextParser:
         if float(years).is_integer():
             return f"{int(years)} years"
         return f"{years:.1f} years"
-
     def _extract_current_role_label(self) -> str:
         current_role = _first_text(
             _deep_get(self.parsed_resume, "experience.currentRole"),
@@ -129,14 +115,12 @@ class _ResumeContextParser:
         if current_company:
             return current_company
         return "Not stated"
-
     def _extract_skills(self) -> list[str]:
         skills = _extract_text_items(_deep_get(self.parsed_resume, "skills.technical"), ("skill", "name", "value"))
         skills += _extract_text_items(_deep_get(self.parsed_resume, "skills.tools"), ("tool", "name", "value", "skill"))
         skills += _extract_text_items(_deep_get(self.parsed_resume, "skills.domain_skills"), ("skill", "name", "value"))
         skills += _extract_text_items(_deep_get(self.parsed_resume, "keywords"))
         return _extract_text_items(skills)
-
     def _extract_projects(self) -> list[str]:
         projects: list[str] = []
         for project in _as_list(_deep_get(self.parsed_resume, "projects")):
@@ -158,7 +142,6 @@ class _ResumeContextParser:
                     compact = f"{compact} (at {company})"
                 projects.append(compact)
         return projects
-
     def _extract_education(self) -> list[str]:
         education: list[str] = []
         source_items = (
@@ -183,7 +166,6 @@ class _ResumeContextParser:
                 if text:
                     education.append(text)
         return _extract_text_items(education)
-
     def _extract_hobbies(self) -> list[str]:
         hobbies: list[str] = []
         source_items = (
@@ -201,7 +183,6 @@ class _ResumeContextParser:
             if text:
                 hobbies.append(text)
         return _extract_text_items(hobbies)
-
     def _extract_work_history(self) -> list[str]:
         work_history: list[str] = []
         for role in _as_list(_deep_get(self.parsed_resume, "work_history")):
@@ -219,7 +200,6 @@ class _ResumeContextParser:
             if text:
                 work_history.append(text)
         return _extract_text_items(work_history)
-
     def _extract_internships(self) -> list[str]:
         internships: list[str] = []
         source = (
@@ -246,7 +226,6 @@ class _ResumeContextParser:
                 if text:
                     internships.append(text)
         return _extract_text_items(internships)
-
     def _build_ownership_risks(self) -> list[str]:
         # Only return explicit red flags from the parser -- never auto-generate generic ones.
         # Ownership is probed for every item anyway via the probe strategy.
@@ -255,9 +234,6 @@ class _ResumeContextParser:
             or _deep_get(self.parsed_resume, "ownership_risks")
             or _deep_get(self.parsed_resume, "scoring_hints.red_flags_to_watch")
         )[:3]
-
-
-
 def parse_resume_context(resume_data: Any, resume_text: str) -> ResumeContext:
     """Convert raw resume input into a normalized ResumeContext."""
     if isinstance(resume_data, ResumeContext):
@@ -265,12 +241,8 @@ def parse_resume_context(resume_data: Any, resume_text: str) -> ResumeContext:
     parsed_resume = _coerce_jsonish(resume_data)
     parser = _ResumeContextParser(parsed_resume=parsed_resume, resume_text=resume_text or "")
     return parser.build()
-
-
 def ensure_resume_context(resume_data: Any, resume_text: str = "") -> ResumeContext:
     """Safe wrapper used by call sites that accept raw or parsed resume data."""
     if isinstance(resume_data, ResumeContext):
         return resume_data
     return parse_resume_context(resume_data, resume_text)
-
-

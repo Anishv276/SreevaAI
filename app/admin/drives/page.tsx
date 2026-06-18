@@ -1,5 +1,4 @@
 "use client";
-
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "@/components/ui/toast-custom";
@@ -36,7 +35,6 @@ import { getSupportComposeUrl, isInterviewQuotaLocked, isOrgRestrictedStatus } f
 import Link from "next/link";
 import { useAdminOrg } from "@/context/admin-org-context";
 import { ALL_VOICES } from "@/lib/constants/voices";
-
 export default function DrivesPage() {
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -46,21 +44,16 @@ export default function DrivesPage() {
     const [searchQuery, setSearchQuery] = useState("");
     const adminOrg = useAdminOrg();
     const [timeline, setTimeline] = useState<DateRange>({ type: "month" });
-
     // ⚡ Read from shared context — no fetch needed (was 2 API calls per load)
     const orgStatus = String(adminOrg?.status || "ACTIVE").toUpperCase();
     const quotaLocked = isInterviewQuotaLocked(adminOrg ?? {});
-
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [driveToDelete, setDriveToDelete] = useState<string | null>(null);
     const [isDeleting, setIsDeleting] = useState(false);
-
-
     useEffect(() => {
         const handler = setTimeout(() => {
             let startDate: string | undefined;
             let endDate: string | undefined;
-
             if (timeline.type === "today") {
                 startDate = new Date().toISOString().split("T")[0];
                 endDate = startDate;
@@ -76,19 +69,15 @@ export default function DrivesPage() {
                 startDate = timeline.from;
                 endDate = timeline.to;
             }
-
             fetchJobs(1, pagination.limit, searchQuery, startDate, endDate).finally(() => setIsLoading(false));
         }, 300);
-
         return () => clearTimeout(handler);
     }, [searchQuery, timeline, pagination.limit]);
-
     const handlePageChange = (newPage: number) => {
         if (newPage >= 1 && newPage <= pagination.totalPages) {
             setIsLoading(true);
             let startDate: string | undefined;
             let endDate: string | undefined;
-
             if (timeline.type === "today") {
                 startDate = new Date().toISOString().split("T")[0];
                 endDate = startDate;
@@ -104,16 +93,13 @@ export default function DrivesPage() {
                 startDate = timeline.from;
                 endDate = timeline.to;
             }
-
             fetchJobs(newPage, pagination.limit, searchQuery, startDate, endDate).finally(() => setIsLoading(false));
         }
     };
-
     const isSuspended = isOrgRestrictedStatus(orgStatus);
     const activeDriveCount = adminOrg?.activeDriveCount ?? getActiveDriveCount(jobs);
     const interviewAccessLocked = quotaLocked || isSuspended;
     const driveCreationLocked = isDriveCreationLocked(adminOrg?.maxActiveDrives, activeDriveCount) || interviewAccessLocked;
-
     const confirmDelete = async () => {
         if (!driveToDelete) return;
         setIsDeleting(true);
@@ -128,7 +114,6 @@ export default function DrivesPage() {
             setIsDeleting(false);
         }
     };
-
     return (
         <div className="space-y-7 pb-10 animate-in fade-in duration-700" style={{ zoom: 0.78, transformOrigin: "top center" }}>
             {/* Header */}
@@ -143,8 +128,6 @@ export default function DrivesPage() {
                         </div>
                     </div>
                 </div>
-
-
                 <div className="flex items-center gap-3 flex-wrap">
                     {driveCreationLocked ? (
                         <div className="flex items-center gap-3">
@@ -190,8 +173,6 @@ export default function DrivesPage() {
                     )}
                 </div>
             </div>
-
-
             {/* Filters */}
             <div className="bg-white p-3 rounded-[1.75rem] border border-slate-200 shadow-sm">
                 <div className="flex flex-col lg:flex-row items-center justify-between gap-6 w-full">
@@ -209,7 +190,6 @@ export default function DrivesPage() {
                     </div>
                 </div>
             </div>
-
             {/* Cards Grid */}
             <div className="grid w-full grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {isLoading ? (
@@ -286,14 +266,11 @@ export default function DrivesPage() {
                         const isExpired = drive.deadline ? new Date(drive.deadline) < new Date() : false;
                         const voice = ALL_VOICES.find(v => v.id === drive.voiceId);
                         const language = drive.interviewLanguage || "English";
-
                         return (
                             <div key={drive.id} className="group cursor-pointer w-full">
                                 <div className="relative h-full flex flex-col rounded-[1.75rem] border border-slate-100 bg-white shadow-[0_4px_24px_rgba(15,23,42,0.06)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_16px_40px_rgba(15,23,42,0.11)] hover:border-slate-200 overflow-hidden">
-
                                     {/* Top accent bar */}
                                     <div className="h-1 w-full bg-gradient-to-r from-orange-400 via-orange-500 to-orange-300 rounded-t-[1.75rem]" />
-
                                     {/* Header */}
                                     <div className="px-5 pt-4 pb-3 flex items-start justify-between gap-3">
                                         <div className="flex items-center gap-3 min-w-0">
@@ -339,7 +316,6 @@ export default function DrivesPage() {
                                             </DropdownMenuContent>
                                         </DropdownMenu>
                                     </div>
-
                                     {/* Role tile */}
                                     <div className="px-5 pb-3">
                                         <div className="rounded-2xl bg-slate-50 border border-slate-100 px-4 py-3">
@@ -349,7 +325,6 @@ export default function DrivesPage() {
                                             </p>
                                         </div>
                                     </div>
-
                                     {/* Bento stats grid */}
                                     <div className="px-5 pb-3 flex-1 space-y-2.5">
                                         {/* Row 1: Candidates + Deadline */}
@@ -365,7 +340,6 @@ export default function DrivesPage() {
                                                 <p className="text-[26px] font-black text-slate-900 leading-none tracking-tight">{applicants}</p>
                                                 <p className="text-[9px] font-semibold text-slate-400">Total applied</p>
                                             </div>
-
                                             {/* Deadline / Created tile */}
                                             <div className="rounded-2xl bg-white border border-slate-100 shadow-[0_2px_8px_rgba(15,23,42,0.04)] px-4 py-3 flex flex-col gap-1">
                                                 <div className="flex items-center gap-1.5">
@@ -384,7 +358,6 @@ export default function DrivesPage() {
                                                 )}
                                             </div>
                                         </div>
-
                                         {/* Row 2: Voice + Language */}
                                         <div className="grid grid-cols-2 gap-2.5">
                                             {/* Voice tile */}
@@ -400,7 +373,6 @@ export default function DrivesPage() {
                                                 </p>
                                                 <p className="text-[9px] font-semibold text-slate-400 truncate">{voice?.provider ?? "Cartesia"}</p>
                                             </div>
-
                                             {/* Language tile */}
                                             <div className="rounded-2xl bg-white border border-slate-100 shadow-[0_2px_8px_rgba(15,23,42,0.04)] px-4 py-3 flex flex-col gap-1">
                                                 <div className="flex items-center gap-1.5">
@@ -416,7 +388,6 @@ export default function DrivesPage() {
                                             </div>
                                         </div>
                                     </div>
-
                                     {/* Footer CTA */}
                                     <div className="px-5 pb-5 pt-1">
                                         <Button
@@ -436,7 +407,6 @@ export default function DrivesPage() {
                     })
                 )}
             </div>
-
             {/* Pagination */}
             {!isLoading && jobs.length > 0 && (
                 <div className="mt-10 py-6 border-t border-slate-200">
@@ -465,8 +435,6 @@ export default function DrivesPage() {
                     </p>
                 </div>
             )}
-
-
             {/* Delete Modal */}
             <ActionConfirmModal
                 isOpen={isDeleteModalOpen}

@@ -1,11 +1,9 @@
 "use client";
-
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
 import type { DateRange } from "./date-filter";
 import { ErrorState } from "./error-state";
-
 interface FunnelData {
     activeDrives: number;
     totalCandidates: number;
@@ -15,24 +13,20 @@ interface FunnelData {
     hiredThisMonth: number;
     shortlistPassRate: number;
 }
-
 interface HiringFunnelProps {
     dateRange: DateRange;
 }
-
 function buildUrl(range: DateRange) {
     const base = "/api/admin/stats";
     if (range.type === "custom" && "from" in range) return `${base}?range=custom&from=${(range as any).from}&to=${(range as any).to}`;
     return `${base}?range=${range.type}`;
 }
-
 function rangeLabel(range: DateRange) {
     if (range.type === "today") return "Today";
     if (range.type === "week") return "This week";
     if (range.type === "month") return "This month";
     return "from" in range ? `${(range as any).from} – ${(range as any).to}` : "Custom";
 }
-
 const STAGES = [
     { key: "uploaded",     label: "Uploaded",     color: "#3B82F6", darkColor: "#2563EB" },
     { key: "shortlisted",  label: "Shortlisted",   color: "#15803D", darkColor: "#166534" },
@@ -40,17 +34,14 @@ const STAGES = [
     { key: "interviewed",  label: "Interviewed",   color: "#16A34A", darkColor: "#15803D" },
     { key: "hired",        label: "Hired",         color: "#10B981", darkColor: "#059669" },
 ] as const;
-
 export function HiringFunnel({ dateRange }: HiringFunnelProps) {
     const [data, setData] = useState<FunnelData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [retryKey, setRetryKey] = useState(0);
-
     useEffect(() => {
         const controller = new AbortController();
         const signal = controller.signal;
-
         const fetchData = async () => {
             setLoading(true);
             setError(null);
@@ -70,18 +61,15 @@ export function HiringFunnel({ dateRange }: HiringFunnelProps) {
                 if (!signal.aborted) setLoading(false);
             }
         };
-
         fetchData();
         return () => controller.abort();
     }, [dateRange, retryKey]);
-
     const handleRetry = () => {
         setLoading(true);
         setError(null);
         setData(null);
         setRetryKey((k) => k + 1);
     };
-
     const stages = data ? [
         { key: "uploaded",    label: "Uploaded",    value: data.totalCandidates },
         { key: "shortlisted", label: "Shortlisted",  value: data.shortlisted },
@@ -89,15 +77,12 @@ export function HiringFunnel({ dateRange }: HiringFunnelProps) {
         { key: "interviewed", label: "Interviewed",  value: data.interviewed },
         { key: "hired",       label: "Hired",        value: data.hiredThisMonth },
     ] : [];
-
     const maxVal = stages.length ? Math.max(...stages.map(s => s.value), 1) : 1;
-
     const passRate = data
         ? data.totalCandidates > 0
             ? ((data.hiredThisMonth / data.totalCandidates) * 100).toFixed(1)
             : "0.0"
         : null;
-
     return (
         <div className="bg-white/40 backdrop-blur-xl rounded-[2.5rem] border border-white/40 shadow-[0_8px_32px_rgba(0,0,0,0.03)] p-8 flex flex-col h-full group hover:shadow-[0_20px_60px_rgba(0,0,0,0.08)] transition-all duration-700">
             {/* Header */}
@@ -119,7 +104,6 @@ export function HiringFunnel({ dateRange }: HiringFunnelProps) {
                     </div>
                 )}
             </div>
-
             {/* Funnel bars */}
             {loading ? (
                 <div className="flex-1 flex items-center justify-center">
@@ -143,7 +127,6 @@ export function HiringFunnel({ dateRange }: HiringFunnelProps) {
                             ? Math.round((stage.value / prevVal) * 100)
                             : null;
                         const accentColor = STAGES[i].color;
-
                         return (
                             <div key={stage.key} className="flex items-center gap-4 group/item">
                                 {/* Label */}
@@ -152,7 +135,6 @@ export function HiringFunnel({ dateRange }: HiringFunnelProps) {
                                         {stage.label}
                                     </p>
                                 </div>
-
                                 {/* Bar track */}
                                 <div className="flex-1 bg-gray-50/50 rounded-2xl h-10 overflow-hidden relative border border-gray-100/50">
                                     <motion.div
@@ -167,11 +149,9 @@ export function HiringFunnel({ dateRange }: HiringFunnelProps) {
                                             {stage.value}
                                         </span>
                                     </motion.div>
-                                    
                                     {/* Glass Highlight */}
                                     <div className="absolute top-0 right-0 h-full w-24 bg-gradient-to-l from-white/10 to-transparent pointer-none" />
                                 </div>
-
                                 {/* Conversion rate */}
                                 <div className="w-12 shrink-0 flex justify-end">
                                     {convRate != null ? (

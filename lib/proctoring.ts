@@ -1,5 +1,4 @@
 export type ProctoringSeverity = "low" | "medium" | "high";
-
 export type ProctoringEventType =
   | "camera_disabled"
   | "microphone_disabled"
@@ -18,7 +17,6 @@ export type ProctoringEventType =
   | "follow_up_collapse"
   | "depth_decay"
   | "complexity_latency_mismatch";
-
 export interface ProctoringEvent {
   eventType: string;
   severity?: ProctoringSeverity;
@@ -28,7 +26,6 @@ export interface ProctoringEvent {
   metadata?: Record<string, unknown>;
   timestamp?: number;
 }
-
 const EVENT_ALIASES: Record<string, ProctoringEventType> = {
   camera_disabled: "camera_disabled",
   cameraDisabled: "camera_disabled",
@@ -65,7 +62,6 @@ const EVENT_ALIASES: Record<string, ProctoringEventType> = {
   complexity_latency_mismatch: "complexity_latency_mismatch",
   complexityLatencyMismatch: "complexity_latency_mismatch",
 };
-
 export const PROCTORING_SEVERITY_BY_TYPE: Record<ProctoringEventType, ProctoringSeverity> = {
   camera_disabled: "high",
   microphone_disabled: "medium",
@@ -85,7 +81,6 @@ export const PROCTORING_SEVERITY_BY_TYPE: Record<ProctoringEventType, Proctoring
   depth_decay: "high",
   complexity_latency_mismatch: "high",
 };
-
 export const PROCTORING_EVENT_ORDER: ProctoringEventType[] = [
   "camera_disabled",
   "microphone_disabled",
@@ -105,13 +100,11 @@ export const PROCTORING_EVENT_ORDER: ProctoringEventType[] = [
   "depth_decay",
   "complexity_latency_mismatch",
 ];
-
 export function normalizeProctoringEvent(event: ProctoringEvent): ProctoringEvent {
   const rawType = String(event.eventType || "").trim();
   const key = rawType.replace(/\s+/g, "_");
   const normalizedType = EVENT_ALIASES[key] || EVENT_ALIASES[key.toLowerCase()] || (key.toLowerCase() as ProctoringEventType);
   const safeType = normalizedType || (PROCTORING_EVENT_ORDER.length > 0 ? PROCTORING_EVENT_ORDER[0] : "connection_lost" as ProctoringEventType);
-
   return {
     eventType: safeType,
     severity: event.severity || PROCTORING_SEVERITY_BY_TYPE[safeType as ProctoringEventType] || "low",
@@ -128,11 +121,9 @@ export function normalizeProctoringEvent(event: ProctoringEvent): ProctoringEven
       : Date.now(),
   };
 }
-
 export function normalizeProctoringEvents(events: ProctoringEvent[]): ProctoringEvent[] {
   return events.map((event) => normalizeProctoringEvent(event));
 }
-
 export function getProctoringCategory(eventType: string): ProctoringEventType {
   const rawType = String(eventType || "").trim().replace(/\s+/g, "_");
   return EVENT_ALIASES[rawType] || EVENT_ALIASES[rawType.toLowerCase()] || (rawType.toLowerCase() as ProctoringEventType);

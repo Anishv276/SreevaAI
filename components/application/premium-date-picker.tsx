@@ -1,15 +1,12 @@
 "use client";
-
 import { useRef, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Label } from "@/components/ui/label";
 import { Calendar, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
-
 /*  Premium Month/Year Picker  */
 const MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const MONTHS_FULL = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-
 interface PremiumMonthPickerProps {
     label: string;
     value: string; // YYYY-MM
@@ -17,20 +14,16 @@ interface PremiumMonthPickerProps {
     placeholder?: string;
     disabled?: boolean;
 }
-
 export function PremiumMonthPicker({ label, value, onChange, placeholder = "Select Month", disabled }: PremiumMonthPickerProps) {
     const [open, setOpen] = useState(false);
     const [rect, setRect] = useState<DOMRect | null>(null);
     const triggerRef = useRef<HTMLButtonElement>(null);
     const pickerRef = useRef<HTMLDivElement>(null);
-
     const today = new Date();
     const currentYear = today.getFullYear();
-
     // Parse value (YYYY-MM)
     const [year, month] = value ? value.split("-").map(Number) : [currentYear, today.getMonth() + 1];
     const [viewYear, setViewYear] = useState(year);
-
     const handleOpen = () => {
         if (disabled) return;
         if (!open && triggerRef.current) {
@@ -38,7 +31,6 @@ export function PremiumMonthPicker({ label, value, onChange, placeholder = "Sele
         }
         setOpen(o => !o);
     };
-
     useEffect(() => {
         if (!open) return;
         const h = (e: MouseEvent) => {
@@ -48,22 +40,18 @@ export function PremiumMonthPicker({ label, value, onChange, placeholder = "Sele
         document.addEventListener("mousedown", h);
         return () => document.removeEventListener("mousedown", h);
     }, [open]);
-
     useEffect(() => {
         if (!open) return;
         const update = () => { if (triggerRef.current) setRect(triggerRef.current.getBoundingClientRect()); };
         window.addEventListener("scroll", update, true);
         return () => window.removeEventListener("scroll", update, true);
     }, [open]);
-
     const selectMonth = (mIndex: number) => {
         const iso = `${viewYear}-${String(mIndex + 1).padStart(2, "0")}`;
         onChange(iso);
         setOpen(false);
     };
-
     const displayValue = value ? `${MONTHS_SHORT[month - 1]} ${year}` : "";
-
     const picker = open && rect ? (
         <div
             ref={pickerRef}
@@ -89,7 +77,6 @@ export function PremiumMonthPicker({ label, value, onChange, placeholder = "Sele
                         <ChevronRight className="h-4 w-4" />
                     </button>
                 </div>
-
                 {/* Months Grid */}
                 <div className="grid grid-cols-3 gap-2">
                     {MONTHS_SHORT.map((m, i) => {
@@ -113,7 +100,6 @@ export function PremiumMonthPicker({ label, value, onChange, placeholder = "Sele
             </div>
         </div>
     ) : null;
-
     return (
         <div className="space-y-3">
             <Label className="text-[11px] font-black text-gray-500 uppercase tracking-widest ml-1">{label}</Label>
@@ -138,4 +124,3 @@ export function PremiumMonthPicker({ label, value, onChange, placeholder = "Sele
         </div>
     );
 }
-

@@ -1,5 +1,4 @@
 "use client";
-
 import { useEffect, useState, useCallback } from "react";
 import { Loader2, ArrowRight, Trophy } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -7,7 +6,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { type DateRange } from "./date-filter";
-
 interface TopCandidate {
     id: string;
     name: string;
@@ -18,7 +16,6 @@ interface TopCandidate {
     resumeScore: number | null;
     status: string;
 }
-
 // Top 3 get rank badges; all get distinct avatar colours
 const AVATAR_COLORS = [
     "bg-blue-500",
@@ -28,13 +25,11 @@ const AVATAR_COLORS = [
     "bg-amber-500",
     "bg-slate-500",
 ];
-
 const RANK_BADGE: Record<number, { bg: string; text: string; label: string }> = {
     0: { bg: "bg-amber-100",  text: "text-amber-700",  label: "#1" },
     1: { bg: "bg-slate-100",  text: "text-slate-600",  label: "#2" },
     2: { bg: "bg-orange-100", text: "text-orange-700", label: "#3" },
 };
-
 const STATUS_CONFIG: Record<string, { dot: string; text: string; bg: string; label: string }> = {
     Shortlisted:   { dot: "bg-emerald-500", text: "text-emerald-700", bg: "bg-emerald-50",  label: "Shortlisted" },
     Hired:         { dot: "bg-emerald-500", text: "text-emerald-700", bg: "bg-emerald-50",  label: "Hired" },
@@ -43,40 +38,33 @@ const STATUS_CONFIG: Record<string, { dot: string; text: string; bg: string; lab
     Pending:       { dot: "bg-gray-300",    text: "text-gray-500",    bg: "bg-gray-50",     label: "Pending" },
     Rejected:      { dot: "bg-red-400",     text: "text-red-600",     bg: "bg-red-50",      label: "Rejected" },
 };
-
 function scoreLabel(score: number) {
     if (score >= 80) return { text: "Excellent", color: "text-emerald-600" };
     if (score >= 60) return { text: "Good",      color: "text-blue-600" };
     if (score >= 40) return { text: "Average",   color: "text-amber-600" };
     return                  { text: "Below Avg", color: "text-red-500" };
 }
-
 function scoreBarColor(score: number) {
     if (score >= 80) return "#10B981";
     if (score >= 60) return "#3B82F6";
     if (score >= 40) return "#F59E0B";
     return "#F87171";
 }
-
 interface TopCandidatesProps {
     dateRange: DateRange;
 }
-
 export function TopCandidates({ dateRange }: TopCandidatesProps) {
     const [candidates, setCandidates] = useState<TopCandidate[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [retryKey, setRetryKey] = useState(0);
     const router = useRouter();
-
     useEffect(() => {
         const controller = new AbortController();
         const { signal } = controller;
-
         const loadCandidates = async () => {
             setLoading(true);
             setError(null);
-
             const params = new URLSearchParams();
             if (dateRange.type === "custom") {
                 params.set("range", "custom");
@@ -85,7 +73,6 @@ export function TopCandidates({ dateRange }: TopCandidatesProps) {
             } else {
                 params.set("range", dateRange.type);
             }
-
             try {
                 const res = await fetch(`/api/admin/top-candidates?${params.toString()}`, { signal });
                 if (signal.aborted) return;
@@ -100,12 +87,9 @@ export function TopCandidates({ dateRange }: TopCandidatesProps) {
                 if (!signal.aborted) setLoading(false);
             }
         };
-
         void loadCandidates();
-
         return () => controller.abort();
     }, [dateRange, retryKey]);
-
     return (
         <div className="bg-white rounded-2xl border border-gray-200 flex flex-col overflow-hidden">
             {/* Header */}
@@ -121,7 +105,6 @@ export function TopCandidates({ dateRange }: TopCandidatesProps) {
                     All Candidates <ArrowRight className="h-3 w-3" />
                 </Link>
             </div>
-
             {/* Body */}
             <div className="flex-1 px-5 py-4">
                 {loading ? (
@@ -156,7 +139,6 @@ export function TopCandidates({ dateRange }: TopCandidatesProps) {
                             const status = STATUS_CONFIG[c.status] ?? STATUS_CONFIG["Reviewing"];
                             const score = c.interviewScore ?? 0;
                             const sl = scoreLabel(score);
-
                             return (
                                 <motion.div
                                     key={c.id}
@@ -181,7 +163,6 @@ export function TopCandidates({ dateRange }: TopCandidatesProps) {
                                             </span>
                                         )}
                                     </div>
-
                                     {/* Info */}
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center justify-between gap-2 mb-0.5">
@@ -197,12 +178,10 @@ export function TopCandidates({ dateRange }: TopCandidatesProps) {
                                                 {status.label}
                                             </span>
                                         </div>
-
                                         {/* Role · Drive */}
                                         <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest truncate mb-1.5">
                                             {c.role} · {c.driveTitle}
                                         </p>
-
                                         {/* Score bar */}
                                         {c.interviewScore != null && (
                                             <div className="flex items-center gap-2">

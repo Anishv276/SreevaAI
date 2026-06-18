@@ -2,17 +2,13 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { normalizeEmail } from "@/lib/email";
 import { isRateLimited } from "@/lib/rate-limit";
-
 export async function POST(request: Request) {
     try {
         const { email, otp } = await request.json();
-
         if (!email || !otp) {
             return NextResponse.json({ error: "Email and OTP are required" }, { status: 400 });
         }
-
         const normalizedEmail = normalizeEmail(email);
-
         // -- BRUTE-FORCE GUARD (fail closed) --------------------------------
         // A 6-digit OTP with no throttle is brute-forceable. Cap verification
         // attempts per email; fail closed so a Redis outage can't open the door.
@@ -23,7 +19,6 @@ export async function POST(request: Request) {
                 { status: 429 }
             );
         }
-
         const superAdmin = await prisma.superAdmin.findFirst({
             where: {
                 email: {
@@ -37,20 +32,16 @@ export async function POST(request: Request) {
                 resetOtpExpires: true
             }
         });
-
         if (superAdmin) {
             if (!superAdmin.resetOtp || superAdmin.resetOtp !== otp) {
                 return NextResponse.json({ error: "Invalid verification code" }, { status: 400 });
             }
-
             const isExpired = superAdmin.resetOtpExpires && superAdmin.resetOtpExpires.getTime() < Date.now();
             if (isExpired) {
                 return NextResponse.json({ error: "Code has expired. Request a new one." }, { status: 400 });
             }
-
             return NextResponse.json({ success: true, message: "Code verified." });
         }
-
         const user = await prisma.user.findFirst({
             where: {
                 email: {
@@ -64,16 +55,13 @@ export async function POST(request: Request) {
                 resetOtpExpires: true
             }
         });
-
         if (!user || !user.resetOtp || user.resetOtp !== otp) {
             return NextResponse.json({ error: "Invalid verification code" }, { status: 400 });
         }
-
         const isExpired = user.resetOtpExpires && user.resetOtpExpires.getTime() < Date.now();
         if (isExpired) {
             return NextResponse.json({ error: "Code has expired. Request a new one." }, { status: 400 });
         }
-
         return NextResponse.json({ success: true, message: "Code verified." });
     } catch (error) {
         console.error("[VERIFY_OTP_API_ERROR]", error);

@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-
 export const metadata: Metadata = {
   title: "Terms of Use",
   description: "Read Sreeva AI's Terms of Use covering platform access, AI interview conduct, billing, candidate rights, intellectual property, and compliance with GDPR and India's DPDP Act.",
@@ -22,7 +21,6 @@ export const metadata: Metadata = {
     follow: true,
   },
 };
-
 export default function TermsLayout({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }

@@ -1,5 +1,4 @@
 "use client";
-
 import { useState } from "react";
 import { Plus, Trash2, Briefcase, Building2, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -7,7 +6,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { PremiumMonthPicker } from "./premium-date-picker";
-
 interface ExperienceItem {
     id: string;
     title: string;
@@ -18,12 +16,10 @@ interface ExperienceItem {
     current: boolean;
     description: string;
 }
-
 interface ExperienceInfoProps {
     value: ExperienceItem[];
     onChange: (value: ExperienceItem[]) => void;
 }
-
 export function ExperienceInfo({ value, onChange }: ExperienceInfoProps) {
     const addExperience = () => {
         const newItem: ExperienceItem = {
@@ -38,17 +34,13 @@ export function ExperienceInfo({ value, onChange }: ExperienceInfoProps) {
         };
         onChange([...value, newItem]);
     };
-
     const removeExperience = (id: string) => {
         onChange(value.filter(item => item.id !== id));
     };
-
     const updateExperience = (id: string, updates: Partial<ExperienceItem>) => {
         onChange(value.map(item => item.id === id ? { ...item, ...updates } : item));
     };
-
     const inputClass = "h-12 rounded-2xl border-gray-100 bg-gray-50/30 px-4 text-sm font-medium transition-all focus:bg-white focus:border-[#F97316] focus:ring-4 focus:ring-orange-500/10 placeholder:text-gray-300";
-
     return (
         <div className="space-y-10 animate-in-fade">
             <div className="space-y-6">
@@ -74,7 +66,6 @@ export function ExperienceInfo({ value, onChange }: ExperienceInfoProps) {
                                 >
                                     <Trash2 className="h-5 w-5" />
                                 </button>
-                                
                                 <div className="grid gap-8 md:grid-cols-2 mt-2">
                                     <div className="space-y-3">
                                         <Label className="text-[11px] font-black text-gray-500 uppercase tracking-widest ml-1">Job Title *</Label>
@@ -101,7 +92,6 @@ export function ExperienceInfo({ value, onChange }: ExperienceInfoProps) {
                                         </div>
                                     </div>
                                 </div>
-
                                 <div className="grid gap-8 md:grid-cols-2 mt-8">
                                     <PremiumMonthPicker 
                                         label="Start Month *"
@@ -131,7 +121,6 @@ export function ExperienceInfo({ value, onChange }: ExperienceInfoProps) {
                                         </div>
                                     </div>
                                 </div>
-
                                 <div className="mt-8 space-y-3">
                                     <Label className="text-[11px] font-black text-gray-500 uppercase tracking-widest ml-1">Key Responsibilities & Achievements</Label>
                                     <textarea
@@ -143,7 +132,6 @@ export function ExperienceInfo({ value, onChange }: ExperienceInfoProps) {
                                 </div>
                             </div>
                         ))}
-                        
                         <Button 
                             variant="ghost" 
                             onClick={addExperience}
@@ -157,4 +145,3 @@ export function ExperienceInfo({ value, onChange }: ExperienceInfoProps) {
         </div>
     );
 }
-

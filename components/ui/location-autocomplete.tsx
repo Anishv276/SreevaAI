@@ -1,11 +1,9 @@
 "use client";
-
 import { useState, useEffect, useRef } from "react";
 import { MapPin as MapPinIcon, Loader2, Search, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
-
 interface LocationAutocompleteProps {
     value: string;
     onChange: (value: string) => void;
@@ -13,7 +11,6 @@ interface LocationAutocompleteProps {
     className?: string;
     icon?: React.ReactNode;
 }
-
 interface Suggestion {
     name: string;
     city?: string;
@@ -21,7 +18,6 @@ interface Suggestion {
     country: string;
     label: string;
 }
-
 export function LocationAutocomplete({ 
     value, 
     onChange, 
@@ -34,12 +30,10 @@ export function LocationAutocomplete({
     const [isLoading, setIsLoading] = useState(false);
     const [isOpen, setIsOpen] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
-
     // Update internal query when prop value changes (e.g. on initial load)
     useEffect(() => {
         setQuery(value);
     }, [value]);
-
     // Handle clicks outside
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -50,7 +44,6 @@ export function LocationAutocomplete({
         document.addEventListener("mousedown", handleClickOutside);
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
-
     // Debounced search
     useEffect(() => {
         const fetchSuggestions = async () => {
@@ -58,7 +51,6 @@ export function LocationAutocomplete({
                 setSuggestions([]);
                 return;
             }
-
             setIsLoading(true);
             try {
                 const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=5`);
@@ -85,17 +77,14 @@ export function LocationAutocomplete({
                 setIsLoading(false);
             }
         };
-
         const timer = setTimeout(fetchSuggestions, 300);
         return () => clearTimeout(timer);
     }, [query, isOpen]);
-
     const handleSelect = (suggestion: Suggestion) => {
         setQuery(suggestion.label);
         onChange(suggestion.label);
         setIsOpen(false);
     };
-
     return (
         <div className={cn("relative w-full", className)} ref={containerRef}>
             <div className="relative group">
@@ -126,7 +115,6 @@ export function LocationAutocomplete({
                     )}
                 </div>
             </div>
-
             <AnimatePresence>
                 {isOpen && (suggestions.length > 0 || isLoading) && (
                     <motion.div
@@ -167,4 +155,3 @@ export function LocationAutocomplete({
         </div>
     );
 }
-

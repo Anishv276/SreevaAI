@@ -1,18 +1,13 @@
 import { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand, ListObjectsV2Command, DeleteObjectCommand } from "@aws-sdk/client-s3";
-
 let _r2Client: S3Client | null = null;
-
 export const getR2Client = () => {
   if (_r2Client) return _r2Client;
-  
   const r2Endpoint = process.env.R2_ENDPOINT;
   const r2AccessKey = process.env.R2_ACCESS_KEY_ID;
   const r2SecretKey = process.env.R2_SECRET_ACCESS_KEY;
-
   if (!r2Endpoint || !r2AccessKey || !r2SecretKey) {
     console.warn("WARNING: S3/R2 configuration is incomplete. Uploads and deletions will fail until R2_ENDPOINT, R2_ACCESS_KEY_ID, and R2_SECRET_ACCESS_KEY are set in .env.");
   }
-
   _r2Client = new S3Client({
     region: "auto",
     endpoint: r2Endpoint || "",
@@ -22,10 +17,8 @@ export const getR2Client = () => {
       secretAccessKey: r2SecretKey || "",
     },
   });
-
   return _r2Client;
 };
-
 /**
  * Standard upload function compatible with both JD and RESUME flows
  */
@@ -36,17 +29,14 @@ export const putObject = async (bucket: string, key: string, body: Buffer, conte
     Body: body,
     ContentType: contentType,
   });
-
   try {
     if (!process.env.R2_ENDPOINT) {
       throw new Error("S3_UPLOAD_FAILED: Cloudflare R2 is not configured. Please set R2_ENDPOINT in your environment.");
     }
     await getR2Client().send(command);
-
     // Construct the public URL based on the BUCKET TYPE
     let publicUrlBase = "";
     const bucketName = bucket.toLowerCase();
-
     if (bucketName.includes("logo")) {
         publicUrlBase = process.env.NEXT_PUBLIC_R2_LOGOS_URL || "";
     } else if (bucketName.includes("jd")) {
@@ -57,14 +47,12 @@ export const putObject = async (bucket: string, key: string, body: Buffer, conte
         // Default to Resumes
         publicUrlBase = process.env.NEXT_PUBLIC_R2_RESUMES_URL || "https://pub-e4a8b24775c741f6a650def856cfec9f.r2.dev";
     }
-
     return `${publicUrlBase.replace(/\/$/, '')}/${key}`;
   } catch (error) {
     console.error(`R2 Upload Error [${bucket}]:`, error);
     throw new Error(`Failed to upload ${key} to Cloudflare R2`);
   }
 };
-
 /**
  * Deletes an object from Cloudflare R2. 
  * Use this to cleanup old resumes, logos, or JDs when records are deleted in the app.
@@ -72,7 +60,6 @@ export const putObject = async (bucket: string, key: string, body: Buffer, conte
 export const deleteObject = async (bucket: string, key: string) => {
     // Normalize key: remove any leading slash R2/S3 doesn't like them in the Key field
     const normalizedKey = key.startsWith('/') ? key.substring(1) : key;
-
     try {
         await deleteObjectStrict(bucket, normalizedKey);
         if (process.env.S3_DELETE_LOGS === "true") {
@@ -84,22 +71,17 @@ export const deleteObject = async (bucket: string, key: string) => {
         return false;
     }
 };
-
 export const deleteObjectStrict = async (bucket: string, key: string) => {
   const normalizedKey = key.startsWith("/") ? key.slice(1) : key;
-
   if (!process.env.R2_ENDPOINT) {
     throw new Error("S3_UPLOAD_FAILED: Cloudflare R2 is not configured. Please set R2_ENDPOINT in your environment.");
   }
-
   const command = new DeleteObjectCommand({
     Bucket: bucket,
     Key: normalizedKey,
   });
-
   await getR2Client().send(command);
 };
-
 /**
  * Extracts the Key (file path) from a public R2 URL.
  * Handles the different public domain structures provided.
@@ -110,7 +92,6 @@ export const getKeyFromUrl = (url: string) => {
         const urlObj = new URL(url);
         // The pathname usually starts with /, we strip it to get the S3 Key
         const key = urlObj.pathname.substring(1);
-        
         // Handle cases where the public URL includes the bucket name as the first segment
         // e.g. https://pub-abc.r2.dev/resumes/my-key.pdf -> resumes/my-key.pdf
         // If we know the buckets specifically, we could strip them.
@@ -120,27 +101,22 @@ export const getKeyFromUrl = (url: string) => {
         return null; // Not a valid URL
     }
 };
-
 /**
  * Generates a presigned URL for direct client-side uploads.
  * Essential for large PDF resumes and JD documents to avoid server timeouts.
  */
 export const getPresignedUploadUrl = async (bucket: string, key: string, contentType: string, contentEncoding?: string) => {
     const { getSignedUrl } = await import("@aws-sdk/s3-request-presigner");
-    
     const command = new PutObjectCommand({
         Bucket: bucket,
         Key: key,
         ContentType: contentType,
         ContentEncoding: contentEncoding,
     });
-
     // Valid for 10 minutes
     return await getSignedUrl(getR2Client(), command, { expiresIn: 600 });
 };
-
 export const uploadToR2 = putObject;
-
 const streamToBuffer = async (stream: NodeJS.ReadableStream): Promise<Buffer> => {
   const chunks: Buffer[] = [];
   for await (const chunk of stream) {
@@ -148,7 +124,6 @@ const streamToBuffer = async (stream: NodeJS.ReadableStream): Promise<Buffer> =>
   }
   return Buffer.concat(chunks);
 };
-
 export const getObjectBuffer = async (bucket: string, key: string): Promise<Buffer> => {
   const command = new GetObjectCommand({
     Bucket: bucket,
@@ -160,7 +135,6 @@ export const getObjectBuffer = async (bucket: string, key: string): Promise<Buff
   }
   return streamToBuffer(response.Body as NodeJS.ReadableStream);
 };
-
 export const headObjectStrict = async (bucket: string, key: string) => {
   const command = new HeadObjectCommand({
     Bucket: bucket,
@@ -168,13 +142,11 @@ export const headObjectStrict = async (bucket: string, key: string) => {
   });
   await getR2Client().send(command);
 };
-
 export type ListedObject = {
   key: string;
   lastModified: Date | null;
   size: number | null;
 };
-
 export const listObjects = async (bucket: string, prefix: string): Promise<ListedObject[]> => {
   const command = new ListObjectsV2Command({
     Bucket: bucket,

@@ -1,5 +1,4 @@
 "use client";
-
 import React from "react";
 import { Icon } from "./billing-icons";
 import { Avatar, StatusPill } from "./billing-primitives";
@@ -20,9 +19,7 @@ import {
   SURFACE,
 } from "./tokens";
 import type { HistorySort, InterviewRow } from "./types";
-
 const PAGE_SIZE = 10;
-
 function HistorySortHead({
   k,
   children,
@@ -67,7 +64,6 @@ function HistorySortHead({
     </button>
   );
 }
-
 function FilterSelect({
   label,
   value,
@@ -161,7 +157,6 @@ function FilterSelect({
     </div>
   );
 }
-
 function PageBtn({
   children,
   active,
@@ -201,7 +196,6 @@ function PageBtn({
     </button>
   );
 }
-
 export function HistoryTable({
   rows,
   loading = false,
@@ -216,9 +210,7 @@ export function HistoryTable({
   const [status, setStatus] = React.useState("all");
   const [dateRange, setDateRange] = React.useState<DateRange>({ type: "month" });
   const [sort, setSort] = React.useState<HistorySort>({ key: "date", dir: "desc" });
-
   const statuses = ["all", "completed", "no-show", "abandoned", "in-progress", "pending"] as const;
-
   const isInDateRange = React.useCallback(
     (dateIso: string) => {
       const d = new Date(dateIso);
@@ -227,7 +219,6 @@ export function HistoryTable({
       const startOfDay = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate());
       const compareYmd = (a: Date, b: Date) =>
         a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-
       if (dateRange.type === "all") return true;
       if (dateRange.type === "today") return compareYmd(d, now);
       if (dateRange.type === "week") {
@@ -250,7 +241,6 @@ export function HistoryTable({
     },
     [dateRange]
   );
-
   const filtered = React.useMemo(() => {
     let out = rows;
     if (search.trim()) {
@@ -268,16 +258,12 @@ export function HistoryTable({
     });
     return out;
   }, [rows, search, status, sort, isInDateRange]);
-
   React.useEffect(() => {
     setPage(1);
   }, [search, status, dateRange]);
-
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-
   const gridCols = showCreditsUsed ? "1.6fr 1.4fr .9fr .9fr 1fr .85fr 120px" : "1.6fr 1.4fr .9fr 1fr .85fr 120px";
-
   return (
     <div
       style={{
@@ -313,7 +299,6 @@ export function HistoryTable({
             <Icon.download s={13} /> Export CSV
           </button>
         </div>
-
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <div
             style={{
@@ -353,7 +338,6 @@ export function HistoryTable({
               </button>
             ) : null}
           </div>
-
           <FilterSelect
             label="Status"
             value={status}
@@ -364,13 +348,11 @@ export function HistoryTable({
             }))}
           />
           <DateFilter value={dateRange} onChange={setDateRange} />
-
           <div style={{ marginLeft: "auto", fontSize: 12, color: MUTED }}>
             <span style={{ color: INK, fontWeight: 600 }}>{filtered.length}</span> result{filtered.length !== 1 ? "s" : ""}
           </div>
         </div>
       </div>
-
       <div
         style={{
           display: "grid",
@@ -406,7 +388,6 @@ export function HistoryTable({
           Status
         </HistorySortHead>
       </div>
-
       <div>
         {loading ? (
           <div style={{ padding: "60px 22px", textAlign: "center", color: MUTED, fontSize: 13 }}>Loading live billing history…</div>
@@ -459,7 +440,6 @@ export function HistoryTable({
           </div>
         ))}
       </div>
-
       <div
         style={{
           display: "flex",

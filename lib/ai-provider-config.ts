@@ -1,13 +1,10 @@
 import { DEFAULT_VOICE_ID, getVoiceById } from "@/lib/constants/voices";
-
 export const DEFAULT_DEEPGRAM_MODEL = "flux-general-en";
-
 export function normalizeDeepgramModel(model?: string | null): string {
   const raw = String(model || "").trim().toLowerCase();
   if (!raw) return DEFAULT_DEEPGRAM_MODEL;
   return raw;
 }
-
 export function resolveVoiceConfig(voiceId: string | null | undefined): {
   voiceId: string;
   provider: "CARTESIA" | "SARVAM" | "ELEVENLABS";
@@ -22,17 +19,14 @@ export function resolveVoiceConfig(voiceId: string | null | undefined): {
   }
   return { voiceId: voice.id, provider: voice.provider, model: voice.model };
 }
-
 type DriveAiInput = {
   voiceId?: string | null;
 };
-
 type OrgAiInput = {
   voiceId?: string | null;
   allowedVoices?: string[] | null;
   deepgramModel?: string | null;
 };
-
 export function normalizeDriveAiConfig({
   current = {},
   next = {},
@@ -44,7 +38,6 @@ export function normalizeDriveAiConfig({
   const { voiceId } = resolveVoiceConfig(id);
   return { voiceId };
 }
-
 export function normalizeOrgAiConfig({
   current = {},
   next = {},
@@ -53,15 +46,12 @@ export function normalizeOrgAiConfig({
   next?: Partial<OrgAiInput> | null;
 }): Record<string, string | string[] | null> {
   const driveFields = normalizeDriveAiConfig({ current, next });
-
   const allowedVoices: string[] = (() => {
     const raw = next?.allowedVoices ?? current?.allowedVoices;
     if (!Array.isArray(raw)) return [];
     return Array.from(new Set(raw.map((id) => String(id || "").trim()).filter(Boolean)));
   })();
-
   const deepgramModel = normalizeDeepgramModel(next?.deepgramModel ?? current?.deepgramModel ?? DEFAULT_DEEPGRAM_MODEL);
-
   return {
     ...driveFields,
     deepgramModel,

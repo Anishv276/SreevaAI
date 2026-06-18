@@ -4,7 +4,6 @@ import { prisma } from "@/lib/prisma";
 import { recordOrgBillingUsage } from "@/lib/usage-metrics";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
 import { isRateLimited } from "@/lib/rate-limit";
-
 const DEEPGRAM_VERIFY_MODEL = "flux-general-en";
 const DEEPGRAM_FLUX_EN_USD_PER_MIN = 0.0065;
 const FLUX_VERIFY_MIN_TIMEOUT_MS = 10000;
@@ -13,7 +12,6 @@ const FLUX_AUDIO_SAMPLE_RATE = 16000;
 const FLUX_AUDIO_CHUNK_BYTES = 2560; // 80ms of 16-bit mono PCM at 16kHz.
 const FLUX_AUDIO_CHUNK_DURATION_MS = 80;
 const MAX_VERIFY_AUDIO_BYTES = 1 * 1024 * 1024;
-
 type FluxMessage = {
     type?: string;
     event?: string;
@@ -23,7 +21,6 @@ type FluxMessage = {
     code?: string;
     description?: string;
 };
-
 type FluxConnection = {
     on(event: "message", callback: (message: FluxMessage) => void): void;
     on(event: "error", callback: (error: Error) => void): void;
@@ -34,7 +31,6 @@ type FluxConnection = {
     sendCloseStream(message: { type: "CloseStream" }): void;
     close(): void;
 };
-
 async function transcribeWithFlux(audioBuffer: ArrayBuffer, apiKey: string): Promise<{
     transcript: string;
     durationSeconds: number;
@@ -49,7 +45,6 @@ async function transcribeWithFlux(audioBuffer: ArrayBuffer, apiKey: string): Pro
     let requestId = "";
     const audioDurationMs = Math.ceil((audioBuffer.byteLength / (FLUX_AUDIO_SAMPLE_RATE * 2)) * 1000);
     const timeoutMs = Math.max(FLUX_VERIFY_MIN_TIMEOUT_MS, audioDurationMs + FLUX_VERIFY_TIMEOUT_PADDING_MS);
-
     return await new Promise(async (resolve, reject) => {
         const finish = (error?: Error) => {
             if (resolved) return;
@@ -71,12 +66,10 @@ async function transcribeWithFlux(audioBuffer: ArrayBuffer, apiKey: string): Pro
                 requestId,
             });
         };
-
         const timeoutId = setTimeout(() => {
             abortController.abort();
             finish(new Error("timeout"));
         }, timeoutMs);
-
         try {
             connection = await client.listen.v2.connect({
                 model: DEEPGRAM_VERIFY_MODEL,
@@ -90,7 +83,6 @@ async function transcribeWithFlux(audioBuffer: ArrayBuffer, apiKey: string): Pro
                 connectionTimeoutInSeconds: 5,
                 reconnectAttempts: 0,
             }) as FluxConnection;
-
             connection.on("message", (message) => {
                 if (message.request_id) requestId = message.request_id;
                 if (typeof message.audio_window_end === "number") {
@@ -107,7 +99,6 @@ async function transcribeWithFlux(audioBuffer: ArrayBuffer, apiKey: string): Pro
             });
             connection.on("error", (error) => finish(error));
             connection.on("close", () => finish());
-
             connection.connect();
             await connection.waitForOpen();
             for (let offset = 0; offset < audioBuffer.byteLength; offset += FLUX_AUDIO_CHUNK_BYTES) {
@@ -122,10 +113,8 @@ async function transcribeWithFlux(audioBuffer: ArrayBuffer, apiKey: string): Pro
         }
     });
 }
-
 async function validateInterviewAccess(applicationId: string, interviewToken: string) {
     if (!applicationId) return null;
-
     const app = await prisma.application.findUnique({
         where: { id: applicationId },
         select: {
@@ -139,7 +128,6 @@ async function validateInterviewAccess(applicationId: string, interviewToken: st
             },
         },
     });
-
     if (!app?.drive?.orgId || !app.interview) {
         console.error("[verify-speech] validateInterviewAccess failed: Missing orgId or interview", { orgId: app?.drive?.orgId, hasInterview: !!app?.interview });
         return null;
@@ -156,10 +144,8 @@ async function validateInterviewAccess(applicationId: string, interviewToken: st
         console.error("[verify-speech] validateInterviewAccess failed: Link not ACTIVE");
         return null;
     }
-
     return app.drive.orgId;
 }
-
 export async function POST(req: NextRequest) {
     try {
         const forwardedFor = req.headers.get("x-forwarded-for") || "";
@@ -167,13 +153,11 @@ export async function POST(req: NextRequest) {
         if (await isRateLimited(`verify-speech:ip:${ip}`, 30, 60, true)) {
             return NextResponse.json({ error: "Too many speech verification attempts" }, { status: 429 });
         }
-
         const formData = await req.formData();
         const audio = formData.get("audio") as Blob | null;
         const targetPhrase = (formData.get("targetPhrase") as string | null) ?? "";
         const applicationId = (formData.get("applicationId") as string | null)?.trim() ?? "";
         const interviewToken = (formData.get("interviewToken") as string | null)?.trim() ?? "";
-
         if (!audio || !targetPhrase.trim() || !applicationId) {
             return NextResponse.json({ error: "Missing audio, targetPhrase, or applicationId" }, { status: 400 });
         }
@@ -186,19 +170,15 @@ export async function POST(req: NextRequest) {
         if (await isRateLimited(`verify-speech:application:${applicationId}`, 10, 60, true)) {
             return NextResponse.json({ error: "Too many speech verification attempts" }, { status: 429 });
         }
-
         const orgId = await validateInterviewAccess(applicationId, interviewToken);
         if (!orgId) {
             return NextResponse.json({ error: "Invalid or expired interview token" }, { status: 401 });
         }
-
         const apiKey = process.env.DEEPGRAM_API_KEY;
         if (!apiKey) {
             return NextResponse.json({ error: "Deepgram API key not configured" }, { status: 500 });
         }
-
         const audioBuffer = await audio.arrayBuffer();
-
         let fluxResult: Awaited<ReturnType<typeof transcribeWithFlux>>;
         try {
             fluxResult = await transcribeWithFlux(audioBuffer, apiKey);
@@ -210,7 +190,6 @@ export async function POST(req: NextRequest) {
             console.error("[verify-speech] Deepgram Flux error:", fetchErr);
             return NextResponse.json({ error: "Transcription failed" }, { status: 500 });
         }
-
         console.log("[verify-speech] Deepgram Flux transcript received", {
             length: fluxResult.transcript.length,
             requestId: fluxResult.requestId || null,
@@ -231,33 +210,26 @@ export async function POST(req: NextRequest) {
                 },
             });
         }
-
         const transcript: string = fluxResult.transcript;
-
         if (!transcript) {
             console.warn("[verify-speech] Empty transcript from Deepgram");
             return NextResponse.json({ transcript: "", matched: false, error: "empty_transcript" });
         }
-
         // Expand contractions so "i'm" → "i am", "i've" → "i have" etc.
         const expand = (s: string) => s
             .replace(/i'm/gi, "i am").replace(/i've/gi, "i have").replace(/i'll/gi, "i will")
             .replace(/it's/gi, "it is").replace(/that's/gi, "that is").replace(/can't/gi, "cannot")
             .replace(/won't/gi, "will not").replace(/don't/gi, "do not").replace(/isn't/gi, "is not")
             .replace(/\bm\b/gi, "am"); // "i m" → "i am" (deepgram splits "I'm" into "i m")
-
         const norm = (s: string) => expand(s).toLowerCase().replace(/[^a-z\s]/g, " ").replace(/\s+/g, " ").trim();
         const spokenNorm = norm(transcript);
         const targetNorm = norm(targetPhrase);
-
         console.log("[verify-speech] normalized transcript evaluated", {
             spokenWordCount: spokenNorm.split(" ").filter(Boolean).length,
             targetWordCount: targetNorm.split(" ").filter(Boolean).length,
         });
-
         const targetWords = targetNorm.split(" ").filter(Boolean);
         const spokenWords = spokenNorm.split(" ").filter(Boolean);
-
         // Reject if the transcript is suspiciously long compared to the target phrase.
         // If someone spoke 3x+ more words than the target, it means there was a lot of
         // noise or repeated filler — we don't want to match on garbage.
@@ -266,7 +238,6 @@ export async function POST(req: NextRequest) {
             console.warn("[verify-speech] Transcript too long vs target (possible noise)", { spokenWords: spokenWords.length, targetWords: targetWords.length });
             return NextResponse.json({ transcript, matched: false, matchedCount: 0, total: targetWords.length });
         }
-
         // Ordered subsequence match: every target word must appear in the transcript
         // in the correct order. This prevents "two two two I am" from matching
         // "I am ready" just because both contain 'i' and 'am' as set members.
@@ -283,9 +254,7 @@ export async function POST(req: NextRequest) {
         }
         // 80% threshold — handles accent/contraction/minor mishearing
         const matched = matchedCount >= Math.ceil(targetWords.length * 0.8);
-
         console.log("[verify-speech] matched:", matchedCount, "/", targetWords.length, "=>", matched);
-
         return NextResponse.json({ transcript, matched, matchedCount, total: targetWords.length });
     } catch (err) {
         console.error("[verify-speech] Unexpected error:", err);

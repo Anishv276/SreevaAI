@@ -1,8 +1,6 @@
 "use client";
-
 import { memo, useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
-
 export const CircularProgress = memo(function CircularProgress({
     value,
     max = 100,
@@ -23,7 +21,6 @@ export const CircularProgress = memo(function CircularProgress({
     const strokeWidth = master ? 12 : 9;
     const circumference = 2 * Math.PI * radius;
     const offset = circumference - (percentage / 100) * circumference;
-
     const sizeClass = size === "sm" ? "h-20 w-20" : size === "md" ? "h-28 w-28" : "h-36 w-36";
     const colors: Record<string, [string, string]> = {
         blue: ["#60A5FA", "#3B82F6"],
@@ -31,10 +28,8 @@ export const CircularProgress = memo(function CircularProgress({
         indigo: ["#818CF8", "#6366F1"],
         emerald: ["#34D399", "#10B981"]
     };
-
     const gradientId = `grad-${color}-${master ? 'master' : 'child'}`;
     const [startColor, endColor] = colors[color] || colors.blue;
-
     return (
         <div className={cn("relative flex flex-col items-center gap-3", master ? "scale-105" : "")}>
             <div className={cn("relative flex items-center justify-center", sizeClass)}>
@@ -80,7 +75,6 @@ export const CircularProgress = memo(function CircularProgress({
         </div>
     );
 });
-
 export const SegmentedProgress = memo(function SegmentedProgress({ candValue, jdValue, label, unit = "YRS" }: { candValue: number; jdValue: number; label: string; unit?: string }) {
     const totalBlocks = Math.max(candValue, jdValue, 8);
     return (
@@ -106,11 +100,9 @@ export const SegmentedProgress = memo(function SegmentedProgress({ candValue, jd
         </div>
     );
 });
-
 export const CommunicationDonutChart = memo(function CommunicationDonutChart({ metrics }: { metrics: { label: string; value: number; color: string }[] }) {
     const [hovered, setHovered] = useState<number | null>(null);
     const [animProgress, setAnimProgress] = useState(0);
-
     useEffect(() => {
         let start: number | null = null;
         const duration = 1200;
@@ -124,23 +116,19 @@ export const CommunicationDonutChart = memo(function CommunicationDonutChart({ m
         const raf = requestAnimationFrame(step);
         return () => cancelAnimationFrame(raf);
     }, []);
-
     const size = 220;
     const cx = size / 2;
     const cy = size / 2;
     const R = 80;
     const r = 52;
     const gap = 3;
-
     const total = metrics.reduce((s, m) => s + m.value, 0);
     const avg = Math.round(metrics.reduce((s, m) => s + m.value, 0) / metrics.length);
-
     const toRad = (deg: number) => (deg * Math.PI) / 180;
     const pt = (rad: number, radius: number) => ({
         x: cx + radius * Math.cos(rad),
         y: cy + radius * Math.sin(rad),
     });
-
     const slices = metrics.map((m, index) => {
         const cursor = metrics
             .slice(0, index)
@@ -148,16 +136,13 @@ export const CommunicationDonutChart = memo(function CommunicationDonutChart({ m
         const sliceDeg = (m.value / total) * 360 - gap;
         const startDeg = cursor + gap / 2;
         const endDeg = startDeg + sliceDeg * animProgress;
-
         const startRad = toRad(startDeg);
         const endRad = toRad(endDeg);
         const largeArc = sliceDeg * animProgress > 180 ? 1 : 0;
-
         const o1 = pt(startRad, R);
         const o2 = pt(endRad, R);
         const i1 = pt(endRad, r);
         const i2 = pt(startRad, r);
-
         const path = [
             `M ${o1.x} ${o1.y}`,
             `A ${R} ${R} 0 ${largeArc} 1 ${o2.x} ${o2.y}`,
@@ -165,16 +150,12 @@ export const CommunicationDonutChart = memo(function CommunicationDonutChart({ m
             `A ${r} ${r} 0 ${largeArc} 0 ${i2.x} ${i2.y}`,
             `Z`,
         ].join(' ');
-
         const midRad = toRad(startDeg + (sliceDeg * animProgress) / 2);
         const labelR = R + 14;
         const labelPt = pt(midRad, labelR);
-
         return { path, color: m.color, label: m.label, value: m.value, labelPt, midRad };
     });
-
     const active = hovered !== null ? metrics[hovered] : null;
-
     return (
         <div className="grid w-full grid-cols-1 items-start gap-5 py-1 sm:grid-cols-[min(220px,42vw)_minmax(0,1fr)] sm:items-center sm:gap-6 lg:grid-cols-[220px_1fr] lg:gap-8">
             <div

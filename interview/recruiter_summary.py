@@ -1,28 +1,20 @@
 """
 Recruiter-facing summary builder.
-
 Converts the finalized TrustState + answer_scores into a clean,
 human-readable summary object for the dashboard/DB.
-
 No LLM calls. Pure aggregation from existing session data.
 """
 from interview.session_state import TrustState, INTEGRITY_BAND, QUALITY_BAND
-
-
 def _safe_int(value, default: int = 0) -> int:
     try:
         return int(value or default)
     except (TypeError, ValueError):
         return default
-
-
 def _safe_float(value, default: float = 0.0) -> float:
     try:
         return float(value if value is not None else default)
     except (TypeError, ValueError):
         return default
-
-
 # -- Recommendation thresholds -------------------------------------------------
 def build_recruiter_summary(
     trust_state: TrustState,
@@ -34,7 +26,6 @@ def build_recruiter_summary(
 ) -> dict:
     """
     Build recruiter-facing summary from finalized trust state.
-
     Returns a dict suitable for JSON serialization and DB storage.
     """
     ts = trust_state
@@ -56,7 +47,6 @@ def build_recruiter_summary(
         )
     )
     suspicion_score = composite_risk
-
     # -- Strengths ----------------------------------------------------------
     strengths = []
     if buckets["intelligence_quality"] >= 0.70:
@@ -72,7 +62,6 @@ def build_recruiter_summary(
         strengths.append("Maintained answer quality under follow-up pressure.")
     if "concrete_example_after_evasion" in recovery_factors:
         strengths.append("Recovered from initial vagueness with a real, specific example.")
-
     # -- Concerns ----------------------------------------------------------
     concerns = []
     if "ownership_ambiguity" in risk_factors:
@@ -89,10 +78,8 @@ def build_recruiter_summary(
         concerns.append("Answer quality declined sharply across the session.")
     if suspicion_score >= 50:
         concerns.append(f"Proctoring risk score elevated ({suspicion_score}/100).")
-
     # -- Authenticity confidence ---------------------------------------------
     authenticity_confidence = _authenticity_label(score, integrity, suspicion_score)
-
     # -- Final recommendation ------------------------------------------------
     recommendation, recommendation_reason = _recommendation(
         score=score,
@@ -101,14 +88,12 @@ def build_recruiter_summary(
         trend=trend,
         suspicion=suspicion_score,
     )
-
     # -- Quality averages from answer_scores --------------------------------
     scored_answers = [s for s in answer_scores if not s.get("is_warmup")]
     n = max(len(scored_answers), 1)
     avg_depth = sum(_safe_float(s.get("depth"), 5.0) for s in scored_answers) / n
     avg_specificity = sum(_safe_float(s.get("specificity"), 5.0) for s in scored_answers) / n
     avg_overall = sum(_safe_float(s.get("overall"), 5.0) for s in scored_answers) / n
-
     return {
         "candidate": candidate_name,
         "role": job_title,
@@ -142,10 +127,7 @@ def build_recruiter_summary(
             "composite": composite_risk,
         },
     }
-
-
 # -- Internal label helpers ----------------------------------------------------
-
 def _authenticity_label(score: float, integrity: str, suspicion: int) -> str:
     if integrity == INTEGRITY_BAND.CRITICAL or suspicion >= 60:
         return "low"
@@ -154,8 +136,6 @@ def _authenticity_label(score: float, integrity: str, suspicion: int) -> str:
     if score >= 0.70 and integrity in (INTEGRITY_BAND.HIGH, INTEGRITY_BAND.MEDIUM):
         return "high"
     return "moderate"
-
-
 def _recommendation(
     score: float,
     integrity: str,
@@ -164,26 +144,21 @@ def _recommendation(
     suspicion: int,
 ) -> tuple[str, str]:
     """Returns (recommendation_label, reason_string)."""
-
     # Hard disqualifiers
     if integrity == INTEGRITY_BAND.CRITICAL or suspicion >= 70:
         return ("DO_NOT_ADVANCE", "Integrity signals too severe to proceed without manual review.")
     if quality == QUALITY_BAND.POOR and trend in ("declining", "collapsing"):
         return ("DO_NOT_ADVANCE", "Answer quality stayed poor and declined during the interview.")
-
     # Strong pass
     if score >= 0.72 and integrity in (INTEGRITY_BAND.HIGH, INTEGRITY_BAND.MEDIUM) and trend in ("stable", "improving"):
         return ("ADVANCE", "Strong answer quality, consistent integrity signals, positive or stable trend.")
-
     # Marginal pass with caveats
     if score >= 0.58 and integrity != INTEGRITY_BAND.CRITICAL:
         if trend == "improving":
             return ("ADVANCE_WITH_NOTE", "Adequate quality with improving trajectory - worth advancing with awareness of early vagueness.")
         return ("ADVANCE_WITH_NOTE", "Adequate performance but some concerns noted - advance with follow-up verification recommended.")
-
     # Weak
     if score >= 0.42:
         return ("REVIEW_MANUALLY", "Mixed signals - requires manual review of transcript before decision.")
-
     # Poor
     return ("DO_NOT_ADVANCE", "Insufficient answer quality and/or integrity concerns across the session.")

@@ -10,16 +10,13 @@ export interface ScreeningCriteria {
     // Backward compatibility for older saved drives.
     evaluationInstructions?: string;
 }
-
 export interface DriveScreeningSettings {
     threshold: number;
     criteria: ScreeningCriteria;
 }
-
 function isPlainObject(value: unknown): value is Record<string, any> {
     return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
-
 function parseMaybeJson(value: unknown): Record<string, any> {
     if (isPlainObject(value)) return value;
     if (typeof value !== "string") return {};
@@ -30,7 +27,6 @@ function parseMaybeJson(value: unknown): Record<string, any> {
         return {};
     }
 }
-
 function normalizeSkills(input: unknown) {
     const skills = isPlainObject(input) ? input : {};
     const mustHave = Array.isArray(skills.mustHave) ? skills.mustHave : Array.isArray(skills.required) ? skills.required : [];
@@ -50,7 +46,6 @@ function normalizeSkills(input: unknown) {
             .filter((item) => item.name),
     };
 }
-
 function normalizeCustomChecks(input: unknown) {
     if (!Array.isArray(input)) return [];
     return input
@@ -60,7 +55,6 @@ function normalizeCustomChecks(input: unknown) {
         }))
         .filter((item) => item.text);
 }
-
 function unwrapScreeningCriteriaSource(criteria: Record<string, any>): Record<string, any> {
     // The frontend saves a wrapper object that looks like:
     // { threshold, criteria: { skills, customChecks, ... } }
@@ -70,7 +64,6 @@ function unwrapScreeningCriteriaSource(criteria: Record<string, any>): Record<st
     }
     return criteria;
 }
-
 export function sanitizeScreeningCriteria(criteria: ScreeningCriteria | Record<string, any> | null | undefined): ScreeningCriteria {
     const source = unwrapScreeningCriteriaSource(isPlainObject(criteria) ? criteria : {});
     const mustHave = normalizeSkills(source.skills).mustHave || [];
@@ -84,7 +77,6 @@ export function sanitizeScreeningCriteria(criteria: ScreeningCriteria | Record<s
         evaluationInstructions: typeof source.evaluationInstructions === "string" ? source.evaluationInstructions : undefined,
     };
 }
-
 export function parseDriveScreeningSettings(
     screeningCriteria: unknown,
     threshold: number
@@ -95,36 +87,28 @@ export function parseDriveScreeningSettings(
         criteria: parsed,
     };
 }
-
 export function getRequiredSkillsText(criteria: ScreeningCriteria): string[] {
     return (criteria.skills?.mustHave || criteria.skills?.required || []).map((s) => s.name).filter(Boolean);
 }
-
 export function getNiceToHaveSkillsText(criteria: ScreeningCriteria): string[] {
     return (criteria.skills?.optional || criteria.skills?.niceToHave || []).map((s) => s.name).filter(Boolean);
 }
-
 export function getCustomChecksText(criteria: ScreeningCriteria): string[] {
     return (criteria.customChecks || []).map((item) => item.text).filter(Boolean);
 }
-
 export function criteriaToText(criteria: ScreeningCriteria): string {
     const parts: string[] = [];
-
     const required = getRequiredSkillsText(criteria);
     if (required.length > 0) {
         parts.push(`Must-have skills: ${required.join(", ")}`);
     }
-
     const niceToHave = getNiceToHaveSkillsText(criteria);
     if (niceToHave.length > 0) {
         parts.push(`Optional skills: ${niceToHave.join(", ")}`);
     }
-
     const customChecks = getCustomChecksText(criteria);
     if (customChecks.length > 0) {
         parts.push(`Custom checks: ${customChecks.join(", ")}`);
     }
-
     return parts.join(" • ");
 }

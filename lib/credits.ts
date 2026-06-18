@@ -8,16 +8,12 @@
  * Existing callers still import this module as "credits", so we keep that filename
  * while exposing interview and usage status helpers.
  */
-
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-
 export const INTERVIEW_QUOTA_THRESHOLD_SECONDS = 5 * 60;
 export const ORG_STATUS_CONTROL_MANUAL = "MANUAL";
 export const ORG_STATUS_CONTROL_QUOTA = "QUOTA";
-
 export type OrgStatusControl = typeof ORG_STATUS_CONTROL_MANUAL | typeof ORG_STATUS_CONTROL_QUOTA;
-
 export interface BillingStatus {
     interviewQuotaTotal: number;
     interviewQuotaUsed: number;
@@ -26,26 +22,20 @@ export interface BillingStatus {
     minutesUsed: number;
     hasSufficientInterviews: boolean;
 }
-
 export type CreditStatus = BillingStatus;
-
 export function normalizeOrgStatusControl(value: unknown): OrgStatusControl {
     return String(value || "").trim().toUpperCase() === ORG_STATUS_CONTROL_MANUAL
         ? ORG_STATUS_CONTROL_MANUAL
         : ORG_STATUS_CONTROL_QUOTA;
 }
-
-
 export function getInterviewQuotaUnits(durationSeconds: number): number {
     if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
         return 0;
     }
-
     // Every completed interview consumes one quota credit.
     // We still keep the duration guard so incomplete/empty sessions do not deduct quota.
     return 1;
 }
-
 export async function getOrgBillingStatus(orgId: string): Promise<BillingStatus> {
     const org = await prisma.$queryRaw<Array<{
         interviewQuotaTotal: number | null;
@@ -62,12 +52,10 @@ export async function getOrgBillingStatus(orgId: string): Promise<BillingStatus>
             LIMIT 1
         `
     );
-
     const interviewQuotaTotal = org[0]?.interviewQuotaTotal ?? 0;
     const interviewQuotaUsed = org[0]?.interviewQuotaUsed ?? 0;
     const interviewQuotaRemaining = Math.max(0, interviewQuotaTotal - interviewQuotaUsed);
     const creditsUsed = Number(org[0]?.creditsUsed ?? 0);
-
     return {
         interviewQuotaTotal,
         interviewQuotaUsed,
@@ -77,11 +65,9 @@ export async function getOrgBillingStatus(orgId: string): Promise<BillingStatus>
         hasSufficientInterviews: interviewQuotaRemaining > 0,
     };
 }
-
 export async function getOrgCreditStatus(orgId: string): Promise<CreditStatus> {
     return getOrgBillingStatus(orgId);
 }
-
 export async function incrementOrgCreditsUsed(orgId: string, creditsDelta: number): Promise<number> {
     const normalizedDelta = Number.isFinite(creditsDelta) ? Math.max(0, creditsDelta) : 0;
     if (normalizedDelta <= 0) {
@@ -91,7 +77,6 @@ export async function incrementOrgCreditsUsed(orgId: string, creditsDelta: numbe
         });
         return Number(current?.creditsUsed ?? 0);
     }
-
     const updated = await prisma.$queryRaw<Array<{ creditsUsed: number | null }>>(
         Prisma.sql`
             UPDATE "Organization"
@@ -100,10 +85,8 @@ export async function incrementOrgCreditsUsed(orgId: string, creditsDelta: numbe
             RETURNING "creditsUsed"
         `
     );
-
     return Number(updated[0]?.creditsUsed ?? 0);
 }
-
 export async function syncOrgStatusWithInterviewQuota(orgId: string): Promise<string | null> {
     const rows = await prisma.$queryRaw<Array<{
         status: string | null;
@@ -118,23 +101,18 @@ export async function syncOrgStatusWithInterviewQuota(orgId: string): Promise<st
             LIMIT 1
         `
     );
-
     const current = rows[0];
     if (!current) {
         return null;
     }
-
     const interviewQuotaTotal = Number(current.interviewQuotaTotal || 0);
     const interviewQuotaUsed = Number(current.interviewQuotaUsed || 0);
     const interviewQuotaRemaining = Math.max(0, interviewQuotaTotal - interviewQuotaUsed);
     const currentStatus = String(current.status || "ACTIVE").toUpperCase();
-
     if (currentStatus === "CLOSED") {
         return "CLOSED";
     }
-
     const statusControl = normalizeOrgStatusControl(current.statusControl);
-
     if (statusControl === ORG_STATUS_CONTROL_MANUAL) {
         if (currentStatus !== "SUSPENDED") {
             await prisma.organization.update({
@@ -144,7 +122,6 @@ export async function syncOrgStatusWithInterviewQuota(orgId: string): Promise<st
         }
         return "SUSPENDED";
     }
-
     if (interviewQuotaTotal > 0 && interviewQuotaRemaining <= 0 && currentStatus !== "SUSPENDED") {
         await prisma.organization.update({
             where: { id: orgId },
@@ -152,7 +129,6 @@ export async function syncOrgStatusWithInterviewQuota(orgId: string): Promise<st
         });
         return "SUSPENDED";
     }
-
     if (interviewQuotaTotal > 0 && interviewQuotaRemaining > 0 && currentStatus !== "ACTIVE") {
         await prisma.organization.update({
             where: { id: orgId },
@@ -160,10 +136,8 @@ export async function syncOrgStatusWithInterviewQuota(orgId: string): Promise<st
         });
         return "ACTIVE";
     }
-
     return currentStatus;
 }
-
 export async function getEffectiveOrgStatus(orgId: string): Promise<string | null> {
     // ⚡ Single query — fetch all needed columns in one round-trip
     const rows = await prisma.$queryRaw<Array<{
@@ -179,45 +153,34 @@ export async function getEffectiveOrgStatus(orgId: string): Promise<string | nul
             LIMIT 1
         `
     );
-
     const current = rows[0];
     if (!current) return null;
-
     const statusControl = normalizeOrgStatusControl(current.statusControl);
     const currentStatus = String(current.status || "ACTIVE").toUpperCase();
-
     if (currentStatus === "CLOSED") {
         return "CLOSED";
     }
-
     if (statusControl === ORG_STATUS_CONTROL_MANUAL) {
         return "SUSPENDED";
     }
-
     const interviewQuotaTotal = Number(current.interviewQuotaTotal || 0);
     const interviewQuotaUsed = Number(current.interviewQuotaUsed || 0);
     const interviewQuotaRemaining = Math.max(0, interviewQuotaTotal - interviewQuotaUsed);
-
     if (interviewQuotaTotal > 0 && interviewQuotaRemaining <= 0) {
         return "SUSPENDED";
     }
-
     if (interviewQuotaTotal > 0 && interviewQuotaRemaining > 0) {
         return "ACTIVE";
     }
-
     return String(current.status || "ACTIVE").toUpperCase();
 }
-
 async function autoSuspendOrgIfQuotaExhausted(orgId: string, interviewQuotaRemaining: number) {
     if (interviewQuotaRemaining > 0) {
         return false;
     }
-
     const nextStatus = await syncOrgStatusWithInterviewQuota(orgId);
     return nextStatus === "SUSPENDED";
 }
-
 /**
  * Deduct one interview from the org's quota at interview completion.
  */
@@ -239,13 +202,11 @@ export async function deductInterviewQuota(orgId: string, count = 1): Promise<{
     const interviewQuotaTotal = updated[0]?.interviewQuotaTotal ?? 0;
     const interviewQuotaUsed = updated[0]?.interviewQuotaUsed ?? 0;
     const interviewQuotaRemaining = Math.max(0, interviewQuotaTotal - interviewQuotaUsed);
-
     try {
         await autoSuspendOrgIfQuotaExhausted(orgId, interviewQuotaRemaining);
     } catch (error) {
         console.error("[credits] Failed to auto-suspend exhausted org:", error);
     }
-
     return {
         deducted: count,
         interviewQuotaRemaining,

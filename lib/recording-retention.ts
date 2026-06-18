@@ -7,12 +7,9 @@ import {
   parseJsonRecord,
   type RecordingState,
 } from "@/lib/recording-state";
-
 export const RECORDING_RETENTION_QUEUE = "recording-retention-cleanup";
 export const RECORDING_RETENTION_SWEEP_JOB = "recording-retention-sweep";
-
 type JsonRecord = Record<string, any>;
-
 function parseJsonSafe<T = JsonRecord>(raw: unknown, fallback: T): T {
   try {
     if (!raw) return fallback;
@@ -23,14 +20,12 @@ function parseJsonSafe<T = JsonRecord>(raw: unknown, fallback: T): T {
     return fallback;
   }
 }
-
 export function normalizeRecordingRetentionDays(raw: unknown): number | null {
   if (raw === undefined || raw === null || raw === "") return null;
   const value = Number(raw);
   if (!Number.isFinite(value)) return null;
   return Math.max(1, Math.round(value));
 }
-
 export function computeRecordingRetentionDueAt(completedAt: Date | string | null | undefined, retentionDays: unknown) {
   const base = completedAt instanceof Date ? completedAt : completedAt ? new Date(completedAt) : null;
   if (!base || !Number.isFinite(base.getTime())) return null;
@@ -38,11 +33,9 @@ export function computeRecordingRetentionDueAt(completedAt: Date | string | null
   if (days === null) return null;
   return new Date(base.getTime() + days * 24 * 60 * 60 * 1000);
 }
-
 export function getInterviewRecordingBucket() {
   return process.env.R2_INTERVIEW_BUCKET || "interview";
 }
-
 export function extractRecordingKey(params: {
   recordingUrl?: string | null;
   recordingKey?: string | null;
@@ -60,14 +53,12 @@ export function extractRecordingKey(params: {
     || ""
   ).trim();
   if (manifestKey) return manifestKey;
-
   const manifestUrl = String(manifest.recordingUrl || "").trim();
   const recordingUrl = String(recording.url || recordingManifest.recordingUrl || "").trim();
   const url = String(params.recordingUrl || recordingUrl || manifestUrl).trim();
   if (!url) return null;
   return getKeyFromUrl(url);
 }
-
 export async function getOrgRecordingSettings(orgId: string) {
   const org = await (prisma as any).organization.findUnique({
     where: { id: orgId },
@@ -76,16 +67,13 @@ export async function getOrgRecordingSettings(orgId: string) {
       recordingRetentionDays: true,
     },
   });
-
   const recordingRetentionDays = normalizeRecordingRetentionDays(org?.recordingRetentionDays);
   const recordingEnabled = org?.recordingEnabled === true && recordingRetentionDays !== null;
-
   return {
     recordingEnabled,
     recordingRetentionDays,
   };
 }
-
 function isIgnorableDeleteError(error: unknown) {
   const code = String((error as any)?.name || (error as any)?.Code || (error as any)?.code || "").toLowerCase();
   return (
@@ -95,11 +83,9 @@ function isIgnorableDeleteError(error: unknown) {
     || code.includes("404")
   );
 }
-
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
-
 export async function deleteRecordingObjectWithRetry(params: {
   bucket?: string;
   key: string;
@@ -111,7 +97,6 @@ export async function deleteRecordingObjectWithRetry(params: {
   const attempts = Math.max(1, Math.round(params.attempts || 3));
   const baseDelayMs = Math.max(0, Math.round(params.baseDelayMs || 1000));
   let lastError: unknown = null;
-
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
       await deleteObjectStrict(bucket, key);
@@ -126,7 +111,6 @@ export async function deleteRecordingObjectWithRetry(params: {
       }
     }
   }
-
   return {
     success: false,
     attempts,
@@ -135,7 +119,6 @@ export async function deleteRecordingObjectWithRetry(params: {
     lastError: lastError instanceof Error ? lastError.message : String(lastError || "Unknown delete error"),
   };
 }
-
 export async function deleteRecordingAsset(params: {
   recordingUrl?: string | null;
   recordingKey?: string | null;
@@ -151,7 +134,6 @@ export async function deleteRecordingAsset(params: {
     recordingManifest: params.recordingManifest,
     recording: params.recording,
   });
-
   if (!key) {
     return {
       success: true,
@@ -161,7 +143,6 @@ export async function deleteRecordingAsset(params: {
       lastError: null as string | null,
     };
   }
-
   return deleteRecordingObjectWithRetry({
     bucket: params.bucket,
     key,
@@ -169,7 +150,6 @@ export async function deleteRecordingAsset(params: {
     baseDelayMs: params.baseDelayMs,
   });
 }
-
 export async function scheduleRecordingRetentionDeletion(params: {
   applicationId: string;
   completedAt: Date | string | null | undefined;
@@ -183,12 +163,10 @@ export async function scheduleRecordingRetentionDeletion(params: {
   if (!dueAt) {
     return { scheduled: false, dueAt: null as Date | null };
   }
-
   const normalizedRetentionDays = normalizeRecordingRetentionDays(params.retentionDays);
   if (normalizedRetentionDays === null) {
     return { scheduled: false, dueAt: null as Date | null };
   }
-
   const interview = await (prisma as any).interview.findUnique({
     where: { applicationId: params.applicationId },
     select: { recording: true },
@@ -210,7 +188,6 @@ export async function scheduleRecordingRetentionDeletion(params: {
     },
   };
   const nextRecording = mergeRecordingState(interview?.recording, recordingPatch);
-
   await (prisma as any).interview.update({
     where: { applicationId: params.applicationId },
     data: {
@@ -222,6 +199,5 @@ export async function scheduleRecordingRetentionDeletion(params: {
       error
     );
   });
-
   return { scheduled: false, stored: true, dueAt };
 }

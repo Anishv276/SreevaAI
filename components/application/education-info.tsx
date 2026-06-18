@@ -1,5 +1,4 @@
 "use client";
-
 import { useState } from "react";
 import { Plus, Trash2, Calendar, GraduationCap, School, BookOpen, ChevronDown, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -7,7 +6,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { PremiumMonthPicker } from "./premium-date-picker";
-
 interface EducationItem {
     id: string;
     institution: string;
@@ -17,12 +15,10 @@ interface EducationItem {
     endDate: string;
     grade: string;
 }
-
 interface EducationInfoProps {
     value: EducationItem[];
     onChange: (value: EducationItem[]) => void;
 }
-
 export function EducationInfo({ value, onChange }: EducationInfoProps) {
     const addEducation = () => {
         const newItem: EducationItem = {
@@ -36,17 +32,13 @@ export function EducationInfo({ value, onChange }: EducationInfoProps) {
         };
         onChange([...value, newItem]);
     };
-
     const removeEducation = (id: string) => {
         onChange(value.filter(item => item.id !== id));
     };
-
     const updateEducation = (id: string, updates: Partial<EducationItem>) => {
         onChange(value.map(item => item.id === id ? { ...item, ...updates } : item));
     };
-
     const inputClass = "h-12 rounded-2xl border-gray-100 bg-gray-50/30 px-4 text-sm font-medium transition-all focus:bg-white focus:border-[#F97316] focus:ring-4 focus:ring-orange-500/10 placeholder:text-gray-300";
-
     return (
         <div className="space-y-10 animate-in-fade">
             <div className="space-y-6">
@@ -72,7 +64,6 @@ export function EducationInfo({ value, onChange }: EducationInfoProps) {
                                 >
                                     <Trash2 className="h-5 w-5" />
                                 </button>
-                                
                                 <div className="grid gap-8 md:grid-cols-2 mt-2">
                                     <div className="space-y-3">
                                         <Label className="text-[11px] font-black text-gray-500 uppercase tracking-widest ml-1">Institution / School *</Label>
@@ -99,7 +90,6 @@ export function EducationInfo({ value, onChange }: EducationInfoProps) {
                                         </div>
                                     </div>
                                 </div>
-
                                 <div className="grid gap-8 md:grid-cols-2 mt-8">
                                     <div className="space-y-3">
                                         <Label className="text-[11px] font-black text-gray-500 uppercase tracking-widest ml-1">Field of Study *</Label>
@@ -123,7 +113,6 @@ export function EducationInfo({ value, onChange }: EducationInfoProps) {
                                         />
                                     </div>
                                 </div>
-
                                 <div className="grid gap-8 md:grid-cols-2 mt-8">
                                     <PremiumMonthPicker 
                                         label="Start Month *"
@@ -140,7 +129,6 @@ export function EducationInfo({ value, onChange }: EducationInfoProps) {
                                 </div>
                             </div>
                         ))}
-                        
                         <Button 
                             variant="ghost" 
                             onClick={addEducation}
@@ -154,4 +142,3 @@ export function EducationInfo({ value, onChange }: EducationInfoProps) {
         </div>
     );
 }
-

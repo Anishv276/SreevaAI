@@ -1,9 +1,7 @@
 "use client";
-
 import { X, ShieldAlert, Loader2, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-
 interface ActionConfirmModalProps {
     isOpen: boolean;
     onClose: () => void;
@@ -15,7 +13,6 @@ interface ActionConfirmModalProps {
     variant?: "danger" | "warning" | "info";
     isLoading?: boolean;
 }
-
 export function ActionConfirmModal({
     isOpen,
     onClose,
@@ -28,9 +25,7 @@ export function ActionConfirmModal({
     isLoading: externalLoading = false,
 }: ActionConfirmModalProps) {
     const [isSubmitting, setIsSubmitting] = useState(false);
-
     if (!isOpen) return null;
-
     const handleConfirm = async () => {
         setIsSubmitting(true);
         try {
@@ -41,9 +36,7 @@ export function ActionConfirmModal({
             setIsSubmitting(false);
         }
     };
-
     const isLoading = externalLoading || isSubmitting;
-
     const variantStyles = {
         danger: {
             icon: Trash2,
@@ -61,10 +54,8 @@ export function ActionConfirmModal({
             buttonBg: "bg-gray-900 hover:bg-blue-600",
         },
     };
-
     const style = variantStyles[variant];
     const Icon = style.icon;
-
     return (
         <div 
             className="fixed inset-0 z-[1000] backdrop-blur-md bg-white/50 flex items-center justify-center p-6 animate-in fade-in duration-200"
@@ -83,18 +74,15 @@ export function ActionConfirmModal({
                             <X className="h-4 w-4" />
                         </button>
                     )}
-                    
                     <div className="flex justify-center">
                         <div className={cn("h-16 w-16 rounded-2xl flex items-center justify-center", style.iconBg)}>
                             <Icon className="h-8 w-8" />
                         </div>
                     </div>
-                    
                     <div className="space-y-2">
                         <h2 className="text-2xl font-extrabold text-gray-900 tracking-tight">{title}</h2>
                         <p className="text-sm font-medium text-gray-500">{description}</p>
                     </div>
-                    
                     <div className="space-y-3 pt-2">
                         <button
                             onClick={handleConfirm}
@@ -106,7 +94,6 @@ export function ActionConfirmModal({
                         >
                             {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : confirmText}
                         </button>
-                        
                         {!isLoading && (
                             <button
                                 onClick={onClose}
@@ -121,4 +108,3 @@ export function ActionConfirmModal({
         </div>
     );
 }
-

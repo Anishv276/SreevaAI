@@ -1,5 +1,4 @@
 "use client";
-
 import { useEffect, useState, use, useRef, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Building2, User, Mail, ShieldCheck, Globe, RefreshCw, Play, Pause, MapPin as MapPinIcon, ChevronRight, Coins, ChevronDown, Loader2, Shield, Layers, AudioLines, Search, Lock, Clock, Eye, EyeOff } from "lucide-react";
@@ -12,7 +11,6 @@ import { getProctoringSignalsForPlan, normalizeProctoringSignals } from "@/lib/p
 import { cn } from "@/lib/utils";
 import { Steps } from "@/components/create-drive/steps";
 import { formatOrgLimitValue } from "@/lib/org-limits";
-
 // UI Components
 function PremiumInput({ label, icon: Icon, error, required = true, type = "text", showPasswordToggle = false, ...props }: any) {
     const [showPassword, setShowPassword] = useState(false);
@@ -49,7 +47,6 @@ function PremiumInput({ label, icon: Icon, error, required = true, type = "text"
         </div>
     );
 }
-
 function SectionHeader({ title }: { title: string }) {
     return (
         <div className="flex items-center gap-3 mb-6">
@@ -58,7 +55,6 @@ function SectionHeader({ title }: { title: string }) {
         </div>
     );
 }
-
 function LimitControl({ value, onChange, label }: { value: string, onChange: (val: string) => void, label: string }) {
     const isUnlimited = String(value).toLowerCase() === "unlimited" || Number(value) === 0;
     const [localValue, setLocalValue] = useState(isUnlimited ? "" : String(value));
@@ -76,7 +72,6 @@ function LimitControl({ value, onChange, label }: { value: string, onChange: (va
         </div>
     );
 }
-
 export default function EditOrgPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params);
     const router = useRouter();
@@ -100,7 +95,6 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
         interviewQuotaUsed: 0,
         interviewQuotaRemaining: 0,
     });
-
     const [form, setForm] = useState({
         name: "", slug: "", plan: DEFAULT_ORG_PLAN,
         maxActiveDrives: "Unlimited",
@@ -111,7 +105,6 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
         recordingEnabled: false,
         recordingRetentionDays: "",
     });
-
     const stopCurrentPreview = () => {
         if (activeAudio) {
             activeAudio.pause();
@@ -128,7 +121,6 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
         audioContextRef.current = null;
         setPlayingVoiceId(null);
     };
-
     const playSample = async (voiceId: string) => {
         if (playingVoiceId === voiceId) { stopCurrentPreview(); return; }
         setPreviewLoading(true);
@@ -171,7 +163,6 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
         } catch (err) { toast.error("Preview failed."); }
         finally { setPreviewLoading(false); }
     };
-
     useEffect(() => {
         const loadVoices = async () => {
             try {
@@ -186,7 +177,6 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
             }
         };
         void loadVoices();
-
         const fetchOrg = async () => {
             try {
                 const res = await fetch(`/api/super-admin/orgs/${id}`);
@@ -205,7 +195,6 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                     allowedVoices: Array.isArray(data.allowedVoices) ? data.allowedVoices : [],
                     recordingEnabled: data.recordingEnabled === true && data.recordingRetentionDays != null,
                     recordingRetentionDays: data.recordingRetentionDays == null ? "" : String(data.recordingRetentionDays),
-
                 });
                 setBillingSnapshot({
                     interviewQuotaTotal: Number(data.interviewQuotaTotal || 0),
@@ -218,7 +207,6 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
         };
         fetchOrg();
     }, [id]);
-
     const handleSubmit = async (e: FormEvent) => {
         e.preventDefault();
         if (form.recordingEnabled) {
@@ -245,16 +233,13 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
         } catch (err: any) { toast.error(err.message); }
         finally { setSaving(false); }
     };
-
     if (loading) { return <div className="p-20 text-center min-h-screen flex items-center justify-center"><RefreshCw className="h-8 w-8 text-[#F97316] animate-spin opacity-20" /></div>; }
-
     return (
         <div className="max-w-4xl mx-auto py-4 space-y-4 px-4 sm:px-6 lg:px-0">
             <button onClick={() => router.back()} className="mb-6 flex items-center gap-2 text-sm font-bold text-gray-400 hover:text-gray-600 transition-colors">
                 <ArrowLeft className="h-4 w-4" />
                 Back to Organizations
             </button>
-
             <div className="mb-8 group">
                 <div className="flex items-center gap-4 mb-3">
                     <div className="h-12 w-1.5 bg-gradient-to-b from-[#F97316] to-orange-400 rounded-full shadow-[0_0_12px_rgba(249,115,22,0.4)] transition-all duration-300 group-hover:h-14" />
@@ -268,7 +253,6 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                     </div>
                 </div>
             </div>
-
             <form onSubmit={handleSubmit} className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <div
                     className="rounded-2xl bg-white transition-all duration-300 relative"
@@ -290,7 +274,6 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                         </div>
                     </div>
                 )}
-
                 {true && (
                     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
                         <SectionHeader title="Master Administrator" />
@@ -318,7 +301,6 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                         </div>
                     </div>
                 )}
-
                 {true && (
                     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
                         <SectionHeader title="AI Engine" />
@@ -376,7 +358,6 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                         </div>
                     </div>
                 )}
-
                 {true && (
                     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
                         <SectionHeader title="Billing & Quotas" />
@@ -429,7 +410,6 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                         </div>
                     </div>
                 )}
-
                 {true && (
                     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
                         <SectionHeader title="Recording Retention" />
@@ -492,8 +472,6 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                         </div>
                     </div>
                 )}
-
-
                 {true && (
                     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
                         <SectionHeader title="Security & Network Plan" />
@@ -524,7 +502,6 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                                 />
                             </div>
                         </div>
-
                         <div className="pt-12 border-t border-gray-100 flex items-center justify-end">
                             <button type="submit" disabled={saving} className="h-14 px-16 rounded-lg bg-[#F97316] text-white font-black text-xs uppercase tracking-widest shadow-xl shadow-orange-200 hover:bg-orange-700 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-3">
                                 {saving ? <Loader2 className="h-5 w-5 animate-spin" /> : <Shield className="h-5 w-5" />} {saving ? "Saving..." : "Update"}

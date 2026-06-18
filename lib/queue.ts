@@ -1,6 +1,5 @@
 import redisConnection from "./redis";
 import { Queue } from 'bullmq';
-
 /**
  * QUEUE DEFINITIONS
  * All queues share this cleanup policy:
@@ -9,36 +8,30 @@ import { Queue } from 'bullmq';
  *
  * Nothing ever accumulates — no manual cleanup needed.
  */
-
 const defaultJobOptions = {
   removeOnComplete: { age: 60 },   // completed jobs gone after 60s
   removeOnFail:    { age: 60 },    // failed jobs gone after 60s — frees slot for next job
 };
-
 // 1. Resume PDF text extraction and AI screening
 export const resumeQueue = new Queue('resume-processing', {
   connection: redisConnection,
   defaultJobOptions,
 });
-
 // 2. Transactional emails (invites, reports)
 export const emailQueue = new Queue('email-delivery', {
   connection: redisConnection,
   defaultJobOptions,
 });
-
 // 3. Interview invitation delivery (delayed sends)
 export const invitationDeliveryQueue = new Queue('invitation-delivery-queue', {
   connection: redisConnection,
   defaultJobOptions,
 });
-
 // 4. Async interview recording / transcript persistence
 export const interviewFinalizationQueue = new Queue('interview-finalization', {
   connection: redisConnection,
   defaultJobOptions,
 });
-
 // 5. Proctoring snapshots (direct R2 upload + DB sync)
 export const interviewSnapshotQueue = new Queue('interview-snapshots', {
   connection: redisConnection,
@@ -49,13 +42,11 @@ export const interviewSnapshotQueue = new Queue('interview-snapshots', {
     removeOnFail:    { age: 60 },
   },
 });
-
 // 6. AI-generated JD PDF uploads to Cloudflare R2
 export const jdUploadQueue = new Queue('jd-upload', {
   connection: redisConnection,
   defaultJobOptions,
 });
-
 // 7. Server-side interview recording finalization (LiveKit egress completion)
 export const interviewRecordingQueue = new Queue('interview-recording', {
   connection: redisConnection,
@@ -66,7 +57,6 @@ export const interviewRecordingQueue = new Queue('interview-recording', {
     removeOnFail:    { age: 60 },
   },
 });
-
 // 8. Recording retention cleanup after the retention window expires
 export const recordingRetentionQueue = new Queue('recording-retention-cleanup', {
   connection: redisConnection,
@@ -77,7 +67,6 @@ export const recordingRetentionQueue = new Queue('recording-retention-cleanup', 
     removeOnFail:    { age: 60 },
   },
 });
-
 // 9. Interview-start transition (PENDING → IN_PROGRESS)
 export const interviewStartQueue = new Queue('interview-start', {
   connection: redisConnection,
@@ -88,5 +77,4 @@ export const interviewStartQueue = new Queue('interview-start', {
     removeOnFail:    { age: 60 },
   },
 });
-
 export default redisConnection;

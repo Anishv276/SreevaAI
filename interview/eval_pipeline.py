@@ -1,33 +1,23 @@
 """
 Evaluation pipeline -- pure scorer, called inline by the agent on every turn.
-
 Responsibility: score the candidate's answer, detect behavioral signals,
 calculate topic saturation, decide PROBE/MOVE_ON.
-
 NOT responsible for: topic selection, directive building, next-topic picking,
 or any agent state mutations. The agent owns all of that.
-
 run_eval_and_build_directive(payload, client) -> EvalResult dict
 """
 from __future__ import annotations
-
 import asyncio
 import re
 import logging
 from typing import Any, Dict, List, Optional
-
 from pydantic import BaseModel, Field
 from openai import AsyncOpenAI
-
 _NO_NEW_QUESTION_CUTOFF_SECONDS: int = 45
-
 from interview.turn_evaluator import run_turn_evaluation
 from interview.agent_scoring import evaluate_answer
 from interview.agent_runtime_support import EVAL_LLM_MODEL
-
 logger = logging.getLogger("interview-agent")
-
-
 # ---------------------------------------------------------------------------
 # Band-aware saturation config
 # ---------------------------------------------------------------------------
@@ -60,36 +50,29 @@ _BAND_SATURATION: dict[str, dict[str, dict]] = {
         "LOW":      {"threshold": 4.0,  "base_credit": 0.9},
     },
 }
-
-
 class TopicState:
     """Single source of truth for per-topic saturation state."""
-
     def __init__(self, topic_name: str, importance: str, updated_turn: int = 0, band: str = "mid"):
         self.topic_name = topic_name
         self.importance = importance
         self.band = band
         self.updated_turn = updated_turn
-
         _band_cfg = _BAND_SATURATION.get(band, _BAND_SATURATION["mid"])
         _importance_cfg = _band_cfg.get(importance, _band_cfg.get("HIGH", {"threshold": 5.5, "base_credit": 0.8}))
         self.saturation_threshold: float = _importance_cfg["threshold"]
         self.base_turn_credit: float = _importance_cfg["base_credit"]
-
         self.saturation_score = 0.0
         self.follow_up_turns = 0
         self.probe_rotation_index = 0  # kept for serialization compat
         self.signals_fired: list[str] = []
         self.is_saturated = False
         self.opened_at_turn = 0
-
         # Dry-topic exit: count consecutive low-yield answers on this topic.
         # A real interviewer abandons a dead topic fast instead of re-asking. When
         # this hits the band cap, eval forces MOVE_ON regardless of the LLM judge.
         self.consecutive_low_yield = 0
         # Fresher: bail after 2 weak turns (breadth-first). Others: 3.
         self.dry_topic_cap = 2 if band == "fresher" else 3
-
         self.progress_check_turns = 3
         self.progress_check_pct = {
             "fresher":    {"CRITICAL": 0.75, "HIGH": 0.80, "MEDIUM": 0.90, "LOW": 0.90},
@@ -97,7 +80,6 @@ class TopicState:
             "experienced":{"CRITICAL": 0.28, "HIGH": 0.30, "MEDIUM": 0.45, "LOW": 0.60},
             "senior":     {"CRITICAL": 0.20, "HIGH": 0.22, "MEDIUM": 0.35, "LOW": 0.50},
         }.get(band, {"CRITICAL": 0.45, "HIGH": 0.45, "MEDIUM": 0.80, "LOW": 0.65}).get(importance, 0.45)
-
     def is_weak_candidate_exit(self) -> bool:
         if self.follow_up_turns < self.progress_check_turns:
             return False
@@ -105,7 +87,6 @@ class TopicState:
         effective_score = max(self.saturation_score, raw_base_accumulated)
         min_expected = self.saturation_threshold * self.progress_check_pct
         return effective_score < min_expected
-
     def add_response_contribution(
         self,
         response_score: float,
@@ -133,14 +114,12 @@ class TopicState:
             self.consecutive_low_yield = 0
         if turn is not None:
             self.updated_turn = turn
-
     def is_dry_topic(self) -> bool:
         """True when the topic has gone dry -- consecutive low-yield answers hit the
         band cap. Forces MOVE_ON so the agent stops re-asking a dead topic."""
         if self.follow_up_turns < self.dry_topic_cap:
             return False
         return self.consecutive_low_yield >= self.dry_topic_cap
-
     def to_dict(self) -> dict:
         return {
             "topic_name": self.topic_name,
@@ -159,7 +138,6 @@ class TopicState:
             "consecutive_low_yield": self.consecutive_low_yield,
             "dry_topic_cap": self.dry_topic_cap,
         }
-
     @classmethod
     def from_dict(cls, state_dict: dict) -> "TopicState":
         """Restore a TopicState from a serialised dict."""
@@ -187,8 +165,6 @@ class TopicState:
         if "progress_check_pct" in state_dict:
             obj.progress_check_pct = float(state_dict["progress_check_pct"])
         return obj
-
-
 class TopicImportanceClassifier:
     @staticmethod
     def classify(topic_source: str, is_anchor: bool) -> str:
@@ -199,8 +175,6 @@ class TopicImportanceClassifier:
         if topic_source == "skill":
             return "MEDIUM"
         return "LOW"
-
-
 def _weighted_score(quality: dict) -> float:
     """Single weighted aggregate of the 4 LLM scores. Used for both saturation
     contribution and depth_signal classification."""
@@ -210,13 +184,9 @@ def _weighted_score(quality: dict) -> float:
         + quality.get("specificity", 0.0) * 0.30
         + quality.get("grounding", 0.0) * 0.15
     )
-
-
 def _score_to_contribution(weighted: float) -> float:
     """Map a weighted score (0-10) to a saturation contribution (0-3.5)."""
     return min(3.5, max(0.0, (weighted - 2.0) / 8.0 * 3.5))
-
-
 class SignalPenaltyCalculator:
     MODIFIERS = {
         "follow_up_collapse": -0.3,
@@ -229,7 +199,6 @@ class SignalPenaltyCalculator:
         "ownership_clarified": +0.3,
         "example_given": +0.3,
     }
-
     @staticmethod
     def calculate_penalties(signal_events: list[dict]) -> float:
         total = 0.0
@@ -238,12 +207,8 @@ class SignalPenaltyCalculator:
             modifier = SignalPenaltyCalculator.MODIFIERS.get(signal_name, 0.0)
             total += modifier
         return total
-
-
 def _normalize_topic_key(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", str(text or "").lower()).strip()
-
-
 # ---------------------------------------------------------------------------
 # Pydantic input schema
 # ---------------------------------------------------------------------------
@@ -277,10 +242,7 @@ class EvaluationPayload(BaseModel):
     topic_depth_history: List[float] = Field(default_factory=list)
     # The actual question Ishita asked -- used for context in scoring
     ai_question_this_turn: str = ""
-
     model_config = {"extra": "allow"}
-
-
 # ---------------------------------------------------------------------------
 # Saturation evaluation
 # ---------------------------------------------------------------------------
@@ -293,21 +255,16 @@ def evaluate_topic_saturation(
 ) -> tuple[bool, str]:
     if not topic_state:
         return False, "no_topic"
-
     weighted = _weighted_score(quality_scores)
     contribution = 0.0 if skip_quality_contribution else _score_to_contribution(weighted)
-
     signal_modifier = SignalPenaltyCalculator.calculate_penalties(signal_events)
     if signal_modifier < 0:
         final_contribution = max(contribution * 0.3, contribution + signal_modifier)
     else:
         final_contribution = contribution + min(signal_modifier, 0.5)
-
     score_before = topic_state.saturation_score
     follow_ups_before = topic_state.follow_up_turns
-
     topic_state.add_response_contribution(final_contribution, 0.0, turn=turn, weighted_quality=weighted)
-
     logger.info(
         "[SAT_CALC] topic=%s | weighted=%.2f contribution=%.2f signal_modifier=%+.2f final_contribution=%.2f",
         topic_state.topic_name, weighted, contribution, signal_modifier, final_contribution,
@@ -318,7 +275,6 @@ def evaluate_topic_saturation(
         score_before, topic_state.saturation_score, topic_state.saturation_score - score_before,
         follow_ups_before, topic_state.follow_up_turns,
     )
-
     if topic_state.is_saturated:
         logger.info(
             "[SAT_RESULT] [OK] SATURATED | score=%.1f >= threshold=%.1f (%.0f%%) | importance=%s",
@@ -336,8 +292,6 @@ def evaluate_topic_saturation(
             topic_state.importance,
         )
         return False, f"score_{round(topic_state.saturation_score, 1)}_need_{round(remaining, 1)}"
-
-
 # ---------------------------------------------------------------------------
 # Main eval function -- pure scorer, no topic selection, no directive building
 # ---------------------------------------------------------------------------
@@ -348,10 +302,8 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     The agent owns topic selection, next-topic picking, and directive building.
     """
     p = EvaluationPayload(**payload)
-
     # Every non-empty candidate answer follows the same LLM-driven path.
     # No local short-utterance, clarification, redirect, or cannot-answer router.
-
     # -- Initialize/restore TopicState for current topic ----------------------
     current_topic_state: Optional[TopicState] = None
     if p.active_topic and p.active_topic_state:
@@ -376,7 +328,6 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
             p.active_topic, _topic_source, importance, p.band,
             current_topic_state.saturation_threshold, current_topic_state.base_turn_credit,
         )
-
     # -- Log turn context -----------------------------------------------------
     _sat_pct = 0
     if current_topic_state:
@@ -392,7 +343,6 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         "[QA] turn=%d  Q: %s\n              A: %s",
         p.turn, (p.question or "")[:200], (p.answer or "")[:200],
     )
-
     # -- Run scoring ----------------------------------------------------------
     # H1 fix: follow_up_turns is the count BEFORE this answer's contribution is
     # added (add_response_contribution runs after run_turn_evaluation returns).
@@ -413,9 +363,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
             1 for s in (current_topic_state.signals_fired or [])
             if s == "follow_up_collapse"
         )
-
     _captured_eval_usage: list[dict] = []
-
     async def _evaluate_answer_capturing(**kwargs):
         result = await evaluate_answer(**kwargs)
         usage = result.pop("_llm_usage", None)
@@ -426,15 +374,12 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         ):
             _captured_eval_usage.append(usage)
         return result
-
     _topic_importance = current_topic_state.importance if current_topic_state else "HIGH"
-
     # C2 fix: session_score_history must be the session-wide quality history from
     # _trust_state.score_history (populated after C1 fix), NOT the per-topic list.
     # depth_decay needs >= 4 turns of cross-topic data to detect session-level decay;
     # per-topic history resets each topic and never accumulates enough entries.
     _session_score_history = [float(r) for r in p.score_history if isinstance(r, (int, float))]
-
     _eval_coro = run_turn_evaluation(
         candidate_answer=p.answer,
         last_question=p.question,
@@ -455,7 +400,6 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         topic_importance=_topic_importance,
         job_title=p.job_title,
     )
-
     # Outer wrapper timeout (10s) sits between the inner LLM call (8s) and the
     # agent's LLM gate (12s) -- strictly increasing so the inner call always gets
     # to finish or self-recover before any outer guard fires.
@@ -482,20 +426,15 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
             "",
         )
         _eval_result = (_recovery_td, "")
-
     td, _ = _eval_result  # directive string from run_turn_evaluation is discarded -- agent builds its own
-
     action: str = td["decision"]["action"]
     signal_events = td.get("signal_events", [])
-
     _weighted_quality = _weighted_score(td["quality"])
-
     depth_signal = "SURFACE"
     if _weighted_quality >= 7.0:
         depth_signal = "DEEP"
     elif _weighted_quality >= 5.0:
         depth_signal = "SPECIFIC"
-
     _all_signal_names = [ev.get("signal_name", "?") for ev in signal_events if ev.get("signal_name")]
     logger.info(
         "[QUALITY] turn=%d | clarity=%.1f depth=%.1f specificity=%.1f grounding=%.1f | weighted=%.2f depth_signal=%s",
@@ -516,16 +455,13 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
                 _ev.get("signal_name", "?"), _ev.get("signal_layer", "?"),
                 float(_ev.get("confidence", 0.5) or 0.5), p.turn,
             )
-
     # -- Saturation calculation ------------------------------------------------
     signal_fired_names = [ev.get("signal_name", "") for ev in signal_events]
     depth_decay_fired = any(ev.get("signal_name") == "depth_decay" for ev in signal_events)
-
     # L4 fix: record follow_up_collapse fires in TopicState.signals_fired so
     # the next turn can derive collapse_stage from the count.
     if current_topic_state and any(n == "follow_up_collapse" for n in signal_fired_names):
         current_topic_state.signals_fired.append("follow_up_collapse")
-
     is_saturated, saturation_status = evaluate_topic_saturation(
         current_topic_state,
         td.get("quality", {}),
@@ -533,13 +469,11 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         turn=p.turn,
         skip_quality_contribution=False,
     )
-
     _weak_exit = current_topic_state is not None and current_topic_state.is_weak_candidate_exit()
     # Dry-topic exit: candidate has given consecutive low-yield answers up to the
     # band cap (fresher 2 / others 3). A real interviewer moves on instead of
     # re-asking a dead topic. This is deterministic -- independent of the LLM judge.
     _dry_topic = current_topic_state is not None and current_topic_state.is_dry_topic()
-
     logger.info(
         "[SATURATION] turn=%d | topic=%s | %s | signals=[%s]%s",
         p.turn,
@@ -550,7 +484,6 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
             next((ev.get("evidence","") for ev in signal_events if ev.get("signal_name")=="depth_decay"), ""))) else
         " | depth_decay->PROBE(mild)" if depth_decay_fired else "",
     )
-
     # -- Decision -------------------------------------------------------------
     # Priority: depth_decay(severe) > weak_exit > saturated > llm_judge >
     #           depth_decay(mild=pressure probe) > PROBE
@@ -558,7 +491,6 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     if depth_decay_fired:
         _dd_ev = next((ev for ev in signal_events if ev.get("signal_name") == "depth_decay"), {})
         depth_decay_severity = "severe" if "severe" in str(_dd_ev.get("evidence", "")) else "mild"
-
     if depth_decay_fired and depth_decay_severity == "severe":
         action = "MOVE_ON"
         logger.info("[DECISION] [OK] MOVE_ON reason=depth_decay(severe) turn=%d", p.turn)
@@ -586,14 +518,11 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         logger.info("[DECISION] PROBE reason=depth_decay(mild)->pressure turn=%d", p.turn)
     else:
         action = "PROBE"
-
     # -- Probe family resolution (only matters for PROBE) ---------------------
     probe_family = None
     # FIX #2: Agent computes goal/style, not eval
-
     if action == "PROBE":
         from interview.probe_strategy import _PROBE_FAMILIES, _SIGNAL_TO_FAMILY, _MODE_ALIASES, get_probe_goal, get_probe_style
-
         def _resolve_probe_family() -> str:
             # First match in _SIGNAL_TO_FAMILY wins -- the table is ordered by
             # priority so the most serious signal drives the probe when multiple
@@ -608,26 +537,22 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
             if llm_mode in _MODE_ALIASES:
                 return _MODE_ALIASES[llm_mode]
             return "ownership"
-
         probe_family = _resolve_probe_family()
         # FIX #2: Agent computes probe_goal and probe_style from family
         # Removed: probe_goal = get_probe_goal(probe_family)
         # Removed: probe_style = get_probe_style(probe_family)
-
         pct_sat = 100 * min(1.0, current_topic_state.saturation_score / current_topic_state.saturation_threshold) \
                   if current_topic_state else 0
         logger.info(
             "[DECISION] 🔄 PROBE family=%s signals=[%s] sat=%.0f%% turn=%d",
             probe_family, ", ".join(signal_fired_names) or "none", pct_sat, p.turn,
         )
-
     # -- Discussed log entry (on MOVE_ON) -------------------------------------
     discussed_log_entry: Optional[str] = None
     if action == "MOVE_ON" and p.question and p.answer:
         topic_line = p.question.split("?")[0].strip()[:80]
         answer_gist = " ".join(p.answer.split()[:20])
         discussed_log_entry = f"- {topic_line}: {answer_gist}"
-
     # -- Quality record for DB ------------------------------------------------
     quality_record = {
         "turn": p.turn,
@@ -644,7 +569,6 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         "topic_saturation_score": current_topic_state.saturation_score if current_topic_state else 0.0,
         "topic_saturation_threshold": current_topic_state.saturation_threshold if current_topic_state else 0.0,
     }
-
     logger.info(
         "[RESULT] turn=%d action=%s quality=%.2f/%s signals=[%s] sat=%.1f/%.1f",
         p.turn, action, _weighted_quality, depth_signal,
@@ -652,7 +576,6 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         current_topic_state.saturation_score if current_topic_state else 0,
         current_topic_state.saturation_threshold if current_topic_state else 0,
     )
-
     return {
         # Decision
         "action": action,                  # PROBE | MOVE_ON

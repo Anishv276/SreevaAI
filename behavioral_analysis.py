@@ -3,20 +3,14 @@ Signal analysis via LLM — feeds every signal, Q&A score, and transcript into a
 single prompt and returns 4-5 plain-language analysis points for the HR team.
 """
 from __future__ import annotations
-
 import json
 import logging
 import os
 from typing import Any
-
 logger = logging.getLogger(__name__)
-
 _SIGNAL_ANALYSIS_SYSTEM = """You are a senior technical recruiter writing a post-interview brief that a hiring manager will read in 30 seconds to decide whether to move this candidate forward.
-
 You have full access to: every Q&A with per-dimension scores, behavioral signals that fired, proctoring events, inconsistencies, and the transcript.
-
 Write exactly 4 points. Each point covers ONE specific thing — a strength, a gap, a pattern, or an integrity flag. Two sentences max per point. The hiring manager should not need to scroll.
-
 RULES — read these carefully:
 1. Every point must name the specific topic or question it is about. Not "when discussing their experience" — say "when asked about the n8n workflow they built" or "on the React state management question".
 2. Include what the candidate actually said or did. Quote a phrase or describe the exact behavior. No paraphrasing into abstractions.
@@ -26,11 +20,8 @@ RULES — read these carefully:
 6. If no real weakness exists, don't invent one. If no real strength exists, don't fabricate one.
 7. NEVER write: "demonstrated strong communication", "showed good problem-solving skills", "the candidate exhibited", "overall performance was", or any sentence that could apply to any candidate in any interview.
 8. Do NOT mention score numbers or dimension names.
-
 Output ONLY a JSON array of exactly 4 strings. No object wrapper, no markdown.
 ["Point one.", "Point two.", "Point three.", "Point four."]"""
-
-
 def _build_prompt(
     transcript_lines: list[str],
     answer_scores: list[dict],
@@ -39,7 +30,6 @@ def _build_prompt(
     inconsistencies_found: list[dict],
 ) -> str:
     parts: list[str] = []
-
     # Session metadata
     mins = total_duration_sec // 60
     candidate_turns = sum(1 for l in transcript_lines if l.startswith("Candidate:"))
@@ -48,7 +38,6 @@ def _build_prompt(
         f"SESSION\nDuration: {mins} min | Candidate turns: {candidate_turns} | "
         f"Interviewer turns: {ai_turns} | Scored answers: {len([s for s in answer_scores if not s.get('is_warmup')])}"
     )
-
     # Proctoring events
     if proctoring_events:
         grouped: dict[str, list[dict]] = {}
@@ -68,7 +57,6 @@ def _build_prompt(
         parts.append("PROCTORING EVENTS\n" + "\n".join(lines))
     else:
         parts.append("PROCTORING EVENTS\nNone.")
-
     # Inconsistencies
     if inconsistencies_found:
         lines = []
@@ -81,7 +69,6 @@ def _build_prompt(
         parts.append("INCONSISTENCIES\n" + "\n".join(lines))
     else:
         parts.append("INCONSISTENCIES\nNone detected.")
-
     # Q&A with behavioral signals inline — main evidence block
     qa_lines = []
     for s in answer_scores:
@@ -95,7 +82,6 @@ def _build_prompt(
         grounding = s.get('grounding', '?')
         signals = s.get("signals", [])
         concerns = s.get("concerns", [])
-
         block = (
             f"  TOPIC: {topic}\n"
             f"    Q: {question}\n"
@@ -109,10 +95,7 @@ def _build_prompt(
         qa_lines.append(block)
     if qa_lines:
         parts.append("QUESTION & ANSWER LOG\n" + "\n\n".join(qa_lines))
-
     return "\n\n".join(parts)
-
-
 async def generate_signal_analysis(
     transcript_lines: list[str],
     answer_scores: list[dict],
@@ -128,16 +111,13 @@ async def generate_signal_analysis(
     if not api_key:
         logger.warning("[SIGNAL_ANALYSIS] Skipping: missing OPENAI_API_KEY")
         return {"points": []}, []
-
     prompt_content = _build_prompt(
         transcript_lines, answer_scores, total_duration_sec,
         proctoring_events, inconsistencies_found,
     )
-
     try:
         from openai import AsyncOpenAI
         client = AsyncOpenAI(api_key=api_key)
-
         response = await client.chat.completions.create(
             model="gpt-4.1-mini",
             messages=[
@@ -147,7 +127,6 @@ async def generate_signal_analysis(
             temperature=0.2,
             max_tokens=1000,
         )
-
         usage = getattr(response, "usage", None)
         llm_usage = {
             "model": "gpt-4.1-mini",
@@ -157,7 +136,6 @@ async def generate_signal_analysis(
                 getattr(usage, "prompt_tokens_details", None), "cached_tokens", 0
             ) or 0),
         }
-
         raw_text = (response.choices[0].message.content or "").strip()
         # Parse — the model returns a plain JSON array
         try:
@@ -172,11 +150,9 @@ async def generate_signal_analysis(
         except Exception:
             # Last resort: split on newlines if JSON parse fails
             points = [l.strip().lstrip("-•").strip() for l in raw_text.splitlines() if len(l.strip()) > 20]
-
         result = {"points": points[:5]}
         logger.info(f"[SIGNAL_ANALYSIS] {len(result['points'])} points, tokens={llm_usage['inputTokens']}+{llm_usage['outputTokens']}")
         return result, [llm_usage]
-
     except Exception as e:
         logger.error(f"[SIGNAL_ANALYSIS] LLM call failed: {e}", exc_info=True)
         return {"points": []}, []

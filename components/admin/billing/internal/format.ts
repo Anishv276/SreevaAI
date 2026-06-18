@@ -4,7 +4,6 @@ export function fmtDuration(sec: number) {
   const s = sec % 60;
   return `${m}m ${s.toString().padStart(2, "0")}s`;
 }
-
 export function fmtDate(iso: string) {
   const d = new Date(iso);
   const today = new Date("2026-04-26");
@@ -17,7 +16,6 @@ export function fmtDate(iso: string) {
   if (isYest) return "Yesterday";
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
-
 export function fmtTime(iso: string) {
   const d = new Date(iso);
   const time = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });

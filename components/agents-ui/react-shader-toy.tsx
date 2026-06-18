@@ -1,7 +1,5 @@
 "use client";
-
 import React, { useEffect, useImperativeHandle, useMemo, useRef, forwardRef } from 'react';
-
 export interface ShaderToyProps {
   fs: string;
   uniforms?: Record<string, { type: string; value: unknown }>;
@@ -10,11 +8,9 @@ export interface ShaderToyProps {
   style?: React.CSSProperties;
   className?: string;
 }
-
 export type ShaderToyHandle = {
   getCanvas: () => HTMLCanvasElement | null;
 };
-
 const ReactShaderToy = forwardRef<ShaderToyHandle, ShaderToyProps>(
   ({ fs, uniforms = {}, onError, onWarning, style, className }, ref) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -29,25 +25,20 @@ const ReactShaderToy = forwardRef<ShaderToyHandle, ShaderToyProps>(
           .join("|"),
       [uniforms],
     );
-
     useImperativeHandle(ref, () => ({
       getCanvas: () => canvasRef.current,
     }));
-
     useEffect(() => {
       uniformsRef.current = uniforms;
     }, [uniforms]);
-
     useEffect(() => {
       const canvas = canvasRef.current;
       if (!canvas) return;
-
       const gl = canvas.getContext('webgl2', { alpha: true });
       if (!gl) {
         onError?.("WebGL2 not supported");
         return;
       }
-
       // Vertex shader is standard
       const vsSource = `#version 300 es
         in vec4 position;
@@ -55,7 +46,6 @@ const ReactShaderToy = forwardRef<ShaderToyHandle, ShaderToyProps>(
           gl_Position = position;
         }
       `;
-
       const createShader = (gl: WebGL2RenderingContext, type: number, source: string) => {
         const shader = gl.createShader(type);
         if (!shader) return null;
@@ -68,7 +58,6 @@ const ReactShaderToy = forwardRef<ShaderToyHandle, ShaderToyProps>(
         }
         return shader;
       };
-
       const vs = createShader(gl, gl.VERTEX_SHADER, vsSource);
       const fsComplete = `#version 300 es
         precision highp float;
@@ -82,25 +71,20 @@ const ReactShaderToy = forwardRef<ShaderToyHandle, ShaderToyProps>(
         }
         ${fs}
       `;
-
       const fShader = createShader(gl, gl.FRAGMENT_SHADER, fsComplete);
       if (!fShader) {
         onError?.("Fragment shader compilation failed");
         return;
       }
-
       const program = gl.createProgram();
       if (!program || !vs || !fShader) return;
-      
       gl.attachShader(program, vs);
       gl.attachShader(program, fShader);
       gl.linkProgram(program);
-      
       if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
         onError?.(gl.getProgramInfoLog(program) || "Linking failed");
         return;
       }
-
       const positionBuffer = gl.createBuffer();
       if (!positionBuffer) {
         onError?.("Failed to create position buffer");
@@ -108,40 +92,30 @@ const ReactShaderToy = forwardRef<ShaderToyHandle, ShaderToyProps>(
       }
       gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
       gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]), gl.STATIC_DRAW);
-
       const uniformLocations = new Map<string, WebGLUniformLocation | null>();
       const cachedUniforms = uniformsRef.current;
       Object.keys(cachedUniforms).forEach((name) => {
         uniformLocations.set(name, gl.getUniformLocation(program, name));
       });
-
       canvas.width = canvas.clientWidth * window.devicePixelRatio;
       canvas.height = canvas.clientHeight * window.devicePixelRatio;
-
       const render = () => {
         if (!gl || !program) return;
-        
         const time = (Date.now() - startTimeRef.current) / 1000.0;
-        
         gl.viewport(0, 0, canvas.width, canvas.height);
         gl.clearColor(0, 0, 0, 0);
         gl.clear(gl.COLOR_BUFFER_BIT);
-
         gl.useProgram(program);
-
         const posLoc = gl.getAttribLocation(program, "position");
         gl.enableVertexAttribArray(posLoc);
         gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
         gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
-
         gl.uniform1f(gl.getUniformLocation(program, "iTime"), time);
         gl.uniform2f(gl.getUniformLocation(program, "iResolution"), canvas.width, canvas.height);
-
         // Apply custom uniforms
         Object.entries(uniformsRef.current).forEach(([name, { type, value }]) => {
           const loc = uniformLocations.get(name);
           if (!loc) return;
-
           if (type === '1f') {
             gl.uniform1f(loc, Number(value));
           } else if (type === '2f' && Array.isArray(value)) {
@@ -152,13 +126,10 @@ const ReactShaderToy = forwardRef<ShaderToyHandle, ShaderToyProps>(
             gl.uniform1i(loc, Number(value));
           }
         });
-
         gl.drawArrays(gl.TRIANGLES, 0, 6);
         requestRef.current = requestAnimationFrame(render);
       };
-
       requestRef.current = requestAnimationFrame(render);
-
       const resizeObserver = new ResizeObserver(() => {
         if (canvas) {
           canvas.width = canvas.clientWidth * window.devicePixelRatio;
@@ -166,7 +137,6 @@ const ReactShaderToy = forwardRef<ShaderToyHandle, ShaderToyProps>(
         }
       });
       resizeObserver.observe(canvas);
-
       return () => {
         resizeObserver.disconnect();
         if (requestRef.current) cancelAnimationFrame(requestRef.current);
@@ -176,7 +146,6 @@ const ReactShaderToy = forwardRef<ShaderToyHandle, ShaderToyProps>(
         gl.deleteShader(fShader);
       };
     }, [fs, uniformSignature, onError, onWarning]);
-
     return (
       <canvas
         ref={canvasRef}
@@ -186,8 +155,5 @@ const ReactShaderToy = forwardRef<ShaderToyHandle, ShaderToyProps>(
     );
   }
 );
-
 ReactShaderToy.displayName = "ReactShaderToy";
-
 export default ReactShaderToy;
-

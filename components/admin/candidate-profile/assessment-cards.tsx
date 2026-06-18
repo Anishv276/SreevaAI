@@ -1,9 +1,7 @@
 "use client";
-
 import { memo } from "react";
 import { cn } from "@/lib/utils";
 import { CheckCircle2, AlertCircle } from "lucide-react";
-
 export const AssessmentCard = memo(function AssessmentCard({ title, subtitle, confidence, score, status }: { title: string; subtitle: string; confidence: string; score: string; status: "PROVED" | "PARTIAL" | "NOT PROVED" | "NOT TESTED" }) {
     const statusThemes = {
         PROVED: { border: "border-emerald-500", bg: "bg-emerald-50/50", text: "text-emerald-700", label: "PROVED" },
@@ -43,7 +41,6 @@ export const AssessmentCard = memo(function AssessmentCard({ title, subtitle, co
         </div>
     );
 });
-
 export const AnalysisEntry = memo(function AnalysisEntry({ qNumber, question, reasoning, depth, score }: { qNumber: string; question: string; reasoning: string; depth: string; score: string }) {
     const scoreVal = parseInt(score.split('/')[0]) || 0;
     const getScoreColor = (val: number) => {
@@ -87,7 +84,6 @@ export const AnalysisEntry = memo(function AnalysisEntry({ qNumber, question, re
         </div>
     );
 });
-
 export const AnalysisSignal = memo(function AnalysisSignal({ title, desc, type }: { title: string; desc: string; type: "success" | "warning" }) {
     const theme = type === "success"
         ? "bg-emerald-50/40 border-emerald-100/60 text-emerald-600 icon-bg-emerald-100"

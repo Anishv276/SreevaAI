@@ -1,10 +1,8 @@
 "use client";
-
 import { Activity } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { ALWAYS_ON_PROCTORING_SIGNALS } from "@/lib/proctoring-signals";
-
 type SignalKey =
   | "tab_switch"
   | "camera_disabled"
@@ -23,23 +21,19 @@ type SignalKey =
   | "follow_up_collapse"
   | "depth_decay"
   | "complexity_latency_mismatch";
-
 // Sanity guard: every key in ALWAYS_ON_PROCTORING_SIGNALS must be a SignalKey.
 // If a future refactor adds a new always-on signal without updating SignalKey,
 // this `satisfies` check will fail compilation -- catching the drift at build
 // time instead of silently rendering an unlocked checkbox.
 const _ALWAYS_ON_KEYS_TYPECHECK = ALWAYS_ON_PROCTORING_SIGNALS satisfies readonly SignalKey[];
 void _ALWAYS_ON_KEYS_TYPECHECK;
-
 type ProctoringSignals = Record<SignalKey, boolean>;
-
 type SignalRow = {
   key: SignalKey;
   label: string;
   group: string;
   description: string;
 };
-
 const SIGNAL_ROWS: SignalRow[] = [
   {
     key: "tab_switch",
@@ -96,7 +90,6 @@ const SIGNAL_ROWS: SignalRow[] = [
     description: "The timing of the response looks off for the complexity of the topic.",
   },
 ];
-
 export function ProctoringSignalsSection({
   signals,
   onChange,
@@ -117,13 +110,11 @@ export function ProctoringSignalsSection({
           <p className="text-sm font-medium text-gray-500">All signals in one place. Green toggles mean enabled, and required signals stay locked on.</p>
         </div>
       </div>
-
       {disabled && (
         <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-medium text-gray-600">
           Starter keeps these plan-controlled proctoring signals locked. Upgrade the plan to enable the browser, device, face, and timing checks below.
         </div>
       )}
-
       <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
         <div className="border-b border-gray-100 px-5 py-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -136,7 +127,6 @@ export function ProctoringSignalsSection({
             </span>
           </div>
         </div>
-
         <div className="divide-y divide-gray-100">
           {SIGNAL_ROWS.map((signal) => {
             return (
@@ -150,7 +140,6 @@ export function ProctoringSignalsSection({
                   </div>
                   <p className="text-xs font-medium leading-5 text-gray-500">{signal.description}</p>
                 </div>
-
                 <div className="flex items-center gap-3 sm:shrink-0">
                   {disabled ? (
                     <span className="rounded-full bg-gray-100 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-gray-500">

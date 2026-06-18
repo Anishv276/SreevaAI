@@ -1,13 +1,11 @@
 import { NextResponse } from "next/server";
 import { getSelectableVoiceById } from "@/lib/engine-voices";
 import { recordOrgBillingUsage } from "@/lib/usage-metrics";
-
 type VoicePreviewInput = {
   voiceId: string;
   transcript?: string;
   orgId?: string | null;
 };
-
 const BILLING_INR_PER_USD = Number(process.env.BILLING_INR_PER_USD || 83);
 const SARVAM_TTS_INR_PER_10K: Record<string, number> = { "bulbul:v3": 30, "bulbul:v2": 15 };
 const CARTESIA_TTS_USD_PER_M: Record<string, number> = {
@@ -26,13 +24,11 @@ const ELEVENLABS_TTS_USD_PER_M: Record<string, number> = {
   eleven_multilingual_v2: 100,
   eleven_multilingual_v3: 100,
 };
-
 function estimateTtsCostUsd(provider: string, model: string, characters: number) {
   const chars = Math.max(0, Math.round(Number(characters || 0)));
   if (chars <= 0) return 0;
   const normalizedProvider = provider.trim().toUpperCase();
   const normalizedModel = model.replace(/^(cartesia|elevenlabs)\//i, "").trim().toLowerCase();
-
   if (normalizedProvider === "SARVAM") {
     const rate = SARVAM_TTS_INR_PER_10K[normalizedModel] ?? SARVAM_TTS_INR_PER_10K["bulbul:v3"];
     return (chars / 10_000) * rate / Math.max(BILLING_INR_PER_USD, 1e-6);
@@ -44,7 +40,6 @@ function estimateTtsCostUsd(provider: string, model: string, characters: number)
   const rate = CARTESIA_TTS_USD_PER_M[normalizedModel] ?? Number(process.env.CARTESIA_TTS_USD_PER_MILLION_CHARS || 15);
   return (chars / 1_000_000) * rate;
 }
-
 async function recordVoicePreviewUsage(input: {
   orgId?: string | null;
   provider: string;
@@ -72,7 +67,6 @@ async function recordVoicePreviewUsage(input: {
     console.error("[VoicePreview] Failed to record TTS usage:", error);
   }
 }
-
 function pcmToWav(pcmData: Uint8Array, sampleRate = 22050, channels = 1, bitsPerSample = 16) {
   const byteRate = (sampleRate * channels * bitsPerSample) / 8;
   const blockAlign = (channels * bitsPerSample) / 8;
@@ -93,7 +87,6 @@ function pcmToWav(pcmData: Uint8Array, sampleRate = 22050, channels = 1, bitsPer
   Buffer.from(pcmData).copy(buffer, 44);
   return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
 }
-
 function toAudioResponse(audioBuffer: ArrayBuffer, contentType: string) {
   return new NextResponse(audioBuffer, {
     headers: {
@@ -102,30 +95,24 @@ function toAudioResponse(audioBuffer: ArrayBuffer, contentType: string) {
     },
   });
 }
-
 function logCreditRechargeNeeded(provider: string) {
   console.error(`[VoicePreview] ${provider} 402 - pls recharge credits`);
 }
-
 export async function createVoicePreviewResponse(input: VoicePreviewInput) {
   const { voiceId, transcript, orgId } = input;
-
   if (!voiceId) {
     return NextResponse.json({ error: "Voice ID is required" }, { status: 400 });
   }
-
   const voice = await getSelectableVoiceById(voiceId);
   if (!voice) {
     return NextResponse.json({ error: "Unknown voice ID" }, { status: 400 });
   }
-
   if (voice.provider === "SARVAM") {
     const apiKey = process.env.SARVAM_API_KEY;
     if (!apiKey) {
       console.error("[VoicePreview] SARVAM_API_KEY missing");
       return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
     }
-
     const isHindi = /[ऀ-ॿ]/.test(transcript || "");
     const langCode = isHindi ? "hi-IN" : "en-IN";
     const model = voice.model;
@@ -141,13 +128,11 @@ export async function createVoicePreviewResponse(input: VoicePreviewInput) {
         ? { enable_preprocessing: true }
         : { temperature: 0.6 }),
     };
-
     const response = await fetch("https://api.sarvam.ai/text-to-speech", {
       method: "POST",
       headers: { "api-subscription-key": apiKey, "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-
     if (!response.ok) {
       let errorMsg = response.statusText;
       try {
@@ -166,7 +151,6 @@ export async function createVoicePreviewResponse(input: VoicePreviewInput) {
       }
       return NextResponse.json({ error: `Sarvam AI: ${errorMsg}` }, { status: response.status });
     }
-
     const data = await response.json();
     const rawAudio = data.audios?.[0];
     if (typeof rawAudio !== "string" || !rawAudio.trim()) {
@@ -177,20 +161,17 @@ export async function createVoicePreviewResponse(input: VoicePreviewInput) {
     await recordVoicePreviewUsage({ orgId, provider: voice.provider, model, text });
     return toAudioResponse(pcmToWav(audio), "audio/wav");
   }
-
   if (voice.provider === "ELEVENLABS") {
     const apiKey = process.env.ELEVENLABS_API_KEY;
     if (!apiKey) {
       console.error("[VoicePreview] ELEVENLABS_API_KEY missing");
       return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
     }
-
     const text = transcript || "Hello, I am ready to be your AI interviewer.";
     const payload = {
       text,
       model_id: voice.model || "eleven_turbo_v2_5",
     };
-
     const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}`, {
       method: "POST",
       headers: {
@@ -200,7 +181,6 @@ export async function createVoicePreviewResponse(input: VoicePreviewInput) {
       },
       body: JSON.stringify(payload),
     });
-
     if (!response.ok) {
       let errorMsg = response.statusText;
       try {
@@ -221,19 +201,16 @@ export async function createVoicePreviewResponse(input: VoicePreviewInput) {
       }
       return NextResponse.json({ error: `ElevenLabs: ${errorMsg}` }, { status: response.status });
     }
-
     const audioBuffer = await response.arrayBuffer();
     await recordVoicePreviewUsage({ orgId, provider: voice.provider, model: payload.model_id, text });
     return toAudioResponse(audioBuffer, "audio/mpeg");
   }
-
   // CARTESIA
   const apiKey = process.env.CARTESIA_API_KEY;
   if (!apiKey) {
     console.error("[VoicePreview] CARTESIA_API_KEY missing");
     return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
   }
-
   const modelId = voice.model.replace(/^cartesia\//, "");
   const text = transcript || "Hello, I am ready to be your AI interviewer.";
   const payload = {
@@ -242,7 +219,6 @@ export async function createVoicePreviewResponse(input: VoicePreviewInput) {
     voice: { mode: "id", id: voiceId },
     output_format: { container: "mp3", sample_rate: 44100, bit_rate: 128000 },
   };
-
   const response = await fetch("https://api.cartesia.ai/tts/bytes", {
     method: "POST",
     headers: {
@@ -252,7 +228,6 @@ export async function createVoicePreviewResponse(input: VoicePreviewInput) {
     },
     body: JSON.stringify(payload),
   });
-
   if (!response.ok) {
     let errorMsg = response.statusText;
     try {
@@ -271,7 +246,6 @@ export async function createVoicePreviewResponse(input: VoicePreviewInput) {
     }
     return NextResponse.json({ error: `Cartesia: ${errorMsg}` }, { status: response.status });
   }
-
   const audioBuffer = await response.arrayBuffer();
   await recordVoicePreviewUsage({ orgId, provider: voice.provider, model: modelId, text });
   return toAudioResponse(audioBuffer, "audio/mpeg");

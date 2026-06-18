@@ -6,16 +6,13 @@ import { getOrgBillingStatus } from "@/lib/credits";
 import { getInterviewActionBlockedMessage, isInterviewQuotaLocked, isOrgRestrictedStatus } from "@/lib/interview-quota";
 import { invitationDeliveryQueue } from "@/lib/queue";
 import { appendCandidateActivity } from "@/lib/candidate-activity";
-
 // Resolves resume-candidate IDs to their underlying Application rows
 // by matching candidateId embedded in resumeUrl or resumeData JSON.
-
 function getResumeCandidateIdFromResumeUrl(resumeUrl?: string | null) {
     if (!resumeUrl) return null;
     const match = String(resumeUrl).match(/[?&]candidateId=([^&]+)/i);
     return match ? decodeURIComponent(match[1]) : null;
 }
-
 function getResumeCandidateIdFromResumeData(resumeData?: string | null) {
     if (!resumeData) return null;
     try {
@@ -27,9 +24,7 @@ function getResumeCandidateIdFromResumeData(resumeData?: string | null) {
         return match ? match[1] : null;
     }
 }
-
 type EmailAction = "shortlist" | "reject";
-
 type BulkEmailTarget = {
     id: string;
     fullName: string;
@@ -42,7 +37,6 @@ type BulkEmailTarget = {
         organization?: { name: string | null } | null;
     } | null;
 };
-
 // POST /api/candidates/bulk-email
 // Sends interview invite (shortlist) or rejection email to multiple candidates.
 // Status updates (shortlist/reject/hire/not_hired) are handled separately by
@@ -51,15 +45,12 @@ export async function POST(request: Request) {
     try {
         const session = await getSession();
         if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
-
         const orgId = session.orgId;
         if (!orgId) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
-
         const [org, billing] = await Promise.all([
             prisma.organization.findUnique({ where: { id: orgId }, select: { status: true } }),
             getOrgBillingStatus(orgId),
         ]);
-
         const isSuspended = isOrgRestrictedStatus(org?.status);
         const quotaLocked = isInterviewQuotaLocked(billing);
         if (isSuspended || quotaLocked) {
@@ -68,18 +59,14 @@ export async function POST(request: Request) {
                 { status: isSuspended ? 403 : 402 }
             );
         }
-
         const { ids, action }: { ids: string[]; action: EmailAction } = await request.json();
-
         if (!ids?.length) {
             return NextResponse.json({ error: "ids are required" }, { status: 400 });
         }
         if (action !== "shortlist" && action !== "reject") {
             return NextResponse.json({ error: "action must be 'shortlist' or 'reject'" }, { status: 400 });
         }
-
         // ── Resolve applications (direct + resume-candidate indirection) ──────
-
         const directApplications = await prisma.application.findMany({
             where: { id: { in: ids }, drive: { orgId } },
             select: {
@@ -98,19 +85,16 @@ export async function POST(request: Request) {
                 },
             },
         });
-
         const resolvedApplications = new Map<string, BulkEmailTarget>();
         for (const app of directApplications) {
             resolvedApplications.set(app.id, app);
         }
-
         const unresolvedIds = ids.filter((id) => !resolvedApplications.has(id));
         if (unresolvedIds.length) {
             const resumeCandidates = await prisma.resumeCandidate.findMany({
                 where: { id: { in: unresolvedIds }, drive: { orgId } },
                 select: { id: true, fullName: true, email: true, resumeStatus: true },
             });
-
             if (resumeCandidates.length) {
                 const applicationsFromResumeCandidates = await prisma.application.findMany({
                     where: {
@@ -137,7 +121,6 @@ export async function POST(request: Request) {
                         },
                     },
                 });
-
                 const byResumeCandidateId = new Map<string, BulkEmailTarget>();
                 for (const app of applicationsFromResumeCandidates) {
                     const candidateId =
@@ -146,29 +129,23 @@ export async function POST(request: Request) {
                     if (!candidateId || byResumeCandidateId.has(candidateId)) continue;
                     byResumeCandidateId.set(candidateId, app);
                 }
-
                 for (const candidate of resumeCandidates) {
                     const app = byResumeCandidateId.get(candidate.id);
                     if (app) resolvedApplications.set(candidate.id, app);
                 }
             }
         }
-
         if (!resolvedApplications.size) {
             return NextResponse.json({ error: "No matching candidates found" }, { status: 404 });
         }
-
         // Preserve original order
         const orderMap = new Map(ids.map((id, i) => [id, i]));
         const orderedApplications = [...resolvedApplications.entries()]
             .sort((a, b) => (orderMap.get(a[0]) ?? Number.MAX_SAFE_INTEGER) - (orderMap.get(b[0]) ?? Number.MAX_SAFE_INTEGER))
             .map(([, app]) => app);
-
         // ── Filter out apps with no email ─────────────────────────────────────
-
         const skipReasons: string[] = [];
         const eligible: BulkEmailTarget[] = [];
-
         for (const app of orderedApplications) {
             if (!app.email) {
                 skipReasons.push(`${app.fullName || app.id}: Missing email address`);
@@ -176,7 +153,6 @@ export async function POST(request: Request) {
             }
             eligible.push(app);
         }
-
         if (!eligible.length) {
             return NextResponse.json({
                 error: "No emails could be sent",
@@ -185,13 +161,10 @@ export async function POST(request: Request) {
                 skipped: skipReasons.length,
             }, { status: 400 });
         }
-
         // ── Deliver ───────────────────────────────────────────────────────────
-
         let sent = 0;
         let queued = 0;
         const failures: Array<{ id: string; reason: string }> = [];
-
         if (action === "shortlist") {
             // Queue via BullMQ — worker creates/refreshes the interview token and sends invite
             for (const app of eligible) {
@@ -238,7 +211,6 @@ export async function POST(request: Request) {
                     return app.id;
                 })
             );
-
             for (const result of results) {
                 if (result.status === "fulfilled") {
                     sent += 1;
@@ -249,7 +221,6 @@ export async function POST(request: Request) {
                 }
             }
         }
-
         if (sent === 0 && queued === 0) {
             return NextResponse.json({
                 error: "Failed to send emails",
@@ -259,11 +230,9 @@ export async function POST(request: Request) {
                 failures,
             }, { status: 500 });
         }
-
         const messageParts: string[] = [];
         if (queued > 0) messageParts.push(`Queued ${queued} interview invite${queued !== 1 ? "s" : ""}`);
         if (sent > 0) messageParts.push(`Sent ${sent} rejection email${sent !== 1 ? "s" : ""}`);
-
         return NextResponse.json({
             message: messageParts.join(" and ") + ".",
             sent,

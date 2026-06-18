@@ -1,16 +1,13 @@
 "use client";
-
 import React from "react";
 import { Icon } from "./billing-icons";
 import { INK, LINE, MUTED, ORANGE, ORANGE_DEEP, ORANGE_SOFT } from "./tokens";
 import type { CreditPack } from "./types";
-
 export const PACKS: CreditPack[] = [
   { id: "s", credits: 100, mins: 100, price: 49, blurb: "Good for ongoing screening" },
   { id: "m", credits: 250, mins: 250, price: 109, blurb: "Most popular", popular: true, save: "12%" },
   { id: "l", credits: 600, mins: 600, price: 239, blurb: "Best value", save: "20%" },
 ];
-
 export function BuyCreditsModal({
   open,
   onClose,
@@ -31,7 +28,6 @@ export function BuyCreditsModal({
   if (!open) return null;
   const sel = PACKS.find((p) => p.id === picked);
   if (!sel) return null;
-
   return (
     <div
       role="presentation"

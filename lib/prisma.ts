@@ -1,6 +1,5 @@
 import { Prisma, PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
-
 function createPrismaClient() {
     // Supabase recommends using the direct/session connection for persistent
     // app servers and reserving the transaction pooler for transient/serverless
@@ -10,14 +9,12 @@ function createPrismaClient() {
     if (!databaseUrl) {
         throw new Error('DIRECT_URL or DATABASE_URL is not set')
     }
-
     const connectionUrl = new URL(databaseUrl)
     connectionUrl.searchParams.set('uselibpqcompat', 'true')
     connectionUrl.searchParams.set('sslmode', 'require')
     // Move pool tuning out of the URL so we can control Prisma's pool directly.
     connectionUrl.searchParams.delete('connect_timeout')
     connectionUrl.searchParams.delete('connection_limit')
-
     const adapter = new PrismaPg({
         connectionString: connectionUrl.toString(),
         connectionTimeoutMillis: 10_000,
@@ -27,18 +24,15 @@ function createPrismaClient() {
         allowExitOnIdle: false,
         ssl: { rejectUnauthorized: false }, // Supabase uses self-signed cert in chain
     })
-    
     const baseClient = new PrismaClient({
         adapter,
         log: ['error', 'warn'],
     });
-
     const modelsWithIsDeleted = new Set(
         Prisma.dmmf.datamodel.models
             .filter(m => m.fields.some(f => f.name === 'isDeleted'))
             .map(m => m.name)
     );
-
     return baseClient.$extends({
         query: {
             $allModels: {
@@ -94,15 +88,11 @@ function createPrismaClient() {
         }
     });
 }
-
 const globalForPrisma = global as unknown as {
     prisma?: ReturnType<typeof createPrismaClient>
 }
-
 const prisma = globalForPrisma.prisma ?? createPrismaClient()
-
 export { prisma };
-
 if (process.env.NODE_ENV !== 'production') {
     globalForPrisma.prisma = prisma
 }

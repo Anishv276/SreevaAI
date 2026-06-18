@@ -1,49 +1,40 @@
 "use client";
-
 import { useState, useRef, useEffect } from "react";
 import { Search, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createPortal } from "react-dom";
 import { countryCodes } from "@/lib/countries";
-
 interface PhoneInputProps {
     value: string | undefined;
     onChange: (value: string) => void;
     className?: string;
 }
-
 function parsePhoneValue(value: string) {
     const found = [...countryCodes]
         .sort((a, b) => b.code.length - a.code.length)
         .find(c => value.startsWith(c.code));
-
     return found
         ? { selectedCode: found.code, phoneNumber: value.slice(found.code.length) }
         : { selectedCode: "+91", phoneNumber: value };
 }
-
 export function PhoneInput({ value = "", onChange, className }: PhoneInputProps) {
     const [open, setOpen] = useState(false);
     const [search, setSearch] = useState("");
     const [rect, setRect] = useState<DOMRect | null>(null);
     const triggerRef = useRef<HTMLButtonElement>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
-
     const initialPhone = parsePhoneValue(value);
     const [selectedCode, setSelectedCode] = useState(initialPhone.selectedCode);
     const [phoneNumber, setPhoneNumber] = useState(initialPhone.phoneNumber);
-
     const filtered = countryCodes.filter(c => 
         c.country.toLowerCase().includes(search.toLowerCase()) || 
         c.code.includes(search)
     );
-
     const handleOpen = () => {
         if (!open && triggerRef.current) setRect(triggerRef.current.getBoundingClientRect());
         setOpen(!open);
         if (!open) setSearch("");
     };
-
     useEffect(() => {
         if (!open) return;
         const h = (e: MouseEvent) => {
@@ -52,19 +43,16 @@ export function PhoneInput({ value = "", onChange, className }: PhoneInputProps)
         document.addEventListener("mousedown", h);
         return () => document.removeEventListener("mousedown", h);
     }, [open]);
-
     const handlePhoneChange = (newNumber: string) => {
         const clean = newNumber.replace(/\D/g, "");
         setPhoneNumber(clean);
         onChange(`${selectedCode}${clean}`);
     };
-
     const handleCodeSelect = (code: string) => {
         setSelectedCode(code);
         onChange(`${code}${phoneNumber}`);
         setOpen(false);
     };
-
     const dropdown = open && rect ? (
         <div
             ref={dropdownRef}
@@ -123,7 +111,6 @@ export function PhoneInput({ value = "", onChange, className }: PhoneInputProps)
             </div>
         </div>
     ) : null;
-
     return (
         <div className={cn("flex gap-3", className)}>
             <div className="relative">
@@ -141,7 +128,6 @@ export function PhoneInput({ value = "", onChange, className }: PhoneInputProps)
                 </button>
                 {typeof window !== "undefined" && createPortal(dropdown, document.body)}
             </div>
-
             <div className="relative flex-1">
                 <input
                     type="tel"
@@ -154,4 +140,3 @@ export function PhoneInput({ value = "", onChange, className }: PhoneInputProps)
         </div>
     );
 }
-

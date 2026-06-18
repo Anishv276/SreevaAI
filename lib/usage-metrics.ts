@@ -1,6 +1,5 @@
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
-
 export type BillingFeature =
   | "interview"
   | "resumeExtraction"
@@ -8,7 +7,6 @@ export type BillingFeature =
   | "chatbot"
   | "resumeReport"
   | "interviewReport";
-
 const BILLING_FEATURES: BillingFeature[] = [
   "interview",
   "resumeExtraction",
@@ -17,13 +15,11 @@ const BILLING_FEATURES: BillingFeature[] = [
   "resumeReport",
   "interviewReport",
 ];
-
 type ModelCostRate = {
   input: number;
   cachedInput: number;
   output: number;
 };
-
 type FeatureModelMetrics = {
   runs: number;
   inputTokens: number;
@@ -32,7 +28,6 @@ type FeatureModelMetrics = {
   sessionDuration: number;
   costUsd: number;
 };
-
 type TtsModelMetrics = {
   runs: number;
   provider?: string;
@@ -40,7 +35,6 @@ type TtsModelMetrics = {
   characters: number;
   costUsd: number;
 };
-
 type SttModelMetrics = {
   runs: number;
   provider?: string;
@@ -48,7 +42,6 @@ type SttModelMetrics = {
   audioSeconds: number;
   costUsd: number;
 };
-
 type BillingFeatureMetrics = {
   runs: number;
   inputTokens: number;
@@ -67,7 +60,6 @@ type BillingFeatureMetrics = {
   ttsByModel: Record<string, TtsModelMetrics>;
   sttByModel: Record<string, SttModelMetrics>;
 };
-
 const MODEL_RATES: Record<string, ModelCostRate> = {
   "gpt-5.5": { input: 5, cachedInput: 0.5, output: 30 },
   "gpt-5.5-pro": { input: 30, cachedInput: 30, output: 180 },
@@ -112,7 +104,6 @@ const MODEL_RATES: Record<string, ModelCostRate> = {
   "davinci-002": { input: 2, cachedInput: 2, output: 2 },
   "babbage-002": { input: 0.4, cachedInput: 0.4, output: 0.4 },
 };
-
 const emptyFeature = () => ({
   runs: 0,
   inputTokens: 0,
@@ -131,7 +122,6 @@ const emptyFeature = () => ({
   ttsByModel: {} as Record<string, TtsModelMetrics>,
   sttByModel: {} as Record<string, SttModelMetrics>,
 }) satisfies BillingFeatureMetrics;
-
 export const emptyBillingMetrics = () => ({
   interview: emptyFeature(),
   resumeExtraction: emptyFeature(),
@@ -140,12 +130,10 @@ export const emptyBillingMetrics = () => ({
   resumeReport: emptyFeature(),
   interviewReport: emptyFeature(),
 });
-
 function normalizeModelName(model: string | undefined | null) {
   // Strip trailing date suffix e.g. "gpt-4.1-mini-2025-04-14" → "gpt-4.1-mini"
   return (model || "").trim().toLowerCase().replace(/-\d{4}-\d{2}-\d{2}$/, "");
 }
-
 function getRate(model: string | undefined | null): ModelCostRate {
   const key = normalizeModelName(model);
   const rate = MODEL_RATES[key];
@@ -154,7 +142,6 @@ function getRate(model: string | undefined | null): ModelCostRate {
   }
   return rate;
 }
-
 export function calculateOpenAICost(opts: {
   model?: string | null;
   inputTokens?: number;
@@ -165,14 +152,11 @@ export function calculateOpenAICost(opts: {
   const inputTokens = Math.max(0, opts.inputTokens ?? 0);
   const outputTokens = Math.max(0, opts.outputTokens ?? 0);
   const cachedInputTokens = Math.max(0, Math.min(opts.cachedInputTokens ?? 0, inputTokens));
-
   const inputCost = ((inputTokens - cachedInputTokens) / 1_000_000) * rate.input;
   const cachedCost = (cachedInputTokens / 1_000_000) * rate.cachedInput;
   const outputCost = (outputTokens / 1_000_000) * rate.output;
-
   return Math.max(0, inputCost + cachedCost + outputCost);
 }
-
 export function usageFromOpenAICompletion(completion: {
   model?: string | null;
   usage?: {
@@ -186,7 +170,6 @@ export function usageFromOpenAICompletion(completion: {
   const promptTokens = completion.usage?.prompt_tokens ?? 0;
   const completionTokens = completion.usage?.completion_tokens ?? 0;
   const cachedTokens = completion.usage?.prompt_tokens_details?.cached_tokens ?? 0;
-
   return {
     model: completion.model ?? null,
     inputTokens: promptTokens,
@@ -194,7 +177,6 @@ export function usageFromOpenAICompletion(completion: {
     cachedInputTokens: cachedTokens,
   };
 }
-
 function hasBillableUsage(usage: {
   inputTokens?: number;
   outputTokens?: number;
@@ -218,7 +200,6 @@ function hasBillableUsage(usage: {
     Number(usage.sessionDuration || 0) > 0
   );
 }
-
 export function mergeBillingFeature(
   billing: ReturnType<typeof emptyBillingMetrics>,
   feature: BillingFeature,
@@ -257,7 +238,6 @@ export function mergeBillingFeature(
   if (hasLlmUsage && !modelKey) {
     throw new Error(`[usage-metrics] Missing OpenAI model for org billing feature=${feature}`);
   }
-
   if (hasLlmUsage) {
     bucket.runs += 1;
     bucket.inputTokens += usage.inputTokens ?? 0;
@@ -272,7 +252,6 @@ export function mergeBillingFeature(
   bucket.sttRuns += usage.sttRuns ?? 0;
   bucket.sttAudioSeconds += usage.sttAudioSeconds ?? 0;
   bucket.sttCostUsd += usage.sttCostUsd ?? 0;
-
   if ((usage.ttsRuns ?? 0) > 0 || (usage.ttsCharacters ?? 0) > 0 || (usage.ttsCostUsd ?? 0) > 0) {
     const provider = String(usage.ttsProvider || "").trim().toUpperCase();
     const model = String(usage.ttsModel || "").trim();
@@ -288,7 +267,6 @@ export function mergeBillingFeature(
     ttsBucket.characters += usage.ttsCharacters ?? 0;
     ttsBucket.costUsd += usage.ttsCostUsd ?? 0;
   }
-
   if ((usage.sttRuns ?? 0) > 0 || (usage.sttAudioSeconds ?? 0) > 0 || (usage.sttCostUsd ?? 0) > 0) {
     const provider = String(usage.sttProvider || "").trim().toUpperCase();
     const model = String(usage.sttModel || "").trim();
@@ -304,7 +282,6 @@ export function mergeBillingFeature(
     sttBucket.audioSeconds += usage.sttAudioSeconds ?? 0;
     sttBucket.costUsd += usage.sttCostUsd ?? 0;
   }
-
   if (hasLlmUsage) {
     if (!bucket.byModel[modelKey]) {
       bucket.byModel[modelKey] = {
@@ -316,7 +293,6 @@ export function mergeBillingFeature(
         costUsd: 0,
       };
     }
-
     const modelBucket = bucket.byModel[modelKey]!;
     modelBucket.runs += 1;
     modelBucket.inputTokens += usage.inputTokens ?? 0;
@@ -324,18 +300,14 @@ export function mergeBillingFeature(
     modelBucket.outputTokens += usage.outputTokens ?? 0;
     modelBucket.sessionDuration += usage.sessionDuration ?? 0;
     modelBucket.costUsd += costUsd;
-
     // Always update lastModel so we know the most recently used model
     bucket.lastModel = modelKey;
   }
-
   return billing;
 }
-
 function coerceBillingMetrics(value: unknown) {
   const base = emptyBillingMetrics();
   if (!value || typeof value !== "object") return base;
-
   const incoming = value as Record<string, unknown>;
   for (const feature of BILLING_FEATURES) {
     const src = incoming[feature] as (BillingFeatureMetrics & {
@@ -362,7 +334,6 @@ function coerceBillingMetrics(value: unknown) {
   }
   return base;
 }
-
 export async function recordOrgBillingUsage(opts: {
   orgId: string;
   feature: BillingFeature;
@@ -402,7 +373,6 @@ export async function recordOrgBillingUsage(opts: {
     );
     const org = rows[0];
     if (!org) return;
-
     const existingUsage =
       org.usageMetrics && typeof org.usageMetrics === "object"
         ? (org.usageMetrics as Record<string, unknown>)
@@ -415,7 +385,6 @@ export async function recordOrgBillingUsage(opts: {
     }
     const billing = coerceBillingMetrics(existingUsage.billing);
     mergeBillingFeature(billing, feature, usage);
-
     const recentEvents = [...existingEvents];
     if (usage.eventId) {
       recentEvents.unshift({
@@ -435,14 +404,12 @@ export async function recordOrgBillingUsage(opts: {
         recordedAt: usage.recordedAt ?? new Date().toISOString(),
       });
     }
-
     const updatedUsage: Record<string, unknown> = {
       ...existingUsage,
       billing,
       ...(recentEvents.length ? { recentBillingEvents: recentEvents.slice(0, 100) } : {}),
       updatedAt: new Date().toISOString(),
     };
-
     await tx.$executeRaw(
       Prisma.sql`
         UPDATE "Organization"
@@ -453,7 +420,6 @@ export async function recordOrgBillingUsage(opts: {
     );
   });
 }
-
 export async function recordOrgBillingFromOpenAICompletion(opts: {
   orgId: string;
   feature: BillingFeature;

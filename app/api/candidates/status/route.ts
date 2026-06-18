@@ -5,7 +5,6 @@ import { isInterviewTokenRequired } from "@/lib/interview-access";
 import { normalizeEmail } from "@/lib/email";
 import { buildInterviewLink } from "@/lib/interview-links";
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-
 export async function GET(request: Request) {
     try {
         const prismaAny = prisma as any;
@@ -13,12 +12,10 @@ export async function GET(request: Request) {
         if (!session) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
-
         const normalizedEmail = normalizeEmail(session.email);
         if (!normalizedEmail) {
             return NextResponse.json({ error: "Session missing email identity" }, { status: 400 });
         }
-
         const applications = await prismaAny.application.findMany({
             where: {
                 email: {
@@ -35,7 +32,6 @@ export async function GET(request: Request) {
                         organization: {
                             select: {
                                 name: true,
-
                             },
                         },
                     }
@@ -55,7 +51,6 @@ export async function GET(request: Request) {
             },
             orderBy: { createdAt: "desc" }
         });
-
         const formattedApplications = applications.map((app: any) => {
             const nowMs = Date.now();
             const expiresAtMs = app.interview?.expiresAt ? new Date(app.interview.expiresAt).getTime() : null;
@@ -84,7 +79,6 @@ export async function GET(request: Request) {
                     }),
                 }
                 : null;
-
             return {
                 id: app.id,
                 status: app.hiringStatus,
@@ -94,7 +88,6 @@ export async function GET(request: Request) {
                 interview: interviewStage,
             };
         });
-
         return NextResponse.json(formattedApplications);
     } catch (error) {
         console.error("[CANDIDATE DASHBOARD ERROR]:", error);

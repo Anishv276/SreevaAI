@@ -8,16 +8,13 @@ import { safeJsonParse } from "@/lib/utils";
 import { getSession } from "@/lib/auth";
 import { parseDriveScreeningSettings, sanitizeScreeningCriteria } from "@/lib/screening-criteria";
 import { isOrgRestrictedStatus } from "@/lib/interview-quota";
-
 function normalizeDeadlineDate(deadline?: string | null) {
     if (!deadline) return null;
     const parsed = new Date(`${deadline}T23:59:59.999`);
     if (Number.isNaN(parsed.getTime())) return null;
     return parsed;
 }
-
 export const dynamic = "force-dynamic";
-
 /**
  * GET handler to fetch the metadata for a specific recruitment drive.
  *
@@ -29,7 +26,6 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
     try {
         const { id } = await params;
-
         const drive = await (prisma.drive as any).findFirst({
             where: {
                 id
@@ -65,15 +61,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
                 },
             },
         } as any);
-
         if (!drive) {
             return NextResponse.json({ error: "Drive not found" }, { status: 404 });
         }
-
         if ((drive as any).organization && isOrgRestrictedStatus((drive as any).organization.status)) {
             return NextResponse.json({ error: "This organization is currently suspended. Access is restricted." }, { status: 403 });
         }
-
         const screeningThreshold = Number((drive as any).screeningThreshold ?? 60);
         const parsedCriteria = parseDriveScreeningSettings(
             (drive as any).screeningCriteria,
@@ -83,7 +76,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
             threshold: parsedCriteria.threshold,
             criteria: parsedCriteria.criteria,
         });
-
         const interviewQuestions = (() => {
             try {
                 const raw = (drive as any).interviewQuestions;
@@ -92,7 +84,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
                 return [];
             }
         })();
-
         return NextResponse.json({
             ...drive,
             orgId: (drive as any).orgId,
@@ -117,7 +108,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         }, { status: 500 });
     }
 }
-
 /**
  * PATCH handler to update metadata details for a specific recruitment drive.
  *
@@ -131,10 +121,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     try {
         const session = await getSession();
         if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
-
         const { id } = await params;
         driveId = id;
-
         const rawBody = await request.text();
         if (!rawBody.trim()) {
             return NextResponse.json(
@@ -142,7 +130,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
                 { status: 400 }
             );
         }
-
         let body: unknown;
         try {
             body = JSON.parse(rawBody);
@@ -152,7 +139,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
                 { status: 400 }
             );
         }
-
         const result = updateDriveSchema.safeParse(body);
         if (!result.success) {
             return NextResponse.json(
@@ -160,7 +146,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
                 { status: 400 }
             );
         }
-
         const data = result.data;
         const existingDrive = await (prisma.drive as any).findUnique({
             where: { id: driveId },
@@ -170,22 +155,17 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
                 voiceId: true,
             },
         });
-
         if (!existingDrive) {
             return NextResponse.json({ error: "Drive not found" }, { status: 404 });
         }
-
         const isSuperAdmin = session.role === "SUPER_ADMIN";
         if (!isSuperAdmin && existingDrive.orgId !== session.orgId) {
             return NextResponse.json({ error: "Access Denied: Ownership required to modify drive" }, { status: 403 });
         }
-
         const updateData: any = {};
-
         if (data.title !== undefined) updateData.title = data.title;
         if (data.role !== undefined) updateData.role = data.role;
         if (data.deadline !== undefined) updateData.deadline = normalizeDeadlineDate(data.deadline as string | null | undefined);
-
         if (data.jdFileName !== undefined) updateData.jdFileName = data.jdFileName;
         if (data.jdPreviewUrl !== undefined) {
             const persistedJdUrl = data.jdPreviewUrl?.startsWith("blob:")
@@ -195,7 +175,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
                 updateData.jdPreviewUrl = persistedJdUrl;
             }
         }
-
         // When extractedDetails changes, re-derive all text fields from it
         if (data.extractedDetails !== undefined) {
             const extractedStr = typeof data.extractedDetails === "string"
@@ -205,13 +184,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
             try {
                 const parsed = JSON.parse(extractedStr);
                 // derived fields removed — extractedDetails is source of truth
-
             } catch { /* keep existing values if parse fails */ }
         }
-
         if (data.screeningThreshold !== undefined || (data as any).screeningCriteria !== undefined) {
             if (data.screeningThreshold !== undefined) updateData.screeningThreshold = data.screeningThreshold;
-
             const rawCriteria = (data as any).screeningCriteria;
             const parsedCriteria = typeof rawCriteria === "string"
                 ? safeJsonParse(rawCriteria, {})
@@ -223,10 +199,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
             };
             updateData.screeningCriteria = JSON.stringify(mergedCriteria);
         }
-
         if (data.interviewLanguage !== undefined) updateData.interviewLanguage = data.interviewLanguage;
         if (data.interviewQuestions !== undefined) updateData.interviewQuestions = JSON.stringify(data.interviewQuestions);
-
         Object.assign(
             updateData,
             normalizeDriveAiConfig({
@@ -235,21 +209,16 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
             })
         );
         if (data.aiName !== undefined) updateData.aiName = data.aiName;
-
-
         if (Object.keys(updateData).length === 0) {
             return NextResponse.json(
                 { error: "No valid fields provided for update" },
                 { status: 400 }
             );
         }
-
-
         const updated = await (prisma.drive as any).update({
             where: { id: driveId },
             data: updateData as any,
         });
-
         return NextResponse.json(updated);
     } catch (error: any) {
         console.error("Error updating drive:", {
@@ -265,46 +234,35 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         }, { status: 500 });
     }
 }
-
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
     try {
         const session = await getSession();
         if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
-
         const { id } = await params;
         const driveId = id;
-
         const drive = await prisma.drive.findUnique({
             where: { id: driveId },
             select: { orgId: true }
         });
-
         if (!drive) {
             return NextResponse.json({ error: "Drive not found" }, { status: 404 });
         }
-
         const isSuperAdmin = session.role === "SUPER_ADMIN";
         if (!isSuperAdmin && drive.orgId !== session.orgId) {
             return NextResponse.json({ error: "Access Denied: Ownership required to remove drive" }, { status: 403 });
         }
-
         // -- SOFT DELETE: DATABASE CLEANUP (Cascading) ---------------------------
         // We use raw SQL to handle appending timestamps to unique columns safely.
         await prisma.$transaction(async (tx) => {
             const timestamp = Date.now().toString();
-
             // 1. Soft Delete Drive
             await tx.$executeRaw`UPDATE "Drive" SET "isDeleted" = true WHERE "id" = ${driveId}`;
-
             // 2. Soft Delete Resume Batches
             await tx.$executeRaw`UPDATE "ResumeBatch" SET "isDeleted" = true WHERE "driveId" = ${driveId}`;
-
             // 3. Soft Delete Resume Candidates
             await tx.$executeRaw`UPDATE "ResumeCandidate" SET "isDeleted" = true WHERE "driveId" = ${driveId}`;
-
             // 4. Soft Delete Applications
             await tx.$executeRaw`UPDATE "Application" SET "isDeleted" = true WHERE "driveId" = ${driveId}`;
-
             // 5. Soft Delete Interviews (rename applicationId and accessToken)
             await tx.$executeRaw`
                 UPDATE "Interview" 
@@ -313,7 +271,6 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
                     "accessToken" = 'del_' || ${timestamp} || '_' || "accessToken"
                 WHERE "applicationId" IN (SELECT "id" FROM "Application" WHERE "driveId" = ${driveId})
             `;
-
             // 6. Soft Delete Support Tickets
             await tx.$executeRaw`
                 UPDATE "SupportTicket" SET "status" = 'DELETED'
@@ -324,7 +281,6 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
                 )
             `;
         });
-
         return NextResponse.json({ message: "Drive soft-deleted successfully" });
     } catch (error) {
         console.error("Error deleting drive:", error);

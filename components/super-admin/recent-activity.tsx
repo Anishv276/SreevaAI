@@ -1,31 +1,26 @@
 "use client";
-
 import { useEffect, useState } from "react";
 import { Clock, Building2, Briefcase, UserCheck, Video, ChevronRight, Loader2 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
-
 interface Activity {
     type: "ORG" | "DRIVE" | "CANDIDATE" | "INTERVIEW";
     detail: string;
     org: string;
     at: string;
 }
-
 interface RecentActivityProps {
     activities?: Activity[] | null;
     loading?: boolean;
     error?: string | null;
     onRetry?: () => void;
 }
-
 const ACTIVITY_CONFIG: Record<Activity["type"], { label: string; icon: React.ElementType; style: string }> = {
     ORG: { label: "New Organization", icon: Building2, style: "bg-orange-50 text-orange-600 border-orange-100" },
     DRIVE: { label: "New Hiring Drive", icon: Briefcase, style: "bg-blue-50 text-blue-600 border-blue-100" },
     CANDIDATE: { label: "Candidate Applied", icon: UserCheck, style: "bg-emerald-50 text-emerald-600 border-emerald-100" },
     INTERVIEW: { label: "Interview Completed", icon: Video, style: "bg-violet-50 text-violet-600 border-violet-100" },
 };
-
 export function RecentActivity({
     activities: externalActivities,
     loading: externalLoading,
@@ -37,19 +32,15 @@ export function RecentActivity({
     const [error, setError] = useState<string | null>(null);
     const [retryKey, setRetryKey] = useState(0);
     const useExternalData = externalActivities !== undefined;
-
     useEffect(() => {
         if (useExternalData) {
             return;
         }
-
         const controller = new AbortController();
         const { signal } = controller;
-
         const loadActivity = async () => {
             setLoading(true);
             setError(null);
-
             try {
                 const res = await fetch("/api/super-admin/stats", { signal });
                 if (signal.aborted) return;
@@ -65,16 +56,12 @@ export function RecentActivity({
                 if (!signal.aborted) setLoading(false);
             }
         };
-
         void loadActivity();
-
         return () => controller.abort();
     }, [retryKey, useExternalData]);
-
     const resolvedActivities = useExternalData ? externalActivities ?? [] : activities;
     const resolvedLoading = useExternalData ? Boolean(externalLoading) : loading;
     const resolvedError = useExternalData ? externalError ?? null : error;
-
     return (
         <section>
             <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
@@ -87,7 +74,6 @@ export function RecentActivity({
                         <Clock className="h-4 w-4" />
                     </div>
                 </div>
-
                 {resolvedLoading ? (
                     <div className="flex justify-center py-10">
                         <Loader2 className="h-6 w-6 animate-spin text-orange-500" />

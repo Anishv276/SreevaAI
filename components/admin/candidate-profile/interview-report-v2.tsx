@@ -1,5 +1,4 @@
 "use client";
-
 /**
  * Interview Report V2 — Executive Assessment Layout
  *
@@ -12,7 +11,6 @@
  *   - Transcript/Recording are access points, not embedded walls.
  *   - Hiring recommendation is the visual conclusion — unmissable.
  */
-
 import { forwardRef, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import Image from "next/image";
@@ -33,16 +31,13 @@ import {
 import type { ComponentProps, ReactNode, RefObject } from "react";
 import type { APITypes } from "plyr-react";
 import type { SreevaAIInterviewViewModel } from "./interview-report-sreevaai";
-
 type PlyrHandle = APITypes & {
   plyr?: {
     currentTime?: number;
   };
   querySelector?: (selector: string) => HTMLVideoElement | null;
 };
-
 // ─── Dynamic video player ────────────────────────────────────────────────────
-
 const Plyr = dynamic(
   () =>
     import("plyr-react").then((m) => {
@@ -59,25 +54,20 @@ const Plyr = dynamic(
     }),
   { ssr: false }
 );
-
 // ─── Constants ───────────────────────────────────────────────────────────────
-
 const REC: Record<string, { bg: string; text: string; ring: string; label: string }> = {
   green:  { bg: "bg-emerald-500", text: "text-white", ring: "ring-emerald-200", label: "Strong Hire" },
   amber:  { bg: "bg-amber-400",   text: "text-amber-950", ring: "ring-amber-200", label: "Lean Hire" },
   red:    { bg: "bg-rose-500",    text: "text-white", ring: "ring-rose-200",  label: "Reject" },
   blue:   { bg: "bg-blue-500",    text: "text-white", ring: "ring-blue-200",  label: "Hire" },
 };
-
 const QBADGE_META: Record<string, { label: string; dot: string; text: string }> = {
   STRONG:  { label: "Strong",  dot: "bg-emerald-500", text: "text-emerald-700" },
   AVERAGE: { label: "Average", dot: "bg-amber-400",   text: "text-amber-700"  },
   FAIR:    { label: "Weak",    dot: "bg-rose-500",    text: "text-rose-700"   },
   PENDING: { label: "N/A",     dot: "bg-slate-300",   text: "text-slate-500"  },
 };
-
 // ─── Radar Chart ─────────────────────────────────────────────────────────────
-
 /**
  * Five-axis radar. Axes are evenly spaced around a circle.
  * Score 0–100. Each axis label sits just outside the polygon vertex.
@@ -94,14 +84,11 @@ function RadarChart({
   const cy = size / 2;
   const R = size * 0.36;
   const n = scores.length;
-
   const angleOf = (i: number) => (Math.PI * 2 * i) / n - Math.PI / 2;
-
   const pointAt = (i: number, r: number) => {
     const a = angleOf(i);
     return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
   };
-
   // Grid rings at 25 / 50 / 75 / 100
   const rings = [0.25, 0.5, 0.75, 1].map((f) =>
     scores
@@ -109,12 +96,10 @@ function RadarChart({
       .map((p, i) => (i === 0 ? `M ${p.x} ${p.y}` : `L ${p.x} ${p.y}`))
       .join(" ") + " Z"
   );
-
   // Data polygon
   const dataPoints = scores.map((s, i) => pointAt(i, R * (s.value / 100)));
   const dataPoly =
     dataPoints.map((p, i) => (i === 0 ? `M ${p.x} ${p.y}` : `L ${p.x} ${p.y}`)).join(" ") + " Z";
-
   return (
     <svg
       width={size}
@@ -128,7 +113,6 @@ function RadarChart({
       {rings.map((d, i) => (
         <path key={i} d={d} fill="none" stroke="#E2E8F0" strokeWidth={1} />
       ))}
-
       {/* Axis spokes */}
       {scores.map((_, i) => {
         const p = pointAt(i, R);
@@ -144,7 +128,6 @@ function RadarChart({
           />
         );
       })}
-
       {/* Filled polygon */}
       <path
         d={dataPoly}
@@ -153,7 +136,6 @@ function RadarChart({
         strokeWidth={2}
         strokeLinejoin="round"
       />
-
       {/* Vertex dots + hover */}
       {dataPoints.map((p, i) => (
         <circle
@@ -169,7 +151,6 @@ function RadarChart({
           onMouseLeave={() => setHovered(null)}
         />
       ))}
-
       {/* Axis labels */}
       {scores.map((s, i) => {
         const labelR = R + 22;
@@ -202,7 +183,6 @@ function RadarChart({
           </g>
         );
       })}
-
       {/* Centre score */}
       {hovered !== null && (
         <text
@@ -219,23 +199,19 @@ function RadarChart({
     </svg>
   );
 }
-
 // ─── Skill Map ────────────────────────────────────────────────────────────────
-
 const STATUS_CHIP: Record<string, string> = {
   PROVED:     "bg-emerald-100 text-emerald-800 border border-emerald-200",
   PARTIAL:    "bg-amber-100 text-amber-800 border border-amber-200",
   "NOT PROVED": "bg-rose-100 text-rose-800 border border-rose-200",
   "NOT TESTED": "bg-slate-100 text-slate-600 border border-slate-200",
 };
-
 function SkillMap({
   skills,
 }: {
   skills: SreevaAIInterviewViewModel["skills"];
 }) {
   const [expanded, setExpanded] = useState<number | null>(null);
-
   return (
     <div className="flex flex-col gap-1.5">
       {skills.slice(0, 12).map((sk, i) => {
@@ -285,9 +261,7 @@ function SkillMap({
     </div>
   );
 }
-
 // ─── Question Row ─────────────────────────────────────────────────────────────
-
 function QuestionRow({
   q,
   index,
@@ -297,7 +271,6 @@ function QuestionRow({
 }) {
   const [open, setOpen] = useState(false);
   const meta = QBADGE_META[q.qBadge] ?? QBADGE_META.PENDING;
-
   return (
     <div className="group">
       <button
@@ -316,7 +289,6 @@ function QuestionRow({
           <ChevronDown className={cn("h-3 w-3 text-slate-300 transition-transform", open && "rotate-180")} />
         </div>
       </button>
-
       {open && (
         <div className="mx-3 mb-2 rounded-md border border-slate-100 bg-slate-50 px-3 py-2.5 text-[11px] leading-relaxed text-slate-600">
           {q.answer && (
@@ -339,9 +311,7 @@ function QuestionRow({
     </div>
   );
 }
-
 // ─── Transcript Preview ───────────────────────────────────────────────────────
-
 function TranscriptPreview({
   transcript,
   onSeek,
@@ -351,7 +321,6 @@ function TranscriptPreview({
 }) {
   const [expanded, setExpanded] = useState(false);
   const visible = expanded ? transcript : transcript.slice(0, 6);
-
   return (
     <div>
       <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
@@ -387,12 +356,9 @@ function TranscriptPreview({
     </div>
   );
 }
-
 // ─── Recommendation Verdict Block ─────────────────────────────────────────────
-
 function VerdictBlock({ model }: { model: SreevaAIInterviewViewModel }) {
   const rec = REC[model.recommendationColor] ?? REC.blue;
-
   const verdictMap: Record<string, { icon: ReactNode; headline: string }> = {
     green: {
       icon: <CheckCircle2 className="h-6 w-6 text-emerald-500" />,
@@ -411,14 +377,11 @@ function VerdictBlock({ model }: { model: SreevaAIInterviewViewModel }) {
       headline: "Reject",
     },
   };
-
   const verdict = verdictMap[model.recommendationColor] ?? verdictMap.blue;
-
   return (
     <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white">
       {/* Colour accent bar */}
       <div className={cn("h-1 w-full", rec.bg)} />
-
       <div className="px-5 py-4">
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -432,7 +395,6 @@ function VerdictBlock({ model }: { model: SreevaAIInterviewViewModel }) {
             {model.fitPercent}% Fit
           </div>
         </div>
-
         {model.verdictRecommendationReason && (
           <p className="mt-3 text-[12px] leading-relaxed text-slate-600 border-t border-slate-100 pt-3">
             {model.verdictRecommendationReason}
@@ -442,19 +404,15 @@ function VerdictBlock({ model }: { model: SreevaAIInterviewViewModel }) {
     </div>
   );
 }
-
 // ─── Integrity Chip ───────────────────────────────────────────────────────────
-
 function IntegrityBlock({ model }: { model: SreevaAIInterviewViewModel }) {
   const score = model.integrityScore;
   const color =
     score >= 80 ? "text-emerald-700 bg-emerald-50 border-emerald-200"
     : score >= 60 ? "text-amber-700 bg-amber-50 border-amber-200"
     : "text-rose-700 bg-rose-50 border-rose-200";
-
   const flags = model.proctoringFlags;
   const headline = model.proctoringHeadline;
-
   return (
     <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
       {/* Header */}
@@ -467,7 +425,6 @@ function IntegrityBlock({ model }: { model: SreevaAIInterviewViewModel }) {
           {score}/100
         </span>
       </div>
-
       <div className="px-4 py-3 space-y-2">
         {/* Flags */}
         <div className="flex items-center justify-between">
@@ -476,7 +433,6 @@ function IntegrityBlock({ model }: { model: SreevaAIInterviewViewModel }) {
             {flags === 0 ? "None" : flags}
           </span>
         </div>
-
         {/* Confidence bar */}
         <div>
           <div className="mb-1 flex justify-between text-[10px] text-slate-400">
@@ -493,11 +449,9 @@ function IntegrityBlock({ model }: { model: SreevaAIInterviewViewModel }) {
             />
           </div>
         </div>
-
         {headline && (
           <p className="text-[11px] text-slate-500 leading-relaxed pt-1">{headline}</p>
         )}
-
         {/* Top integrity signals */}
         {model.integritySignals.slice(0, 3).map((sig, i) => (
           <div key={i} className="flex items-center gap-2">
@@ -524,9 +478,7 @@ function IntegrityBlock({ model }: { model: SreevaAIInterviewViewModel }) {
     </div>
   );
 }
-
 // ─── Recording Access Point ───────────────────────────────────────────────────
-
 function RecordingBlock({
   videoUrl,
   videoMimeType,
@@ -539,7 +491,6 @@ function RecordingBlock({
   plyrRef: RefObject<PlyrHandle | null>;
 }) {
   const [open, setOpen] = useState(false);
-
   if (!videoUrl) {
     return (
       <div className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-slate-200 bg-slate-50 py-6 text-center">
@@ -548,9 +499,7 @@ function RecordingBlock({
       </div>
     );
   }
-
   const mins = durationSec ? Math.round(durationSec / 60) : null;
-
   return (
     <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
       <button
@@ -568,7 +517,6 @@ function RecordingBlock({
         </div>
         <ChevronDown className={cn("h-4 w-4 text-slate-300 transition-transform", open && "rotate-180")} />
       </button>
-
       {open && (
         <div className="border-t border-slate-100 p-3">
           <Plyr
@@ -581,9 +529,7 @@ function RecordingBlock({
     </div>
   );
 }
-
 // ─── Main Export ──────────────────────────────────────────────────────────────
-
 export function InterviewReportV2({
   model,
   showHeader = true,
@@ -594,7 +540,6 @@ export function InterviewReportV2({
   headerActions?: ReactNode;
 }) {
   const plyrRef = useRef<PlyrHandle>(null);
-
   const handleSeek = (seconds: number) => {
     if (!Number.isFinite(seconds)) return;
     try {
@@ -604,7 +549,6 @@ export function InterviewReportV2({
       if (vid) vid.currentTime = Math.max(0, seconds);
     } catch {}
   };
-
   // Derive the 5 competency scores for the radar chart
   const sc = model.technical.scores;
   const radarScores = [
@@ -614,19 +558,15 @@ export function InterviewReportV2({
     { label: "Communication", value: Math.round((model.comm.fluency + model.comm.pronunciation + model.comm.confidence) / 3) || Math.round(model.technical.percent * 0.8) },
     { label: "Ownership", value: sc?.ownership_credibility ?? Math.round(model.technical.percent * 0.88) },
   ] as { label: string; value: number }[];
-
   // Clamp all values 0-100
   radarScores.forEach((s) => { s.value = Math.min(100, Math.max(0, s.value)); });
-
   const overallScore = Math.round(radarScores.reduce((a, s) => a + s.value, 0) / radarScores.length);
-
   const recColor = model.recommendationColor;
   const accentBar =
     recColor === "green" ? "from-emerald-500 to-cyan-500"
     : recColor === "blue" ? "from-blue-500 to-cyan-500"
     : recColor === "amber" ? "from-amber-400 to-yellow-400"
     : "from-rose-500 to-pink-500";
-
   return (
     <div className="w-full min-h-screen bg-[#F3F4F6]">
       {/* ── Nav strip ── */}
@@ -645,7 +585,6 @@ export function InterviewReportV2({
           </div>
         </div>
       )}
-
       {/* ── Fallback banner ── */}
       {model.isFallback && (
         <div className="flex items-start gap-3 border-b border-amber-200 bg-amber-50 px-6 py-3">
@@ -655,15 +594,12 @@ export function InterviewReportV2({
           </p>
         </div>
       )}
-
       <div className="mx-auto max-w-[1360px] px-4 py-6 sm:px-6 lg:px-8">
-
         {/* ════════════════════════════════════════════
             ROW 1 — Candidate identity + Verdict + Integrity
             Layout: [identity 5fr] [verdict 4fr] [integrity 3fr]
         ════════════════════════════════════════════ */}
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-12 mb-4">
-
           {/* Identity */}
           <div className="lg:col-span-5 rounded-2xl border border-slate-200 bg-white overflow-hidden">
             {/* Gradient accent bar */}
@@ -687,7 +623,6 @@ export function InterviewReportV2({
                   {/* Recommendation dot */}
                   <div className={cn("absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full border-2 border-white", REC[recColor]?.bg ?? "bg-blue-500")} />
                 </div>
-
                 <div className="min-w-0 flex-1">
                   <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 leading-none">{model.fullName}</h1>
                   <p className="mt-1 text-[12px] text-slate-500">{model.roleLabel}</p>
@@ -697,14 +632,12 @@ export function InterviewReportV2({
                     <span><span className="font-semibold text-slate-600">Questions</span> · {model.questionsAsked}</span>
                   </div>
                 </div>
-
                 {/* Overall score pill */}
                 <div className="shrink-0 flex flex-col items-center justify-center w-14 h-14 rounded-full border-2 border-slate-200 bg-slate-50">
                   <span className="text-xl font-extrabold text-slate-900 leading-none">{overallScore}</span>
                   <span className="text-[8px] font-bold uppercase tracking-widest text-slate-400 mt-0.5">Score</span>
                 </div>
               </div>
-
               {/* AI Summary */}
               {model.verdictSummary && (
                 <div className="mt-4 rounded-xl bg-slate-50 border border-slate-100 px-4 py-3">
@@ -714,11 +647,9 @@ export function InterviewReportV2({
               )}
             </div>
           </div>
-
           {/* Verdict */}
           <div className="lg:col-span-4">
             <VerdictBlock model={model} />
-
             {/* Strengths & Weaknesses below verdict on same column */}
             <div className="mt-4 rounded-2xl border border-slate-200 bg-white overflow-hidden">
               <div className="grid grid-cols-2 divide-x divide-slate-100">
@@ -747,19 +678,16 @@ export function InterviewReportV2({
               </div>
             </div>
           </div>
-
           {/* Integrity */}
           <div className="lg:col-span-3">
             <IntegrityBlock model={model} />
           </div>
         </div>
-
         {/* ════════════════════════════════════════════
             ROW 2 — Score Breakdown (Radar) + Skill Map + Q-by-Q
             Layout: [radar 4fr] [skills 3fr] [questions 5fr]
         ════════════════════════════════════════════ */}
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-12 mb-4">
-
           {/* Radar Chart — Score Breakdown */}
           <div className="lg:col-span-4 rounded-2xl border border-slate-200 bg-white overflow-hidden">
             <div className="border-b border-slate-100 px-4 py-3 flex items-center justify-between">
@@ -774,7 +702,6 @@ export function InterviewReportV2({
             </div>
             <div className="flex flex-col items-center px-4 pb-4 pt-3">
               <RadarChart scores={radarScores} size={220} />
-
               {/* Legend */}
               <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 w-full">
                 {radarScores.map((s) => (
@@ -786,7 +713,6 @@ export function InterviewReportV2({
               </div>
             </div>
           </div>
-
           {/* Skill Map */}
           <div className="lg:col-span-3 rounded-2xl border border-slate-200 bg-white overflow-hidden">
             <div className="border-b border-slate-100 px-4 py-3 flex items-center justify-between">
@@ -797,7 +723,6 @@ export function InterviewReportV2({
               <SkillMap skills={model.skills} />
             </div>
           </div>
-
           {/* Question-by-Question */}
           <div className="lg:col-span-5 rounded-2xl border border-slate-200 bg-white overflow-hidden">
             <div className="border-b border-slate-100 px-4 py-3 flex items-center justify-between">
@@ -821,13 +746,11 @@ export function InterviewReportV2({
             </div>
           </div>
         </div>
-
         {/* ════════════════════════════════════════════
             ROW 3 — Transcript + Recording
             Compact access points, not embedded walls.
         ════════════════════════════════════════════ */}
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-
           {/* Transcript */}
           <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
             <div className="flex items-center gap-2.5 border-b border-slate-100 px-4 py-3">
@@ -839,7 +762,6 @@ export function InterviewReportV2({
               <TranscriptPreview transcript={model.transcript} onSeek={handleSeek} />
             </div>
           </div>
-
           {/* Recording */}
           <div>
             <RecordingBlock
@@ -850,7 +772,6 @@ export function InterviewReportV2({
             />
           </div>
         </div>
-
       </div>
     </div>
   );

@@ -1,5 +1,4 @@
 "use client";
-
 import { useState, useEffect } from "react";
 import { SuperAdminStatsGrid } from "@/components/super-admin/stats-grid";
 import { OrgCreditPieChart, OrgQuotaConsumption, OrgInterviewPieChart } from "@/components/super-admin/credit-charts";
@@ -8,7 +7,6 @@ import { Plus, ArrowRight, Building2, Loader2 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
-
 interface Org {
     id: string;
     name: string;
@@ -19,13 +17,11 @@ interface Org {
     interviewQuotaTotal?: number;
     interviewQuotaUsed?: number;
 }
-
 interface ChartStats {
     orgCreditStats: { name: string; creditsUsed: number }[];
     orgInterviewStats: { name: string; count: number }[];
     orgQuotaStats: { name: string; used: number; total: number }[];
 }
-
 interface DashboardStats extends ChartStats {
     totalOrgs: number;
     activeOrgs: number;
@@ -40,12 +36,10 @@ interface DashboardStats extends ChartStats {
     trends: { orgs: number; admins: number; drives: number; candidates: number };
     recentActivity: { type: "ORG" | "DRIVE" | "CANDIDATE" | "INTERVIEW"; detail: string; org: string; at: string }[];
 }
-
 function getStatusBadge(org: Org) {
     const quotaTotal = Number(org.interviewQuotaTotal || 0);
     const quotaUsed = Number(org.interviewQuotaUsed || 0);
     const isQuotaExhausted = quotaTotal > 0 && quotaUsed >= quotaTotal;
-
     if (org.status === "ACTIVE") {
         return { label: "Active", dot: "bg-emerald-500 animate-pulse", cls: "bg-emerald-50 text-emerald-600 border-emerald-100" };
     }
@@ -57,25 +51,21 @@ function getStatusBadge(org: Org) {
     }
     return { label: "Suspended", dot: "bg-red-400", cls: "bg-red-50 text-red-600 border-red-100" };
 }
-
 export default function SuperAdminDashboard() {
     const [orgs, setOrgs] = useState<Org[]>([]);
     const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(null);
     const [statsLoading, setStatsLoading] = useState(true);
     const [statsError, setStatsError] = useState<string | null>(null);
     const [orgsLoading, setOrgsLoading] = useState(true);
-
     const loadDashboardStats = async (signal?: AbortSignal) => {
         setStatsLoading(true);
         setStatsError(null);
-
         try {
             const res = await fetch("/api/super-admin/stats", signal ? { signal } : undefined);
             if (!res.ok) {
                 setStatsError("Failed to load dashboard stats.");
                 return;
             }
-
             const data = await res.json();
             setDashboardStats({
                 ...data,
@@ -94,7 +84,6 @@ export default function SuperAdminDashboard() {
             }
         }
     };
-
     useEffect(() => {
         fetch("/api/super-admin/orgs?limit=6")
             .then(async (res) => {
@@ -102,13 +91,10 @@ export default function SuperAdminDashboard() {
             })
             .catch(() => {})
             .finally(() => setOrgsLoading(false));
-
         const controller = new AbortController();
         void loadDashboardStats(controller.signal);
-
         return () => controller.abort();
     }, []);
-
     return (
         <div className="space-y-7 pb-10 animate-in fade-in duration-700" style={{ zoom: 0.78, transformOrigin: "top center" }}>
             <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between mb-8">
@@ -124,7 +110,6 @@ export default function SuperAdminDashboard() {
                         </div>
                     </div>
                 </div>
-
                 <div className="flex items-center gap-3 flex-wrap">
                     <Link href="/super-admin/voices">
                         <button className="flex items-center gap-2 border border-gray-200 bg-white text-gray-700 text-sm font-bold px-4 py-2.5 rounded-2xl hover:border-orange-200 hover:text-orange-600 transition-all">
@@ -139,14 +124,12 @@ export default function SuperAdminDashboard() {
                     </Link>
                 </div>
             </div>
-
             <SuperAdminStatsGrid
                 stats={dashboardStats}
                 loading={statsLoading}
                 error={statsError}
                 onRetry={() => { void loadDashboardStats(); }}
             />
-
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
                 <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
                     <div className="flex items-center justify-between mb-5">
@@ -158,7 +141,6 @@ export default function SuperAdminDashboard() {
                             <ArrowRight className="h-4 w-4" />
                         </Link>
                     </div>
-
                     {orgsLoading ? (
                         <div className="flex justify-center py-10">
                             <Loader2 className="h-6 w-6 animate-spin text-orange-500" />
@@ -212,15 +194,12 @@ export default function SuperAdminDashboard() {
                         </div>
                     )}
                 </div>
-
                 <OrgInterviewPieChart stats={dashboardStats?.orgInterviewStats ?? []} loading={statsLoading} />
             </div>
-
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
                 <OrgCreditPieChart stats={dashboardStats?.orgCreditStats ?? []} loading={statsLoading} />
                 <OrgQuotaConsumption stats={dashboardStats?.orgQuotaStats ?? []} loading={statsLoading} />
             </div>
-
             <RecentActivity
                 activities={dashboardStats?.recentActivity ?? null}
                 loading={statsLoading}

@@ -1,6 +1,5 @@
 import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
-
 interface StepsProps {
     steps: string[];
     currentStep: number;
@@ -8,7 +7,6 @@ interface StepsProps {
     isEditMode?: boolean;
     maxStepReached?: number;
 }
-
 export function Steps({ steps, currentStep, onStepClick, isEditMode, maxStepReached = 0 }: StepsProps) {
     return (
         <div className="relative flex justify-between w-full">
@@ -19,15 +17,12 @@ export function Steps({ steps, currentStep, onStepClick, isEditMode, maxStepReac
                 className="absolute top-4 left-0 h-[2px] bg-[#F97316] rounded-full transition-all duration-500"
                 style={{ width: `${(currentStep / (steps.length - 1)) * 100}%` }}
             />
-
             {steps.map((step, index) => {
                 const isCompleted = index < currentStep;
                 const isCurrent = index === currentStep;
                 const wasReached = index <= maxStepReached;
-                
                 // Clickable if completed, in edit mode, or previously reached
                 const isClickable = (isCompleted || isEditMode || wasReached) && onStepClick;
-
                 return (
                     <div key={step} className="relative z-10 flex flex-col items-center gap-2">
                         <div
@@ -62,4 +57,3 @@ export function Steps({ steps, currentStep, onStepClick, isEditMode, maxStepReac
         </div>
     );
 }
-

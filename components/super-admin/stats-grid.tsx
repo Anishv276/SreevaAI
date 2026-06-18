@@ -1,10 +1,8 @@
 "use client";
-
 import { useEffect, useState } from "react";
 import { Users, Building2, Briefcase, Zap, Globe, Target, TrendingUp, TrendingDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
-
 interface SuperAdminStats {
     totalOrgs: number;
     activeOrgs: number;
@@ -18,14 +16,12 @@ interface SuperAdminStats {
     engagedOrgs: number;
     trends: { orgs: number; admins: number; drives: number; candidates: number };
 }
-
 interface SuperAdminStatsGridProps {
     stats?: SuperAdminStats | null;
     loading?: boolean;
     error?: string | null;
     onRetry?: () => void;
 }
-
 export function SuperAdminStatsGrid({
     stats: externalStats,
     loading: externalLoading,
@@ -37,19 +33,15 @@ export function SuperAdminStatsGrid({
     const [error, setError] = useState<string | null>(null);
     const [retryKey, setRetryKey] = useState(0);
     const useExternalData = externalStats !== undefined;
-
     useEffect(() => {
         if (useExternalData) {
             return;
         }
-
         const controller = new AbortController();
         const { signal } = controller;
-
         const loadStats = async () => {
             setLoading(true);
             setError(null);
-
             try {
                 const res = await fetch("/api/super-admin/stats", { signal });
                 if (signal.aborted) return;
@@ -64,16 +56,12 @@ export function SuperAdminStatsGrid({
                 if (!signal.aborted) setLoading(false);
             }
         };
-
         void loadStats();
-
         return () => controller.abort();
     }, [retryKey, useExternalData]);
-
     const resolvedStats = useExternalData ? externalStats : stats;
     const resolvedLoading = useExternalData ? Boolean(externalLoading) : loading;
     const resolvedError = useExternalData ? externalError ?? null : error;
-
     if (resolvedError) {
         return (
             <div className="rounded-2xl border border-red-100 bg-red-50 px-6 py-4 flex items-center justify-between">
@@ -93,7 +81,6 @@ export function SuperAdminStatsGrid({
             </div>
         );
     }
-
     if (resolvedLoading || !resolvedStats) {
         return (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
@@ -103,10 +90,8 @@ export function SuperAdminStatsGrid({
             </div>
         );
     }
-
     const s = resolvedStats;
     const activePercentage = s.platformHealth ?? (s.totalOrgs > 0 ? Math.round((s.activeOrgs / s.totalOrgs) * 100) : 0);
-
     const cards = [
         {
             label: "Organizations",
@@ -158,7 +143,6 @@ export function SuperAdminStatsGrid({
             sub: `${s.activeOrgs} active · ${s.suspendedOrgs} paused · ${s.engagedOrgs ?? 0} engaged/30d`,
         },
     ];
-
     return (
         <motion.div
             initial="hidden"

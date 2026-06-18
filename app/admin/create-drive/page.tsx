@@ -29,7 +29,6 @@ import { useAdminOrg } from "@/context/admin-org-context";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PremiumDatePicker } from "@/components/ui/premium-date-picker";
-
 export default function CreateDrivePage() {
   return (
     <div style={{ zoom: 0.75, transformOrigin: "top center" }}>
@@ -39,7 +38,6 @@ export default function CreateDrivePage() {
     </div>
   );
 }
-
 function CreateDriveForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -67,7 +65,6 @@ function CreateDriveForm() {
     aiName: "Ishitha",
     extractedDetails: null,
   });
-
   const [published, setPublished] = useState(false);
   const [publishedDriveId, setPublishedDriveId] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -86,9 +83,6 @@ function CreateDriveForm() {
   const interviewAccessLocked = quotaLocked || isSuspended;
   const billingLocked = isDriveCreationLocked(maxActiveDrives, activeDriveCount);
   const driveCreationLocked = !isEditMode && (billingLocked || interviewAccessLocked);
-
-
-
   const formatDateForInput = (value?: string | null) => {
     if (!value) return "";
     const date = new Date(value);
@@ -98,32 +92,26 @@ function CreateDriveForm() {
     const day = String(date.getDate()).padStart(2, "0");
     return `${year}-${month}-${day}`;
   };
-
   const displayFormData = formData;
-
   const getPersistedJdUrl = (source: any = formDataRef.current) => {
     const candidateUrl = jdPersistedUrlRef.current || source?.jdPreviewUrl;
     return typeof candidateUrl === "string" && !candidateUrl.startsWith("blob:") ? candidateUrl : null;
   };
-
   useEffect(() => {
     formDataRef.current = formData;
     if (typeof formData.jdPreviewUrl === "string" && !formData.jdPreviewUrl.startsWith("blob:")) {
       jdPersistedUrlRef.current = formData.jdPreviewUrl;
     }
   }, [formData]);
-
   useEffect(() => {
     const url = formData.jdPreviewUrl;
     return () => { if (url && url.startsWith("blob:")) URL.revokeObjectURL(url); };
   }, [formData.jdPreviewUrl]);
-
   useEffect(() => {
     if (!allowLanguageSelection && formData.interviewLanguage !== "English") {
       setFormData((prev: any) => ({ ...prev, interviewLanguage: "English" }));
     }
   }, [allowLanguageSelection, formData.interviewLanguage]);
-
   // Initial load for edit mode
   useEffect(() => {
     if (isEditMode && hasInitialLoadedRef.current !== driveId) {
@@ -168,7 +156,6 @@ function CreateDriveForm() {
       loadDrive();
     }
   }, [isEditMode, driveId, adminOrg?.voiceId, fallbackVoiceId, fallbackAllowedVoices]);
-
   // Handle AI-chat sync
   useEffect(() => {
     const method = searchParams.get("method");
@@ -187,7 +174,6 @@ function CreateDriveForm() {
       }
     }
   }, [searchParams]);
-
   // Reset on new drive
   useEffect(() => {
     if (!isEditMode && !searchParams.get("id")) {
@@ -206,7 +192,6 @@ function CreateDriveForm() {
       }
     }
   }, [isEditMode, searchParams, fallbackVoiceId, fallbackAllowedVoices]);
-
   const startAnalysis = async ({ file, url }: { file?: File; url?: string }) => {
     setIsAnalyzing(true);
     setAnalysisError(null);
@@ -227,11 +212,9 @@ function CreateDriveForm() {
       if (res.ok || res.status === 202) {
         const responseData = await res.json().catch(() => null);
         if (!responseData) { setAnalysisError("Failed to extract JD details."); return; }
-
         let extracted: any = null;
         let text: string | null = null;
         let r2Url: string | null = responseData.url ?? null;
-
         if (responseData.jobId) {
           const jobId = responseData.jobId as string;
           const POLL_INTERVAL = 2000;
@@ -252,10 +235,8 @@ function CreateDriveForm() {
           text = responseData.text ?? null;
           r2Url = responseData.url ?? null;
         }
-
         if (!extracted && !text && !r2Url) { setAnalysisError(responseData.error || "Failed to extract JD details."); return; }
         if (typeof r2Url === "string" && !r2Url.startsWith("blob:")) jdPersistedUrlRef.current = r2Url;
-
         setFormData((prev: any) => ({
           ...prev,
           title: extracted?.job_title || prev.role || "New Job",
@@ -279,7 +260,6 @@ function CreateDriveForm() {
       if (analysisAbortRef.current === controller) analysisAbortRef.current = null;
     }
   };
-
   const handlePublish = async () => {
     const currentFormData = formDataRef.current;
     if (driveCreationLocked && !isEditMode) {
@@ -337,12 +317,10 @@ function CreateDriveForm() {
       setIsSavingDraft(false);
     }
   };
-
   const screeningConfig = useMemo(() => ({
     threshold: Number(formData.screeningThreshold ?? 60),
     criteria: (formData.screeningCriteria || {}) as ScreeningCriteria,
   }), [formData.screeningThreshold, formData.screeningCriteria]);
-
   const handleScreeningConfig = useMemo(() => (cfg: any) =>
     setFormData((prev: any) => {
       const current = {
@@ -356,7 +334,6 @@ function CreateDriveForm() {
         screeningCriteria: sanitizeScreeningCriteria(next.criteria || {}),
       };
     }), []);
-
   // Success screen
   if (published) {
     return (
@@ -386,7 +363,6 @@ function CreateDriveForm() {
       </div>
     );
   }
-
   // Locked screen — shown instead of the form when creation is blocked
   if (driveCreationLocked) {
     return (
@@ -440,7 +416,6 @@ function CreateDriveForm() {
       </div>
     );
   }
-
   // Main single-scroll form
   return (
     <div className="max-w-4xl mx-auto py-4 space-y-4">
@@ -451,7 +426,6 @@ function CreateDriveForm() {
         <ChevronLeft className="h-4 w-4" />
         {isEditMode ? "Back to All Jobs" : "Back"}
       </button>
-
       <div className="mb-8 group">
         <div className="flex items-center gap-4 mb-3">
           <div className="h-12 w-1.5 bg-gradient-to-b from-[#F97316] to-orange-400 rounded-full shadow-[0_0_12px_rgba(249,115,22,0.4)] transition-all duration-300 group-hover:h-14" />
@@ -465,13 +439,11 @@ function CreateDriveForm() {
           </div>
         </div>
       </div>
-
       <div
         className="rounded-2xl bg-white transition-all duration-300 relative"
         style={{ border: "1px solid #E5E7EB", borderTop: "4px solid #F97316", boxShadow: "0 4px 24px rgba(0,0,0,0.06), 0 1px 4px rgba(0,0,0,0.04)" }}
       >
         <div className="p-8 space-y-10">
-
           {/* Section 1: JD Upload */}
           <section>
             <SectionHeader index={1} title="Job Description" subtitle="Upload your JD and AI will auto-fill the details" />
@@ -482,12 +454,9 @@ function CreateDriveForm() {
               analysisError={analysisError}
               startAnalysis={startAnalysis}
               abortAnalysis={() => { analysisAbortRef.current?.abort(); setIsAnalyzing(false); }}
-
             />
           </section>
-
           <Divider />
-
           {/* Section 2: Job Name & Role */}
           <section>
             <SectionHeader index={2} title="Job Details" subtitle="Name and role for this job" />
@@ -546,9 +515,7 @@ function CreateDriveForm() {
               </p>
             )}
           </section>
-
           <Divider />
-
           {/* Section 3: Interview Setup */}
           <section>
             <SectionHeader index={3} title="Interview Setup" subtitle="Configure your AI interviewer" />
@@ -558,9 +525,7 @@ function CreateDriveForm() {
               allowLanguageSelection={allowLanguageSelection}
             />
           </section>
-
           <Divider />
-
           {/* Section 4: Screening Settings */}
           <section>
             <SectionHeader index={4} title="Screening Settings" subtitle="Set threshold and criteria for resume screening" />
@@ -570,7 +535,6 @@ function CreateDriveForm() {
             />
           </section>
         </div>
-
         {/* Footer */}
         <div className="flex justify-between items-center px-8 py-4 bg-white border-t border-gray-100 rounded-b-2xl">
           <button
@@ -579,7 +543,6 @@ function CreateDriveForm() {
           >
             {isEditAction ? "Cancel" : "Back"}
           </button>
-
           <button
             type="button"
             onClick={handlePublish}
@@ -595,7 +558,6 @@ function CreateDriveForm() {
           </button>
         </div>
       </div>
-
       <style>{`
         @keyframes pulse-glow {
           0%, 100% { box-shadow: 0 0 0 0 rgba(249,115,22,0.5), 0 4px 20px rgba(249,115,22,0.45); }
@@ -605,7 +567,6 @@ function CreateDriveForm() {
     </div>
   );
 }
-
 function SectionHeader({ index, title, subtitle }: { index: number; title: string; subtitle: string }) {
   return (
     <div className="flex items-start gap-4 mb-6">
@@ -619,7 +580,6 @@ function SectionHeader({ index, title, subtitle }: { index: number; title: strin
     </div>
   );
 }
-
 function Divider() {
   return <div className="h-px bg-gray-100" />;
 }

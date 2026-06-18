@@ -1,14 +1,11 @@
 import { sendEmail } from "./resend";
-
 export type MailResult =
     | { success: true }
     | { success: false; error: string };
-
 const FONT = `-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif`;
 const ORANGE = "#F97316";
 const ORANGE_LIGHT = "#fff7ed";   // orange-50
 const ORANGE_BORDER = "#fed7aa";  // orange-200
-
 function wrapper(content: string) {
     return `<!DOCTYPE html>
 <html lang="en">
@@ -29,7 +26,6 @@ function wrapper(content: string) {
 </body>
 </html>`;
 }
-
 // White header with orange accent bar on left + orange eyebrow text
 function header(eyebrow: string, title: string) {
     return `
@@ -50,7 +46,6 @@ function header(eyebrow: string, title: string) {
   </td>
 </tr>`;
 }
-
 function infoCard(items: { label: string; value: string }[]) {
     return `
 <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${ORANGE_LIGHT};border:1px solid ${ORANGE_BORDER};border-left:4px solid ${ORANGE};border-radius:10px;margin:20px 0;">
@@ -69,25 +64,21 @@ function infoCard(items: { label: string; value: string }[]) {
   </td></tr>
 </table>`;
 }
-
 function ctaButton(href: string, label: string) {
     return `<a href="${href}" style="display:inline-block;background:${ORANGE};color:#ffffff;text-decoration:none;font-size:15px;font-weight:700;padding:14px 36px;border-radius:10px;letter-spacing:0.01em;box-shadow:0 2px 12px rgba(249,115,22,0.30);">${label} &rarr;</a>`;
 }
-
 function tipBox(html: string) {
     return `
 <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${ORANGE_LIGHT};border:1px solid ${ORANGE_BORDER};border-radius:10px;margin:16px 0;">
   <tr><td style="padding:16px 20px;font-size:13px;color:#92400e;line-height:1.75;">${html}</td></tr>
 </table>`;
 }
-
 function noteBox(html: string) {
     return `
 <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#fafafa;border:1px solid #e5e5e5;border-radius:10px;margin:16px 0;">
   <tr><td style="padding:16px 20px;font-size:13px;color:#525252;line-height:1.75;">${html}</td></tr>
 </table>`;
 }
-
 function footerRow(text: string) {
     return `
 <tr>
@@ -99,9 +90,7 @@ function footerRow(text: string) {
   </td>
 </tr>`;
 }
-
 // ─── 1. Interview Invitation ─────────────────────────────────────────────────
-
 export async function sendInterviewInviteEmail({
     email, fullName, jobTitle, orgName, interviewLink, schedulingDeadline,
 }: {
@@ -115,9 +104,7 @@ export async function sendInterviewInviteEmail({
     const deadlineStr = schedulingDeadline
         ? schedulingDeadline.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })
         : null;
-
     const subject = `You've been shortlisted for ${jobTitle} at ${orgName} — Complete your AI interview`;
-
     const html = wrapper(`
         ${header("Interview Invitation", `Congratulations, ${fullName}!`)}
         <tr><td style="padding:32px 36px 0;">
@@ -148,7 +135,6 @@ export async function sendInterviewInviteEmail({
         </td></tr>
         ${footerRow(`Sent by ${orgName} via Sreeva AI · ${email} · Results reviewed within 24–48 hours.`)}
     `);
-
     try {
         await sendEmail({ to: email, subject, html, type: "interview" });
         return { success: true };
@@ -156,9 +142,7 @@ export async function sendInterviewInviteEmail({
         return { success: false, error: (error as Error)?.message || "Failed to send email" };
     }
 }
-
 // ─── 2. Rejection ────────────────────────────────────────────────────────────
-
 export async function sendRejectionEmail({
     email, fullName, jobTitle, orgName,
 }: {
@@ -168,7 +152,6 @@ export async function sendRejectionEmail({
     orgName: string;
 }): Promise<MailResult> {
     const subject = `Your application update for ${jobTitle} at ${orgName}`;
-
     const html = wrapper(`
         ${header("Application Update", `Hi ${fullName},`)}
         <tr><td style="padding:32px 36px 0;">
@@ -180,7 +163,6 @@ export async function sendRejectionEmail({
         </td></tr>
         ${footerRow(`Sent by ${orgName} via Sreeva AI · ${email}`)}
     `);
-
     try {
         await sendEmail({ to: email, subject, html, type: "interview" });
         return { success: true };
@@ -188,9 +170,7 @@ export async function sendRejectionEmail({
         return { success: false, error: (error as Error)?.message || "Failed to send email" };
     }
 }
-
 // ─── 3. Interview Completed (admin notification) ─────────────────────────────
-
 export async function sendInterviewCompletedEmail({
     adminEmail, adminName, candidateName, jobTitle, orgName, driveTitle, completedAt, reportLink,
 }: {
@@ -207,7 +187,6 @@ export async function sendInterviewCompletedEmail({
     const completedStr = (completedAt || new Date()).toLocaleString("en-US", {
         weekday: "short", month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit",
     });
-
     const html = wrapper(`
         ${header("Interview Completed", "New report ready to review")}
         <tr><td style="padding:32px 36px 0;">
@@ -230,7 +209,6 @@ export async function sendInterviewCompletedEmail({
         </td></tr>
         ${footerRow(`You are receiving this as an admin of ${orgName} on Sreeva AI.`)}
     `);
-
     try {
         await sendEmail({ to: adminEmail, subject, html, type: "interview" });
         return { success: true };
@@ -238,9 +216,7 @@ export async function sendInterviewCompletedEmail({
         return { success: false, error: (error as Error)?.message || "Failed to send email" };
     }
 }
-
 // ─── 4. Org Welcome ──────────────────────────────────────────────────────────
-
 export async function sendOrgWelcomeEmail({
     email, orgName, adminName, tempPassword,
 }: {
@@ -251,7 +227,6 @@ export async function sendOrgWelcomeEmail({
 }): Promise<MailResult> {
     const loginUrl = `${process.env.NEXT_PUBLIC_APP_URL || ""}/login`;
     const subject = `Your ${orgName} workspace on Sreeva AI is ready`;
-
     const html = wrapper(`
         ${header("Workspace Ready", `Welcome aboard, ${adminName}!`)}
         <tr><td style="padding:32px 36px 0;">
@@ -286,7 +261,6 @@ export async function sendOrgWelcomeEmail({
         </td></tr>
         ${footerRow(`Questions? Reply to this email or contact your platform administrator.`)}
     `);
-
     try {
         await sendEmail({ to: email, subject, html, type: "welcome" });
         return { success: true };
@@ -294,15 +268,12 @@ export async function sendOrgWelcomeEmail({
         return { success: false, error: (error as Error)?.message || "Failed to send welcome email" };
     }
 }
-
 // ─── 5. OTP — Password Reset ─────────────────────────────────────────────────
-
 export async function sendOtpEmail({ to, name, otp }: { to: string; name: string; otp: string }): Promise<void> {
     const subject = `${otp} is your Sreeva AI recovery code`;
     const digitBoxes = otp.split("").map(d =>
         `<td style="padding:0 4px;"><div style="width:48px;height:60px;background:#ffffff;border:2px solid ${ORANGE_BORDER};border-radius:10px;text-align:center;line-height:60px;font-size:28px;font-weight:800;color:#111111;font-variant-numeric:tabular-nums;">${d}</div></td>`
     ).join("");
-
     const html = wrapper(`
         ${header("Security Code", "Account recovery")}
         <tr><td style="padding:32px 36px 0;">
@@ -320,18 +291,14 @@ export async function sendOtpEmail({ to, name, otp }: { to: string; name: string
         </td></tr>
         ${footerRow(`Security email sent to ${to} · This code expires in 10 minutes.`)}
     `);
-
     await sendEmail({ to, subject, html, type: "password-reset" });
 }
-
 // ─── 6. OTP — Password Change ─────────────────────────────────────────────────
-
 export async function sendPasswordChangeOtpEmail({ to, otp }: { to: string; otp: string }): Promise<void> {
     const subject = `${otp} — Confirm your Sreeva AI password change`;
     const digitBoxes = otp.split("").map(d =>
         `<td style="padding:0 4px;"><div style="width:48px;height:60px;background:#ffffff;border:2px solid ${ORANGE_BORDER};border-radius:10px;text-align:center;line-height:60px;font-size:28px;font-weight:800;color:#111111;font-variant-numeric:tabular-nums;">${d}</div></td>`
     ).join("");
-
     const html = wrapper(`
         ${header("Security Verification", "Confirm password change")}
         <tr><td style="padding:32px 36px 0;">
@@ -349,6 +316,5 @@ export async function sendPasswordChangeOtpEmail({ to, otp }: { to: string; otp:
         </td></tr>
         ${footerRow(`Security email sent to ${to} · This code expires in 10 minutes.`)}
     `);
-
     await sendEmail({ to, subject, html, type: "password-reset" });
 }

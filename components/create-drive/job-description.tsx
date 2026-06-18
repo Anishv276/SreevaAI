@@ -1,7 +1,6 @@
 "use client";
 import { useState, useRef } from "react";
 import { Upload, Loader2, FileText, X, CheckCircle2, Eye } from "lucide-react";
-
 export function JobDescription({
     formData,
     updateFormData,
@@ -19,19 +18,16 @@ export function JobDescription({
 }) {
     const [dragOver, setDragOver] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
-
     const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) startAnalysis({ file });
     };
-
     const handleDrop = (e: React.DragEvent) => {
         e.preventDefault();
         setDragOver(false);
         const file = e.dataTransfer.files?.[0];
         if (file) startAnalysis({ file });
     };
-
     const clearFile = () => {
         abortAnalysis?.();
         updateFormData((prev: any) => ({
@@ -42,7 +38,6 @@ export function JobDescription({
             extractedDetails: null,
         }));
     };
-
     return (
         <div className="space-y-4">
             {analysisError && (
@@ -50,7 +45,6 @@ export function JobDescription({
                     <X className="h-4 w-4" /> {analysisError}
                 </div>
             )}
-
             {!formData.jdFileName || isAnalyzing ? (
                 <div
                     onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}

@@ -1,31 +1,25 @@
 const fs = require('fs');
 const path = 'c:\\Users\\vamsi\\OneDrive\\Desktop\\HR-updates\\components\\admin\\candidate-profile\\resume-report-sreevaai.tsx';
 let content = fs.readFileSync(path, 'utf8').replace(/\r\n/g, '\n');
-
 // 1. Update imports
 content = content.replace(
   '  Activity,\n} from "lucide-react";',
   '  Activity,\n  CheckCircle,\n  XCircle,\n  AlertTriangle,\n  ChevronDown,\n  MapPin,\n} from "lucide-react";'
 );
-
 // 2. Add useState hooks
 content = content.replace(
   'const [radarHovered, setRadarHovered] = useState<RadarKey | null>(null);',
   'const [radarHovered, setRadarHovered] = useState<RadarKey | null>(null);\n  const [openStrengths, setOpenStrengths] = useState(true);\n  const [openWeaknesses, setOpenWeaknesses] = useState(true);\n  const [expandedVerdict, setExpandedVerdict] = useState(false);'
 );
-
 // 3. Replace the layout
 const splitStr = '        {/* Candidate Header Card */}';
 const splitIdx = content.indexOf(splitStr);
-
 if (splitIdx !== -1) {
   const topPart = content.slice(0, splitIdx);
   const newLayout = `        {/* Main 3-Panel Bento Architecture */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 min-h-[calc(100vh-8rem)]">
-          
           {/* PANEL 1: Left (Profile, Verdict, Radar, Summary) */}
           <div className="lg:col-span-4 flex flex-col gap-4 min-h-0 overflow-y-auto" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
-            
             {/* Candidate Profile Compact */}
             <div className={cn("rounded-2xl border border-[#E4E7EB] bg-white p-5 shadow-sm")}>
               <div className="flex items-center gap-4 mb-4">
@@ -55,7 +49,6 @@ if (splitIdx !== -1) {
                 ) : null}
               </div>
             </div>
-
             {/* Hiring Verdict Box */}
             {(() => {
               const isHire = model.decisionStamp === "SHORTLISTED";
@@ -103,7 +96,6 @@ if (splitIdx !== -1) {
                 </div>
               );
             })()}
-
             {/* Fit Radar */}
             <div className="rounded-2xl border border-[#E4E7EB] bg-white overflow-hidden shadow-sm">
               <div className="px-5 py-4 border-b border-[#F3F4F6]">
@@ -113,7 +105,6 @@ if (splitIdx !== -1) {
                 <ResumeRadarPlot values={model.fitRadar} notes={model.fitRadarNotes} onHoverChange={setRadarHovered} />
               </div>
             </div>
-
             {/* AI Summary */}
             <div className="rounded-2xl border border-[#E4E7EB] bg-white overflow-hidden shadow-sm">
               <div className="px-5 py-4 border-b border-[#F3F4F6]">
@@ -137,12 +128,9 @@ if (splitIdx !== -1) {
                 ))}
               </div>
             </div>
-            
           </div>
-
           {/* PANEL 2: Middle (Evidence Highlights, Skill Signals) */}
           <div className="lg:col-span-4 flex flex-col gap-4 min-h-0 overflow-y-auto" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
-            
             {/* Evidence Highlights */}
             <div className="rounded-2xl border border-[#E4E7EB] bg-white shadow-sm overflow-hidden">
               <div className="px-5 py-4 border-b border-[#F3F4F6]">
@@ -179,9 +167,7 @@ if (splitIdx !== -1) {
                       </div>
                     )}
                   </div>
-
                   <div className="h-px bg-[#F3F4F6] my-1" />
-
                   {/* Weaknesses */}
                   <div className="flex flex-col">
                     <button type="button" onClick={() => setOpenWeaknesses(!openWeaknesses)}
@@ -214,7 +200,6 @@ if (splitIdx !== -1) {
                 </div>
               </div>
             </div>
-
             {/* Skill Signals */}
             <div className="rounded-2xl border border-[#E4E7EB] bg-white shadow-sm overflow-hidden flex-1 flex flex-col min-h-0">
               <div className="px-5 py-4 border-b border-[#F3F4F6] shrink-0">
@@ -273,7 +258,6 @@ if (splitIdx !== -1) {
               </div>
             </div>
           </div>
-
           {/* PANEL 3: Right (Career Timeline) */}
           <div className="lg:col-span-4 flex flex-col gap-4 min-h-0 overflow-y-auto" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
             <div className="rounded-2xl border border-[#E4E7EB] bg-white shadow-sm overflow-hidden flex-1 flex flex-col min-h-0">
@@ -296,15 +280,12 @@ if (splitIdx !== -1) {
               </div>
             </div>
           </div>
-
         </div>
-
       </div>
     </div>
   );
 }
 `;
-
   const finalContent = topPart + newLayout;
   fs.writeFileSync(path, finalContent, 'utf8');
   console.log('Successfully replaced ALL layout securely!');

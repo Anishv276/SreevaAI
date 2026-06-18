@@ -1,5 +1,4 @@
 "use client";
-
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Bell, LifeBuoy, Search, Loader2, MessageSquare, Clock3, Building2, Mail, User, CheckCircle2, CircleDot, ArrowRight, ShieldAlert, Check, MoreVertical, Eye, ChevronDown } from "lucide-react";
@@ -20,7 +19,6 @@ import {
     DialogDescription,
 } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/toast-custom";
-
 type SupportTicket = {
     id: string;
     name: string;
@@ -45,7 +43,6 @@ type SupportTicket = {
         } | null;
     } | null;
 };
-
 export default function SuperAdminSupportPage() {
     const [tickets, setTickets] = useState<SupportTicket[]>([]);
     const [loading, setLoading] = useState(true);
@@ -57,11 +54,9 @@ export default function SuperAdminSupportPage() {
     const [status, setStatus] = useState("ALL");
     const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
     const [viewTicket, setViewTicket] = useState<SupportTicket | null>(null);
-
     const handleUpdateStatus = async (id: string, newStatus: string) => {
         const ticket = tickets.find(t => t.id === id);
         if (!ticket || ticket.status === newStatus) return;
-
         setUpdatingStatus(id);
         try {
             const res = await fetch("/api/super-admin/support-tickets", {
@@ -69,7 +64,6 @@ export default function SuperAdminSupportPage() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ id, status: newStatus }),
             });
-
             if (res.ok) {
                 setTickets(prev => prev.map(t => t.id === id ? { ...t, status: newStatus } : t));
                 toast.success(`Ticket status updated to ${newStatus}`);
@@ -85,7 +79,6 @@ export default function SuperAdminSupportPage() {
             setUpdatingStatus(null);
         }
     };
-
     const fetchTickets = async (currentPage = page, currentSearch = search, currentStatus = status) => {
         setLoading(true);
         try {
@@ -95,7 +88,6 @@ export default function SuperAdminSupportPage() {
                 ...(currentSearch ? { q: currentSearch } : {}),
                 ...(currentStatus ? { status: currentStatus } : {}),
             });
-
             const res = await fetch(`/api/super-admin/support-tickets?${params.toString()}`);
             const data = await res.json();
             if (res.ok) {
@@ -112,40 +104,31 @@ export default function SuperAdminSupportPage() {
             setLoading(false);
         }
     };
-
     useEffect(() => {
         void fetchTickets();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [page, search, status]);
-
     const statusColor = (ticketStatus: string) => ({
         OPEN: "bg-amber-50 text-amber-700 border-amber-100",
         RESOLVED: "bg-emerald-50 text-emerald-700 border-emerald-100",
         CLOSED: "bg-gray-50 text-gray-600 border-gray-200",
     }[ticketStatus] || "bg-gray-50 text-gray-500 border-gray-100");
-
     const candidateName = (ticket: SupportTicket) =>
         ticket.interview?.application?.fullName?.trim() || ticket.name || "Unknown candidate";
-
     const candidateEmail = (ticket: SupportTicket) =>
         ticket.interview?.application?.email?.trim() || ticket.email || "Unknown email";
-
     const orgName = (ticket: SupportTicket) =>
         ticket.interview?.application?.drive?.organization?.name?.trim() || "No organization";
-
     const orgSlug = (ticket: SupportTicket) =>
         ticket.interview?.application?.drive?.organization?.slug?.trim() || "";
-
     const driveTitle = (ticket: SupportTicket) =>
         ticket.interview?.application?.drive?.title?.trim() || "Interview";
-
     const visibleStats = useMemo(() => ([
         { label: "Total Tickets", value: stats.total, icon: MessageSquare, color: "text-blue-600", bg: "bg-blue-50" },
         { label: "Open", value: stats.openCount, icon: CircleDot, color: "text-amber-600", bg: "bg-amber-50" },
         { label: "Resolved", value: stats.resolvedCount, icon: CheckCircle2, color: "text-emerald-600", bg: "bg-emerald-50" },
         { label: "Closed", value: stats.closedCount, icon: ShieldAlert, color: "text-gray-600", bg: "bg-gray-100" },
     ]), [stats]);
-
     return (
         <div className="max-w-6xl mx-auto space-y-5 pb-8">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between animate-fade-slide">
@@ -156,7 +139,6 @@ export default function SuperAdminSupportPage() {
                         <p className="text-gray-400 font-medium text-[10px] uppercase tracking-wider">Manage interview help requests</p>
                     </div>
                 </div>
-
                 <Link href="/super-admin">
                     <button className="flex items-center gap-1.5 bg-white border border-gray-100 hover:border-gray-200 text-gray-500 text-[11px] font-bold px-3 py-1.5 rounded-lg transition-all">
                         <ArrowRight className="h-3 w-3 rotate-180" />
@@ -164,7 +146,6 @@ export default function SuperAdminSupportPage() {
                     </button>
                 </Link>
             </div>
-
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 {visibleStats.map((item) => (
                     <div key={item.label} className="flex items-center gap-3 p-3.5 bg-white rounded-xl border border-gray-100 shadow-sm transition-all hover:border-gray-200">
@@ -178,11 +159,9 @@ export default function SuperAdminSupportPage() {
                     </div>
                 ))}
             </div>
-
             <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
                 <div className="px-5 py-4 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <h2 className="text-sm font-bold text-gray-900">Recent Tickets</h2>
-                    
                     <div className="flex items-center gap-2">
                         <div className="relative">
                             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
@@ -218,7 +197,6 @@ export default function SuperAdminSupportPage() {
                         </Button>
                     </div>
                 </div>
-
                 {loading ? (
                     <div className="py-16 flex justify-center">
                         <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
@@ -254,7 +232,6 @@ export default function SuperAdminSupportPage() {
                                                     <span className="text-[10px] text-gray-400 truncate">{candidateEmail(ticket)}</span>
                                                 </div>
                                             </td>
-
                                             <td className="px-4 py-4">
                                                 <span 
                                                     className="text-[10px] font-medium text-gray-500 tabular-nums truncate whitespace-nowrap max-w-[180px] inline-block"
@@ -263,19 +240,16 @@ export default function SuperAdminSupportPage() {
                                                     {ticket.applicationId || ticket.interviewId || "N/A"}
                                                 </span>
                                             </td>
-
                                             <td className="px-4 py-4">
                                                 <span className="text-[11px] font-bold text-gray-700 truncate max-w-[120px]">
                                                     {orgName(ticket)}
                                                 </span>
                                             </td>
-
                                             <td className="px-4 py-4">
                                                 <span className="text-[10px] font-medium text-gray-400 truncate uppercase max-w-[120px]">
                                                     {driveTitle(ticket)}
                                                 </span>
                                             </td>
-
                                             <td className="px-4 py-4">
                                                 <div className="flex items-center gap-2 group/issue min-w-[150px]">
                                                     <p className="text-[11px] text-gray-600 line-clamp-1">
@@ -289,7 +263,6 @@ export default function SuperAdminSupportPage() {
                                                     </button>
                                                 </div>
                                             </td>
-
                                             <td className="px-4 py-4 text-center">
                                                 <div className="flex flex-col items-center min-w-[90px]">
                                                     <span className="text-[10px] font-bold text-gray-700 tabular-nums">
@@ -300,7 +273,6 @@ export default function SuperAdminSupportPage() {
                                                     </span>
                                                 </div>
                                             </td>
-
                                             <td className="pr-5 py-4 text-right">
                                                 <DropdownMenu>
                                                     <DropdownMenuTrigger asChild>
@@ -343,7 +315,6 @@ export default function SuperAdminSupportPage() {
                                 </tbody>
                             </table>
                         </div>
-
                         <div className="px-5 py-3.5 border-t border-gray-100 bg-gray-50/20 flex items-center justify-between">
                             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
                                 Page <span className="text-gray-900">{page}</span> of <span className="text-gray-900">{totalPages}</span>

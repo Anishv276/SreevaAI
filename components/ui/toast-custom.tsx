@@ -1,75 +1,58 @@
 "use client";
-
 import { AnimatePresence, motion } from "framer-motion";
 import { CheckCircle2, AlertCircle, X, Info } from "lucide-react";
 import { useEffect, useState } from "react";
-
 type ToastType = "success" | "error" | "info";
-
 interface Toast {
     id: string;
     message: string;
     type: ToastType;
 }
-
 interface ToastStore {
     toasts: Toast[];
     addToast: (message: string, type?: ToastType) => void;
     removeToast: (id: string) => void;
 }
-
 // Simple state management without zustand if not present, but wait, zustand is not in package.json.
 // I'll use a simple event emitter pattern or a singleton class.
-
 class ToastManager {
     private listeners: ((toasts: Toast[]) => void)[] = [];
     private toasts: Toast[] = [];
-
     subscribe(listener: (toasts: Toast[]) => void) {
         this.listeners.push(listener);
         return () => {
             this.listeners = this.listeners.filter(l => l !== listener);
         };
     }
-
     private notify() {
         this.listeners.forEach(l => l([...this.toasts]));
     }
-
     success(message: string) {
         this.add(message, "success");
     }
-
     error(message: string) {
         this.add(message, "error");
     }
-
     info(message: string) {
         this.add(message, "info");
     }
-
     private add(message: string, type: ToastType) {
         const id = Math.random().toString(36).substring(2, 9);
         this.toasts.push({ id, message, type });
         this.notify();
         setTimeout(() => this.remove(id), 4000);
     }
-
     remove(id: string) {
         this.toasts = this.toasts.filter(t => t.id !== id);
         this.notify();
     }
 }
-
 export const toast = new ToastManager();
-
 export function Toaster() {
     const [toasts, setToasts] = useState<Toast[]>([]);
-
     useEffect(() => {
         return toast.subscribe(setToasts);
     }, []);
-
     return (
         <div className="fixed top-8 right-8 z-[9999] flex flex-col gap-3 pointer-events-none" suppressHydrationWarning>
             <AnimatePresence mode="popLayout">
@@ -97,7 +80,6 @@ export function Toaster() {
                                 {t.type === "error" && <AlertCircle className="w-5 h-5" />}
                                 {t.type === "info" && <Info className="w-5 h-5" />}
                             </div>
-                            
                             <div className="flex-1">
                                 <p className="text-[13px] font-black uppercase tracking-widest opacity-40 leading-none mb-1">
                                     {t.type}
@@ -106,7 +88,6 @@ export function Toaster() {
                                     {t.message}
                                 </p>
                             </div>
-
                             <button 
                                 onClick={() => toast.remove(t.id)}
                                 className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-gray-100 transition-colors text-gray-400"
@@ -120,4 +101,3 @@ export function Toaster() {
         </div>
     );
 }
-

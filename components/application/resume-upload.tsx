@@ -1,6 +1,5 @@
 import { Upload, FileText, Loader2, X, CheckCircle2 } from "lucide-react";
 import { useRef, useState } from "react";
-
 interface ResumeUploadProps {
     formData: any;
     isAnalyzing: boolean;
@@ -8,11 +7,9 @@ interface ResumeUploadProps {
     startAnalysis: (file: File) => void;
     clearFile: () => void;
 }
-
 export function ResumeUpload({ formData, isAnalyzing, analysisError, startAnalysis, clearFile }: ResumeUploadProps) {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [dragOver, setDragOver] = useState(false);
-
     const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
@@ -24,7 +21,6 @@ export function ResumeUpload({ formData, isAnalyzing, analysisError, startAnalys
             startAnalysis(file);
         }
     };
-
     const handleDrop = (e: React.DragEvent) => {
         e.preventDefault();
         setDragOver(false);
@@ -36,7 +32,6 @@ export function ResumeUpload({ formData, isAnalyzing, analysisError, startAnalys
             startAnalysis(file);
         }
     };
-
     return (
         <div className="space-y-4">
             {analysisError && (
@@ -44,7 +39,6 @@ export function ResumeUpload({ formData, isAnalyzing, analysisError, startAnalys
                     <X className="h-4 w-4" /> {analysisError}
                 </div>
             )}
-
             {!formData.resumeUploaded ? (
                 <div
                     onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
@@ -126,4 +120,3 @@ export function ResumeUpload({ formData, isAnalyzing, analysisError, startAnalys
         </div>
     );
 }
-

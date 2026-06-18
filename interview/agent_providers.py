@@ -2,15 +2,12 @@
 agent_providers.py
 ==================
 Provider factory layer for TTS, STT, LLM, and VAD plugins.
-
 Supported providers:
   TTS: Cartesia, Sarvam, ElevenLabs (routed via VOICE_REGISTRY in agent_runtime_support)
   STT: Deepgram only
   LLM: OpenAI only
 """
-
 from __future__ import annotations
-
 import asyncio
 import base64
 import json
@@ -18,7 +15,6 @@ import inspect
 import os
 from dataclasses import replace
 from typing import Any, Sequence
-
 import aiohttp
 from livekit.agents import APIConnectionError, APIStatusError, APITimeoutError, tts, utils
 from livekit.agents.types import APIConnectOptions, DEFAULT_API_CONNECT_OPTIONS
@@ -27,7 +23,6 @@ try:
     from livekit.plugins import elevenlabs  # type: ignore[attr-defined]
 except Exception:  # pragma: no cover - plugin may not be installed in all environments
     elevenlabs = None
-
 from interview.agent_runtime_support import (
     LLM_MODEL,
     FLUX_EOT_THRESHOLD,
@@ -36,11 +31,9 @@ from interview.agent_runtime_support import (
     logger,
 )
 from interview.agent_utils import _cartesia_plugin_model
-
 _CARTESIA_DEFAULT_MODEL = "cartesia/sonic-3"
 _CARTESIA_DEFAULT_VOICE = "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"
 _ELEVENLABS_DEFAULT_MODEL = "eleven_turbo_v2_5"
-
 _PROVIDER_DEFAULTS: dict[str, Any] = {
     "cartesia_speed":          0.92,
     "sarvam_pace":             1.2,
@@ -64,19 +57,14 @@ _PROVIDER_DEFAULTS: dict[str, Any] = {
     # 20s prevent this. recv timeout is set separately to 90s in _recv_task.
     "sarvam_ws_timeout_sec":   25,
 }
-
 _LANG_MAP: dict[str, str] = {
     "hi":    "hi-IN",
     "en":    "en-IN",
     "en-US": "en-IN",
     "hi-IN": "hi-IN",
 }
-
-
 def _map_language(language: str, fallback: str | None = None) -> str:
     return _LANG_MAP.get(language, fallback or language)
-
-
 class SarvamTTSConnectionManager:
     def __init__(self, tts_instance):
         self._tts = tts_instance
@@ -84,35 +72,28 @@ class SarvamTTSConnectionManager:
         self._opts = replace(tts_instance._opts)
         self._session: aiohttp.ClientSession | None = None
         self._ws_timeout = _PROVIDER_DEFAULTS["sarvam_ws_timeout_sec"]
-
     def __getattr__(self, name):
         if name == "synthesize":
             raise AttributeError(name)
         return getattr(self._tts, name)
-
     def stream(
         self,
         *,
         conn_options: APIConnectOptions = DEFAULT_API_CONNECT_OPTIONS,
     ) -> "SarvamDirectSynthesizeStream":
         return SarvamDirectSynthesizeStream(manager=self, conn_options=conn_options)
-
     async def _ensure_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession()
         return self._session
-
     async def aclose(self) -> None:
         if self._session is not None and not self._session.closed:
             await self._session.close()
         if hasattr(self._tts, "aclose"):
             await self._tts.aclose()
-
-
 class SarvamDirectSynthesizeStream(tts.SynthesizeStream):
     _KEEPALIVE_INTERVAL_SEC = 20.0
     _USER_AGENT = "livekit-agents-sarvam-direct/1.0"
-
     def __init__(
         self,
         *,
@@ -122,7 +103,6 @@ class SarvamDirectSynthesizeStream(tts.SynthesizeStream):
         super().__init__(tts=manager, conn_options=conn_options)
         self._manager = manager
         self._opts = manager._opts
-
     def _build_config_data(self) -> dict[str, Any]:
         data: dict[str, Any] = {
             "target_language_code": self._opts.target_language_code,
@@ -147,7 +127,6 @@ class SarvamDirectSynthesizeStream(tts.SynthesizeStream):
         if self._opts.model == "bulbul:v3" and self._opts.dict_id is not None:
             data["dict_id"] = self._opts.dict_id
         return data
-
     async def _run(self, output_emitter: tts.AudioEmitter) -> None:
         request_id = utils.shortuuid()
         timeout_sec = self._conn_options.timeout or self._manager._ws_timeout
@@ -155,7 +134,6 @@ class SarvamDirectSynthesizeStream(tts.SynthesizeStream):
         completion_event = asyncio.Event()
         ws: aiohttp.ClientWebSocketResponse | None = None
         tasks: list[asyncio.Task[Any]] = []
-
         output_emitter.initialize(
             request_id=request_id,
             sample_rate=self._opts.speech_sample_rate,
@@ -165,7 +143,6 @@ class SarvamDirectSynthesizeStream(tts.SynthesizeStream):
             frame_size_ms=50,
         )
         output_emitter.start_segment(segment_id=request_id)
-
         logger.info(
             "[TTS_SARVAM_WS_START] request_id=%s model=%s speaker=%s language=%s ws_url=%s",
             request_id,
@@ -174,7 +151,6 @@ class SarvamDirectSynthesizeStream(tts.SynthesizeStream):
             self._opts.target_language_code,
             self._opts.ws_url,
         )
-
         async def _send_json(payload: dict[str, Any], stage: str) -> None:
             if ws is None:
                 raise APIConnectionError("Sarvam websocket is not connected")
@@ -191,7 +167,6 @@ class SarvamDirectSynthesizeStream(tts.SynthesizeStream):
                 raise APIConnectionError(
                     f"Sarvam TTS websocket send failed during {stage}: {e}"
                 ) from e
-
         try:
             session = await self._manager._ensure_session()
             try:
@@ -227,7 +202,6 @@ class SarvamDirectSynthesizeStream(tts.SynthesizeStream):
                     exc_info=True,
                 )
                 raise APIConnectionError(f"Failed to connect to Sarvam TTS websocket: {e}") from e
-
             config_msg = {"type": "config", "data": self._build_config_data()}
             logger.debug(
                 "[TTS_SARVAM_WS_CONFIG] request_id=%s payload=%s",
@@ -235,7 +209,6 @@ class SarvamDirectSynthesizeStream(tts.SynthesizeStream):
                 config_msg,
             )
             await _send_json(config_msg, "config")
-
             async def _send_task() -> None:
                 try:
                     async for item in self._input_ch:
@@ -249,7 +222,6 @@ class SarvamDirectSynthesizeStream(tts.SynthesizeStream):
                                 request_id,
                                 type(item),
                             )
-
                     try:
                         await _send_json({"type": "flush"}, "final-flush")
                     except APIConnectionError as e:
@@ -273,7 +245,6 @@ class SarvamDirectSynthesizeStream(tts.SynthesizeStream):
                         exc_info=True,
                     )
                     raise APIConnectionError(f"Sarvam TTS send task failed: {e}") from e
-
             async def _recv_task() -> None:
                 # Sarvam docs: WS closes after 60s inactivity. Our keepalive pings every 20s
                 # prevent that. But between audio chunks Sarvam can be slow -- use 90s receive
@@ -293,7 +264,6 @@ class SarvamDirectSynthesizeStream(tts.SynthesizeStream):
                             raise APITimeoutError(
                                 f"Sarvam TTS websocket receive timed out after {recv_timeout_sec}s"
                             ) from e
-
                         if msg.type in (
                             aiohttp.WSMsgType.CLOSE,
                             aiohttp.WSMsgType.CLOSED,
@@ -310,7 +280,6 @@ class SarvamDirectSynthesizeStream(tts.SynthesizeStream):
                                 )
                                 completion_event.set()
                                 break
-
                             raw_close = {
                                 "msg_type": str(msg.type),
                                 "close_code": close_code,
@@ -329,7 +298,6 @@ class SarvamDirectSynthesizeStream(tts.SynthesizeStream):
                                 status_code=int(close_code) if isinstance(close_code, int) else -1,
                                 body=raw_close,
                             )
-
                         if msg.type == aiohttp.WSMsgType.TEXT:
                             try:
                                 payload = json.loads(msg.data)
@@ -346,7 +314,6 @@ class SarvamDirectSynthesizeStream(tts.SynthesizeStream):
                                     status_code=500,
                                     body={"raw_message": msg.data},
                                 ) from e
-
                             msg_type = payload.get("type")
                             if msg_type == "audio":
                                 audio_data = payload.get("data", {}).get("audio", "")
@@ -373,7 +340,6 @@ class SarvamDirectSynthesizeStream(tts.SynthesizeStream):
                                     ) from e
                                 output_emitter.push(audio_bytes)
                                 continue
-
                             if msg_type == "event":
                                 event_data = payload.get("data", {})
                                 event_type = event_data.get("event_type")
@@ -394,7 +360,6 @@ class SarvamDirectSynthesizeStream(tts.SynthesizeStream):
                                     payload,
                                 )
                                 continue
-
                             if msg_type == "error":
                                 error_data = payload.get("data", {})
                                 error_msg = str(error_data.get("message", "Unknown error"))
@@ -421,7 +386,6 @@ class SarvamDirectSynthesizeStream(tts.SynthesizeStream):
                                     status_code=500,
                                     body=payload,
                                 )
-
                             logger.debug(
                                 "[TTS_SARVAM_WS_UNKNOWN] request_id=%s msg_type=%s payload=%s",
                                 request_id,
@@ -429,7 +393,6 @@ class SarvamDirectSynthesizeStream(tts.SynthesizeStream):
                                 payload,
                             )
                             continue
-
                         if msg.type == aiohttp.WSMsgType.ERROR:
                             logger.error(
                                 "[TTS_SARVAM_WS_SOCKET_ERROR] request_id=%s error=%s",
@@ -438,7 +401,6 @@ class SarvamDirectSynthesizeStream(tts.SynthesizeStream):
                                 exc_info=True,
                             )
                             raise APIConnectionError(f"Sarvam TTS websocket error: {msg.data}")
-
                         logger.debug(
                             "[TTS_SARVAM_WS_MESSAGE] request_id=%s msg_type=%s data=%s",
                             request_id,
@@ -457,7 +419,6 @@ class SarvamDirectSynthesizeStream(tts.SynthesizeStream):
                         exc_info=True,
                     )
                     raise APIConnectionError(f"Sarvam TTS receive task failed: {e}") from e
-
             async def _keepalive_task() -> None:
                 try:
                     while not completion_event.is_set():
@@ -494,7 +455,6 @@ class SarvamDirectSynthesizeStream(tts.SynthesizeStream):
                         e,
                         exc_info=True,
                     )
-
             tasks = [
                 asyncio.create_task(_send_task(), name="SarvamDirectSynthesizeStream.send"),
                 asyncio.create_task(_recv_task(), name="SarvamDirectSynthesizeStream.recv"),
@@ -502,7 +462,6 @@ class SarvamDirectSynthesizeStream(tts.SynthesizeStream):
                     _keepalive_task(), name="SarvamDirectSynthesizeStream.keepalive"
                 ),
             ]
-
             try:
                 await asyncio.gather(*tasks)
                 logger.info(
@@ -565,8 +524,6 @@ class SarvamDirectSynthesizeStream(tts.SynthesizeStream):
                         e,
                         exc_info=True,
                     )
-
-
 def build_cartesia_tts(
     language: str = "en",
     model: str = _CARTESIA_DEFAULT_MODEL,
@@ -586,8 +543,6 @@ def build_cartesia_tts(
     if extra_kwargs:
         tts_kwargs.update(extra_kwargs)
     return cartesia.TTS(**tts_kwargs)
-
-
 def build_sarvam_tts(
     language: str = "en-IN",
     model: str = "bulbul:v3",
@@ -600,7 +555,6 @@ def build_sarvam_tts(
             "To fix: export SARVAM_API_KEY='your-api-key-here' "
             "Get your API key from: https://console.sarvam.ai/settings/api-keys"
         )
-
     # FIX: Validate API key format to catch misconfigurations early
     if not isinstance(api_key, str) or len(api_key.strip()) < 10:
         raise RuntimeError(
@@ -608,7 +562,6 @@ def build_sarvam_tts(
             f"Expected at least 10 characters. "
             f"Verify your key at: https://console.sarvam.ai/settings/api-keys"
         )
-
     logger.info(
         f"[SARVAM_TTS] Initializing TTS: model={model} language={language} voice={voice_id} "
         f"api_key_len={len(api_key)}"
@@ -642,12 +595,9 @@ def build_sarvam_tts(
         })
     else:
         tts_kwargs["temperature"] = d["sarvam_temperature"]
-
     tts = sarvam.TTS(**tts_kwargs)
     # Wrap with a direct WebSocket manager for per-turn connections.
     return SarvamTTSConnectionManager(tts)
-
-
 def _elevenlabs_supported_params() -> set[str]:
     if elevenlabs is None:
         return set()
@@ -656,8 +606,6 @@ def _elevenlabs_supported_params() -> set[str]:
         return set(sig.parameters.keys()) - {"self"}
     except Exception:
         return set()
-
-
 def build_elevenlabs_tts(
     language: str = "en",
     model: str = _ELEVENLABS_DEFAULT_MODEL,
@@ -668,7 +616,6 @@ def build_elevenlabs_tts(
     api_key = os.getenv("ELEVENLABS_API_KEY")
     if not api_key:
         raise RuntimeError("ELEVENLABS_API_KEY is not set")
-
     supported = _elevenlabs_supported_params()
     tts_kwargs: dict[str, Any] = {}
     if "api_key" in supported:
@@ -683,10 +630,7 @@ def build_elevenlabs_tts(
         tts_kwargs["voice_id"] = voice_id
     if "language" in supported:
         tts_kwargs["language"] = language
-
     return elevenlabs.TTS(**tts_kwargs)
-
-
 # Base keyterms that are always included regardless of role/JD.
 # Extra role/resume/JD terms can be passed at STT construction time. Avoid
 # updating LiveKit STTv2 mid-stream: in livekit-plugins-deepgram 1.5.x,
@@ -694,8 +638,6 @@ def build_elevenlabs_tts(
 _FLUX_BASE_KEYTERMS: list[str] = [
     "instantly", "heyreach", "n8n",
 ]
-
-
 def _merge_flux_keyterms(extra_keyterms: Sequence[str] | None = None) -> list[str]:
     """Return Flux keyterms deduped in order and capped to Deepgram's limit."""
     merged: list[str] = []
@@ -712,11 +654,8 @@ def _merge_flux_keyterms(extra_keyterms: Sequence[str] | None = None) -> list[st
         if len(merged) >= 100:
             break
     return merged
-
-
 def build_stt(language_code: str = "en", keyterms: Sequence[str] | None = None):
     """Build a Deepgram Flux STTv2 instance for live interview sessions.
-
     Flux uses /v2/listen (not /v1). Turn detection is native — EOT events replace
     endpointing_ms. VAD (Silero) is still passed to AgentSession for barge-in handling.
     Language: flux-general-en for English-only, flux-general-multi for multilingual.
@@ -728,7 +667,6 @@ def build_stt(language_code: str = "en", keyterms: Sequence[str] | None = None):
     is_multilingual = language_code not in ("en", "en-US", "en-IN", "en-GB")
     resolved_model = "flux-general-multi" if is_multilingual else "flux-general-en"
     flux_keyterms = _merge_flux_keyterms(keyterms)
-
     stt_kwargs: dict[str, Any] = {
         "model":          resolved_model,
         "sample_rate":    16000,
@@ -738,13 +676,11 @@ def build_stt(language_code: str = "en", keyterms: Sequence[str] | None = None):
         "mip_opt_out":    True,
         "keyterm":        flux_keyterms,
     }
-
     # eager_eot_threshold: fires EagerEndOfTurn ~200ms earlier to pre-warm LLM.
     # Only enable if FLUX_EAGER_EOT_THRESHOLD is set (non-None) — requires that
     # the eval gate handles TurnResumed cancellation to avoid double-firing.
     if FLUX_EAGER_EOT_THRESHOLD is not None:
         stt_kwargs["eager_eot_threshold"] = FLUX_EAGER_EOT_THRESHOLD
-
     # language_hint: bias language detection for flux-general-multi.
     # For Hindi sessions, hint both hi+en (code-switching is common in Indian interviews).
     if is_multilingual:
@@ -754,7 +690,6 @@ def build_stt(language_code: str = "en", keyterms: Sequence[str] | None = None):
         }
         hints = lang_hint_map.get(language_code, [language_code])
         stt_kwargs["language_hint"] = hints
-
     logger.info(
         "[STT] Flux config: model=%s eot_threshold=%s eager_eot=%s eot_timeout_ms=%s"
         " multilingual=%s language_hint=%s mip_opt_out=True keyterm_count=%d keyterms=%s",
@@ -767,18 +702,13 @@ def build_stt(language_code: str = "en", keyterms: Sequence[str] | None = None):
         len(flux_keyterms),
         flux_keyterms,
     )
-
     stt_v2 = deepgram.STTv2(**stt_kwargs)
     # Mark engine and turn detection mode so agent_runtime can read them without
     # importing deepgram directly or doing isinstance checks.
     setattr(stt_v2, "_hr_stt_engine", "deepgram_flux")
     setattr(stt_v2, "_hr_turn_detection_mode", "stt")
     return stt_v2
-
-
 def build_llm(model: str = LLM_MODEL, temperature: float = 0.6):
     return openai.LLM(model=model, temperature=temperature)
-
-
 def build_vad():
     return silero.VAD.load()
