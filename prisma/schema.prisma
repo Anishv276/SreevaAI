@@ -179,26 +179,28 @@ model SupportTicket {
 }
 
 model ResumeCandidate {
-  id           String      @id @default(cuid())
-  driveId      String
-  bulkBatchId  String
-  fullName     String
-  email        String?
-  phone        String?
-  fileName     String
-  resumeText   String?
-  aiScore      Int?
-  aiReport     String?
-  resumeData   String?
-  resumeStatus String      @default("pending")
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
-  isDeleted    Boolean     @default(false)
-  batch        ResumeBatch @relation(fields: [bulkBatchId], references: [id], onDelete: Cascade)
-  drive        Drive       @relation(fields: [driveId], references: [id], onDelete: Cascade)
+  id            String      @id @default(cuid())
+  driveId       String
+  bulkBatchId   String
+  applicationId String?
+  fullName      String
+  email         String?
+  phone         String?
+  fileName      String
+  resumeText    String?
+  aiScore       Int?
+  aiReport      String?
+  resumeData    String?
+  resumeStatus  String      @default("pending")
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  isDeleted     Boolean     @default(false)
+  batch         ResumeBatch @relation(fields: [bulkBatchId], references: [id], onDelete: Cascade)
+  drive         Drive       @relation(fields: [driveId], references: [id], onDelete: Cascade)
 
   @@index([driveId, bulkBatchId])
   @@index([driveId, resumeStatus])
+  @@index([applicationId])
 }
 
 model ResumeBatch {

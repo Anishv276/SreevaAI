@@ -31,7 +31,8 @@ console.warn = (...args: any[]) => {
 function createRedisConnection(): IORedis {
   return new IORedis(getRedisUrl() || DEFAULT_REDIS_URL, {
     maxRetriesPerRequest: null,
-    lazyConnect: true,
+    lazyConnect: false,
+    keepAlive: 10000,
     retryStrategy: (times: number) => Math.min(times * 500, 10_000),
     enableReadyCheck: false,
   });

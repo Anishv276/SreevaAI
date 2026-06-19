@@ -156,7 +156,6 @@ export async function DELETE(
         }
         // -- SOFT DELETE: DATABASE CLEANUP (Cascading) ---------------------------
         await prisma.$transaction(async (tx) => {
-            const timestamp = Date.now().toString();
             // 1. Soft Delete Support Tickets
             await tx.$executeRawUnsafe(`
                 UPDATE "SupportTicket" SET "status" = 'DELETED'
@@ -164,13 +163,9 @@ export async function DELETE(
                     SELECT "id" FROM "Interview" WHERE "applicationId" = '${id}'
                 )
             `);
-            // 2. Soft delete the interview (rename unique constraints)
+            // 2. Delete the interview (FK constraint prevents renaming applicationId)
             await tx.$executeRawUnsafe(`
-                UPDATE "Interview" 
-                SET "isDeleted" = true, 
-                    "applicationId" = 'del_' || ${timestamp} || '_' || "applicationId", 
-                    "accessToken" = 'del_' || ${timestamp} || '_' || "accessToken"
-                WHERE "applicationId" = '${id}'
+                DELETE FROM "Interview" WHERE "applicationId" = '${id}'
             `);
             // 3. Soft delete the application
             await tx.application.update({

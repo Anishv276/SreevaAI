@@ -104,14 +104,13 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
         else if (timeline.type === "custom") { startDate = timeline.from; endDate = timeline.to; }
         return { startDate, endDate };
     };
-    // Filter/search change — show skeleton, reset to page 1
+    // Filter/search change — refetch silently, only show skeleton on first load
     useEffect(() => {
         let cancelled = false;
-        setIsDriveViewReady(false);
-        setSelectedIds(new Set());
+        if (!isDriveViewReady) setSelectedIds(new Set());
         const handler = setTimeout(() => {
             const { startDate, endDate } = getDateRange();
-            void fetchCandidates(1, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm, scoreSort)
+            void fetchCandidates(1, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm, scoreSort, { background: isDriveViewReady })
                 .finally(() => { if (!cancelled) setIsDriveViewReady(true); });
         }, 500);
         return () => { cancelled = true; clearTimeout(handler); };
@@ -126,7 +125,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
         void fetchCandidates(1, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm, scoreSort);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [pageSize]);
-    // Auto-poll while any candidate is waiting/processing so progress shows without a manual refresh
+    // Auto-poll while any candidate is waiting/processing — always background so table never flashes
     useEffect(() => {
         const hasPending = candidates.some((c: any) => {
             const s = String(c.resumeStatus || c.status || "").toLowerCase();
@@ -135,7 +134,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
         if (!hasPending) return;
         const timer = setInterval(() => {
             const { startDate, endDate } = getDateRange();
-            void fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm, scoreSort);
+            void fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm, scoreSort, { background: true, force: true });
         }, 3000);
         return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -170,7 +169,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
             });
             if (res.ok) {
                 toast.success(successMsg);
-                fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, undefined, undefined, searchTerm, scoreSort);
+                fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, undefined, undefined, searchTerm, scoreSort, { background: true, force: true });
             } else {
                 toast.error("Failed to update status");
             }
@@ -191,7 +190,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
             const data = await res.json().catch(() => null);
             if (res.ok) {
                 toast.success(data?.message || `Interview link sent to ${candidate.name}`);
-                fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, undefined, undefined, searchTerm, scoreSort);
+                fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, undefined, undefined, searchTerm, scoreSort, { background: true, force: true });
                 return;
             }
             toast.error(data?.error || "Failed to send interview link");
@@ -242,7 +241,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
             if (res.ok) {
                 toast.success(data?.message || "Bulk action completed");
                 clearSelection();
-                fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, undefined, undefined, searchTerm, scoreSort);
+                fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, undefined, undefined, searchTerm, scoreSort, { background: true, force: true });
                 return;
             }
             toast.error(data?.error || "Failed to update selected candidates");
@@ -260,7 +259,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                 const res = await fetch(`/api/candidates/${deleteConfirm.candidateId}`, { method: "DELETE" });
                 if (res.ok) {
                     toast.success(`${deleteConfirm.candidateName || "Candidate"} deleted`);
-                    fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, undefined, undefined, searchTerm, scoreSort);
+                    fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, undefined, undefined, searchTerm, scoreSort, { background: true, force: true });
                 } else {
                     const data = await res.json().catch(() => null);
                     toast.error(data?.error || "Failed to delete candidate");
@@ -293,7 +292,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
             if (succeeded > 0) toast.success(`Interview link sent to ${succeeded} candidate(s)`);
             if (failed > 0) toast.error(`Failed to send to ${failed} candidate(s)`);
             clearSelection();
-            fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, undefined, undefined, searchTerm, scoreSort);
+            fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, undefined, undefined, searchTerm, scoreSort, { background: true, force: true });
         } catch {
             toast.error("Failed to send interview links");
         } finally {
@@ -342,7 +341,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                 if (succeeded > 0) toast.success(`Emails sent to ${shortlisted.length + rejected.length} candidate(s)`);
                 if (failed > 0) toast.error(`Failed to send to ${failed} candidate(s)`);
                 clearSelection();
-                fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, undefined, undefined, searchTerm, scoreSort);
+                fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, undefined, undefined, searchTerm, scoreSort, { background: true, force: true });
             }
         } catch {
             toast.error("Failed to send email");

@@ -42,23 +42,18 @@ export async function POST(request: Request) {
             }
             // -- SOFT DELETE: DATABASE CLEANUP (Cascading) ---------------------------
             await prisma.$transaction(async (tx) => {
-                const timestamp = Date.now().toString();
                 if (validIds.length > 0) {
                     const placeholders = validIds.map(id => `'${id}'`).join(',');
-                    // 1. Soft Delete Support Tickets FIRST (before Interview applicationId is renamed)
+                    // 1. Nullify FK on Interview before deleting Application rows
                     await tx.$executeRawUnsafe(`
                         UPDATE "SupportTicket" SET "status" = 'DELETED'
                         WHERE "interviewId" IN (
                             SELECT "id" FROM "Interview" WHERE "applicationId" IN (${placeholders})
                         )
                     `);
-                    // 2. Soft delete interviews (rename unique keys via Raw SQL)
+                    // 2. Delete Interview rows (FK blocks renaming applicationId, so just delete)
                     await tx.$executeRawUnsafe(`
-                        UPDATE "Interview" 
-                        SET "isDeleted" = true, 
-                            "applicationId" = 'del_' || ${timestamp} || '_' || "applicationId", 
-                            "accessToken" = 'del_' || ${timestamp} || '_' || "accessToken"
-                        WHERE "applicationId" IN (${placeholders})
+                        DELETE FROM "Interview" WHERE "applicationId" IN (${placeholders})
                     `);
                     // 3. Soft delete applications
                     await tx.application.updateMany({
@@ -67,7 +62,7 @@ export async function POST(request: Request) {
                     });
                 }
             });
-            return NextResponse.json({ message: `${validIds.length} candidates soft-deleted` });
+            return NextResponse.json({ message: `${validIds.length} candidates deleted` });
         }
         if (action === "shortlist") {
             await prisma.application.updateMany({

@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
+import { randomUUID } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { putObject } from "@/lib/s3";
-import { resumeQueue } from "@/lib/queue";
 import { generateId } from "@/lib/ids";
+import { enqueueResumeBatch } from "@/lib/resume-queue-publisher";
 import { getOrgBillingStatus } from "@/lib/credits";
 import { getInterviewQuotaSupportMessage } from "@/lib/interview-quota";
 import { getSession, isAdminRole, isSuperAdminRole } from "@/lib/auth";
@@ -80,94 +81,140 @@ export async function POST(
       data: {
         driveId,
         orgId: drive.orgId,
-        totalCount: files.length,
+        totalCount: 0, // set to the ACTUAL created count after uploads — never to intent
         processedCount: 0,
         failedCount: 0,
         status: "QUEUED",
       },
     });
     console.log(`[RESUME-UPLOAD] Created batch ${batch.id} for drive=${driveId}`);
-    const queuedIds: string[] = [];
+    // ── PHASE 1: Upload every PDF to R2 first, collecting successes. ──────────
+    // A per-file R2 failure is skipped & reported — it must NOT leave a half-built
+    // batch behind. We pre-generate IDs so the candidate<->application FK link is
+    // known before any DB write.
+    type PreparedRow = {
+      candidateId: string;
+      applicationId: string;
+      fullName: string;
+      fileName: string;
+      bucket: string;
+      key: string;
+      uploadedUrl: string;
+      downloadUrl: string;
+    };
+    const prepared: PreparedRow[] = [];
+    const uploadFailures: string[] = [];
     for (let index = 0; index < files.length; index += 1) {
       const file = files[index];
-      const buffer = Buffer.from(await file.arrayBuffer());
-      const safeName = sanitizeFileName(file.name || `resume_${index + 1}.pdf`);
-      const key = `resume/${orgSlug}/${safeDriveTitle}/${batch.id}_${Date.now()}_${index}_${safeName}`;
-      const uploadedUrl = await putObject(
-        RESUME_BUCKET,
-        key,
-        buffer,
-        file.type || "application/pdf"
-      );
-      console.log(`[RESUME-UPLOAD] Stored ${file.name || safeName} in R2 -> ${key}`);
-      const applicationId = generateId("app", `${guessNameFromFile(file.name || "")}-${batch.id}-${index}`);
-      const downloadUrl = `/api/drives/${driveId}/resume-screening/download?candidateId=${applicationId}`;
-      const candidate = await prisma.resumeCandidate.create({
-        data: {
-          driveId,
-          bulkBatchId: batch.id,
-          fullName: guessNameFromFile(file.name || ""),
-          fileName: file.name || safeName,
-          resumeStatus: "waiting",
-          aiScore: 0,
-          aiReport: buildProgressState(0, "waiting"),
-          resumeData: JSON.stringify({
-            source: {
-              bucket: RESUME_BUCKET,
-              key,
-              url: uploadedUrl,
-              applicationId,
-            },
-          }),
-        },
-      });
-      await prisma.application.create({
-        data: {
-          id: applicationId,
-          fullName: candidate.fullName,
-          email: "",
-          phone: "",
-          resumeUrl: uploadedUrl,
-          aiScore: 0,
-          aiReport: buildProgressState(0, "waiting"),
-          resumeText: null,
-          resumeData: JSON.stringify({
-            source: {
-              bucket: RESUME_BUCKET,
-              key,
-              url: uploadedUrl,
-              candidateId: candidate.id,
-              downloadUrl,
-            },
-          }),
-          driveId,
-          resumeStatus: "waiting",
-          interviewStatus: "pending",
-          hiringStatus: "pending",
-        },
-      });
-      queuedIds.push(candidate.id);
-      console.log(`[RESUME-UPLOAD] Candidate queued id=${candidate.id} name=${candidate.fullName}`);
-    }
-    await resumeQueue.add(
-      "drive-resume-batch",
-      {
-        batchId: batch.id,
-        driveId,
-        orgId: drive.orgId,
-      },
-      {
-        jobId: `batch_${batch.id}`,   // deduplication — same batch can only have one job at a time
-        attempts: 1,                  // no retries — if it fails, fix the data, don't re-clog
-        removeOnComplete: true,
-        removeOnFail: { count: 5 },
+      const fileName = file.name || `resume_${index + 1}.pdf`;
+      try {
+        const buffer = Buffer.from(await file.arrayBuffer());
+        const safeName = sanitizeFileName(fileName);
+        const key = `resume/${orgSlug}/${safeDriveTitle}/${batch.id}_${Date.now()}_${index}_${safeName}`;
+        const uploadedUrl = await putObject(RESUME_BUCKET, key, buffer, file.type || "application/pdf");
+        // Pre-generated, collision-free IDs so the candidate<->application link
+        // is known before any DB write. UUID suffix guarantees uniqueness.
+        const applicationId = `${generateId("app", guessNameFromFile(fileName))}-${randomUUID().slice(0, 8)}`;
+        const candidateId = `cand-${randomUUID()}`;
+        prepared.push({
+          candidateId,
+          applicationId,
+          fullName: guessNameFromFile(fileName),
+          fileName,
+          bucket: RESUME_BUCKET,
+          key,
+          uploadedUrl,
+          downloadUrl: `/api/drives/${driveId}/resume-screening/download?candidateId=${applicationId}`,
+        });
+        console.log(`[RESUME-UPLOAD] Stored ${fileName} in R2 -> ${key}`);
+      } catch (uploadErr: any) {
+        uploadFailures.push(fileName);
+        console.error(`[RESUME-UPLOAD] R2 upload failed for ${fileName}: ${uploadErr?.message}`);
       }
-    );
-    console.log(`[RESUME-UPLOAD] Worker job enqueued batchId=${batch.id} candidates=${queuedIds.length}`);
+    }
+    // If nothing uploaded, fail the batch cleanly — never enqueue an empty job.
+    if (prepared.length === 0) {
+      await prisma.resumeBatch.update({
+        where: { id: batch.id },
+        data: { status: "FAILED", totalCount: 0 },
+      }).catch(() => {});
+      return NextResponse.json(
+        { error: "All resume uploads failed", failedFiles: uploadFailures },
+        { status: 502 }
+      );
+    }
+    // ── PHASE 2: Create all rows in ONE transaction via createMany. ──────────
+    // Two bulk inserts (not 2×N individual creates) keep this fast even for 1000
+    // resumes and well within transaction time limits. Either all rows land or
+    // none do — no partial state. totalCount is the real count so completion math
+    // is correct. On failure the batch is marked FAILED and we surface a 5xx.
+    try {
+      await prisma.$transaction([
+        prisma.application.createMany({
+          data: prepared.map((row) => ({
+            id: row.applicationId,
+            fullName: row.fullName,
+            email: "",
+            phone: "",
+            resumeUrl: row.uploadedUrl,
+            aiScore: 0,
+            aiReport: buildProgressState(0, "waiting"),
+            resumeText: null,
+            resumeData: JSON.stringify({
+              source: { bucket: row.bucket, key: row.key, url: row.uploadedUrl, candidateId: row.candidateId, downloadUrl: row.downloadUrl },
+            }),
+            driveId,
+            resumeStatus: "waiting",
+            interviewStatus: "pending",
+            hiringStatus: "pending",
+          })),
+        }),
+        prisma.resumeCandidate.createMany({
+          data: prepared.map((row) => ({
+            id: row.candidateId,
+            driveId,
+            bulkBatchId: batch.id,
+            applicationId: row.applicationId,
+            fullName: row.fullName,
+            fileName: row.fileName,
+            resumeStatus: "waiting",
+            aiScore: 0,
+            aiReport: buildProgressState(0, "waiting"),
+            resumeData: JSON.stringify({
+              source: { bucket: row.bucket, key: row.key, url: row.uploadedUrl, applicationId: row.applicationId },
+            }),
+          })),
+        }),
+        prisma.resumeBatch.update({
+          where: { id: batch.id },
+          data: { totalCount: prepared.length },
+        }),
+      ]);
+    } catch (dbErr: any) {
+      console.error(`[RESUME-UPLOAD] DB persist failed for batch ${batch.id}: ${dbErr?.message}`);
+      await prisma.resumeBatch.update({
+        where: { id: batch.id },
+        data: { status: "FAILED" },
+      }).catch(() => {});
+      return NextResponse.json({ error: "Failed to persist candidates" }, { status: 500 });
+    }
+    const queuedIds = prepared.map((row) => row.candidateId);
+    console.log(`[RESUME-UPLOAD] Persisted ${queuedIds.length} candidate(s) for batch ${batch.id}`);
+    // ── PHASE 3: Durable, verified enqueue. ──────────────────────────────────
+    // Throws if the job cannot be confirmed in Redis — we surface a 5xx rather
+    // than telling the client "success" for a job that was lost.
+    const jobIds = await enqueueResumeBatch({
+      batchId: batch.id,
+      driveId,
+      orgId: drive.orgId,
+      candidateIds: queuedIds,
+    });
+    console.log(`[RESUME-UPLOAD] Worker job(s) enqueued (verified) batchId=${batch.id} jobs=${jobIds.length} candidates=${queuedIds.length}`);
     return NextResponse.json({
       batchId: batch.id,
-      totalCount: files.length,
+      totalCount: prepared.length,
       candidateIds: queuedIds,
+      ...(uploadFailures.length > 0 ? { failedFiles: uploadFailures } : {}),
     });
   } catch (err) {
     console.error("[RESUME-SCREENING] POST error:", err);
