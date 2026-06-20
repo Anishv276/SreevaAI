@@ -1,0 +1,73 @@
+# =============================================================================
+# SreevaAI — Phase 1 CI/CD: build-on-box deploy to a single EC2 host.
+#
+# Flow: push to `main`  ->  SSH into EC2  ->  git pull  ->  rebuild  ->  up -d.
+# No ECR needed at this phase (the box builds its own images).
+#
+# Required GitHub repo secrets (Settings > Secrets and variables > Actions):
+#   EC2_HOST       Elastic IP or DNS of the box (e.g. 13.x.x.x)
+#   EC2_USER       ssh user (ubuntu)
+#   EC2_SSH_KEY    the PRIVATE key (.pem contents) for that box
+#   APP_DIR        absolute path of the repo on the box (e.g. /home/ubuntu/SreevaAI)
+#
+# NOTE: the box holds its own .env (never committed). This workflow only ships
+# code + restarts containers; it does not touch secrets.
+#
+# Phase 2 upgrade path is sketched at the bottom (build -> push ECR -> pull).
+# =============================================================================
+name: Deploy (EC2 single-box)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}   # allow manual "Run workflow" from the Actions tab
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false   # never interrupt a deploy mid-flight
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script_stop: true       # abort on first failing command
+          command_timeout: 30m    # image builds can be slow
+          script: |
+            set -euo pipefail
+            cd "${{ secrets.APP_DIR }}"
+
+            echo "==> Pulling latest code"
+            git fetch --all
+            git reset --hard origin/main
+
+            echo "==> Building images"
+            docker compose -f docker-compose.prod.yml build
+
+            echo "==> Applying DB migrations (Supabase via DIRECT_URL)"
+            # Runs inside the freshly built app image; uses .env on the box.
+            docker compose -f docker-compose.prod.yml run --rm \
+              hr-frontend npx prisma migrate deploy
+
+            echo "==> Rolling out"
+            docker compose -f docker-compose.prod.yml up -d
+
+            echo "==> Pruning old images"
+            docker image prune -f
+
+            echo "==> Container status"
+            docker compose -f docker-compose.prod.yml ps
+
+# -----------------------------------------------------------------------------
+# PHASE 2 (Fargate / multi-host) — replace the SSH job above with:
+#   1. configure-aws-credentials (OIDC role, no static keys)
+#   2. amazon-ecr-login
+#   3. docker build + push :$GITHUB_SHA  for app image and agent image
+#   4. render new ECS task definition with the new image tags
+#   5. amazon-ecs-deploy-task-definition  (rolling, zero-downtime)
+# -----------------------------------------------------------------------------
