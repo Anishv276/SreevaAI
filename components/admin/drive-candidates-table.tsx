@@ -48,7 +48,10 @@ function formatCandidateStatusLabel(value?: string) {
     const normalized = String(value || "").trim().toLowerCase().replace(/[_-]+/g, " ");
     if (!normalized) return "Pending";
     if (normalized === "waiting") return "Waiting";
-    if (normalized === "processing") return "Processing";
+    if (normalized === "starting") return "Starting";
+    if (normalized === "extracting") return "Extracting";
+    if (normalized === "scoring") return "Scoring";
+    if (normalized === "processing") return "Extracting";
     if (normalized === "failed") return "Failed";
     if (normalized === "inprogress" || normalized === "in progress") return "In Progress";
     if (normalized === "finished" || normalized === "completed") return "Completed";
@@ -129,7 +132,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
     useEffect(() => {
         const hasPending = candidates.some((c: any) => {
             const s = String(c.resumeStatus || c.status || "").toLowerCase();
-            return s === "waiting" || s === "processing";
+            return s === "extracting" || s === "waiting" || s === "processing";
         });
         if (!hasPending) return;
         const timer = setInterval(() => {
@@ -633,7 +636,10 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                     const statusKey = normalizeStatusKey(statusValue) || "pending";
                                     const statusLabel = formatCandidateStatusLabel(statusValue);
                                     const isWaiting = statusKey === "waiting";
-                                    const isProcessing = statusKey === "processing";
+                                    const isStarting = statusKey === "starting";
+                                    const isScoring = statusKey === "scoring";
+                                    const isExtracting = statusKey === "extracting" || statusKey === "scoring" || statusKey === "starting" || statusKey === "waiting" || statusKey === "processing";
+                                    const isProcessing = isExtracting;
                                     const isFailed = statusKey === "failed";
                                     const interviewStatusValue = candidate.interviewStatus;
                                     const interviewStatusKey = normalizeStatusKey(interviewStatusValue) || "pending";
@@ -707,19 +713,15 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                                 <div className="flex justify-center">
                                                     <Badge className={cn(
                                                         "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest border-0 shadow-sm pointer-events-none",
-                                                        isWaiting ? "bg-slate-100 text-slate-600 w-full" :
-                                                        isProcessing ? "bg-orange-50 text-orange-700 w-full" :
+                                                        isExtracting ? "bg-orange-50 text-orange-700 w-full" :
                                                         isFailed ? "bg-rose-50 text-rose-700 w-full" :
                                                         score >= 80 ? "bg-emerald-50 text-emerald-700" :
                                                             score >= 50 ? "bg-amber-50 text-amber-700" :
                                                                 "bg-rose-50 text-rose-700"
                                                     )}>
-                                                        {isWaiting || isProcessing ? (
+                                                        {isExtracting ? (
                                                             <div className="w-full h-1.5 bg-orange-100 rounded-full overflow-hidden mt-0.5 mb-0.5">
-                                                                {isWaiting
-                                                                    ? <div className="h-full w-1/3 bg-slate-400 rounded-full animate-[slide_1.5s_ease-in-out_infinite]" style={{ animationName: 'slideX', background: 'linear-gradient(90deg,transparent,#94a3b8,transparent)', backgroundSize: '200% 100%', animation: 'shimmer 1.5s infinite' }} />
-                                                                    : <div className="h-full bg-orange-500 transition-all duration-500 rounded-full" style={{ width: `${Math.max(progressValue, 8)}%` }} />
-                                                                }
+                                                                <div className="h-full bg-orange-500 transition-all duration-500 rounded-full" style={{ width: `${isWaiting ? 0 : isStarting ? 10 : isScoring ? 90 : Math.max(progressValue, 8)}%` }} />
                                                             </div>
                                                         ) : isFailed ? "Failed" : (score ? `${score}%` : "No score")}
                                                     </Badge>
@@ -729,13 +731,12 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                                 <div className="flex justify-center items-center h-full">
                                                     <Badge variant="secondary" className={cn(
                                                         "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest border-0 shadow-sm transition-all pointer-events-none",
-                                                        isWaiting ? "bg-slate-50 text-slate-600" :
-                                                        isProcessing ? "bg-orange-50 text-orange-700" :
+                                                        isExtracting ? "bg-orange-50 text-orange-700" :
                                                         isFailed ? "bg-rose-50 text-rose-700" :
                                                         statusKey === "rejected" ? "bg-rose-50 text-rose-700" :
                                                             statusKey === "shortlisted" ? "bg-emerald-50 text-emerald-700" : "bg-slate-50 text-slate-500"
                                                     )}>
-                                                        {isWaiting ? "Waiting 0%" : isProcessing ? `${stageLabel || "Processing"} ${progressValue}%` : statusKey === "rejected" ? "Rejected" : statusKey === "shortlisted" ? "Shortlisted" : statusLabel}
+                                                        {isWaiting ? "Waiting 0%" : isStarting ? "Starting 10%" : isScoring ? "Scoring 90%" : isExtracting ? `Extracting ${progressValue}%` : statusKey === "rejected" ? "Rejected" : statusKey === "shortlisted" ? "Shortlisted" : statusLabel}
                                                     </Badge>
                                                 </div>
                                             </TableCell>
@@ -767,7 +768,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                             </TableCell>
                                             <TableCell className="py-5 text-center" onClick={(e) => e.stopPropagation()}>
                                                 {isWaiting || isProcessing ? (
-                                                    <div className={cn("inline-flex h-8 w-8 items-center justify-center rounded-full", isWaiting ? "text-slate-400 bg-slate-50" : "text-orange-500 bg-orange-50")}>
+                                                    <div className={cn("inline-flex h-8 w-8 items-center justify-center rounded-full", isWaiting ? "text-slate-400 bg-slate-50" : isStarting ? "text-blue-500 bg-blue-50" : "text-orange-500 bg-orange-50")}>
                                                         <Loader2 className="h-4 w-4 animate-spin" />
                                                     </div>
                                                 ) : isFailed ? (

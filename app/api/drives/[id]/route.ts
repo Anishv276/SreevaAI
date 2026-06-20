@@ -57,7 +57,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
                     },
                 },
                 _count: {
-                    select: { applications: true },
+                    select: { applications: { where: { isDeleted: false } } },
                 },
             },
         } as any);

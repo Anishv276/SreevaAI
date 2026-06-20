@@ -65,7 +65,7 @@ export function ResumeScreening({ driveId, driveName }: { driveId: string; drive
         });
         const hasActiveCandidate = candidates.some((c) => {
             const s = String(c.resumeStatus || "").toLowerCase();
-            return s === "waiting" || s === "processing";
+            return s === "extracting" || s === "waiting" || s === "starting" || s === "scoring" || s === "processing";
         });
         if (!hasActiveBatch && !hasActiveCandidate) return;
         const timer = setInterval(refresh, 3000);

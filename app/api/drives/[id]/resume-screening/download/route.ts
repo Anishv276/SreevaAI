@@ -16,9 +16,8 @@ export async function GET(
         if (!candidateId) {
             return NextResponse.json({ error: "Missing candidateId" }, { status: 400 });
         }
-        const candidate = await prisma.resumeCandidate.findUnique({
+        const candidate = await prisma.application.findUnique({
             where: { id: candidateId },
-            include: { drive: true },
         });
         if (!candidate) {
             return NextResponse.json({ error: "Candidate not found" }, { status: 404 });
@@ -26,13 +25,13 @@ export async function GET(
         if (candidate.driveId !== driveId) {
             return NextResponse.json({ error: "Candidate not in this drive" }, { status: 403 });
         }
-        // Return the resume text as a downloadable file
         const resumeText = candidate.resumeText || "";
+        const fileName = (candidate.fileName || candidateId).replace(".pdf", ".txt");
         return new NextResponse(resumeText, {
             status: 200,
             headers: {
                 "Content-Type": "text/plain",
-                "Content-Disposition": `attachment; filename="${candidate.fileName.replace(".pdf", ".txt")}"`,
+                "Content-Disposition": `attachment; filename="${fileName}"`,
             },
         });
     } catch (err) {

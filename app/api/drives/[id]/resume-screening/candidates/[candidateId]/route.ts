@@ -15,7 +15,7 @@ export async function PATCH(
         if (!resumeStatus || !["SHORTLISTED", "REJECTED"].includes(resumeStatus)) {
             return NextResponse.json({ error: "Invalid status" }, { status: 400 });
         }
-        const candidate = await prisma.resumeCandidate.findUnique({
+        const candidate = await prisma.application.findUnique({
             where: { id: candidateId },
         });
         if (!candidate) {
@@ -24,7 +24,7 @@ export async function PATCH(
         if (candidate.driveId !== driveId) {
             return NextResponse.json({ error: "Candidate not in this drive" }, { status: 403 });
         }
-        const updated = await prisma.resumeCandidate.update({
+        const updated = await prisma.application.update({
             where: { id: candidateId },
             data: { resumeStatus },
         });
@@ -44,7 +44,7 @@ export async function DELETE(
         if (!access.ok) {
             return NextResponse.json({ error: access.error }, { status: access.status });
         }
-        const candidate = await prisma.resumeCandidate.findUnique({
+        const candidate = await prisma.application.findUnique({
             where: { id: candidateId },
         });
         if (!candidate) {
@@ -53,7 +53,7 @@ export async function DELETE(
         if (candidate.driveId !== driveId) {
             return NextResponse.json({ error: "Candidate not in this drive" }, { status: 403 });
         }
-        await prisma.resumeCandidate.update({
+        await prisma.application.update({
             where: { id: candidateId },
             data: { isDeleted: true }
         });

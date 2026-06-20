@@ -6,7 +6,7 @@ import { spawn } from 'child_process';
 import { tmpdir } from 'os';
 import { writeFile, unlink, readdir, stat } from 'fs/promises';
 import { prisma } from './lib/prisma';
-import redisConnection from './lib/redis';
+import redisConnection, { createRedisConnection } from './lib/redis';
 import { putObject, getObjectBuffer, headObjectStrict } from "./lib/s3";
 import { generateId } from "./lib/ids";
 import { isInterviewTokenRequired } from "./lib/interview-access";
@@ -72,7 +72,6 @@ if (!process.env.REDIS_URL) {
 }
 void redisConnection.connect().catch(() => {}); // force-connect before BullMQ workers start
 const pythonCmd = getPythonExecutable();
-const DRIVE_BATCH_SIZE = 5;
 const DEFAULT_R2_PUBLIC_URL = "https://pub-e4a8b24775c741f6a650def856cfec9f.r2.dev";
 function parseJsonSafe<T = Record<string, any>>(raw: unknown, fallback: T): T {
   try {
@@ -82,21 +81,6 @@ function parseJsonSafe<T = Record<string, any>>(raw: unknown, fallback: T): T {
     return fallback;
   } catch {
     return fallback;
-  }
-}
-function isAllowedResumeFetchUrl(rawUrl: string): boolean {
-  try {
-    const url = new URL(rawUrl);
-    if (url.protocol !== "https:") return false;
-    const baseUrl = new URL(process.env.NEXT_PUBLIC_R2_RESUMES_URL || DEFAULT_R2_PUBLIC_URL);
-    if (url.origin !== baseUrl.origin) return false;
-    const basePath = baseUrl.pathname.replace(/\/$/, "");
-    if (basePath && basePath !== "" && basePath !== "/") {
-      return url.pathname.startsWith(`${basePath}/`);
-    }
-    return url.pathname.startsWith("/resumes/");
-  } catch {
-    return false;
   }
 }
 function hasJdMustHaves(jd: Record<string, any>): boolean {
@@ -128,30 +112,6 @@ function buildJdRawText(drive: {
     if (typeof minExp === "number") parts.push(`Experience: ${minExp}${maxExp ? `-${maxExp}` : "+"}+ years`);
   } catch { /* ignore parse errors */ }
   return parts.join("\n\n").trim();
-}
-/**
- * GLOBAL PYTHON SUBPROCESS SEMAPHORE (#9)
- * Caps the TOTAL number of concurrent extract_pdf.py processes across ALL
- * batches/orgs, regardless of worker concurrency × chunk size. Without this,
- * 3 batches × 5 resumes = 15 simultaneous Python procs can OOM the worker.
- * Tunable via PYTHON_MAX_CONCURRENCY (default 8).
- */
-const PYTHON_MAX_CONCURRENCY = Math.max(1, Number(process.env.PYTHON_MAX_CONCURRENCY) || 8);
-let pythonActive = 0;
-const pythonWaiters: Array<() => void> = [];
-async function acquirePythonSlot(): Promise<() => void> {
-  if (pythonActive >= PYTHON_MAX_CONCURRENCY) {
-    await new Promise<void>((resolve) => pythonWaiters.push(resolve));
-  }
-  pythonActive += 1;
-  let released = false;
-  return () => {
-    if (released) return;
-    released = true;
-    pythonActive -= 1;
-    const next = pythonWaiters.shift();
-    if (next) next();
-  };
 }
 // Core spawn runner with hard timeout + guaranteed slot release. `stdinPayload`
 // optional. On timeout the process is SIGKILLed so it can't linger.
@@ -192,22 +152,10 @@ function spawnPythonJson(args: string[], stdinPayload: string | null, timeoutMs:
   });
 }
 async function runPythonJson(args: string[], timeoutMs = 180000): Promise<any> {
-  const release = await acquirePythonSlot();
-  try {
-    return await spawnPythonJson(args, null, timeoutMs);
-  } finally {
-    release();
-  }
+  return spawnPythonJson(args, null, timeoutMs);
 }
-// Like runPythonJson but writes `stdinPayload` to the process stdin.
-// Used for RESUME_AND_SCORE mode to pass the JD payload without a temp file.
 async function runPythonJsonWithStdin(args: string[], stdinPayload: string, timeoutMs = 180000): Promise<any> {
-  const release = await acquirePythonSlot();
-  try {
-    return await spawnPythonJson(args, stdinPayload, timeoutMs);
-  } finally {
-    release();
-  }
+  return spawnPythonJson(args, stdinPayload, timeoutMs);
 }
 /**
  * TEMP-FILE JANITOR (#10)
@@ -240,41 +188,18 @@ async function sweepTempFiles() {
   if (removed > 0) console.log(`[TEMP-JANITOR] Removed ${removed} stale temp file(s).`);
 }
 async function setDriveCandidateStage(
-  candidateId: string,
+  applicationId: string,
   stage: string,
   progress: number,
   resumeStatus: string,
-  applicationId?: string | null
 ) {
   const payload = JSON.stringify({ processing: { stage, progress } });
-  await prisma.resumeCandidate.update({
-    where: { id: candidateId },
+  await prisma.application.update({
+    where: { id: applicationId },
     data: { resumeStatus, aiScore: progress, aiReport: payload },
+  }).catch((err: any) => {
+    console.warn(`  [RESUME] stage update failed appId=${applicationId}: ${err?.message}`);
   });
-  // Prefer the applicationId passed in (from the indexed FK column). Fall back to
-  // an indexed lookup on ResumeCandidate.applicationId for legacy rows.
-  let appId = applicationId || null;
-  if (!appId) {
-    try {
-      const found = await prisma.resumeCandidate.findUnique({
-        where: { id: candidateId },
-        select: { applicationId: true },
-      });
-      appId = found?.applicationId ?? null;
-    } catch (err: any) {
-      console.warn(`[RESUME-WORKER] setDriveCandidateStage: lookup failed for candidateId=${candidateId}: ${err?.message}`);
-    }
-  }
-  if (appId) {
-    await prisma.application.update({
-      where: { id: appId },
-      data: { resumeStatus, aiScore: progress, aiReport: payload },
-    }).catch((err: any) => {
-      console.warn(`[RESUME-WORKER] setDriveCandidateStage: application update failed appId=${appId}: ${err?.message}`);
-    });
-  } else {
-    console.warn(`[RESUME-WORKER] setDriveCandidateStage: no Application found for candidateId=${candidateId} stage=${stage}`);
-  }
 }
 async function processInterviewStartJob(job: any) {
   const prismaAny = prisma as any;
@@ -500,36 +425,37 @@ async function processRecordingRetentionSweepJob(job: any) {
 async function processDriveResumeBatchJob(job: any) {
   const { batchId, driveId, orgId, candidateIds: candidateIdsFromPayload } = job.data || {};
   if (!batchId || !driveId || !orgId) {
-    console.warn(`[RESUME-WORKER] Stale job ${job.id} has no payload — discarding silently.`);
+    console.warn(`[WORKER] Stale job ${job.id} has no payload — discarding.`);
     return;
   }
   const batchExtractModel = "gpt-4o-mini";
   const batchReportModel = "gpt-4o-mini";
-  console.log(`[RESUME-WORKER] Batch queued -> starting batchId=${batchId} driveId=${driveId}`);
+  console.log(`\n[BATCH START] batchId=${batchId} driveId=${driveId}`);
   const batch = await prisma.resumeBatch.findUnique({ where: { id: batchId } });
   if (!batch) {
-    console.warn(`[RESUME-WORKER] Batch ${batchId} not found — skipping stale job.`);
+    console.warn(`[BATCH] ${batchId} not found in DB — discarding stale job.`);
     return;
   }
   const normalizedBatchStatus = String(batch.status || "").toUpperCase();
   if (normalizedBatchStatus === "COMPLETED" || normalizedBatchStatus === "FAILED") {
-    console.log(`[RESUME-WORKER] Batch ${batchId} already ${normalizedBatchStatus}. Skipping.`);
+    console.log(`[BATCH] ${batchId} already ${normalizedBatchStatus} — skipping.`);
     return;
   }
-  // This sub-job processes exactly the candidate IDs in its payload. Legacy jobs
-  // without candidateIds fall back to the whole batch.
-  const hasPayloadIds = Array.isArray(candidateIdsFromPayload) && candidateIdsFromPayload.length > 0;
-  let candidates = await prisma.resumeCandidate.findMany({
-    where: hasPayloadIds ? { id: { in: candidateIdsFromPayload } } : { bulkBatchId: batchId },
+  if (!Array.isArray(candidateIdsFromPayload) || candidateIdsFromPayload.length === 0) {
+    console.warn(`[BATCH] ${batchId} sub-job has no candidateIds — discarding.`);
+    return;
+  }
+  let candidates = await prisma.application.findMany({
+    where: { id: { in: candidateIdsFromPayload } },
     orderBy: { createdAt: "asc" },
   });
   if (candidates.length === 0) {
     // This sub-job's candidates are gone (e.g. user deleted them). Do NOT fail the
     // whole batch — other sub-jobs may still be working. Just exit cleanly.
-    console.warn(`[RESUME-WORKER] Batch ${batchId}: sub-job has no candidates (deleted?) — exiting cleanly.`);
+    console.warn(`[BATCH] ${batchId} sub-job candidates deleted — exiting cleanly.`);
     return;
   }
-  console.log(`[RESUME-WORKER] Batch ${batchId}: ${candidates.length} candidate(s) loaded (sub-job slice)`);
+  console.log(`[BATCH] ${batchId} → processing ${candidates.length} resume(s)`);
   // Mark PROCESSING without zeroing counts — concurrent sub-jobs of the same
   // batch must not stomp each other's progress. Counts are authoritative from
   // candidate rows (see tickBatch + finalization).
@@ -554,32 +480,6 @@ async function processDriveResumeBatchJob(job: any) {
   );
   const threshold = parsedSettings.threshold;
   const screeningCriteria = parsedSettings.criteria;
-  // Mark all candidates as "queued" immediately so the frontend stops showing "waiting"
-  // while JD extraction runs (which can take several seconds before any per-candidate work starts).
-  const processingReport = JSON.stringify({ processing: { stage: "queued", progress: 5 } });
-  const sliceCandidateIds = candidates.map((c) => c.id);
-  await prisma.resumeCandidate.updateMany({
-    where: { id: { in: sliceCandidateIds }, resumeStatus: "waiting" },
-    data: {
-      resumeStatus: "processing",
-      aiReport: processingReport,
-    },
-  });
-  // Bulk-update the linked Application rows by their real FK id (indexed) —
-  // no more O(candidates × applications) LIKE scans. One indexed updateMany.
-  const linkedApplicationIds = candidates
-    .map((c) => {
-      const fromCol = (c as any).applicationId as string | null;
-      if (fromCol) return fromCol;
-      return String(parseJsonSafe<any>(c.resumeData, {}).source?.applicationId || "").trim() || null;
-    })
-    .filter((id): id is string => Boolean(id));
-  if (linkedApplicationIds.length > 0) {
-    await prisma.application.updateMany({
-      where: { id: { in: linkedApplicationIds }, resumeStatus: "waiting" },
-      data: { resumeStatus: "processing", aiReport: processingReport },
-    }).catch(() => {});
-  }
   let structuredJd = parseJsonSafe<Record<string, any>>(drive.extractedDetails, {});
   const jdRawText = buildJdRawText(drive);
   // JD structuring is best-effort. If OpenAI is slow/down, we MUST NOT abort the
@@ -603,35 +503,22 @@ async function processDriveResumeBatchJob(job: any) {
         }
       }
     } catch (jdErr: any) {
-      console.warn(`[RESUME-WORKER] Batch ${batchId}: JD extraction failed, falling back to raw-text scoring — ${jdErr?.message}`);
+      console.warn(`[BATCH] ${batchId} JD extraction failed, scoring without JD — ${jdErr?.message}`);
     }
   }
-  let processedCount = 0;
-  let failedCount = 0;
-  const totalChunks = Math.max(1, Math.ceil(candidates.length / DRIVE_BATCH_SIZE));
-  // Atomic SQL increment for live progress — no read-modify-write race, and the
-  // `updatedAt` bump it triggers is what the stuck-batch sweeper watches.
-  // Authoritative counts are recomputed from candidate rows at finalization.
+  // Atomic SQL increment — no read-modify-write race.
   async function tickBatch(success: boolean) {
-    if (success) processedCount += 1;
-    else failedCount += 1;
     const column = success ? "processedCount" : "failedCount";
     await prisma.$executeRawUnsafe(
       `UPDATE "ResumeBatch" SET "${column}" = "${column}" + 1, "updatedAt" = NOW() WHERE id = $1`,
       batchId
     ).catch(() => {});
   }
-  for (let i = 0; i < candidates.length; i += DRIVE_BATCH_SIZE) {
-    const chunk = candidates.slice(i, i + DRIVE_BATCH_SIZE);
-    const chunkIndex = Math.floor(i / DRIVE_BATCH_SIZE) + 1;
-    console.log(
-      `[RESUME-WORKER] Batch ${batchId}: processing chunk ${chunkIndex}/${totalChunks} ` +
-      `(${chunk.length} resume(s))`
-    );
-    await Promise.allSettled(
-      chunk.map(async (candidate) => {
+  console.log(`[BATCH] ${batchId} → running ${candidates.length} resume(s) in parallel`);
+  await Promise.allSettled(
+    candidates.map(async (candidate) => {
         let tmpPdfPath: string | null = null;
-        let linkedAppId: string | null = null;
+        const appId = candidate.id; // candidate IS the Application row now
         try {
           const existingStatus = String(candidate.resumeStatus || "").toLowerCase();
           const existingReport = String(candidate.aiReport || "");
@@ -642,20 +529,14 @@ async function processDriveResumeBatchJob(job: any) {
             existingReport.includes("\"stage\":\"completed\"");
           const alreadyFailed = existingStatus === "failed" && existingStage === "failed";
           if (alreadyCompleted || alreadyFailed) {
-            console.log(
-              `[RESUME-WORKER] Candidate ${candidate.id}: already in terminal state (${existingStatus || "unknown"}), skipping.`
-            );
             await tickBatch(true);
             return;
           }
-          console.log(`[RESUME-WORKER] Candidate ${candidate.id}: waiting -> extracting (25%)`);
           const source = parseJsonSafe<any>(candidate.resumeData, {}).source || {};
           const bucket = String(source.bucket || process.env.R2_RESUMES_BUCKET || "resumes");
           const key = String(source.key || "");
-          // Prefer the indexed FK column; fall back to the embedded source value.
-          linkedAppId = String((candidate as any).applicationId || source.applicationId || "").trim() || null;
-          if (!key) throw new Error(`Missing source key for candidate ${candidate.id}`);
-          await setDriveCandidateStage(candidate.id, "extracting", 25, "processing", linkedAppId);
+          if (!key) throw new Error(`Missing source key for application ${appId}`);
+          await setDriveCandidateStage(appId, "starting", 10, "starting");
           // Download PDF from R2 — fast-fail if key was deleted
           let pdfBuffer: Buffer;
           try {
@@ -679,9 +560,10 @@ async function processDriveResumeBatchJob(job: any) {
           let structuredResume: Record<string, any>;
           let aiResult: Record<string, any>;
           let scoreUsage: Record<string, any> | null = null;
+          await setDriveCandidateStage(appId, "extracting", 50, "extracting");
           if (hasCachedParse) {
             // Already have parsed resume — only need to score it (single subprocess)
-            console.log(`[RESUME-WORKER] Candidate ${candidate.id}: using cached parse, running score only`);
+            console.log(`  [RESUME] ${candidate.fullName} — cached parse found, scoring only`);
             const tmpScorePath = join(tmpdir(), `drive_score_${candidate.id}_${Date.now()}.json`);
             await writeFile(tmpScorePath, JSON.stringify({
               resume: cachedStructured,
@@ -700,7 +582,7 @@ async function processDriveResumeBatchJob(job: any) {
             scoreUsage = scoreOnly.usage || null;
           } else {
             // Combined mode: one subprocess does extract + parse + score + report
-            console.log(`[RESUME-WORKER] Candidate ${candidate.id}: running combined RESUME_AND_SCORE`);
+            console.log(`  [RESUME] ${candidate.fullName} — extracting + scoring`);
             const jdPayload = JSON.stringify({
               jd: structuredJd,
               jd_raw_text: jdRawText,
@@ -732,25 +614,12 @@ async function processDriveResumeBatchJob(job: any) {
               });
             }
           }
-          await setDriveCandidateStage(candidate.id, "finalizing", 80, "processing", linkedAppId);
+          await setDriveCandidateStage(appId, "scoring", 90, "scoring");
           const finalScore =
             typeof aiResult.score === "number"
               ? aiResult.score
               : parseInt(String(aiResult.score || "0"), 10) || 0;
           const finalStatus = finalScore >= threshold ? "shortlisted" : "rejected";
-          // appId comes from the indexed FK (linkedAppId). Legacy rows without it
-          // fall back to an indexed lookup on ResumeCandidate.applicationId.
-          let appId: string | null = linkedAppId;
-          if (!appId) {
-            const legacy = await prisma.resumeCandidate.findUnique({
-              where: { id: candidate.id },
-              select: { applicationId: true },
-            }).catch(() => null);
-            appId = legacy?.applicationId ?? null;
-          }
-          if (!appId) {
-            console.warn(`[RESUME-WORKER] Candidate ${candidate.id}: no linked Application found — status will NOT update to ${finalStatus}`);
-          }
           const completedPayload = JSON.stringify({
             processing: { stage: "completed", progress: 100 },
             result: { score: finalScore, status: finalStatus },
@@ -760,53 +629,32 @@ async function processDriveResumeBatchJob(job: any) {
             score: finalScore,
             status: finalStatus,
           });
-          await prisma.resumeCandidate.update({
-            where: { id: candidate.id },
+          await prisma.application.update({
+            where: { id: appId },
             data: {
               fullName: structuredResume?.full_name || candidate.fullName,
-              email: structuredResume?.email || candidate.email,
-              phone: structuredResume?.phone || candidate.phone,
+              email: structuredResume?.email || "",
+              phone: structuredResume?.phone || "",
               resumeText: resumeRawText,
-              resumeData: JSON.stringify({
-                source: { bucket, key, applicationId: appId },
-                structured: structuredResume,
-              }),
+              resumeData: JSON.stringify(structuredResume),
               aiScore: finalScore,
               aiReport: completedPayload,
+              fullScanReport: fullScanPayload,
               resumeStatus: finalStatus,
+              interviewStatus: "pending",
+              hiringStatus: "pending",
             },
+          } as any).catch((err: any) => {
+            console.warn(`  [RESUME] ${candidate.fullName} — final update failed: ${err?.message}`);
           });
-          if (appId) {
-            await prisma.application.update({
-              where: { id: appId },
-              data: {
-                fullName: structuredResume?.full_name || candidate.fullName,
-                email: structuredResume?.email || "",
-                phone: structuredResume?.phone || "",
-                resumeText: resumeRawText,
-                resumeData: JSON.stringify(structuredResume),
-                aiScore: finalScore,
-                aiReport: completedPayload,
-                fullScanReport: fullScanPayload,
-                resumeStatus: finalStatus,
-                interviewStatus: "pending",
-                hiringStatus: "pending",
-              },
-            } as any).catch((err: any) => {
-              console.warn(`[RESUME-WORKER] Candidate ${candidate.id}: final Application update failed appId=${appId}: ${err?.message}`);
-            });
-            await appendCandidateActivity(appId, {
-              type: "resume_screened",
-              label: finalStatus === "shortlisted" ? "Resume shortlisted" : "Resume rejected",
-              details: `AI score ${finalScore} vs threshold ${threshold}`,
-              timestamp: new Date().toISOString(),
-              source: "system",
-            }).catch(() => {});
-          }
-          console.log(
-            `[RESUME-WORKER] Candidate ${candidate.id}: completed score=${finalScore} status=${finalStatus}`
-          );
-          // Bill score/report usage — populated from combined.usage_score or scoreOnly.usage above
+          await appendCandidateActivity(appId, {
+            type: "resume_screened",
+            label: finalStatus === "shortlisted" ? "Resume shortlisted" : "Resume rejected",
+            details: `AI score ${finalScore} vs threshold ${threshold}`,
+            timestamp: new Date().toISOString(),
+            source: "system",
+          }).catch(() => {});
+          console.log(`  [RESUME] ${candidate.fullName} — score=${finalScore} → ${finalStatus.toUpperCase()}`);
           if (scoreUsage?.inputTokens || scoreUsage?.outputTokens) {
             await recordOrgBillingUsage({
               orgId,
@@ -816,7 +664,7 @@ async function processDriveResumeBatchJob(job: any) {
                 inputTokens: scoreUsage.inputTokens || 0,
                 outputTokens: scoreUsage.outputTokens || 0,
                 cachedInputTokens: scoreUsage.cachedInputTokens || 0,
-                eventId: `resume-report:${candidate.id}`,
+                eventId: `resume-report:${appId}`,
               },
             });
           }
@@ -829,21 +677,11 @@ async function processDriveResumeBatchJob(job: any) {
               error: error?.message || "Resume processing failed",
             },
           });
-          console.error(`[RESUME-WORKER] Candidate ${candidate.id}: failed -> ${error?.message || error}`);
-          await prisma.resumeCandidate.update({
-            where: { id: candidate.id },
+          console.error(`  [RESUME] ${candidate.fullName} — FAILED: ${error?.message || error}`);
+          await prisma.application.update({
+            where: { id: appId },
             data: { resumeStatus: "failed", aiScore: 0, aiReport: failPayload },
           }).catch(() => {});
-          const failAppId = linkedAppId || (await prisma.resumeCandidate.findUnique({
-            where: { id: candidate.id },
-            select: { applicationId: true },
-          }).then((r) => r?.applicationId ?? null).catch(() => null));
-          if (failAppId) {
-            await prisma.application.update({
-              where: { id: failAppId },
-              data: { resumeStatus: "failed", aiScore: 0, aiReport: failPayload },
-            }).catch(() => {});
-          }
           await tickBatch(false);
           // NOTE: do NOT auto-delete the candidate here. The job may retry
           // (attempts:3); deleting would make the retry skip this resume and
@@ -853,8 +691,7 @@ async function processDriveResumeBatchJob(job: any) {
           if (tmpPdfPath) await unlink(tmpPdfPath).catch(() => {});
         }
       })
-    );
-  }
+  );
   // Finalization is BATCH-GLOBAL, not slice-local. With fan-out, several sub-jobs
   // run concurrently; only the one that finishes the LAST non-terminal candidate
   // should mark the batch COMPLETED. We recompute authoritative counts across the
@@ -862,13 +699,13 @@ async function processDriveResumeBatchJob(job: any) {
   // only finalize when nothing is left in a non-terminal state.
   const TERMINAL = ["shortlisted", "rejected", "failed"];
   const [doneCount, failCount, pendingCount] = await Promise.all([
-    prisma.resumeCandidate.count({
+    prisma.application.count({
       where: { bulkBatchId: batchId, resumeStatus: { in: ["shortlisted", "rejected"] } },
     }),
-    prisma.resumeCandidate.count({
+    prisma.application.count({
       where: { bulkBatchId: batchId, resumeStatus: "failed" },
     }),
-    prisma.resumeCandidate.count({
+    prisma.application.count({
       where: { bulkBatchId: batchId, resumeStatus: { notIn: TERMINAL } },
     }),
   ]);
@@ -878,7 +715,7 @@ async function processDriveResumeBatchJob(job: any) {
       where: { id: batchId },
       data: { processedCount: doneCount, failedCount: failCount },
     }).catch(() => {});
-    console.log(`[RESUME-WORKER] Batch ${batchId} sub-job done; ${pendingCount} candidate(s) still pending across batch.`);
+    console.log(`[BATCH] ${batchId} sub-job done — ${pendingCount} resume(s) still in progress`);
     return;
   }
   const allFailed = failCount > 0 && doneCount === 0;
@@ -891,75 +728,30 @@ async function processDriveResumeBatchJob(job: any) {
       completedAt: new Date(),
     },
   });
-  console.log(`[RESUME-WORKER] Batch ${batchId} ${allFailed ? "FAILED" : "COMPLETED"}: ${doneCount} processed, ${failCount} failed`);
+  console.log(`[BATCH DONE] ${batchId} — ${doneCount} processed, ${failCount} failed → ${allFailed ? "FAILED" : "COMPLETED"}\n`);
 }
-export const RECOVER_STUCK_BATCHES_JOB = "recover-stuck-resume-batches";
 /**
- * Reconciliation sweeper: finds batches stuck in QUEUED/PROCESSING whose
- * `updatedAt` hasn't moved in >STUCK_MINUTES (worker crashed mid-batch, or the
- * enqueue was lost) and re-enqueues them. Re-enqueue is idempotent: candidates
- * already in a terminal state are skipped by the per-candidate guard, so no
- * resume is processed twice. A unique jobId suffix avoids dedup against any
- * lingering completed job.
+ * Startup cleanup: any batch still in QUEUED/PROCESSING when the worker boots
+ * means the previous worker run died mid-job. Mark them FAILED immediately —
+ * candidates keep their last known status (extracting/scoring → visible as failed
+ * in UI). No re-enqueue, no sweep, no polling. Simple.
  */
-async function recoverStuckResumeBatches() {
-  const STUCK_MINUTES = 15;
-  const cutoff = new Date(Date.now() - STUCK_MINUTES * 60_000);
-  const stuck = await prisma.resumeBatch.findMany({
-    where: {
-      status: { in: ["QUEUED", "PROCESSING"] },
-      isDeleted: false,
-      updatedAt: { lt: cutoff },
-    },
-    select: { id: true, driveId: true, orgId: true, totalCount: true },
-    take: 50,
-  });
-  if (stuck.length === 0) return { recovered: 0 };
-  let recovered = 0;
-  for (const batch of stuck) {
-    // Only re-enqueue batches that still have unfinished candidates.
-    const candidates = await prisma.resumeCandidate.findMany({
-      where: { bulkBatchId: batch.id },
-      select: { id: true, resumeStatus: true },
+async function markStuckBatchesAsFailed() {
+  try {
+    const result = await prisma.resumeBatch.updateMany({
+      where: { status: { in: ["QUEUED", "PROCESSING"] }, isDeleted: false },
+      data: { status: "FAILED", completedAt: new Date() },
     });
-    const unfinished = candidates.filter(
-      (c) => !["shortlisted", "rejected", "failed"].includes(String(c.resumeStatus || "").toLowerCase())
-    );
-    if (candidates.length === 0) {
-      // No candidates at all — terminal-fail it so it stops being "stuck".
-      await prisma.resumeBatch.update({
-        where: { id: batch.id },
-        data: { status: "FAILED" },
-      }).catch(() => {});
-      continue;
+    if (result.count > 0) {
+      await prisma.application.updateMany({
+        where: { resumeStatus: { notIn: ["shortlisted", "rejected", "failed", "pending"] } },
+        data: { resumeStatus: "failed" },
+      });
+      console.log(`[STARTUP] Marked ${result.count} stuck batch(es) and their candidates as FAILED.`);
     }
-    if (unfinished.length === 0) {
-      // All candidates done — just finalize the batch row.
-      const done = candidates.filter((c) => ["shortlisted", "rejected"].includes(String(c.resumeStatus).toLowerCase())).length;
-      const failed = candidates.filter((c) => String(c.resumeStatus).toLowerCase() === "failed").length;
-      await prisma.resumeBatch.update({
-        where: { id: batch.id },
-        data: { status: failed > 0 && done === 0 ? "FAILED" : "COMPLETED", processedCount: done, failedCount: failed, completedAt: new Date() },
-      }).catch(() => {});
-      continue;
-    }
-    // Re-enqueue ONLY the unfinished candidates, fanned out, with a unique suffix
-    // so it isn't deduped against a stale job. Finished candidates are left alone.
-    const { enqueueResumeBatch } = await import("./lib/resume-queue-publisher");
-    await enqueueResumeBatch(
-      {
-        batchId: batch.id,
-        driveId: batch.driveId,
-        orgId: batch.orgId,
-        candidateIds: unfinished.map((c) => c.id),
-      },
-      { jobIdSuffix: `recover_${Date.now()}` }
-    );
-    recovered += 1;
-    console.warn(`[RESUME-RECOVERY] Re-enqueued stuck batch ${batch.id} (${unfinished.length} unfinished candidate(s))`);
+  } catch (err: any) {
+    console.warn("[STARTUP] Could not clean up stuck batches:", err?.message);
   }
-  if (recovered > 0) console.warn(`[RESUME-RECOVERY] Recovered ${recovered} stuck batch(es).`);
-  return { recovered };
 }
 async function persistInterviewUpdateRaw(params: {
   applicationId: string;
@@ -1035,7 +827,6 @@ let backupQueue: Queue | null = null;
 let shutdownInProgress = false;
 let setupCronJobs: (() => Promise<void>) | null = null;
 let setupRetentionCronJobs: (() => Promise<void>) | null = null;
-let setupResumeRecoveryCron: (() => Promise<void>) | null = null;
 const requestedQueues = new Set(
   (process.env.WORKER_QUEUES || "resume-processing")
     .split(",")
@@ -1052,16 +843,8 @@ function trackWorker(name: string, worker: Worker) {
     console.error(`[${name}] Redis/BullMQ error:`, error);
   });
   // Log when jobs are cleared (60s after completion/failure as per queue config)
-  worker.on("completed", (job) => {
-    setTimeout(() => {
-      console.log(`[${name}] Job ${job?.id || job?.name || 'unknown'} cleared after 60 seconds (completed)`);
-    }, 60_000);
-  });
-  worker.on("failed", (job) => {
-    setTimeout(() => {
-      console.log(`[${name}] Job ${job?.id || job?.name || 'unknown'} cleared after 60 seconds (failed)`);
-    }, 60_000);
-  });
+  worker.on("completed", (_job) => { /* removed immediately, no log needed */ });
+  worker.on("failed", (_job, _err) => { /* logged at point of failure */ });
   return worker;
 }
 async function closeWorkerResources(reason: string) {
@@ -1203,254 +986,66 @@ async function processResumeFileExtractJob(job: any) {
     await unlink(tempFilePath).catch(() => {});
   }
 }
-if (isQueueEnabled("resume-processing")) {
-  const worker = trackWorker('resume-processing', new Worker('resume-processing', async (job) => {
-    console.log(`[RESUME-WORKER] Received job id=${job.id} name=${job.name}`);
+// Per-org worker factory — each org gets its own BullMQ Worker on its own queue.
+// This means Org A's 1000-resume burst never queues behind Org B's jobs.
+// Workers are created on demand and cached for the lifetime of the process.
+const ORG_REGISTRY_KEY = "resume-worker:active-orgs"; // Redis set — publisher adds orgIds here
+const orgWorkers = new Map<string, Worker>();
+function getOrCreateOrgWorker(orgId: string): Worker {
+  const queueName = `resume-processing--${orgId}`;
+  if (orgWorkers.has(queueName)) return orgWorkers.get(queueName)!;
+  const w = trackWorker(queueName, new Worker(queueName, async (job) => {
+    console.log(`[WORKER:${orgId}] Job picked up → ${job.name} (id=${job.id})`);
     if (job.name === "drive-resume-batch") {
       await processDriveResumeBatchJob(job);
       return;
     }
-    if (job.name === RECOVER_STUCK_BATCHES_JOB) {
-      return await recoverStuckResumeBatches();
+    if (job.name === "resume-file-extract") {
+      return await processResumeFileExtractJob(job);
+    }
+    console.warn(`[WORKER:${orgId}] Unknown job name: ${job.name} — discarding.`);
+  }, {
+    connection: redisConnection,
+    concurrency: 5,              // 5 sub-jobs per org in parallel — each sub-job runs its candidates all at once
+    lockDuration: 15 * 60 * 1000,
+    stalledInterval: 60 * 1000,
+    maxStalledCount: 3,
+    drainDelay: 200,
+    removeOnComplete: { count: 0 },
+    removeOnFail: { count: 0 },
+  }));
+  w.on("failed", (job, err) => {
+    console.error(`[RESUME-WORKER:${orgId}] Job ${job?.id} failed: ${err.message}`);
+  });
+  void w.waitUntilReady()
+    .then(() => console.log(`[resume-processing--${orgId}] Worker ready`))
+    .catch((err) => console.error(`[resume-processing--${orgId}] Worker failed to start:`, err));
+  orgWorkers.set(queueName, w);
+  return w;
+}
+
+// Legacy fallback worker on the shared queue (handles any old jobs still in Redis).
+// New uploads go to per-org queues; this only runs until the old queue drains.
+if (isQueueEnabled("resume-processing")) {
+  const worker = trackWorker('resume-processing', new Worker('resume-processing', async (job) => {
+    console.log(`[WORKER:legacy] Job picked up → ${job.name} (id=${job.id})`);
+    if (job.name === "drive-resume-batch") {
+      await processDriveResumeBatchJob(job);
+      return;
     }
     if (job.name === "resume-file-extract") {
       return await processResumeFileExtractJob(job);
     }
-    const {
-      applicationId,
-      resumeText: initialResumeText,
-      resumeUrl,
-      jdText,
-      drive,
-      applicantEmail,
-      applicantName,
-      structuredResume: initialStructuredResume,
-      extractModel = "gpt-4o-mini",
-      reportModel = "gpt-4o-mini",
-    } = job.data;
-    // Guard: discard stale/malformed jobs that have no applicationId — these are
-    // legacy "drive-resume-batch"-style jobs that fell through without matching a
-    // named handler. Calling findUnique with id=undefined throws a Prisma error.
-    if (!applicationId) {
-      console.warn(`[JOB] Discarding job ${job.id} (name=${job.name}): missing applicationId in payload. Stale or unknown job type.`);
-      return;
-    }
-    console.log(`[JOB] Processing application ${applicationId} for ${applicantEmail}`);
-    // Guard: skip if the application record was deleted
-    const appExists = await prisma.application.findUnique({
-      where: { id: applicationId },
-      select: {
-        id: true,
-        createdAt: true,
-        hiringStatus: true,
-        resumeStatus: true,
-        aiScore: true,
-        aiReport: true,
-        resumeText: true,
-        resumeData: true,
-      },
-    });
-    if (!appExists) {
-      console.warn(`[JOB] Application ${applicationId} no longer exists. Discarding stale job.`);
-      return;
-    }
-    const normalizedExistingStatus = String(appExists.resumeStatus || "")
-      .trim()
-      .toUpperCase()
-      .replace(/\s+/g, "_");
-    const alreadyFinalized =
-      ["SHORTLISTED", "ACCEPTED", "REJECTED"].includes(normalizedExistingStatus) &&
-      appExists.aiScore !== null &&
-      !!appExists.aiReport;
-    if (alreadyFinalized && !job.data.force) {
-      console.log(
-        `[JOB] Application ${applicationId} already finalized (${normalizedExistingStatus}). Skipping duplicate processing.`
-      );
-      return;
-    }
-    const cachedResumeData = parseJsonSafe<any>(appExists.resumeData, {});
-    let resumeText = initialResumeText || String(appExists.resumeText || "");
-    let structuredResume = initialStructuredResume || cachedResumeData?.structured || cachedResumeData || {};
-    let tempResumePath: string | null = null;
-    let tempInputPath: string | null = null;
-    try {
-      // 1. ENSURE TEXT & STRUCTURE (Only re-extract when both text and structured cache are missing)
-      const needsExtraction =
-        (!resumeText || resumeText.length < 10) &&
-        Object.keys(structuredResume).length === 0;
-      if (needsExtraction) {
-        console.log(`[JOB] Resume text or structure missing. Initiating extraction...`);
-        // Check if resumeUrl is a valid HTTP(S) URL
-        const isRemoteUrl = typeof resumeUrl === 'string' && (resumeUrl.startsWith('http://') || resumeUrl.startsWith('https://'));
-        if (isRemoteUrl) {
-          tempResumePath = join(tmpdir(), `resume_${applicationId}_${Date.now()}.pdf`);
-          try {
-            if (!isAllowedResumeFetchUrl(resumeUrl)) {
-              throw new Error("Resume URL is not an allowed R2 resume URL");
-            }
-            console.log(`[JOB] Fetching remote resume for extraction: ${resumeUrl}`);
-            const response = await safeFetch(resumeUrl);
-            if (!response.ok) throw new Error(`Failed to fetch resume: ${response.statusText}`);
-            const buffer = Buffer.from(await response.arrayBuffer());
-            await writeFile(tempResumePath, buffer);
-          } catch (fetchErr) {
-            console.warn(`[JOB] Could not download resume from ${resumeUrl}:`, fetchErr);
-            tempResumePath = null;
-          }
-        }
-        if (tempResumePath) {
-          const extractProcess = spawn(pythonCmd, ["scripts/extract_pdf.py", tempResumePath, "RESUME", extractModel]);
-          let extractionOutput = "";
-          await new Promise((resolve, reject) => {
-            extractProcess.stdout.on("data", (data) => { extractionOutput += data.toString(); });
-            extractProcess.on("close", (code) => {
-              if (code !== 0) reject(new Error(`Extraction failed code ${code}`));
-              else resolve(null);
-            });
-          });
-          try {
-            const parsedExtraction = JSON.parse(extractionOutput);
-            resumeText = parsedExtraction.text || resumeText;
-            structuredResume = parsedExtraction.data || structuredResume;
-          } catch (parseErr) {
-            console.error(`[JOB] Failed to parse extraction output`);
-          }
-        } else if (resumeText) {
-          // If we have text but no file, we might still want to "extract" structure from the text
-          // But for now, we'll assume the text is enough for scoring
-          console.log(`[JOB] No remote file found, but have resumeText. Proceeding.`);
-        }
-      } else {
-        console.log(`[JOB] Using provided resume text and structured data.`);
-      }
-      // Update the DB with the latest structured data
-      await (prisma.application as any).update({
-        where: { id: applicationId },
-        data: {
-          resumeText: resumeText || "",
-          experienceYears: (structuredResume as any)?.experience?.total_years != null ? parseFloat(String((structuredResume as any).experience.total_years)) : null,
-        }
-      });
-      // 2. SCORING (Structured JD vs Structured Resume)
-      console.log(`[JOB] Scoring candidate ${applicantEmail} using Structured Data...`);
-      let aiResult: { score: number; status: string; reasoning: string; hard_rejected?: boolean } = { score: 0, status: "Pending", reasoning: "No resume data" };
-      // Always read the latest drive settings from DB (never trust queued snapshot).
-      const latestDrive = await (prisma.drive as any).findUnique({
-        where: { id: drive.id },
-        select: {
-          title: true,
-          extractedDetails: true,
-          screeningThreshold: true,
-          screeningCriteria: true,
-          orgId: true,
-          organization: {
-            select: {
-              name: true,
-            },
-          },
-        },
-      });
-      const THRESHOLD = Number(latestDrive?.screeningThreshold ?? 60) || 60;
-      const singleJobParsedSettings = parseDriveScreeningSettings(
-        latestDrive?.screeningCriteria,
-        THRESHOLD
-      );
-      const singleJobScreeningCriteria = singleJobParsedSettings.criteria;
-      // Parse JD details if stored as string
-      let jdDetails: Record<string, any> = {};
-      try {
-        jdDetails = typeof latestDrive?.extractedDetails === 'string'
-          ? JSON.parse(latestDrive.extractedDetails)
-          : (latestDrive?.extractedDetails as unknown as Record<string, any>) || {};
-        if (typeof jdDetails !== 'object' || Array.isArray(jdDetails) || jdDetails === null) {
-          console.warn(`[JOB] extractedDetails is not a plain object after parsing - resetting to {}`);
-          jdDetails = {};
-        }
-      } catch (e) {
-        console.warn(`[JOB] Failed to parse extractedDetails for drive ${drive.id}:`, e);
-        jdDetails = {};
-      }
-      const scoringInput = {
-        resume: structuredResume,
-        jd: jdDetails,
-        resume_raw_text: resumeText,
-        jd_raw_text: jdText || latestDrive?.description || (drive as any).description || "",
-        threshold: THRESHOLD,
-        screening_criteria: singleJobScreeningCriteria,
-      };
-      tempInputPath = join(tmpdir(), `scoring_${Date.now()}_${Math.random().toString(36).substring(7)}.json`);
-      await writeFile(tempInputPath, JSON.stringify(scoringInput));
-      const pythonProcess = spawn(pythonCmd, ["scripts/extract_pdf.py", tempInputPath, "SCORE", reportModel]);
-      let outputData = "";
-      let errorData = "";
-      await new Promise((resolve, reject) => {
-        pythonProcess.stdout.on("data", (data) => { outputData += data.toString(); });
-        pythonProcess.stderr.on("data", (data) => {
-          const chunk = data.toString();
-          errorData += chunk;
-          process.stderr.write(chunk); // Pipe to main console for real-time visibility
-        });
-        pythonProcess.on("close", (code) => {
-          if (code !== 0) reject(new Error(`Python script exited with code ${code}: ${errorData}`));
-          else resolve(null);
-        });
-      });
-      await unlink(tempInputPath).catch(() => { });
-      if (tempResumePath) await unlink(tempResumePath).catch(() => { });
-      const parsed = JSON.parse(outputData);
-      aiResult = parsed.data || parsed;
-      const currentScore = Math.max(0, Math.min(100, parseInt(aiResult.score?.toString() || "0") || 0));
-      const normalizedAiStatus = String(aiResult.status || "")
-        .trim()
-        .toUpperCase()
-        .replace(/\s+/g, "_");
-      // The DB screeningThreshold is the ONLY source of truth for pass/fail.
-      // hard_rejected from Python is purely informational (shown in report to HR)
-      // but can NEVER override the admin-configured threshold.
-      // If admin sets threshold=1%, a score of 26 MUST shortlist - no exceptions.
-      const resumeStatus: "SHORTLISTED" | "REJECTED" =
-        currentScore >= THRESHOLD ? "SHORTLISTED" : "REJECTED";
-      // 2. Update DB
-      const exists = await prisma.application.findUnique({
-        where: { id: applicationId },
-        select: { id: true }
-      });
-      if (!exists) {
-        console.warn(`[JOB] Application ${applicationId} no longer exists. Skipping update.`);
-        return;
-      }
-      await prisma.application.update({
-        where: { id: applicationId },
-        data: {
-          resumeStatus: resumeStatus,
-          aiScore: currentScore,
-          aiReport: JSON.stringify(aiResult),
-          ...(resumeStatus === "REJECTED" && {
-            interviewStatus: "Not Qualified",
-            hiringStatus: "Not Shortlisted",
-          }),
-        }
-      });
-      console.log(`[SUCCESS] Candidate ${applicantEmail} scored ${currentScore}. Status: ${resumeStatus}`);
-      console.log(
-        `[EMAIL] Auto status email disabled for application ${applicationId}. ` +
-        "Manual send/resend actions now control interview and rejection emails."
-      );
-    } catch (error) {
-      console.error(`[ERROR] Job ${job.id} failed:`, error);
-      if (tempResumePath) await unlink(tempResumePath).catch(() => { });
-      if (tempInputPath) await unlink(tempInputPath).catch(() => { });
-      throw error; // Rethrow so BullMQ knows it failed and can retry
-    }
+    console.warn(`[RESUME-WORKER] Unknown job name: ${job.name} — discarding.`);
   }, {
     connection: redisConnection,
-    concurrency: 3, // Process up to 3 batches concurrently (each batch itself is already chunked)
+    concurrency: 50, // unlimited effective concurrency — all sub-jobs picked up immediately
     lockDuration: 15 * 60 * 1000, // 15 min — safely exceeds the slowest single chunk
     stalledInterval: 60 * 1000, // Check for stalled jobs every 60s (faster recovery)
     maxStalledCount: 3, // Re-deliver a stalled job up to 3 times before giving up
     drainDelay: 200, // Poll every 200ms for snappier job pickup
-    removeOnComplete: { age: 3_600, count: 1_000 }, // keep history for observability
-    removeOnFail: { age: 86_400 },
+    removeOnComplete: { count: 0 },
+    removeOnFail: { count: 0 },
   }));
   void worker.waitUntilReady()
     .then(() => console.log("[resume-processing] Worker ready and waiting for jobs"))
@@ -1461,25 +1056,27 @@ if (isQueueEnabled("resume-processing")) {
   // Temp-file janitor: sweep at boot and every 6 hours.
   void sweepTempFiles();
   setInterval(() => { void sweepTempFiles(); }, 6 * 60 * 60 * 1000).unref();
-  // Register the stuck-batch reconciliation sweeper (every 5 min).
-  setupResumeRecoveryCron = async function setupResumeRecoveryCron() {
-    const recoveryQueue = new Queue("resume-processing", { connection: redisConnection });
-    const existing = await recoveryQueue.getRepeatableJobs();
-    for (const j of existing) {
-      if (j.name === RECOVER_STUCK_BATCHES_JOB) await recoveryQueue.removeRepeatableByKey(j.key);
-    }
-    await recoveryQueue.add(
-      RECOVER_STUCK_BATCHES_JOB,
-      {},
-      {
-        repeat: { every: 5 * 60 * 1000 },
-        removeOnComplete: { age: 600 },
-        removeOnFail: { age: 600 },
+  // On startup: mark any batches left stuck from a previous crashed worker run as FAILED.
+  void markStuckBatchesAsFailed();
+  // Watch Redis for new orgs that have uploaded resumes.
+  // The publisher adds each orgId to ORG_REGISTRY_KEY on every enqueue.
+  // We poll every 10s and spin up a worker for any org we haven't seen yet.
+  async function syncOrgWorkers() {
+    try {
+      const orgIds = await redisConnection.smembers(ORG_REGISTRY_KEY);
+      for (const orgId of orgIds) {
+        if (orgId) getOrCreateOrgWorker(orgId);
       }
-    );
-    await recoveryQueue.close();
-    console.log("[Worker] Registered resume stuck-batch recovery sweep (every 5 min).");
-  };
+    } catch (err: any) {
+      if (!shutdownInProgress) console.warn("[ORG-WORKERS] Failed to sync org workers:", err?.message);
+    }
+  }
+  void syncOrgWorkers(); // run immediately at boot to restore workers for existing orgs
+  const orgSyncInterval = setInterval(() => { void syncOrgWorkers(); }, 10_000);
+  orgSyncInterval.unref();
+  // Clear the interval on shutdown so it doesn't fire on a closed connection.
+  process.once("SIGINT", () => clearInterval(orgSyncInterval));
+  process.once("SIGTERM", () => clearInterval(orgSyncInterval));
 }
 if (isQueueEnabled("invitation-delivery-queue")) {
   const invitationDeliveryWorker = trackWorker("invitation-delivery-queue", new Worker(
@@ -2557,13 +2154,6 @@ async function initializeWorkerMetadata() {
         await setupRetentionCronJobs();
       } catch (cronErr: any) {
         console.error("  ?? ?? Failed to register recording retention sweep:", cronErr.message);
-      }
-    }
-    if (setupResumeRecoveryCron) {
-      try {
-        await setupResumeRecoveryCron();
-      } catch (cronErr: any) {
-        console.error("[Worker] Failed to register resume recovery sweep:", cronErr.message);
       }
     }
   } catch (err: any) {

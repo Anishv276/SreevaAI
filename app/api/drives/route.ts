@@ -82,7 +82,7 @@ export async function GET(request: Request) {
                     aiName: true,
                     voiceId: true,
                     _count: {
-                        select: { applications: true },
+                        select: { applications: { where: { isDeleted: false } } },
                     },
                 },
             }),
@@ -261,12 +261,7 @@ export async function DELETE(request: Request) {
                 where: { driveId: { in: validIds } },
                 data: { isDeleted: true }
             });
-            // 3. Soft Delete Resume Candidates
-            await tx.resumeCandidate.updateMany({
-                where: { driveId: { in: validIds } },
-                data: { isDeleted: true }
-            });
-            // 4. Soft Delete Applications
+            // 3. Soft Delete Applications
             await tx.application.updateMany({
                 where: { driveId: { in: validIds } },
                 data: { isDeleted: true }

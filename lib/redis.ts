@@ -29,6 +29,7 @@ console.warn = (...args: any[]) => {
 };
 // ---------------------------------------------------------
 function createRedisConnection(): IORedis {
+  // Always creates a FRESH connection — never returns the shared singleton.
   return new IORedis(getRedisUrl() || DEFAULT_REDIS_URL, {
     maxRetriesPerRequest: null,
     lazyConnect: false,

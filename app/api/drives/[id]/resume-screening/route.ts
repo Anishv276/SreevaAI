@@ -93,7 +93,6 @@ export async function POST(
     // batch behind. We pre-generate IDs so the candidate<->application FK link is
     // known before any DB write.
     type PreparedRow = {
-      candidateId: string;
       applicationId: string;
       fullName: string;
       fileName: string;
@@ -115,9 +114,7 @@ export async function POST(
         // Pre-generated, collision-free IDs so the candidate<->application link
         // is known before any DB write. UUID suffix guarantees uniqueness.
         const applicationId = `${generateId("app", guessNameFromFile(fileName))}-${randomUUID().slice(0, 8)}`;
-        const candidateId = `cand-${randomUUID()}`;
         prepared.push({
-          candidateId,
           applicationId,
           fullName: guessNameFromFile(fileName),
           fileName,
@@ -161,28 +158,14 @@ export async function POST(
             aiReport: buildProgressState(0, "waiting"),
             resumeText: null,
             resumeData: JSON.stringify({
-              source: { bucket: row.bucket, key: row.key, url: row.uploadedUrl, candidateId: row.candidateId, downloadUrl: row.downloadUrl },
+              source: { bucket: row.bucket, key: row.key, url: row.uploadedUrl, downloadUrl: row.downloadUrl },
             }),
             driveId,
+            bulkBatchId: batch.id,
+            fileName: row.fileName,
             resumeStatus: "waiting",
             interviewStatus: "pending",
             hiringStatus: "pending",
-          })),
-        }),
-        prisma.resumeCandidate.createMany({
-          data: prepared.map((row) => ({
-            id: row.candidateId,
-            driveId,
-            bulkBatchId: batch.id,
-            applicationId: row.applicationId,
-            fullName: row.fullName,
-            fileName: row.fileName,
-            resumeStatus: "waiting",
-            aiScore: 0,
-            aiReport: buildProgressState(0, "waiting"),
-            resumeData: JSON.stringify({
-              source: { bucket: row.bucket, key: row.key, url: row.uploadedUrl, applicationId: row.applicationId },
-            }),
           })),
         }),
         prisma.resumeBatch.update({
@@ -198,7 +181,7 @@ export async function POST(
       }).catch(() => {});
       return NextResponse.json({ error: "Failed to persist candidates" }, { status: 500 });
     }
-    const queuedIds = prepared.map((row) => row.candidateId);
+    const queuedIds = prepared.map((row) => row.applicationId);
     console.log(`[RESUME-UPLOAD] Persisted ${queuedIds.length} candidate(s) for batch ${batch.id}`);
     // ── PHASE 3: Durable, verified enqueue. ──────────────────────────────────
     // Throws if the job cannot be confirmed in Redis — we surface a 5xx rather
@@ -275,8 +258,8 @@ export async function GET(
           completedAt: true,
         },
       }),
-      prisma.resumeCandidate.findMany({
-        where: { driveId },
+      prisma.application.findMany({
+        where: { driveId, bulkBatchId: { not: null } },
         orderBy: { createdAt: "asc" },
         select: {
           id: true,
