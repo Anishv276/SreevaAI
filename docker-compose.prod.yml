@@ -20,13 +20,12 @@ services:
   # Reverse proxy + automatic TLS for www/apex AND lk.sreevaai.com
   # ---------------------------------------------------------------------------
   traefik:
-    image: traefik:v3.1
+    # NOTE: older Traefik (<=v3.1) hard-codes Docker API v1.24, which modern
+    # Docker daemons reject. `latest` ships a Docker client that negotiates a
+    # supported version. (Pin to a specific recent v3.x tag once verified.)
+    image: traefik:latest
     container_name: traefik
     restart: always
-    environment:
-      # Newer Docker daemons reject Traefik's default API version (1.24).
-      # Pin to a version the daemon accepts so Traefik can read the socket.
-      - DOCKER_API_VERSION=1.44
     command:
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
