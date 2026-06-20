@@ -1,21 +1,20 @@
 services:
   # Next.js Frontend + API
-  hr-frontend:
+  sreevaai-frontend:
     build:
       context: .
       dockerfile: Dockerfile.frontend
-      args:
-        # NEXT_PUBLIC_LIVEKIT_URL: "wss://new-wi7dgqfb.livekit.cloud" # LiveKit Cloud (commented for now)
-        NEXT_PUBLIC_LIVEKIT_URL: "wss://lk.sreevaai.com" # Deployment cloud
-        NEXT_PUBLIC_APP_URL: "https://www.sreevaai.com"
+    args:
+      NEXT_PUBLIC_LIVEKIT_URL: "${NEXT_PUBLIC_LIVEKIT_URL}" # Pulls from .env (e.g. wss://your-project.livekit.cloud)
+      NEXT_PUBLIC_APP_URL: "https://www.sreevaai.com"
     container_name: Frontend
     networks:
       - traefik-proxy
     env_file:
       - .env
     environment:
-      LIVEKIT_URL: "wss://lk.sreevaai.com"
-      NEXT_PUBLIC_LIVEKIT_URL: "wss://lk.sreevaai.com"
+      LIVEKIT_URL: "${LIVEKIT_URL}"
+      NEXT_PUBLIC_LIVEKIT_URL: "${NEXT_PUBLIC_LIVEKIT_URL}"
       # REDIS_URL comes from .env (external Redis at 31.97.60.216:32768)
     restart: always
     dns:
@@ -23,14 +22,14 @@ services:
       - 8.8.4.4
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.hr-app.rule=Host(`www.sreevaai.com`) || Host(`sreevaai.com`)"
-      - "traefik.http.routers.hr-app.entrypoints=websecure"
-      - "traefik.http.routers.hr-app.tls=true"
-      - "traefik.http.routers.hr-app.tls.certresolver=mytlschallenge"
-      - "traefik.http.services.hr-app.loadbalancer.server.port=3000"
+      - "traefik.http.routers.sreevaai-app.rule=Host(`www.sreevaai.com`) || Host(`sreevaai.com`)"
+      - "traefik.http.routers.sreevaai-app.entrypoints=websecure"
+      - "traefik.http.routers.sreevaai-app.tls=true"
+      - "traefik.http.routers.sreevaai-app.tls.certresolver=mytlschallenge"
+      - "traefik.http.services.sreevaai-app.loadbalancer.server.port=3000"
 
   # Background Worker (Handles Scoring & Emails)
-  hr-worker:
+  sreevaai-worker:
     build:
       context: .
       dockerfile: Dockerfile.frontend
@@ -39,8 +38,8 @@ services:
     env_file:
       - .env
     environment:
-      LIVEKIT_URL: "wss://lk.sreevaai.com"
-      NEXT_PUBLIC_LIVEKIT_URL: "wss://lk.sreevaai.com"
+      LIVEKIT_URL: "${LIVEKIT_URL}"
+      NEXT_PUBLIC_LIVEKIT_URL: "${NEXT_PUBLIC_LIVEKIT_URL}"
       # REDIS_URL comes from .env (external Redis at 31.97.60.216:32768)
       WORKER_QUEUES: "resume-processing,invitation-delivery-queue,interview-start,interview-finalization,interview-snapshots,interview-recording,recording-retention-cleanup,jd-upload,jd-extraction,backup-queue"
     restart: always
@@ -51,7 +50,7 @@ services:
       - 8.8.4.4
 
   # Python AI Agent (Backend)
-  hr-agent:
+  sreevaai-agent:
     build:
       context: .
       dockerfile: Dockerfile
@@ -61,87 +60,12 @@ services:
     env_file:
       - .env
     environment:
-      LIVEKIT_URL: "ws://livekit:7880"
+      LIVEKIT_URL: "${LIVEKIT_URL}"
       # REDIS_URL comes from .env (external Redis at 31.97.60.216:32768)
     restart: always
     dns:
       - 8.8.8.8
       - 8.8.4.4
-
-  # LiveKit Server (Self-Hosted)
-  # Full config is supplied inline from .env via LIVEKIT_CONFIG (no hardcoded secrets, no mounted file).
-  # Secrets (keys + redis) come from .env; static infra values (ports, log level) are fixed here.
-  # Redis must match the egress service below so egress receives jobs.
-  livekit:
-    image: livekit/livekit-server:latest
-    container_name: livekit
-    restart: always
-    networks:
-      - traefik-proxy
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
-    environment:
-      LIVEKIT_CONFIG: |
-        port: 7880
-        bind_addresses:
-          - ""
-        rtc:
-          tcp_port: 7881
-          port_range_start: 5000
-          port_range_end: 5100
-          use_external_ip: true
-        keys:
-          ${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}
-        redis:
-          # External production Redis (same instance the app/worker use via .env).
-          address: "${LIVEKIT_REDIS_ADDRESS}"
-          username: "${LIVEKIT_REDIS_USERNAME}"
-          password: "${LIVEKIT_REDIS_PASSWORD}"
-        logging:
-          level: debug
-    ports:
-      - "5000-5100:5000-5100/udp"
-      - "7880:7880"
-      - "7881:7881"
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.livekit.rule=Host(`lk.sreevaai.com`)"
-      - "traefik.http.routers.livekit.entrypoints=websecure"
-      - "traefik.http.routers.livekit.tls=true"
-      - "traefik.http.routers.livekit.tls.certresolver=mytlschallenge"
-      - "traefik.http.services.livekit.loadbalancer.server.port=7880"
-
-  # LiveKit Egress (Requires Redis & LiveKit Server)
-  # Config is supplied inline from .env via EGRESS_CONFIG_BODY (no hardcoded secrets, no mounted file).
-  # Redis must match the LiveKit server above so egress receives jobs.
-  livekit-egress:
-    image: livekit/egress:latest
-    container_name: livekit-egress
-    restart: always
-    environment:
-      EGRESS_CONFIG_BODY: |
-        api_key: "${LIVEKIT_API_KEY}"
-        api_secret: "${LIVEKIT_API_SECRET}"
-        ws_url: "ws://livekit:7880"
-        redis:
-          # External production Redis (same instance the app/worker use via .env).
-          address: "${LIVEKIT_REDIS_ADDRESS}"
-          username: "${LIVEKIT_REDIS_USERNAME}"
-          password: "${LIVEKIT_REDIS_PASSWORD}"
-        # This host has 2 CPUs; egress defaults assume 4 and log
-        # "not enough cpu for some egress types". Lower the per-job CPU
-        # cost so room/track egress is accepted on a 2-CPU box.
-        cpu_cost:
-          room_composite_cpu_cost: 2.0
-          web_cpu_cost: 2.0
-          track_composite_cpu_cost: 1.0
-          track_cpu_cost: 0.5
-    networks:
-      - traefik-proxy
-    depends_on:
-      livekit:
-        condition: service_started
 
 networks:
   traefik-proxy:

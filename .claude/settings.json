@@ -147,7 +147,8 @@
       "Bash(grep -rn \"model ResumeCandidate\\\\|model Application\\\\b\" prisma/schema.prisma)",
       "Bash(find . -name \"schema.prisma\" -not -path \"*/node_modules/*\")",
       "Bash(timeout 25 npx cross-env WORKER_QUEUES=resume-processing tsx --env-file=.env worker.ts)",
-      "Bash(echo \"EXIT=$?\")"
+      "Bash(echo \"EXIT=$?\")",
+      "WebFetch(domain:docs.bullmq.io)"
     ],
     "additionalDirectories": [
       "c:\\Users\\vamsi\\OneDrive\\Desktop\\HR-updates\\scratch",
