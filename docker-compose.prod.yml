@@ -92,7 +92,13 @@ services:
   # Background worker — all BullMQ queues
   # ---------------------------------------------------------------------------
   hr-worker:
-    image: sreeva-app:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        NEXT_PUBLIC_LIVEKIT_URL: ${NEXT_PUBLIC_LIVEKIT_URL}
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
+    image: sreeva-app:latest        # same build+tag as hr-frontend -> built once, reused
     container_name: Normal-worker
     restart: always
     command: ["npm", "exec", "--", "tsx", "worker.ts"]
