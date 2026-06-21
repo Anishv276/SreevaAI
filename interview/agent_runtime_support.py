@@ -3,7 +3,7 @@ import logging
 import os
 import time
 from contextvars import ContextVar
-from typing import Any, Optional
+from typing import Any
 from dotenv import load_dotenv
 load_dotenv(override=False)  # override=False: skip if env vars already set (avoids redundant disk reads)
 logger = logging.getLogger("interview-agent")
@@ -216,22 +216,3 @@ APP_BASE_URL = (
 _DB_POOL: Any = None
 _DB_POOL_INIT_TASK: Any = None
 _PENDING_MANUAL_BILLING: dict[str, list[tuple[str, dict]]] = {}
-_TOOL_ALIAS_CATALOG: dict[str, str] = {}
-PROCTORING_WEIGHTS: dict[str, int] = {
-    "tab_switch": 5,
-    "face_absence": 3,
-    "multiple_faces": 30,
-}
-_COMPOSITE_RISK_WEIGHTS = {
-    "integrity": 0.60,
-    "depth": 0.40,
-}
-def compose_risk_score(
-    integrity_risk: int,
-    depth_risk: int,
-) -> int:
-    weighted = (
-        integrity_risk * _COMPOSITE_RISK_WEIGHTS["integrity"]
-        + depth_risk * _COMPOSITE_RISK_WEIGHTS["depth"]
-    )
-    return max(0, min(100, int(round(weighted))))

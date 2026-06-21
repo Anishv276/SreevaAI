@@ -196,9 +196,6 @@ from livekit.agents import (
 from livekit.agents.metrics import AgentSessionUsage
 from livekit.agents.voice import room_io
 from livekit.agents.voice.turn import InterruptionOptions
-from interview.trust_engine import finalize_trust_state, apply_turn_decision
-from interview.session_state import init_trust_state
-from interview.recruiter_summary import build_recruiter_summary
 from interview.prompt_layers import (
     build_voice_layer_prompt,
     build_evaluation_layer_prompt,
@@ -1684,7 +1681,6 @@ async def entrypoint(ctx: JobContext):
     _last_applied_eval_turn: int = 0             # monotonic guard against stale eval results
     _question_asked_at: float = 0.0
     _answer_received_at: float = 0.0
-    _trust_state = init_trust_state()
     _custom_q_reminder_fired: bool = False
     _custom_q_final_reminder_fired: bool = False
     _covered_topic_keys = CoveredTopics()  # single source of truth — normalized lowercase keys
@@ -2170,7 +2166,7 @@ async def entrypoint(ctx: JobContext):
         """Persist eval state mutations. Agent already owns topic/directive decisions."""
         nonlocal answer_scores, _last_applied_eval_turn, \
             _topic_score_histories, _last_depth_decay_turn, \
-            _eval_llm_usages_accumulated, _trust_state
+            _eval_llm_usages_accumulated
         if result_turn <= _last_applied_eval_turn:
             logger.debug(
                 "[EVAL] skipping stale eval result turn=%d last_applied=%d",
@@ -2187,31 +2183,6 @@ async def entrypoint(ctx: JobContext):
                 _eval_llm_usages_accumulated.extend(eval_usages)
             if quality_record:
                 answer_scores.append(quality_record)
-                # C1 fix: apply per-turn trust update so trust_score accumulates
-                # correctly across the session.  Must run inside the lock so the
-                # mutable _trust_state dict is never accessed from two coroutines
-                # simultaneously (the same lock guards all session-state writes).
-                # Build a minimal trust-engine-compatible dict from the new
-                # single-signal eval schema. trust_engine reads signal_events as
-                # a list of {signal_name, score_delta, trust_bucket_affected, ...}.
-                _eval_sig = result.get("signal")
-                _signal_events_for_trust = (
-                    [{"signal_name": _eval_sig, "score_delta": -0.15,
-                      "trust_bucket_affected": "behavioral_confidence",
-                      "recoverable": True}]
-                    if _eval_sig else []
-                )
-                _td_for_trust = {
-                    "quality": quality_record,
-                    "signals": {_eval_sig: True} if _eval_sig else {},
-                    "signal_events": _signal_events_for_trust,
-                    "decision": {"action": result.get("action", "PROBE")},
-                }
-                _trust_state = apply_turn_decision(
-                    _trust_state,
-                    _td_for_trust,
-                    behavioral_toggles=evaluation_signal_toggles,
-                )
                 topic_key = re.sub(
                     r"[^a-z0-9]+", " ",
                     str(quality_record.get("topic") or _active_topic or "").lower(),
@@ -2238,7 +2209,7 @@ async def entrypoint(ctx: JobContext):
     ) -> None:
         nonlocal proctoring_events, _last_interviewer_question, \
             answer_scores, \
-            _trust_state, greeting_delivered_at, \
+            greeting_delivered_at, \
             warmup_complete, _last_depth_decay_turn, \
             _active_topic, _covered_topic_keys, _topic_states, \
             _last_applied_eval_turn, _topic_score_histories, \
@@ -2430,7 +2401,6 @@ async def entrypoint(ctx: JobContext):
             )
             logger.info("[EVAL_GATE] turn=%d -> %s", turn_snapshot, _gate_reason)
             if _can_eval_turn:
-                score_history_snap = list(_trust_state.get("score_history", []))
                 turns_since_decay_snap = (
                     (turn_snapshot - _last_depth_decay_turn)
                     if _last_depth_decay_turn >= 0
@@ -2451,7 +2421,6 @@ async def entrypoint(ctx: JobContext):
                     question=question_snap,
                     lines=lines_snap_eval,
                     turn=turn_snapshot,
-                    score_history=score_history_snap,
                     turns_since_decay=turns_since_decay_snap,
                     response_latency=response_latency_snap,
                 ) -> dict:
@@ -2496,7 +2465,6 @@ async def entrypoint(ctx: JobContext):
                         "answer": answer,
                         "question": resolved_question,
                         "transcript_lines": lines[-6:],
-                        "score_history": score_history,
                         "topic_score_history": _topic_score_history_snap,
                         "topic_depth_history": _topic_depth_history_snap,
                         "turns_since_decay": turns_since_decay,
@@ -3877,23 +3845,6 @@ async def entrypoint(ctx: JobContext):
     # Ã¢ Final definitive save - Phase 5 includes proctoring report + answer scores
     proctoring_data = _build_proctoring_data(
         "time_expired" if time_expired else "interview_finished"
-    )
-    # Finalize Trust Engine and build recruiter summary before persisting
-    _trust_state = finalize_trust_state(_trust_state)
-    recruiter_summary = build_recruiter_summary(
-        trust_state=_trust_state,
-        answer_scores=answer_scores,
-        total_turns=turn_count,
-        candidate_name=candidate_name,
-        job_title=job_title,
-        proctoring_profile=proctoring_data,
-    )
-    logger.info(
-        f"[TRUST] Final  score={_trust_state['trust_score']} "
-        f"integrity={_trust_state['integrity_band']} "
-        f"quality={_trust_state['quality_band']} "
-        f"trend={_trust_state['trend']} "
-        f"recommendation={recruiter_summary['recommendation']}"
     )
     logger.info("[PERSIST] Saving final transcript (%d lines) and scores (%d turns)", len(transcript_lines), len(answer_scores))
     await persist_transcript(

@@ -5,7 +5,6 @@ import { generateId } from "@/lib/ids";
 import { sendInterviewInviteEmail } from "@/lib/mail";
 import { buildInterviewLink } from "@/lib/interview-links";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
-import { enqueueResumeJob } from "@/lib/resume-queue-publisher";
 
 // POST /api/admin/interview-only
 // Interview Only mode — two paths:
@@ -118,11 +117,6 @@ export async function POST(request: Request) {
             }
         }
 
-        // Enqueue resume screening for all candidates that have a resume
-        // The worker will auto-send invite after scoring (interviewMode === "interview-only")
-        if (candidateIdsWithResume.length > 0) {
-            await enqueueResumeJob({ driveId, orgId, candidateIds: candidateIdsWithResume });
-        }
 
         return NextResponse.json({ success: true, results });
     } catch (err) {

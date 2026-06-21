@@ -3,7 +3,6 @@ import { prisma } from "@/lib/prisma";
 import { getSession, isAdminRole } from "@/lib/auth";
 import { generateId } from "@/lib/ids";
 import { putObject } from "@/lib/s3";
-import { enqueueResumeJob } from "@/lib/resume-queue-publisher";
 import { randomUUID } from "crypto";
 
 const RESUME_BUCKET = process.env.R2_RESUMES_BUCKET || "resumes";
@@ -73,8 +72,7 @@ export async function POST(request: Request) {
             },
         });
 
-        // Enqueue resume screening
-        await enqueueResumeJob({ driveId, orgId, candidateIds: [appId] });
+
 
         return NextResponse.json({ success: true, applicationId: appId });
     } catch (err: any) {

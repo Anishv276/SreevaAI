@@ -5,28 +5,28 @@ import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 // Short, natural lines that feel less robotic while staying easy to verify.
 const VERIFICATION_SENTENCES = [
-    "I am ready for a great interview today",
-    "Hello, I am here and ready to begin",
-    "My microphone sounds clear and crisp",
-    "I can speak clearly and confidently today",
-    "Please verify that my microphone is working",
-    "I build things that save people time",
-    "I like turning messy work into simple workflows",
-    "Today feels like a good day to get started",
-    "I bring calm energy and clear communication",
-    "This setup is looking smooth and ready",
-    "I enjoy solving problems one step at a time",
-    "Let us make this interview a good conversation",
+    "I am excited to share my experience in this interview",
+    "Artificial intelligence is changing the way we work and hire",
+    "I enjoy solving problems and building things that matter",
+    "This AI interview will help showcase my skills and strengths",
+    "I am confident in my ability to communicate clearly",
+    "Technology is helping companies find the right people faster",
+    "I have prepared well and I am ready to do my best",
+    "Good communication is the foundation of every great team",
+    "I look forward to discussing my background and experience",
+    "AI systems can evaluate candidates fairly and efficiently",
+    "I bring focus and clarity to everything I work on",
+    "Every great career starts with a single conversation",
 ];
 const SPEAKER_PROMPTS = [
-    "Quick sound check for us today: when you hear {word}, click Yes.",
-    "Let's make sure the room sounds good. When you hear {word}, tap Yes.",
-    "One last audio check: I will say {word} in a moment. Hear it and click Yes.",
-    "Just a quick speaker test. When you catch the word {word}, press Yes.",
-    "We are almost there. When you hear {word}, go ahead and click Yes.",
-    "Tiny audio check before we begin: listen for {word}, then click Yes.",
-    "Let us confirm the speakers are lively. When you hear {word}, click Yes.",
-    "A quick volume check: once you hear {word}, just hit Yes.",
+    "Almost ready for your interview. Listen for the word {word} and click Yes.",
+    "Quick audio check before we begin. When you hear {word}, tap Yes.",
+    "Making sure your speakers are working. Catch the word {word} and click Yes.",
+    "One small step before your interview starts. Hear {word} and press Yes.",
+    "Your interview is almost set. When you hear {word}, go ahead and click Yes.",
+    "Let us confirm your audio is clear. Listen for {word} and click Yes.",
+    "Final check before we launch. When you catch the word {word}, hit Yes.",
+    "Nearly there. Listen carefully for {word} and click Yes when you hear it.",
 ];
 interface HardwareCheckProps {
     onComplete: (devices?: { cameraId?: string; micId?: string }) => void | Promise<void>;
@@ -912,7 +912,7 @@ export function HardwareCheck({
                         </span>
                     </div>
                     {/* Step Card Inner Screens */}
-                    <div className="flex-1 flex flex-col justify-center mt-6">
+                    <div className="flex-1 flex flex-col justify-center mt-6 mb-2">
                         <AnimatePresence mode="wait">
                             {/* STAGE 1: Microphone Check */}
                             {activeStep === 0 && (
@@ -1271,6 +1271,18 @@ export function HardwareCheck({
                             )}
                         </AnimatePresence>
                     </div>
+                    {/* Terms & Policy Footer — always visible at bottom of right card */}
+                    <p className="text-[10px] text-gray-400 text-center leading-relaxed pt-3 border-t border-gray-100 mt-2">
+                        By proceeding, you agree to our{" "}
+                        <a href="/terms" target="_blank" rel="noopener noreferrer" className="text-orange-500 hover:underline font-semibold">
+                            Terms of Service
+                        </a>{" "}
+                        and{" "}
+                        <a href="/privacy" target="_blank" rel="noopener noreferrer" className="text-orange-500 hover:underline font-semibold">
+                            Privacy Policy
+                        </a>
+                        . This session will be recorded and monitored for quality and verification purposes.
+                    </p>
                 </div>
             </div>
         </div>

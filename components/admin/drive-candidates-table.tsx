@@ -3,7 +3,6 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DateFilter, type DateRange } from "@/components/admin/date-filter";
 import { useCandidates } from "@/context/candidates-context";
@@ -13,10 +12,10 @@ import { toast } from "@/components/ui/toast-custom";
 import { getInterviewActionBlockedMessage, isInterviewQuotaLocked, isOrgRestrictedStatus } from "@/lib/interview-quota";
 import { useAdminOrg } from "@/context/admin-org-context";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import * as RadixSlider from "@radix-ui/react-slider";
 import {
     AlertCircle,
     Mail,
-    Search,
     ChevronDown,
     Target,
     UserX,
@@ -28,6 +27,7 @@ import {
     Square,
     Trash2,
     Loader2,
+    SlidersHorizontal,
 } from "lucide-react";
 import {
     DropdownMenu,
@@ -57,10 +57,103 @@ function formatCandidateStatusLabel(value?: string) {
 function normalizeStatusKey(value?: string) {
     return String(value || "").trim().toLowerCase().replace(/[_-]+/g, " ");
 }
+function ScoreRangeFilter({
+    min, max, onChange,
+}: {
+    min: number; max: number;
+    onChange: (min: number, max: number) => void;
+}) {
+    const isFiltered = min > 0 || max < 100;
+
+    return (
+        <div className={cn(
+            "flex items-center gap-2 h-9 px-3 rounded-full border transition-all duration-200 bg-white",
+            isFiltered ? "border-[#F97316] shadow-sm" : "border-gray-200 hover:border-gray-300"
+        )}>
+            {/* Min label */}
+            <span className="text-[11px] font-bold tabular-nums w-5 text-right flex-shrink-0"
+                style={{ color: isFiltered ? "#F97316" : "#9ca3af" }}>
+                {min}
+            </span>
+
+            <RadixSlider.Root
+                className="relative flex items-center flex-shrink-0"
+                style={{ width: 140, height: 28 }}
+                min={0}
+                max={100}
+                step={1}
+                value={[min, max]}
+                onValueChange={([lo, hi]) => onChange(lo, hi)}
+                minStepsBetweenThumbs={1}
+            >
+                <RadixSlider.Track className="relative h-[3px] flex-1 rounded-full bg-gray-200">
+                    <RadixSlider.Range
+                        className="absolute h-full rounded-full"
+                        style={{
+                            background: "#F97316",
+                            transition: "left 80ms ease, right 80ms ease",
+                        }}
+                    />
+                </RadixSlider.Track>
+
+                {/* MIN ball */}
+                <RadixSlider.Thumb
+                    className="flex items-center justify-center rounded-full font-black cursor-grab active:cursor-grabbing focus:outline-none select-none"
+                    style={{
+                        width: 28, height: 28, fontSize: 9,
+                        background: isFiltered && min > 0 ? "#F97316" : "#ffffff",
+                        border: `2px solid ${isFiltered && min > 0 ? "#F97316" : "#d1d5db"}`,
+                        color: isFiltered && min > 0 ? "#ffffff" : "#374151",
+                        boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
+                        transition: "background 150ms, border-color 150ms, color 150ms",
+                    }}
+                    aria-label="Minimum score"
+                >
+                    {min}
+                </RadixSlider.Thumb>
+
+                {/* MAX ball */}
+                <RadixSlider.Thumb
+                    className="flex items-center justify-center rounded-full font-black cursor-grab active:cursor-grabbing focus:outline-none select-none"
+                    style={{
+                        width: 28, height: 28, fontSize: 9,
+                        background: isFiltered && max < 100 ? "#F97316" : "#ffffff",
+                        border: `2px solid ${isFiltered && max < 100 ? "#F97316" : "#d1d5db"}`,
+                        color: isFiltered && max < 100 ? "#ffffff" : "#374151",
+                        boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
+                        transition: "background 150ms, border-color 150ms, color 150ms",
+                    }}
+                    aria-label="Maximum score"
+                >
+                    {max}
+                </RadixSlider.Thumb>
+            </RadixSlider.Root>
+
+            {/* Max label */}
+            <span className="text-[11px] font-bold tabular-nums w-5 flex-shrink-0"
+                style={{ color: isFiltered ? "#F97316" : "#9ca3af" }}>
+                {max}
+            </span>
+
+            {/* Clear — only when filtered */}
+            {isFiltered && (
+                <button
+                    onClick={() => onChange(0, 100)}
+                    className="text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0 ml-0.5"
+                    aria-label="Clear score filter"
+                >
+                    <XCircle className="h-3.5 w-3.5" />
+                </button>
+            )}
+        </div>
+    );
+}
+
 export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string, refreshKey?: number }) {
     const { candidates, pagination, isLoading, error, fetchCandidates, clearError } = useCandidates();
     const { organization } = useJobs();
-    const [searchTerm, setSearchTerm] = useState("");
+    const [scoreMin, setScoreMin] = useState(0);
+    const [scoreMax, setScoreMax] = useState(100);
     const [resumeFilter, setResumeFilter] = useState("all");
     const [interviewFilter, setInterviewFilter] = useState("all");
     const [timeline, setTimeline] = useState<DateRange>({ type: "all" });
@@ -102,17 +195,17 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
         if (!isDriveViewReady) setSelectedIds(new Set());
         const handler = setTimeout(() => {
             const { startDate, endDate } = getDateRange();
-            void fetchCandidates(1, pageSize, driveId, resumeFilter, interviewFilter, startDate, endDate, searchTerm, scoreSort, { background: isDriveViewReady })
+            void fetchCandidates(1, pageSize, driveId, resumeFilter, interviewFilter, startDate, endDate, undefined, scoreSort, { background: isDriveViewReady })
                 .finally(() => { if (!cancelled) setIsDriveViewReady(true); });
         }, 500);
         return () => { cancelled = true; clearTimeout(handler); };
-    }, [driveId, resumeFilter, interviewFilter, timeline, searchTerm, fetchCandidates, scoreSort, refreshKey]);
+    }, [driveId, resumeFilter, interviewFilter, timeline, fetchCandidates, scoreSort, refreshKey]);
     const pageSizeRef = useRef(pageSize);
     useEffect(() => {
         if (pageSizeRef.current === pageSize) return;
         pageSizeRef.current = pageSize;
         const { startDate, endDate } = getDateRange();
-        void fetchCandidates(1, pageSize, driveId, resumeFilter, interviewFilter, startDate, endDate, searchTerm, scoreSort);
+        void fetchCandidates(1, pageSize, driveId, resumeFilter, interviewFilter, startDate, endDate, undefined, scoreSort);
     }, [pageSize]);
     useEffect(() => {
         const hasPending = candidates.some((c: any) => {
@@ -122,10 +215,10 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
         if (!hasPending) return;
         const timer = setInterval(() => {
             const { startDate, endDate } = getDateRange();
-            void fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, startDate, endDate, searchTerm, scoreSort, { background: true, force: true });
+            void fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, startDate, endDate, undefined, scoreSort, { background: true, force: true });
         }, 3000);
         return () => clearInterval(timer);
-    }, [candidates, pagination.page, pageSize, driveId, resumeFilter, interviewFilter, searchTerm, scoreSort]);
+    }, [candidates, pagination.page, pageSize, driveId, resumeFilter, interviewFilter, scoreSort]);
     const handlePageChange = (newPage: number) => {
         if (newPage < 1 || newPage > pagination.totalPages) return;
         let startDate: string | undefined;
@@ -145,7 +238,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
             startDate = timeline.from;
             endDate = timeline.to;
         }
-        fetchCandidates(newPage, pageSize, driveId, resumeFilter, interviewFilter, startDate, endDate, searchTerm, scoreSort);
+        fetchCandidates(newPage, pageSize, driveId, resumeFilter, interviewFilter, startDate, endDate, undefined, scoreSort);
     };
     const handleUpdateStatus = async (applicationId: string, statusUpdate: { resumeStatus?: string; hiringStatus?: string }, successMsg: string) => {
         try {
@@ -187,7 +280,14 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
             setSendingInterviewLinkId(null);
         }
     };
-    const filteredCandidates = candidates.filter((candidate: any) => candidate.driveId === driveId);
+    const filteredCandidates = candidates.filter((candidate: any) => {
+        if (candidate.driveId !== driveId) return false;
+        if (scoreMin > 0 || scoreMax < 100) {
+            const score = Number(candidate.score ?? candidate.aiScore ?? 0);
+            if (score < scoreMin || score > scoreMax) return false;
+        }
+        return true;
+    });
     const selectedCount = selectedIds.size;
     const selectedOnPage = filteredCandidates.filter((candidate: any) => selectedIds.has(candidate.id));
     const isAllSelected = filteredCandidates.length > 0 && selectedOnPage.length === filteredCandidates.length;
@@ -467,10 +567,11 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                         <button onClick={isInterviewActionBlocked ? undefined : handleBulkSendInterviewLink} disabled={isBulkLoading} className={cn("h-8 px-3 rounded-full border text-[12px] font-semibold flex items-center gap-1.5 disabled:opacity-50 transition-colors", isInterviewActionBlocked ? "border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed" : "border-orange-200 bg-white text-[#F97316] hover:bg-orange-50")}>{isInterviewActionBlocked ? <Lock className="h-3.5 w-3.5" /> : <RefreshCw className="h-3.5 w-3.5" />} Resend</button>
                         <button onClick={() => setDeleteConfirm({ mode: "bulk" })} disabled={isBulkLoading} className="h-8 px-3 rounded-full border border-red-200 bg-white text-[12px] font-semibold text-red-600 hover:bg-red-50 flex items-center gap-1.5 disabled:opacity-50 transition-colors"><Trash2 className="h-3.5 w-3.5" /> Delete ({selectedCount})</button>
                     </>)}
-                    <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
-                        <Input placeholder="Search candidates..." className="pl-8 h-8 w-48 border-gray-200 rounded-full text-[12px] font-medium focus:border-orange-400 focus:ring-1 focus:ring-orange-200 bg-gray-50" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
-                    </div>
+                    <ScoreRangeFilter
+                        min={scoreMin}
+                        max={scoreMax}
+                        onChange={(lo, hi) => { setScoreMin(lo); setScoreMax(hi); }}
+                    />
                 </div>
             </div>
             {error && (
@@ -738,7 +839,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                     <p className="text-[12px] text-gray-500">
                         Showing <span className="font-bold text-gray-800">{pagination.total > 0 ? (pagination.page - 1) * pageSize + 1 : 0}</span>–<span className="font-bold text-gray-800">{Math.min(pagination.page * pageSize, pagination.total)}</span> of <span className="font-bold text-gray-800">{pagination.total}</span>
                     </p>
-                    <Select value={String(pageSize)} onValueChange={(v) => { const n = Number(v); setPageSize(n); clearSelection(); fetchCandidates(1, n, driveId, resumeFilter, interviewFilter, undefined, undefined, searchTerm, scoreSort); }}>
+                    <Select value={String(pageSize)} onValueChange={(v) => { const n = Number(v); setPageSize(n); clearSelection(); fetchCandidates(1, n, driveId, resumeFilter, interviewFilter, undefined, undefined, undefined, scoreSort); }}>
                         <SelectTrigger className="h-7 w-28 rounded-lg border-gray-200 bg-white text-[12px] font-semibold text-gray-600 shadow-none"><SelectValue /></SelectTrigger>
                         <SelectContent className="rounded-xl border-gray-100">{[20, 50, 100, 250, 500, 1000].map(o => <SelectItem key={o} value={String(o)} className="rounded-lg font-semibold text-[12px]">{o} / page</SelectItem>)}</SelectContent>
                     </Select>

@@ -155,7 +155,15 @@
       "Bash(python -c \"import livekit.plugins.sarvam as s; import inspect; print\\(inspect.getfile\\(s\\)\\)\")",
       "Bash(xargs grep -n \"pace\\\\|temperature\\\\|enable_preprocessing\\\\|min_buffer\\\\|max_chunk\\\\|bitrate\\\\|sample_rate\\\\|class TTS\\\\|def __init__\")",
       "PowerShell(New-Item -ItemType Directory -Force \"c:\\\\Users\\\\vamsi\\\\OneDrive\\\\Documents\\\\SreevaAI\\\\app\\\\api\\\\admin\\\\interview-only\")",
-      "PowerShell(New-Item -ItemType Directory -Force \"c:\\\\Users\\\\vamsi\\\\OneDrive\\\\Documents\\\\SreevaAI\\\\app\\\\api\\\\admin\\\\upload-resume\")"
+      "PowerShell(New-Item -ItemType Directory -Force \"c:\\\\Users\\\\vamsi\\\\OneDrive\\\\Documents\\\\SreevaAI\\\\app\\\\api\\\\admin\\\\upload-resume\")",
+      "Bash(grep -E \"\\\\.\\(ts|js|mjs|cjs\\)$\")",
+      "Bash(grep -r \"from \\\\\"./\\\\|from '\\\\./\\\\|from \\\\\"../\\\\|from '../\" /c/Users/vamsi/OneDrive/Documents/SreevaAI/scripts --include=\"*.ts\" --exclude-dir=node_modules)",
+      "Bash(grep -E \"middleware|\\\\.ts$\")",
+      "Bash(npm uninstall *)",
+      "Bash(npm ls *)",
+      "WebFetch(domain:docs.deepgram.com)",
+      "WebFetch(domain:platform.openai.com)",
+      "Bash(npm show *)"
     ],
     "additionalDirectories": [
       "c:\\Users\\vamsi\\OneDrive\\Desktop\\HR-updates\\scratch",

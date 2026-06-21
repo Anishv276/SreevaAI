@@ -3,7 +3,6 @@ import { randomUUID } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { putObject } from "@/lib/s3";
 import { generateId } from "@/lib/ids";
-import { enqueueResumeJob } from "@/lib/resume-queue-publisher";
 import { getOrgBillingStatus } from "@/lib/credits";
 import { getInterviewQuotaSupportMessage } from "@/lib/interview-quota";
 import { getSession, isAdminRole, isSuperAdminRole } from "@/lib/auth";
@@ -166,14 +165,6 @@ export async function POST(
     const candidateIds = prepared.map((row) => row.applicationId);
     console.log(`[RESUME-UPLOAD] Persisted ${candidateIds.length} candidate(s) for drive=${driveId}`);
 
-    // ── PHASE 3: Enqueue one job for all candidates ──────────────────────────
-    const jobId = await enqueueResumeJob({
-      driveId,
-      orgId: drive.orgId,
-      candidateIds,
-    });
-
-    console.log(`[RESUME-UPLOAD] Job enqueued (verified) jobId=${jobId} candidates=${candidateIds.length}`);
 
     return NextResponse.json({
       totalCount: prepared.length,

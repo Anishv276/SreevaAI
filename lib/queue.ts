@@ -17,11 +17,7 @@ export const resumeQueue = new Queue('resume-processing', {
   connection: redisConnection,
   defaultJobOptions,
 });
-// 2. Transactional emails (invites, reports)
-export const emailQueue = new Queue('email-delivery', {
-  connection: redisConnection,
-  defaultJobOptions,
-});
+
 // 3. Interview invitation delivery (delayed sends)
 export const invitationDeliveryQueue = new Queue('invitation-delivery-queue', {
   connection: redisConnection,

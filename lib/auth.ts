@@ -3,11 +3,6 @@ import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import redis from "./redis";
 import { getSecretKey, allSecretKeys } from "./session-secret";
-// ─── Rotating JWT Secret ───────────────────────────────────────────────────────
-// The rotating-secret implementation now lives in lib/session-secret.ts so the
-// Edge middleware (proxy.ts) and this Node auth layer verify against the SAME
-// key set. See that module for the rotation/grace-period semantics.
-// ──────────────────────────────────────────────────────────────────────────────
 export type SessionRole = "SUPER_ADMIN" | "ADMIN" | "CANDIDATE";
 export interface SessionUser {
     userId: string;

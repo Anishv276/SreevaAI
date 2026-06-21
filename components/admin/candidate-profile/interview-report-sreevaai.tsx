@@ -222,6 +222,34 @@ const PROCTORING_DISPLAY: Record<string, { title: string; why: string; risk: str
   tab_switch: { title: "Tab / app switch", why: "The candidate switched away from the interview tab to another browser tab or application. This is commonly associated with looking up answers.", risk: "Medium - cross-check with answer quality; sudden improvement after a tab switch is a red flag." },
   connection_lost: { title: "Connection dropped", why: "The candidate's internet connection was interrupted during the session. This may be genuine or deliberate.", risk: "Low-Medium - check whether audio and video resumed cleanly and whether answers were affected." },
 };
+function SkillRatingsList({ skills }: { skills: SreevaAIInterviewViewModel["skills"] }) {
+  const [open, setOpen] = useState<number | null>(null);
+  return (
+    <ul className="divide-y divide-[#F3F4F6]">
+      {skills.map((skill, idx) => (
+        <li key={idx} className="py-2">
+          <button
+            type="button"
+            onClick={() => setOpen(open === idx ? null : idx)}
+            className="w-full flex items-center justify-between gap-2 text-left"
+          >
+            <span className="text-[12px] font-semibold text-[#374151] truncate">{skill.name}</span>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span className="text-[11px] font-bold text-[#374151] tabular-nums">{skill.score}/10</span>
+              {skill.evidence && (
+                <ChevronDown className={cn("w-3 h-3 text-[#9CA3AF] transition-transform", open === idx && "rotate-180")} />
+              )}
+            </div>
+          </button>
+          {open === idx && skill.evidence && (
+            <p className="mt-1.5 text-[11px] leading-relaxed text-[#6B7280] pl-0.5">{skill.evidence}</p>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function buildIntegritySignals(
   rows: { key: string; label: string; value: string; bad: boolean }[],
   _integrityScore: number,
@@ -1483,19 +1511,7 @@ export function InterviewReportSreevaAI({
               <div className="px-5 py-4">
                 <p className="text-[13px] font-bold text-[#111827] mb-3">Skill Ratings</p>
                 {model.skills.length > 0 ? (
-                  <ul className="divide-y divide-[#F3F4F6]">
-                    {model.skills.map((skill, idx) => (
-                      <li key={idx} className="py-2.5">
-                        <div className="flex items-center justify-between gap-2 mb-1">
-                          <span className="text-[12px] font-semibold text-[#374151] truncate">{skill.name}</span>
-                          <span className="text-[11px] font-bold text-[#374151] tabular-nums shrink-0">{skill.score}/10</span>
-                        </div>
-                        {skill.evidence && (
-                          <p className="text-[11px] leading-relaxed text-[#6B7280]">{skill.evidence}</p>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
+                  <SkillRatingsList skills={model.skills} />
                 ) : (
                   <p className="text-[12px] text-[#9CA3AF]">No skills evaluated.</p>
                 )}
