@@ -48,7 +48,7 @@ _BANNED_ACK_REPLACEMENTS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"^\s*thank\s+you\s+for\s+(?:sharing|clarifying|explaining)\s*[,.\-–—]*\s*", re.I), "Got it. "),
     # Warmup guard: if the model ignores "how about you?" and emits the observed
     # bad transition, convert it into a real human answer before the readiness check.
-    (re.compile(r"^\s*good\.\s+so\s+i['’]?ll\s+be\s+conducting\b", re.I), "Doing well, packed with interviews today. I'll be conducting"),
+    (re.compile(r"^\s*good\.\s+so\s+i[‘’]?ll\s+be\s+conducting\b", re.I), "Doing well, packed with interviews today. I’ll be conducting"),
 )
 _TRAILING_FILLER_RE = re.compile(
     r"(?:[,.\s]+)(?:um+|uh+|hmm+|mm+|ah+|oh+)\s*[.!?]*\s*$",

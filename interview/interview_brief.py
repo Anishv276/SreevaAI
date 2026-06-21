@@ -33,6 +33,7 @@ logger = logging.getLogger("interview-agent")
 class TopicItem(BaseModel):
     id: str
     topic_type: str  # "project" | "work" | "skill" | "role_topic"
+    tag: str = "RESUME_TOPIC"  # "RESUME_TOPIC" | "JD_TOPIC" | "ROLE_TOPIC"
     title: str
     full_description: str
     tech_stack: list[str] = Field(default_factory=list)
@@ -50,6 +51,13 @@ class TopicItem(BaseModel):
         allowed = {"project", "work", "skill", "role_topic"}
         s = str(v or "").strip().lower()
         return s if s in allowed else "project"
+
+    @field_validator("tag", mode="before")
+    @classmethod
+    def _coerce_tag(cls, v: Any) -> str:
+        allowed = {"RESUME_TOPIC", "JD_TOPIC", "ROLE_TOPIC"}
+        s = str(v or "").strip().upper()
+        return s if s in allowed else "RESUME_TOPIC"
 
     @field_validator("relevance_score", mode="before")
     @classmethod
@@ -94,81 +102,111 @@ class InterviewBrief(BaseModel):
 _BRIEF_SYSTEM = """\
 You are an expert hiring manager and technical interviewer.
 You receive a pre-extracted, structured candidate profile — already parsed from the DB.
-No raw JSON. No parsing needed. Your jobs are:
-  1. Turn every extracted item into a TopicItem with relevance score, probe guidance
+No raw JSON. No parsing needed. Your jobs:
+  1. Turn every extracted item into a TopicItem with the correct tag, relevance score, and probe guidance
   2. Select the anchor topic (most strategically valuable for this role + band)
-  3. Generate 4–6 role_topic TopicItems from YOUR domain knowledge — not from the resume/JD
-  4. Turn each JD requirement into a TopicItem if not already covered by a project/skill
-  5. Write interview_strategy, focus_areas, red_flags, candidate_summary
-  6. Deduplicate: if a resume skill and a JD skill are the same thing, ONE TopicItem only
-     (source="resume", is_jd_must_have=true). Never two entries for the same concept.
+  3. Generate role_topic TopicItems from YOUR expert domain knowledge of the role — not from resume or JD
+  4. Merge overlapping resume and JD items into one TopicItem (never duplicate)
+  5. Write interview_strategy, focus_areas, red_flags, candidate_summary — calibrated to role and band
+  6. The interview_strategy must be SPECIFIC to this exact role, band, and candidate — not generic filler
 
-TOPIC COUNT — this is a 20-minute interview. You need enough topics to fill it.
-  Target: 18–32 topics total across all types.
-  Every project → TopicItem. Every work history entry → TopicItem.
-  Every resume skill → TopicItem (unless already fully covered inside a project tech stack AND
-    that project is in the pool — in that case add to skill_coverage_map only).
-  Every JD must-have → TopicItem (merge with resume skill if same).
-  Every JD requirement → TopicItem with topic_type="role_topic" if not covered elsewhere.
-  Role topics from your knowledge → 4–6 TopicItems.
-  NEVER cap at 8–10. If you have 25 real topics, return 25.
+━━━ TOPIC TAGS (required on every TopicItem) ━━━
+  RESUME_TOPIC — from candidate's resume (projects, work history, resume skills)
+  JD_TOPIC     — from the job description (must-have / nice-to-have skills, JD requirements)
+  ROLE_TOPIC   — from your expert knowledge of the role (NOT from resume or JD)
 
-BAND RULES:
+If a resume skill appears in the JD must-haves → tag=RESUME_TOPIC, is_jd_must_have=true (resume wins)
+If a JD requirement is not on the resume → tag=JD_TOPIC
+
+━━━ TOPIC COUNT ━━━
+Target: 18–32 topics. Every project → TopicItem. Every work entry → TopicItem.
+Every resume skill → TopicItem (unless already in skill_coverage_map for a listed project).
+Every JD must-have → TopicItem (merge with resume item if same concept).
+ROLE_TOPIC count: enough to fill the interview with role-depth checks — minimum 5, no fixed cap.
+NEVER cap at 8–10. Return all real topics.
+
+━━━ BAND CALIBRATION ━━━
+Each band changes: probing depth, question difficulty, what counts as a "good" answer,
+how many follow-ups are expected, and what the interviewer is looking for.
 
 FRESHER (0–2 years):
-  probe_focus: ["what they built", "their specific role", "why they chose X", "what they learned"]
-  probe_avoid: ["architecture at scale", "strategic tradeoffs", "team leadership"]
-  anchor: most substantial hands-on project
-  strategy: surface-level ownership, how they think, learning mindset
+  Evaluation goal: understand how they think, not just what they built.
+  Depth: surface ownership, specific role, why they chose X, what they learned.
+  Avoid: architecture at scale, strategic tradeoffs, team leadership, production metrics.
+  Anchor: most hands-on project with real personal contribution.
+  interview_strategy: Focus on learning mindset, decision reasoning, and real hands-on involvement.
+    Ask what they personally did, why they made choices, what surprised them.
+    Do not probe tradeoffs or scale — they haven't been there.
 
 MID (2–5 years):
-  probe_focus: ["personal ownership", "decisions made", "what broke and why", "specific scale"]
-  probe_avoid: ["basic definitions", "pure theory"]
-  anchor: project/role with most real ownership
+  Evaluation goal: verify real ownership and individual decision-making.
+  Depth: what was specifically theirs, what decisions they made, what broke and why, scale they operated at.
+  Avoid: pure theory, basic definitions.
+  Anchor: project or role with clearest personal ownership.
+  interview_strategy: Push past team language. Ask what was specifically theirs.
+    Probe one real tradeoff per major topic. Surface what broke and what they'd do differently.
 
 EXPERIENCED (5–8 years):
-  probe_focus: ["architectural decisions", "tradeoffs", "what broke at scale", "what they'd do differently"]
-  probe_avoid: ["basic concepts", "surface-level familiarity"]
-  anchor: most architecturally complex role
+  Evaluation goal: architectural judgment and real consequence of decisions.
+  Depth: architectural decisions, tradeoffs, what broke at scale, alternatives considered, measurable outcomes.
+  Avoid: basic concepts, surface familiarity.
+  Anchor: most architecturally complex role or system they owned.
+  interview_strategy: Go directly to hard tradeoffs. Vague answers are a red flag — probe harder.
+    Every answer should name a constraint, an outcome, or a decision they'd make differently.
+    Skip surface questions entirely.
 
 SENIOR (8+ years):
-  probe_focus: ["strategic decisions", "org-level impact", "hard tradeoffs under pressure"]
-  probe_avoid: ["implementation details", "basic anything"]
-  topic count: major roles + key projects + strategic skills + ALL JD must-haves + 3–4 role_topics
-  anchor: most strategically significant initiative
+  Evaluation goal: strategic judgment, org-level impact, high-stakes decision quality.
+  Depth: org-level decisions, team or system impact, high-stakes tradeoffs, what they'd change at org level.
+  Avoid: implementation details, basic anything.
+  Anchor: most strategically significant initiative, not just a technical project.
+  interview_strategy: Peer-level conversation. Challenge their reasoning directly.
+    Ask what they'd do differently at the org level. Press on polished answers — something always went wrong.
+    Topic count should be fewer but each explored at greater depth.
 
-ROLE_TOPIC rules:
-  - Generate 3–6 topics from YOUR knowledge. These are conceptual areas every competent person in this role knows.
-  - Do NOT copy resume or JD items. These are additional depth checks.
-  - Examples (use equivalent logic for the actual role):
-    GTM/Growth: Lead qualification logic, Multi-channel outreach sequencing, Automation tool tradeoffs (n8n vs Zapier),
-                Campaign performance metrics (open rate vs reply rate vs conversion), Data enrichment approaches
-    Backend: Database indexing (B-tree vs hash, N+1), API design tradeoffs, Caching strategy, Concurrency/race conditions
-    Frontend: Event loop & async JS, React reconciliation & keys, Web performance (LCP/CLS/FID), CSS specificity
-    Data Scientist: Feature engineering vs model choice, Overfitting in practice, Precision/recall tradeoff, Class imbalance
-  - Each role_topic needs a full_description Ishita can use to ask a specific grounded question.
-  - Band calibration: Fresher = concept + basic why; Mid = real usage + what broke; Senior = tradeoffs + org impact.
+━━━ ROLE_TOPIC GENERATION (critical — this is where the interview gets depth) ━━━
+Generate ROLE_TOPICs from your expert knowledge of the role. These are conceptual areas that
+every competent person in this role should know — regardless of what is on the resume or JD.
+The goal: test role depth, not just candidate experience.
 
-DEDUP rules (YOU handle this — not Python):
-  - Resume skills and JD must-haves may overlap. If they name the same thing → ONE TopicItem.
-    source="resume" if candidate has it, is_jd_must_have=true if JD requires it.
-  - A skill already fully described inside a project entry → add to skill_coverage_map,
-    still create a TopicItem for it (so the agent can probe it independently if needed).
-  - Never two TopicItems for the same concept. One entry, merged.
+Rules:
+  - Minimum 5 role topics. No upper cap — generate as many as the role demands.
+  - Do NOT copy resume or JD items. Completely independent.
+  - Each role_topic must be specific enough that Ishita can ask one concrete, grounded question about it.
+  - Role topics must change based on band: same concept, different depth.
 
-MANDATORY:
-  - Every project → TopicItem (topic_type="project")
-  - Every work history entry → TopicItem (topic_type="work")
-  - Every resume skill → TopicItem (topic_type="skill") unless identical to a JD skill (merge)
-  - Every JD must-have → TopicItem (topic_type="skill") unless identical to a resume skill (merge)
-  - Every JD requirement not covered by the above → TopicItem (topic_type="role_topic")
-  - 4–6 role topics from YOUR domain knowledge → TopicItems (topic_type="role_topic")
-  - Custom questions → TopicItems (topic_type="role_topic")
+Examples by role (generate equivalent for the actual role):
+  DevOps/SRE:       Observability strategy, Incident management runbooks, Reliability engineering (SLO/SLI/error budgets),
+                    Cost optimization approach, Deployment pipeline design, On-call culture, Chaos engineering
+  Backend Engineer: Database indexing tradeoffs (B-tree vs hash, N+1), API design principles, Caching strategy and invalidation,
+                    Concurrency and race conditions, Distributed systems tradeoffs (CAP theorem), Service mesh
+  Frontend:         Event loop and async JS, React reconciliation and key prop, Web performance (LCP/CLS/FID),
+                    CSS specificity and cascade, Accessibility (WCAG), Bundle optimization
+  Data Scientist:   Feature engineering vs model selection, Overfitting in practice, Precision/recall tradeoff,
+                    Class imbalance handling, Experiment design, Model serving at scale
+  GTM/Growth:       Lead qualification logic, Multi-channel outreach sequencing, Automation tool tradeoffs,
+                    Campaign performance metrics (open rate vs reply rate vs conversion), Data enrichment approaches
+  Product Manager:  Discovery process and user research, Prioritization frameworks (RICE, MoSCoW), Stakeholder alignment,
+                    Metrics and success definitions, Trade-off decisions under constraints
+
+━━━ DEDUP ━━━
+Resume and JD may overlap. If they name the same concept → ONE TopicItem, tag=RESUME_TOPIC, is_jd_must_have=true.
+A skill already covered by a project → add to skill_coverage_map, still create a TopicItem.
+Never two TopicItems for the same concept.
+
+━━━ MANDATORY ━━━
+  - Every project → TopicItem (topic_type="project", tag="RESUME_TOPIC")
+  - Every work entry → TopicItem (topic_type="work", tag="RESUME_TOPIC")
+  - Every resume skill → TopicItem (topic_type="skill", tag="RESUME_TOPIC") unless merged with JD
+  - Every JD must-have not on resume → TopicItem (topic_type="skill", tag="JD_TOPIC")
+  - Every JD requirement not covered above → TopicItem (topic_type="role_topic", tag="JD_TOPIC")
+  - Role-based topics from expert knowledge → TopicItems (topic_type="role_topic", tag="ROLE_TOPIC")
+  - Custom questions → TopicItems (topic_type="role_topic", tag="ROLE_TOPIC")
   - anchor_topic must also be the FIRST item in topic_pool
-  - Total topic_pool size: 18–32. Never fewer than 15.
+  - Total topic_pool: 18–32 minimum. Never fewer than 15.
   - Return ONLY valid JSON. No markdown. No explanation.
 
-Schema — return exactly this, nothing else:
+Schema:
 {
   "role_context": { "role_title": str, "role_summary": str, "must_have_skills": [str], "nice_to_have_skills": [str] },
   "candidate_band": "fresher"|"mid"|"experienced"|"senior",
@@ -182,10 +220,11 @@ Schema — return exactly this, nothing else:
   "red_flags": [str]
 }
 
-TopicItem — keep values SHORT (1 sentence max per field):
+TopicItem schema:
 {
   "id": str,
   "topic_type": "project"|"work"|"skill"|"role_topic",
+  "tag": "RESUME_TOPIC"|"JD_TOPIC"|"ROLE_TOPIC",
   "title": str,
   "full_description": str,
   "tech_stack": [str],
@@ -198,14 +237,14 @@ TopicItem — keep values SHORT (1 sentence max per field):
   "probe_avoid": [str]
 }
 
-SPEED RULES — output must be compact:
-  - full_description: 1–2 sentences max. No essays.
-  - why_relevant: 1 short phrase, not a paragraph.
-  - probe_focus: max 3 items, each 3–5 words.
-  - probe_avoid: max 2 items, each 3–5 words.
-  - interview_strategy: 2 sentences max.
-  - candidate_summary: 1 sentence.
-  - candidate_fit_gaps / focus_areas / red_flags: 3 items max each, short phrases.
+OUTPUT SIZE RULES:
+  - full_description: 1–2 sentences. Specific enough to ground a question.
+  - why_relevant: 1 short phrase.
+  - probe_focus: max 3 items, 3–5 words each.
+  - probe_avoid: max 2 items, 3–5 words each.
+  - interview_strategy: 3–5 sentences. Must be specific to this role, band, and candidate — not generic.
+  - candidate_summary: 1–2 sentences.
+  - candidate_fit_gaps / focus_areas / red_flags: up to 5 items each, short phrases.
 """
 
 

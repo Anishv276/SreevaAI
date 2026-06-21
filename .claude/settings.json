@@ -148,7 +148,9 @@
       "Bash(find . -name \"schema.prisma\" -not -path \"*/node_modules/*\")",
       "Bash(timeout 25 npx cross-env WORKER_QUEUES=resume-processing tsx --env-file=.env worker.ts)",
       "Bash(echo \"EXIT=$?\")",
-      "WebFetch(domain:docs.bullmq.io)"
+      "WebFetch(domain:docs.bullmq.io)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('c:/Users/vamsi/OneDrive/Documents/SreevaAI/interview/interview_phases.py', encoding='utf-8'\\).read\\(\\)\\); print\\('ok'\\)\")",
+      "Bash(python -)"
     ],
     "additionalDirectories": [
       "c:\\Users\\vamsi\\OneDrive\\Desktop\\HR-updates\\scratch",

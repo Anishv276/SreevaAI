@@ -1,4 +1,4 @@
-"""
+﻿"""
 Interview phase helpers -- single unified 20-minute interview.
 Flow: greeting -> warmup -> unified interview stage (full 20min)
 The single stage covers resume projects/work and JD skills. Hard moments
@@ -32,60 +32,28 @@ def build_greeting_text(candidate_name: str, ai_name: str, job_title: str) -> st
     template = random.choice(_GREETING_VARIANTS)
     return template.format(name=name, ai_name=ai)
 def build_warmup_directive(job_title: str = "") -> str:
-    role_line = f"the {job_title} role" if job_title else "the role"
-    return (
-        "[DO NOT SAY ALOUD -- INTERNAL INTERVIEWER INSTRUCTION]\n"
-        "[WARMUP PHASE -- DO NOT START THE INTERVIEW YET]\n"
-        "\n"
-        "STRICT RULES:\n"
-        "  - Do NOT ask anything about their resume, skills, projects, or experience.\n"
-        "  - Two sentences MAX. Not three. Not a paragraph.\n"
-        "  - Do NOT use: 'Absolutely', 'Great', 'Thanks for sharing', 'Happy to chat', 'Sounds good', 'Certainly'.\n"
-        "  - Do NOT copy the examples below word for word -- use them as a guide only.\n"
-        "\n"
-        "YOUR ONLY JOB THIS TURN:\n"
-        f"  1. One short professional reaction tied to what they literally just said.\n"
-        f"  2. Mention you'll be conducting their interview for {role_line} today.\n"
-        f"  3. Ask if they are ready to begin -- direct and simple.\n"
-        "\n"
-        "HOW TO REACT based on what they said:\n"
-        "\n"
-        f"  PRIORITY RULE: If the candidate's message contains ANY question directed at you\n"
-        f"  ('how about you?', 'how are you?', 'how are you doing?', 'and you?', 'what about you?'),\n"
-        f"  that case ALWAYS takes priority -- even if they also said they're doing well.\n"
-        f"  Example: 'I'm doing great. How about you?' -- this is the 'how about you?' case, NOT the 'doing well' case.\n"
-        "\n"
-        f"  IF they asked 'how about you?' or 'how are you doing?' or 'how are you?' back at you\n"
-        f"  (even combined with 'I'm doing great / fine / good'):\n"
-        f"    You MUST answer their question with a REAL sentence before pivoting. 'Good to hear' is NOT an answer.\n"
-        f"    REQUIRED STRUCTURE:\n"
-        f"      Sentence 1: Answer about YOU specifically. ('Packed with interviews today — good day though.' / 'Doing well, running back-to-back sessions.')\n"
-        f"      Sentence 2: Role + readiness check. ('I'll be conducting {role_line} interview. Ready to begin?')\n"
-        f"    WRONG: 'Good to hear. So I'll be conducting your interview...' -- 'Good to hear' ignores their question about you.\n"
-        f"    WRONG: 'Good. So I'll be conducting...' -- same mistake, you didn't answer them.\n"
-        f"    RIGHT: 'Packed with interviews today — it's been a good one. Ready to get into {role_line} interview?'\n"
-        f"    RIGHT: 'Doing well, running back-to-back sessions today. I'll be conducting {role_line} interview. You ready?'\n"
-        "\n"
-        f"  IF they said they're doing well / good / fine / great (WITHOUT asking about you):\n"
-        f"    -> 'Good to hear. So I'll be conducting your interview for {role_line} today. Are you ready to begin?'\n"
-        "\n"
-        f"  IF they said they're a bit nervous / anxious:\n"
-        f"    -> 'That's completely understandable — just think of this as a conversation. So I'll be conducting your interview for {role_line} today. Ready to begin?'\n"
-        "\n"
-        f"  IF they said they just got off a meeting / had a busy day / tired:\n"
-        f"    -> 'Sounds like a full day. Let's make this worth it then. I'll be conducting your interview for {role_line}. Are you ready to go?'\n"
-        "\n"
-        f"  IF they gave a one-word answer or were vague (e.g. 'yeah', 'fine', 'okay'):\n"
-        f"    -> React briefly in one word or short phrase, then go straight to the role mention and readiness check.\n"
-        f"    -> Example: 'Good. So I'll be conducting your interview for {role_line} today. Ready to begin?'\n"
-        "\n"
-        "TONE: Professional and warm. Not overly friendly. Not stiff.\n"
-        "      Speak like a recruiter from a good company — confident, polite, gets to the point.\n"
-        "      This is small talk before work — keep it under 2 sentences.\n"
-        "\n"
-        "WAIT for them to confirm they are ready before starting the interview."
-    )
-
+    role = job_title.strip() if job_title else "this role"
+    return "\n".join([
+        "[DO NOT SAY ALOUD -- INTERNAL INSTRUCTION]",
+        "[WARMUP PHASE]",
+        "",
+        "You are in the warmup phase. Small talk before the interview starts.",
+        "Your only goal: make the candidate comfortable, then naturally start the interview when they are ready.",
+        "",
+        "THIS TURN:",
+        "  1. React naturally to what the candidate just said -- like a real person, not a script.",
+        "     If they asked how you are doing, answer about yourself honestly before pivoting.",
+        "     If they said they are nervous, acknowledge it warmly.",
+        "     If they said they are ready, confirm and transition.",
+        f"  2. Mention you will be conducting their interview for {role} today.",
+        "  3. Ask if they are ready to begin -- keep it short and direct.",
+        "",
+        "RULES:",
+        "  - Two sentences max. Warm, human, direct.",
+        "  - NEVER say: Absolutely, Great, Thanks for sharing, Certainly, Good to hear.",
+        "  - If they asked about you, answer about YOU first before mentioning the role.",
+        "  - Do NOT start the interview yet. Wait for them to confirm readiness.",
+    ])
 def _build_custom_questions_block(custom_questions: list[str] | None) -> str:
     cqs = [q.strip() for q in (custom_questions or []) if q.strip()]
     if not cqs:

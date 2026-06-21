@@ -86,6 +86,8 @@ class EvalGraphState(TypedDict):
     candidate_band: str
     active_topic: str
     topic_importance: str
+    topic_tag: str
+    topic_probe_focus: list
     job_title: str
     # Intermediate results (filled by nodes)
     raw_quality: dict                # output of evaluate_answer_fn
@@ -110,6 +112,8 @@ async def _node_llm_evaluate(state: EvalGraphState) -> dict:
             candidate_band=state["candidate_band"],
             active_topic=state.get("active_topic", ""),
             topic_importance=state.get("topic_importance", "HIGH"),
+            topic_tag=state.get("topic_tag", "RESUME_TOPIC"),
+            topic_probe_focus=state.get("topic_probe_focus", []),
             job_title=state.get("job_title", ""),
         )
         return {"raw_quality": result, "error": None}
@@ -230,6 +234,8 @@ async def run_turn_evaluation(
     candidate_band: str = "mid",
     active_topic: str = "",
     topic_importance: str = "HIGH",
+    topic_tag: str = "RESUME_TOPIC",
+    topic_probe_focus: Optional[list] = None,
     job_title: str = "",
 ) -> tuple[TurnDecision, str]:
     """Evaluate one candidate answer and produce a TurnDecision.
@@ -259,6 +265,8 @@ async def run_turn_evaluation(
             "candidate_band":        candidate_band,
             "active_topic":          active_topic,
             "topic_importance":      topic_importance,
+            "topic_tag":             topic_tag,
+            "topic_probe_focus":     topic_probe_focus or [],
             "job_title":             job_title,
             # Intermediate (filled by nodes)
             "raw_quality":    {},
@@ -285,6 +293,8 @@ async def run_turn_evaluation(
         candidate_band=candidate_band,
         active_topic=active_topic,
         topic_importance=topic_importance,
+        topic_tag=topic_tag,
+        topic_probe_focus=topic_probe_focus or [],
         job_title=job_title,
     )
     signal_events = await detect_signal_events_async(

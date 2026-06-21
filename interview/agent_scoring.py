@@ -31,6 +31,8 @@ async def evaluate_answer(
     candidate_band: str = "mid",
     active_topic: str = "",
     topic_importance: str = "HIGH",
+    topic_tag: str = "RESUME_TOPIC",
+    topic_probe_focus: list | None = None,
     job_title: str = "",
 ) -> dict:
     """
@@ -147,8 +149,17 @@ async def evaluate_answer(
                             f"-- INTERVIEW CONTEXT --\n"
                             f"Role being hired for: {job_title or 'not specified'}\n"
                             f"Topic being evaluated: {active_topic or 'general'}\n"
-                            f"Topic importance: {topic_importance} (CRITICAL = must go deep, LOW = breadth is fine)\n\n"
-                            "Use this context to judge whether the candidate's answer is appropriate for the role and topic.\n"
+                            f"Topic importance: {topic_importance} (CRITICAL = must go deep, LOW = one clear answer is enough)\n"
+                            f"Topic tag: {topic_tag}\n"
+                            + (f"What to probe for: {', '.join(topic_probe_focus)}\n" if topic_probe_focus else "")
+                            + "\nTag-based scoring rules:\n"
+                            "  RESUME_TOPIC: candidate claims direct experience. Score depth and grounding hard.\n"
+                            "    A vague answer on something they listed on their resume is a red flag. Push for specifics.\n"
+                            "  JD_TOPIC: candidate may not have this skill. Score fairly -- if they have partial exposure,\n"
+                            "    credit what they know. Don't penalise absence of experience they never claimed.\n"
+                            "  ROLE_TOPIC: conceptual role-depth check. Score whether they understand the concept\n"
+                            "    and can reason about it. One grounded answer is enough to MOVE_ON.\n\n"
+                            "Use the probe focus above to judge whether the answer addressed the right angle.\n"
                             "A strong answer on a CRITICAL topic must show real domain knowledge -- not just communication skill.\n"
                             "If the answer is technically incorrect or misunderstands the topic, penalise depth and grounding.\n\n"
                             "-- THE 4 SCORES --\n"

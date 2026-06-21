@@ -673,7 +673,10 @@ async def persist_org_usage_metrics(
     plugin_stt_audio_seconds: float = 0.0,
 ) -> None:
     has_plugin_usage = bool(plugin_tts_characters or plugin_tts_audio_seconds or plugin_stt_audio_seconds)
-    if not org_id or not DATABASE_URL or (session_usage is None and not has_plugin_usage):
+    if not org_id or not DATABASE_URL:
+        return
+    if session_usage is None and not has_plugin_usage:
+        logger.info("[BILLING] persist_org_usage_metrics: no session_usage and no plugin metrics for org=%s — skipping", org_id)
         return
     session_summary = summarize_session_usage(session_usage)
     session_summary = _replace_component_usage_from_plugin_metrics(
@@ -782,7 +785,27 @@ async def persist_interview_billing_snapshot(
     )
     has_session_usage = any(bucket.get("sessions") for bucket in session_summary.values())
     has_manual_usage  = bool(org_id and _PENDING_MANUAL_BILLING.get(org_id))
-    if not has_session_usage and not has_manual_usage and not duration_seconds:
+    logger.info(
+        "[BILLING] persist_interview_billing_snapshot: app=%s has_session=%s has_manual=%s "
+        "duration=%.1f tts_chars=%d stt_secs=%.1f pending_manual=%d",
+        app_id, has_session_usage, has_manual_usage,
+        float(duration_seconds or 0),
+        int(plugin_tts_characters or 0),
+        float(plugin_stt_audio_seconds or 0),
+        len(_PENDING_MANUAL_BILLING.get(org_id, [])) if org_id else 0,
+    )
+    # Always write if we have any signal at all: duration, TTS chars, STT, or tokens.
+    # Never skip based on session_usage alone — our LLM calls bypass LiveKit's plugin
+    # client so model_usage is always empty and has_session_usage is always False.
+    has_any_signal = (
+        has_session_usage
+        or has_manual_usage
+        or bool(duration_seconds)
+        or int(plugin_tts_characters or 0) > 0
+        or float(plugin_stt_audio_seconds or 0) > 0
+    )
+    if not has_any_signal:
+        logger.warning("[BILLING] No billing signal at all for %s — skipping snapshot", app_id)
         return
     snapshot_billing  = merge_interview_billing(
         {}, session_summary,
@@ -791,7 +814,9 @@ async def persist_interview_billing_snapshot(
     )
     interview_bucket = _coerce_jsonish(_coerce_jsonish(snapshot_billing.get("billing")).get("interview"))
     if org_id:
-        for feature, usage in _PENDING_MANUAL_BILLING.get(org_id, []):
+        manual_entries = _PENDING_MANUAL_BILLING.get(org_id, [])
+        logger.info("[BILLING] Merging %d manual billing entries for org=%s", len(manual_entries), org_id)
+        for feature, usage in manual_entries:
             if feature != "interview":
                 continue
             model_name   = str(usage.get("model", "") or "").strip()
@@ -841,6 +866,17 @@ async def persist_interview_billing_snapshot(
         "sttByModel":      interview_bucket.get("sttByModel", {}),
         "updatedAt":       time.time(),
     }
+    logger.info(
+        "[BILLING] Snapshot built: durationSec=%d llmCostUsd=%.6f ttsCostUsd=%.6f "
+        "sttCostUsd=%.6f inputTokens=%d outputTokens=%d ttsChars=%d",
+        int(duration_seconds or 0),
+        float(interview_bucket.get("costUsd", 0.0)),
+        float(interview_bucket.get("ttsCostUsd", 0.0)),
+        float(interview_bucket.get("sttCostUsd", 0.0)),
+        int(interview_bucket.get("inputTokens", 0)),
+        int(interview_bucket.get("outputTokens", 0)),
+        int(interview_bucket.get("ttsCharacters", 0)),
+    )
     try:
         pool = await DatabasePool.get()
         async with pool.acquire() as conn:
@@ -849,6 +885,7 @@ async def persist_interview_billing_snapshot(
                 app_id,
             )
             if not row:
+                logger.error("[BILLING] No Interview row found for app_id=%s — billing snapshot lost", app_id)
                 return
             existing_snapshot = _coerce_jsonish(row["billingSnapshot"])
             persisted_snapshot = {**existing_snapshot, **snapshot}
@@ -859,7 +896,12 @@ async def persist_interview_billing_snapshot(
                 'UPDATE "Interview" SET "billingSnapshot" = $1::jsonb, "updatedAt" = NOW() WHERE "applicationId" = $2',
                 json.dumps(persisted_snapshot), app_id,
             )
-        logger.info(f"[USAGE] Saved interview billing snapshot for {app_id}")
+        logger.info(
+            "[BILLING] Saved interview billing snapshot for %s | totalCostUsd=%.6f inputTokens=%d outputTokens=%d",
+            app_id, float(persisted_snapshot.get("totalCostUsd", 0.0)),
+            int(persisted_snapshot.get("inputTokens", 0)),
+            int(persisted_snapshot.get("outputTokens", 0)),
+        )
     except Exception as e:
         logger.error(f"[USAGE] Failed to save interview billing snapshot for {app_id}: {e}")
         raise

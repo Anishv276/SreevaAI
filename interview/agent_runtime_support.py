@@ -155,17 +155,17 @@ for logger_name in ("livekit.plugins.cartesia", "livekit.plugins.silero", "livek
 # replaces endpointing_ms. Thresholds tuned for 20-min interviews where candidates
 # give 30s–2min answers with thinking pauses and fillers.
 STT_MODEL = "flux-general-en"
-# EndOfTurn confidence threshold. 0.75 is patient enough for thinking pauses without
-# cutting candidates mid-sentence. Range: 0.5–0.9 (Deepgram default: 0.7).
-FLUX_EOT_THRESHOLD: float = 0.75
+# EndOfTurn confidence threshold. 0.70 reduces premature VAD resets on short
+# warmup-style answers ("Yeah. I'm ready."). Range: 0.5–0.9 (Deepgram default: 0.7).
+FLUX_EOT_THRESHOLD: float = 0.70
 # EagerEndOfTurn fires ~200ms early to warm up LLM. Must be <= FLUX_EOT_THRESHOLD.
 # Set to None to disable. When enabled, agent must handle TurnResumed by cancelling
 # any in-flight eval. Currently disabled — our eval gate is not wired for cancellation.
 FLUX_EAGER_EOT_THRESHOLD: float | None = None
-# Max silence before forced turn end regardless of confidence. 2500ms is sufficient —
-# eot_threshold=0.75 handles real pauses; this guard only fires on true dead air.
-# Range: 500–10000 (Deepgram default: 5000). Reduced from 6000 for lower latency.
-FLUX_EOT_TIMEOUT_MS: int = 2500
+# Max silence before forced turn end regardless of confidence. 3500ms gives short
+# answers enough runway so Deepgram doesn't declare EOS while the candidate is still
+# speaking. Range: 500–10000 (Deepgram default: 5000).
+FLUX_EOT_TIMEOUT_MS: int = 3500
 LLM_MODEL = "gpt-4.1-mini"
 INTERVIEW_LLM_MODEL = LLM_MODEL
 INTERVIEW_TEMPERATURE = 0.75
