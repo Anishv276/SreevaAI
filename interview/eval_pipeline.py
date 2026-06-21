@@ -244,20 +244,18 @@ class EvaluationPayload(BaseModel):
     active_topic: Optional[str] = None
     active_topic_state: Optional[Dict[str, Any]] = None
     anchor_item: Optional[str] = None
-    resume_topics: List[str] = Field(default_factory=list)
-    skill_topics: List[str] = Field(default_factory=list)
-    discussed_log: List[str] = Field(default_factory=list)
     job_title: str = "the role"
     remaining_seconds: float = 999.0
-    current_interview_mode: str = "normal"
     candidate_name: str = "?"
     band: str = "mid"
     time_limit_mins: int = 20
     topic_score_history: List[float] = Field(default_factory=list)
-    # H2 fix: per-topic depth scores (separate from overall) for follow_up_collapse
     topic_depth_history: List[float] = Field(default_factory=list)
-    # The actual question Ishita asked -- used for context in scoring
     ai_question_this_turn: str = ""
+    # Brief-derived topic metadata — more accurate than string heuristics
+    topic_tag: str = "RESUME_TOPIC"          # RESUME_TOPIC | JD_TOPIC | ROLE_TOPIC
+    topic_probe_focus: List[str] = Field(default_factory=list)
+    topic_why_relevant: str = ""
     model_config = {"extra": "allow"}
 # ---------------------------------------------------------------------------
 # Saturation evaluation
@@ -334,17 +332,24 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
             current_topic_state.follow_up_turns,
         )
     elif p.active_topic:
-        _topic_key = _normalize_topic_key(p.active_topic)
-        _resume_keys = {_normalize_topic_key(t) for t in p.resume_topics}
-        _topic_source = "resume" if _topic_key in _resume_keys else "skill"
+        # Derive importance directly from the brief tag — no heuristic inference needed.
+        # RESUME_TOPIC = candidate has direct experience → HIGH/CRITICAL (most signal value)
+        # JD_TOPIC     = candidate may not know it → MEDIUM (less saturation needed)
+        # ROLE_TOPIC   = conceptual check → LOW (one clear answer is enough)
+        _tag_to_source = {
+            "RESUME_TOPIC": "resume",
+            "JD_TOPIC": "skill",
+            "ROLE_TOPIC": "skill",
+        }
+        _topic_source = _tag_to_source.get(p.topic_tag, "resume")
         importance = TopicImportanceClassifier.classify(
             topic_source=_topic_source,
             is_anchor=p.active_topic == p.anchor_item,
         )
         current_topic_state = TopicState(p.active_topic, importance, updated_turn=p.turn, band=p.band)
         logger.info(
-            "[TOPIC_STATE] CREATED | topic=%s source=%s importance=%s band=%s | threshold=%.1f base_credit=%.1f",
-            p.active_topic, _topic_source, importance, p.band,
+            "[TOPIC_STATE] CREATED | topic=%s tag=%s importance=%s band=%s | threshold=%.1f base_credit=%.1f",
+            p.active_topic, p.topic_tag, importance, p.band,
             current_topic_state.saturation_threshold, current_topic_state.base_turn_credit,
         )
     # -- Log turn context -----------------------------------------------------
@@ -417,6 +422,8 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         candidate_band=p.band,
         active_topic=p.active_topic or "",
         topic_importance=_topic_importance,
+        topic_tag=p.topic_tag,
+        topic_probe_focus=p.topic_probe_focus,
         job_title=p.job_title,
     )
     # Outer wrapper timeout (10s) sits between the inner LLM call (8s) and the
@@ -566,12 +573,6 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
             "[DECISION] 🔄 PROBE family=%s signals=[%s] sat=%.0f%% turn=%d",
             probe_family, ", ".join(signal_fired_names) or "none", pct_sat, p.turn,
         )
-    # -- Discussed log entry (on MOVE_ON) -------------------------------------
-    discussed_log_entry: Optional[str] = None
-    if action == "MOVE_ON" and p.question and p.answer:
-        topic_line = p.question.split("?")[0].strip()[:80]
-        answer_gist = " ".join(p.answer.split()[:20])
-        discussed_log_entry = f"- {topic_line}: {answer_gist}"
     # -- Quality record for DB ------------------------------------------------
     quality_record = {
         "turn": p.turn,
@@ -619,7 +620,6 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
             "depth_decay": depth_decay_fired,
             "topic_state_dict": current_topic_state.to_dict() if current_topic_state else None,
         },
-        "discussed_log_entry": discussed_log_entry,
         # LLM usage for billing
         "eval_llm_usages": list(_captured_eval_usage),
         # Pass through for agent logging
