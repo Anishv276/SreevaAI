@@ -12,7 +12,6 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const prismaAny = prisma as any;
     const { id: applicationId } = await params;
     const body = (await request.json().catch(() => ({}))) as StartInterviewBody;
     const interviewToken = String(body.token || "").trim();
@@ -27,7 +26,7 @@ export async function POST(
     if (requireInterviewToken && !interviewToken) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
-    const interview = await prismaAny.interview.findUnique({
+    const interview = await prisma.interview.findUnique({
       where: { applicationId },
       select: {
         accessToken: true,
@@ -56,7 +55,7 @@ export async function POST(
     if (interview.startedAt) {
       if (interview.linkStatus === "EXPIRED" || startIsExpiredByTime) {
         if (startIsExpiredByTime && interview.linkStatus !== "EXPIRED") {
-          await prismaAny.interview.update({
+          await prisma.interview.update({
             where: { applicationId },
             data: { linkStatus: "EXPIRED" },
           }).catch(() => {});
@@ -80,14 +79,14 @@ export async function POST(
     // Reset EXPIRED status if the deadline hasn't passed — handles re-attempts after
     // a previous session completed or timed out with startedAt set.
     if (interview.linkStatus === "EXPIRED" && !isExpiredByTime) {
-      await prismaAny.interview.update({
+      await prisma.interview.update({
         where: { applicationId },
         data: { linkStatus: "ACTIVE", startedAt: null },
       }).catch(() => {});
       // Allow access — fall through
     } else {
       if (isExpiredByTime && interview.linkStatus !== "EXPIRED") {
-        await prismaAny.interview.update({
+        await prisma.interview.update({
           where: { applicationId },
           data: { linkStatus: "EXPIRED" },
         }).catch(() => {});

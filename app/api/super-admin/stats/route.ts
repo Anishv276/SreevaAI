@@ -43,7 +43,6 @@ export async function GET() {
                 totalCandidates: number;
                 totalShortlisted: number;
                 totalInterviewed: number;
-                totalHired: number;
                 totalInterviewQuotaAllocated: number;
                 totalInterviewQuotaConsumed: number;
                 totalCreditsUsed: number;
@@ -54,7 +53,6 @@ export async function GET() {
                     (SELECT COUNT(*)::INT FROM "Application") AS "totalCandidates",
                     (SELECT COUNT(*)::INT FROM "Application" WHERE UPPER("resumeStatus") = 'SHORTLISTED') AS "totalShortlisted",
                     (SELECT COUNT(*)::INT FROM "Interview" WHERE "status" = 'COMPLETED') AS "totalInterviewed",
-                    (SELECT COUNT(*)::INT FROM "Application" WHERE UPPER("hiringStatus") = 'HIRED') AS "totalHired",
                     COALESCE(SUM("interviewQuotaTotal"), 0)::INT AS "totalInterviewQuotaAllocated",
                     COALESCE(SUM("interviewQuotaUsed"), 0)::INT AS "totalInterviewQuotaConsumed",
                     COALESCE(SUM(COALESCE("creditsUsed", 0)), 0)::FLOAT AS "totalCreditsUsed"
@@ -229,7 +227,6 @@ export async function GET() {
             totalCandidates: Number(c.totalCandidates || 0),
             totalShortlisted: Number(c.totalShortlisted || 0),
             totalInterviewed: Number(c.totalInterviewed || 0),
-            totalHired: Number(c.totalHired || 0),
             totalInterviewQuotaAllocated: Number(c.totalInterviewQuotaAllocated || 0),
             totalInterviewQuotaConsumed: Number(c.totalInterviewQuotaConsumed || 0),
             totalCreditsUsed: Number(c.totalCreditsUsed || 0),

@@ -52,7 +52,7 @@ export default function TermsOfUse() {
             <header className="h-20 border-b border-slate-100">
                 <div className="mx-auto flex h-full max-w-[1320px] items-center justify-between px-6">
                     <Link href="/" className="flex items-center gap-3 font-display text-2xl font-black text-slate-900">
-                        <img src="/Logo.png" alt="Sreeva AI Logo" className="h-10 w-10 object-contain" />
+                        <img src="/sreevalogo.png" alt="Sreeva AI Logo" className="h-10 w-10 object-contain" />
                         <span>Sreeva AI</span>
                     </Link>
                     <div className="flex items-center gap-4">
@@ -153,7 +153,7 @@ export default function TermsOfUse() {
                 <div className="mx-auto grid max-w-[1320px] grid-cols-2 gap-8 px-6 md:grid-cols-4 lg:grid-cols-6">
                     <div className="col-span-2">
                         <div className="mb-4 flex items-center gap-3 text-xl font-bold text-slate-900">
-                            <img src="/Logo.png" alt="Sreeva AI Logo" className="h-10 w-10 object-contain" />
+                            <img src="/sreevalogo.png" alt="Sreeva AI Logo" className="h-10 w-10 object-contain" />
                             <span>Sreeva AI</span>
                         </div>
                         <p className="text-sm text-slate-500">© 2026 Sreeva AI. All rights reserved.</p>

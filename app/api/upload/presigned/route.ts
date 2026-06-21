@@ -35,11 +35,11 @@ export async function POST(request: Request) {
             if (!driveId) {
                 return NextResponse.json({ error: "driveId is required for resume uploads" }, { status: 400 });
             }
-            const drive = await (prisma.drive as any).findUnique({
+            const drive = await prisma.drive.findUnique({
                 where: { id: driveId },
-                select: { status: true }
+                select: { isDeleted: true }
             });
-            if (!drive || (drive as any).status === "CLOSED") {
+            if (!drive || drive.isDeleted) {
                 return NextResponse.json({ error: "Applications for this position are closed" }, { status: 403 });
             }
         }

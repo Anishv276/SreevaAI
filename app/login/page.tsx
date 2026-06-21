@@ -66,7 +66,7 @@ export default function LoginPage() {
         return (
             <div className="min-h-screen bg-[#fbf8f4] flex items-center justify-center p-6 font-medium editorial-theme">
                 <div className="text-center space-y-3">
-                    <img src="/Logo.png" alt="Sreeva AI" className="h-16 w-16 mx-auto animate-pulse" />
+                    <img src="/sreevalogo.png" alt="Sreeva AI" className="h-16 w-16 mx-auto animate-pulse" />
                     <p className="text-[#6f6862] text-[10px] font-black uppercase tracking-[0.4em]">Checking session</p>
                 </div>
             </div>
@@ -86,7 +86,7 @@ export default function LoginPage() {
                 {/* Logo Section - Matching Admin Sidebar */}
                 <div className="flex flex-col items-center gap-6 text-center">
                     <div className="h-14 w-14 rounded-xl bg-white flex items-center justify-center shadow-[0_4px_15px_rgba(255,106,0,0.1)] overflow-hidden">
-                        <img src="/Logo.png" alt="Logo" className="h-full w-full object-contain p-2" />
+                        <img src="/sreevalogo.png" alt="Logo" className="h-full w-full object-contain p-2" />
                     </div>
                     <div>
                         <h1 className="text-[26px] text-[#1c1b1b]" style={{ fontFamily: '"Instrument Serif", serif', letterSpacing: '-0.015em', fontWeight: 400, display: 'inline-flex', alignItems: 'baseline', gap: '6px' }}>

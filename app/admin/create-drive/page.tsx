@@ -64,6 +64,7 @@ function CreateDriveForm() {
     allowedVoices: fallbackAllowedVoices,
     aiName: "Ishitha",
     extractedDetails: null,
+    interviewMode: "ats",
   });
   const [published, setPublished] = useState(false);
   const [publishedDriveId, setPublishedDriveId] = useState<string | null>(null);
@@ -147,6 +148,7 @@ function CreateDriveForm() {
             voiceId: (drive as any).voiceId || adminOrg?.voiceId || fallbackVoiceId,
             allowedVoices: Array.isArray(adminOrg?.allowedVoices) ? adminOrg.allowedVoices : fallbackAllowedVoices,
             aiName: (drive as any).aiName || "Ishitha",
+            interviewMode: (drive as any).interviewMode || "ats",
           }));
         } catch (err) {
           console.error("Failed to load drive:", err);
@@ -186,6 +188,7 @@ function CreateDriveForm() {
           voiceId: fallbackVoiceId,
           allowedVoices: fallbackAllowedVoices,
           aiName: "Ishitha", extractedDetails: null,
+          interviewMode: "ats",
         });
         setIsAnalyzing(false);
         setAnalysisError(null);
@@ -292,6 +295,7 @@ function CreateDriveForm() {
       screeningCriteria: sanitizeScreeningCriteria(currentFormData.screeningCriteria || {}),
       voiceId: currentFormData.voiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
       aiName: currentFormData.aiName || "Ishitha",
+      interviewMode: currentFormData.interviewMode || "ats",
     };
     try {
       let result;
@@ -444,9 +448,78 @@ function CreateDriveForm() {
         style={{ border: "1px solid #E5E7EB", borderTop: "4px solid #F97316", boxShadow: "0 4px 24px rgba(0,0,0,0.06), 0 1px 4px rgba(0,0,0,0.04)" }}
       >
         <div className="p-8 space-y-10">
-          {/* Section 1: JD Upload */}
+          {/* Section 0: Interview Mode Selection */}
           <section>
-            <SectionHeader index={1} title="Job Description" subtitle="Upload your JD and AI will auto-fill the details" />
+            <SectionHeader index={1} title="Interview Mode" subtitle="Choose how candidates are processed for this job" />
+            <div className="grid grid-cols-2 gap-4 mt-4">
+              {[
+                {
+                  value: "ats",
+                  label: "Scoring + Interview",
+                  icon: "⚖️",
+                  desc: "Upload resumes → AI scores and ranks → you shortlist → send interview link manually.",
+                  badge: "Full Pipeline",
+                },
+                {
+                  value: "interview-only",
+                  label: "Interview Only",
+                  icon: "⚡",
+                  desc: "Add candidates → interview link sent automatically. No scoring or shortlisting.",
+                  badge: "Direct Invite",
+                },
+              ].map(opt => {
+                const active = formData.interviewMode === opt.value;
+                const locked = isEditMode;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => !locked && setFormData((prev: any) => ({ ...prev, interviewMode: opt.value }))}
+                    disabled={locked && !active}
+                    className={cn(
+                      "relative text-left p-5 rounded-xl border-2 transition-all duration-200",
+                      active
+                        ? "border-[#F97316] bg-orange-50/50 shadow-[0_0_0_3px_rgba(249,115,22,0.1)]"
+                        : locked
+                          ? "border-gray-200 bg-gray-50 opacity-40 cursor-not-allowed"
+                          : "border-gray-200 bg-white hover:border-orange-200 hover:bg-orange-50/20 cursor-pointer"
+                    )}
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <span className="text-2xl">{opt.icon}</span>
+                      <div className="flex items-center gap-1.5">
+                        {locked && active && <span className="text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full bg-amber-100 text-amber-600">Locked</span>}
+                        <span className={cn(
+                          "text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full",
+                          active ? "bg-[#F97316] text-white" : "bg-gray-100 text-gray-500"
+                        )}>{opt.badge}</span>
+                      </div>
+                    </div>
+                    <p className={cn("text-[15px] font-bold mb-1", active ? "text-[#F97316]" : "text-gray-800")}>{opt.label}</p>
+                    <p className="text-[12px] text-gray-500 leading-relaxed">{opt.desc}</p>
+                    {active && (
+                      <div className="absolute top-3 right-3 h-5 w-5 rounded-full bg-[#F97316] flex items-center justify-center">
+                        <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            {/* Warning shown during creation only — this choice is permanent */}
+            {!isEditMode && (
+              <div className="mt-4 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+                <svg className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
+                <p className="text-[12px] font-semibold text-amber-700">
+                  <strong>This cannot be changed later.</strong> Once you create the job, the mode is locked permanently. Choose carefully.
+                </p>
+              </div>
+            )}
+          </section>
+          <Divider />
+          {/* Section 2: JD Upload */}
+          <section>
+            <SectionHeader index={2} title="Job Description" subtitle="Upload your JD and AI will auto-fill the details" />
             <JobDescription
               formData={displayFormData}
               updateFormData={setFormData}
@@ -457,9 +530,9 @@ function CreateDriveForm() {
             />
           </section>
           <Divider />
-          {/* Section 2: Job Name & Role */}
+          {/* Section 3: Job Name & Role */}
           <section>
-            <SectionHeader index={2} title="Job Details" subtitle="Name and role for this job" />
+            <SectionHeader index={3} title="Job Details" subtitle="Name and role for this job" />
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
                 <Label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest">
@@ -516,9 +589,9 @@ function CreateDriveForm() {
             )}
           </section>
           <Divider />
-          {/* Section 3: Interview Setup */}
+          {/* Section 4: Interview Setup */}
           <section>
-            <SectionHeader index={3} title="Interview Setup" subtitle="Configure your AI interviewer" />
+            <SectionHeader index={4} title="Interview Setup" subtitle="Configure your AI interviewer" />
             <InterviewSetup
               formData={displayFormData}
               updateFormData={setFormData}
@@ -526,14 +599,16 @@ function CreateDriveForm() {
             />
           </section>
           <Divider />
-          {/* Section 4: Screening Settings */}
+          {/* Section 5: Screening Settings — only show for ATS mode */}
+          {formData.interviewMode !== "interview-only" && (
           <section>
-            <SectionHeader index={4} title="Screening Settings" subtitle="Set threshold and criteria for resume screening" />
+            <SectionHeader index={5} title="Screening Settings" subtitle="Set threshold and criteria for resume screening" />
             <ScreeningSettings
               config={screeningConfig}
               setConfig={handleScreeningConfig}
             />
           </section>
+          )}
         </div>
         {/* Footer */}
         <div className="flex justify-between items-center px-8 py-4 bg-white border-t border-gray-100 rounded-b-2xl">

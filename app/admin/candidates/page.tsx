@@ -112,7 +112,6 @@ function CandidateStatsRow() {
     const { stats, isLoading, error } = useCandidates();
     const kpis = [
         { label: "Shortlisted", value: stats.shortlisted, icon: Target, color: "text-emerald-600", bg: "bg-emerald-50" },
-        { label: "Hired", value: stats.hired, icon: Award, color: "text-emerald-600", bg: "bg-emerald-50" },
         { label: "Rejected", value: stats.rejected, icon: UserX, color: "text-rose-600", bg: "bg-rose-50" },
         { label: "Live", value: stats.interviewRunning, icon: Radio, color: "text-blue-600", bg: "bg-blue-50", pulse: stats.interviewRunning > 0 },
         { label: "Pending", value: stats.interviewPending, icon: Clock, color: "text-slate-500", bg: "bg-slate-50" },
@@ -164,7 +163,6 @@ function formatCandidateStatusLabel(value?: string) {
     if (normalized === "shortlisted") return "Shortlisted";
     if (normalized === "rejected") return "Rejected";
     if (normalized === "not shortlisted") return "Not Shortlisted";
-    if (normalized === "not hired") return "Not Hired";
     if (normalized === "not qualified") return "Not Qualified";
     return normalized.replace(/\b\w/g, (ch) => ch.toUpperCase());
 }
@@ -177,7 +175,6 @@ export default function CandidatesPage() {
     const [searchTerm, setSearchTerm] = useState("");
     const [resumeFilter, setResumeFilter] = useState("all");
     const [interviewFilter, setInterviewFilter] = useState("all");
-    const [hiringFilter, setHiringFilter] = useState("all");
     const [roleFilter, setRoleFilter] = useState("all");
     const [pageSize, setPageSize] = useState(20);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -217,19 +214,19 @@ export default function CandidatesPage() {
         setIsCandidatesTableReady(false);
         const handler = setTimeout(() => {
             const { startDate, endDate } = getDateRange();
-            void fetchCandidates(1, pageSize, roleFilter, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm)
+            void fetchCandidates(1, pageSize, roleFilter, resumeFilter, interviewFilter, startDate, endDate, searchTerm)
                 .finally(() => setIsCandidatesTableReady(true));
         }, 200);
         return () => clearTimeout(handler);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [resumeFilter, interviewFilter, hiringFilter, roleFilter, timeline, searchTerm]);
+    }, [resumeFilter, interviewFilter, roleFilter, timeline, searchTerm]);
     // Page size change — no skeleton, just refetch silently
     const pageSizeRef = useRef(pageSize);
     useEffect(() => {
         if (pageSizeRef.current === pageSize) return;
         pageSizeRef.current = pageSize;
         const { startDate, endDate } = getDateRange();
-        void fetchCandidates(1, pageSize, roleFilter, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm);
+        void fetchCandidates(1, pageSize, roleFilter, resumeFilter, interviewFilter, startDate, endDate, searchTerm);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [pageSize]);
     useEffect(() => {
@@ -271,7 +268,7 @@ export default function CandidatesPage() {
         else if (timeline.type === "week") { const d = new Date(); d.setDate(d.getDate() - 7); startDate = d.toISOString().split("T")[0]; }
         else if (timeline.type === "month") { const d = new Date(); d.setMonth(d.getMonth() - 1); startDate = d.toISOString().split("T")[0]; }
         else if (timeline.type === "custom") { startDate = timeline.from; endDate = timeline.to; }
-        fetchCandidates(page, pageSize, roleFilter, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm);
+        fetchCandidates(page, pageSize, roleFilter, resumeFilter, interviewFilter, startDate, endDate, searchTerm);
     };
     const handlePageChange = (p: number) => { if (p >= 1 && p <= pagination.totalPages) refetch(p); };
     const handleMoveToDrive = (candidateDriveId?: string | null) => {
@@ -313,7 +310,7 @@ export default function CandidatesPage() {
     });
     const toggleSelection = (id: string) => setSelectedIds(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
     const clearSelection = () => setSelectedIds(new Set());
-    const handleBulkStatus = async (action: "hire" | "not_hired" | "reject" | "shortlist" | "delete") => {
+    const handleBulkStatus = async (action: "reject" | "shortlist" | "delete") => {
         if (!selectedCount || isBulkLoading) return;
         setIsBulkLoading(true);
         try {
@@ -450,20 +447,7 @@ export default function CandidatesPage() {
                             </Button>
                         </div>
                     </div>
-                    {/* Group 2: Hire */}
-                    <div className="rounded-2xl border border-indigo-100 bg-indigo-50/40 px-3 py-2.5">
-                        <p className="text-[9px] font-black uppercase tracking-[0.22em] text-indigo-600 mb-2">Hire</p>
-                        <div className="flex flex-wrap items-center gap-2">
-                            <Button size="sm" onClick={() => handleBulkStatus("hire")} disabled={isBulkLoading}
-                                className="h-8 px-3 rounded-xl border border-gray-200 bg-white text-gray-900 font-bold text-xs flex items-center gap-1.5 shadow-sm hover:bg-gray-50">
-                                <BadgeCheck className="h-3.5 w-3.5" /> Hire
-                            </Button>
-                            <Button size="sm" onClick={() => handleBulkStatus("not_hired")} disabled={isBulkLoading}
-                                className="h-8 px-3 rounded-xl border border-gray-200 bg-white text-gray-900 font-bold text-xs flex items-center gap-1.5 shadow-sm hover:bg-gray-50">
-                                <UserX className="h-3.5 w-3.5" /> Not Hired
-                            </Button>
-                        </div>
-                    </div>
+
                     {/* Group 3: Interview Link — locked (not hidden) when suspended/quota */}
                     <div className="rounded-2xl border border-orange-100 bg-orange-50/40 px-3 py-2.5">
                         <p className="text-[9px] font-black uppercase tracking-[0.22em] text-orange-600 mb-2">Interview Link</p>
@@ -526,13 +510,6 @@ export default function CandidatesPage() {
                                     { value: "inprogress", label: "In Progress", colorClass: "text-blue-600" },
                                     { value: "finished", label: "Completed", colorClass: "text-emerald-600" },
                                 ]} />
-                            <PremiumFilter value={hiringFilter} onChange={setHiringFilter} icon={BadgeCheck} placeholder="Hiring"
-                                options={[
-                                    { value: "all", label: "All Hiring" },
-                                    { value: "hired", label: "Hired", colorClass: "text-emerald-600" },
-                                    { value: "not hired", label: "Not Hired", colorClass: "text-rose-600" },
-                                    { value: "pending", label: "Pending", colorClass: "text-slate-600" },
-                                ]} />
                             <PremiumFilter value={roleFilter} onChange={setRoleFilter} icon={Briefcase} placeholder="All Job Roles"
                                 options={[
                                     { value: "all", label: "All Job Roles" },
@@ -556,7 +533,6 @@ export default function CandidatesPage() {
                                 <TableHead className="w-[180px] h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500">Job Role</TableHead>
                                 <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Resume</TableHead>
                                 <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Interview</TableHead>
-                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Hiring</TableHead>
                                 <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Resume Report</TableHead>
                                 <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Interview Report</TableHead>
                                 <TableHead className="text-right pr-8 h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500">Actions</TableHead>
@@ -575,8 +551,6 @@ export default function CandidatesPage() {
                                 const interviewStage = normalizeStatusKey(candidate.interviewStatus) || "pending";
                                 const interviewStageLabel = formatCandidateStatusLabel(candidate.interviewStatus);
                                 const interviewReportUnlocked = interviewStage === "completed" || interviewStage === "finished";
-                                const hiringDecision = normalizeStatusKey(candidate.hiringStatus) || "pending";
-                                const hiringDecisionLabel = formatCandidateStatusLabel(candidate.hiringStatus);
                                 const resumeScore = Number(candidate.score ?? candidate.aiScore ?? 0);
                                 const interviewScore = interviewScoresById[candidate.id] ?? (interviewReportUnlocked ? 0 : null);
                                 const canResendInterview = interviewStage === "pending" || interviewStage === "in progress" || interviewStage === "completed" || interviewStage === "finished" || mainStatus === "shortlisted";
@@ -647,14 +621,6 @@ export default function CandidatesPage() {
                                             </div>
                                         </TableCell>
                                         <TableCell className="py-5 text-center" onClick={e => e.stopPropagation()}>
-                                            <Badge variant="secondary" className={cn(
-                                                "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest border-0 shadow-sm pointer-events-none",
-                                                hiringDecision === "hired" ? "bg-emerald-50 text-emerald-700" :
-                                                    hiringDecision === "not hired" ? "bg-rose-50 text-rose-700" :
-                                                        hiringDecision === "not shortlisted" ? "bg-amber-50 text-amber-700" : "bg-slate-50 text-slate-500"
-                                            )}>{hiringDecisionLabel}</Badge>
-                                        </TableCell>
-                                        <TableCell className="py-5 text-center" onClick={e => e.stopPropagation()}>
                                             <Link
                                                 href={orgIdParam
                                                     ? `/admin/candidates/${candidate.id}?report=resume&orgId=${encodeURIComponent(orgIdParam)}`
@@ -718,16 +684,6 @@ export default function CandidatesPage() {
                                                         title={isSuspended ? interviewActionBlockedMessage : undefined}>
                                                         {isSuspended ? <Lock className="h-4 w-4 mr-2 shrink-0" /> : <Mail className="h-4 w-4 mr-2 shrink-0" />}
                                                         Send Email
-                                                    </DropdownMenuItem>
-                                                    {/* Hire */}
-                                                    <DropdownMenuLabel className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400 mt-1">Hire</DropdownMenuLabel>
-                                                    <DropdownMenuItem onClick={() => handleUpdateStatus(candidate.id, { hiringStatus: "hired" }, `${displayName} hired`)}
-                                                        className="rounded-xl px-2.5 py-2 text-sm font-semibold cursor-pointer text-emerald-600 focus:text-emerald-700 focus:bg-emerald-50">
-                                                        <BadgeCheck className="h-4 w-4 mr-2 shrink-0" /> Hire
-                                                    </DropdownMenuItem>
-                                                    <DropdownMenuItem onClick={() => handleUpdateStatus(candidate.id, { hiringStatus: "not hired" }, `${displayName} marked as not hired`)}
-                                                        className="rounded-xl px-2.5 py-2 text-sm font-semibold cursor-pointer text-rose-600 focus:text-rose-700 focus:bg-rose-50">
-                                                        <XCircle className="h-4 w-4 mr-2 shrink-0" /> Not Hired
                                                     </DropdownMenuItem>
                                                     {/* Manage */}
                                                     <DropdownMenuLabel className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400 mt-1">Manage</DropdownMenuLabel>

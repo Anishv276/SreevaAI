@@ -88,7 +88,7 @@ export default function SuperAdminShell({ children }: { children: React.ReactNod
                 <div className="p-8 border-b border-gray-50">
                     <div className="flex items-center gap-4 group cursor-pointer">
                         <div className="w-10 h-10 rounded-xl overflow-hidden shadow-[0_4px_15px_rgba(249,115,22,0.1)] transition-transform group-hover:scale-105">
-                            <img src="/Logo.png" alt="Sreeva AI" className="w-full h-full object-cover" />
+                            <img src="/sreevalogo.png" alt="Sreeva AI" className="w-full h-full object-cover" />
                         </div>
                         <div>
                             <p className="text-gray-900 font-black text-lg tracking-tight leading-none">Sreeva AI</p>

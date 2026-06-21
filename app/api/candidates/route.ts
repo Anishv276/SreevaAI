@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { bulkDeleteCandidatesSchema } from "@/lib/validation";
 import { getSession } from "@/lib/auth";
 import { deleteUrlTargets } from "@/lib/delete-utils";
@@ -44,8 +45,7 @@ export async function GET(request: Request) {
                 case "completed":
                 case "finished":
                     return ["completed", "COMPLETED", "Completed", "finished", "FINISHED", "Finished"];
-                case "not hired":
-                    return ["not hired", "NOT HIRED", "Not Hired"];
+
                 case "not qualified":
                     return ["not qualified", "NOT QUALIFIED", "Not Qualified"];
                 case "pending":
@@ -109,7 +109,8 @@ export async function GET(request: Request) {
             prisma.application.findMany({
                 where,
                 include: {
-                    drive: { select: { title: true, role: true } }
+                    drive: { select: { title: true, role: true } },
+                    interview: { select: { inviteSentAt: true, status: true } },
                 },
                 orderBy:
                     sortBy === "score"
@@ -134,8 +135,6 @@ export async function GET(request: Request) {
         const statsRow = {
             shortlisted: 0,
             rejected: 0,
-            hired: 0,
-            not_hired: 0,
             interviewRunning: 0,
             interviewPending: 0,
             interviewCompleted: 0
@@ -147,13 +146,11 @@ export async function GET(request: Request) {
             const intStatus = String(group.interviewStatus || "").toLowerCase().replace(/[_-]+/g, " ");
             if (resStatus === 'shortlisted') statsRow.shortlisted += count;
             if (resStatus === 'rejected') statsRow.rejected += count;
-            if (hiStatus === 'hired') statsRow.hired += count;
-            if (hiStatus === 'not hired') statsRow.not_hired += count;
             if (intStatus === 'inprogress' || intStatus === 'in progress') statsRow.interviewRunning += count;
             if (intStatus === 'pending') statsRow.interviewPending += count;
             if (intStatus === 'finished' || intStatus === 'completed') statsRow.interviewCompleted += count;
         });
-        const formattedCandidates = (candidates as any[]).map((app: any) => {
+        const formattedCandidates = candidates.map((app) => {
             let progress = null as number | null;
             let stage = null as string | null;
             try {
@@ -178,8 +175,8 @@ export async function GET(request: Request) {
                 hiringStatus: app.hiringStatus,
                 screeningProgress: progress,
                 screeningStage: stage,
-                experienceYears: app.experienceYears,
-                relevantYears: app.relevantYears,
+                inviteSentAt: app.interview?.inviteSentAt ?? null,
+                createdAt: app.createdAt,
                 date: new Date(app.createdAt).toLocaleDateString(),
             };
         });
@@ -194,7 +191,6 @@ export async function GET(request: Request) {
             stats: {
                 shortlisted: Number(statsRow.shortlisted ?? 0),
                 rejected: Number(statsRow.rejected ?? 0),
-                hired: Number(statsRow.hired ?? 0),
                 interviewRunning: Number(statsRow.interviewRunning ?? 0),
                 interviewPending: Number(statsRow.interviewPending ?? 0),
                 interviewCompleted: Number(statsRow.interviewCompleted ?? 0),
@@ -256,7 +252,7 @@ export async function DELETE(request: Request) {
                     select: {
                         recording: true,
                         snapshots: true
-                    } as any
+                    }
                 }
             }
         });
@@ -279,22 +275,22 @@ export async function DELETE(request: Request) {
         await prisma.$transaction(async (tx) => {
             const timestamp = Date.now().toString();
             if (validIds.length > 0) {
-                const placeholders = validIds.map(id => `'${id}'`).join(',');
+                const idList = Prisma.join(validIds);
                 // 1. Soft Delete Support Tickets FIRST (before Interview applicationId is renamed)
-                await tx.$executeRawUnsafe(`
+                await tx.$executeRaw`
                     UPDATE "SupportTicket" SET "status" = 'DELETED'
                     WHERE "interviewId" IN (
-                        SELECT "id" FROM "Interview" WHERE "applicationId" IN (${placeholders})
+                        SELECT "id" FROM "Interview" WHERE "applicationId" IN (${idList})
                     )
-                `);
+                `;
                 // 2. Soft delete interviews (rename unique keys via Raw SQL)
-                await tx.$executeRawUnsafe(`
-                    UPDATE "Interview" 
-                    SET "isDeleted" = true, 
-                        "applicationId" = 'del_' || ${timestamp} || '_' || "applicationId", 
+                await tx.$executeRaw`
+                    UPDATE "Interview"
+                    SET "isDeleted" = true,
+                        "applicationId" = 'del_' || ${timestamp} || '_' || "applicationId",
                         "accessToken" = 'del_' || ${timestamp} || '_' || "accessToken"
-                    WHERE "applicationId" IN (${placeholders})
-                `);
+                    WHERE "applicationId" IN (${idList})
+                `;
                 // 3. Soft delete applications
                 await tx.application.updateMany({
                     where: { id: { in: validIds } },

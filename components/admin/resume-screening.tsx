@@ -25,16 +25,6 @@ interface ResumeCandidate {
     aiReport?: string;
     resumeStatus: string;
     createdAt: string;
-    bulkBatchId: string;
-}
-interface ResumeBatch {
-    id: string;
-    status: string;
-    totalCount: number;
-    processedCount: number;
-    failedCount: number;
-    createdAt: string;
-    completedAt?: string;
 }
 type SortKey = "aiScore" | "fullName" | "resumeStatus";
 type SortDir = "asc" | "desc";
@@ -43,7 +33,6 @@ export function ResumeScreening({ driveId, driveName }: { driveId: string; drive
     const router = useRouter();
     const [modalOpen, setModalOpen] = useState(false);
     const [candidates, setCandidates] = useState<ResumeCandidate[]>([]);
-    const [batches, setBatches] = useState<ResumeBatch[]>([]);
     const [loadingData, setLoadingData] = useState(true);
     const refresh = useCallback(async () => {
         try {
@@ -51,26 +40,21 @@ export function ResumeScreening({ driveId, driveName }: { driveId: string; drive
             if (!res.ok) return;
             const data = await res.json();
             setCandidates(data.candidates || []);
-            setBatches(data.batches || []);
         } catch { /* silent */ } finally {
             setLoadingData(false);
         }
     }, [driveId]);
     useEffect(() => { refresh(); }, [refresh]);
-    // Auto-poll while any batch or candidate is still in-flight
+    // Auto-poll while any candidate is still in-flight
     useEffect(() => {
-        const hasActiveBatch = batches.some((b) => {
-            const s = String(b.status || "").toUpperCase();
-            return s === "QUEUED" || s === "PROCESSING";
-        });
         const hasActiveCandidate = candidates.some((c) => {
             const s = String(c.resumeStatus || "").toLowerCase();
             return s === "extracting" || s === "waiting" || s === "starting" || s === "scoring" || s === "processing";
         });
-        if (!hasActiveBatch && !hasActiveCandidate) return;
+        if (!hasActiveCandidate) return;
         const timer = setInterval(refresh, 3000);
         return () => clearInterval(timer);
-    }, [batches, candidates, refresh]);
+    }, [candidates, refresh]);
     // ⚡ Read from shared context — no fetch needed
     const adminOrg = useAdminOrg();
     const quotaLocked = isInterviewQuotaLocked(adminOrg ?? {});
@@ -213,20 +197,21 @@ function UploadModal({
         const dropped = Array.from(e.dataTransfer.files).filter(f => f.name.endsWith(".pdf"));
         setFiles(prev => [...prev, ...dropped]);
     };
-    const loadBatchSummary = async (nextBatchId: string) => {
+    const loadSummaryForIds = async (ids: string[]) => {
         const res = await fetch(`/api/drives/${driveId}/resume-screening`);
         if (!res.ok) throw new Error("Failed to load screening summary");
         const data = await res.json();
-        const batchCandidates = Array.isArray(data.candidates)
-            ? data.candidates.filter((candidate: any) => candidate.bulkBatchId === nextBatchId)
+        const idSet = new Set(ids);
+        const uploadCandidates = Array.isArray(data.candidates)
+            ? data.candidates.filter((c: any) => idSet.has(c.id))
             : [];
         const normalizedStatus = (value: unknown) =>
             String(value || "").trim().toLowerCase().replace(/[_-]+/g, " ");
         return {
-            shortlisted: batchCandidates.filter((candidate: any) => normalizedStatus(candidate.resumeStatus) === "shortlisted").length,
-            rejected: batchCandidates.filter((candidate: any) => normalizedStatus(candidate.resumeStatus) === "rejected").length,
-            total: batchCandidates.length,
-            candidateIds: batchCandidates.map((candidate: any) => candidate.id),
+            shortlisted: uploadCandidates.filter((c: any) => normalizedStatus(c.resumeStatus) === "shortlisted").length,
+            rejected: uploadCandidates.filter((c: any) => normalizedStatus(c.resumeStatus) === "rejected").length,
+            total: uploadCandidates.length,
+            candidateIds: uploadCandidates.map((c: any) => c.id),
         };
     };
     const handleSendFollowUpEmails = async () => {
@@ -263,25 +248,26 @@ function UploadModal({
             const res = await fetch(`/api/drives/${driveId}/resume-screening`, { method: "POST", body: fd });
             if (!res.ok) throw new Error((await res.json()).error || "Upload failed");
             const data = await res.json();
-            const nextBatchId: string = data.batchId;
-            const totalFiles = files.length;
+            const uploadedIds: string[] = data.candidateIds || [];
+            const totalFiles = uploadedIds.length || files.length;
             setProgress({ processed: 0, total: totalFiles });
             setPhase("processing");
-            // Poll batch + candidates until all are done
+            const TERMINAL = new Set(["shortlisted", "rejected", "failed"]);
+            // Poll candidate statuses until all are in a terminal state
             pollRef.current = setInterval(async () => {
                 try {
-                    const batchRes = await fetch(`/api/drives/${driveId}/resume-screening?batchId=${nextBatchId}`);
-                    if (!batchRes.ok) return;
-                    const batch = await batchRes.json();
-                    const done = (batch.processedCount || 0) + (batch.failedCount || 0);
-                    setProgress({ processed: done, total: batch.totalCount || totalFiles });
-                    const batchDone =
-                        String(batch.status || "").toUpperCase() === "COMPLETED" ||
-                        String(batch.status || "").toUpperCase() === "FAILED" ||
-                        done >= (batch.totalCount || totalFiles);
-                    if (batchDone) {
+                    const pollRes = await fetch(`/api/drives/${driveId}/resume-screening`);
+                    if (!pollRes.ok) return;
+                    const pollData = await pollRes.json();
+                    const idSet = new Set(uploadedIds);
+                    const these = Array.isArray(pollData.candidates)
+                        ? pollData.candidates.filter((c: any) => idSet.has(c.id))
+                        : [];
+                    const done = these.filter((c: any) => TERMINAL.has(String(c.resumeStatus || "").toLowerCase())).length;
+                    setProgress({ processed: done, total: totalFiles });
+                    if (done >= totalFiles && totalFiles > 0) {
                         if (pollRef.current) clearInterval(pollRef.current);
-                        const summaryData = await loadBatchSummary(nextBatchId);
+                        const summaryData = await loadSummaryForIds(uploadedIds);
                         setSummary(summaryData);
                         setPhase("summary");
                     }

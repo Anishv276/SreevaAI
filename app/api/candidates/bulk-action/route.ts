@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { getSession } from "@/lib/auth";
 import { appendCandidateActivity } from "@/lib/candidate-activity";
 export async function POST(request: Request) {
@@ -8,7 +9,7 @@ export async function POST(request: Request) {
         if (!session) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
         const orgId = session.orgId;
         if (!orgId) return NextResponse.json({ error: "Not authorized" }, { status: 401 });
-        const { ids, action }: { ids: string[]; action: "hire" | "reject" | "delete" | "shortlist" | "not_hired" } = await request.json();
+        const { ids, action }: { ids: string[]; action: "reject" | "delete" | "shortlist" } = await request.json();
         if (!ids?.length || !action) {
             return NextResponse.json({ error: "ids and action are required" }, { status: 400 });
         }
@@ -43,18 +44,18 @@ export async function POST(request: Request) {
             // -- SOFT DELETE: DATABASE CLEANUP (Cascading) ---------------------------
             await prisma.$transaction(async (tx) => {
                 if (validIds.length > 0) {
-                    const placeholders = validIds.map(id => `'${id}'`).join(',');
+                    const idList = Prisma.join(validIds);
                     // 1. Nullify FK on Interview before deleting Application rows
-                    await tx.$executeRawUnsafe(`
+                    await tx.$executeRaw`
                         UPDATE "SupportTicket" SET "status" = 'DELETED'
                         WHERE "interviewId" IN (
-                            SELECT "id" FROM "Interview" WHERE "applicationId" IN (${placeholders})
+                            SELECT "id" FROM "Interview" WHERE "applicationId" IN (${idList})
                         )
-                    `);
+                    `;
                     // 2. Delete Interview rows (FK blocks renaming applicationId, so just delete)
-                    await tx.$executeRawUnsafe(`
-                        DELETE FROM "Interview" WHERE "applicationId" IN (${placeholders})
-                    `);
+                    await tx.$executeRaw`
+                        DELETE FROM "Interview" WHERE "applicationId" IN (${idList})
+                    `;
                     // 3. Soft delete applications
                     await tx.application.updateMany({
                         where: { id: { in: validIds } },
@@ -82,37 +83,23 @@ export async function POST(request: Request) {
             })));
             return NextResponse.json({ message: `${validIds.length} candidates shortlisted` });
         }
-        if (action === "not_hired" || action === "reject") {
+        if (action === "reject") {
             await prisma.application.updateMany({
                 where: { id: { in: validIds } },
                 data: {
                     resumeStatus: "rejected",
                     interviewStatus: "Not Qualified",
-                    hiringStatus: "not hired",
+                    hiringStatus: "rejected",
                 },
             });
             await Promise.all(validIds.map((id) => appendCandidateActivity(id, {
                 type: "status_changed",
-                label: action === "reject" ? "Resume rejected" : "Marked as not hired",
-                details: `resume=rejected, interview=Not Qualified, hiring=${action === "reject" ? "Not Shortlisted" : "Not Hired"}`,
+                label: "Resume rejected",
+                details: `resume=rejected, interview=Not Qualified, hiring=Not Shortlisted`,
                 timestamp: new Date().toISOString(),
                 source: "hr",
             })));
-            return NextResponse.json({ message: `${validIds.length} candidates marked as not hired` });
-        }
-        if (action === "hire") {
-            await prisma.application.updateMany({
-                where: { id: { in: validIds } },
-                data: { hiringStatus: "hired", resumeStatus: "shortlisted", interviewStatus: "COMPLETED" },
-            });
-            await Promise.all(validIds.map((id) => appendCandidateActivity(id, {
-                type: "status_changed",
-                label: "Candidate hired",
-                details: "resume=shortlisted, interview=COMPLETED, hiring=hired",
-                timestamp: new Date().toISOString(),
-                source: "hr",
-            })));
-            return NextResponse.json({ message: `${validIds.length} candidates hired` });
+            return NextResponse.json({ message: `${validIds.length} candidates rejected` });
         }
         return NextResponse.json({ error: "Invalid action" }, { status: 400 });
     } catch (error) {

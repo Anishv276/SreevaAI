@@ -33,8 +33,8 @@ export function isSuperAdminRole(role: string | null | undefined): boolean {
 export function isAdminRole(role: string | null | undefined): boolean {
     return normalizeRole(role) === "ADMIN";
 }
-const SESSION_DURATION = "2h";
-const SESSION_DURATION_MS = 2 * 60 * 60 * 1000; // 2 hours
+const SESSION_DURATION = "12h";
+const SESSION_DURATION_MS = 12 * 60 * 60 * 1000; // 12 hours
 export async function createSession(user: SessionUser): Promise<string> {
     return await new SignJWT({ ...user })
         .setProtectedHeader({ alg: "HS256" })

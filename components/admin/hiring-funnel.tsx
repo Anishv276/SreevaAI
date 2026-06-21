@@ -10,7 +10,6 @@ interface FunnelData {
     invited: number;
     interviewed: number;
     shortlisted: number;
-    hiredThisMonth: number;
     shortlistPassRate: number;
 }
 interface HiringFunnelProps {
@@ -32,7 +31,6 @@ const STAGES = [
     { key: "shortlisted",  label: "Shortlisted",   color: "#15803D", darkColor: "#166534" },
     { key: "invited",      label: "Invited",       color: "#1D4ED8", darkColor: "#1E40AF" },
     { key: "interviewed",  label: "Interviewed",   color: "#16A34A", darkColor: "#15803D" },
-    { key: "hired",        label: "Hired",         color: "#10B981", darkColor: "#059669" },
 ] as const;
 export function HiringFunnel({ dateRange }: HiringFunnelProps) {
     const [data, setData] = useState<FunnelData | null>(null);
@@ -75,12 +73,11 @@ export function HiringFunnel({ dateRange }: HiringFunnelProps) {
         { key: "shortlisted", label: "Shortlisted",  value: data.shortlisted },
         { key: "invited",     label: "Invited",      value: data.invited },
         { key: "interviewed", label: "Interviewed",  value: data.interviewed },
-        { key: "hired",       label: "Hired",        value: data.hiredThisMonth },
     ] : [];
     const maxVal = stages.length ? Math.max(...stages.map(s => s.value), 1) : 1;
     const passRate = data
         ? data.totalCandidates > 0
-            ? ((data.hiredThisMonth / data.totalCandidates) * 100).toFixed(1)
+            ? ((data.shortlisted / data.totalCandidates) * 100).toFixed(1)
             : "0.0"
         : null;
     return (

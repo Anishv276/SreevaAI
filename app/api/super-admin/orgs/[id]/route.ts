@@ -91,7 +91,7 @@ export async function PATCH(
             interviewQuotaTotal !== undefined ? Math.max(0, Math.round(Number(interviewQuotaTotal) || 0)) : undefined;
         const shouldApplyInterviewQuotaTopUp =
             parsedInterviewQuotaTopUp !== undefined && parsedInterviewQuotaTopUp > 0;
-        const existingOrg = await (prisma.organization as any).findUnique({
+        const existingOrg = await prisma.organization.findUnique({
             where: { id },
             select: {
                 status: true,
@@ -169,14 +169,14 @@ export async function PATCH(
                 `
             );
             return NextResponse.json({
-                ...(existingOrg as any),
+                ...existingOrg,
                 status: directStatus,
                 statusControl: nextStatusControl ?? currentStatusControl,
             });
         }
         const normalizedPlan = plan !== undefined ? (normalizeOrgPlan(plan) || DEFAULT_ORG_PLAN) : null;
         // Build update - only write fields that were sent
-        const updateData: any = {};
+        const updateData: Record<string, unknown> = {};
         if (name !== undefined) updateData.name = name;
         if (plan !== undefined) updateData.plan = normalizedPlan || plan;
         if (maxActiveDrives !== undefined && String(maxActiveDrives).trim() !== "") {
@@ -289,7 +289,7 @@ export async function PATCH(
         let primaryAdminId: string | null = null;
         const updated = await prisma.$transaction(async (tx) => {
             // 1. Update Org
-            const org = await (tx.organization as any).update({
+            const org = await tx.organization.update({
                 where: { id },
                 data: updateData,
             });
@@ -320,7 +320,7 @@ export async function PATCH(
                 });
                 if (admin) {
                     primaryAdminId = admin.id;
-                    const adminUpdate: any = {};
+                    const adminUpdate: Record<string, unknown> = {};
                     if (adminName !== undefined) adminUpdate.name = adminName;
                     if (adminEmail !== undefined) adminUpdate.email = normalizeEmail(adminEmail);
                     if (adminPassword !== undefined && String(adminPassword).trim()) {
@@ -393,12 +393,7 @@ export async function DELETE(
             await tx.$executeRaw`UPDATE "User" SET "isDeleted" = true, "email" = 'del_' || ${timestamp} || '_' || "email" WHERE "orgId" = ${id}`;
             // 3. Soft Delete Drives
             await tx.$executeRaw`UPDATE "Drive" SET "isDeleted" = true WHERE "orgId" = ${id}`;
-            // 4. Soft Delete Resume Batches
-            await tx.$executeRaw`
-                UPDATE "ResumeBatch" SET "isDeleted" = true 
-                WHERE "driveId" IN (SELECT "id" FROM "Drive" WHERE "orgId" = ${id})
-            `;
-            // 5. Soft Delete Resume Candidates
+            // 4. Soft Delete Resume Candidates
             await tx.$executeRaw`
                 UPDATE "ResumeCandidate" SET "isDeleted" = true 
                 WHERE "driveId" IN (SELECT "id" FROM "Drive" WHERE "orgId" = ${id})

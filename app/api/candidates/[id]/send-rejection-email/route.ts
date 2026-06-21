@@ -21,7 +21,7 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
         if (!application) {
             return NextResponse.json({ error: "Application not found" }, { status: 404 });
         }
-        if (session.orgId && (application.drive as any)?.orgId !== session.orgId) {
+        if (session.orgId && application.drive?.orgId !== session.orgId) {
             return NextResponse.json({ error: "Forbidden" }, { status: 403 });
         }
         if (!application.email) {
@@ -30,8 +30,8 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
         const mailResult = await sendRejectionEmail({
             email: application.email,
             fullName: application.fullName,
-            jobTitle: (application.drive as any)?.title || "Unknown Role",
-            orgName: (application.drive as any)?.organization?.name || "Sreeva AI",
+            jobTitle: application.drive?.title || "Unknown Role",
+            orgName: application.drive?.organization?.name || "Sreeva AI",
         });
         if (!mailResult.success) {
             return NextResponse.json({ error: mailResult.error }, { status: 500 });

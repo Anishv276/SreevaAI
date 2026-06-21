@@ -75,7 +75,7 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: "Organization not found" }, { status: 404 });
         }
         let effectiveStatus = String(org.status || "ACTIVE").toUpperCase();
-        if ((org as any).statusControl === "QUOTA" && (org as any).interviewQuotaTotal > 0 && (org as any).interviewQuotaUsed >= (org as any).interviewQuotaTotal) {
+        if (org.statusControl === "QUOTA" && (org.interviewQuotaTotal ?? 0) > 0 && (org.interviewQuotaUsed ?? 0) >= (org.interviewQuotaTotal ?? 0)) {
             effectiveStatus = "QUOTA_EXCEEDED";
         }
         return NextResponse.json({

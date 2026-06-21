@@ -1,15 +1,11 @@
 "use client";
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DateFilter, type DateRange } from "@/components/admin/date-filter";
-import { PremiumFilter } from "@/components/admin/premium-filter";
-import { ActionConfirmModal } from "@/components/ui/action-confirm-modal";
 import { useCandidates } from "@/context/candidates-context";
 import { useJobs } from "@/context/jobs-context";
 import { cn } from "@/lib/utils";
@@ -19,8 +15,6 @@ import { useAdminOrg } from "@/context/admin-org-context";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
     AlertCircle,
-    Eye,
-    FileText,
     Mail,
     Search,
     ChevronDown,
@@ -30,11 +24,9 @@ import {
     Lock,
     XCircle,
     RefreshCw,
-    BadgeCheck,
     CheckSquare,
     Square,
     Trash2,
-    Radio,
     Loader2,
 } from "lucide-react";
 import {
@@ -67,11 +59,10 @@ function normalizeStatusKey(value?: string) {
 }
 export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string, refreshKey?: number }) {
     const { candidates, pagination, isLoading, error, fetchCandidates, clearError } = useCandidates();
-    const { jobs, organization } = useJobs();
+    const { organization } = useJobs();
     const [searchTerm, setSearchTerm] = useState("");
     const [resumeFilter, setResumeFilter] = useState("all");
     const [interviewFilter, setInterviewFilter] = useState("all");
-    const [hiringFilter, setHiringFilter] = useState("all");
     const [timeline, setTimeline] = useState<DateRange>({ type: "all" });
     const [scoreSort, setScoreSort] = useState<"default" | "score_desc" | "score_asc">("default");
     const [pageSize, setPageSize] = useState(20);
@@ -91,7 +82,6 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
         candidateId?: string;
         candidateName?: string;
     } | null>(null);
-    // ⚡ Read from shared context — no fetch needed
     const adminOrg = useAdminOrg();
     const quotaLocked = isInterviewQuotaLocked(adminOrg ?? {});
     const orgStatus = String(adminOrg?.status || organization?.status || "").trim().toUpperCase();
@@ -107,28 +97,23 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
         else if (timeline.type === "custom") { startDate = timeline.from; endDate = timeline.to; }
         return { startDate, endDate };
     };
-    // Filter/search change — refetch silently, only show skeleton on first load
     useEffect(() => {
         let cancelled = false;
         if (!isDriveViewReady) setSelectedIds(new Set());
         const handler = setTimeout(() => {
             const { startDate, endDate } = getDateRange();
-            void fetchCandidates(1, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm, scoreSort, { background: isDriveViewReady })
+            void fetchCandidates(1, pageSize, driveId, resumeFilter, interviewFilter, startDate, endDate, searchTerm, scoreSort, { background: isDriveViewReady })
                 .finally(() => { if (!cancelled) setIsDriveViewReady(true); });
         }, 500);
         return () => { cancelled = true; clearTimeout(handler); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [driveId, resumeFilter, interviewFilter, hiringFilter, timeline, searchTerm, fetchCandidates, scoreSort, refreshKey]);
-    // Page size change — no skeleton, just refetch silently
+    }, [driveId, resumeFilter, interviewFilter, timeline, searchTerm, fetchCandidates, scoreSort, refreshKey]);
     const pageSizeRef = useRef(pageSize);
     useEffect(() => {
         if (pageSizeRef.current === pageSize) return;
         pageSizeRef.current = pageSize;
         const { startDate, endDate } = getDateRange();
-        void fetchCandidates(1, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm, scoreSort);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        void fetchCandidates(1, pageSize, driveId, resumeFilter, interviewFilter, startDate, endDate, searchTerm, scoreSort);
     }, [pageSize]);
-    // Auto-poll while any candidate is waiting/processing — always background so table never flashes
     useEffect(() => {
         const hasPending = candidates.some((c: any) => {
             const s = String(c.resumeStatus || c.status || "").toLowerCase();
@@ -137,11 +122,10 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
         if (!hasPending) return;
         const timer = setInterval(() => {
             const { startDate, endDate } = getDateRange();
-            void fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm, scoreSort, { background: true, force: true });
+            void fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, startDate, endDate, searchTerm, scoreSort, { background: true, force: true });
         }, 3000);
         return () => clearInterval(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [candidates, pagination.page, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, searchTerm, scoreSort]);
+    }, [candidates, pagination.page, pageSize, driveId, resumeFilter, interviewFilter, searchTerm, scoreSort]);
     const handlePageChange = (newPage: number) => {
         if (newPage < 1 || newPage > pagination.totalPages) return;
         let startDate: string | undefined;
@@ -161,7 +145,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
             startDate = timeline.from;
             endDate = timeline.to;
         }
-        fetchCandidates(newPage, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, startDate, endDate, searchTerm, scoreSort);
+        fetchCandidates(newPage, pageSize, driveId, resumeFilter, interviewFilter, startDate, endDate, searchTerm, scoreSort);
     };
     const handleUpdateStatus = async (applicationId: string, statusUpdate: { resumeStatus?: string; hiringStatus?: string }, successMsg: string) => {
         try {
@@ -172,7 +156,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
             });
             if (res.ok) {
                 toast.success(successMsg);
-                fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, undefined, undefined, searchTerm, scoreSort, { background: true, force: true });
+                fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, undefined, undefined, searchTerm, scoreSort, { background: true, force: true });
             } else {
                 toast.error("Failed to update status");
             }
@@ -193,7 +177,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
             const data = await res.json().catch(() => null);
             if (res.ok) {
                 toast.success(data?.message || `Interview link sent to ${candidate.name}`);
-                fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, undefined, undefined, searchTerm, scoreSort, { background: true, force: true });
+                fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, undefined, undefined, searchTerm, scoreSort, { background: true, force: true });
                 return;
             }
             toast.error(data?.error || "Failed to send interview link");
@@ -230,7 +214,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
         setSelectedIds(new Set());
         setIsSelectionMode(true);
     };
-    const handleBulkStatus = async (action: "hire" | "not_hired" | "reject" | "shortlist" | "delete") => {
+    const handleBulkStatus = async (action: "reject" | "shortlist" | "delete") => {
         if (!selectedCount || isBulkLoading) return;
         const ids = Array.from(selectedIds);
         try {
@@ -244,7 +228,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
             if (res.ok) {
                 toast.success(data?.message || "Bulk action completed");
                 clearSelection();
-                fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, undefined, undefined, searchTerm, scoreSort, { background: true, force: true });
+                fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, undefined, undefined, searchTerm, scoreSort, { background: true, force: true });
                 return;
             }
             toast.error(data?.error || "Failed to update selected candidates");
@@ -262,7 +246,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                 const res = await fetch(`/api/candidates/${deleteConfirm.candidateId}`, { method: "DELETE" });
                 if (res.ok) {
                     toast.success(`${deleteConfirm.candidateName || "Candidate"} deleted`);
-                    fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, undefined, undefined, searchTerm, scoreSort, { background: true, force: true });
+                    fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, undefined, undefined, searchTerm, scoreSort, { background: true, force: true });
                 } else {
                     const data = await res.json().catch(() => null);
                     toast.error(data?.error || "Failed to delete candidate");
@@ -295,7 +279,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
             if (succeeded > 0) toast.success(`Interview link sent to ${succeeded} candidate(s)`);
             if (failed > 0) toast.error(`Failed to send to ${failed} candidate(s)`);
             clearSelection();
-            fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, undefined, undefined, searchTerm, scoreSort, { background: true, force: true });
+            fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, undefined, undefined, searchTerm, scoreSort, { background: true, force: true });
         } catch {
             toast.error("Failed to send interview links");
         } finally {
@@ -327,7 +311,6 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                     toast.success(`Rejection email sent to ${emailConfirm.candidateName}`);
                 }
             } else if (emailConfirm.mode === "bulk") {
-                const ids = Array.from(selectedIds);
                 const selected = filteredCandidates.filter((c: any) => selectedIds.has(c.id));
                 const shortlisted = selected.filter((c: any) => normalizeStatusKey(c.status) === "shortlisted").map((c: any) => c.id);
                 const rejected = selected.filter((c: any) => normalizeStatusKey(c.status) === "rejected").map((c: any) => c.id);
@@ -344,7 +327,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                 if (succeeded > 0) toast.success(`Emails sent to ${shortlisted.length + rejected.length} candidate(s)`);
                 if (failed > 0) toast.error(`Failed to send to ${failed} candidate(s)`);
                 clearSelection();
-                fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, hiringFilter, undefined, undefined, searchTerm, scoreSort, { background: true, force: true });
+                fetchCandidates(pagination.page, pageSize, driveId, resumeFilter, interviewFilter, undefined, undefined, searchTerm, scoreSort, { background: true, force: true });
             }
         } catch {
             toast.error("Failed to send email");
@@ -376,7 +359,6 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
         }
         setEmailConfirm({ mode: "bulk" });
     };
-    const driveTitle = jobs.find((job) => job.id === driveId)?.title || "Job";
     if (!isDriveViewReady) {
         return (
             <div className="flex min-h-[40vh] items-center justify-center rounded-2xl border border-white/40 bg-white/60 backdrop-blur-xl shadow-[0_8px_24px_rgba(15,23,42,0.03)]">
@@ -390,229 +372,147 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
         );
     }
     return (
-        <div className="space-y-4">
-            <div className="rounded-[1.75rem] border border-white/40 bg-white/50 p-2.5 backdrop-blur-xl shadow-[0_8px_24px_rgba(15,23,42,0.03)]">
-                <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-                    <div className="relative flex-1 max-w-2xl w-full">
-                        <Search className="absolute left-4 top-3.5 h-4 w-4 text-gray-400" />
-                        <Input
-                            placeholder={`Search candidates in ${driveTitle}...`}
-                            className="pl-11 h-11 border-transparent bg-white/60 rounded-2xl focus:bg-white focus:border-orange-200 focus:ring-8 focus:ring-orange-50/50 transition-all font-bold text-sm shadow-inner"
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                        />
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2.5 w-full xl:w-auto overflow-x-auto pb-1 xl:pb-0 no-scrollbar">
-                        <DateFilter value={timeline} onChange={setTimeline} />
-                        <PremiumFilter
-                            value={resumeFilter}
-                            onChange={setResumeFilter}
-                            icon={Target}
-                            placeholder="Resume"
-                            options={[
-                                { value: "all", label: "All Status" },
-                                { value: "shortlisted", label: "Shortlisted", colorClass: "text-emerald-600" },
-                                { value: "rejected", label: "Rejected", colorClass: "text-rose-600" },
-                                { value: "pending", label: "Pending", colorClass: "text-slate-600" },
-                            ]}
-                        />
-                        <PremiumFilter
-                            value={interviewFilter}
-                            onChange={setInterviewFilter}
-                            icon={Radio}
-                            placeholder="Interview"
-                            options={[
-                                { value: "all", label: "All Interview" },
-                                { value: "pending", label: "Pending", colorClass: "text-amber-600" },
-                                { value: "inprogress", label: "In Progress", colorClass: "text-blue-600" },
-                                { value: "completed", label: "Completed", colorClass: "text-emerald-600" },
-                            ]}
-                        />
-                        <PremiumFilter
-                            value={hiringFilter}
-                            onChange={setHiringFilter}
-                            icon={BadgeCheck}
-                            placeholder="Hiring"
-                            options={[
-                                { value: "all", label: "All Hiring" },
-                                { value: "hired", label: "Hired", colorClass: "text-emerald-600" },
-                                { value: "not hired", label: "Not Hired", colorClass: "text-rose-600" },
-                                { value: "pending", label: "Pending", colorClass: "text-slate-600" },
-                            ]}
-                        />
+        <div>
+            {/* ── Filter rows ── */}
+            {/* Row 1: Shortlisted filter (ATS status) + Interview filter + Date + Search + Bulk actions */}
+            <div className="flex items-center justify-between gap-3 px-6 py-3 border-b border-gray-100 flex-wrap">
+                {/* Left: dropdown filters */}
+                <div className="flex items-center gap-2 flex-wrap">
+
+                    {/* Shortlisted status dropdown */}
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <button className={cn(
+                                "flex items-center gap-1.5 h-8 px-3.5 rounded-full text-[12px] font-bold transition-all border focus:outline-none",
+                                resumeFilter !== "all"
+                                    ? "bg-[#F97316] text-white border-[#F97316] shadow-sm"
+                                    : "text-gray-600 border-gray-200 hover:border-gray-300 hover:text-gray-800 bg-white"
+                            )}>
+                                {resumeFilter === "all" ? "Shortlisted" :
+                                    resumeFilter === "shortlisted" ? "Shortlisted" :
+                                    resumeFilter === "rejected" ? "Rejected" :
+                                    resumeFilter === "pending" ? "Pending" : "Shortlisted"}
+                                {resumeFilter !== "all" && (
+                                    <span className="bg-white/25 text-white text-[10px] font-black px-1.5 py-0.5 rounded-full">
+                                        {pagination.total}
+                                    </span>
+                                )}
+                                <ChevronDown className="h-3 w-3 ml-0.5" />
+                            </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start" className="w-44 p-1.5 rounded-xl shadow-lg border-gray-100 bg-white">
+                            <DropdownMenuLabel className="px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400">ATS Status</DropdownMenuLabel>
+                            {[
+                                { value: "all", label: "All Candidates" },
+                                { value: "shortlisted", label: "Shortlisted" },
+                                { value: "rejected", label: "Rejected" },
+                                { value: "pending", label: "Pending" },
+                            ].map(opt => (
+                                <DropdownMenuItem key={opt.value} onClick={() => setResumeFilter(opt.value)}
+                                    className={cn("rounded-lg px-3 py-2 text-[12px] font-semibold cursor-pointer flex items-center justify-between",
+                                        resumeFilter === opt.value ? "text-[#F97316] bg-orange-50" : "text-gray-700"
+                                    )}>
+                                    {opt.label}
+                                    {resumeFilter === opt.value && <span className="h-1.5 w-1.5 rounded-full bg-[#F97316]" />}
+                                </DropdownMenuItem>
+                            ))}
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+
+                    {/* Interview status dropdown */}
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <button className={cn(
+                                "flex items-center gap-1.5 h-8 px-3.5 rounded-full text-[12px] font-bold transition-all border focus:outline-none",
+                                interviewFilter !== "all"
+                                    ? "bg-gray-800 text-white border-gray-800 shadow-sm"
+                                    : "text-gray-600 border-gray-200 hover:border-gray-300 hover:text-gray-800 bg-white"
+                            )}>
+                                {interviewFilter === "all" ? "Interview" :
+                                    interviewFilter === "pending" ? "Pending" :
+                                    interviewFilter === "inprogress" ? "In Progress" :
+                                    interviewFilter === "completed" ? "Completed" : "Interview"}
+                                <ChevronDown className="h-3 w-3 ml-0.5" />
+                            </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start" className="w-44 p-1.5 rounded-xl shadow-lg border-gray-100 bg-white">
+                            <DropdownMenuLabel className="px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400">Interview Status</DropdownMenuLabel>
+                            {[
+                                { value: "all", label: "All" },
+                                { value: "pending", label: "Pending" },
+                                { value: "inprogress", label: "In Progress" },
+                                { value: "completed", label: "Completed" },
+                            ].map(opt => (
+                                <DropdownMenuItem key={opt.value} onClick={() => setInterviewFilter(opt.value)}
+                                    className={cn("rounded-lg px-3 py-2 text-[12px] font-semibold cursor-pointer flex items-center justify-between",
+                                        interviewFilter === opt.value ? "text-gray-900 bg-gray-100" : "text-gray-700"
+                                    )}>
+                                    {opt.label}
+                                    {interviewFilter === opt.value && <span className="h-1.5 w-1.5 rounded-full bg-gray-800" />}
+                                </DropdownMenuItem>
+                            ))}
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+
+                    {/* Date filter */}
+                    <DateFilter value={timeline} onChange={setTimeline} />
+                </div>
+
+                {/* Right: bulk actions + search */}
+                <div className="flex items-center gap-2 flex-wrap">
+                    {selectedCount > 0 && (<>
+                        <button onClick={() => handleBulkStatus("shortlist")} disabled={isBulkLoading} className="h-8 px-3 rounded-full border border-emerald-200 bg-white text-[12px] font-semibold text-emerald-700 hover:bg-emerald-50 flex items-center gap-1.5 disabled:opacity-50 transition-colors"><Target className="h-3.5 w-3.5" /> Shortlist</button>
+                        <button onClick={() => handleBulkStatus("reject")} disabled={isBulkLoading} className="h-8 px-3 rounded-full border border-rose-200 bg-white text-[12px] font-semibold text-rose-600 hover:bg-rose-50 flex items-center gap-1.5 disabled:opacity-50 transition-colors"><UserX className="h-3.5 w-3.5" /> Reject</button>
+                        <button onClick={isSuspended ? undefined : openBulkSendEmailConfirm} disabled={isBulkLoading} className={cn("h-8 px-3 rounded-full border text-[12px] font-semibold flex items-center gap-1.5 disabled:opacity-50 transition-colors", isSuspended ? "border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed" : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50")}>{isSuspended ? <Lock className="h-3.5 w-3.5" /> : <Mail className="h-3.5 w-3.5" />} Email</button>
+                        <button onClick={isInterviewActionBlocked ? undefined : handleBulkSendInterviewLink} disabled={isBulkLoading} className={cn("h-8 px-3 rounded-full border text-[12px] font-semibold flex items-center gap-1.5 disabled:opacity-50 transition-colors", isInterviewActionBlocked ? "border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed" : "border-orange-200 bg-white text-[#F97316] hover:bg-orange-50")}>{isInterviewActionBlocked ? <Lock className="h-3.5 w-3.5" /> : <RefreshCw className="h-3.5 w-3.5" />} Resend</button>
+                        <button onClick={() => setDeleteConfirm({ mode: "bulk" })} disabled={isBulkLoading} className="h-8 px-3 rounded-full border border-red-200 bg-white text-[12px] font-semibold text-red-600 hover:bg-red-50 flex items-center gap-1.5 disabled:opacity-50 transition-colors"><Trash2 className="h-3.5 w-3.5" /> Delete ({selectedCount})</button>
+                    </>)}
+                    <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
+                        <Input placeholder="Search candidates..." className="pl-8 h-8 w-48 border-gray-200 rounded-full text-[12px] font-medium focus:border-orange-400 focus:ring-1 focus:ring-orange-200 bg-gray-50" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
                     </div>
                 </div>
             </div>
-            {selectedCount > 0 && (
-                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                    {/* Group 1: Shortlist */}
-                    <div className="rounded-2xl border border-emerald-100 bg-emerald-50/40 px-3 py-2.5">
-                        <p className="text-[9px] font-black uppercase tracking-[0.22em] text-emerald-600 mb-2">Shortlist</p>
-                        <div className="flex flex-wrap items-center gap-2">
-                            <Button
-                                size="sm"
-                                onClick={() => handleBulkStatus("shortlist")}
-                                disabled={isBulkLoading}
-                                className="h-8 px-3 rounded-xl border border-gray-200 bg-white text-gray-900 font-bold text-xs flex items-center gap-1.5 shadow-sm hover:bg-gray-50"
-                            >
-                                <Target className="h-3.5 w-3.5" /> Shortlist
-                            </Button>
-                            <Button
-                                size="sm"
-                                onClick={() => handleBulkStatus("reject")}
-                                disabled={isBulkLoading}
-                                className="h-8 px-3 rounded-xl border border-gray-200 bg-white text-gray-900 font-bold text-xs flex items-center gap-1.5 shadow-sm hover:bg-gray-50"
-                            >
-                                <UserX className="h-3.5 w-3.5" /> Reject
-                            </Button>
-                            {/* Email: locked when suspended, not hidden */}
-                            <Button
-                                size="sm"
-                                onClick={isSuspended ? undefined : openBulkSendEmailConfirm}
-                                disabled={isBulkLoading}
-                                title={isSuspended ? interviewActionBlockedMessage : undefined}
-                                className={cn(
-                                    "h-8 px-3 rounded-xl border border-gray-200 font-bold text-xs flex items-center gap-1.5 shadow-sm",
-                                    isSuspended ? "bg-gray-50 text-gray-400 cursor-not-allowed" : "bg-white text-gray-900 hover:bg-gray-50"
-                                )}
-                            >
-                                {isSuspended ? <Lock className="h-3.5 w-3.5" /> : <Mail className="h-3.5 w-3.5" />} Send Email
-                            </Button>
-                        </div>
-                    </div>
-                    {/* Group 2: Hiring */}
-                    <div className="rounded-2xl border border-indigo-100 bg-indigo-50/40 px-3 py-2.5">
-                        <p className="text-[9px] font-black uppercase tracking-[0.22em] text-indigo-600 mb-2">Hire</p>
-                        <div className="flex flex-wrap items-center gap-2">
-                            <Button
-                                size="sm"
-                                onClick={() => handleBulkStatus("hire")}
-                                disabled={isBulkLoading}
-                                className="h-8 px-3 rounded-xl border border-gray-200 bg-white text-gray-900 font-bold text-xs flex items-center gap-1.5 shadow-sm hover:bg-gray-50"
-                            >
-                                <BadgeCheck className="h-3.5 w-3.5" /> Hire
-                            </Button>
-                            <Button
-                                size="sm"
-                                onClick={() => handleBulkStatus("not_hired")}
-                                disabled={isBulkLoading}
-                                className="h-8 px-3 rounded-xl border border-gray-200 bg-white text-gray-900 font-bold text-xs flex items-center gap-1.5 shadow-sm hover:bg-gray-50"
-                            >
-                                <UserX className="h-3.5 w-3.5" /> Not Hired
-                            </Button>
-                        </div>
-                    </div>
-                    {/* Interview Link group: locked when suspended/quota, not hidden */}
-                    <div className="rounded-2xl border border-orange-100 bg-orange-50/40 px-3 py-2.5">
-                        <p className="text-[9px] font-black uppercase tracking-[0.22em] text-orange-600 mb-2">Interview Link</p>
-                        <div className="flex flex-wrap items-center gap-2">
-                            <Button
-                                size="sm"
-                                onClick={isInterviewActionBlocked ? undefined : handleBulkSendInterviewLink}
-                                disabled={isBulkLoading}
-                                title={isInterviewActionBlocked ? interviewActionBlockedMessage : undefined}
-                                className={cn(
-                                    "h-8 px-3 rounded-xl border border-gray-200 font-bold text-xs flex items-center gap-1.5 shadow-sm",
-                                    isInterviewActionBlocked ? "bg-gray-50 text-gray-400 cursor-not-allowed" : "bg-white text-gray-900 hover:bg-gray-50"
-                                )}
-                            >
-                                {isInterviewActionBlocked ? <Lock className="h-3.5 w-3.5" /> : <RefreshCw className="h-3.5 w-3.5" />} Resend Link
-                            </Button>
-                        </div>
-                    </div>
-                    {/* Group 4: Delete */}
-                    <div className="rounded-2xl border border-red-100 bg-red-50/40 px-3 py-2.5">
-                        <p className="text-[9px] font-black uppercase tracking-[0.22em] text-red-500 mb-2">Remove</p>
-                        <div className="flex flex-wrap items-center gap-2">
-                            <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => setDeleteConfirm({ mode: "bulk" })}
-                                disabled={isBulkLoading}
-                                className="h-8 px-3 rounded-xl border-red-200 text-red-600 font-bold text-xs flex items-center gap-1.5 hover:bg-red-50"
-                            >
-                                <Trash2 className="h-3.5 w-3.5" /> Delete
-                            </Button>
-                        </div>
-                    </div>
-                </div>
-            )}
             {error && (
-                <div className="bg-red-50 border border-red-100 rounded-2xl p-4 flex items-center justify-between animate-in slide-in-from-top-4">
-                    <div className="flex items-center gap-3">
-                        <AlertCircle className="h-4 w-4 text-red-600" />
-                        <span className="text-xs font-bold text-red-900 uppercase tracking-tighter">Sync Error: {error}</span>
-                    </div>
-                    <button onClick={clearError} className="text-red-600 hover:text-red-800 transition-colors">
-                        <XCircle className="h-4 w-4" />
-                    </button>
+                <div className="mx-4 mt-3 flex items-center justify-between rounded-xl border border-red-100 bg-red-50 px-4 py-3">
+                    <div className="flex items-center gap-2"><AlertCircle className="h-4 w-4 text-red-500" /><span className="text-[12px] font-semibold text-red-700">Sync Error: {error}</span></div>
+                    <button onClick={clearError}><XCircle className="h-4 w-4 text-red-400 hover:text-red-600" /></button>
                 </div>
             )}
-            <div className="group relative bg-white/40 backdrop-blur-xl rounded-[2.5rem] border border-white/40 shadow-[0_8px_24px_rgba(15,23,42,0.03)] overflow-hidden transition-all duration-700 hover:shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
-                <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-orange-400/0 via-[#F97316]/40 to-orange-400/0" />
-                <div className="relative w-full overflow-auto max-h-[86vh]">
+            {/* ── Table — flat screenshot style ── */}
+            <div className="overflow-x-auto">
+                <div className="relative w-full overflow-auto max-h-[80vh]">
                     <Table>
-                        <TableHeader className="bg-gray-50/50 sticky top-0 z-10 backdrop-blur-md">
+                        <TableHeader className="bg-gray-50/80 sticky top-0 z-10">
                             <TableRow className="border-b border-gray-100 hover:bg-transparent">
                                 {isSelectionMode && (
-                                    <TableHead className="w-[56px] pl-6 font-bold uppercase tracking-wider text-[11px] text-gray-500">
-                                        <button
-                                            type="button"
-                                            onClick={toggleSelectAll}
-                                            className="flex h-5 w-5 items-center justify-center rounded-md text-gray-400 hover:text-[#F97316] transition-colors"
-                                            aria-label={isAllSelected ? "Deselect all candidates on this page" : "Select all candidates on this page"}
-                                        >
+                                    <TableHead className="w-10 px-4">
+                                        <button type="button" onClick={toggleSelectAll} className="flex h-5 w-5 items-center justify-center rounded-md text-gray-400 hover:text-blue-600 transition-colors">
                                             {isAllSelected ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
                                         </button>
                                     </TableHead>
                                 )}
-                                <TableHead className="w-[60px] pl-8 font-bold uppercase tracking-wider text-[11px] text-gray-500">#</TableHead>
-                                <TableHead className="w-[320px] h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 pl-4">Candidate</TableHead>
-                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">
-                                    <div className="flex items-center justify-center gap-1">
-                                        <span>Score</span>
+                                <TableHead className="px-4 py-3 text-[11px] font-black uppercase tracking-wider text-gray-400">Candidate</TableHead>
+                                <TableHead className="px-4 py-3 text-[11px] font-black uppercase tracking-wider text-gray-400">
+                                    <div className="flex items-center gap-1">Score
                                         <DropdownMenu>
                                             <DropdownMenuTrigger asChild>
-                                                <button
-                                                    type="button"
-                                                    className="inline-flex h-5 w-5 items-center justify-center rounded-full text-gray-400 hover:text-[#F97316] transition-colors"
-                                                    aria-label="Sort score"
-                                                >
-                                                    <ChevronDown className="h-3.5 w-3.5" />
-                                                </button>
+                                                <button type="button" className="inline-flex h-4 w-4 items-center justify-center rounded text-gray-400 hover:text-gray-600"><ChevronDown className="h-3 w-3" /></button>
                                             </DropdownMenuTrigger>
-                                            <DropdownMenuContent align="center" className="w-48 p-2 rounded-xl shadow-xl border-gray-100 bg-white">
-                                                <DropdownMenuLabel className="px-3 py-2 text-[10px] font-black uppercase tracking-widest text-gray-400">
-                                                    Sort by score
-                                                </DropdownMenuLabel>
-                                                <DropdownMenuItem
-                                                    onClick={() => setScoreSort("default")}
-                                                    className="rounded-lg px-3 py-2 font-bold cursor-pointer transition-colors"
-                                                >
-                                                    Normal
-                                                </DropdownMenuItem>
-                                                <DropdownMenuItem
-                                                    onClick={() => setScoreSort("score_desc")}
-                                                    className="rounded-lg px-3 py-2 font-bold cursor-pointer transition-colors"
-                                                >
-                                                    Top scorers
-                                                </DropdownMenuItem>
-                                                <DropdownMenuItem
-                                                    onClick={() => setScoreSort("score_asc")}
-                                                    className="rounded-lg px-3 py-2 font-bold cursor-pointer transition-colors"
-                                                >
-                                                    Lowest scorers
-                                                </DropdownMenuItem>
+                                            <DropdownMenuContent align="center" className="w-40 p-1.5 rounded-xl shadow-lg border-gray-100 bg-white">
+                                                <DropdownMenuLabel className="px-2 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400">Sort</DropdownMenuLabel>
+                                                <DropdownMenuItem onClick={() => setScoreSort("default")} className="rounded-lg px-2 py-1.5 text-[12px] font-semibold cursor-pointer">Normal</DropdownMenuItem>
+                                                <DropdownMenuItem onClick={() => setScoreSort("score_desc")} className="rounded-lg px-2 py-1.5 text-[12px] font-semibold cursor-pointer">Top scorers</DropdownMenuItem>
+                                                <DropdownMenuItem onClick={() => setScoreSort("score_asc")} className="rounded-lg px-2 py-1.5 text-[12px] font-semibold cursor-pointer">Lowest scorers</DropdownMenuItem>
                                             </DropdownMenuContent>
                                         </DropdownMenu>
                                     </div>
                                 </TableHead>
-                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Resume</TableHead>
-                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Interview</TableHead>
-                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Hiring</TableHead>
-                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Resume Report</TableHead>
-                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Interview Report</TableHead>
-                                <TableHead className="text-right pr-8 h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500">Actions</TableHead>
+                                <TableHead className="px-4 py-3 text-[11px] font-black uppercase tracking-wider text-gray-400">ATS Status</TableHead>
+                                <TableHead className="px-4 py-3 text-[11px] font-black uppercase tracking-wider text-gray-400">Interview</TableHead>
+                                <TableHead className="px-4 py-3 text-[11px] font-black uppercase tracking-wider text-gray-400 text-center">ATS Report</TableHead>
+                                <TableHead className="px-4 py-3 text-[11px] font-black uppercase tracking-wider text-gray-400 text-center">Interview Report</TableHead>
+                                <TableHead className="px-4 py-3 text-[11px] font-black uppercase tracking-wider text-gray-400 text-right">Actions</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody className="[&_tr:last-child]:border-0">
@@ -629,15 +529,13 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                     </TableCell>
                                 </TableRow>
                             ) : (
-                                filteredCandidates.map((candidate: any, index: number) => {
+                                filteredCandidates.map((candidate: any) => {
                                     const displayName = candidate.fullName || candidate.name || "Unknown Candidate";
                                     const displayEmail = candidate.email || "";
                                     const statusValue = candidate.resumeStatus || candidate.status;
                                     const statusKey = normalizeStatusKey(statusValue) || "pending";
                                     const statusLabel = formatCandidateStatusLabel(statusValue);
                                     const isWaiting = statusKey === "waiting";
-                                    const isStarting = statusKey === "starting";
-                                    const isScoring = statusKey === "scoring";
                                     const isExtracting = statusKey === "extracting" || statusKey === "scoring" || statusKey === "starting" || statusKey === "waiting" || statusKey === "processing";
                                     const isProcessing = isExtracting;
                                     const isFailed = statusKey === "failed";
@@ -647,24 +545,10 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                     const interviewReportUnlocked =
                                         interviewStatusKey === "completed" ||
                                         interviewStatusKey === "finished";
-                                    const hiringStatusValue = candidate.hiringStatus;
-                                    const hiringStatusKey = normalizeStatusKey(hiringStatusValue) || "pending";
-                                    const hiringStatusLabel = formatCandidateStatusLabel(hiringStatusValue);
+                                    const hiringStatusKey = normalizeStatusKey(candidate.hiringStatus) || "pending";
                                     const score = Number(candidate.score ?? candidate.aiScore ?? 0);
-                                    const progressValue = Math.max(0, Math.min(100, Number(candidate.screeningProgress ?? (isProcessing ? score : 0) ?? 0)));
                                     const stageLabelRaw = String(candidate.screeningStage || "").trim().toLowerCase();
-                                    const stageLabel =
-                                        stageLabelRaw === "extracting"
-                                            ? "Extracting"
-                                            : stageLabelRaw === "scoring"
-                                                ? "Scoring"
-                                                : stageLabelRaw === "finalizing"
-                                                    ? "Finalizing"
-                                                    : isWaiting
-                                                        ? "Waiting"
-                                                        : isProcessing
-                                                            ? "Processing"
-                                                            : "";
+                                    const stageLabel = stageLabelRaw === "extracting" ? "Extracting" : stageLabelRaw === "scoring" ? "Scoring" : stageLabelRaw === "finalizing" ? "Finalizing" : isWaiting ? "Waiting" : isProcessing ? "Processing" : "";
                                     const canResendInterview =
                                         interviewStatusKey === "pending" ||
                                         interviewStatusKey === "in progress" ||
@@ -677,13 +561,13 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                             key={candidate.id}
                                             onClick={() => isSelectionMode && toggleSelected(candidate.id)}
                                             className={cn(
-                                                "group border-b border-white/20 hover:bg-white/40 transition-all duration-500",
+                                                "group border-b border-gray-100 hover:bg-gray-50/60 transition-colors",
                                                 isSelectionMode && "cursor-pointer",
-                                                selectedIds.has(candidate.id) && "bg-orange-50/30"
+                                                selectedIds.has(candidate.id) && "bg-blue-50/40"
                                             )}
                                         >
                                             {isSelectionMode && (
-                                                <TableCell className="pl-6 py-5" onClick={(e) => e.stopPropagation()}>
+                                                <TableCell className="px-4 py-4" onClick={(e) => e.stopPropagation()}>
                                                     <Checkbox
                                                         onClick={(e) => e.stopPropagation()}
                                                         checked={selectedIds.has(candidate.id)}
@@ -692,117 +576,76 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                                     />
                                                 </TableCell>
                                             )}
-                                            <TableCell className="pl-8 py-5 text-[12px] font-bold text-gray-400 tabular-nums">
-                                                {index + 1 + (pagination.page - 1) * pageSize}
-                                            </TableCell>
-                                            <TableCell className="py-5 pl-4">
-                                                <div className="flex items-center gap-4">
-                                                    <div className="relative group/avatar">
-                                                        <Avatar className="h-11 w-11 border-2 border-white shadow-sm ring-1 ring-gray-100 group-hover/avatar:scale-105 transition-transform duration-300">
-                                                            <AvatarImage src={`https://api.dicebear.com/7.x/initials/svg?seed=${displayName}`} />
-                                                            <AvatarFallback>{displayName.substring(0, 2).toUpperCase()}</AvatarFallback>
-                                                        </Avatar>
+                                            {/* no row number — matches screenshot */}
+                                            <TableCell className="px-4 py-3.5">
+                                                <div className="flex items-center gap-3">
+                                                    {/* Square letter avatar — exact screenshot style */}
+                                                    <div className="h-8 w-8 rounded-lg bg-gray-100 border border-gray-200 flex items-center justify-center text-[12px] font-bold text-gray-600 shrink-0 uppercase">
+                                                        {displayName.charAt(0)}
                                                     </div>
-                                                    <div className="flex flex-col relative">
-                                                        <span className="text-gray-900 font-extrabold text-[15px] leading-tight transition-colors">{displayName}</span>
-                                                        <span className="text-[11px] text-gray-400 font-bold mt-0.5">{displayEmail}</span>
+                                                    <div>
+                                                        <p className="text-[13px] font-semibold text-gray-900 leading-tight">{displayName}</p>
+                                                        <p className="text-[11px] text-gray-400 mt-0.5 truncate max-w-[180px]">{displayEmail}</p>
                                                     </div>
                                                 </div>
                                             </TableCell>
-                                            <TableCell className="py-5 text-center" onClick={(e) => e.stopPropagation()}>
-                                                <div className="flex justify-center">
-                                                    <Badge className={cn(
-                                                        "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest border-0 shadow-sm pointer-events-none",
-                                                        isExtracting ? "bg-orange-50 text-orange-700 w-full" :
-                                                        isFailed ? "bg-rose-50 text-rose-700 w-full" :
-                                                        score >= 80 ? "bg-emerald-50 text-emerald-700" :
-                                                            score >= 50 ? "bg-amber-50 text-amber-700" :
-                                                                "bg-rose-50 text-rose-700"
-                                                    )}>
-                                                        {isExtracting ? (
-                                                            <div className="w-full h-1.5 bg-orange-100 rounded-full overflow-hidden mt-0.5 mb-0.5">
-                                                                <div className="h-full bg-orange-500 transition-all duration-500 rounded-full" style={{ width: `${isWaiting ? 0 : isStarting ? 10 : isScoring ? 90 : Math.max(progressValue, 8)}%` }} />
-                                                            </div>
-                                                        ) : isFailed ? "Failed" : (score ? `${score}%` : "No score")}
-                                                    </Badge>
-                                                </div>
-                                            </TableCell>
-                                            <TableCell className="py-5 text-center" onClick={(e) => e.stopPropagation()}>
-                                                <div className="flex justify-center items-center h-full">
-                                                    <Badge variant="secondary" className={cn(
-                                                        "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest border-0 shadow-sm transition-all pointer-events-none",
-                                                        isExtracting ? "bg-orange-50 text-orange-700" :
-                                                        isFailed ? "bg-rose-50 text-rose-700" :
-                                                        statusKey === "rejected" ? "bg-rose-50 text-rose-700" :
-                                                            statusKey === "shortlisted" ? "bg-emerald-50 text-emerald-700" : "bg-slate-50 text-slate-500"
-                                                    )}>
-                                                        {isWaiting ? "Waiting 0%" : isStarting ? "Starting 10%" : isScoring ? "Scoring 90%" : isExtracting ? `Extracting ${progressValue}%` : statusKey === "rejected" ? "Rejected" : statusKey === "shortlisted" ? "Shortlisted" : statusLabel}
-                                                    </Badge>
-                                                </div>
-                                            </TableCell>
-                                            <TableCell className="py-5 text-center" onClick={(e) => e.stopPropagation()}>
-                                                <div className="flex justify-center items-center h-full">
-                                                    <Badge variant="secondary" className={cn(
-                                                        "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest border-0 shadow-sm transition-all pointer-events-none",
-                                                        interviewStatusKey === "completed" || interviewStatusKey === "finished" ? "bg-emerald-50 text-emerald-700" :
-                                                            interviewStatusKey === "in progress" ? "bg-blue-50 text-blue-700" :
-                                                                interviewStatusKey === "pending" ? "bg-slate-50 text-slate-500" :
-                                                                    "bg-amber-50 text-amber-700"
-                                                    )}>
-                                                        {interviewStatusLabel}
-                                                    </Badge>
-                                                </div>
-                                            </TableCell>
-                                            <TableCell className="py-5 text-center">
-                                                <div className="flex justify-center items-center h-full">
-                                                    <Badge variant="secondary" className={cn(
-                                                        "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest border-0 shadow-sm transition-all pointer-events-none",
-                                                        hiringStatusKey === "hired" ? "bg-emerald-50 text-emerald-700" :
-                                                            hiringStatusKey === "not hired" ? "bg-rose-50 text-rose-700" :
-                                                                hiringStatusKey === "not shortlisted" ? "bg-amber-50 text-amber-700" :
-                                                                    "bg-slate-50 text-slate-500"
-                                                    )}>
-                                                        {hiringStatusLabel}
-                                                    </Badge>
-                                                </div>
-                                            </TableCell>
-                                            <TableCell className="py-5 text-center" onClick={(e) => e.stopPropagation()}>
-                                                {isWaiting || isProcessing ? (
-                                                    <div className={cn("inline-flex h-8 w-8 items-center justify-center rounded-full", isWaiting ? "text-slate-400 bg-slate-50" : isStarting ? "text-blue-500 bg-blue-50" : "text-orange-500 bg-orange-50")}>
-                                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                            {/* Score */}
+                                            <TableCell className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}>
+                                                {isExtracting ? (
+                                                    <div className="flex items-center gap-2">
+                                                        <Loader2 className="h-3.5 w-3.5 animate-spin text-orange-500" />
+                                                        <span className="text-[12px] text-orange-600 font-medium">{stageLabel || "Processing"}</span>
                                                     </div>
                                                 ) : isFailed ? (
-                                                    <span
-                                                        className="inline-flex h-8 w-8 items-center justify-center rounded-full text-rose-400 bg-rose-50"
-                                                        title="Resume processing failed"
-                                                        aria-label="Resume processing failed"
-                                                    >
-                                                        <XCircle className="h-4 w-4" />
-                                                    </span>
+                                                    <span className="text-[12px] font-semibold text-rose-500">Failed</span>
                                                 ) : (
-                                                    <Link
-                                                        href={`/admin/candidates/${candidate.id}?report=resume&back=${encodeURIComponent(`/admin/candidates/drive/${driveId}`)}`}
-                                                        className="inline-flex h-8 w-8 items-center justify-center rounded-full text-[#F97316] transition-colors hover:bg-orange-50"
-                                                        title="Open resume report"
-                                                        aria-label="Open resume report"
-                                                    >
-                                                        <Eye className="h-4 w-4" />
-                                                    </Link>
+                                                    <span className={cn("text-[13px] font-bold",
+                                                        score >= 80 ? "text-emerald-600" : score >= 50 ? "text-amber-600" : score > 0 ? "text-rose-500" : "text-gray-300"
+                                                    )}>{score ? `${score}%` : "—"}</span>
                                                 )}
                                             </TableCell>
-                                            <TableCell className="py-5 text-center" onClick={(e) => e.stopPropagation()}>
-                                                {interviewReportUnlocked ? (
-                                                    <Link
-                                                        href={`/admin/candidates/${candidate.id}?back=${encodeURIComponent(`/admin/candidates/drive/${driveId}`)}`}
-                                                        className="inline-flex h-8 w-8 items-center justify-center rounded-full text-[#0D4D2E] transition-colors hover:bg-emerald-50"
-                                                        title="Open interview report"
-                                                        aria-label="Open interview report"
-                                                    >
-                                                        <FileText className="h-4 w-4" />
-                                                    </Link>
+                                            {/* Resume status */}
+                                            <TableCell className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}>
+                                                <span className={cn(
+                                                    "inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold border",
+                                                    isExtracting ? "bg-orange-50 text-orange-600 border-orange-200" :
+                                                    isFailed ? "bg-rose-50 text-rose-600 border-rose-200" :
+                                                    statusKey === "rejected" ? "bg-rose-50 text-rose-600 border-rose-200" :
+                                                    statusKey === "shortlisted" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                                                    "bg-gray-50 text-gray-500 border-gray-200"
+                                                )}>
+                                                    {isProcessing ? (stageLabel || "Processing") : statusKey === "rejected" ? "Rejected" : statusKey === "shortlisted" ? "Shortlisted" : statusLabel}
+                                                </span>
+                                            </TableCell>
+                                            {/* Interview status */}
+                                            <TableCell className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}>
+                                                <div className="flex items-center gap-2">
+                                                    <div className={cn("h-2 w-2 rounded-full shrink-0",
+                                                        interviewStatusKey === "completed" || interviewStatusKey === "finished" ? "bg-emerald-500" :
+                                                        interviewStatusKey === "in progress" || interviewStatusKey === "inprogress" ? "bg-blue-500" : "bg-gray-300"
+                                                    )} />
+                                                    <span className={cn("text-[12px] font-medium",
+                                                        interviewStatusKey === "completed" || interviewStatusKey === "finished" ? "text-emerald-700" :
+                                                        interviewStatusKey === "in progress" || interviewStatusKey === "inprogress" ? "text-blue-700" : "text-gray-400"
+                                                    )}>{interviewStatusLabel}</span>
+                                                </div>
+                                            </TableCell>
+                                            {/* Resume report */}
+                                            <TableCell className="px-4 py-3.5 text-center" onClick={(e) => e.stopPropagation()}>
+                                                {isWaiting || isProcessing ? (
+                                                    <Loader2 className="h-3.5 w-3.5 animate-spin text-orange-400 mx-auto" />
+                                                ) : isFailed ? (
+                                                    <XCircle className="h-3.5 w-3.5 text-rose-400 mx-auto" />
                                                 ) : (
-                                                    <span
-                                                        className="inline-flex h-8 w-8 items-center justify-center rounded-full text-gray-300"
+                                                    <Link href={`/admin/candidates/${candidate.id}?report=resume&back=${encodeURIComponent(`/admin/candidates/drive/${driveId}`)}`} className="text-[12px] font-semibold text-orange-500 hover:text-orange-700 transition-colors">View</Link>
+                                                )}
+                                            </TableCell>
+                                            {/* Interview report */}
+                                            <TableCell className="px-4 py-3.5 text-center" onClick={(e) => e.stopPropagation()}>
+                                                {interviewReportUnlocked ? (
+                                                    <Link href={`/admin/candidates/${candidate.id}?back=${encodeURIComponent(`/admin/candidates/drive/${driveId}`)}`} className="text-[12px] font-semibold text-emerald-600 hover:text-emerald-800 transition-colors">View</Link>
+                                                ) : (
+                                                    <span className="inline-flex items-center justify-center text-gray-300"
                                                         title="Interview report is locked until the interview is finished"
                                                         aria-label="Interview report locked"
                                                     >
@@ -810,19 +653,19 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                                     </span>
                                                 )}
                                             </TableCell>
-                                            <TableCell className="py-5 pr-8 text-right" onClick={(e) => e.stopPropagation()}>
+                                            <TableCell className="px-4 py-3.5 text-right" onClick={(e) => e.stopPropagation()}>
                                                 <DropdownMenu modal={false}>
                                                     <DropdownMenuTrigger asChild>
-                                                        <Button variant="ghost" size="icon" className="h-9 w-9 rounded-lg hover:bg-gray-50 transition-colors">
-                                                            <MoreHorizontal className="h-4 w-4 text-gray-400" />
-                                                        </Button>
+                                                        <button className="h-7 w-7 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors">
+                                                            <MoreHorizontal className="h-4 w-4" />
+                                                        </button>
                                                     </DropdownMenuTrigger>
                                                     <DropdownMenuContent
                                                         align="end"
                                                         side="bottom"
-                                                        sideOffset={8}
+                                                        sideOffset={6}
                                                         collisionPadding={12}
-                                                        className="w-64 max-h-[70vh] overflow-y-auto origin-top-right p-2 rounded-2xl shadow-xl border-gray-100 bg-white"
+                                                        className="w-56 p-1.5 rounded-xl shadow-lg border-gray-100 bg-white"
                                                     >
                                                         <DropdownMenuLabel className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400">Shortlist</DropdownMenuLabel>
                                                         <DropdownMenuItem onClick={() => handleUpdateStatus(candidate.id, { resumeStatus: "shortlisted" }, `${displayName} shortlisted`)} className="rounded-xl px-2.5 py-2 text-sm font-semibold text-emerald-600 cursor-pointer transition-colors hover:bg-emerald-50 hover:text-emerald-700 focus:text-emerald-700 focus:bg-emerald-50 data-[highlighted]:bg-emerald-50 data-[highlighted]:text-emerald-700">
@@ -833,7 +676,6 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                                             <UserX className="h-4 w-4 mr-2 shrink-0" />
                                                             Reject
                                                         </DropdownMenuItem>
-                                                        {/* Send Email — locked when suspended */}
                                                         <DropdownMenuItem
                                                             onClick={() => !isSuspended && openSendEmailConfirm({ id: candidate.id, name: displayName, resumeStatus: candidate.status })}
                                                             className={cn(
@@ -845,21 +687,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                                             {isSuspended ? <Lock className="h-4 w-4 mr-2 shrink-0" /> : <Mail className="h-4 w-4 mr-2 shrink-0" />}
                                                             Send Email
                                                         </DropdownMenuItem>
-                                                        <DropdownMenuLabel className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400">Hire</DropdownMenuLabel>
-                                                        <DropdownMenuItem
-                                                            onClick={() => handleUpdateStatus(candidate.id, { hiringStatus: "hired" }, `${displayName} hired - confirmation email sent`)}
-                                                            className="rounded-xl px-2.5 py-2 text-sm font-semibold cursor-pointer text-emerald-600 focus:text-emerald-700 focus:bg-emerald-50 transition-colors"
-                                                        >
-                                                            <BadgeCheck className="h-4 w-4 mr-2 shrink-0" />
-                                                            Hire
-                                                        </DropdownMenuItem>
-                                                        <DropdownMenuItem
-                                                            onClick={() => handleUpdateStatus(candidate.id, { hiringStatus: "not hired" }, `${displayName} marked as not hired`)}
-                                                            className="rounded-xl px-2.5 py-2 text-sm font-semibold cursor-pointer text-rose-600 focus:text-rose-700 focus:bg-rose-50 transition-colors"
-                                                        >
-                                                            <XCircle className="h-4 w-4 mr-2 shrink-0" />
-                                                            Not Hired
-                                                        </DropdownMenuItem>
+
                                                         <>
                                                             <DropdownMenuLabel className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400">Manage</DropdownMenuLabel>
                                                             <DropdownMenuItem
@@ -904,43 +732,20 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                     </Table>
                 </div>
             </div>
-            <div className="flex flex-col gap-4 border-t border-white/20 bg-white/20 px-4 py-5 backdrop-blur-xl rounded-2xl lg:flex-row lg:items-center lg:justify-between">
-                <div className="flex flex-wrap items-center gap-3">
-                    <p className="text-[13px] font-medium text-gray-500">
-                        Showing <span className="text-gray-900 font-bold">{pagination.total > 0 ? (pagination.page - 1) * pageSize + 1 : 0}</span> to <span className="text-gray-900 font-bold">{Math.min(pagination.page * pageSize, pagination.total)}</span> of <span className="text-gray-900 font-bold">{pagination.total}</span> candidates
+            {/* ── Pagination — flat style ── */}
+            <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 flex-wrap gap-3">
+                <div className="flex items-center gap-3">
+                    <p className="text-[12px] text-gray-500">
+                        Showing <span className="font-bold text-gray-800">{pagination.total > 0 ? (pagination.page - 1) * pageSize + 1 : 0}</span>–<span className="font-bold text-gray-800">{Math.min(pagination.page * pageSize, pagination.total)}</span> of <span className="font-bold text-gray-800">{pagination.total}</span>
                     </p>
-                    <div className="h-4 w-px bg-gray-200 hidden sm:block" />
-                    <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-black uppercase tracking-[0.22em] text-gray-400">Rows</span>
-                        <Select
-                            value={String(pageSize)}
-                            onValueChange={(value) => {
-                                const next = Number(value);
-                                setPageSize(next);
-                                clearSelection();
-                                fetchCandidates(1, next, driveId, resumeFilter, interviewFilter, hiringFilter, undefined, undefined, searchTerm, scoreSort);
-                            }}
-                        >
-                            <SelectTrigger className="h-9 w-[120px] rounded-xl border-gray-200 bg-white text-sm font-bold text-gray-700 shadow-none focus:ring-2 focus:ring-orange-100">
-                                <SelectValue placeholder="Rows" />
-                            </SelectTrigger>
-                            <SelectContent className="rounded-xl border-gray-100">
-                                {[20, 50, 100, 250, 500, 1000].map((option) => (
-                                    <SelectItem key={option} value={String(option)} className="rounded-lg font-semibold">
-                                        {option} / page
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
+                    <Select value={String(pageSize)} onValueChange={(v) => { const n = Number(v); setPageSize(n); clearSelection(); fetchCandidates(1, n, driveId, resumeFilter, interviewFilter, undefined, undefined, searchTerm, scoreSort); }}>
+                        <SelectTrigger className="h-7 w-28 rounded-lg border-gray-200 bg-white text-[12px] font-semibold text-gray-600 shadow-none"><SelectValue /></SelectTrigger>
+                        <SelectContent className="rounded-xl border-gray-100">{[20, 50, 100, 250, 500, 1000].map(o => <SelectItem key={o} value={String(o)} className="rounded-lg font-semibold text-[12px]">{o} / page</SelectItem>)}</SelectContent>
+                    </Select>
                 </div>
-                <div className="flex gap-3">
-                    <Button variant="outline" size="sm" className="h-10 px-6 rounded-xl border-gray-200 bg-white text-gray-500 font-bold hover:bg-gray-50 hover:text-[#F97316] hover:shadow-none disabled:opacity-30 transition-all shadow-none" disabled={pagination.page <= 1 || isLoading} onClick={() => handlePageChange(pagination.page - 1)}>
-                        Previous
-                    </Button>
-                    <Button variant="outline" size="sm" className="h-10 px-6 rounded-xl border-gray-200 bg-white text-gray-500 font-bold hover:bg-gray-50 hover:text-[#F97316] hover:shadow-none disabled:opacity-30 transition-all shadow-none" disabled={pagination.page >= pagination.totalPages || isLoading} onClick={() => handlePageChange(pagination.page + 1)}>
-                        Next
-                    </Button>
+                <div className="flex gap-2">
+                    <button disabled={pagination.page <= 1 || isLoading} onClick={() => handlePageChange(pagination.page - 1)} className="h-7 px-3 rounded-lg border border-gray-200 text-[12px] font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-40">Previous</button>
+                    <button disabled={pagination.page >= pagination.totalPages || isLoading} onClick={() => handlePageChange(pagination.page + 1)} className="h-7 px-3 rounded-lg border border-gray-200 text-[12px] font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-40">Next</button>
                 </div>
             </div>
             {emailConfirm && (() => {

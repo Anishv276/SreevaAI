@@ -52,7 +52,6 @@ type CandidateFetchParams = {
     driveId?: string;
     resumeStatus?: string;
     interviewStatus?: string;
-    hiringStatus?: string;
     startDate?: string;
     endDate?: string;
     search?: string;
@@ -61,7 +60,6 @@ type CandidateFetchParams = {
 export interface CandidateStats {
     shortlisted: number;
     rejected: number;
-    hired: number;
     interviewRunning: number;
     interviewPending: number;
     interviewCompleted: number;
@@ -79,7 +77,6 @@ interface CandidatesContextType {
         driveId?: string,
         resumeStatus?: string,
         interviewStatus?: string,
-        hiringStatus?: string,
         startDate?: string,
         endDate?: string,
         search?: string,
@@ -106,7 +103,6 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
     const [stats, setStats] = useState<CandidateStats>({
         shortlisted: 0,
         rejected: 0,
-        hired: 0,
         interviewRunning: 0,
         interviewPending: 0,
         interviewCompleted: 0
@@ -138,7 +134,6 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
         driveId?: string,
         resumeStatus?: string,
         interviewStatus?: string,
-        hiringStatus?: string,
         startDate?: string,
         endDate?: string,
         search?: string,
@@ -150,7 +145,6 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
             driveId || "all",
             resumeStatus || "all",
             interviewStatus || "all",
-            hiringStatus || "all",
             startDate || "none",
             endDate || "none",
             search || "",
@@ -163,7 +157,6 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
         driveId?: string,
         resumeStatus?: string,
         interviewStatus?: string,
-        hiringStatus?: string,
         startDate?: string,
         endDate?: string,
         search?: string,
@@ -176,13 +169,12 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
             driveId,
             resumeStatus,
             interviewStatus,
-            hiringStatus,
             startDate,
             endDate,
             search,
             sort,
         };
-        const key = buildFetchKey(page, limit, driveId, resumeStatus, interviewStatus, hiringStatus, startDate, endDate, search, sort);
+        const key = buildFetchKey(page, limit, driveId, resumeStatus, interviewStatus, startDate, endDate, search, sort);
         const now = Date.now();
         const inFlight = inFlightRequestsRef.current.get(key);
         if (inFlight) {
@@ -236,9 +228,6 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
                 }
                 if (interviewStatus && interviewStatus !== "all") {
                     params.set("interviewStatus", interviewStatus);
-                }
-                if (hiringStatus && hiringStatus !== "all") {
-                    params.set("hiringStatus", hiringStatus);
                 }
                 if (startDate) {
                     params.set("startDate", startDate);
@@ -328,14 +317,13 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
         driveId?: string,
         resumeStatus?: string,
         interviewStatus?: string,
-        hiringStatus?: string,
         startDate?: string,
         endDate?: string,
         search?: string,
         sort?: "default" | "score_desc" | "score_asc",
         options?: { force?: boolean; background?: boolean }
     ) => {
-        await fetchCandidatesInternal(page, limit, driveId, resumeStatus, interviewStatus, hiringStatus, startDate, endDate, search, sort, options);
+        await fetchCandidatesInternal(page, limit, driveId, resumeStatus, interviewStatus, startDate, endDate, search, sort, options);
     }, [fetchCandidatesInternal]);
     const scheduleStreamRefresh = useCallback(() => {
         if (refreshTimerRef.current !== null) {
@@ -351,7 +339,6 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
                 lastParams?.driveId,
                 lastParams?.resumeStatus,
                 lastParams?.interviewStatus,
-                lastParams?.hiringStatus,
                 lastParams?.startDate,
                 lastParams?.endDate,
                 lastParams?.search,
@@ -476,7 +463,6 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
                 lastParams?.driveId,
                 lastParams?.resumeStatus,
                 lastParams?.interviewStatus,
-                lastParams?.hiringStatus,
                 lastParams?.startDate,
                 lastParams?.endDate,
                 lastParams?.search,
@@ -504,7 +490,6 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
                     lastParams?.driveId,
                     lastParams?.resumeStatus,
                     lastParams?.interviewStatus,
-                    lastParams?.hiringStatus,
                     lastParams?.startDate,
                     lastParams?.endDate,
                     lastParams?.search,

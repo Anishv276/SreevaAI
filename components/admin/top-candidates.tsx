@@ -32,7 +32,6 @@ const RANK_BADGE: Record<number, { bg: string; text: string; label: string }> = 
 };
 const STATUS_CONFIG: Record<string, { dot: string; text: string; bg: string; label: string }> = {
     Shortlisted:   { dot: "bg-emerald-500", text: "text-emerald-700", bg: "bg-emerald-50",  label: "Shortlisted" },
-    Hired:         { dot: "bg-emerald-500", text: "text-emerald-700", bg: "bg-emerald-50",  label: "Hired" },
     Reviewing:     { dot: "bg-amber-500",   text: "text-amber-700",   bg: "bg-amber-50",    label: "Reviewing" },
     "In progress": { dot: "bg-blue-500",    text: "text-blue-700",    bg: "bg-blue-50",     label: "In Progress" },
     Pending:       { dot: "bg-gray-300",    text: "text-gray-500",    bg: "bg-gray-50",     label: "Pending" },

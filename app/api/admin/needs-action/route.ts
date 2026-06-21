@@ -15,8 +15,7 @@ export async function GET() {
             where: {
                 drive: { orgId },
                 interview: { status: "COMPLETED" },
-                hiringStatus: { in: ["pending", "PENDING"] },
-                resumeStatus: { notIn: ["SHORTLISTED", "shortlisted", "REJECTED", "rejected", "HIRED", "hired"] },
+                resumeStatus: { notIn: ["SHORTLISTED", "shortlisted", "REJECTED", "rejected"] },
             },
             select: {
                 id: true,
@@ -37,7 +36,6 @@ export async function GET() {
                     { interview: { inviteSentAt: null, status: "PENDING" } },
                 ],
                 resumeStatus: { notIn: ["REJECTED", "rejected"] },
-                hiringStatus: { notIn: ["HIRED", "hired", "REJECTED", "rejected"] },
             },
             select: {
                 id: true,
@@ -52,7 +50,6 @@ export async function GET() {
             where: {
                 drive: { orgId },
                 resumeStatus: { in: ["SHORTLISTED", "shortlisted"] },
-                hiringStatus: { in: ["pending", "PENDING"] },
             },
             select: {
                 id: true,

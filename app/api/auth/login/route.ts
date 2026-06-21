@@ -56,12 +56,12 @@ export async function POST(request: Request) {
                 httpOnly: true,
                 secure: process.env.NODE_ENV === "production",
                 sameSite: "lax",
-                maxAge: 60 * 60 * 2, // 2 hours (sliding — proxy refreshes on activity)
+                maxAge: 60 * 60 * 12, // 12 hours
                 path: "/",
             });
             return response;
         }
-        const userProfile = (await prisma.user.findFirst({
+        const userProfile = await prisma.user.findFirst({
             where: {
                 email: {
                     equals: normalizedEmail,
@@ -69,7 +69,7 @@ export async function POST(request: Request) {
                 },
             },
             include: { organization: { select: { onboardingComplete: true, status: true } } }
-        } as any)) as any;
+        });
         if (!userProfile || !userProfile.password) {
             // Spend the same time as a real password check so response timing
             // doesn't reveal whether the email is registered.
@@ -100,7 +100,7 @@ export async function POST(request: Request) {
             httpOnly: true,
             secure: process.env.NODE_ENV === "production",
             sameSite: "lax",
-            maxAge: 60 * 60 * 2, // 2 hours (sliding — proxy refreshes on activity) // 7 days
+            maxAge: 60 * 60 * 12, // 12 hours
             path: "/",
         });
         return response;

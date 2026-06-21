@@ -12,6 +12,7 @@ interface DriveResumeUploadModalProps {
     onOpenChange: (open: boolean) => void;
     driveId: string;
     driveName: string;
+    mode?: "ats" | "interview-only";
     onUploaded?: () => void;
 }
 function fmt(bytes: number) {
@@ -19,7 +20,7 @@ function fmt(bytes: number) {
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
-export function DriveResumeUploadModal({ open, onOpenChange, driveId, driveName, onUploaded }: DriveResumeUploadModalProps) {
+export function DriveResumeUploadModal({ open, onOpenChange, driveId, driveName, mode = "ats", onUploaded }: DriveResumeUploadModalProps) {
     const [files, setFiles] = useState<File[]>([]);
     const [dragging, setDragging] = useState(false);
     const [uploading, setUploading] = useState(false);
@@ -50,7 +51,10 @@ export function DriveResumeUploadModal({ open, onOpenChange, driveId, driveName,
             const res = await fetch(`/api/drives/${driveId}/resume-screening`, { method: "POST", body: fd });
             if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Upload failed");
             setDone(true);
-            toast.success(`${files.length} resume${files.length > 1 ? "s" : ""} successfully added for AI screening.`);
+            toast.success(mode === "interview-only"
+                ? `${files.length} resume${files.length > 1 ? "s" : ""} uploaded — invite${files.length > 1 ? "s" : ""} will be sent automatically after scoring.`
+                : `${files.length} resume${files.length > 1 ? "s" : ""} successfully added for AI screening.`
+            );
             onUploaded?.();
             setTimeout(() => { reset(); onOpenChange(false); }, 1200);
         } catch (e) {
@@ -173,7 +177,7 @@ export function DriveResumeUploadModal({ open, onOpenChange, driveId, driveName,
                             )}>
                             {done ? <><CheckCircle2 className="h-3.5 w-3.5" /> Done</>
                                 : uploading ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Uploading…</>
-                                    : <>Start Screening {files.length > 0 && <span className="rounded bg-white/20 px-1.5 py-0.5 text-[10px]">{files.length}</span>}</>}
+                                    : <>{mode === "interview-only" ? "Upload & Auto-Invite" : "Start Screening"} {files.length > 0 && <span className="rounded bg-white/20 px-1.5 py-0.5 text-[10px]">{files.length}</span>}</>}
                         </button>
                     </div>
                 </div>

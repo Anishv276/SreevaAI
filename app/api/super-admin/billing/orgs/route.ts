@@ -7,7 +7,7 @@ export async function GET() {
     if (!session || session.role !== "SUPER_ADMIN") {
       return NextResponse.json({ error: "Unauthorized access" }, { status: 403 });
     }
-    const orgs = (await prisma.organization.findMany({
+    const orgs = await prisma.organization.findMany({
       orderBy: { createdAt: "desc" },
         select: {
             id: true,
@@ -20,8 +20,8 @@ export async function GET() {
             interviewQuotaUsed: true,
             creditsUsed: true,
             createdAt: true,
-        } as any,
-    } as any)) as any[];
+        },
+    });
     return NextResponse.json({
         orgs: orgs.map((org) => ({
         ...org,

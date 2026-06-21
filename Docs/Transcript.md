@@ -1,27 +1,21 @@
-Interviewer[4]: Hi Vamsi, I'm Ishitha. Good to have you here. How are you doing today?
-Candidate[8]: Yeah. I'm doing great, Shita. How about you?
-Interviewer[11]: Alright. Are you ready to begin?
-Candidate[15]: Yeah. Let's go ahead.
-Interviewer[25]: Alright, let's get into it — can you walk me through what you built for the Multi Channel Lead Qualification System and what your specific role was?
-Candidate[33]: Yeah. Everything was own goal. So... and that was not a team project.
-Interviewer[43]: Can you tell me more about the part of the system you personally worked on and what problem it was meant to solve?
-Candidate[49]: So, like, what do you mean?
-Interviewer[59]: Can you walk me through the steps you took to build that system, and share what you found most effective or surprising during the process?
-Candidate[83]: So the project was really impressive. You know, I build it for client, and client was really impressed. So this is multichannel. Like, it comes from Instagram. Whatever the DMS come from Instagram, Facebook, and wherever the sources it has, then our AI will analyze the message, and it will reply to them. This is what the surprising moment.
-Interviewer[95]: Can you describe the exact sequence of actions you took when building this system, and share any particular techniques or tools that made a difference in your process?
-Candidate[106]: Yeah. Moreover, listen. Open AI made a lot of difference. I like the open AI part. Oh, the hallucination. I mean, how they given... giving replies or not.
-Interviewer[117]: Can you tell me about the part of the lead qualification system you were responsible for building and what specific challenge it addressed?
-Candidate[128]: Much... okay. I'm not sure. Sorry.
-Interviewer[142]: Oh, interesting. What was the main challenge you aimed to solve with the system you built using Python and DuckDB for Sensex data analysis?
-Candidate[164]: So... okay. Fine. So the thing is when I was building the I was unsure about the database. So then I started to learn about the so I go to know it's a very lightweight. But before on all, I worked on queries. So that was really new for me. So somehow, we got it out.
-Interviewer[178]: Can you walk me through the step-by-step process you followed to build the Sensex analysis system, highlighting any particular challenges or surprises you faced along the way?
-Candidate[187]: Okay. Fine. So not sure. I forgot the project.
-Interviewer[198]: Can you tell me about a data analysis or visualization project you've worked on that you’re proud of, and what tools or techniques you used?
-Candidate[206]: What data analysis I worked? I didn't work on any data analysis.
-Interviewer[219]: Oh, interesting. What was your role in setting up the data sync between the CRM and outbound tools to ensure real-time updates?
-Candidate[240]: Can you repeat it again?
-Interviewer[247]: Can you tell me what you did to make sure the CRM and outbound tools shared data quickly and correctly?
-Candidate[251]: I didn't work on CRM.
-Interviewer[264]: Oh, interesting. What was the main challenge you aimed to solve with the automation workflows in the personal brand system you built?
-Candidate[278]: No. I don't remember.
-Interviewer[288]: Oh, interesting. What was the main challenge you wanted to solve with the Sensex data visualization?
+Interviewer[3]: Hi Vamsi, I'm Ishitha. How are you doing?
+Candidate[7]: Yeah. I'm doing great. How about you?
+Interviewer[14]: I’ll be conducting your interview for the GTM Engineer role today. Are you ready to get started?
+Candidate[18]: Yeah. I'm ready. Let's go ahead.
+Interviewer[28]: Let’s jump right in — what exactly did you build for the multi-channel lead qualification system, and what was your specific role in it?
+Candidate[35]: Yeah. specific one was that I build everything on own.
+Interviewer[48]: When you say you built everything on your own for the multi-channel lead qualification system, can you tell me which particular components or features you were responsible for?
+Candidate[83]: Yeah. So I built everything on own. There is no responsibility on features. So to be straight, uh, I was working on the multichannel qualification part because of client. So he told me that whatever the she's getting from multiple sources, we have to, uh, then, uh, let's take example. We have to use an automation then issue... reply to the... all of the people who are really interested to... who are interested and who are... a time passes.
+Interviewer[98]: Could you walk me through the exact steps you took to set up the lead qualification process? How did you decide on the criteria for qualifying leads, and did you encounter any unexpected challenges along the way?
+Candidate[117]: Okay. So what I faced was... so during when I was building, then I was building this project... I mean, this automation, I was getting lot of a hallucinations. So that was the main thing that I faced a lot.
+Interviewer[127]: What specific steps did you take to set up the automation for the lead qualification, and how did you test whether each part was working as intended?
+Candidate[143]: No. I didn't. The automation early qualification, I did use an open ALM for criteria part and all. The criteria given client is budget, timeline, urgency.
+Interviewer[157]: Reflecting on your approach, what do you think you could have done differently to ensure the automation captured and qualified leads more effectively, especially given the criteria you mentioned?
+Candidate[165]: Not as... not sure exactly.
+Interviewer[177]: What specific steps did you take to build the automation for lead qualification across the different channels, and can you share what parts of that process worked well or caught you off guard?
+Candidate[182]: I don't know. I forgot.
+Interviewer[195]: When you were actually working on setting up the automation, what specific actions did you take step by step, and what parts of that process felt straightforward versus surprising or difficult?
+Candidate[200]: I forgot actually. I don't remember.
+Interviewer[213]: Oh, interesting. What was one challenge you faced when designing the data cleaning process for the Sensex analysis system, and how did you address it?
+Candidate[218]: I forgot about Sensex. I didn't remember that.
+Interviewer[233]: When you built the Sensex analysis system, what was the main data cleaning step you focused on yourself, and what problem did it solve?

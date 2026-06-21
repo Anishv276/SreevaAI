@@ -10,7 +10,6 @@ import { generateId } from "@/lib/ids";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
     try {
-        const prismaAny = prisma as any;
         const session = await getSession();
         if (!session || !isAdminRole(session.role)) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -20,7 +19,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
             console.error("[INTERVIEW] Missing applicationId in params");
             return NextResponse.json({ error: "Application ID required" }, { status: 400 });
         }
-        const application = await prismaAny.application.findUnique({
+        const application = await prisma.application.findUnique({
             where: { id: applicationId },
             include: {
                 drive: {
@@ -56,18 +55,21 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         }
         const resumeStatus = (application.resumeStatus || "").toUpperCase();
         const hiringStatus = (application.hiringStatus || "").toUpperCase();
-        const canSendAgain = ["SHORTLISTED", "ACCEPTED"].includes(resumeStatus) || ["SHORTLISTED", "ACCEPTED"].includes(hiringStatus);
+        // Allow: shortlisted/accepted (ATS flow), skipped/completed (interview-only flow)
+        const canSendAgain =
+            ["SHORTLISTED", "ACCEPTED", "SKIPPED", "COMPLETED"].includes(resumeStatus) ||
+            ["SHORTLISTED", "ACCEPTED"].includes(hiringStatus);
         if (!canSendAgain) {
             console.error(`[INTERVIEW] Status mismatch. Resume: ${resumeStatus}, Hiring: ${hiringStatus}`);
             return NextResponse.json({
-                error: `Only shortlisted candidates can receive a fresh interview link. Current statuses are resume="${application.resumeStatus}" and hiring="${application.hiringStatus}".`
+                error: `Candidate is not eligible for an interview link yet. Current resume status: "${application.resumeStatus}".`
             }, { status: 400 });
         }
         if (!application.email) {
             return NextResponse.json({ error: "Candidate email is missing" }, { status: 400 });
         }
         const driveDeadline = application.drive?.deadline ? new Date(application.drive.deadline) : null;
-        const interviewRecord = await prismaAny.interview.upsert({
+        const interviewRecord = await prisma.interview.upsert({
             where: { applicationId },
             update: {
                 inviteSentAt: new Date(),
@@ -97,14 +99,14 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
             jobTitle: application.drive?.title || "Unknown Role",
             orgName: application.drive?.organization?.name || "Sreeva AI",
             interviewLink,
-            schedulingDeadline: (application.drive as any)?.deadline ?? null,
+            schedulingDeadline: application.drive?.deadline ?? null,
         });
         if (!mailResult.success) {
             return NextResponse.json({
                 error: `Interview link email could not be sent: ${mailResult.error}`,
             }, { status: 500 });
         }
-        await prismaAny.application.update({
+        await prisma.application.update({
             where: { id: applicationId },
             data: { interviewStatus: "pending", updatedAt: new Date() },
         });

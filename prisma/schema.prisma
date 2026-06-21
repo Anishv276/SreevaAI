@@ -85,11 +85,11 @@ model Drive {
   deadline           DateTime?
   aiName             String?           @default("Ishitha")
   voiceId            String?           @default("9626c31c-bec5-4cca-baa8-f8ba9e84c8bc")
+  interviewMode      String?           @default("ats")
   isDeleted          Boolean           @default(false)
   applications       Application[]
   creator            User              @relation("CreatedDrives", fields: [creatorId], references: [id], onDelete: Cascade)
   organization       Organization?     @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  resumeBatches      ResumeBatch[]
 
   @@index([orgId])
   @@index([orgId, createdAt(sort: Desc)])
@@ -113,17 +113,14 @@ model Application {
   hiringStatus    String       @default("pending")
   fullScanReport  String?
   isDeleted       Boolean      @default(false)
-  bulkBatchId     String?
   fileName        String?
   drive           Drive        @relation(fields: [driveId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   interview       Interview?
-  resumeBatch     ResumeBatch? @relation(fields: [bulkBatchId], references: [id], onDelete: SetNull)
 
   @@index([driveId, resumeStatus, hiringStatus, updatedAt])
   @@index([driveId, aiScore(sort: Desc), updatedAt(sort: Desc)])
   @@index([createdAt(sort: Desc)])
   @@index([updatedAt(sort: Desc)])
-  @@index([bulkBatchId])
 }
 
 /// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
@@ -179,24 +176,6 @@ model SupportTicket {
   @@index([status, createdAt])
   @@index([interviewId, createdAt])
   @@index([applicationId])
-}
-
-model ResumeBatch {
-  id             String        @id @default(cuid())
-  driveId        String
-  orgId          String
-  status         String        @default("PROCESSING")
-  totalCount     Int           @default(0)
-  processedCount Int           @default(0)
-  failedCount    Int           @default(0)
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-  completedAt    DateTime?
-  isDeleted      Boolean       @default(false)
-  drive          Drive         @relation(fields: [driveId], references: [id], onDelete: Cascade)
-  applications   Application[]
-
-  @@index([driveId, status])
 }
 
 model EngineVoice {

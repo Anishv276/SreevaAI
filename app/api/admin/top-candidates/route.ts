@@ -30,7 +30,6 @@ export async function GET(req: Request) {
                 fullName: true,
                 aiScore: true,
                 resumeStatus: true,
-                hiringStatus: true,
                 drive: { select: { title: true, role: true } },
                 interview: {
                     select: {
@@ -45,13 +44,10 @@ export async function GET(req: Request) {
             // Derive display status
             const statusMap: Record<string, string> = {
                 shortlisted: "Shortlisted",
-                hired: "Hired",
                 rejected: "Rejected",
                 pending: "Pending",
             };
-            const compositeStatus =
-                normalizeStatus(app.hiringStatus) ||
-                normalizeStatus(app.resumeStatus);
+            const compositeStatus = normalizeStatus(app.resumeStatus);
             const displayStatus = statusMap[compositeStatus] ?? "Reviewing";
             // Initials from name
             const initials = (app.fullName || "")

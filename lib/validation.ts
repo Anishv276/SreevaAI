@@ -19,6 +19,7 @@ export const createDriveSchema = z.object({
   aiName: z.string().optional(),
   screeningThreshold: z.coerce.number().int().optional(),
   screeningCriteria: z.union([z.string(), z.record(z.string(), z.any())]).optional(),
+  interviewMode: z.enum(["ats", "interview-only"]).optional(),
 });
 export const updateDriveSchema = createDriveSchema.partial();
 export const bulkDeleteSchema = z.object({

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { createDriveSchema, bulkDeleteSchema } from "@/lib/validation";
 import { getSession } from "@/lib/auth";
 import { sanitizeObject } from "@/lib/utils";
@@ -30,26 +31,21 @@ export async function GET(request: Request) {
         const orgId = searchParams.get("orgId");
         const startDate = searchParams.get("startDate");
         const endDate = searchParams.get("endDate");
-        const where: any = {};
-        if (startDate) {
-            where.createdAt = {
-                ...where.createdAt,
-                gte: new Date(startDate)
-            };
-        }
-        if (endDate) {
-            const end = new Date(endDate);
-            end.setHours(23, 59, 59, 999);
-            where.createdAt = {
-                ...where.createdAt,
-                lte: end
-            };
+        const where: Prisma.DriveWhereInput = {};
+        if (startDate || endDate) {
+            where.createdAt = {};
+            if (startDate) (where.createdAt as Prisma.DateTimeFilter).gte = new Date(startDate);
+            if (endDate) {
+                const end = new Date(endDate);
+                end.setHours(23, 59, 59, 999);
+                (where.createdAt as Prisma.DateTimeFilter).lte = end;
+            }
         }
         // -- ADMIN ACCESS: Filter by Role & Org -----------
-        if ((session as any).role === "SUPER_ADMIN") {
+        if (session.role === "SUPER_ADMIN") {
             if (orgId) where.orgId = orgId;
         } else {
-            where.orgId = (session as any).orgId;
+            where.orgId = session.orgId;
         }
         // Search filters
         if (search) {
@@ -59,7 +55,7 @@ export async function GET(request: Request) {
             ];
         }
         const [drives, total] = await Promise.all([
-            (prisma.drive as any).findMany({
+            prisma.drive.findMany({
                 where,
                 orderBy: { createdAt: "desc" },
                 skip,
@@ -81,6 +77,7 @@ export async function GET(request: Request) {
                     deadline: true,
                     aiName: true,
                     voiceId: true,
+                    interviewMode: true,
                     _count: {
                         select: { applications: { where: { isDeleted: false } } },
                     },
@@ -88,7 +85,7 @@ export async function GET(request: Request) {
             }),
             prisma.drive.count({ where })
         ]);
-        const formattedDrives = drives.map((drive: any) => {
+        const formattedDrives = drives.map((drive) => {
             const screeningThreshold = Number(drive.screeningThreshold ?? 60);
             const parsedScreening = parseDriveScreeningSettings(
                 drive.screeningCriteria,
@@ -103,7 +100,7 @@ export async function GET(request: Request) {
                     criteria: parsedScreening.criteria,
                 }),
                 aiScreening: {
-                    enabled: (drive as any).aiScreeningEnabled
+                    enabled: true,
                 },
                 interviewQuestions: drive.interviewQuestions ? JSON.parse(drive.interviewQuestions) : []
             };
@@ -198,7 +195,7 @@ export async function POST(request: Request) {
             ...(data.screeningThreshold !== undefined ? { threshold: data.screeningThreshold } : {}),
         };
         const driveId = generateId("drv", data.title);
-        const drive = await (prisma.drive as any).create({
+        const drive = await prisma.drive.create({
             data: {
                 id: driveId,
                 title: data.title,
@@ -209,14 +206,14 @@ export async function POST(request: Request) {
                 screeningCriteria: JSON.stringify(mergedScreeningCriteria),
                 screeningThreshold: data.screeningThreshold ?? 60,
                 deadline: normalizeDeadlineDate(data.deadline as string | null | undefined),
-                // Interview configuration
                 interviewLanguage: data.interviewLanguage || "English",
                 interviewQuestions: data.interviewQuestions ? JSON.stringify(data.interviewQuestions) : "[]",
                 aiName: data.aiName || "Ishitha",
-                orgId: (session as any).orgId,
-                creatorId: (session as any).userId,
+                interviewMode: data.interviewMode || "ats",
+                orgId: session.orgId!,
+                creatorId: session.userId,
                 ...aiConfig,
-            } as any,
+            },
         });
         return NextResponse.json(drive);
     } catch (error: any) {
@@ -256,35 +253,30 @@ export async function DELETE(request: Request) {
                 where: { id: { in: validIds } },
                 data: { isDeleted: true }
             });
-            // 2. Soft Delete Resume Batches
-            await tx.resumeBatch.updateMany({
-                where: { driveId: { in: validIds } },
-                data: { isDeleted: true }
-            });
-            // 3. Soft Delete Applications
+            // 2. Soft Delete Applications
             await tx.application.updateMany({
                 where: { driveId: { in: validIds } },
                 data: { isDeleted: true }
             });
             // 5. Soft Delete Interviews (rename unique keys via Raw SQL)
             if (validIds.length > 0) {
-                const placeholders = validIds.map(id => `'${id}'`).join(',');
-                await tx.$executeRawUnsafe(`
-                    UPDATE "Interview" 
-                    SET "isDeleted" = true, 
-                        "applicationId" = 'del_' || ${timestamp} || '_' || "applicationId", 
+                const idList = Prisma.join(validIds);
+                await tx.$executeRaw`
+                    UPDATE "Interview"
+                    SET "isDeleted" = true,
+                        "applicationId" = 'del_' || ${timestamp} || '_' || "applicationId",
                         "accessToken" = 'del_' || ${timestamp} || '_' || "accessToken"
-                    WHERE "applicationId" IN (SELECT "id" FROM "Application" WHERE "driveId" IN (${placeholders}))
-                `);
+                    WHERE "applicationId" IN (SELECT "id" FROM "Application" WHERE "driveId" IN (${idList}))
+                `;
                 // 6. Soft Delete Support Tickets
-                await tx.$executeRawUnsafe(`
+                await tx.$executeRaw`
                     UPDATE "SupportTicket" SET "status" = 'DELETED'
                     WHERE "interviewId" IN (
                         SELECT "id" FROM "Interview" WHERE "applicationId" IN (
-                            SELECT "id" FROM "Application" WHERE "driveId" IN (${placeholders})
+                            SELECT "id" FROM "Application" WHERE "driveId" IN (${idList})
                         )
                     )
-                `);
+                `;
             }
         });
         return NextResponse.json({ message: `${validIds.length} drives soft-deleted successfully` });

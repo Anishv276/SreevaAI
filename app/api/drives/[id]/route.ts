@@ -26,7 +26,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
     try {
         const { id } = await params;
-        const drive = await (prisma.drive as any).findFirst({
+        const drive = await prisma.drive.findFirst({
             where: {
                 id
             },
@@ -48,6 +48,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
                 orgId: true,
                 aiName: true,
                 voiceId: true,
+                interviewMode: true,
                 organization: {
                     select: {
                         status: true,
@@ -60,16 +61,16 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
                     select: { applications: { where: { isDeleted: false } } },
                 },
             },
-        } as any);
+        });
         if (!drive) {
             return NextResponse.json({ error: "Drive not found" }, { status: 404 });
         }
-        if ((drive as any).organization && isOrgRestrictedStatus((drive as any).organization.status)) {
+        if (drive.organization && isOrgRestrictedStatus(drive.organization.status)) {
             return NextResponse.json({ error: "This organization is currently suspended. Access is restricted." }, { status: 403 });
         }
-        const screeningThreshold = Number((drive as any).screeningThreshold ?? 60);
+        const screeningThreshold = Number(drive.screeningThreshold ?? 60);
         const parsedCriteria = parseDriveScreeningSettings(
-            (drive as any).screeningCriteria,
+            drive.screeningCriteria,
             screeningThreshold,
         );
         const screeningCriteria = JSON.stringify({
@@ -78,7 +79,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         });
         const interviewQuestions = (() => {
             try {
-                const raw = (drive as any).interviewQuestions;
+                const raw = drive.interviewQuestions;
                 return raw ? JSON.parse(raw) : [];
             } catch {
                 return [];
@@ -86,11 +87,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         })();
         return NextResponse.json({
             ...drive,
-            orgId: (drive as any).orgId,
+            orgId: drive.orgId,
             screeningThreshold,
             screeningCriteria,
             interviewQuestions,
-            applicants: (drive as any)._count?.applications || 0,
+            applicants: drive._count?.applications || 0,
             aiScreening: {
                 enabled: true,
                 weights: {} // Schema doesn't have a weights field yet
@@ -147,11 +148,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
             );
         }
         const data = result.data;
-        const existingDrive = await (prisma.drive as any).findUnique({
+        const existingDrive = await prisma.drive.findUnique({
             where: { id: driveId },
             select: {
                 orgId: true,
                 extractedDetails: true,
+                jdPreviewUrl: true,
                 voiceId: true,
             },
         });
@@ -162,14 +164,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         if (!isSuperAdmin && existingDrive.orgId !== session.orgId) {
             return NextResponse.json({ error: "Access Denied: Ownership required to modify drive" }, { status: 403 });
         }
-        const updateData: any = {};
+        const updateData: Record<string, unknown> = {};
         if (data.title !== undefined) updateData.title = data.title;
         if (data.role !== undefined) updateData.role = data.role;
         if (data.deadline !== undefined) updateData.deadline = normalizeDeadlineDate(data.deadline as string | null | undefined);
         if (data.jdFileName !== undefined) updateData.jdFileName = data.jdFileName;
         if (data.jdPreviewUrl !== undefined) {
             const persistedJdUrl = data.jdPreviewUrl?.startsWith("blob:")
-                ? (existingDrive as any).jdPreviewUrl || null
+                ? existingDrive.jdPreviewUrl || null
                 : (data.jdPreviewUrl || null);
             if (persistedJdUrl !== null) {
                 updateData.jdPreviewUrl = persistedJdUrl;
@@ -186,9 +188,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
                 // derived fields removed — extractedDetails is source of truth
             } catch { /* keep existing values if parse fails */ }
         }
-        if (data.screeningThreshold !== undefined || (data as any).screeningCriteria !== undefined) {
+        if (data.screeningThreshold !== undefined || data.screeningCriteria !== undefined) {
             if (data.screeningThreshold !== undefined) updateData.screeningThreshold = data.screeningThreshold;
-            const rawCriteria = (data as any).screeningCriteria;
+            const rawCriteria = data.screeningCriteria;
             const parsedCriteria = typeof rawCriteria === "string"
                 ? safeJsonParse(rawCriteria, {})
                 : (rawCriteria || {});
@@ -209,15 +211,16 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
             })
         );
         if (data.aiName !== undefined) updateData.aiName = data.aiName;
+        if (data.interviewMode !== undefined) updateData.interviewMode = data.interviewMode;
         if (Object.keys(updateData).length === 0) {
             return NextResponse.json(
                 { error: "No valid fields provided for update" },
                 { status: 400 }
             );
         }
-        const updated = await (prisma.drive as any).update({
+        const updated = await prisma.drive.update({
             where: { id: driveId },
-            data: updateData as any,
+            data: updateData,
         });
         return NextResponse.json(updated);
     } catch (error: any) {
@@ -257,9 +260,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
             const timestamp = Date.now().toString();
             // 1. Soft Delete Drive
             await tx.$executeRaw`UPDATE "Drive" SET "isDeleted" = true WHERE "id" = ${driveId}`;
-            // 2. Soft Delete Resume Batches
-            await tx.$executeRaw`UPDATE "ResumeBatch" SET "isDeleted" = true WHERE "driveId" = ${driveId}`;
-            // 3. Soft Delete Resume Candidates
+            // 2. Soft Delete Resume Candidates
             await tx.$executeRaw`UPDATE "ResumeCandidate" SET "isDeleted" = true WHERE "driveId" = ${driveId}`;
             // 4. Soft Delete Applications
             await tx.$executeRaw`UPDATE "Application" SET "isDeleted" = true WHERE "driveId" = ${driveId}`;

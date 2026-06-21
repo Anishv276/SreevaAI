@@ -60,7 +60,7 @@ export function extractRecordingKey(params: {
   return getKeyFromUrl(url);
 }
 export async function getOrgRecordingSettings(orgId: string) {
-  const org = await (prisma as any).organization.findUnique({
+  const org = await prisma.organization.findUnique({
     where: { id: orgId },
     select: {
       recordingEnabled: true,
@@ -75,7 +75,8 @@ export async function getOrgRecordingSettings(orgId: string) {
   };
 }
 function isIgnorableDeleteError(error: unknown) {
-  const code = String((error as any)?.name || (error as any)?.Code || (error as any)?.code || "").toLowerCase();
+  const err = error as Record<string, unknown>;
+  const code = String(err?.name || err?.Code || err?.code || "").toLowerCase();
   return (
     code.includes("nosuchkey")
     || code.includes("notfound")
@@ -167,7 +168,7 @@ export async function scheduleRecordingRetentionDeletion(params: {
   if (normalizedRetentionDays === null) {
     return { scheduled: false, dueAt: null as Date | null };
   }
-  const interview = await (prisma as any).interview.findUnique({
+  const interview = await prisma.interview.findUnique({
     where: { applicationId: params.applicationId },
     select: { recording: true },
   }).catch(() => null);
@@ -188,7 +189,7 @@ export async function scheduleRecordingRetentionDeletion(params: {
     },
   };
   const nextRecording = mergeRecordingState(interview?.recording, recordingPatch);
-  await (prisma as any).interview.update({
+  await prisma.interview.update({
     where: { applicationId: params.applicationId },
     data: {
       recording: nextRecording,

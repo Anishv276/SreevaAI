@@ -7,7 +7,6 @@ import { buildInterviewLink } from "@/lib/interview-links";
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 export async function GET(request: Request) {
     try {
-        const prismaAny = prisma as any;
         const session = await getSession();
         if (!session) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -16,7 +15,7 @@ export async function GET(request: Request) {
         if (!normalizedEmail) {
             return NextResponse.json({ error: "Session missing email identity" }, { status: 400 });
         }
-        const applications = await prismaAny.application.findMany({
+        const applications = await prisma.application.findMany({
             where: {
                 email: {
                     equals: normalizedEmail,

@@ -69,7 +69,7 @@ export async function GET(req: NextRequest) {
         // Fetch completed interviews in range, with integritySignals
         let interviews: { id: string; integritySignals: unknown; applicationId: string }[] = [];
         try {
-            interviews = await (prisma.interview as any).findMany({
+            interviews = await prisma.interview.findMany({
                 where: {
                     status: "COMPLETED",
                     completedAt: { gte: start },

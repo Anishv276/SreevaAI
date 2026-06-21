@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { getSession } from "@/lib/auth";
 import { updateCandidateStatusSchema } from "@/lib/validation";
 import { deleteUrlTargets } from "@/lib/delete-utils";
@@ -21,7 +22,7 @@ export async function GET(
             session.role === "SUPER_ADMIN"
                 ? { id }
                 : { id, drive: { orgId: session.orgId ?? "__none__" } };
-        const candidate: any = await prisma.application.findFirst({
+        const candidate = await prisma.application.findFirst({
             where: orgScope,
             select: {
                 id: true,
@@ -70,29 +71,30 @@ export async function GET(
                         recording: true,
                         snapshots: true,
                     }
-                } as any
+                }
             }
-        } as any);
+        });
         if (!candidate) {
             return NextResponse.json({ error: "Candidate not found" }, { status: 404 });
         }
-        if (candidate.interview?.recording) {
-            candidate.interview.interviewRecordingUrl = getRecordingUrl(
-                candidate.interview.recording
-            );
-            candidate.interview.recordingDurationSec = getRecordingDurationSec(
-                candidate.interview.recording
-            );
-            candidate.interview.recordingMimeType = getRecordingMimeType(
-                candidate.interview.recording
-            );
-        }
+        const interview = candidate.interview
+            ? {
+                  ...candidate.interview,
+                  ...(candidate.interview.recording
+                      ? {
+                            interviewRecordingUrl: getRecordingUrl(candidate.interview.recording),
+                            recordingDurationSec: getRecordingDurationSec(candidate.interview.recording),
+                            recordingMimeType: getRecordingMimeType(candidate.interview.recording),
+                        }
+                      : {}),
+              }
+            : null;
         // Org ownership is now enforced by the findFirst WHERE clause above, so a
         // returned candidate is guaranteed to belong to the caller's org (or the
         // caller is a SUPER_ADMIN). No post-fetch check needed.
         return NextResponse.json({
             ...candidate,
-            interview: candidate.interview ?? null,
+            interview,
             formattedDate: new Date(candidate.createdAt).toLocaleDateString(),
             driveTitle: candidate.drive?.title || "Role N/A"
         }, {
@@ -135,7 +137,7 @@ export async function DELETE(
                     select: {
                         recording: true,
                         snapshots: true
-                    } as any
+                    }
                 }
             }
         });
@@ -157,16 +159,16 @@ export async function DELETE(
         // -- SOFT DELETE: DATABASE CLEANUP (Cascading) ---------------------------
         await prisma.$transaction(async (tx) => {
             // 1. Soft Delete Support Tickets
-            await tx.$executeRawUnsafe(`
+            await tx.$executeRaw`
                 UPDATE "SupportTicket" SET "status" = 'DELETED'
                 WHERE "interviewId" IN (
-                    SELECT "id" FROM "Interview" WHERE "applicationId" = '${id}'
+                    SELECT "id" FROM "Interview" WHERE "applicationId" = ${id}
                 )
-            `);
+            `;
             // 2. Delete the interview (FK constraint prevents renaming applicationId)
-            await tx.$executeRawUnsafe(`
-                DELETE FROM "Interview" WHERE "applicationId" = '${id}'
-            `);
+            await tx.$executeRaw`
+                DELETE FROM "Interview" WHERE "applicationId" = ${id}
+            `;
             // 3. Soft delete the application
             await tx.application.update({
                 where: { id },
@@ -213,8 +215,7 @@ export async function PATCH(
         const normalize = (value: unknown) => String(value || "").trim().toLowerCase().replace(/[_-]+/g, " ");
         const isShortlist = normalize(body.resumeStatus) === "shortlisted";
         const isRejected = normalize(body.resumeStatus) === "rejected";
-        const isHired = normalize(body.hiringStatus) === "hired";
-        const isNotHired = normalize(body.hiringStatus) === "not hired" || normalize(body.hiringStatus) === "not shortlisted";
+
         // -- UPDATE -----------------------------------------
         const dataToUpdate: any = {
             ...(body.resumeStatus !== undefined && { resumeStatus: body.resumeStatus }),
@@ -229,31 +230,17 @@ export async function PATCH(
         if (isRejected) {
             dataToUpdate.resumeStatus = "rejected";
             dataToUpdate.interviewStatus = "Not Qualified";
-            dataToUpdate.hiringStatus = "not hired";
-        }
-        if (isHired) {
-            dataToUpdate.resumeStatus = "shortlisted";
-            dataToUpdate.interviewStatus = "COMPLETED";
-            dataToUpdate.hiringStatus = "hired";
-        }
-        if (isNotHired) {
-            dataToUpdate.resumeStatus = "rejected";
-            dataToUpdate.interviewStatus = "Not Qualified";
-            dataToUpdate.hiringStatus = "not hired";
+            dataToUpdate.hiringStatus = "rejected";
         }
         const updated = await prisma.application.update({
             where: { id },
             data: dataToUpdate,
             include: { drive: { select: { title: true, orgId: true } } },
         });
-        if (isShortlist || isRejected || isHired || isNotHired) {
+        if (isShortlist || isRejected) {
             const actionLabel = isShortlist
                 ? "Resume shortlisted"
-                : isRejected
-                    ? "Resume rejected"
-                    : isHired
-                        ? "Candidate hired"
-                        : "Marked as not hired";
+                : "Resume rejected";
             await appendCandidateActivity(id, {
                 type: "status_changed",
                 label: actionLabel,

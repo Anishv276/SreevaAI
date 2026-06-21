@@ -371,10 +371,11 @@ def _build_secondary_directive(secondary: dict, *, job_title: str) -> str:
     )
 async def _generate_probe_directive(
     *,
-    probe_family: str,
+    signal: Optional[str],
+    signal_reason: Optional[str],
     band: str,
     active_topic: str,
-    topic_item: Optional[Any],          # TopicItem from InterviewBrief
+    topic_item: Optional[Any],
     prev_question: str,
     prev_answer: str,
     topic_follow_ups: int,
@@ -382,108 +383,85 @@ async def _generate_probe_directive(
     topic_denied: bool,
     coverage_memory: str,
     asked_questions_log: list[str],
+    topic_transcript: list[str],
     client: Any,
     llm_model: str = "gpt-4.1-mini",
     usage_sink: Optional[Any] = None,
 ) -> str:
     """
-    LLM-driven probe directive. Uses TopicItem full_description, probe_focus,
-    probe_avoid from the brief — no rule-based templates. Returns directive string.
+    Builds a probe directive that tells the interview LLM what SIGNAL fired,
+    what it means, what ANGLE to pursue, and what the probe family demands.
+    No scripted question — Ishita generates the question herself from the
+    live conversation, guided by the signal context and family definition.
     """
     import logging as _logging
+    from interview.probe_strategy import get_probe_context
     _log = _logging.getLogger("interview-agent")
 
-    # Build topic context from brief item
+    # -- Topic brief block --
     _topic_ctx = ""
     if topic_item is not None:
         parts = [f"TOPIC: {topic_item.title}"]
         if topic_item.full_description:
             parts.append(f"WHAT THIS IS: {topic_item.full_description}")
         if topic_item.probe_focus:
-            parts.append(f"PROBE FOCUS (what to dig into): {', '.join(topic_item.probe_focus)}")
+            parts.append(f"INTERESTING ANGLES: {', '.join(topic_item.probe_focus)}")
         if topic_item.probe_avoid:
-            parts.append(f"PROBE AVOID (do not go here): {', '.join(topic_item.probe_avoid)}")
+            parts.append(f"SKIP: {', '.join(topic_item.probe_avoid)}")
         if topic_item.why_relevant:
             parts.append(f"WHY THIS MATTERS: {topic_item.why_relevant}")
         _topic_ctx = "\n".join(parts)
     else:
         _topic_ctx = f"TOPIC: {active_topic}"
 
-    _prev_a_gist = " ".join(prev_answer.split()[:50])
-    _asked = "\n".join(f"  - {q}" for q in asked_questions_log[-5:])
+    # -- Conversation thread (last 8 lines so directive LLM sees full back-and-forth) --
+    _thread = "\n".join(topic_transcript[-8:]) if topic_transcript else (
+        f"Interviewer: {prev_question}\nCandidate: {prev_answer}"
+    )
 
-    # Tier-specific instruction
-    if is_closing_tier:
-        _tier_instruction = (
-            "This is the CLOSING probe on this topic — invite honest self-reflection. "
-            "Ask ONE reflective question: what they'd change, what they're most proud of, "
-            "or what a more senior person would push back on. Anchor to a specific detail they mentioned."
-        )
-    elif topic_follow_ups <= 1:
-        _tier_instruction = (
-            "This is the FIRST probe on this topic. Stay at the surface first. "
-            "Ask what they personally built, what their role was, or what problem it solved. "
-            "Establish the WHAT before the HOW. Do NOT jump to deep mechanics."
-        )
-    elif band == "fresher":
-        _tier_instruction = (
-            "FRESHER band. Ask HOW they built it: what did they actually do step by step? "
-            "What worked? What broke? What surprised them? Do NOT ask about tradeoffs or architecture."
-        )
-    else:
-        _tier_instruction = (
-            f"{band.upper()} band. Push deeper: decisions made, what broke, specific numbers, "
-            "tradeoffs, what they'd do differently. Vague answers → probe harder."
-        )
+    _asked = "\n".join(f"  - {q}" for q in asked_questions_log[-6:])
 
-    # Denial/redirect
-    if topic_denied:
-        _tier_instruction = (
-            "Candidate doesn't remember or didn't build this. DO NOT push. "
-            "Ask what they DO remember, or redirect to a related thing they did work on."
-        )
+    # -- Signal probe context from probe_strategy --
+    _probe_ctx = get_probe_context(
+        signal=signal,
+        signal_reason=signal_reason,
+        band=band,
+        topic_follow_ups=topic_follow_ups,
+        is_closing_tier=is_closing_tier,
+        topic_denied=topic_denied,
+        prev_answer=prev_answer,
+    )
 
     _system = (
-        "You are writing an internal directive for an AI interviewer named Ishita. "
-        "This directive is NEVER spoken aloud — it is a silent instruction she reads and acts on.\n\n"
-        "Your task: write a [NEXT_TURN_DIRECTIVE] for a PROBE turn. "
-        "The directive must tell Ishita exactly what ONE follow-up question to ask, "
-        "grounded in the topic brief context below. Do NOT use generic templates. "
-        "The question must come from the topic's actual content.\n\n"
+        "You are a senior interviewer coach writing a PRIVATE DIRECTIVE for Ishita, an AI interviewer.\n"
+        "This directive is NEVER spoken aloud. Ishita reads it, then generates her OWN question\n"
+        "from the live conversation. She does not copy your words.\n\n"
+        "YOUR JOB: Tell Ishita what the signal means, what angle to pursue, and what to find out.\n"
+        "Do NOT write a question. A scripted question makes her sound robotic.\n\n"
         "Output format (plain text, no markdown):\n"
         "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
-        "DECISION: PROBE ({family})\n"
-        "TOPIC CONTEXT: ...\n"
-        "WHAT TO DIG INTO: ...\n"
-        "SUGGESTED QUESTION: ...\n"
-        "FORBIDDEN: list 1-2 things she must not say or repeat\n\n"
-        "Rules for the SUGGESTED QUESTION:\n"
-        "- ONE question only\n"
-        "- Specific to the topic brief — never generic\n"
-        "- Natural, curious tone — not an interrogation\n"
-        "- Do NOT repeat or closely rephrase any question in QUESTIONS ALREADY ASKED\n"
-        "- NEVER start with 'Can you' or 'Could you' -- sounds like a form, not a person\n"
-        "- Ask like someone genuinely curious about what was just said, not running a checklist\n"
-        "- Every question must feel different in angle and intent from PREVIOUS QUESTION\n"
-        "- The question comes from what the candidate said, not from a template"
-    ).replace("{family}", probe_family.upper())
+        f"DECISION: PROBE ({(signal or 'depth').upper()})\n"
+        "WHAT THE CANDIDATE REVEALED: 1-2 lines — what is interesting, missing, or suspicious in what they just said\n"
+        "ANGLE TO PURSUE: The specific thread worth pulling — reference their actual words, not a generic description\n"
+        "INTENT: What Ishita is trying to find out and why this angle matters right now\n"
+        "FORBIDDEN: 1-2 specific things NOT to do this turn\n\n"
+        "Rules:\n"
+        "- NO question ever. Ishita generates the question herself.\n"
+        "- ANGLE must quote or reference something from the conversation thread — never generic.\n"
+        "- One angle only. Sharp and specific beats broad and general."
+    )
 
     _user = (
-        f"BAND: {band.upper()}\n"
-        f"PROBE FAMILY: {probe_family.upper()}\n\n"
-        f"TOPIC BRIEF CONTEXT:\n{_topic_ctx}\n\n"
-        f"PREVIOUS QUESTION: \"{prev_question}\"\n"
-        f"CANDIDATE SAID: \"{_prev_a_gist}{'...' if len(prev_answer.split()) > 50 else ''}\"\n\n"
-        f"TIER INSTRUCTION: {_tier_instruction}\n\n"
-        + (f"QUESTIONS ALREADY ASKED — DO NOT REPEAT:\n{_asked}\n\n" if _asked else "")
+        f"BAND: {band.upper()}\n\n"
+        f"TOPIC BRIEF:\n{_topic_ctx}\n\n"
+        f"CONVERSATION THREAD:\n{_thread}\n\n"
+        f"SIGNAL & PROBE CONTEXT:\n{_probe_ctx}\n\n"
+        + (f"QUESTIONS ALREADY ASKED (do NOT repeat these angles):\n{_asked}\n\n" if _asked else "")
         + (f"{coverage_memory}\n" if coverage_memory else "")
         + "Write the directive now."
     )
 
     try:
-        # Use client-level timeout so it covers both connection AND full stream
-        # consumption. asyncio.wait_for only covers the coroutine up to first
-        # yield — the async for loop below would hang unprotected otherwise.
         chunks: list[str] = []
         _usage = None
         async with asyncio.timeout(8.0):
@@ -491,18 +469,18 @@ async def _generate_probe_directive(
                 model=llm_model,
                 messages=[
                     {"role": "system", "content": _system},
-                    {"role": "user", "content": _user},
+                    {"role": "user",   "content": _user},
                 ],
                 temperature=0.3,
                 max_tokens=400,
                 stream=True,
                 stream_options={"include_usage": True},
                 store=True,
-                metadata={"call_type": "probe_directive", "band": band, "probe_family": probe_family},
+                metadata={"call_type": "probe_directive", "band": band, "signal": signal or "none"},
                 prediction={"type": "content", "content": (
                     "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
-                    f"DECISION: PROBE ({probe_family.upper()})\n"
-                    "TOPIC CONTEXT: "
+                    f"DECISION: PROBE ({(signal or 'depth').upper()})\n"
+                    "WHAT THE CANDIDATE REVEALED: "
                 )},
             )
             async for chunk in stream:
@@ -512,28 +490,33 @@ async def _generate_probe_directive(
                     _usage = chunk.usage
         if usage_sink and _usage:
             usage_sink({
-                "model": llm_model,
-                "inputTokens": int(getattr(_usage, "prompt_tokens", 0) or 0),
-                "outputTokens": int(getattr(_usage, "completion_tokens", 0) or 0),
-                "cachedInputTokens": int(
-                    getattr(getattr(_usage, "prompt_tokens_details", None), "cached_tokens", 0) or 0
-                ),
+                "model":             llm_model,
+                "inputTokens":       int(getattr(_usage, "prompt_tokens", 0) or 0),
+                "outputTokens":      int(getattr(_usage, "completion_tokens", 0) or 0),
+                "cachedInputTokens": int(getattr(getattr(_usage, "prompt_tokens_details", None), "cached_tokens", 0) or 0),
             })
         generated = "".join(chunks).strip()
         if not generated:
             raise ValueError("empty probe directive")
-        _log.info("[PROBE_LLM] Generated directive | topic=%r | %d chars", active_topic[:60], len(generated))
+        _log.info("[PROBE_LLM] Generated | topic=%r signal=%s | %d chars",
+                  active_topic[:60], signal or "none", len(generated))
         return generated
+
     except Exception as exc:
-        _log.warning("[PROBE_LLM] generation failed (%s) — using minimal fallback", exc)
-        # Minimal LLM-friendly fallback: give the LLM the topic context and let it generate
+        _log.warning("[PROBE_LLM] generation failed (%s) — fallback", exc)
+        _thread_fallback = "\n".join(topic_transcript[-4:]) if topic_transcript else (
+            f"Interviewer: {prev_question}\nCandidate: {prev_answer}"
+        )
+        _signal_line = f"SIGNAL: {signal} — {signal_reason}" if signal else "No specific signal detected."
         return (
             f"[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
-            f"DECISION: PROBE ({probe_family.upper()})\n"
-            f"TOPIC CONTEXT: {active_topic}\n"
-            f"WHAT TO DIG INTO: {_topic_ctx}\n"
-            f"Ask ONE specific, natural follow-up question about what the candidate just said. "
-            f"Anchor to a concrete detail from TOPIC CONTEXT. ONE question only."
+            f"DECISION: PROBE ({(signal or 'depth').upper()})\n"
+            f"WHAT THE CANDIDATE REVEALED: Their answer left something specific unresolved.\n"
+            f"{_signal_line}\n"
+            f"ANGLE TO PURSUE: Find the most concrete or surprising thing in their last answer and pull that thread.\n"
+            f"INTENT: Understand what they actually did or decided — not just what they say they did.\n"
+            f"CONVERSATION THREAD:\n{_thread_fallback}\n"
+            f"FORBIDDEN: Do not ask a generic question. Do not repeat an already-asked angle."
         )
 
 
@@ -1495,7 +1478,7 @@ async def entrypoint(ctx: JobContext):
     chat_ctx = llm.ChatContext()
     chat_ctx.add_message(role="system", content=system_prompt)
     chat_ctx.add_message(role="system", content=interview_directive_cached)
-    warmup_directive = build_warmup_directive(job_title=job_title)
+    warmup_directive = build_warmup_directive(job_title=job_title, candidate_name=candidate_first_name or candidate_name)
     chat_ctx.add_message(role="system", content=warmup_directive)
     logger.info("[FLOW] System prompt ready  greeting  warmup  interview")
     logger.debug("[SYSTEM_PROMPT] Full system prompt:\n%s", system_prompt)
@@ -2199,9 +2182,6 @@ async def entrypoint(ctx: JobContext):
         if signal_events:
             proctoring_events.extend(signal_events)
         async with _session_state_lock:
-            saturation = result.get("saturation") or {}
-            if saturation.get("depth_decay"):
-                _last_depth_decay_turn = result_turn
             eval_usages = result.get("eval_llm_usages") or []
             if eval_usages:
                 _eval_llm_usages_accumulated.extend(eval_usages)
@@ -2211,10 +2191,19 @@ async def entrypoint(ctx: JobContext):
                 # correctly across the session.  Must run inside the lock so the
                 # mutable _trust_state dict is never accessed from two coroutines
                 # simultaneously (the same lock guards all session-state writes).
-                _signal_events_for_trust = result.get("signal_events") or []
+                # Build a minimal trust-engine-compatible dict from the new
+                # single-signal eval schema. trust_engine reads signal_events as
+                # a list of {signal_name, score_delta, trust_bucket_affected, ...}.
+                _eval_sig = result.get("signal")
+                _signal_events_for_trust = (
+                    [{"signal_name": _eval_sig, "score_delta": -0.15,
+                      "trust_bucket_affected": "behavioral_confidence",
+                      "recoverable": True}]
+                    if _eval_sig else []
+                )
                 _td_for_trust = {
                     "quality": quality_record,
-                    "signals": {ev.get("signal_name"): True for ev in _signal_events_for_trust},
+                    "signals": {_eval_sig: True} if _eval_sig else {},
                     "signal_events": _signal_events_for_trust,
                     "decision": {"action": result.get("action", "PROBE")},
                 }
@@ -2581,8 +2570,9 @@ async def entrypoint(ctx: JobContext):
                 # The agent therefore has NO fallback path -- it trusts eval's return.
                 _eval_result_inline: dict = await run_eval_and_build_directive(payload, _eval_openai_client)
                 # -- Unpack eval result ----------------------------------------
-                _action_from_eval = str(_eval_result_inline.get("action", "PROBE")).upper()
-                _probe_family = _eval_result_inline.get("probe_family") or "ownership"
+                _action_from_eval   = str(_eval_result_inline.get("action", "PROBE")).upper()
+                _eval_signal        = _eval_result_inline.get("signal")         # str | None
+                _eval_signal_reason = _eval_result_inline.get("signal_reason")  # str | None
                 _saturation   = _eval_result_inline.get("saturation") or {}
                 # H5 fix: read rotation index from TopicState and advance it so
                 # consecutive PROBE turns on the same topic cycle through different
@@ -2590,27 +2580,24 @@ async def entrypoint(ctx: JobContext):
                 _new_topic_state_dict_pre = _saturation.get("topic_state_dict") if _eval_result_inline.get("saturation") else None
                 _rotation_idx = int((_new_topic_state_dict_pre or {}).get("probe_rotation_index", 0) or 0)
                 _qr           = _eval_result_inline.get("quality_record") or {}
-                _signals      = [e.get("signal_name") for e in (_eval_result_inline.get("signal_events") or []) if e.get("signal_name")]
+                _signals      = [_eval_signal] if _eval_signal else []
                 _sat_after    = _saturation.get("score", 0.0)
                 _sat_thresh   = _saturation.get("threshold", 0.0)
                 _is_saturated = _saturation.get("is_saturated", False)
                 _weak_exit    = _saturation.get("weak_exit", False)
                 _dry_topic    = _saturation.get("dry_topic", False)
-                _depth_decay  = _saturation.get("depth_decay", False)
-                # FIX: Agent applies its own action logic based on saturation.
-                # Eval signals intent, but agent enforces the exit conditions.
-                # dry_topic = candidate gave consecutive low-yield answers up to the
-                # band cap -> move on instead of re-asking a dead topic.
-                _action = "PROBE"  # Default
-                if _depth_decay or _weak_exit or _is_saturated or _dry_topic:
-                    _action = "MOVE_ON"  # Saturation / dry-topic move
+                # Agent applies its own action logic on top of eval's recommendation.
+                # dry_topic = consecutive low-yield answers hit cap -> always move on.
+                _action = "PROBE"
+                if _weak_exit or _is_saturated or _dry_topic:
+                    _action = "MOVE_ON"
                 elif _action_from_eval == "MOVE_ON":
-                    _action = "MOVE_ON"  # LLM judge recommends move
+                    _action = "MOVE_ON"
                 # else: PROBE (default)
                 logger.info(
-                    "[AGENT] turn=%d | decision_logic: sat=%.1f/%.1f saturated=%s weak=%s dry=%s depth_decay=%s "
+                    "[AGENT] turn=%d | decision_logic: sat=%.1f/%.1f saturated=%s weak=%s dry=%s "
                     "eval_action=%s -> agent_action=%s",
-                    turn_snapshot, _sat_after, _sat_thresh, _is_saturated, _weak_exit, _dry_topic, _depth_decay,
+                    turn_snapshot, _sat_after, _sat_thresh, _is_saturated, _weak_exit, _dry_topic,
                     _action_from_eval, _action
                 )
                 # Log scores
@@ -2658,10 +2645,9 @@ async def entrypoint(ctx: JobContext):
                         # Determine exit reason from saturation flags
                         _exit_reason = (
                             "explicit_denial" if _old_key in _covered_topic_keys
-                            else "weak_exit"   if _weak_exit
-                            else "depth_decay" if _depth_decay
-                            else "saturated"   if _is_saturated
-                            else "dry_topic"   if _dry_topic
+                            else "weak_exit"  if _weak_exit
+                            else "saturated"  if _is_saturated
+                            else "dry_topic"  if _dry_topic
                             else "eval_moveon"
                         )
                         # Compute avg scores across all turns on this topic
@@ -3030,8 +3016,13 @@ async def entrypoint(ctx: JobContext):
                          if _topic_short_key_for_ordering(t.title).lower() == _depth_topic_key_lc),
                         None,
                     )
+                    # Build the conversation thread for this topic from the live
+                    # transcript. Take the last 8 lines so the probe LLM sees the
+                    # full back-and-forth, not just the most recent exchange.
+                    _topic_thread_lines = lines_snap_eval[-8:] if lines_snap_eval else []
                     _directive = await _generate_probe_directive(
-                        probe_family=_probe_family,
+                        signal=_eval_signal,
+                        signal_reason=_eval_signal_reason,
                         band=(payload.get("band") or candidate_band or "mid").lower(),
                         active_topic=_active_topic or "",
                         topic_item=_probe_brief_item,
@@ -3042,6 +3033,7 @@ async def entrypoint(ctx: JobContext):
                         topic_denied=_topic_short_key(_active_topic or "").lower() in _covered_topic_keys,
                         coverage_memory=_covered_topic_keys.get_memory_block(),
                         asked_questions_log=list(_asked_questions_log),
+                        topic_transcript=_topic_thread_lines,
                         client=_eval_openai_client,
                         llm_model=analysis_model,
                         usage_sink=_eval_llm_usages_accumulated.append,
@@ -3053,8 +3045,8 @@ async def entrypoint(ctx: JobContext):
                         if isinstance(_ts_for_rotation, dict):
                             _ts_for_rotation["probe_rotation_index"] = _rotation_idx + 1
                     logger.info(
-                        "[PROBE] turn=%d | family=%s | topic=%r | sat=%.1f/%.1f | brief_probe=%s brief_avoid=%s",
-                        turn_snapshot, _probe_family, _scoring_topic_log,
+                        "[PROBE] turn=%d | signal=%s | topic=%r | sat=%.1f/%.1f | brief_probe=%s brief_avoid=%s",
+                        turn_snapshot, _eval_signal or "none", _scoring_topic_log,
                         _sat_after, _sat_thresh,
                         ",".join((_probe_brief_item.probe_focus or [])[:3]) if _probe_brief_item else "-",
                         ",".join((_probe_brief_item.probe_avoid or [])[:2]) if _probe_brief_item else "-",
@@ -3570,8 +3562,8 @@ async def entrypoint(ctx: JobContext):
                                 "[PHASE_STATUS -- DO NOT SAY ALOUD]\n"
                                 "GREETING: DONE. You have already said hello and introduced yourself.\n"
                                 "DO NOT greet again, re-introduce yourself, or ask 'how are you doing' again.\n"
-                                "CURRENT PHASE: WARMUP -- ask one short yes/no readiness check only.\n"
-                                "Do NOT mention projects, resume items, skills, companies, tools, or the role in the readiness check."
+                                "CURRENT PHASE: WARMUP -- respond to what they said, briefly introduce the interview, ask if ready.\n"
+                                "Do NOT mention projects, resume items, skills, companies, or specific tools yet."
                             ),
                         )
                         break

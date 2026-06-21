@@ -78,7 +78,7 @@ export async function POST(req: Request) {
       }
     }
     const requestedEvents = normalizeProctoringEvents(result.data.events);
-    const interview = await (prisma.interview as any).findUnique({
+    const interview = await prisma.interview.findUnique({
       where: { applicationId },
       select: { id: true, integritySignals: true },
     });
@@ -113,18 +113,18 @@ export async function POST(req: Request) {
     const mergedEvents = [...currentEvents, ...events].slice(-400);
     const now = new Date();
     if (interview) {
-      await (prisma.interview as any).update({
+      await prisma.interview.update({
         where: { applicationId },
         data: {
-          integritySignals: mergedEvents as any,
+          integritySignals: mergedEvents,
           updatedAt: now,
         }
       });
     } else {
-      await (prisma.interview as any).upsert({
+      await prisma.interview.upsert({
         where: { applicationId },
         update: {
-          integritySignals: mergedEvents as any,
+          integritySignals: mergedEvents,
           updatedAt: now,
         },
         create: {
@@ -132,7 +132,7 @@ export async function POST(req: Request) {
           applicationId,
           accessToken: crypto.randomUUID(),
           status: "IN_PROGRESS",
-          integritySignals: mergedEvents as any,
+          integritySignals: mergedEvents,
           createdAt: now,
           updatedAt: now,
         },

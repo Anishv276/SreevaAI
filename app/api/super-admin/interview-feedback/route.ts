@@ -141,7 +141,7 @@ export async function GET(request: Request) {
                             },
                         },
                     },
-                } as any,
+                },
             }),
             prisma.interview.count({ where: notesWhere }),
             prisma.interview.count({ where: ratingWhere }),

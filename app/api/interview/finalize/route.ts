@@ -40,7 +40,7 @@ async function persistInterviewUpdateRaw(params: {
     where: { id: applicationId },
     select: { fullName: true, drive: { select: { title: true, role: true } } }
   });
-  const existingInterview = await (prisma as any).interview.findUnique({
+  const existingInterview = await prisma.interview.findUnique({
     where: { applicationId },
     select: { recording: true },
   }).catch(() => null);

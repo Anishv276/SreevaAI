@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
         } else if (range === "custom" && from) {
             startTime = new Date(from);
         }
-        const interviews = await (prisma.interview as any).findMany({
+        const interviews = await prisma.interview.findMany({
             where: {
                 status: "COMPLETED",
                 completedAt: { gte: startTime },
@@ -68,7 +68,7 @@ export async function GET(req: NextRequest) {
             events: any[];
         };
         const formattedLogs = interviews.map((iv: (typeof interviews)[number]): FormattedLog => {
-            const rawEvents = iv.integritySignals as any[] || [];
+            const rawEvents = Array.isArray(iv.integritySignals) ? iv.integritySignals : [];
             // Re-map event types using similar logic as main integrity API
             return {
                 id: iv.id,

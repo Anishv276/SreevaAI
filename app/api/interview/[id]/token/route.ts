@@ -12,14 +12,13 @@ export async function POST(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const prismaAny = prisma as any;
         const { id: applicationId } = await params;
         const { token: interviewToken } = await request.json();
         const requireInterviewToken = isInterviewTokenRequired();
         if (!applicationId || (requireInterviewToken && !interviewToken)) {
             return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
         }
-        const application = await prismaAny.application.findUnique({
+        const application = await prisma.application.findUnique({
             where: { id: applicationId },
             include: {
                 drive: {
@@ -63,14 +62,14 @@ export async function POST(
             // Reset EXPIRED linkStatus if the interview was already done (completed/no-show)
             // and the deadline hasn't actually passed — this lets admins re-send links.
             if (interview.linkStatus === "EXPIRED" && isAlreadyDone && !deadlineExpired) {
-                await prismaAny.interview.update({
+                await prisma.interview.update({
                     where: { applicationId },
                     data: { linkStatus: "ACTIVE", startedAt: null },
                 }).catch(() => { });
                 // Allow access — fall through to token generation
             } else {
                 if (isExpiredByTime && interview.linkStatus !== "EXPIRED") {
-                    await prismaAny.interview.update({
+                    await prisma.interview.update({
                         where: { applicationId },
                         data: { linkStatus: "EXPIRED" },
                     }).catch(() => { });
@@ -187,7 +186,6 @@ export async function GET(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const prismaAny = prisma as any;
         const { id: applicationId } = await params;
         const url = new URL(request.url);
         const interviewToken = url.searchParams.get("token") || "";
@@ -195,7 +193,7 @@ export async function GET(
         if (!applicationId || (requireInterviewToken && !interviewToken)) {
             return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
         }
-        const application = await prismaAny.application.findUnique({
+        const application = await prisma.application.findUnique({
             where: { id: applicationId },
             include: { interview: true },
         });

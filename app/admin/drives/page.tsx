@@ -5,101 +5,69 @@ import { toast } from "@/components/ui/toast-custom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-    Search,
-    MoreHorizontal,
-    Plus,
-    Briefcase,
-    Users,
-    Trash2,
-    Edit,
-    Loader2,
-    ChevronRight,
-    Lock,
-    Rocket,
-    Target,
-    ArrowUpRight,
-    Globe,
-    Mic,
+    Search, MoreHorizontal, Plus, Briefcase, Users,
+    Trash2, Edit, Loader2, ChevronRight, Lock,
+    ArrowUpRight, Globe, Mic, Calendar,
+    Zap, SlidersHorizontal,
 } from "lucide-react";
 import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuTrigger,
+    DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useJobs } from "@/context/jobs-context";
 import { ActionConfirmModal } from "@/components/ui/action-confirm-modal";
 import { DateFilter, type DateRange } from "@/components/admin/date-filter";
 import { getActiveDriveCount, isDriveCreationLocked } from "@/lib/drive-limits";
-import { getSupportComposeUrl, isInterviewQuotaLocked, isOrgRestrictedStatus } from "@/lib/interview-quota";
+import { isInterviewQuotaLocked, isOrgRestrictedStatus } from "@/lib/interview-quota";
 import Link from "next/link";
 import { useAdminOrg } from "@/context/admin-org-context";
 import { ALL_VOICES } from "@/lib/constants/voices";
+import { cn } from "@/lib/utils";
+
 export default function DrivesPage() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const orgId = searchParams.get("orgId");
-    const { jobs, pagination, deleteJob, fetchJobs, organization } = useJobs();
+    const { jobs, pagination, deleteJob, fetchJobs } = useJobs();
     const [isLoading, setIsLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState("");
     const adminOrg = useAdminOrg();
     const [timeline, setTimeline] = useState<DateRange>({ type: "month" });
-    // ⚡ Read from shared context — no fetch needed (was 2 API calls per load)
     const orgStatus = String(adminOrg?.status || "ACTIVE").toUpperCase();
     const quotaLocked = isInterviewQuotaLocked(adminOrg ?? {});
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [driveToDelete, setDriveToDelete] = useState<string | null>(null);
     const [isDeleting, setIsDeleting] = useState(false);
+
     useEffect(() => {
         const handler = setTimeout(() => {
             let startDate: string | undefined;
             let endDate: string | undefined;
-            if (timeline.type === "today") {
-                startDate = new Date().toISOString().split("T")[0];
-                endDate = startDate;
-            } else if (timeline.type === "week") {
-                const date = new Date();
-                date.setDate(date.getDate() - 7);
-                startDate = date.toISOString().split("T")[0];
-            } else if (timeline.type === "month") {
-                const date = new Date();
-                date.setMonth(date.getMonth() - 1);
-                startDate = date.toISOString().split("T")[0];
-            } else if (timeline.type === "custom") {
-                startDate = timeline.from;
-                endDate = timeline.to;
-            }
+            if (timeline.type === "today") { startDate = new Date().toISOString().split("T")[0]; endDate = startDate; }
+            else if (timeline.type === "week") { const d = new Date(); d.setDate(d.getDate() - 7); startDate = d.toISOString().split("T")[0]; }
+            else if (timeline.type === "month") { const d = new Date(); d.setMonth(d.getMonth() - 1); startDate = d.toISOString().split("T")[0]; }
+            else if (timeline.type === "custom") { startDate = timeline.from; endDate = timeline.to; }
             fetchJobs(1, pagination.limit, searchQuery, startDate, endDate).finally(() => setIsLoading(false));
         }, 300);
         return () => clearTimeout(handler);
     }, [searchQuery, timeline, pagination.limit]);
+
     const handlePageChange = (newPage: number) => {
         if (newPage >= 1 && newPage <= pagination.totalPages) {
             setIsLoading(true);
-            let startDate: string | undefined;
-            let endDate: string | undefined;
-            if (timeline.type === "today") {
-                startDate = new Date().toISOString().split("T")[0];
-                endDate = startDate;
-            } else if (timeline.type === "week") {
-                const date = new Date();
-                date.setDate(date.getDate() - 7);
-                startDate = date.toISOString().split("T")[0];
-            } else if (timeline.type === "month") {
-                const date = new Date();
-                date.setMonth(date.getMonth() - 1);
-                startDate = date.toISOString().split("T")[0];
-            } else if (timeline.type === "custom") {
-                startDate = timeline.from;
-                endDate = timeline.to;
-            }
+            let startDate: string | undefined; let endDate: string | undefined;
+            if (timeline.type === "today") { startDate = new Date().toISOString().split("T")[0]; endDate = startDate; }
+            else if (timeline.type === "week") { const d = new Date(); d.setDate(d.getDate() - 7); startDate = d.toISOString().split("T")[0]; }
+            else if (timeline.type === "month") { const d = new Date(); d.setMonth(d.getMonth() - 1); startDate = d.toISOString().split("T")[0]; }
+            else if (timeline.type === "custom") { startDate = timeline.from; endDate = timeline.to; }
             fetchJobs(newPage, pagination.limit, searchQuery, startDate, endDate).finally(() => setIsLoading(false));
         }
     };
+
     const isSuspended = isOrgRestrictedStatus(orgStatus);
     const activeDriveCount = adminOrg?.activeDriveCount ?? getActiveDriveCount(jobs);
     const interviewAccessLocked = quotaLocked || isSuspended;
     const driveCreationLocked = isDriveCreationLocked(adminOrg?.maxActiveDrives, activeDriveCount) || interviewAccessLocked;
+
     const confirmDelete = async () => {
         if (!driveToDelete) return;
         setIsDeleting(true);
@@ -107,335 +75,245 @@ export default function DrivesPage() {
             await deleteJob(driveToDelete);
             setIsDeleteModalOpen(false);
             setDriveToDelete(null);
-        } catch (error) {
-            console.error("Error deleting drive:", error);
+        } catch {
             toast.error("Failed to delete drive");
         } finally {
             setIsDeleting(false);
         }
     };
+
     return (
-        <div className="space-y-7 pb-10 animate-in fade-in duration-700" style={{ zoom: 0.78, transformOrigin: "top center" }}>
-            {/* Header */}
-            <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between mb-8">
-                <div className="flex items-center gap-5 group">
-                    <div className="h-12 w-1.5 bg-orange-600 rounded-full shadow-[0_0_15px_rgba(234,88,12,0.3)]" />
-                    <div className="space-y-1">
-                        <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 tracking-tight">Active Jobs</h1>
-                        <div className="flex items-center gap-3">
-                            <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-pulse" />
-                            <p className="text-gray-400 font-bold text-[11px] uppercase tracking-widest">{pagination.total || 0} Total Jobs</p>
-                        </div>
-                    </div>
+        <div className="min-h-screen bg-gray-50/70 pb-16 animate-in fade-in duration-500">
+
+            {/* ── Page header ── */}
+            <div className="px-6 lg:px-10 pt-8 pb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                    <h1 className="text-[26px] font-extrabold text-gray-900 tracking-tight">Active Jobs</h1>
+                    <p className="text-[13px] text-gray-400 mt-0.5 font-medium">
+                        {pagination.total} {pagination.total === 1 ? "job" : "jobs"} · Updated just now
+                    </p>
                 </div>
-                <div className="flex items-center gap-3 flex-wrap">
-                    {driveCreationLocked ? (
-                        <div className="flex items-center gap-3">
-                            <button disabled className="bg-gray-100 text-gray-400 border border-gray-200 h-12 px-6 font-bold rounded-2xl cursor-not-allowed opacity-70 flex items-center gap-2">
-                                <Lock className="h-4 w-4" />
-                                {interviewAccessLocked ? "Job Locked" : "New Job"}
-                            </button>
-                            {interviewAccessLocked ? (
-                                <a
-                                    href={getSupportComposeUrl({
-                                        subject: "Interview quota support request",
-                                        body: isSuspended
-                                            ? "Hi support team,\n\nOur account is suspended by Super Admin. Please help us restore access.\n"
-                                            : "Hi support team,\n\nPlease help us restore interview access for our account.\n",
-                                    })}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="text-[12px] font-bold text-slate-700 hover:text-slate-900 uppercase tracking-widest"
-                                >
-                                    Contact Support
-                                </a>
-                            ) : (
-                                <a
-                                    href={getSupportComposeUrl({
-                                        subject: "Upgrade plan request",
-                                        body: "Hi support team,\n\nWe would like to upgrade our plan to create more jobs.\n",
-                                    })}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="text-[12px] font-bold text-slate-700 hover:text-slate-900 uppercase tracking-widest"
-                                >
-                                    Contact Support
-                                </a>
-                            )}
-                        </div>
-                    ) : (
-                        <Link href="/admin/create-drive">
-                            <Button className="bg-orange-600 hover:bg-orange-700 transition-all duration-300 h-12 px-6 font-bold rounded-2xl text-white shadow-lg shadow-orange-600/10">
-                                <Plus className="h-5 w-5 mr-2" />
-                                New Job
-                            </Button>
-                        </Link>
-                    )}
-                </div>
-            </div>
-            {/* Filters */}
-            <div className="bg-white p-3 rounded-[1.75rem] border border-slate-200 shadow-sm">
-                <div className="flex flex-col lg:flex-row items-center justify-between gap-6 w-full">
-                    <div className="relative flex-1 max-w-2xl w-full group/search">
-                        <Search className="absolute left-4 top-3.5 h-4 w-4 text-gray-400" />
+
+                <div className="flex items-center gap-2.5 flex-wrap">
+                    <div className="relative">
+                        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
                         <Input
-                            placeholder="Search by role or title..."
-                            className="pl-11 h-11 border-slate-200 bg-slate-50 rounded-2xl focus:bg-white focus:border-slate-300 focus:ring-4 focus:ring-slate-100 transition-all font-semibold text-sm shadow-inner"
+                            placeholder="Search jobs..."
+                            className="pl-10 h-9 w-52 border-gray-200 bg-white rounded-full text-[13px] shadow-sm focus:border-orange-400 focus:ring-1 focus:ring-orange-200"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                         />
                     </div>
-                    <div className="flex items-center gap-4 w-full md:w-auto">
-                        <DateFilter value={timeline} onChange={setTimeline} />
-                    </div>
+                    <DateFilter value={timeline} onChange={setTimeline} />
+                    {driveCreationLocked ? (
+                        <button disabled className="h-9 px-4 rounded-full bg-gray-100 text-gray-400 font-semibold text-[13px] flex items-center gap-1.5 cursor-not-allowed border border-gray-200">
+                            <Lock className="h-3.5 w-3.5" /> {interviewAccessLocked ? "Locked" : "New Job"}
+                        </button>
+                    ) : (
+                        <Link href="/admin/create-drive">
+                            <button className="h-9 px-5 rounded-full bg-[#F97316] hover:bg-orange-600 text-white font-bold text-[13px] flex items-center gap-1.5 shadow-sm transition-colors">
+                                <Plus className="h-4 w-4" /> New Job
+                            </button>
+                        </Link>
+                    )}
                 </div>
             </div>
-            {/* Cards Grid */}
-            <div className="grid w-full grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+
+            {/* ── Cards grid ── */}
+            <div className="px-6 lg:px-10">
                 {isLoading ? (
-                    <div className="col-span-full flex w-full flex-col items-center justify-center py-24 min-h-[320px]">
-                        <Loader2 className="h-10 w-10 text-slate-500 animate-spin mb-3" />
-                        <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">Loading jobs...</p>
+                    <div className="flex flex-col items-center justify-center py-36">
+                        <Loader2 className="h-9 w-9 text-[#F97316] animate-spin mb-3" />
+                        <p className="text-[12px] font-bold text-gray-400 uppercase tracking-widest">Loading jobs...</p>
                     </div>
                 ) : jobs.length === 0 ? (
-                    <div className="col-span-full">
-                        <div className="flex flex-col items-center justify-center py-24 px-4">
-                            <div className="h-20 w-20 bg-slate-50 text-slate-600 rounded-3xl flex items-center justify-center mb-8 shadow-sm border border-slate-200">
-                                <Rocket className="h-10 w-10" />
-                            </div>
-                            <h3 className="text-2xl font-bold text-gray-900 tracking-tight mb-2">Create your first recruitment job</h3>
-                            <p className="text-gray-500 font-medium text-sm mb-10 leading-relaxed max-w-sm text-center">
-                                Post a job role to start screening candidates with AI. Upload resumes in bulk and configure screening rules.
-                            </p>
-                            {driveCreationLocked ? (
-                                <div className="flex flex-col items-center gap-3">
-                                    <Button disabled className="bg-gray-100 text-gray-400 transition-all duration-300 h-14 px-10 font-bold rounded-2xl border border-gray-200 cursor-not-allowed gap-3">
-                                        <Lock className="h-5 w-5" />
-                                        {interviewAccessLocked ? "Job Locked" : "Create Locked"}
-                                    </Button>
-                                    {interviewAccessLocked ? (
-                                        <a
-                                            href={getSupportComposeUrl({
-                                                subject: "Interview quota support request",
-                                                body: isSuspended
-                                                    ? "Hi support team,\n\nOur account is suspended by Super Admin. Please help us restore access.\n"
-                                                    : "Hi support team,\n\nPlease help us restore interview access for our account.\n",
-                                            })}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                            className="text-[12px] font-bold text-slate-700 hover:text-slate-900 uppercase tracking-widest"
-                                        >
-                                            Contact Support
-                                        </a>
-                                    ) : (
-                                        <a
-                                            href={getSupportComposeUrl({
-                                                subject: "Upgrade plan request",
-                                                body: "Hi support team,\n\nWe would like to upgrade our plan to create more jobs.\n",
-                                            })}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                            className="text-[12px] font-bold text-slate-700 hover:text-slate-900 uppercase tracking-widest"
-                                        >
-                                            Contact Support
-                                        </a>
-                                    )}
-                                </div>
-                            ) : (
-                                <Link href="/admin/create-drive">
-                                    <Button className="bg-orange-600 hover:bg-orange-700 transition-all duration-300 h-14 px-10 font-bold rounded-2xl text-white shadow-lg shadow-orange-600/10 gap-3 group">
-                                        <Plus className="h-5 w-5" />
-                                        Create New Job
-                                        <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-                                    </Button>
-                                </Link>
-                            )}
+                    <div className="flex flex-col items-center justify-center py-36 text-center max-w-xs mx-auto">
+                        <div className="h-16 w-16 rounded-2xl bg-orange-50 border border-orange-100 flex items-center justify-center mb-4">
+                            <Briefcase className="h-7 w-7 text-[#F97316]" />
                         </div>
+                        <h3 className="text-[16px] font-bold text-gray-800 mb-1.5">No active jobs yet</h3>
+                        <p className="text-[13px] text-gray-400 mb-6 leading-relaxed">
+                            Create your first job and candidates will appear automatically.
+                        </p>
+                        {!driveCreationLocked && (
+                            <Link href="/admin/create-drive">
+                                <button className="h-9 px-5 rounded-full bg-[#F97316] hover:bg-orange-600 text-white font-bold text-[13px] flex items-center gap-1.5 shadow-sm transition-colors">
+                                    <Plus className="h-4 w-4" /> Create First Job
+                                </button>
+                            </Link>
+                        )}
                     </div>
                 ) : (
-                    jobs.map((drive) => {
-                        const applicants = Number(drive.applicants || 0);
-                        const createdAt = drive.createdAt ? new Date(drive.createdAt).toLocaleDateString(undefined, {
-                            month: "short",
-                            day: "numeric",
-                            year: "numeric",
-                        }) : "Unknown";
-                        const deadlineText = drive.deadline
-                            ? new Date(drive.deadline).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
-                            : null;
-                        const isExpired = drive.deadline ? new Date(drive.deadline) < new Date() : false;
-                        const voice = ALL_VOICES.find(v => v.id === drive.voiceId);
-                        const language = drive.interviewLanguage || "English";
-                        return (
-                            <div key={drive.id} className="group cursor-pointer w-full">
-                                <div className="relative h-full flex flex-col rounded-[1.75rem] border border-slate-100 bg-white shadow-[0_4px_24px_rgba(15,23,42,0.06)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_16px_40px_rgba(15,23,42,0.11)] hover:border-slate-200 overflow-hidden">
-                                    {/* Top accent bar */}
-                                    <div className="h-1 w-full bg-gradient-to-r from-orange-400 via-orange-500 to-orange-300 rounded-t-[1.75rem]" />
-                                    {/* Header */}
-                                    <div className="px-5 pt-4 pb-3 flex items-start justify-between gap-3">
-                                        <div className="flex items-center gap-3 min-w-0">
-                                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-orange-50 border border-orange-100">
-                                                <Briefcase className="h-4 w-4 text-orange-500" />
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+                        {jobs.map((drive) => {
+                            const applicants = Number(drive.applicants || 0);
+                            const deadlineText = drive.deadline
+                                ? new Date(drive.deadline).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
+                                : null;
+                            const isExpired = drive.deadline ? new Date(drive.deadline) < new Date() : false;
+                            const voice = ALL_VOICES.find(v => v.id === drive.voiceId);
+                            const language = drive.interviewLanguage || "English";
+                            const isInterviewOnly = (drive as any).interviewMode === "interview-only";
+
+                            return (
+                                <div
+                                    key={drive.id}
+                                    onClick={() => router.push(`/admin/candidates/drive/${encodeURIComponent(drive.id)}`)}
+                                    className="group relative bg-white rounded-2xl border border-gray-100 shadow-[0_1px_8px_rgba(0,0,0,0.06)] hover:shadow-[0_4px_24px_rgba(0,0,0,0.10)] hover:border-orange-200/60 transition-all duration-250 cursor-pointer flex flex-col overflow-hidden"
+                                >
+                                    {/* Orange top accent line */}
+                                    <div className="h-[3px] w-full bg-[#F97316]" />
+
+                                    {/* ── Card header ── */}
+                                    <div className="px-5 pt-4 pb-4 flex items-start justify-between gap-3">
+                                        <div className="flex items-start gap-3 min-w-0">
+                                            {/* Icon */}
+                                            <div className="h-10 w-10 rounded-xl bg-orange-50 border border-orange-100 flex items-center justify-center shrink-0 mt-0.5">
+                                                <Briefcase className="h-4.5 w-4.5 text-[#F97316]" />
                                             </div>
                                             <div className="min-w-0">
-                                                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Active Job</p>
-                                                <h3 className="text-[15px] font-extrabold text-slate-900 tracking-tight leading-snug line-clamp-1 mt-0.5">
+                                                {/* Mode pill */}
+                                                <span className={cn(
+                                                    "inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full mb-1.5",
+                                                    isInterviewOnly
+                                                        ? "bg-orange-50 text-[#F97316] border border-orange-200"
+                                                        : "bg-gray-50 text-gray-500 border border-gray-200"
+                                                )}>
+                                                    {isInterviewOnly
+                                                        ? <><Zap className="h-2.5 w-2.5" /> Interview Only</>
+                                                        : <><SlidersHorizontal className="h-2.5 w-2.5" /> Scoring + Interview</>
+                                                    }
+                                                </span>
+                                                {/* Title */}
+                                                <h3 className="text-[15px] font-extrabold text-gray-900 leading-snug tracking-tight line-clamp-2">
                                                     {drive.title}
                                                 </h3>
+                                                {/* Role */}
+                                                {drive.role && drive.role !== drive.title && (
+                                                    <p className="text-[12px] text-gray-400 font-medium mt-0.5 truncate">{drive.role}</p>
+                                                )}
                                             </div>
                                         </div>
+
+                                        {/* Menu */}
                                         <DropdownMenu>
-                                            <DropdownMenuTrigger asChild>
-                                                <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl shrink-0 text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all">
+                                            <DropdownMenuTrigger asChild onClick={e => e.stopPropagation()}>
+                                                <button className="h-8 w-8 rounded-lg border border-gray-100 bg-gray-50 hover:bg-gray-100 text-gray-400 hover:text-gray-700 flex items-center justify-center transition-colors shrink-0">
                                                     <MoreHorizontal className="h-4 w-4" />
-                                                </Button>
+                                                </button>
                                             </DropdownMenuTrigger>
-                                            <DropdownMenuContent align="end" className="w-[200px] p-2 rounded-2xl bg-white/95 backdrop-blur-2xl border border-slate-200 shadow-[0_20px_60px_rgba(15,23,42,0.10)]">
+                                            <DropdownMenuContent align="end" className="w-48 p-1.5 rounded-xl bg-white border border-gray-100 shadow-xl">
                                                 <DropdownMenuItem
-                                                    className="rounded-xl py-2.5 px-3 focus:bg-slate-100 text-slate-700 font-medium text-[13px]"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        router.push(`/admin/create-drive?id=${drive.id}&mode=edit${orgId ? `&orgId=${orgId}` : ""}`);
-                                                    }}
+                                                    className="rounded-lg py-2 px-3 text-gray-700 font-semibold text-[13px] cursor-pointer"
+                                                    onClick={(e) => { e.stopPropagation(); router.push(`/admin/create-drive?id=${drive.id}&mode=edit${orgId ? `&orgId=${orgId}` : ""}`); }}
                                                 >
-                                                    <Edit className="h-4 w-4 mr-2" />
-                                                    Edit Details
+                                                    <Edit className="h-3.5 w-3.5 mr-2 text-gray-400" /> Edit Details
                                                 </DropdownMenuItem>
-                                                <div className="h-px bg-slate-100 my-1.5 mx-2" />
+                                                <div className="h-px bg-gray-100 my-1 mx-1" />
                                                 <DropdownMenuItem
-                                                    className="rounded-xl py-2.5 px-3 focus:bg-red-50 text-red-600 font-medium text-[13px]"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setDriveToDelete(drive.id);
-                                                        setIsDeleteModalOpen(true);
-                                                    }}
+                                                    className="rounded-lg py-2 px-3 text-red-600 font-semibold text-[13px] cursor-pointer focus:bg-red-50"
+                                                    onClick={(e) => { e.stopPropagation(); setDriveToDelete(drive.id); setIsDeleteModalOpen(true); }}
                                                 >
-                                                    <Trash2 className="h-4 w-4 mr-2" />
-                                                    Delete
+                                                    <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete
                                                 </DropdownMenuItem>
                                             </DropdownMenuContent>
                                         </DropdownMenu>
                                     </div>
-                                    {/* Role tile */}
-                                    <div className="px-5 pb-3">
-                                        <div className="rounded-2xl bg-slate-50 border border-slate-100 px-4 py-3">
-                                            <p className="text-[9px] font-black uppercase tracking-[0.22em] text-slate-400 mb-1">Role</p>
-                                            <p className="text-[13px] font-semibold text-slate-800 line-clamp-2 leading-snug">
-                                                {drive.role || drive.title}
+
+                                    {/* ── Stats strip ── */}
+                                    <div className="mx-5 mb-4 grid grid-cols-3 rounded-xl border border-gray-100 bg-gray-50/60 divide-x divide-gray-100 overflow-hidden">
+                                        <div className="px-3 py-2.5 text-center">
+                                            <p className="text-[20px] font-black text-gray-900 leading-none">{applicants}</p>
+                                            <p className="text-[10px] text-gray-400 font-semibold mt-0.5 flex items-center justify-center gap-1">
+                                                <Users className="h-2.5 w-2.5" /> Candidates
+                                            </p>
+                                        </div>
+                                        <div className="px-3 py-2.5 text-center">
+                                            <p className={cn(
+                                                "text-[12px] font-bold leading-tight",
+                                                deadlineText ? (isExpired ? "text-red-500" : "text-gray-900") : "text-gray-300"
+                                            )}>
+                                                {deadlineText ?? "—"}
+                                            </p>
+                                            <p className={cn(
+                                                "text-[10px] font-semibold mt-0.5 flex items-center justify-center gap-1",
+                                                isExpired ? "text-red-400" : "text-gray-400"
+                                            )}>
+                                                <Calendar className="h-2.5 w-2.5" />
+                                                {deadlineText ? (isExpired ? "Expired" : "Deadline") : "No deadline"}
+                                            </p>
+                                        </div>
+                                        <div className="px-3 py-2.5 text-center">
+                                            <p className="text-[12px] font-bold text-gray-900 leading-tight truncate">{language}</p>
+                                            <p className="text-[10px] text-gray-400 font-semibold mt-0.5 flex items-center justify-center gap-1">
+                                                <Globe className="h-2.5 w-2.5" /> Language
                                             </p>
                                         </div>
                                     </div>
-                                    {/* Bento stats grid */}
-                                    <div className="px-5 pb-3 flex-1 space-y-2.5">
-                                        {/* Row 1: Candidates + Deadline */}
-                                        <div className="grid grid-cols-2 gap-2.5">
-                                            {/* Candidates tile */}
-                                            <div className="rounded-2xl bg-white border border-slate-100 shadow-[0_2px_8px_rgba(15,23,42,0.04)] px-4 py-3 flex flex-col gap-1">
-                                                <div className="flex items-center gap-1.5">
-                                                    <div className="h-5 w-5 rounded-lg bg-blue-50 flex items-center justify-center">
-                                                        <Users className="h-3 w-3 text-blue-500" />
-                                                    </div>
-                                                    <p className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">Candidates</p>
-                                                </div>
-                                                <p className="text-[26px] font-black text-slate-900 leading-none tracking-tight">{applicants}</p>
-                                                <p className="text-[9px] font-semibold text-slate-400">Total applied</p>
-                                            </div>
-                                            {/* Deadline / Created tile */}
-                                            <div className="rounded-2xl bg-white border border-slate-100 shadow-[0_2px_8px_rgba(15,23,42,0.04)] px-4 py-3 flex flex-col gap-1">
-                                                <div className="flex items-center gap-1.5">
-                                                    <div className={`h-5 w-5 rounded-lg flex items-center justify-center ${deadlineText ? (isExpired ? "bg-red-50" : "bg-emerald-50") : "bg-slate-50"}`}>
-                                                        <Target className={`h-3 w-3 ${deadlineText ? (isExpired ? "text-red-500" : "text-emerald-500") : "text-slate-400"}`} />
-                                                    </div>
-                                                    <p className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">
-                                                        {deadlineText ? "Deadline" : "Created"}
-                                                    </p>
-                                                </div>
-                                                <p className={`text-[13px] font-bold leading-tight mt-1 ${deadlineText && isExpired ? "text-red-500" : "text-slate-800"}`}>
-                                                    {deadlineText ?? createdAt}
-                                                </p>
-                                                {deadlineText && (
-                                                    <p className="text-[9px] font-semibold text-slate-400">{isExpired ? "Expired" : "Open"}</p>
-                                                )}
-                                            </div>
+
+                                    {/* ── Voice row ── */}
+                                    <div className="mx-5 mb-4 flex items-center gap-2.5 rounded-xl border border-gray-100 bg-gray-50/60 px-3.5 py-2.5">
+                                        <div className="h-7 w-7 rounded-lg bg-white border border-gray-200 flex items-center justify-center shrink-0">
+                                            <Mic className="h-3.5 w-3.5 text-[#F97316]" />
                                         </div>
-                                        {/* Row 2: Voice + Language */}
-                                        <div className="grid grid-cols-2 gap-2.5">
-                                            {/* Voice tile */}
-                                            <div className="rounded-2xl bg-white border border-slate-100 shadow-[0_2px_8px_rgba(15,23,42,0.04)] px-4 py-3 flex flex-col gap-1">
-                                                <div className="flex items-center gap-1.5">
-                                                    <div className="h-5 w-5 rounded-lg bg-orange-50 flex items-center justify-center">
-                                                        <Mic className="h-3 w-3 text-orange-500" />
-                                                    </div>
-                                                    <p className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">Voice</p>
-                                                </div>
-                                                <p className="text-[13px] font-bold text-slate-800 leading-tight mt-1 truncate">
-                                                    {voice?.name ?? "Default"}
-                                                </p>
-                                                <p className="text-[9px] font-semibold text-slate-400 truncate">{voice?.provider ?? "Cartesia"}</p>
-                                            </div>
-                                            {/* Language tile */}
-                                            <div className="rounded-2xl bg-white border border-slate-100 shadow-[0_2px_8px_rgba(15,23,42,0.04)] px-4 py-3 flex flex-col gap-1">
-                                                <div className="flex items-center gap-1.5">
-                                                    <div className="h-5 w-5 rounded-lg bg-purple-50 flex items-center justify-center">
-                                                        <Globe className="h-3 w-3 text-purple-500" />
-                                                    </div>
-                                                    <p className="text-[9px] font-black uppercase tracking-[0.18em] text-slate-400">Language</p>
-                                                </div>
-                                                <p className="text-[13px] font-bold text-slate-800 leading-tight mt-1 truncate">
-                                                    {language}
-                                                </p>
-                                                <p className="text-[9px] font-semibold text-slate-400">Interview lang</p>
-                                            </div>
+                                        <div className="min-w-0 flex-1">
+                                            <p className="text-[12px] font-bold text-gray-800 truncate">{voice?.name ?? "Default Voice"}</p>
+                                            <p className="text-[10px] text-gray-400 font-medium">{voice?.provider ?? "Cartesia"}</p>
                                         </div>
+                                        {deadlineText && !isExpired && (
+                                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100 shrink-0">
+                                                Open
+                                            </span>
+                                        )}
+                                        {isExpired && (
+                                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-50 text-red-500 border border-red-100 shrink-0">
+                                                Expired
+                                            </span>
+                                        )}
                                     </div>
-                                    {/* Footer CTA */}
-                                    <div className="px-5 pb-5 pt-1">
-                                        <Button
-                                            className="w-full h-10 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-[12px] tracking-wide shadow-[0_4px_14px_rgba(15,23,42,0.18)] transition-all duration-200 hover:shadow-[0_8px_20px_rgba(15,23,42,0.22)]"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                router.push(`/admin/candidates/drive/${encodeURIComponent(drive.id)}`);
-                                            }}
+
+                                    {/* ── CTA ── */}
+                                    <div className="px-5 pb-4 mt-auto">
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); router.push(`/admin/candidates/drive/${encodeURIComponent(drive.id)}`); }}
+                                            className="w-full h-10 rounded-xl bg-gray-900 hover:bg-[#F97316] text-white font-bold text-[13px] flex items-center justify-center gap-2 transition-colors duration-200 group/btn"
                                         >
                                             View Candidates
-                                            <ArrowUpRight className="ml-2 h-3.5 w-3.5" />
-                                        </Button>
+                                            <ArrowUpRight className="h-3.5 w-3.5 group-hover/btn:translate-x-0.5 group-hover/btn:-translate-y-0.5 transition-transform" />
+                                        </button>
                                     </div>
                                 </div>
-                            </div>
-                        );
-                    })
+                            );
+                        })}
+                    </div>
                 )}
             </div>
-            {/* Pagination */}
-            {!isLoading && jobs.length > 0 && (
-                <div className="mt-10 py-6 border-t border-slate-200">
-                    <div className="flex items-center justify-center gap-4 mb-6">
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-10 px-8 rounded-xl border-slate-200 bg-white text-slate-600 font-bold hover:bg-slate-50 disabled:opacity-30 transition-all"
+
+            {/* ── Pagination ── */}
+            {!isLoading && jobs.length > 0 && pagination.totalPages > 1 && (
+                <div className="px-6 lg:px-10 mt-10 flex items-center justify-between">
+                    <p className="text-[12px] text-gray-400 font-medium">
+                        Showing <span className="font-bold text-gray-700">{(pagination.page - 1) * pagination.limit + 1}</span>–<span className="font-bold text-gray-700">{Math.min(pagination.page * pagination.limit, pagination.total)}</span> of <span className="font-bold text-gray-700">{pagination.total}</span>
+                    </p>
+                    <div className="flex gap-2">
+                        <button
                             disabled={pagination.page <= 1 || isLoading}
                             onClick={() => handlePageChange(pagination.page - 1)}
+                            className="h-9 px-5 rounded-full border border-gray-200 bg-white text-[13px] font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-30 transition-colors flex items-center gap-1.5"
                         >
-                            <ChevronRight className="h-4 w-4 mr-2 rotate-180" /> Previous
-                        </Button>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-10 px-8 rounded-xl border-slate-200 bg-white text-slate-600 font-bold hover:bg-slate-50 disabled:opacity-30 transition-all"
+                            <ChevronRight className="h-4 w-4 rotate-180" /> Previous
+                        </button>
+                        <button
                             disabled={pagination.page >= pagination.totalPages || isLoading}
                             onClick={() => handlePageChange(pagination.page + 1)}
+                            className="h-9 px-5 rounded-full border border-gray-200 bg-white text-[13px] font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-30 transition-colors flex items-center gap-1.5"
                         >
-                            Next <ChevronRight className="h-4 w-4 ml-2" />
-                        </Button>
+                            Next <ChevronRight className="h-4 w-4" />
+                        </button>
                     </div>
-                    <p className="text-center text-[12px] font-medium text-gray-400">
-                        Showing <span className="text-gray-900 font-bold">{(pagination.page - 1) * pagination.limit + 1}</span> to <span className="text-gray-900 font-bold">{Math.min(pagination.page * pagination.limit, pagination.total)}</span> of <span className="text-gray-900 font-bold">{pagination.total}</span> jobs
-                    </p>
                 </div>
             )}
-            {/* Delete Modal */}
+
             <ActionConfirmModal
                 isOpen={isDeleteModalOpen}
                 onClose={() => setIsDeleteModalOpen(false)}

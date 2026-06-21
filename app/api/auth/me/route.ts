@@ -8,7 +8,7 @@ export async function GET(req: NextRequest) {
         const org = await prisma.organization.findUnique({
             where: { id: session.orgId },
             select: { status: true }
-        } as any);
+        });
         if (!org || (!isOrgRestrictedStatus(org.status) && String(org.status || "").toUpperCase() !== "ACTIVE")) {
             // Org is deleted or has an invalid status, session is invalid
             return NextResponse.json(null);

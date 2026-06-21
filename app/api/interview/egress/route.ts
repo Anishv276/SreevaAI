@@ -125,7 +125,7 @@ async function getInterviewManifest(applicationId: string): Promise<EgressManife
         where: { applicationId },
         select: { recording: true },
     });
-    const recording = normalizeRecordingState((row as any)?.recording);
+    const recording = normalizeRecordingState(row?.recording);
     return normalizeManifest(recording.manifest);
 }
 async function persistRecordingState(params: {
@@ -159,7 +159,7 @@ async function persistRecordingState(params: {
         select: { recording: true },
     }).catch(() => null);
     const currentManifest = normalizeManifest(
-        normalizeRecordingState((currentRow as any)?.recording).manifest
+        normalizeRecordingState(currentRow?.recording).manifest
     );
     const nextManifest = {
         ...currentManifest,
@@ -181,7 +181,7 @@ async function persistRecordingState(params: {
     const retentionDueAt = terminalWithAsset && normalizedRetentionDays !== null
         ? computeRecordingRetentionDueAt(retentionBase, normalizedRetentionDays)
         : null;
-    const nextRecording = mergeRecordingState((currentRow as any)?.recording, {
+    const nextRecording = mergeRecordingState(currentRow?.recording, {
         ...(recordingName ? { name: recordingName } : {}),
         mode: nextManifest.mode || "livekit_egress",
         status,
@@ -378,7 +378,7 @@ export async function POST(req: Request) {
                         },
                     },
                 };
-                const info = await (egressClient as any).startRoomCompositeEgress(
+                const info = await egressClient.startRoomCompositeEgress(
                     roomName,
                     encodedOutput,
                     { layout: "speaker-light" }

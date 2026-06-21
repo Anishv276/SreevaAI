@@ -15,10 +15,6 @@ interface StatsData {
     interviewed: number;
     shortlisted: number;
     shortlistPassRate: number;
-    hiredThisMonth: number;
-    hiredPrevMonth: number;
-    avgTimeToHire: number | null;
-    timeToHireDiff: number | null;
     liveInterviews: number;
     avgRating: number;
 }
@@ -81,7 +77,6 @@ export function StatsGrid({ dateRange }: StatsGridProps) {
         );
     }
     const s = stats;
-    const hiredDelta = s.hiredThisMonth - s.hiredPrevMonth;
     const cards = [
         {
             label: "Active Jobs",
@@ -129,29 +124,7 @@ export function StatsGrid({ dateRange }: StatsGridProps) {
             color: "text-pink-700",
             iconBg: "bg-pink-50",
         },
-        {
-            label: "Hired",
-            value: s.hiredThisMonth,
-            sub: s.hiredPrevMonth > 0
-                ? `${hiredDelta >= 0 ? "+" : ""}${hiredDelta} vs last period`
-                : "This period",
-            icon: UserCheck,
-            color: "text-emerald-700",
-            iconBg: "bg-emerald-50",
-            badge: s.hiredPrevMonth > 0
-                ? { label: `${hiredDelta >= 0 ? "+" : ""}${hiredDelta}`, up: hiredDelta >= 0 }
-                : undefined,
-        },
-        {
-            label: "Avg. Time to Hire",
-            value: s.avgTimeToHire != null ? `${s.avgTimeToHire}d` : "—",
-            sub: s.timeToHireDiff != null
-                ? `${s.timeToHireDiff > 0 ? "+" : ""}${s.timeToHireDiff}d vs last period`
-                : s.avgTimeToHire != null ? "Stable" : "No hires yet",
-            icon: Clock,
-            color: "text-sky-700",
-            iconBg: "bg-sky-50",
-        },
+
         {
             label: "Candidate Rating",
             value: s.avgRating > 0 ? s.avgRating.toFixed(1) : "—",

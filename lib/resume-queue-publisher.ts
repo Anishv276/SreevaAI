@@ -2,18 +2,6 @@ import IORedis from "ioredis";
 import { Queue } from "bullmq";
 import { getRedisUrl } from "./redis";
 
-/**
- * DEDICATED RESUME-BATCH PUBLISHER
- *
- * Each org gets its own queue: resume-processing:{orgId}
- * This means Org A's 1000-resume upload never blocks Org B's 5-resume upload.
- * The worker side dynamically subscribes to each org queue the first time it sees one.
- *
- * One long-lived Redis connection + per-org Queue cache, stored on `global` so
- * Next.js hot-reloads reuse them instead of leaking connections.
- * Every enqueue is VERIFIED: after add(), we read the job back.
- */
-
 type PublisherState = {
   connection: IORedis;
   queues: Map<string, Queue>;
@@ -57,16 +45,11 @@ function getOrgQueue(orgId: string): Queue {
   return queues.get(name)!;
 }
 
-export interface ResumeBatchJobData {
-  batchId: string;
+export interface ResumeJobData {
   driveId: string;
   orgId: string;
   candidateIds: string[];
 }
-
-// Each sub-job processes exactly SUBJOB_SIZE candidates, all in parallel.
-// Keeping this at 5 means each sub-job is fast and orgs get fair turn-taking.
-const SUBJOB_SIZE = Math.max(1, Number(process.env.RESUME_SUBJOB_SIZE) || 5);
 
 const BULLMQ_JOB_OPTS = {
   attempts: 3,
@@ -75,50 +58,32 @@ const BULLMQ_JOB_OPTS = {
   removeOnFail: { count: 0 },
 };
 
-/**
- * Enqueue to the org's dedicated queue and verify every job landed in Redis.
- * Large batches are fanned out into sub-jobs of SUBJOB_SIZE candidates each.
- */
 const ORG_REGISTRY_KEY = "resume-worker:active-orgs";
 
-export async function enqueueResumeBatch(
-  data: ResumeBatchJobData,
-  opts?: { jobIdSuffix?: string }
-): Promise<string[]> {
+/**
+ * Enqueue all candidates as a single job on the org's dedicated queue.
+ * Up to 500 resumes per upload — all processed in parallel by the worker.
+ */
+export async function enqueueResumeJob(data: ResumeJobData): Promise<string> {
   const queue = getOrgQueue(data.orgId);
   await queue.waitUntilReady();
-  // Register this org so the worker process knows to spin up a dedicated worker for it.
   await getPublisher().connection.sadd(ORG_REGISTRY_KEY, data.orgId).catch(() => {});
 
-  const ids = data.candidateIds;
-  const suffix = opts?.jobIdSuffix ? `_${opts.jobIdSuffix}` : "";
-
-  const slices: string[][] = [];
-  for (let i = 0; i < ids.length; i += SUBJOB_SIZE) {
-    slices.push(ids.slice(i, i + SUBJOB_SIZE));
-  }
-  if (slices.length === 0) slices.push([]);
-
-  const jobIds: string[] = [];
-  for (let part = 0; part < slices.length; part += 1) {
-    const jobId = `batch_${data.batchId}${suffix}_part${part}`;
-    const job = await queue.add(
-      "drive-resume-batch",
-      {
-        batchId: data.batchId,
-        driveId: data.driveId,
-        orgId: data.orgId,
-        candidateIds: slices[part],
-      },
-      { ...BULLMQ_JOB_OPTS, jobId }
+  const jobId = `resume_${data.orgId}_${Date.now()}`;
+  const job = await queue.add(
+    "drive-resume-batch",
+    {
+      driveId: data.driveId,
+      orgId: data.orgId,
+      candidateIds: data.candidateIds,
+    },
+    { ...BULLMQ_JOB_OPTS, jobId }
+  );
+  const confirmed = await queue.getJob(job.id as string);
+  if (!confirmed) {
+    throw new Error(
+      `[RESUME-PUBLISHER] Enqueue not durable — job ${job.id} not found after add()`
     );
-    const confirmed = await queue.getJob(job.id as string);
-    if (!confirmed) {
-      throw new Error(
-        `[RESUME-PUBLISHER] Enqueue not durable — job ${job.id} for batch ${data.batchId} not found after add()`
-      );
-    }
-    jobIds.push(job.id as string);
   }
-  return jobIds;
+  return job.id as string;
 }

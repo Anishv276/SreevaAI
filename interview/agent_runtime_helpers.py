@@ -51,7 +51,10 @@ _BANNED_ACK_REPLACEMENTS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"^\s*good\.\s+so\s+i[‘’]?ll\s+be\s+conducting\b", re.I), "Doing well, packed with interviews today. I’ll be conducting"),
 )
 _TRAILING_FILLER_RE = re.compile(
-    r"(?:[,.\s]+)(?:um+|uh+|hmm+|mm+|ah+|oh+)\s*[.!?]*\s*$",
+    # Strip pure noise fillers (um, uh) dangling at end of a turn.
+    # Intentional openers (hmm, mm, ah, oh) are now encouraged before questions
+    # so we only strip them when they appear at the very end with no following content.
+    r"(?:[,.\s]+)(?:um+|uh+)\s*[.!?]*\s*$",
     re.I,
 )
 def polish_candidate_facing_text(text: str) -> str:
@@ -81,7 +84,9 @@ async def _tts_acronym_transform(text_stream):
     async for chunk in text_stream:
         yield tts_phonetic_processor.transform(chunk)
 _TTS_PHONETIC_FIXES = [
-    # Remove em/en dashes that cause TTS to pause-split surrounding words
+    # Remove em/en dashes (Unicode U+2014/U+2013) and ASCII double-hyphens that
+    # cause Sarvam to say "dash" or pause-split surrounding words.
+    (re.compile(r"\s*[–—]\s*"), ", "),
     (re.compile(r"\s*-{2,}\s*"), ", "),
     # Remove soft-hyphen / mid-word hyphen the LLM inserts (e.g. "respon-sibilities")
     # Only strip hyphens that are surrounded by letters -- keep valid compounds like "well-known"
@@ -91,6 +96,10 @@ _TTS_PHONETIC_FIXES = [
     (re.compile(r"\.{2,}"), ", "),
     # Strip residual markdown symbols (backticks, asterisks, underscores, tildes)
     (re.compile(r"[`*_~]"), ""),
+    # Natural filler pause cue: ensure spoken fillers get a comma-breath after them
+    # so Sarvam pauses naturally before the next clause. Only when not already followed
+    # by punctuation.
+    (re.compile(r"\b(Hmm|Mm|Ah|Oh|Right|Yeah|So|Well|Okay)\b(?!\s*[,.\?!])"), r"\1,"),
     # Collapse any resulting double spaces
     (re.compile(r" {2,}"), " "),
 ]

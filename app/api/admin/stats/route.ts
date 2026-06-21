@@ -23,14 +23,12 @@ export async function GET(req: NextRequest) {
             applicationsPrev: number;
             screenedInPeriod: number;
             shortlisted: number;
-            hiredThisMonth: number;
-            hiredPrevMonth: number;
+
             interviewed: number;
             liveInterviews: number;
             needsReview: number;
             invited: number;
-            avgTimeToHire: number | null;
-            avgTimeToHirePrev: number | null;
+
         };
         type DriveStatsRow = {
             activeDrives: number;
@@ -43,20 +41,13 @@ export async function GET(req: NextRequest) {
                 COUNT(*) FILTER (WHERE a."createdAt" >= ${prevStart} AND a."createdAt" < ${prevEnd})::INT AS "applicationsPrev",
                 COUNT(*) FILTER (WHERE a."createdAt" >= ${start} AND a."aiScore" IS NOT NULL)::INT AS "screenedInPeriod",
                 COUNT(*) FILTER (WHERE a."updatedAt" >= ${start} AND a."resumeStatus" ILIKE 'SHORTLISTED')::INT AS shortlisted,
-                COUNT(*) FILTER (WHERE a."updatedAt" >= ${start} AND a."hiringStatus" ILIKE 'HIRED')::INT AS "hiredThisMonth",
-                COUNT(*) FILTER (WHERE a."updatedAt" >= ${prevStart} AND a."updatedAt" < ${prevEnd} AND a."hiringStatus" ILIKE 'HIRED')::INT AS "hiredPrevMonth",
+
                 COUNT(*) FILTER (
                     WHERE i."status" = 'COMPLETED' AND i."completedAt" >= ${start}
                 )::INT AS interviewed,
                 COUNT(*) FILTER (WHERE i."status" = 'IN_PROGRESS')::INT AS "liveInterviews",
                 COUNT(*) FILTER (WHERE i."status" = 'COMPLETED' AND a."aiScore" IS NULL)::INT AS "needsReview",
-                COUNT(*) FILTER (WHERE i."createdAt" >= ${start})::INT AS invited,
-                AVG(EXTRACT(EPOCH FROM (a."updatedAt" - a."createdAt"))/86400) FILTER (
-                    WHERE a."updatedAt" >= ${start} AND a."hiringStatus" ILIKE 'HIRED'
-                )::FLOAT AS "avgTimeToHire",
-                AVG(EXTRACT(EPOCH FROM (a."updatedAt" - a."createdAt"))/86400) FILTER (
-                    WHERE a."updatedAt" >= ${prevStart} AND a."updatedAt" < ${prevEnd} AND a."hiringStatus" ILIKE 'HIRED'
-                )::FLOAT AS "avgTimeToHirePrev"
+                COUNT(*) FILTER (WHERE i."createdAt" >= ${start})::INT AS invited
             FROM "Application" a
             JOIN "Drive" d ON d.id = a."driveId"
             LEFT JOIN "Interview" i ON i."applicationId" = a.id
@@ -100,8 +91,7 @@ export async function GET(req: NextRequest) {
         function safeRound(val: number | string | null | undefined) {
             return val != null ? Math.round(Number(val)) : null;
         }
-        const avgTimeToHire = safeRound(s.avgTimeToHire);
-        const avgTimeToHirePrev = safeRound(s.avgTimeToHirePrev);
+
         const applications = Number(s.applications);
         const applicationsPrev = Number(s.applicationsPrev);
         const interviewed = Number(s.interviewed);
@@ -120,10 +110,7 @@ export async function GET(req: NextRequest) {
             interviewRate: screenedInPeriod > 0 ? Math.round((interviewed / screenedInPeriod) * 100) : 0,
             shortlisted,
             shortlistPassRate: applications > 0 ? Math.round((shortlisted / applications) * 100) : 0,
-            hiredThisMonth: Number(s.hiredThisMonth),
-            hiredPrevMonth: Number(s.hiredPrevMonth),
-            avgTimeToHire,
-            timeToHireDiff: avgTimeToHire != null && avgTimeToHirePrev != null ? avgTimeToHire - avgTimeToHirePrev : null,
+
             dropOffRate: (interviewed + liveInterviews) > 0 ? Math.round((liveInterviews / (interviewed + liveInterviews)) * 100) : 0,
             needsReview: Number(s.needsReview),
             liveInterviews,

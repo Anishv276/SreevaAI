@@ -83,7 +83,20 @@ async function recordedAudioToLinear16Pcm(chunks: Blob[], mimeType: string): Pro
                 break;
             }
         }
-        const trimmedChannel = speechStartSample > 0 ? channel.slice(speechStartSample) : channel;
+        // --- Trim trailing silence ---
+        // Scan backwards from end to find last window with speech activity
+        let speechEndSample = channel.length;
+        for (let i = channel.length - windowSamples; i > speechStartSample; i -= windowSamples) {
+            let sumSq = 0;
+            for (let j = i; j < i + windowSamples; j++) sumSq += channel[j] * channel[j];
+            const rms = Math.sqrt(sumSq / windowSamples);
+            if (rms > SPEECH_RMS_THRESHOLD) {
+                // Keep 150ms after last detected speech to avoid clipping
+                speechEndSample = Math.min(channel.length, i + windowSamples + Math.floor(FLUX_VERIFY_SAMPLE_RATE * 0.15));
+                break;
+            }
+        }
+        const trimmedChannel = channel.slice(speechStartSample, speechEndSample);
         const pcm = new ArrayBuffer(trimmedChannel.length * 2);
         const view = new DataView(pcm);
         for (let i = 0; i < trimmedChannel.length; i++) {

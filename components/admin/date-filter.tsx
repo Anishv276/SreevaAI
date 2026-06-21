@@ -15,7 +15,7 @@ interface DateFilterProps {
     onChange: (range: DateRange) => void;
 }
 const PRESETS = [
-    { key: "all", label: "All Time", icon: CalendarDays },
+    { key: "all", label: "All Dates", icon: CalendarDays },
     { key: "today", label: "Today", icon: Clock },
     { key: "week", label: "This Week", icon: CalendarDays },
     { key: "month", label: "This Month", icon: Calendar },
@@ -57,7 +57,7 @@ export function DateFilter({ value, onChange }: DateFilterProps) {
     }, [open]);
     const getLabel = () => {
         if (value.type === "custom") return `${value.from} – ${value.to}`;
-        return PRESETS.find(p => p.key === value.type)?.label || "All Time";
+        return PRESETS.find(p => p.key === value.type)?.label || "All Dates";
     };
     const dropdown = open && rect ? (
         <div
@@ -148,21 +148,22 @@ export function DateFilter({ value, onChange }: DateFilterProps) {
             )}
         </div>
     ) : null;
+    const isActive = value.type !== "all";
     return (
         <div className="relative">
             <button
                 ref={triggerRef}
                 onClick={handleOpen}
                 className={cn(
-                    "group flex items-center justify-between gap-4 h-12 px-5 rounded-2xl border-transparent bg-white/60 text-gray-500 font-bold hover:text-[#F97316] transition-all shadow-inner focus:outline-none",
-                    open && "text-[#F97316]"
+                    "flex items-center gap-1.5 h-8 px-3.5 rounded-full text-[12px] font-bold transition-all duration-150 border focus:outline-none",
+                    isActive
+                        ? "bg-[#F97316] text-white border-[#F97316] shadow-sm"
+                        : "text-gray-500 border-gray-200 hover:border-gray-300 hover:text-gray-700 bg-white"
                 )}
             >
-                <div className="flex items-center gap-2">
-                    <Calendar className="h-4 w-4" />
-                    <span className="text-[13px] tracking-tight whitespace-nowrap">{getLabel()}</span>
-                </div>
-                <ChevronDown className={cn("h-4 w-4 text-gray-300 transition-transform duration-300", open && "rotate-180 text-[#F97316]")} />
+                <Calendar className="h-3.5 w-3.5" />
+                <span className="whitespace-nowrap">{getLabel()}</span>
+                <ChevronDown className={cn("h-3 w-3 ml-0.5 transition-transform duration-200", open && "rotate-180")} />
             </button>
             {typeof window !== "undefined" && createPortal(dropdown, document.body)}
         </div>

@@ -18,7 +18,7 @@ import { recordOrgBillingUsage } from "./lib/usage-metrics";
 import { buildInterviewLink } from "./lib/interview-links";
 import { safeFetch } from "./lib/safe-fetch";
 import { Prisma } from "@prisma/client";
-import { recordingRetentionQueue } from "./lib/queue";
+import { recordingRetentionQueue, invitationDeliveryQueue } from "./lib/queue";
 import {
   computeRecordingRetentionDueAt,
   deleteRecordingAsset,
@@ -202,7 +202,6 @@ async function setDriveCandidateStage(
   });
 }
 async function processInterviewStartJob(job: any) {
-  const prismaAny = prisma as any;
   const {
     applicationId,
     startedAt: startedAtRaw,
@@ -211,7 +210,7 @@ async function processInterviewStartJob(job: any) {
   if (!applicationId) {
     throw new Error("Missing applicationId in interview-start job");
   }
-  const application = await prismaAny.application.findUnique({
+  const application = await prisma.application.findUnique({
     where: { id: applicationId },
     select: { id: true },
   });
@@ -223,7 +222,7 @@ async function processInterviewStartJob(job: any) {
   if (!Number.isFinite(startedAtCandidate.getTime())) {
     throw new Error(`Invalid startedAt timestamp for ${applicationId}`);
   }
-  const existingInterview = await prismaAny.interview.findUnique({
+  const existingInterview = await prisma.interview.findUnique({
     where: { applicationId },
     select: {
       startedAt: true,
@@ -236,7 +235,7 @@ async function processInterviewStartJob(job: any) {
     console.log(
       `[INTERVIEW-START] Interview already started for ${applicationId} at ${existingInterview.startedAt.toISOString()}`
     );
-    await prismaAny.application.update({
+    await prisma.application.update({
       where: { id: applicationId },
       data: { interviewStatus: "IN_PROGRESS" },
     }).catch(() => {});
@@ -248,7 +247,7 @@ async function processInterviewStartJob(job: any) {
     };
   }
   const interviewAccessToken = existingInterview?.accessToken || accessToken || crypto.randomUUID();
-  await prismaAny.interview.upsert({
+  await prisma.interview.upsert({
     where: { applicationId },
     update: {
       status: "IN_PROGRESS",
@@ -264,7 +263,7 @@ async function processInterviewStartJob(job: any) {
       linkStatus: "ACTIVE",
     },
   });
-  await prismaAny.application.update({
+  await prisma.application.update({
     where: { id: applicationId },
     data: { interviewStatus: "IN_PROGRESS" },
   });
@@ -350,7 +349,7 @@ async function processRecordingRetentionSweepJob(job: any) {
       recordingManifest,
       recording: row.recording,
     });
-    await (prisma as any).interview.update({
+    await prisma.interview.update({
       where: { applicationId: row.applicationId },
       data: {
         recording: mergeRecordingState(row.recording, {
@@ -374,7 +373,7 @@ async function processRecordingRetentionSweepJob(job: any) {
     if (!deleteResult.success) {
       const lastError = deleteResult.lastError || "Failed to delete recording asset from Cloudflare R2";
       failed += 1;
-      await (prisma as any).interview.update({
+      await prisma.interview.update({
         where: { applicationId: row.applicationId },
         data: {
           recording: mergeRecordingState(row.recording, {
@@ -391,7 +390,7 @@ async function processRecordingRetentionSweepJob(job: any) {
     }
     const deletedAt = new Date();
     deleted += 1;
-    await (prisma as any).interview.update({
+    await prisma.interview.update({
       where: { applicationId: row.applicationId },
       data: {
         recording: mergeRecordingState(row.recording, {
@@ -423,26 +422,16 @@ async function processRecordingRetentionSweepJob(job: any) {
   };
 }
 async function processDriveResumeBatchJob(job: any) {
-  const { batchId, driveId, orgId, candidateIds: candidateIdsFromPayload } = job.data || {};
-  if (!batchId || !driveId || !orgId) {
+  const { driveId, orgId, candidateIds: candidateIdsFromPayload } = job.data || {};
+  if (!driveId || !orgId) {
     console.warn(`[WORKER] Stale job ${job.id} has no payload — discarding.`);
     return;
   }
   const batchExtractModel = "gpt-4o-mini";
   const batchReportModel = "gpt-4o-mini";
-  console.log(`\n[BATCH START] batchId=${batchId} driveId=${driveId}`);
-  const batch = await prisma.resumeBatch.findUnique({ where: { id: batchId } });
-  if (!batch) {
-    console.warn(`[BATCH] ${batchId} not found in DB — discarding stale job.`);
-    return;
-  }
-  const normalizedBatchStatus = String(batch.status || "").toUpperCase();
-  if (normalizedBatchStatus === "COMPLETED" || normalizedBatchStatus === "FAILED") {
-    console.log(`[BATCH] ${batchId} already ${normalizedBatchStatus} — skipping.`);
-    return;
-  }
+  console.log(`\n[RESUME JOB] jobId=${job.id} driveId=${driveId} candidates=${Array.isArray(candidateIdsFromPayload) ? candidateIdsFromPayload.length : 0}`);
   if (!Array.isArray(candidateIdsFromPayload) || candidateIdsFromPayload.length === 0) {
-    console.warn(`[BATCH] ${batchId} sub-job has no candidateIds — discarding.`);
+    console.warn(`[RESUME JOB] ${job.id} has no candidateIds — discarding.`);
     return;
   }
   let candidates = await prisma.application.findMany({
@@ -450,19 +439,10 @@ async function processDriveResumeBatchJob(job: any) {
     orderBy: { createdAt: "asc" },
   });
   if (candidates.length === 0) {
-    // This sub-job's candidates are gone (e.g. user deleted them). Do NOT fail the
-    // whole batch — other sub-jobs may still be working. Just exit cleanly.
-    console.warn(`[BATCH] ${batchId} sub-job candidates deleted — exiting cleanly.`);
+    console.warn(`[RESUME JOB] ${job.id} candidates deleted — exiting cleanly.`);
     return;
   }
-  console.log(`[BATCH] ${batchId} → processing ${candidates.length} resume(s)`);
-  // Mark PROCESSING without zeroing counts — concurrent sub-jobs of the same
-  // batch must not stomp each other's progress. Counts are authoritative from
-  // candidate rows (see tickBatch + finalization).
-  await prisma.resumeBatch.update({
-    where: { id: batchId },
-    data: { status: "PROCESSING" },
-  }).catch(() => {});
+  console.log(`[RESUME JOB] ${job.id} → processing ${candidates.length} resume(s) in parallel`);
   const drive = await prisma.drive.findUnique({
     where: { id: driveId },
     select: {
@@ -482,9 +462,6 @@ async function processDriveResumeBatchJob(job: any) {
   const screeningCriteria = parsedSettings.criteria;
   let structuredJd = parseJsonSafe<Record<string, any>>(drive.extractedDetails, {});
   const jdRawText = buildJdRawText(drive);
-  // JD structuring is best-effort. If OpenAI is slow/down, we MUST NOT abort the
-  // whole batch — fall back to raw-text scoring so every candidate still gets a
-  // score. (#8)
   if (!hasJdMustHaves(structuredJd) && jdRawText.length >= 80) {
     try {
       const extracted = await extractJDFromText(jdRawText, "gpt-4o-mini");
@@ -498,23 +475,14 @@ async function processDriveResumeBatchJob(job: any) {
           await recordOrgBillingUsage({
             orgId,
             feature: "jdExtraction",
-            usage: { ...extracted.usage, eventId: `resume-batch-jd:${batchId}:${driveId}` },
+            usage: { ...extracted.usage, eventId: `resume-jd:${job.id}:${driveId}` },
           }).catch(() => {});
         }
       }
     } catch (jdErr: any) {
-      console.warn(`[BATCH] ${batchId} JD extraction failed, scoring without JD — ${jdErr?.message}`);
+      console.warn(`[RESUME JOB] ${job.id} JD extraction failed, scoring without JD — ${jdErr?.message}`);
     }
   }
-  // Atomic SQL increment — no read-modify-write race.
-  async function tickBatch(success: boolean) {
-    const column = success ? "processedCount" : "failedCount";
-    await prisma.$executeRawUnsafe(
-      `UPDATE "ResumeBatch" SET "${column}" = "${column}" + 1, "updatedAt" = NOW() WHERE id = $1`,
-      batchId
-    ).catch(() => {});
-  }
-  console.log(`[BATCH] ${batchId} → running ${candidates.length} resume(s) in parallel`);
   await Promise.allSettled(
     candidates.map(async (candidate) => {
         let tmpPdfPath: string | null = null;
@@ -529,7 +497,6 @@ async function processDriveResumeBatchJob(job: any) {
             existingReport.includes("\"stage\":\"completed\"");
           const alreadyFailed = existingStatus === "failed" && existingStage === "failed";
           if (alreadyCompleted || alreadyFailed) {
-            await tickBatch(true);
             return;
           }
           const source = parseJsonSafe<any>(candidate.resumeData, {}).source || {};
@@ -644,8 +611,8 @@ async function processDriveResumeBatchJob(job: any) {
               interviewStatus: "pending",
               hiringStatus: "pending",
             },
-          } as any).catch((err: any) => {
-            console.warn(`  [RESUME] ${candidate.fullName} — final update failed: ${err?.message}`);
+          }).catch((err: unknown) => {
+            console.warn(`  [RESUME] ${candidate.fullName} — final update failed: ${(err as Error)?.message}`);
           });
           await appendCandidateActivity(appId, {
             type: "resume_screened",
@@ -655,6 +622,7 @@ async function processDriveResumeBatchJob(job: any) {
             source: "system",
           }).catch(() => {});
           console.log(`  [RESUME] ${candidate.fullName} — score=${finalScore} → ${finalStatus.toUpperCase()}`);
+
           if (scoreUsage?.inputTokens || scoreUsage?.outputTokens) {
             await recordOrgBillingUsage({
               orgId,
@@ -668,7 +636,6 @@ async function processDriveResumeBatchJob(job: any) {
               },
             });
           }
-          await tickBatch(true);
         } catch (error: any) {
           const failPayload = JSON.stringify({
             processing: {
@@ -682,76 +649,12 @@ async function processDriveResumeBatchJob(job: any) {
             where: { id: appId },
             data: { resumeStatus: "failed", aiScore: 0, aiReport: failPayload },
           }).catch(() => {});
-          await tickBatch(false);
-          // NOTE: do NOT auto-delete the candidate here. The job may retry
-          // (attempts:3); deleting would make the retry skip this resume and
-          // corrupt the batch count. Failed rows are surfaced in the UI and can
-          // be manually deleted, or cleaned by a separate retention sweep.
         } finally {
           if (tmpPdfPath) await unlink(tmpPdfPath).catch(() => {});
         }
       })
   );
-  // Finalization is BATCH-GLOBAL, not slice-local. With fan-out, several sub-jobs
-  // run concurrently; only the one that finishes the LAST non-terminal candidate
-  // should mark the batch COMPLETED. We recompute authoritative counts across the
-  // WHOLE batch from candidate rows (immune to retry drift / double-tick), and
-  // only finalize when nothing is left in a non-terminal state.
-  const TERMINAL = ["shortlisted", "rejected", "failed"];
-  const [doneCount, failCount, pendingCount] = await Promise.all([
-    prisma.application.count({
-      where: { bulkBatchId: batchId, resumeStatus: { in: ["shortlisted", "rejected"] } },
-    }),
-    prisma.application.count({
-      where: { bulkBatchId: batchId, resumeStatus: "failed" },
-    }),
-    prisma.application.count({
-      where: { bulkBatchId: batchId, resumeStatus: { notIn: TERMINAL } },
-    }),
-  ]);
-  if (pendingCount > 0) {
-    // Other sub-jobs are still working. Just update progress counters; do not finalize.
-    await prisma.resumeBatch.update({
-      where: { id: batchId },
-      data: { processedCount: doneCount, failedCount: failCount },
-    }).catch(() => {});
-    console.log(`[BATCH] ${batchId} sub-job done — ${pendingCount} resume(s) still in progress`);
-    return;
-  }
-  const allFailed = failCount > 0 && doneCount === 0;
-  await prisma.resumeBatch.update({
-    where: { id: batchId },
-    data: {
-      status: allFailed ? "FAILED" : "COMPLETED",
-      processedCount: doneCount,
-      failedCount: failCount,
-      completedAt: new Date(),
-    },
-  });
-  console.log(`[BATCH DONE] ${batchId} — ${doneCount} processed, ${failCount} failed → ${allFailed ? "FAILED" : "COMPLETED"}\n`);
-}
-/**
- * Startup cleanup: any batch still in QUEUED/PROCESSING when the worker boots
- * means the previous worker run died mid-job. Mark them FAILED immediately —
- * candidates keep their last known status (extracting/scoring → visible as failed
- * in UI). No re-enqueue, no sweep, no polling. Simple.
- */
-async function markStuckBatchesAsFailed() {
-  try {
-    const result = await prisma.resumeBatch.updateMany({
-      where: { status: { in: ["QUEUED", "PROCESSING"] }, isDeleted: false },
-      data: { status: "FAILED", completedAt: new Date() },
-    });
-    if (result.count > 0) {
-      await prisma.application.updateMany({
-        where: { resumeStatus: { notIn: ["shortlisted", "rejected", "failed", "pending"] } },
-        data: { resumeStatus: "failed" },
-      });
-      console.log(`[STARTUP] Marked ${result.count} stuck batch(es) and their candidates as FAILED.`);
-    }
-  } catch (err: any) {
-    console.warn("[STARTUP] Could not clean up stuck batches:", err?.message);
-  }
+  console.log(`[RESUME JOB] ${job.id} done — all ${candidates.length} resume(s) processed\n`);
 }
 async function persistInterviewUpdateRaw(params: {
   applicationId: string;
@@ -772,7 +675,7 @@ async function persistInterviewUpdateRaw(params: {
     ? incomingTranscript
     : existingTranscript;
   const recordingToPersist = recordingUrl
-    ? mergeRecordingState((existingInterview as any)?.recording, {
+    ? mergeRecordingState(existingInterview?.recording, {
         status: interviewStatus === "COMPLETED" ? "COMPLETED" : "IN_PROGRESS",
         url: recordingUrl,
         recordedAt: now.toISOString(),
@@ -1056,8 +959,6 @@ if (isQueueEnabled("resume-processing")) {
   // Temp-file janitor: sweep at boot and every 6 hours.
   void sweepTempFiles();
   setInterval(() => { void sweepTempFiles(); }, 6 * 60 * 60 * 1000).unref();
-  // On startup: mark any batches left stuck from a previous crashed worker run as FAILED.
-  void markStuckBatchesAsFailed();
   // Watch Redis for new orgs that have uploaded resumes.
   // The publisher adds each orgId to ORG_REGISTRY_KEY on every enqueue.
   // We poll every 10s and spin up a worker for any org we haven't seen yet.
@@ -1087,14 +988,13 @@ if (isQueueEnabled("invitation-delivery-queue")) {
         action,
       }: {
         applicationId?: string;
-        action?: "shortlist" | "reject" | "nothired";
+        action?: "shortlist" | "reject";
       } = job.data || {};
       console.log(`[Invitation Worker] Job received: action=${action}, applicationId=${applicationId}`);
       if (!applicationId || !action) {
         throw new Error("Missing applicationId or action in invitation-delivery-queue job");
       }
-      const prismaAny = prisma as any;
-      const application = await prismaAny.application.findUnique({
+      const application = await prisma.application.findUnique({
         where: { id: applicationId },
         select: {
           id: true,
@@ -1129,7 +1029,7 @@ if (isQueueEnabled("invitation-delivery-queue")) {
       let interviewLink: string | undefined;
       if (action === "shortlist") {
         const driveDeadline = application.drive?.deadline ? new Date(application.drive.deadline) : null;
-        const interviewRecord = await prismaAny.interview.upsert({
+        const interviewRecord = await prisma.interview.upsert({
           where: { applicationId },
           update: {
             inviteSentAt: now,
@@ -1166,7 +1066,7 @@ if (isQueueEnabled("invitation-delivery-queue")) {
           interviewLink,
           schedulingDeadline: application.drive?.deadline ?? null,
         });
-      } else if (action === "reject" || action === "nothired") {
+      } else if (action === "reject") {
         mailResult = await sendRejectionEmail({
           email: application.email,
           fullName: application.fullName || "Candidate",
@@ -1190,7 +1090,7 @@ if (isQueueEnabled("invitation-delivery-queue")) {
         throw new Error(reason);
       }
       if (action === "shortlist") {
-        await prismaAny.application.update({
+        await prisma.application.update({
           where: { id: applicationId },
           data: { interviewStatus: "pending", updatedAt: new Date() },
         }).catch(() => {});
@@ -1281,18 +1181,15 @@ if (isQueueEnabled("backup-queue")) {
       try {
         // 1. Fetch data from core tables
         const users = await prisma.user.findMany();
-        const drives = await (prisma.drive as any).findMany({
+        const drives = await prisma.drive.findMany({
           select: {
             id: true,
             title: true,
             role: true,
-            type: true,
             screeningThreshold: true,
             creatorId: true,
             createdAt: true,
             updatedAt: true,
-            positions: true,
-            workMode: true,
             extractedDetails: true,
             interviewLanguage: true,
             interviewQuestions: true,
@@ -1433,22 +1330,22 @@ if (isQueueEnabled("interview-finalization")) {
             );
           });
         }
-        const updateData: any = { updatedAt: new Date() };
-        const existingInterview = await (prisma as any).interview.findUnique({
+        const updateData: Record<string, unknown> = { updatedAt: new Date() };
+        const existingInterview = await prisma.interview.findUnique({
           where: { applicationId },
           select: { interviewTranscript: true, recording: true },
         });
         const existingTranscript = String(existingInterview?.interviewTranscript || "").trim();
         const incomingTranscript = String(transcript || "").trim();
         if (recordingUrlToPersist) {
-          updateData.recording = mergeRecordingState((existingInterview as any)?.recording, {
+          updateData.recording = mergeRecordingState(existingInterview?.recording, {
             status: interviewStatus === "COMPLETED" ? "COMPLETED" : "IN_PROGRESS",
             url: recordingUrlToPersist,
             recordedAt: new Date().toISOString(),
           });
         } else if (recordingDisabled) {
           const deletedAt = new Date();
-          updateData.recording = mergeRecordingState((existingInterview as any)?.recording, {
+          updateData.recording = mergeRecordingState(existingInterview?.recording, {
             status: "DISABLED",
             url: null,
             retention: {
@@ -1475,7 +1372,7 @@ if (isQueueEnabled("interview-finalization")) {
         }
         try {
           const appForId = await prisma.application.findUnique({ where: { id: applicationId }, select: { fullName: true } });
-          await (prisma as any).interview.upsert({
+          await prisma.interview.upsert({
             where: { applicationId },
             update: updateData,
             create: {
@@ -1680,13 +1577,13 @@ if (isQueueEnabled("interview-recording")) {
       const recordingSettings = orgId
         ? await getOrgRecordingSettings(orgId)
           : { recordingEnabled: false, recordingRetentionDays: null };
-      const interviewRow = await (prisma as any).interview.findUnique({
+      const interviewRow = await prisma.interview.findUnique({
         where: { applicationId },
         select: {
           recording: true,
         },
       });
-      const existingRecording = normalizeRecordingState((interviewRow as any)?.recording);
+      const existingRecording = normalizeRecordingState(interviewRow?.recording);
       const manifest = parseJsonRecord(existingRecording.manifest);
       const resolvedKey = String(recordingKey || existingRecording.key || manifest.recordingKey || "").trim();
       const resolvedUrl = String(
@@ -1758,7 +1655,7 @@ if (isQueueEnabled("interview-recording")) {
       const recordingName = [application?.fullName, application?.drive?.title || application?.drive?.role]
         .filter(Boolean)
         .join(" ") || applicationId;
-      const recordingToPersist = mergeRecordingState((interviewRow as any)?.recording, {
+      const recordingToPersist = mergeRecordingState(interviewRow?.recording, {
         name: recordingName,
         mode: "livekit_egress",
         status: shouldStoreRecording ? "COMPLETED" : "ABORTED",

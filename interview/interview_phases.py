@@ -6,53 +6,39 @@ The single stage covers resume projects/work and JD skills. Hard moments
 "pressure" family -- not scheduled as a separate quota.
 """
 from __future__ import annotations
-import random
 from typing import Any
 _BriefType = Any
-# Lightweight, human-feeling greeting templates.
-# - No project/role/anchor reference -- keeps the opener generic so it never
-#   makes the candidate feel "researched" before the interview even starts.
-# - Multiple variants prevent every session sounding identical.
-# - Two short sentences max -- spoken delivery, not corporate boilerplate.
-_GREETING_VARIANTS: list[str] = [
-    "Hi {name}, I'm {ai_name}. How are you doing?",
-    "Hi {name}, I'm {ai_name}. Good to have you here. How are you doing today?",
-    "Hello {name}, I'm {ai_name}. Hope you're doing well. How has your day been?",
-    "Hi {name}, I'm {ai_name}. How's your day going so far?",
-]
 def build_greeting_text(candidate_name: str, ai_name: str, job_title: str) -> str:
-    """Build a short, varied, human-feeling greeting.
-    `job_title` is intentionally unused; we keep it in the signature for
-    backwards compatibility with the existing call site. The greeting stays
-    role-agnostic so the opener does not sound rehearsed.
-    """
-    # Sanitize inputs so a missing/empty name doesn't render "Hi , ..."
+    """Fixed greeting — natural, warm, consistent across all sessions."""
     name = (candidate_name or "").strip().split()[0] if candidate_name else "there"
     ai = (ai_name or "").strip() or "your interviewer"
-    template = random.choice(_GREETING_VARIANTS)
-    return template.format(name=name, ai_name=ai)
-def build_warmup_directive(job_title: str = "") -> str:
+    return f"Hi {name}, this is {ai}, your interviewer for today. Let's have a great conversation together. How are you doing?"
+
+
+def build_warmup_directive(job_title: str = "", candidate_name: str = "") -> str:
+    """
+    Warmup directive — LLM generates a warm, role-specific intro + readiness check.
+    The LLM reads what the candidate just said and responds naturally.
+    """
     role = job_title.strip() if job_title else "this role"
+    name = (candidate_name or "").strip().split()[0] if candidate_name else "you"
     return "\n".join([
         "[DO NOT SAY ALOUD -- INTERNAL INSTRUCTION]",
         "[WARMUP PHASE]",
         "",
-        "You are in the warmup phase. Small talk before the interview starts.",
-        "Your only goal: make the candidate comfortable, then naturally start the interview when they are ready.",
+        "The candidate just responded to your greeting. Now generate your warmup response.",
         "",
-        "THIS TURN:",
-        "  1. React naturally to what the candidate just said -- like a real person, not a script.",
-        "     If they asked how you are doing, answer about yourself honestly before pivoting.",
-        "     If they said they are nervous, acknowledge it warmly.",
-        "     If they said they are ready, confirm and transition.",
-        f"  2. Mention you will be conducting their interview for {role} today.",
-        "  3. Ask if they are ready to begin -- keep it short and direct.",
+        "YOUR RESPONSE MUST DO THREE THINGS IN ORDER:",
+        f"  1. If they asked how you are doing: answer naturally. Say something like 'I'm doing great, {name},' or 'Doing well, thanks.' Keep it one short phrase. Do NOT skip this if they asked.",
+        f"  2. Give a warm one-line intro to the interview: mention you'd like to learn about their experience and what they bring to the {role} role. Keep it conversational, not corporate.",
+        "  3. Ask if they're ready to begin. One short direct question. Nothing more.",
         "",
         "RULES:",
-        "  - Two sentences max. Warm, human, direct.",
-        "  - NEVER say: Absolutely, Great, Thanks for sharing, Certainly, Good to hear.",
-        "  - If they asked about you, answer about YOU first before mentioning the role.",
-        "  - Do NOT start the interview yet. Wait for them to confirm readiness.",
+        "  - Three things only. Total response: 2-3 short sentences max.",
+        "  - Sound like a real person, not an HR script.",
+        "  - NEVER say: Absolutely, Great to hear, Thanks for sharing, Certainly, Wonderful.",
+        "  - NEVER mention projects, resume, skills, companies, or specific role requirements yet.",
+        "  - Do NOT start the interview. Wait for them to confirm they're ready.",
     ])
 def _build_custom_questions_block(custom_questions: list[str] | None) -> str:
     cqs = [q.strip() for q in (custom_questions or []) if q.strip()]
