@@ -63,8 +63,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         redirect("/login");
     }
     // Real-time synchronization: prioritize DB state over session cookie for onboarding UI
-    // Super-admins have no org, so skip onboarding entirely
-    const needsOnboarding = !isSuperAdmin && orgData.onboardingComplete !== true;
+    const needsOnboarding = orgData.onboardingComplete !== true;
     const showSidebar = !needsOnboarding;
     return (
         <>
