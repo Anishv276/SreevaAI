@@ -1,10 +1,10 @@
 """
 agent_providers.py
 ==================
-Provider factory layer for TTS, STT, LLM, and VAD plugins.
+Provider factory layer for TTS, STT, and LLM plugins.
 Supported providers:
   TTS: Cartesia, Sarvam, ElevenLabs (routed via VOICE_REGISTRY in agent_runtime_support)
-  STT: Deepgram only
+  STT: Deepgram Flux (native EOT turn detection)
   LLM: OpenAI only
 """
 from __future__ import annotations
@@ -194,8 +194,8 @@ def _merge_flux_keyterms(extra_keyterms: Sequence[str] | None = None) -> list[st
     return merged
 def build_stt(language_code: str = "en", keyterms: Sequence[str] | None = None):
     """Build a Deepgram Flux STTv2 instance for live interview sessions.
-    Flux uses /v2/listen (not /v1). Turn detection is native — EOT events replace
-    endpointing_ms. VAD (Silero) is still passed to AgentSession for barge-in handling.
+    Flux uses /v2/listen (not /v1). Turn detection is native — EOT events drive all turn boundaries.
+    No separate VAD needed (Flux natively provides End-of-Turn detection).
     Language: flux-general-en for English-only, flux-general-multi for multilingual.
     For Hindi (Sarvam TTS sessions), pass language_code="hi" to use flux-general-multi.
     """
