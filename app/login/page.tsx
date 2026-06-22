@@ -74,6 +74,7 @@ export default function LoginPage() {
                                 onChange={e => setEmail(e.target.value)}
                                 placeholder="name@sreevaai.com"
                                 required
+                                autoComplete="off"
                                 className="w-full h-12 px-4 bg-[#f4f0ea] border border-transparent rounded-xl text-[#1c1b1b] placeholder-[#9a938d] text-sm font-bold outline-none group-hover:bg-white focus:bg-white focus:border-[#1c1b1b] transition-all"
                             />
                         </div>
@@ -95,6 +96,7 @@ export default function LoginPage() {
                                     onChange={e => setPassword(e.target.value)}
                                     placeholder="••••••••"
                                     required
+                                    autoComplete="new-password"
                                     className="w-full h-12 px-4 pr-12 bg-[#f4f0ea] border border-transparent rounded-xl text-[#1c1b1b] placeholder-[#9a938d] text-sm font-bold outline-none group-hover:bg-white focus:bg-white focus:border-[#1c1b1b] transition-all"
                                 />
                                 <button
