@@ -62,7 +62,6 @@ export const bulkDeleteCandidatesSchema = z.object({
 export const updateCandidateStatusSchema = z.object({
   resumeStatus: z.string().min(1).max(40).optional(),
   interviewStatus: z.string().min(1).max(40).optional(),
-  hiringStatus: z.string().min(1).max(40).optional(),
 }).strict();
 export const interviewTokenSchema = z.object({
   applicationId: z.string().min(1, "Application ID required"),

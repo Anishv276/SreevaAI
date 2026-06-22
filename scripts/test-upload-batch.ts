@@ -50,7 +50,6 @@ async function uploadOne(label: string, filePath: string, drive: any) {
       fileName,
       resumeStatus: 'waiting',
       interviewStatus: 'pending',
-      hiringStatus: 'pending',
     },
   });
 

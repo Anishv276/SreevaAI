@@ -278,7 +278,7 @@ export default function CandidatesPage() {
             : `/admin/candidates/drive/${encodeURIComponent(candidateDriveId)}`;
         router.push(href);
     };
-    const handleUpdateStatus = async (applicationId: string, statusUpdate: { resumeStatus?: string; hiringStatus?: string }, successMsg: string) => {
+    const handleUpdateStatus = async (applicationId: string, statusUpdate: { resumeStatus?: string }, successMsg: string) => {
         try {
             const res = await fetch(`/api/candidates/${applicationId}`, {
                 method: "PATCH", headers: { "Content-Type": "application/json" },

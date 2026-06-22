@@ -71,13 +71,12 @@ export async function POST(request: Request) {
                 data: {
                     resumeStatus: "shortlisted",
                     interviewStatus: "pending",
-                    hiringStatus: "pending",
                 },
             });
             await Promise.all(validIds.map((id) => appendCandidateActivity(id, {
                 type: "status_changed",
                 label: "Resume shortlisted",
-                details: "resume=shortlisted, interview=pending, hiring=pending",
+                details: "resume=shortlisted, interview=pending",
                 timestamp: new Date().toISOString(),
                 source: "hr",
             })));
@@ -89,13 +88,12 @@ export async function POST(request: Request) {
                 data: {
                     resumeStatus: "rejected",
                     interviewStatus: "Not Qualified",
-                    hiringStatus: "rejected",
                 },
             });
             await Promise.all(validIds.map((id) => appendCandidateActivity(id, {
                 type: "status_changed",
                 label: "Resume rejected",
-                details: `resume=rejected, interview=Not Qualified, hiring=Not Shortlisted`,
+                details: `resume=rejected, interview=Not Qualified`,
                 timestamp: new Date().toISOString(),
                 source: "hr",
             })));

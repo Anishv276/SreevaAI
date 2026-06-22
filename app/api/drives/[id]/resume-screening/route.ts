@@ -155,7 +155,6 @@ export async function POST(
           fileName: row.fileName,
           resumeStatus: "waiting",
           interviewStatus: "pending",
-          hiringStatus: "pending",
         })),
       });
     } catch (dbErr: any) {

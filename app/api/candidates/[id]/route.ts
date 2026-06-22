@@ -37,7 +37,6 @@ export async function GET(
                 resumeData: true,
                 resumeStatus: true,
                 interviewStatus: true,
-                hiringStatus: true,
                 createdAt: true,
                 updatedAt: true,
                 drive: {
@@ -220,17 +219,14 @@ export async function PATCH(
         const dataToUpdate: any = {
             ...(body.resumeStatus !== undefined && { resumeStatus: body.resumeStatus }),
             ...(body.interviewStatus !== undefined && { interviewStatus: body.interviewStatus }),
-            ...(body.hiringStatus !== undefined && { hiringStatus: body.hiringStatus }),
         };
         if (isShortlist) {
             dataToUpdate.resumeStatus = "shortlisted";
             dataToUpdate.interviewStatus = "pending";
-            dataToUpdate.hiringStatus = "pending";
         }
         if (isRejected) {
             dataToUpdate.resumeStatus = "rejected";
             dataToUpdate.interviewStatus = "Not Qualified";
-            dataToUpdate.hiringStatus = "rejected";
         }
         const updated = await prisma.application.update({
             where: { id },
@@ -244,7 +240,7 @@ export async function PATCH(
             await appendCandidateActivity(id, {
                 type: "status_changed",
                 label: actionLabel,
-                details: `resume=${updated.resumeStatus}, interview=${updated.interviewStatus}, hiring=${updated.hiringStatus}`,
+                details: `resume=${updated.resumeStatus}, interview=${updated.interviewStatus}`,
                 timestamp: new Date().toISOString(),
                 source: "hr",
             });

@@ -43,7 +43,7 @@ export async function GET(request: Request) {
             return `"${s.replace(/"/g, '""')}"`;
         };
         // Convert to CSV
-        const headers = ["Candidate ID", "Name", "Email", "Phone", "Role", "AI Score", "Resume Status", "Interview Status", "Hiring Status"];
+        const headers = ["Candidate ID", "Name", "Email", "Phone", "Role", "AI Score", "Resume Status", "Interview Status"];
         const rows = candidates.map((c: (typeof candidates)[number]) => [
             csvCell(c.id),
             csvCell(c.fullName),
@@ -52,8 +52,7 @@ export async function GET(request: Request) {
             csvCell(c.drive?.title || "Unknown"),
             c.aiScore || 0,
             csvCell(c.resumeStatus || "pending"),
-            csvCell(c.interviewStatus || "pending"),
-            csvCell(c.hiringStatus || "pending")
+            csvCell(c.interviewStatus || "pending")
         ]);
         const csvContent = [headers.join(","), ...rows.map((r: (typeof rows)[number]) => r.join(","))].join("\n");
         // Return as a downloadable CSV file

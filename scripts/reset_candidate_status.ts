@@ -28,7 +28,6 @@ async function main() {
                 data: {
                     resumeStatus: "SHORTLISTED",
                     interviewStatus: undefined,
-                    hiringStatus: undefined,
                 },
             });
             console.log(`    ✅ Fixed: REJECTED -> SHORTLISTED`);

@@ -54,13 +54,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
             }
         }
         const resumeStatus = (application.resumeStatus || "").toUpperCase();
-        const hiringStatus = (application.hiringStatus || "").toUpperCase();
         // Allow: shortlisted/accepted (ATS flow), skipped/completed (interview-only flow)
         const canSendAgain =
-            ["SHORTLISTED", "ACCEPTED", "SKIPPED", "COMPLETED"].includes(resumeStatus) ||
-            ["SHORTLISTED", "ACCEPTED"].includes(hiringStatus);
+            ["SHORTLISTED", "ACCEPTED", "SKIPPED", "COMPLETED"].includes(resumeStatus);
         if (!canSendAgain) {
-            console.error(`[INTERVIEW] Status mismatch. Resume: ${resumeStatus}, Hiring: ${hiringStatus}`);
+            console.error(`[INTERVIEW] Status mismatch. Resume: ${resumeStatus}`);
             return NextResponse.json({
                 error: `Candidate is not eligible for an interview link yet. Current resume status: "${application.resumeStatus}".`
             }, { status: 400 });

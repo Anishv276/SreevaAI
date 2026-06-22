@@ -19,7 +19,6 @@ export type Candidate = {
     driveId: string; // to link to specific drive
     status: string;
     interviewStatus?: string;
-    hiringStatus?: string;
     score: number;
     screeningProgress?: number | null;
     screeningStage?: string | null;
@@ -267,7 +266,6 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
                         driveId: c.driveId?.toString(),
                         status: c.status,
                         interviewStatus: c.interviewStatus,
-                        hiringStatus: c.hiringStatus,
                         score: c.score || 0,
                         screeningProgress: c.screeningProgress ?? null,
                         screeningStage: c.screeningStage ?? null,

@@ -52,7 +52,7 @@ export async function GET(request: Request) {
                             updatedAt: { gt: lastCheck },
                             createdAt: { lte: lastCheck } // exclude newly created (already caught above)
                         },
-                        select: { id: true, resumeStatus: true, interviewStatus: true, hiringStatus: true, updatedAt: true },
+                        select: { id: true, resumeStatus: true, interviewStatus: true, updatedAt: true },
                         orderBy: { updatedAt: "desc" },
                         take: 10
                     });

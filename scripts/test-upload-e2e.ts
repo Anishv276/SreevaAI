@@ -64,7 +64,6 @@ async function uploadOne(label: string, filePath: string, drive: any) {
       fileName,
       resumeStatus:    'waiting',
       interviewStatus: 'pending',
-      hiringStatus:    'pending',
     },
   });
   console.log(`${ts()}   ✓ DB row created  applicationId="${applicationId}"  resumeStatus="waiting"`);

@@ -80,7 +80,7 @@ export async function GET(request: Request) {
                 : null;
             return {
                 id: app.id,
-                status: app.hiringStatus,
+                status: app.resumeStatus,
                 score: app.aiScore,
                 createdAt: app.createdAt,
                 drive: app.drive,

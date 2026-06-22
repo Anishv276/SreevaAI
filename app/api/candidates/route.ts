@@ -23,7 +23,6 @@ export async function GET(request: Request) {
         const search = searchParams.get("search")?.trim() || "";
         const resumeStatus = searchParams.get("resumeStatus") || searchParams.get("status") || "all";
         const interviewStatus = searchParams.get("interviewStatus") || "all";
-        const hiringStatus = searchParams.get("hiringStatus") || "all";
         const page = parseInt(searchParams.get("page") || "1");
         const limit = parseInt(searchParams.get("limit") || "10");
         const offset = (page - 1) * limit;
@@ -95,9 +94,6 @@ export async function GET(request: Request) {
         if (interviewStatus && interviewStatus !== "all") {
             where.interviewStatus = { in: statusVariants(interviewStatus) };
         }
-        if (hiringStatus && hiringStatus !== "all") {
-            where.hiringStatus = { in: statusVariants(hiringStatus) };
-        }
         if (search) {
             where.OR = [
                 { fullName: { contains: search, mode: "insensitive" } },
@@ -124,7 +120,7 @@ export async function GET(request: Request) {
             }),
             prisma.application.count({ where }),
             prisma.application.groupBy({
-                by: ['resumeStatus', 'hiringStatus', 'interviewStatus'],
+                by: ['resumeStatus', 'interviewStatus'],
                 where: {
                     drive: { orgId, ...(driveId && driveId !== "all" ? { id: driveId } : {}) }
                 },
@@ -142,7 +138,6 @@ export async function GET(request: Request) {
         statsResult.forEach((group: any) => {
             const count = group._count._all;
             const resStatus = (group.resumeStatus || "").toLowerCase();
-            const hiStatus = (group.hiringStatus || "").toLowerCase();
             const intStatus = String(group.interviewStatus || "").toLowerCase().replace(/[_-]+/g, " ");
             if (resStatus === 'shortlisted') statsRow.shortlisted += count;
             if (resStatus === 'rejected') statsRow.rejected += count;
@@ -172,7 +167,6 @@ export async function GET(request: Request) {
                 score: app.aiScore || 0,
                 status: app.resumeStatus,
                 interviewStatus: app.interviewStatus,
-                hiringStatus: app.hiringStatus,
                 screeningProgress: progress,
                 screeningStage: stage,
                 inviteSentAt: app.interview?.inviteSentAt ?? null,

@@ -62,7 +62,6 @@ export async function POST(request: Request) {
                     driveId,
                     resumeStatus: hasResume ? "waiting" : "skipped",
                     interviewStatus: "pending",
-                    hiringStatus: "pending",
                 },
             });
 

@@ -232,7 +232,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
         }
         fetchCandidates(newPage, pageSize, driveId, resumeFilter, interviewFilter, startDate, endDate, undefined, scoreSort);
     };
-    const handleUpdateStatus = async (applicationId: string, statusUpdate: { resumeStatus?: string; hiringStatus?: string }, successMsg: string) => {
+    const handleUpdateStatus = async (applicationId: string, statusUpdate: { resumeStatus?: string }, successMsg: string) => {
         try {
             const res = await fetch(`/api/candidates/${applicationId}`, {
                 method: "PATCH",
@@ -638,7 +638,6 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                     const interviewReportUnlocked =
                                         interviewStatusKey === "completed" ||
                                         interviewStatusKey === "finished";
-                                    const hiringStatusKey = normalizeStatusKey(candidate.hiringStatus) || "pending";
                                     const score = Number(candidate.score ?? candidate.aiScore ?? 0);
                                     const stageLabelRaw = String(candidate.screeningStage || "").trim().toLowerCase();
                                     const stageLabel = stageLabelRaw === "extracting" ? "Extracting" : stageLabelRaw === "scoring" ? "Scoring" : stageLabelRaw === "finalizing" ? "Finalizing" : isWaiting ? "Waiting" : isProcessing ? "Processing" : "";
@@ -647,8 +646,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                         interviewStatusKey === "in progress" ||
                                         interviewStatusKey === "completed" ||
                                         interviewStatusKey === "finished" ||
-                                        statusKey === "shortlisted" ||
-                                        hiringStatusKey === "hired";
+                                        statusKey === "shortlisted";
                                     return (
                                         <TableRow
                                             key={candidate.id}
@@ -685,9 +683,20 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                             {/* Score */}
                                             <TableCell className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}>
                                                 {isExtracting ? (
-                                                    <div className="flex items-center gap-2">
-                                                        <Loader2 className="h-3.5 w-3.5 animate-spin text-orange-500" />
-                                                        <span className="text-[12px] text-orange-600 font-medium">{stageLabel || "Processing"}</span>
+                                                    <div className="flex flex-col gap-1.5">
+                                                        <div className="flex items-center gap-2">
+                                                            <Loader2 className="h-3.5 w-3.5 animate-spin text-orange-500" />
+                                                            <span className="text-[12px] text-orange-600 font-semibold">
+                                                                {statusKey === "extracting" && "25%"}
+                                                                {statusKey === "scoring" && "50%"}
+                                                                {statusKey === "starting" || statusKey === "waiting" || statusKey === "processing" ? "25%" : "—"}
+                                                            </span>
+                                                        </div>
+                                                        {score > 0 && (
+                                                            <span className={cn("text-[11px] font-semibold",
+                                                                score >= 80 ? "text-emerald-600" : score >= 50 ? "text-amber-600" : "text-orange-500"
+                                                            )}>Score: {score}%</span>
+                                                        )}
                                                     </div>
                                                 ) : isFailed ? (
                                                     <span className="text-[12px] font-semibold text-rose-500">Failed</span>
