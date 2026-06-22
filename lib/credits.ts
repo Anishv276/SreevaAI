@@ -48,7 +48,7 @@ export async function getOrgBillingStatus(orgId: string): Promise<BillingStatus>
                 "interviewQuotaUsed",
                 "creditsUsed"
             FROM "Organization"
-            WHERE id = ${orgId}
+            WHERE id = ${orgId} AND "isDeleted" = false
             LIMIT 1
         `
     );
@@ -78,7 +78,7 @@ export async function syncOrgStatusWithInterviewQuota(orgId: string): Promise<st
         Prisma.sql`
             SELECT "status", "interviewQuotaTotal", "interviewQuotaUsed", "statusControl"
             FROM "Organization"
-            WHERE id = ${orgId}
+            WHERE id = ${orgId} AND "isDeleted" = false
             LIMIT 1
         `
     );
@@ -130,7 +130,7 @@ export async function getEffectiveOrgStatus(orgId: string): Promise<string | nul
         Prisma.sql`
             SELECT "status", "interviewQuotaTotal", "interviewQuotaUsed", "statusControl"
             FROM "Organization"
-            WHERE id = ${orgId}
+            WHERE id = ${orgId} AND "isDeleted" = false
             LIMIT 1
         `
     );

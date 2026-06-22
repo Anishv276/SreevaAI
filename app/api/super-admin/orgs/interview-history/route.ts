@@ -41,6 +41,9 @@ export async function GET(request: Request) {
       JOIN "Application" a ON a.id = i."applicationId"
       JOIN "Drive" d ON d.id = a."driveId"
       WHERE d."orgId" = ${orgId}
+        AND i."isDeleted" = false
+        AND a."isDeleted" = false
+        AND d."isDeleted" = false
       ORDER BY COALESCE(i."completedAt", i."updatedAt") DESC
       LIMIT 100
     `;

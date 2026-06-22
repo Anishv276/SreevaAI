@@ -41,6 +41,9 @@ export async function GET(req: NextRequest) {
             JOIN "Application" a ON iv."applicationId" = a."id"
             JOIN "Drive" d ON a."driveId" = d."id"
             WHERE d."orgId" = ${orgId}
+              AND iv."isDeleted" = false
+              AND a."isDeleted" = false
+              AND d."isDeleted" = false
               AND iv."status" = 'COMPLETED'
               AND iv."completedAt" >= ${start}
               AND a."aiScore" IS NOT NULL

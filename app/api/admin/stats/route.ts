@@ -52,6 +52,9 @@ export async function GET(req: NextRequest) {
             JOIN "Drive" d ON d.id = a."driveId"
             LEFT JOIN "Interview" i ON i."applicationId" = a.id
             WHERE d."orgId" = ${orgId}
+              AND a."isDeleted" = false
+              AND d."isDeleted" = false
+              AND i."isDeleted" = false
         `;
         const driveStats = await prisma.$queryRaw<DriveStatsRow[]>`
             SELECT
@@ -59,6 +62,7 @@ export async function GET(req: NextRequest) {
                 0::INT AS "closingSoon"
             FROM "Drive"
             WHERE "orgId" = ${orgId}
+              AND "isDeleted" = false
         `;
         const ratingStats = await prisma.$queryRaw<Array<{ avgRating: number | null }>>(Prisma.sql`
             SELECT COALESCE(
@@ -83,6 +87,9 @@ export async function GET(req: NextRequest) {
             JOIN "Application" a ON a.id = i."applicationId"
             JOIN "Drive" d ON d.id = a."driveId"
             WHERE d."orgId" = ${orgId}
+              AND i."isDeleted" = false
+              AND a."isDeleted" = false
+              AND d."isDeleted" = false
               AND i."status" = 'COMPLETED'
               AND i."completedAt" >= ${start}
         `);

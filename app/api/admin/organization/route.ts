@@ -59,10 +59,10 @@ export async function GET(request: Request) {
                     (
                         SELECT COUNT(*)
                         FROM "Drive" d
-                        WHERE d."orgId" = o.id
+                        WHERE d."orgId" = o.id AND d."isDeleted" = false
                     )::INT AS "activeDriveCount"
                 FROM "Organization" o
-                WHERE o.id = ${orgId}
+                WHERE o.id = ${orgId} AND o."isDeleted" = false
                 LIMIT 1
             `
         );
