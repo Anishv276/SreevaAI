@@ -207,7 +207,8 @@
       "Bash(python -c \"from interview.agent_runtime_utils import AgentConfig, TextSanitizer, TranscriptManager, MutableStateManager; print\\('✓ agent_runtime_utils imports OK'\\)\")",
       "Skill(update-config)",
       "Skill(update-config:*)",
-      "Bash(cat)"
+      "Bash(cat)",
+      "Bash(xargs grep -l \"role\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\vamsi\\OneDrive\\Desktop\\HR-updates\\scratch",

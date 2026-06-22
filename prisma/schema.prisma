@@ -51,7 +51,6 @@ model User {
   id              String        @id
   email           String        @unique
   name            String?
-  role            String        @default("CANDIDATE")
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
   password        String?
