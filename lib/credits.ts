@@ -68,25 +68,6 @@ export async function getOrgBillingStatus(orgId: string): Promise<BillingStatus>
 export async function getOrgCreditStatus(orgId: string): Promise<CreditStatus> {
     return getOrgBillingStatus(orgId);
 }
-export async function incrementOrgCreditsUsed(orgId: string, creditsDelta: number): Promise<number> {
-    const normalizedDelta = Number.isFinite(creditsDelta) ? Math.max(0, creditsDelta) : 0;
-    if (normalizedDelta <= 0) {
-        const current = await prisma.organization.findUnique({
-            where: { id: orgId },
-            select: { creditsUsed: true },
-        });
-        return Number(current?.creditsUsed ?? 0);
-    }
-    const updated = await prisma.$queryRaw<Array<{ creditsUsed: number | null }>>(
-        Prisma.sql`
-            UPDATE "Organization"
-            SET "creditsUsed" = COALESCE("creditsUsed", 0) + ${normalizedDelta}
-            WHERE id = ${orgId}
-            RETURNING "creditsUsed"
-        `
-    );
-    return Number(updated[0]?.creditsUsed ?? 0);
-}
 export async function syncOrgStatusWithInterviewQuota(orgId: string): Promise<string | null> {
     const rows = await prisma.$queryRaw<Array<{
         status: string | null;
@@ -173,42 +154,4 @@ export async function getEffectiveOrgStatus(orgId: string): Promise<string | nul
         return "ACTIVE";
     }
     return String(current.status || "ACTIVE").toUpperCase();
-}
-async function autoSuspendOrgIfQuotaExhausted(orgId: string, interviewQuotaRemaining: number) {
-    if (interviewQuotaRemaining > 0) {
-        return false;
-    }
-    const nextStatus = await syncOrgStatusWithInterviewQuota(orgId);
-    return nextStatus === "SUSPENDED";
-}
-/**
- * Deduct one interview from the org's quota at interview completion.
- */
-export async function deductInterviewQuota(orgId: string, count = 1): Promise<{
-    deducted: number;
-    interviewQuotaRemaining: number;
-}> {
-    const updated = await prisma.$queryRaw<Array<{
-        interviewQuotaTotal: number | null;
-        interviewQuotaUsed: number | null;
-    }>>(
-        Prisma.sql`
-            UPDATE "Organization"
-            SET "interviewQuotaUsed" = COALESCE("interviewQuotaUsed", 0) + ${count}
-            WHERE id = ${orgId}
-            RETURNING "interviewQuotaTotal", "interviewQuotaUsed"
-        `
-    );
-    const interviewQuotaTotal = updated[0]?.interviewQuotaTotal ?? 0;
-    const interviewQuotaUsed = updated[0]?.interviewQuotaUsed ?? 0;
-    const interviewQuotaRemaining = Math.max(0, interviewQuotaTotal - interviewQuotaUsed);
-    try {
-        await autoSuspendOrgIfQuotaExhausted(orgId, interviewQuotaRemaining);
-    } catch (error) {
-        console.error("[credits] Failed to auto-suspend exhausted org:", error);
-    }
-    return {
-        deducted: count,
-        interviewQuotaRemaining,
-    };
 }

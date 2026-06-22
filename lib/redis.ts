@@ -28,12 +28,29 @@ console.warn = (...args: any[]) => {
   _origWarn(...args);
 };
 // ---------------------------------------------------------
+// Logical Redis DB index per environment. Dev and prod MUST NOT share a DB,
+// otherwise a stale worker in one environment will steal jobs enqueued by the
+// other (both block on the same `bzpopmin`). Default 0; override with REDIS_DB.
+export function getRedisDb(): number {
+  const raw = process.env.REDIS_DB?.trim();
+  if (!raw) return 0;
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 0 ? n : 0;
+}
+
+// BullMQ key prefix per environment. Combined with REDIS_DB this guarantees two
+// deployments never consume the same queue. Default "bull".
+export function getBullPrefix(): string {
+  return process.env.BULLMQ_PREFIX?.trim() || "bull";
+}
+
 function createRedisConnection(): IORedis {
   // Always creates a FRESH connection — never returns the shared singleton.
   return new IORedis(getRedisUrl() || DEFAULT_REDIS_URL, {
     maxRetriesPerRequest: null,
     lazyConnect: false,
     keepAlive: 10000,
+    db: getRedisDb(),
     retryStrategy: (times: number) => Math.min(times * 500, 10_000),
     enableReadyCheck: false,
   });

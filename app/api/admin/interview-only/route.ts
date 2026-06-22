@@ -5,6 +5,7 @@ import { generateId } from "@/lib/ids";
 import { sendInterviewInviteEmail } from "@/lib/mail";
 import { buildInterviewLink } from "@/lib/interview-links";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
+import { resumeQueue } from "@/lib/queue";
 
 // POST /api/admin/interview-only
 // Interview Only mode — two paths:
@@ -43,7 +44,6 @@ export async function POST(request: Request) {
         const tokenRequired = isInterviewTokenRequired();
 
         const results: { id: string; email: string; name: string; sent: boolean; queued: boolean }[] = [];
-        const candidateIdsWithResume: string[] = [];
 
         for (const candidate of candidates) {
             const { fullName, email, phone, resumeUrl } = candidate;
@@ -52,7 +52,6 @@ export async function POST(request: Request) {
             const appId = generateId("app", fullName);
             const hasResume = !!resumeUrl;
 
-            // Create application record
             await prisma.application.create({
                 data: {
                     id: appId,
@@ -61,8 +60,6 @@ export async function POST(request: Request) {
                     phone: phone || "",
                     resumeUrl: resumeUrl || "",
                     driveId,
-                    // If resume provided: queue screening, worker sends invite after scoring
-                    // If no resume: mark as skipped, send invite now
                     resumeStatus: hasResume ? "waiting" : "skipped",
                     interviewStatus: "pending",
                     hiringStatus: "pending",
@@ -70,8 +67,21 @@ export async function POST(request: Request) {
             });
 
             if (hasResume) {
-                // Resume will be screened → worker auto-sends invite after scoring
-                candidateIdsWithResume.push(appId);
+                // Enqueue an individual screening job immediately.
+                // The worker processes it as soon as a concurrency slot is free.
+                await resumeQueue.add(
+                    "screen-resume",
+                    {
+                        applicationId: appId,
+                        bucket: process.env.R2_RESUMES_BUCKET || "resumes",
+                        key: new URL(resumeUrl).pathname.replace(/^\//, ""),
+                        fileName: resumeUrl.split("/").pop() || "resume.pdf",
+                        orgId,
+                    },
+                    { attempts: 2, backoff: { type: "exponential", delay: 5000 } },
+                ).catch((err) => {
+                    console.error(`[interview-only] Failed to enqueue screening job for ${appId}:`, err);
+                });
                 results.push({ id: appId, email, name: fullName, sent: false, queued: true });
             } else {
                 // No resume → create Interview record and send invite immediately

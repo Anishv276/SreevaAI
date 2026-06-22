@@ -7,6 +7,7 @@ import { getOrgBillingStatus } from "@/lib/credits";
 import { getInterviewQuotaSupportMessage } from "@/lib/interview-quota";
 import { getSession, isAdminRole, isSuperAdminRole } from "@/lib/auth";
 import { authorizeDriveAccess } from "@/lib/drive-access";
+import { resumeQueue } from "@/lib/queue";
 
 const RESUME_BUCKET = process.env.R2_RESUMES_BUCKET || "resumes";
 
@@ -165,10 +166,57 @@ export async function POST(
     const candidateIds = prepared.map((row) => row.applicationId);
     console.log(`[RESUME-UPLOAD] Persisted ${candidateIds.length} candidate(s) for drive=${driveId}`);
 
+    // ── Enqueue one screening job per resume immediately ──────────────────────
+    // Each job is independent: the worker picks it up as soon as a concurrency
+    // slot is free. No batch IDs, no batch tables — just individual jobs.
+    const enqueueResults = await Promise.allSettled(
+      prepared.map((row) =>
+        resumeQueue.add(
+          "screen-resume",
+          {
+            applicationId: row.applicationId,
+            bucket: row.bucket,
+            key: row.key,
+            fileName: row.fileName,
+            orgId: drive.orgId,
+          },
+          {
+            attempts: 2,
+            backoff: { type: "exponential", delay: 5000 },
+          },
+        )
+      )
+    );
+
+    // Reconcile DB status with the actual enqueue outcome. A candidate row is
+    // created as "waiting" BEFORE the job is enqueued; if .add() rejects, the row
+    // would otherwise hang on "waiting" forever with no job backing it. So we flip
+    // any failed-to-enqueue row to "failed" immediately — the UI never hangs.
+    const failedToEnqueue: string[] = [];
+    await Promise.all(
+      enqueueResults.map((r, i) => {
+        if (r.status === "fulfilled") {
+          console.log(`[RESUME-UPLOAD] Enqueued screen-resume job id="${r.value.id}" for applicationId="${prepared[i].applicationId}" file="${prepared[i].fileName}"`);
+          return Promise.resolve();
+        }
+        failedToEnqueue.push(prepared[i].applicationId);
+        console.error(`[RESUME-UPLOAD] FAILED to enqueue job for "${prepared[i].fileName}": ${r.reason}`);
+        return prisma.application.update({
+          where: { id: prepared[i].applicationId },
+          data: {
+            resumeStatus: "failed",
+            aiReport: buildProgressState(0, "failed", { error: "Failed to enqueue screening job" }),
+            updatedAt: new Date(),
+          },
+        }).catch((e: any) => console.error(`[RESUME-UPLOAD] Could not mark ${prepared[i].applicationId} failed: ${e?.message}`));
+      })
+    );
 
     return NextResponse.json({
       totalCount: prepared.length,
+      enqueuedCount: prepared.length - failedToEnqueue.length,
       candidateIds,
+      ...(failedToEnqueue.length > 0 ? { failedToEnqueue } : {}),
       ...(uploadFailures.length > 0 ? { failedFiles: uploadFailures } : {}),
     });
   } catch (err) {
@@ -179,7 +227,7 @@ export async function POST(
 
 // GET /api/drives/[id]/resume-screening -> fetch all candidates
 export async function GET(
-  request: Request,
+  _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {

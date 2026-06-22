@@ -69,10 +69,12 @@ export async function GET(request: Request) {
                     // Ignore errors during high load
                 }
             };
-            // START: Fire and forget initial check to avoid blocking the stream response
+            // Fire immediately on connect so the client is in sync right away.
             checkForUpdates();
-            // Poll every 90 seconds to reduce DB connection pool pressure
-            const interval = setInterval(checkForUpdates, 90000);
+            // Poll every 3 seconds while connection is open.
+            // This is the only mechanism the frontend has to learn about worker completion —
+            // the worker updates DB and this poll detects the updatedAt change.
+            const interval = setInterval(checkForUpdates, 3000);
             request.signal.addEventListener("abort", () => {
                 closed = true;
                 clearInterval(interval);

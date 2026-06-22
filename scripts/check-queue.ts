@@ -12,31 +12,44 @@ async function main() {
 
   await queue.waitUntilReady();
 
-  const [waiting, active, delayed, failed, completed] = await Promise.all([
-    queue.getWaiting(),
-    queue.getActive(),
-    queue.getDelayed(),
-    queue.getFailed(0, 10),
-    queue.getCompleted(0, 5),
-  ]);
+  const counts = await queue.getJobCounts(
+    'waiting', 'active', 'delayed', 'failed', 'completed', 'paused', 'waiting-children'
+  );
+  console.log(`\n=== resume-processing queue counts ===`);
+  console.log(JSON.stringify(counts, null, 2));
 
-  console.log(`\n=== resume-processing queue state ===`);
-  console.log(`Waiting: ${waiting.length}`);
-  for (const j of waiting) {
-    console.log(`  [waiting] id=${j.id} name=${j.name} data=${JSON.stringify(j.data).slice(0, 120)}`);
-  }
-  console.log(`Active: ${active.length}`);
-  for (const j of active) {
-    console.log(`  [active] id=${j.id} name=${j.name}`);
-  }
-  console.log(`Delayed: ${delayed.length}`);
-  console.log(`Failed: ${failed.length}`);
+  const isPaused = await queue.isPaused();
+  console.log(`Paused: ${isPaused}`);
+
+  const failed = await queue.getFailed(0, 20);
+  console.log(`\n=== Failed jobs (${failed.length}) ===`);
   for (const j of failed) {
-    console.log(`  [failed] id=${j.id} name=${j.name} reason=${j.failedReason}`);
+    if (!j) { console.log('  [failed] <null entry — job hash missing>'); continue; }
+    console.log(`  [failed] id=${j.id} name=${j.name} attemptsMade=${j.attemptsMade}`);
+    console.log(`           data=${JSON.stringify(j.data).slice(0, 160)}`);
+    console.log(`           reason=${j.failedReason}`);
+    console.log(`           finishedOn=${j.finishedOn ? new Date(j.finishedOn).toISOString() : 'n/a'}`);
   }
-  console.log(`Completed (last 5): ${completed.length}`);
-  for (const j of completed) {
-    console.log(`  [completed] id=${j.id} name=${j.name}`);
+
+  const active = await queue.getActive(0, 20);
+  console.log(`\n=== Active jobs (${active.length}) ===`);
+  for (const j of active) {
+    if (!j) { console.log('  [active] <null>'); continue; }
+    console.log(`  [active] id=${j.id} name=${j.name} processedOn=${j.processedOn ? new Date(j.processedOn).toISOString() : 'n/a'}`);
+  }
+
+  const waiting = await queue.getWaiting(0, 20);
+  console.log(`\n=== Waiting jobs (${waiting.length}) ===`);
+  for (const j of waiting) {
+    if (!j) { console.log('  [waiting] <null>'); continue; }
+    console.log(`  [waiting] id=${j.id} name=${j.name}`);
+  }
+
+  // Inspect raw worker registry (stalled-check heartbeats)
+  const workers = await queue.getWorkers();
+  console.log(`\n=== Registered workers (${workers.length}) ===`);
+  for (const w of workers) {
+    console.log(`  ${JSON.stringify(w)}`);
   }
 
   await queue.close();

@@ -135,16 +135,7 @@ function ScoreRangeFilter({
                 {max}
             </span>
 
-            {/* Clear — only when filtered */}
-            {isFiltered && (
-                <button
-                    onClick={() => onChange(0, 100)}
-                    className="text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0 ml-0.5"
-                    aria-label="Clear score filter"
-                >
-                    <XCircle className="h-3.5 w-3.5" />
-                </button>
-            )}
+
         </div>
     );
 }
@@ -159,6 +150,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
     const [timeline, setTimeline] = useState<DateRange>({ type: "all" });
     const [scoreSort, setScoreSort] = useState<"default" | "score_desc" | "score_asc">("default");
     const [pageSize, setPageSize] = useState(20);
+    const [searchTerm, setSearchTerm] = useState("");
     const [sendingInterviewLinkId, setSendingInterviewLinkId] = useState<string | null>(null);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [isSelectionMode, setIsSelectionMode] = useState(true);

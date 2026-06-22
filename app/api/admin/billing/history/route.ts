@@ -35,6 +35,7 @@ export async function GET(request: Request) {
         completedAt: true,
         interviewDuration: true,
         recording: true,
+        billingSnapshot: true,
         application: {
           select: {
             fullName: true,
@@ -48,13 +49,16 @@ export async function GET(request: Request) {
     const rows = interviews
       .map((row) => {
         const durationSec = Number(row.interviewDuration ?? getRecordingDurationSec(row.recording) ?? 0);
+        const snapshot = row.billingSnapshot && typeof row.billingSnapshot === "object"
+          ? (row.billingSnapshot as Record<string, unknown>)
+          : {};
         const date = (row.completedAt ?? row.updatedAt).toISOString();
         return {
           id: row.id,
           candidate: row.application?.fullName || "Unknown Candidate",
           role: row.application?.drive?.role || row.application?.drive?.title || "Unknown Role",
           interviews: 1,
-          creditsUsed: Math.round((durationSec / 60) * 100) / 100,
+          creditsUsed: Number(snapshot.creditsUsed ?? 0),
           status: normalizeStatus(row.status),
           date,
           time: (() => { const m = Math.floor(durationSec / 60); const s = durationSec % 60; return durationSec ? `${m}m ${String(s).padStart(2, "0")}s` : undefined; })(),

@@ -62,3 +62,4 @@ prisma/*.ts
 prisma/*.sql
 scripts/fix_*.js
 scripts/get_*.js
+.worker.pid

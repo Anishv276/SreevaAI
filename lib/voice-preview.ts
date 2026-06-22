@@ -6,40 +6,6 @@ type VoicePreviewInput = {
   transcript?: string;
   orgId?: string | null;
 };
-const BILLING_INR_PER_USD = Number(process.env.BILLING_INR_PER_USD || 83);
-const SARVAM_TTS_INR_PER_10K: Record<string, number> = { "bulbul:v3": 30, "bulbul:v2": 15 };
-const CARTESIA_TTS_USD_PER_M: Record<string, number> = {
-  "sonic-3": 15,
-  "sonic-2": 15,
-  sonic: 15,
-  "sonic-3-hd": 30,
-  "sonic-2-hd": 30,
-  "sonic-hd": 30,
-};
-const ELEVENLABS_TTS_USD_PER_M: Record<string, number> = {
-  eleven_flash_v2: 50,
-  eleven_flash_v2_5: 50,
-  eleven_turbo_v2: 50,
-  eleven_turbo_v2_5: 50,
-  eleven_multilingual_v2: 100,
-  eleven_multilingual_v3: 100,
-};
-function estimateTtsCostUsd(provider: string, model: string, characters: number) {
-  const chars = Math.max(0, Math.round(Number(characters || 0)));
-  if (chars <= 0) return 0;
-  const normalizedProvider = provider.trim().toUpperCase();
-  const normalizedModel = model.replace(/^(cartesia|elevenlabs)\//i, "").trim().toLowerCase();
-  if (normalizedProvider === "SARVAM") {
-    const rate = SARVAM_TTS_INR_PER_10K[normalizedModel] ?? SARVAM_TTS_INR_PER_10K["bulbul:v3"];
-    return (chars / 10_000) * rate / Math.max(BILLING_INR_PER_USD, 1e-6);
-  }
-  if (normalizedProvider === "ELEVENLABS") {
-    const rate = ELEVENLABS_TTS_USD_PER_M[normalizedModel] ?? Number(process.env.ELEVENLABS_TTS_USD_PER_MILLION_CHARS || 100);
-    return (chars / 1_000_000) * rate;
-  }
-  const rate = CARTESIA_TTS_USD_PER_M[normalizedModel] ?? Number(process.env.CARTESIA_TTS_USD_PER_MILLION_CHARS || 15);
-  return (chars / 1_000_000) * rate;
-}
 async function recordVoicePreviewUsage(input: {
   orgId?: string | null;
   provider: string;
@@ -59,7 +25,6 @@ async function recordVoicePreviewUsage(input: {
         ttsProvider: input.provider,
         ttsModel: input.model,
         ttsCharacters: characters,
-        ttsCostUsd: estimateTtsCostUsd(input.provider, input.model, characters),
         eventId: `voice-preview:${orgId}:${Date.now()}:${Math.random().toString(36).slice(2)}`,
       },
     });

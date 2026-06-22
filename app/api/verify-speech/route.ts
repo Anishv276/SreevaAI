@@ -5,7 +5,6 @@ import { recordOrgBillingUsage } from "@/lib/usage-metrics";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
 import { isRateLimited } from "@/lib/rate-limit";
 const DEEPGRAM_VERIFY_MODEL = "flux-general-en";
-const DEEPGRAM_FLUX_EN_USD_PER_MIN = 0.0065;
 const FLUX_VERIFY_MIN_TIMEOUT_MS = 10000;
 const FLUX_VERIFY_TIMEOUT_PADDING_MS = 6000;
 const FLUX_AUDIO_SAMPLE_RATE = 16000;
@@ -205,7 +204,6 @@ export async function POST(req: NextRequest) {
                     sttProvider: "DEEPGRAM",
                     sttModel: DEEPGRAM_VERIFY_MODEL,
                     sttAudioSeconds: durationSeconds,
-                    sttCostUsd: (durationSeconds / 60) * DEEPGRAM_FLUX_EN_USD_PER_MIN,
                     eventId: `verify-speech:${applicationId}:${fluxResult.requestId || Date.now()}`,
                 },
             });

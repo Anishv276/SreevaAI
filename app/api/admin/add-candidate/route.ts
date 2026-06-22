@@ -4,6 +4,7 @@ import { getSession, isAdminRole } from "@/lib/auth";
 import { generateId } from "@/lib/ids";
 import { putObject } from "@/lib/s3";
 import { randomUUID } from "crypto";
+import { resumeQueue } from "@/lib/queue";
 
 const RESUME_BUCKET = process.env.R2_RESUMES_BUCKET || "resumes";
 
@@ -73,6 +74,18 @@ export async function POST(request: Request) {
         });
 
 
+
+        await resumeQueue.add(
+            "screen-resume",
+            {
+                applicationId: appId,
+                bucket: RESUME_BUCKET,
+                key,
+                fileName: file.name,
+                orgId,
+            },
+            { attempts: 2, backoff: { type: "exponential", delay: 5000 } },
+        );
 
         return NextResponse.json({ success: true, applicationId: appId });
     } catch (err: any) {

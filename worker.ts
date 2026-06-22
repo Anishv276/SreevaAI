@@ -6,7 +6,7 @@ import { spawn } from 'child_process';
 import { tmpdir } from 'os';
 import { writeFile, unlink, readdir, stat } from 'fs/promises';
 import { prisma } from './lib/prisma';
-import redisConnection from './lib/redis';
+import redisConnection, { createRedisConnection, getBullPrefix } from './lib/redis';
 import { putObject, getObjectBuffer, headObjectStrict } from "./lib/s3";
 import { generateId } from "./lib/ids";
 import { isInterviewTokenRequired } from "./lib/interview-access";
@@ -30,15 +30,20 @@ if (!process.env.REDIS_URL) {
   console.error('FATAL: REDIS_URL is missing from environment variables!');
   process.exit(1);
 }
+
 void redisConnection.connect().catch(() => { }); // force-connect before BullMQ workers start
 const pythonCmd = getPythonExecutable();
+// BullMQ key prefix — MUST match lib/queue.ts so this worker consumes the same
+// queues the API enqueues to. Set BULLMQ_PREFIX to isolate dev/prod on shared Redis.
+const BULL_PREFIX = getBullPrefix();
+console.log(`[Worker] PID=${process.pid}`);
+console.log(`[Worker] BullMQ prefix="${BULL_PREFIX}"`);
 
 // Core spawn runner with hard timeout + guaranteed slot release. `stdinPayload`
 // optional. On timeout the process is SIGKILLed so it can't linger.
 function spawnPythonJson(args: string[], stdinPayload: string | null, timeoutMs: number): Promise<any> {
   return new Promise((resolve, reject) => {
     let out = "";
-    let err = "";
     let settled = false;
     const p = spawn(pythonCmd, args);
     const finish = (fn: () => void) => { if (!settled) { settled = true; fn(); } };
@@ -47,18 +52,19 @@ function spawnPythonJson(args: string[], stdinPayload: string | null, timeoutMs:
       finish(() => reject(new Error(`python timed out after ${timeoutMs}ms`)));
     }, timeoutMs);
     p.stdout.on("data", (data) => { out += data.toString(); });
-    p.stderr.on("data", (data) => { err += data.toString(); });
+    // Stream Python progress lines directly to console in real time.
+    p.stderr.on("data", (data) => { process.stderr.write(`[PY] ${data}`); });
     p.on("close", (code) => {
       clearTimeout(timer);
       if (code !== 0) {
-        finish(() => reject(new Error(err || `python exited ${code}`)));
+        finish(() => reject(new Error(`python exited with code ${code}`)));
         return;
       }
       try {
         const parsed = JSON.parse(out);
         finish(() => resolve(parsed));
       } catch (e: any) {
-        finish(() => reject(new Error(`Invalid python JSON: ${e.message}`)));
+        finish(() => reject(new Error(`Invalid python JSON: ${e.message}\nraw stdout: ${out.slice(0, 500)}`)));
       }
     });
     p.on("error", (error) => {
@@ -472,6 +478,180 @@ async function shouldSkipCronRegistration() {
   }
   return false;
 }
+// ─────────────────────────────────────────────────────────────────────────────
+// RESUME SCREENING JOB
+// Full pipeline: download → extract text → score against JD → write DB.
+// Job name: "screen-resume"
+// Job data: { applicationId, bucket, key, fileName, orgId }
+// ─────────────────────────────────────────────────────────────────────────────
+async function processResumeScreeningJob(job: any) {
+  const {
+    applicationId,
+    bucket = process.env.R2_RESUMES_BUCKET || "resumes",
+    key,
+    fileName = "resume.pdf",
+    orgId = null,
+  } = job.data || {};
+
+  if (!applicationId || !key) {
+    throw new Error("Missing applicationId or key in screen-resume job");
+  }
+
+  console.log(`[RESUME-WORKER] Job ${job.id} started for ${applicationId}`);
+
+  const tempExt = String(fileName).match(/\.[a-z0-9]+$/i)?.[0] || ".pdf";
+  const tempFilePath = join(tmpdir(), `resume_extract_${String(job.id)}_${Date.now()}${tempExt}`);
+
+  try {
+    // ── 10% Upload received ────────────────────────────────────────────────
+    await job.updateProgress(10);
+    await prisma.application.update({
+      where: { id: applicationId },
+      data: { resumeStatus: "processing", updatedAt: new Date() },
+    }).catch((e: any) => console.warn(`[RESUME-WORKER] status update failed: ${e.message}`));
+
+    // ── 20% Download from R2 ───────────────────────────────────────────────
+    await job.updateProgress(20);
+    console.log(`[RESUME-WORKER] Downloading from R2: ${key}`);
+    const sourceBuffer = await getObjectBuffer(bucket, key);
+    await writeFile(tempFilePath, sourceBuffer);
+    console.log(`[RESUME-WORKER] Downloaded ${sourceBuffer.length} bytes`);
+
+    // ── 30% Load JD config ────────────────────────────────────────────────
+    await job.updateProgress(30);
+    const application = await prisma.application.findUnique({
+      where: { id: applicationId },
+      select: {
+        drive: {
+          select: {
+            extractedDetails: true,
+            screeningCriteria: true,
+            screeningThreshold: true,
+          },
+        },
+      },
+    });
+
+    const extractedDetails = (() => {
+      try { return JSON.parse(application?.drive?.extractedDetails || "{}"); } catch { return {}; }
+    })();
+    const screeningCriteria = (() => {
+      try { return JSON.parse(application?.drive?.screeningCriteria || "{}"); } catch { return {}; }
+    })();
+    const threshold = application?.drive?.screeningThreshold ?? 0;
+    const hasJd = Object.keys(extractedDetails).length > 0;
+
+    // ── 40% Extract + 60% Score (Python subprocess) ───────────────────────
+    await job.updateProgress(40);
+    console.log(`[RESUME-WORKER] Running Python pipeline (hasJd=${hasJd})...`);
+
+    let result: any;
+    if (hasJd) {
+      const jdPayload = JSON.stringify({
+        jd: extractedDetails,
+        jd_raw_text: extractedDetails?.rawText || extractedDetails?.description || "",
+        threshold,
+        screening_criteria: screeningCriteria,
+      });
+      result = await runPythonJsonWithStdin(
+        ["scripts/extract_pdf.py", tempFilePath, "RESUME_AND_SCORE", "gpt-4.1-mini", "gpt-4.1-mini"],
+        jdPayload,
+        180_000,
+      );
+    } else {
+      result = await runPythonJson(
+        ["scripts/extract_pdf.py", tempFilePath, "RESUME", "gpt-4.1-mini"],
+        120_000,
+      );
+    }
+
+    if (result?.error) throw new Error(result.error);
+
+    // ── 70% Parse results ─────────────────────────────────────────────────
+    await job.updateProgress(70);
+    console.log(`[RESUME-WORKER] Python done. keys=${Object.keys(result || {}).join(",")}`);
+
+    const scoreData  = result?.score ?? null;
+    const resumeData = result?.data  ?? {};
+    const resumeText = result?.text  ?? "";
+    const aiScore    = typeof scoreData?.score === "number" ? Math.round(scoreData.score) : null;
+    const reportJson = scoreData ? JSON.stringify(scoreData) : null;
+
+    // ── 80% Write to DB ───────────────────────────────────────────────────
+    await job.updateProgress(80);
+    console.log(`[RESUME-WORKER] Saving — aiScore=${aiScore} hasReport=${!!reportJson}`);
+
+    await prisma.application.update({
+      where: { id: applicationId },
+      data: {
+        resumeText,
+        resumeData: JSON.stringify({ source: { bucket, key }, parsed: resumeData }),
+        ...(aiScore   !== null && { aiScore }),
+        ...(reportJson && { fullScanReport: reportJson, aiReport: reportJson }),
+        // "screened" = extraction + scoring done, ready for admin review.
+        // frontend stops spinner on any value that is NOT processing/waiting/extracting.
+        resumeStatus: "pending",
+        updatedAt: new Date(),
+      },
+    });
+
+    // ── 90% Billing ───────────────────────────────────────────────────────
+    await job.updateProgress(90);
+    if (orgId) {
+      const usageExtract = result?.usage_extract ?? result?.usage ?? null;
+      const usageScore   = result?.usage_score   ?? null;
+      if (usageExtract) {
+        await recordOrgBillingUsage({
+          orgId,
+          feature: "resumeExtraction",
+          usage: {
+            model: usageExtract.model,
+            inputTokens: usageExtract.inputTokens || 0,
+            outputTokens: usageExtract.outputTokens || 0,
+            cachedInputTokens: usageExtract.cachedInputTokens || 0,
+            eventId: `resume-extraction:${job.id}`,
+          },
+        }).catch(() => {});
+      }
+      if (usageScore) {
+        await recordOrgBillingUsage({
+          orgId,
+          feature: "resumeReport",
+          usage: {
+            model: usageScore.model,
+            inputTokens: usageScore.inputTokens || 0,
+            outputTokens: usageScore.outputTokens || 0,
+            cachedInputTokens: usageScore.cachedInputTokens || 0,
+            eventId: `resume-report:${job.id}`,
+          },
+        }).catch(() => {});
+      }
+    }
+
+    // ── 100% Done ─────────────────────────────────────────────────────────
+    await job.updateProgress(100);
+    console.log(`[RESUME-WORKER] Job ${job.id} done for ${applicationId} — score: ${aiScore ?? "n/a"}`);
+    return { applicationId, aiScore, hasScore: aiScore !== null };
+
+  } catch (err: any) {
+    console.error(`[RESUME-WORKER] Job ${job.id} failed for ${applicationId}: ${err.message}`);
+    await prisma.application.update({
+      where: { id: applicationId },
+      data: { resumeStatus: "failed", updatedAt: new Date() },
+    }).catch(() => {});
+    throw err;
+  } finally {
+    await unlink(tempFilePath).catch(() => {});
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RESUME EXTRACTION JOB (general extraction UI — /api/extract)
+// Extracts + parses only; result is returned to the job for the UI to poll.
+// No DB writes — the caller reads returnvalue via /api/extract/status/[jobId].
+// Job name: "resume-file-extract"
+// Job data: { bucket, key, fileUrl, fileName, orgId, orgOpenAIModel }
+// ─────────────────────────────────────────────────────────────────────────────
 async function processResumeFileExtractJob(job: any) {
   const {
     bucket = process.env.R2_RESUMES_BUCKET || "resumes",
@@ -479,25 +659,18 @@ async function processResumeFileExtractJob(job: any) {
     fileUrl = null,
     fileName = "resume.pdf",
     orgId = null,
-    orgOpenAIModel = "gpt-4o-mini",
+    orgOpenAIModel = "gpt-4.1-mini",
   } = job.data || {};
   if (!key) {
     throw new Error("Invalid resume extraction job payload");
   }
-  console.log(`[RESUME-WORKER] File extraction job ${job.id} started`, {
-    fileName,
-    bucket,
-    key,
-  });
+  console.log(`[RESUME-WORKER] File extraction job ${job.id} started`, { fileName, bucket, key });
   const tempExt = (() => {
     const match = String(fileName).match(/\.[a-z0-9]+$/i);
     return match?.[0] || ".pdf";
   })();
   const sourceBuffer = await getObjectBuffer(bucket, key);
-  const tempFilePath = join(
-    tmpdir(),
-    `resume_extract_${String(job.id)}_${Date.now()}${tempExt}`
-  );
+  const tempFilePath = join(tmpdir(), `resume_extract_${String(job.id)}_${Date.now()}${tempExt}`);
   await writeFile(tempFilePath, sourceBuffer);
   try {
     const extracted = await runPythonJson([
@@ -537,39 +710,132 @@ async function processResumeFileExtractJob(job: any) {
   }
 }
 
-
-// Active shared queue worker for resume-processing.
-// Handles jobs that don't specify an org-specific queue, including fallback for general file extraction.
+// ─────────────────────────────────────────────────────────────────────────────
+// RESUME PROCESSING WORKER
+// Single worker, two job types:
+//   "screen-resume"      — full pipeline: extract + score + write DB (from upload routes)
+//   "resume-file-extract"— extract only, result returned for UI polling (/api/extract)
+// Workers continuously poll the queue; as soon as a slot opens the next job starts.
+// ─────────────────────────────────────────────────────────────────────────────
 if (isQueueEnabled("resume-processing")) {
-  const worker = trackWorker('resume-processing', new Worker('resume-processing', async (job) => {
+  const resumeWorker = trackWorker("resume-processing", new Worker("resume-processing", async (job) => {
     console.log(`\n=================================================`);
-    console.log(`▶ [RESUME WORKER] Triggered! Job: ${job.name} (ID: ${job.id})`);
+    console.log(`▶ [RESUME WORKER] PID=${process.pid} Job: name="${job.name}" id="${job.id}"`);
     console.log(`=================================================\n`);
 
+    if (job.name === "screen-resume") {
+      return await processResumeScreeningJob(job);
+    }
     if (job.name === "resume-file-extract") {
       return await processResumeFileExtractJob(job);
     }
-    console.warn(`[RESUME-WORKER] Unknown job name: ${job.name} — discarding.`);
+    throw new Error(`[RESUME-WORKER] Unknown job name: "${job.name}"`);
   }, {
-    connection: redisConnection,
-    concurrency: 200, // Process 200 resumes globally simultaneously
-    lockDuration: 15 * 60 * 1000, // 15 min — safely exceeds the slowest single chunk
-    stalledInterval: 60 * 1000, // Check for stalled jobs every 60s (faster recovery)
-    maxStalledCount: 3, // Re-deliver a stalled job up to 3 times before giving up
-    drainDelay: 200, // Poll every 200ms for snappier job pickup
-    removeOnComplete: { count: 0 },
-    removeOnFail: { count: 0 },
+    connection: createRedisConnection(),
+    prefix: BULL_PREFIX,
+    concurrency: 50,
+    lockDuration: 15 * 60 * 1000,
+    stalledInterval: 60 * 1000,
+    maxStalledCount: 2,
+    drainDelay: 300,
+    removeOnComplete: { age: 3600 },
+    removeOnFail:    { age: 3600 },
   }));
-  void worker.waitUntilReady()
-    .then(() => console.log("[resume-processing] Worker ready and waiting for jobs"))
-    .catch((error) => console.error("[resume-processing] Worker failed to become ready:", error));
-  worker.on('failed', (job, err) => {
-    console.log(`[FATAL] Job ${job?.id} failed permanently: ${err.message}`);
+
+  resumeWorker.on("error", (err) => {
+    console.error(`[resume-processing] Worker error:`, err.message);
   });
+  resumeWorker.on("active", (job) => {
+    console.log(`[resume-processing] ► Active: name="${job.name}" id="${job.id}" app="${job.data?.applicationId}"`);
+  });
+  resumeWorker.on("completed", (job, result) => {
+    console.log(`[resume-processing] ✓ Completed: name="${job.name}" id="${job.id}" result=${JSON.stringify(result)}`);
+  });
+  resumeWorker.on("failed", (job, err) => {
+    console.error(`[resume-processing] ✗ Failed: name="${job?.name}" id="${job?.id}" — ${err.message}`);
+    console.error(err.stack);
+  });
+  resumeWorker.on("stalled", (jobId) => {
+    console.warn(`[resume-processing] ⚠ Stalled: id="${jobId}"`);
+  });
+
+  void resumeWorker.waitUntilReady()
+    .then(async () => {
+      console.log(`[resume-processing] Worker ready. Queue="resume-processing" | Concurrency=50`);
+      // DUPLICATE-WORKER GUARD: if another consumer is already subscribed to this
+      // queue (e.g. a stale Docker container on the prod host), it will race us for
+      // jobs and our console will silently miss them. Surface it loudly.
+      try {
+        const guardQueue = new Queue("resume-processing", { connection: redisConnection, prefix: BULL_PREFIX });
+        const all = await guardQueue.getWorkers();
+        await guardQueue.close();
+        if (all.length > 1) {
+          console.warn(
+            `[resume-processing] ⚠ DUPLICATE CONSUMERS DETECTED (${all.length}) on this queue. ` +
+            `Other workers will steal jobs. Addresses: ` +
+            all.map((w: any) => `${w.addr}(age=${w.age}s)`).join(", ")
+          );
+        }
+      } catch { /* getWorkers best-effort */ }
+    })
+    .catch((err) => console.error("[resume-processing] Worker failed to become ready:", err));
+
   // Temp-file janitor: sweep at boot and every 6 hours.
   void sweepTempFiles();
   setInterval(() => { void sweepTempFiles(); }, 6 * 60 * 60 * 1000).unref();
 
+  // STALE-ROW RECONCILER: the durable guarantee that no candidate hangs on
+  // "waiting"/"processing" forever. A row can become orphaned if the enqueue
+  // failed silently, the job was stolen+lost by a duplicate worker, or Redis
+  // evicted the job hash. Every 2 minutes we cross-check DB rows against live
+  // BullMQ jobs; any row older than the grace window with NO backing job is
+  // marked "failed" so the UI stops spinning. Also purges orphan failed-set
+  // pointers (failed-set members whose job hash is already gone).
+  void reconcileResumeQueue();
+  setInterval(() => { void reconcileResumeQueue(); }, 2 * 60 * 1000).unref();
+}
+
+async function reconcileResumeQueue() {
+  const GRACE_MS = 10 * 60 * 1000; // give a real job up to 10 min before declaring it dead
+  try {
+    const reconcileQueue = new Queue("resume-processing", { connection: redisConnection, prefix: BULL_PREFIX });
+    // 1) Purge orphan failed-set pointers (job hash already removed by removeOnFail age).
+    await reconcileQueue.clean(0, 1000, "failed").catch(() => []);
+
+    // 2) Gather the applicationIds that DO have a live job (waiting/active/delayed).
+    const liveJobs = await reconcileQueue.getJobs(["waiting", "active", "delayed", "paused"], 0, 5000, false);
+    const liveAppIds = new Set(
+      liveJobs.filter(Boolean).map((j: any) => String(j?.data?.applicationId || "")).filter(Boolean)
+    );
+    await reconcileQueue.close();
+
+    // 3) Find DB rows stuck in an in-flight status past the grace window.
+    const cutoff = new Date(Date.now() - GRACE_MS);
+    const stuck = await prisma.application.findMany({
+      where: {
+        resumeStatus: { in: ["waiting", "processing", "extracting", "scoring", "starting"] },
+        updatedAt: { lt: cutoff },
+      },
+      select: { id: true, resumeStatus: true },
+    });
+
+    const orphaned = stuck.filter((row) => !liveAppIds.has(row.id));
+    if (orphaned.length === 0) return;
+
+    for (const row of orphaned) {
+      await prisma.application.update({
+        where: { id: row.id },
+        data: {
+          resumeStatus: "failed",
+          aiReport: JSON.stringify({ processing: { progress: 0, stage: "failed", error: "No active screening job (reconciled)" } }),
+          updatedAt: new Date(),
+        },
+      }).catch(() => {});
+    }
+    console.warn(`[RECONCILE] Marked ${orphaned.length} orphaned resume row(s) as failed (no backing job): ${orphaned.map((o) => o.id).join(", ")}`);
+  } catch (err: any) {
+    console.warn(`[RECONCILE] Reconciler sweep failed: ${err?.message}`);
+  }
 }
 if (isQueueEnabled("invitation-delivery-queue")) {
   const invitationDeliveryWorker = trackWorker("invitation-delivery-queue", new Worker(
@@ -701,6 +967,7 @@ if (isQueueEnabled("invitation-delivery-queue")) {
     },
     {
       connection: redisConnection,
+      prefix: BULL_PREFIX,
       concurrency: 10,
       limiter: {
         max: 10,
@@ -732,6 +999,7 @@ if (isQueueEnabled("recording-retention-cleanup")) {
     },
     {
       connection: redisConnection,
+      prefix: BULL_PREFIX,
       concurrency: 100,
       lockDuration: 5 * 60 * 1000,
       stalledInterval: 2 * 60 * 1000,
@@ -765,6 +1033,7 @@ if (isQueueEnabled("interview-start")) {
     },
     {
       connection: redisConnection,
+      prefix: BULL_PREFIX,
       concurrency: 100,
       lockDuration: 60 * 1000,
       stalledInterval: 30 * 1000,
@@ -987,6 +1256,7 @@ if (isQueueEnabled("interview-finalization")) {
     },
     {
       connection: redisConnection,
+      prefix: BULL_PREFIX,
       concurrency: 100,
       lockDuration: 10 * 60 * 1000,    // 10 min lock — report generation can take a while
       stalledInterval: 5 * 60 * 1000,
@@ -1167,7 +1437,7 @@ if (isQueueEnabled("interview-recording")) {
           console.warn(`[RECORDING_RETENTION] Failed to schedule cleanup for ${applicationId}:`, error);
         });
       }
-      const finalizationQueue = new Queue("interview-finalization", { connection: redisConnection });
+      const finalizationQueue = new Queue("interview-finalization", { connection: redisConnection, prefix: BULL_PREFIX });
       await finalizationQueue.add(
         "finalize-interview",
         {
@@ -1195,6 +1465,7 @@ if (isQueueEnabled("interview-recording")) {
     },
     {
       connection: redisConnection,
+      prefix: BULL_PREFIX,
       concurrency: 100,
       lockDuration: 5 * 60 * 1000,
       stalledInterval: 2 * 60 * 1000,
@@ -1282,6 +1553,7 @@ if (isQueueEnabled("interview-snapshots")) {
     },
     {
       connection: redisConnection,
+      prefix: BULL_PREFIX,
       concurrency: 100, // Process snapshots in parallel to clear Redis memory fast
       lockDuration: 30000,
       removeOnComplete: { age: 60 },
@@ -1320,6 +1592,7 @@ if (isQueueEnabled("jd-upload")) {
     },
     {
       connection: redisConnection,
+      prefix: BULL_PREFIX,
       concurrency: 10, // Efficient parallel uploads
       removeOnComplete: { age: 60 },
       removeOnFail: { age: 60 },

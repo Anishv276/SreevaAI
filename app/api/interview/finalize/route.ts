@@ -1,22 +1,14 @@
 import { NextResponse } from "next/server";
-import { Prisma } from "@prisma/client";
 import { interviewFinalizationQueue } from "@/lib/queue";
 import { prisma } from "@/lib/prisma";
 import { interviewFinalizeSchema } from "@/lib/validation";
 import crypto from "crypto";
 import { generateId } from "@/lib/ids";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
-import {
-  deductInterviewQuota,
-  incrementOrgCreditsUsed,
-} from "@/lib/credits";
+import { deductInterviewQuotaForApplication } from "@/lib/usage-metrics";
 import { getOrgRecordingSettings, scheduleRecordingRetentionDeletion } from "@/lib/recording-retention";
 import { mergeRecordingState, type RecordingState } from "@/lib/recording-state";
 export const runtime = "nodejs";
-function roundCredits(value: number) {
-  if (!Number.isFinite(value)) return 0;
-  return Math.round(value * 100) / 100;
-}
 async function persistInterviewUpdateRaw(params: {
   applicationId: string;
   recordingUrl?: string;
@@ -222,50 +214,11 @@ export async function POST(req: Request) {
           }
         }
         if (orgId) {
-          const interviewForBilling = await prisma.interview.findUnique({
-            where: { applicationId },
-            select: { billingSnapshot: true },
+          await deductInterviewQuotaForApplication({
+            applicationId,
+            durationSeconds: Number.isFinite(Number(resolvedDuration)) ? Number(resolvedDuration) : null,
           });
-          const existingSnapshot =
-            interviewForBilling?.billingSnapshot && typeof interviewForBilling.billingSnapshot === "object"
-              ? (interviewForBilling.billingSnapshot as Record<string, unknown>)
-              : {};
-          const durationSec = Math.max(0, Number(resolvedDuration ?? 0));
-          const creditsUsed = roundCredits(durationSec / 60);
-          const billingSnapshotPayload = {
-            ...existingSnapshot,
-            durationSec,
-            creditsUsed,
-            interviewName: `${appForOrg?.fullName || "Unknown Candidate"} - ${appForOrg?.drive?.title || appForOrg?.drive?.role || "Interview"}`,
-            candidateName: appForOrg?.fullName || "Unknown Candidate",
-            jobTitle: appForOrg?.drive?.role || appForOrg?.drive?.title || "Unknown Role",
-            billedAt: Math.floor(Date.now() / 1000),
-          };
-          // Atomically mark the interview as billed — returns the row only if not already billed.
-          const marked = await prisma.$queryRaw<Array<{ id: string }>>(
-            Prisma.sql`
-              UPDATE "Interview"
-              SET "billingSnapshot" = ${JSON.stringify(billingSnapshotPayload)}::jsonb,
-              "updatedAt" = NOW()
-              WHERE "applicationId" = ${applicationId}
-                AND ("billingSnapshot" IS NULL OR "billingSnapshot"->'billedAt' IS NULL)
-              RETURNING id
-            `
-          );
-          if (marked.length > 0) {
-            // This is the first and only time we bill for this interview.
-            await deductInterviewQuota(orgId, 1);
-            const dur = durationSec;
-            if (Number.isFinite(dur) && dur > 0) {
-              const creditsDelta = roundCredits(dur / 60);
-              if (creditsDelta > 0) {
-                await incrementOrgCreditsUsed(orgId, creditsDelta);
-              }
-            }
-            console.log(`[FINALIZE] Billing deducted for ${applicationId} org=${orgId} dur=${resolvedDuration}s`);
-          } else {
-            console.log(`[FINALIZE] Billing already deducted for ${applicationId} — skipping`);
-          }
+          console.log(`[FINALIZE] Billing finalized for ${applicationId} org=${orgId} dur=${resolvedDuration}s`);
         }
       } catch (creditError) {
         console.error("[FINALIZE] Billing deduction failed:", creditError);
