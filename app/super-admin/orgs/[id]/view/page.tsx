@@ -80,7 +80,6 @@ const FEATURE_MODEL_DISPLAY_MAP: Record<string, string> = {
     interview: "gpt-4.1-mini",
     resumeExtraction: "gpt-5.4-mini",
     jdExtraction: "gpt-5.4-mini",
-    chatbot: "gpt-4o-mini",
     resumeReport: "gpt-5.4-mini",
     interviewReport: "gpt-5.4-mini",
 };
@@ -490,7 +489,6 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                                 { label: "Interview LLM", key: "interview" },
                                 { label: "Resume Extraction", key: "resumeExtraction" },
                                 { label: "JD Extraction", key: "jdExtraction" },
-                                { label: "Chatbot", key: "chatbot" },
                                 { label: "Resume Report", key: "resumeReport" },
                                 { label: "Interview Report", key: "interviewReport" },
                             ].map((section) => {
@@ -610,7 +608,6 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                                         "interview",
                                         "resumeExtraction",
                                         "jdExtraction",
-                                        "chatbot",
                                         "resumeReport",
                                         "interviewReport",
                                     ].reduce((sum, key) => {

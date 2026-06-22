@@ -78,7 +78,7 @@ interface Org {
         drives: number;
     };
 }
-type BillingFeatureKey = "interview" | "resumeExtraction" | "jdExtraction" | "chatbot" | "resumeReport" | "interviewReport";
+type BillingFeatureKey = "interview" | "resumeExtraction" | "jdExtraction" | "resumeReport" | "interviewReport";
 type BillingFeatureMetrics = {
     runs?: number;
     inputTokens?: number;
@@ -224,7 +224,6 @@ export default function OrgsPage() {
     const fmtHistory = (usd: number | null | undefined) => usd == null ? "-" : fmt(Number(usd || 0));
     const metricSections: { key: BillingFeatureKey; label: string }[] = [
         { key: "resumeExtraction", label: "LLM - Resume" },
-        { key: "chatbot", label: "LLM - Chatbot" },
         { key: "interview", label: "LLM - Interview" },
         { key: "jdExtraction", label: "LLM - JD" },
         { key: "resumeReport", label: "LLM - Resume Report" },
@@ -233,7 +232,6 @@ export default function OrgsPage() {
     const FEATURE_MODEL_DISPLAY_MAP: Record<BillingFeatureKey, string> = {
         resumeExtraction: "gpt-5.4-mini",
         jdExtraction: "gpt-5.4-mini",
-        chatbot: "gpt-4o-mini",
         interview: "gpt-4.1-mini",
         resumeReport: "gpt-5.4-mini",
         interviewReport: "gpt-5.4-mini",
