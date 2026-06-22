@@ -507,7 +507,7 @@ async function processResumeScreeningJob(job: any) {
     await job.updateProgress(10);
     await prisma.application.update({
       where: { id: applicationId },
-      data: { resumeStatus: "processing", updatedAt: new Date() },
+      data: { resumeStatus: "extracting", updatedAt: new Date() },
     }).catch((e: any) => console.warn(`[RESUME-WORKER] status update failed: ${e.message}`));
 
     // ── 20% Download from R2 ───────────────────────────────────────────────
@@ -519,6 +519,10 @@ async function processResumeScreeningJob(job: any) {
 
     // ── 30% Load JD config ────────────────────────────────────────────────
     await job.updateProgress(30);
+    await prisma.application.update({
+      where: { id: applicationId },
+      data: { resumeStatus: "extracting", updatedAt: new Date() },
+    }).catch(() => {});
     const application = await prisma.application.findUnique({
       where: { id: applicationId },
       select: {
@@ -543,6 +547,10 @@ async function processResumeScreeningJob(job: any) {
 
     // ── 40% Extract + 60% Score (Python subprocess) ───────────────────────
     await job.updateProgress(40);
+    await prisma.application.update({
+      where: { id: applicationId },
+      data: { resumeStatus: "scoring", updatedAt: new Date() },
+    }).catch(() => {});
     console.log(`[RESUME-WORKER] Running Python pipeline (hasJd=${hasJd})...`);
 
     let result: any;
@@ -577,9 +585,15 @@ async function processResumeScreeningJob(job: any) {
     const aiScore    = typeof scoreData?.score === "number" ? Math.round(scoreData.score) : null;
     const reportJson = scoreData ? JSON.stringify(scoreData) : null;
 
+    // ── Automatic ATS status based on score vs threshold ────────────────────
+    let resumeStatus = "pending";
+    if (aiScore !== null && threshold > 0) {
+      resumeStatus = aiScore >= threshold ? "shortlisted" : "rejected";
+    }
+
     // ── 80% Write to DB ───────────────────────────────────────────────────
     await job.updateProgress(80);
-    console.log(`[RESUME-WORKER] Saving — aiScore=${aiScore} hasReport=${!!reportJson}`);
+    console.log(`[RESUME-WORKER] Saving — aiScore=${aiScore} threshold=${threshold} resumeStatus=${resumeStatus} hasReport=${!!reportJson}`);
 
     await prisma.application.update({
       where: { id: applicationId },
@@ -588,9 +602,10 @@ async function processResumeScreeningJob(job: any) {
         resumeData: JSON.stringify({ source: { bucket, key }, parsed: resumeData }),
         ...(aiScore   !== null && { aiScore }),
         ...(reportJson && { fullScanReport: reportJson, aiReport: reportJson }),
+        // Auto-update ATS status: if score >= threshold → shortlisted, else → rejected
         // "screened" = extraction + scoring done, ready for admin review.
         // frontend stops spinner on any value that is NOT processing/waiting/extracting.
-        resumeStatus: "pending",
+        resumeStatus,
         updatedAt: new Date(),
       },
     });
