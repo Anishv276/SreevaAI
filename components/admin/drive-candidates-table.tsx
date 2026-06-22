@@ -202,7 +202,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
     useEffect(() => {
         const hasPending = candidates.some((c: any) => {
             const s = String(c.resumeStatus || c.status || "").toLowerCase();
-            return s === "extracting" || s === "waiting" || s === "processing";
+            return s === "extracting" || s === "scoring" || s === "waiting" || s === "processing" || s === "starting";
         });
         if (!hasPending) return;
         const timer = setInterval(() => {
@@ -716,7 +716,12 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                                     statusKey === "shortlisted" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
                                                     "bg-gray-50 text-gray-500 border-gray-200"
                                                 )}>
-                                                    {isProcessing ? (stageLabel || "Processing") : statusKey === "rejected" ? "Rejected" : statusKey === "shortlisted" ? "Shortlisted" : statusLabel}
+                                                    {statusKey === "extracting" ? "Extracting" :
+                                                     statusKey === "scoring" ? "Scoring" :
+                                                     isProcessing ? (stageLabel || "Processing") :
+                                                     statusKey === "rejected" ? "Rejected" :
+                                                     statusKey === "shortlisted" ? "Shortlisted" :
+                                                     statusLabel}
                                                 </span>
                                             </TableCell>
                                             {/* Interview status */}

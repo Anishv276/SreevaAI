@@ -1,0 +1,245 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║                                                                            ║
+║               SOFT-DELETE AUDIT — QUICK REFERENCE CARD                     ║
+║                                                                            ║
+║                            Laminate and Keep!                              ║
+║                                                                            ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+┌────────────────────────────────────────────────────────────────────────────┐
+│ THE PROBLEM IN 30 SECONDS                                                  │
+├────────────────────────────────────────────────────────────────────────────┤
+│                                                                            │
+│ Raw SQL queries ($queryRaw) don't auto-filter soft-deleted records.       │
+│ Must manually add WHERE "isDeleted" = false                               │
+│                                                                            │
+│ ❌ WRONG: SELECT * FROM "Organization"                                    │
+│ ✅ RIGHT: SELECT * FROM "Organization" WHERE "isDeleted" = false          │
+│                                                                            │
+│ Status: 35+ missing filters in 7 files                                    │
+│ Impact: Deleted data visible in dashboards + statistics                   │
+│ Effort: 1-2 days to fix                                                   │
+│                                                                            │
+└────────────────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────────────────┐
+│ WHAT NEEDS FIXING (Priority Order)                                        │
+├────────────────────────────────────────────────────────────────────────────┤
+│                                                                            │
+│ 🔴 PRIORITY 1-2 (Do First):                                               │
+│    1. app/api/super-admin/stats/route.ts (8 fixes)                        │
+│    2. app/api/admin/stats/route.ts (3 fixes)                              │
+│    3. app/api/super-admin/orgs/route.ts (6 fixes)                         │
+│    4. lib/credits.ts (3 fixes)                                            │
+│                                                                            │
+│ 🟠 PRIORITY 3 (Secondary):                                                │
+│    5. app/api/admin/organization/route.ts                                 │
+│    6. app/api/super-admin/orgs/interview-history/route.ts                │
+│    7. app/api/admin/score-distribution/route.ts                           │
+│                                                                            │
+└────────────────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────────────────┐
+│ THE FIX PATTERN                                                            │
+├────────────────────────────────────────────────────────────────────────────┤
+│                                                                            │
+│ SIMPLE COUNT:                                                              │
+│   ❌ SELECT COUNT(*) FROM "Drive"                                         │
+│   ✅ SELECT COUNT(*) FROM "Drive" WHERE "isDeleted" = false               │
+│                                                                            │
+│ MULTIPLE CONDITIONS:                                                       │
+│   ❌ SELECT COUNT(*) FROM "Drive" WHERE "orgId" = '123'                   │
+│   ✅ SELECT COUNT(*) FROM "Drive"                                         │
+│      WHERE "orgId" = '123' AND "isDeleted" = false                        │
+│                                                                            │
+│ JOIN QUERIES:                                                              │
+│   ❌ FROM "Organization" o                                                │
+│      JOIN "Drive" d ON d."orgId" = o.id                                   │
+│                                                                            │
+│   ✅ FROM "Organization" o                                                │
+│      JOIN "Drive" d ON d."orgId" = o.id                                   │
+│      WHERE o."isDeleted" = false AND d."isDeleted" = false               │
+│                                                                            │
+│ SUBQUERIES:                                                                │
+│   ❌ (SELECT COUNT(*) FROM "User" u WHERE u."orgId" = o.id)              │
+│                                                                            │
+│   ✅ (SELECT COUNT(*) FROM "User" u                                       │
+│       WHERE u."orgId" = o.id AND u."isDeleted" = false)                  │
+│                                                                            │
+└────────────────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────────────────┐
+│ MODELS WITH isDeleted FIELD (Must Filter)                                 │
+├────────────────────────────────────────────────────────────────────────────┤
+│                                                                            │
+│ ✓ Organization  →  Filter in queries                                      │
+│ ✓ User          →  Filter in queries                                      │
+│ ✓ Drive         →  Filter in queries                                      │
+│ ✓ Application   →  Filter in queries                                      │
+│ ✓ Interview     →  Filter in queries                                      │
+│ ✓ SuperAdmin    →  Filter in queries                                      │
+│ ✓ SupportTicket →  Filter in queries                                      │
+│ ✓ EngineVoice   →  Filter in queries                                      │
+│                                                                            │
+│ Note: All 8 models have isDeleted field in schema.prisma                  │
+│                                                                            │
+└────────────────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────────────────┐
+│ WHAT WORKS (No Changes Needed)                                            │
+├────────────────────────────────────────────────────────────────────────────┤
+│                                                                            │
+│ ✓ prisma.organization.findMany()                                          │
+│ ✓ prisma.organization.count()                                             │
+│ ✓ prisma.user.findUnique()                                                │
+│ ✓ prisma.drive.findFirst()                                                │
+│ ✓ All ORM operations (middleware auto-filters)                            │
+│                                                                            │
+│ ✗ prisma.$queryRaw("SELECT ...") ← Must add WHERE manually               │
+│ ✗ prisma.$queryRawUnsafe(...) ← Must add WHERE manually                  │
+│                                                                            │
+└────────────────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────────────────┐
+│ TESTING CHECKLIST (Per Fix)                                               │
+├────────────────────────────────────────────────────────────────────────────┤
+│                                                                            │
+│ For each file you fix:                                                     │
+│                                                                            │
+│ 1. □ Create test data (organization, drive, application, interview)      │
+│ 2. □ Call the endpoint → record initial numbers                           │
+│ 3. □ Soft-delete one item via DB (UPDATE ... SET isDeleted = true)       │
+│ 4. □ Call the endpoint again → verify count decreased by 1                │
+│ 5. □ Verify no API errors returned                                        │
+│ 6. □ Verify dashboard displays updated numbers                            │
+│                                                                            │
+└────────────────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────────────────┐
+│ DOCUMENT MAP                                                               │
+├────────────────────────────────────────────────────────────────────────────┤
+│                                                                            │
+│ 📍 START: SOFT_DELETE_EXECUTIVE_SUMMARY.txt (5 min)                      │
+│    └─ Overview + impact + effort                                          │
+│                                                                            │
+│ 📍 IMPLEMENT: SOFT_DELETE_FIX_CHECKLIST.md (use while coding)            │
+│    └─ Line-by-line diffs + WHERE clauses to copy-paste                   │
+│                                                                            │
+│ 📍 UNDERSTAND: SOFT_DELETE_ARCHITECTURE.txt (learn the mechanism)        │
+│    └─ Diagrams + flows + patterns                                         │
+│                                                                            │
+│ 📍 VERIFY: SOFT_DELETE_AUDIT_REPORT.md (detailed findings)               │
+│    └─ Line numbers + exact issues + impact                                │
+│                                                                            │
+│ 📍 NAVIGATE: SOFT_DELETE_AUDIT_INDEX.md (find anything)                  │
+│    └─ FAQ + cross-references + reading guide                              │
+│                                                                            │
+└────────────────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────────────────┐
+│ KEY FACTS                                                                  │
+├────────────────────────────────────────────────────────────────────────────┤
+│                                                                            │
+│ Files to Fix:           7                                                  │
+│ WHERE Clauses to Add:   ~25-30                                             │
+│ Lines of SQL:           ~200-250                                           │
+│ Models Affected:        5                                                  │
+│ Issues Found:           35+                                                │
+│ Time to Fix:            1-2 days                                           │
+│ Difficulty:             LOW (copy-paste style)                            │
+│ Risk:                   LOW (additive changes)                             │
+│ Rollback:               Easy (just remove WHERE clauses)                   │
+│ Tests Needed:           Simple (compare before/after counts)               │
+│                                                                            │
+└────────────────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────────────────┐
+│ COMMON MISTAKES TO AVOID                                                   │
+├────────────────────────────────────────────────────────────────────────────┤
+│                                                                            │
+│ ❌ Using OR condition: WHERE "isDeleted" = false OR x = y                 │
+│    (This defeats soft-delete if x = y matches deleted records)            │
+│                                                                            │
+│ ✅ Using AND: WHERE x = y AND "isDeleted" = false                         │
+│                                                                            │
+│ ❌ Forgetting filter in JOINs: Only filtering main table                  │
+│    (Deleted related records still appear)                                 │
+│                                                                            │
+│ ✅ Filter ALL tables: WHERE o."isDeleted" = false                         │
+│                       AND d."isDeleted" = false                           │
+│                                                                            │
+│ ❌ Filtering only in WHERE, not in subqueries                             │
+│                                                                            │
+│ ✅ Filter everywhere: Main query + subqueries + JOINs                    │
+│                                                                            │
+└────────────────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────────────────┐
+│ IMPACT BEFORE & AFTER                                                      │
+├────────────────────────────────────────────────────────────────────────────┤
+│                                                                            │
+│ BEFORE FIX:                          AFTER FIX:                           │
+│ ─────────────────────────────────    ─────────────────────────────────   │
+│ Admin Dashboard Stats:               Admin Dashboard Stats:              │
+│   Total Drives: 42 ❌                  Total Drives: 38 ✓                 │
+│   (includes 4 deleted)                (excludes deleted)                 │
+│                                                                            │
+│ Billing Module:                      Billing Module:                      │
+│   Org Credits: $1200 ❌               Org Credits: $1000 ✓                │
+│   (includes deleted org)              (excludes deleted)                  │
+│                                                                            │
+│ Trends Report:                       Trends Report:                       │
+│   Growth: +25% ❌                     Growth: +20% ✓                      │
+│   (inflated by deleted)               (accurate)                          │
+│                                                                            │
+└────────────────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────────────────┐
+│ QUICK START STEPS                                                          │
+├────────────────────────────────────────────────────────────────────────────┤
+│                                                                            │
+│ 1. Open SOFT_DELETE_FIX_CHECKLIST.md                                      │
+│ 2. Go to PRIORITY 1: super-admin/stats/route.ts                           │
+│ 3. Find Line 52: (SELECT COUNT(*)::INT FROM "Drive")                     │
+│ 4. Copy from checklist:                                                    │
+│    (SELECT COUNT(*)::INT FROM "Drive" WHERE "isDeleted" = false)         │
+│ 5. Paste into file                                                         │
+│ 6. Repeat for all items in checklist                                       │
+│ 7. Run test: Create item → soft-delete → verify count decreased           │
+│                                                                            │
+└────────────────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────────────────┐
+│ BEFORE YOU START                                                           │
+├────────────────────────────────────────────────────────────────────────────┤
+│                                                                            │
+│ ✓ Read SOFT_DELETE_EXECUTIVE_SUMMARY.txt (understand the issue)          │
+│ ✓ Read SOFT_DELETE_ARCHITECTURE.txt (understand the mechanism)           │
+│ ✓ Have SOFT_DELETE_FIX_CHECKLIST.md open while implementing              │
+│ ✓ Run tests per TESTING CHECKLIST (above)                                 │
+│ ✓ Review each fix against SOFT_DELETE_AUDIT_REPORT.md                    │
+│                                                                            │
+└────────────────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────────────────┐
+│ REMEMBER                                                                   │
+├────────────────────────────────────────────────────────────────────────────┤
+│                                                                            │
+│ • Prisma ORM = Auto-filtered ✓                                            │
+│ • Raw SQL = Manual filter required ✗                                      │
+│ • WHERE "isDeleted" = false required on all soft-delete models            │
+│ • Test with deleted records to verify filters work                        │
+│ • All 8 models need filtering (check schema.prisma for fields)            │
+│                                                                            │
+└────────────────────────────────────────────────────────────────────────────┘
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                                                                            ║
+║     Audit Date: June 22, 2026                                              ║
+║     Status: CRITICAL — 35+ Missing Filters Found                           ║
+║     Effort: 1-2 Days to Fix                                                ║
+║     Risk: LOW (Additive Changes Only)                                      ║
+║                                                                            ║
+║                 👉 Start with SOFT_DELETE_FIX_CHECKLIST.md 👈            ║
+║                                                                            ║
+╚════════════════════════════════════════════════════════════════════════════╝

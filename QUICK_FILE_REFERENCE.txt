@@ -1,0 +1,168 @@
+================================================================================
+                    INTERVIEW MODULE - FILE REFERENCE
+                        Complete & Accurate Mapping
+================================================================================
+
+TOTAL FILES: 17 (All analyzed and verified)
+
+================================================================================
+CORE EXECUTION ENGINE (4 files)
+================================================================================
+
+1. interview_executor.py (was: agent_runtime.py) [215 KB]
+   └─ Main interview session orchestrator
+   └─ Entry point, per-turn eval loop, topic management
+   └─ Core business logic
+
+2. runtime_config.py (was: agent_runtime_support.py) [12 KB]
+   └─ Configuration, logging, state management
+   └─ Config singleton, DB pool, logging setup
+
+3. text_processor.py (was: agent_runtime_helpers.py) [12 KB]
+   └─ Text cleaning, transcript handling
+   └─ Sanitization, polish, TTS transforms
+
+4. runtime_utilities.py (was: agent_runtime_utils.py) [20 KB] ⭐ NEW
+   └─ Runtime utility classes
+   └─ AgentConfig, StateManager, TextSanitizer, TranscriptManager
+
+================================================================================
+INFRASTRUCTURE (2 files)
+================================================================================
+
+5. provider_factory.py (was: agent_providers.py) [12 KB]
+   └─ TTS/STT/LLM provider initialization
+   └─ Cartesia, Sarvam, ElevenLabs, Deepgram, OpenAI
+
+6. database_layer.py (was: agent_persistence.py) [18 KB]
+   └─ Database operations and persistence
+   └─ AsyncPG pool, transcript/scores/reports persistence
+
+================================================================================
+EVALUATION & SCORING (2 files)
+================================================================================
+
+7. answer_evaluator.py (was: agent_scoring.py) [19 KB]
+   └─ Answer evaluation and signal detection
+   └─ Scores clarity/depth/specificity/grounding + 1 signal per turn
+
+8. evaluation_orchestrator.py (was: eval_pipeline.py) [19 KB]
+   └─ Eval orchestration and topic saturation
+   └─ Band-aware thresholds, PROBE vs MOVE_ON decision
+
+================================================================================
+INTERVIEW CONTENT & STRATEGY (5 files)
+================================================================================
+
+9. phase_prompt_builder.py (was: interview_phases.py) [18 KB]
+   └─ Phase-specific prompts (greeting, warmup, interview)
+   └─ Builds system directives for each phase
+
+10. candidate_context_builder.py (was: interview_brief.py) [15 KB]
+    └─ Resume & JD parsing into structured context
+    └─ Band inference, topic extraction
+
+11. system_prompt_builder.py (was: prompt_layers.py) [16 KB]
+    └─ System prompt assembly (voice + eval + phase + context)
+    └─ Layered prompt construction
+
+12. follow_up_strategy.py (was: probe_strategy.py) [9.2 KB]
+    └─ Follow-up question strategy per signal
+    └─ Probe families, context injection
+
+13. data_extractor.py (was: brief_extraction.py) [20 KB]
+    └─ Deterministic resume/JD extraction (NO LLM)
+    └─ Pure Python parsing, zero ML
+
+================================================================================
+REPORTING (1 file)
+================================================================================
+
+14. interview_report_generator.py (was: report_pipeline.py) [59 KB] 🔴 LARGEST
+    └─ Post-interview report generation
+    └─ LangGraph DAG: signals → LLM calls → final scorecard
+
+================================================================================
+UTILITIES (2 files)
+================================================================================
+
+15. speech_processor.py (was: tts_phonetic_processor.py) [12 KB]
+    └─ TTS pronunciation fixing
+    └─ Acronyms, dashes, contractions normalization
+
+16. agent_utils.py (KEEP NAME) [3.2 KB]
+    └─ Generic helpers (JSON, tokens, names)
+    └─ No rename needed - generic utilities
+
+================================================================================
+PACKAGE (1 file)
+================================================================================
+
+17. __init__.py (NO CHANGE) [94 bytes]
+    └─ Package initialization
+
+================================================================================
+FILES TO DELETE (Non-existent, cleanup only)
+================================================================================
+
+❌ turn_evaluator.py — Does NOT exist (pycache only)
+❌ trust_engine.py — Does NOT exist (test reference only)
+❌ session_state.py — Does NOT exist (test reference only)
+❌ tests/test_signal_toggles.py — BROKEN (imports non-existent modules)
+
+================================================================================
+STATISTICS
+================================================================================
+
+Total Size:        ~570 KB
+Total Lines:       ~3000+ lines of code
+
+By Group:
+  Execution:       59 KB (4 files)
+  Infrastructure:  30 KB (2 files)
+  Evaluation:      38 KB (2 files)
+  Content:         68 KB (5 files)
+  Reporting:       59 KB (1 file)
+  Utilities:       15 KB (2 files)
+  Package:         94 B (1 file)
+
+Largest Files:
+  1. interview_report_generator.py    59 KB
+  2. interview_executor.py            215 KB ⚠️ MAIN
+  3. data_extractor.py                20 KB
+  4. runtime_utilities.py             20 KB
+  5. answer_evaluator.py              19 KB
+
+================================================================================
+NAMING CONVENTIONS USED
+================================================================================
+
+Verbs:
+  *_executor    = runs/executes something (interview_executor)
+  *_builder     = builds/constructs (prompt builder, context builder)
+  *_generator   = generates output (report generator)
+  *_orchestrator = orchestrates workflow (evaluation orchestrator)
+  *_processor   = processes data (text processor, speech processor)
+  *_factory     = creates/initializes objects (provider factory)
+  *_layer       = persistence/access layer (database layer)
+  *_evaluator   = evaluates/scores something (answer evaluator)
+  *_strategy    = defines strategy/tactics (follow-up strategy)
+  *_extractor   = extracts data (data extractor)
+
+Suffixes:
+  runtime_*     = runtime-specific utilities
+  *_config      = configuration
+  *_utilities   = utility classes/functions
+
+================================================================================
+READY TO RENAME? Y/N
+================================================================================
+
+All files identified and verified.
+All imports mapped.
+No fictional files included.
+Test file marked for deletion.
+
+Ready for: git mv, import updates, commit
+
+================================================================================

@@ -10,6 +10,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { validatePasswordStrength } from "@/lib/validation";
 import { toast } from "@/components/ui/toast-custom";
+import { useAuth } from "@/context/auth-context";
 function Field({ label, required, children, hint }: { label: string; required?: boolean; children: React.ReactNode; hint?: string }) {
     return (
         <div className="space-y-1.5">
@@ -39,6 +40,7 @@ function InputIcon({ icon, ...props }: { icon: React.ReactNode } & React.InputHT
 }
 export default function OnboardingPage() {
     const router = useRouter();
+    const { user, refreshUser } = useAuth();
     const [isLoading, setIsLoading] = useState(true);
     const hasLoaded = useRef(false);
     const [passwords, setPasswords] = useState({ current: "", next: "" });
@@ -52,6 +54,7 @@ export default function OnboardingPage() {
         hasLoaded.current = true;
         const load = async () => {
             try {
+                await refreshUser();
                 const orgRes = await fetch("/api/admin/organization");
                 if (orgRes.ok) {
                     const data = await orgRes.json();
@@ -176,6 +179,14 @@ export default function OnboardingPage() {
                             </div>
                         </div>
                         <div className="p-6 space-y-4">
+                            <Field label="Email Address">
+                                <input
+                                    type="email"
+                                    value={user?.email || ""}
+                                    disabled
+                                    className="h-10 w-full rounded-lg border border-gray-200 bg-gray-50 px-3 text-[13px] font-medium text-gray-600 outline-none cursor-not-allowed"
+                                />
+                            </Field>
                             <Field label="Company Name" required>
                                 <InputIcon
                                     icon={<Building2 className="h-3.5 w-3.5" />}
@@ -198,7 +209,7 @@ export default function OnboardingPage() {
                     </button>
                     <button
                         onClick={handleActivate}
-                        disabled={isSaving || isUploading || !canActivate}
+                        disabled={isSaving || !canActivate}
                         className={cn(
                             "flex items-center gap-2 px-6 h-10 rounded-xl font-semibold text-[13px] transition-all",
                             canActivate && !isSaving

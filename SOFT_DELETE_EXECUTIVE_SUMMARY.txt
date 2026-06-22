@@ -1,0 +1,230 @@
+================================================================================
+                    SOFT-DELETE AUDIT — EXECUTIVE SUMMARY
+================================================================================
+
+PROJECT: SreevaAI HR Interview Platform
+DATE: June 22, 2026
+STATUS: CRITICAL ISSUES FOUND ⚠️
+
+================================================================================
+ISSUE OVERVIEW
+================================================================================
+
+The codebase uses a soft-delete mechanism (isDeleted field) to mark deleted
+records. A global Prisma middleware automatically filters out deleted records
+in ORM queries, but RAW SQL queries bypass this middleware and must manually
+add WHERE "isDeleted" = false filters.
+
+FINDING: 7 API endpoints and 1 utility module use raw SQL queries WITHOUT
+soft-delete filters, causing deleted organizations, drives, applications,
+and interviews to be counted in statistics and displayed in dashboards.
+
+================================================================================
+IMPACT SUMMARY
+================================================================================
+
+SEVERITY: 🔴 HIGH
+
+AFFECTED SYSTEMS:
+  • Super-Admin Dashboard Statistics
+  • Organization Admin Dashboard
+  • Billing/Credits Module
+  • Recent Activity Feeds
+  • Trend Analysis
+  • Interview History
+  • Score Distribution Charts
+
+BUSINESS IMPACT:
+  ✗ Inflated statistics and KPIs
+  ✗ Incorrect billing calculations
+  ✗ Deleted data visible in dashboards
+  ✗ Misleading trends and forecasts
+  ✗ Potential security/privacy issue (deleted orgs still countable)
+
+================================================================================
+QUICK FACTS
+================================================================================
+
+Total Files Affected:        7
+Total Lines Requiring Fix:   ~200-250 SQL lines
+Total Fixes Needed:          ~25-30 WHERE clause additions
+
+Models with Soft-Delete:
+  • Organization (9 query issues)
+  • User (5 query issues)
+  • Drive (6 query issues)
+  • Application (7 query issues)
+  • Interview (7 query issues)
+  • SuperAdmin (1 correct ✓)
+  • SupportTicket (not audited)
+  • EngineVoice (not audited)
+
+================================================================================
+FILES REQUIRING FIXES
+================================================================================
+
+🔴 CRITICAL (Use for dashboards, billing):
+
+  1. app/api/super-admin/stats/route.ts
+     Lines: 52, 53, 54, 55, 59, 75-83, 85-91, 101-140, 152-159
+     Fixes: 8 separate WHERE clause additions
+
+  2. app/api/admin/stats/route.ts
+     Lines: 37-55, 56-61, 63-88
+     Fixes: 3 separate WHERE clause additions
+
+  3. app/api/super-admin/orgs/route.ts
+     Lines: 50-79, 99-119, 120-127, 128-137, 138-177, 178-197
+     Fixes: 6 separate WHERE clause additions
+
+  4. lib/credits.ts
+     Lines: 40-54, 71-83, 124-135
+     Fixes: 3 separate WHERE clause additions
+
+🟠 HIGH (Secondary impact):
+
+  5. app/api/admin/organization/route.ts
+
+  6. app/api/super-admin/orgs/interview-history/route.ts
+
+  7. app/api/admin/score-distribution/route.ts
+
+================================================================================
+THE PROBLEM PATTERN
+================================================================================
+
+❌ CURRENT (WRONG) — Deleted records included:
+
+  SELECT COUNT(*)::INT FROM "Drive"
+
+  SELECT o.name, COUNT(i.id) FROM "Organization" o
+  JOIN "Drive" d ON d."orgId" = o.id
+  JOIN "Application" a ON a."driveId" = d.id
+  JOIN "Interview" i ON i."applicationId" = a.id
+
+✅ CORRECT — Deleted records excluded:
+
+  SELECT COUNT(*)::INT FROM "Drive"
+  WHERE "isDeleted" = false
+
+  SELECT o.name, COUNT(i.id) FROM "Organization" o
+  JOIN "Drive" d ON d."orgId" = o.id
+  JOIN "Application" a ON a."driveId" = d.id
+  JOIN "Interview" i ON i."applicationId" = a.id
+  WHERE o."isDeleted" = false
+    AND d."isDeleted" = false
+    AND a."isDeleted" = false
+    AND i."isDeleted" = false
+
+================================================================================
+ROOT CAUSE
+================================================================================
+
+Prisma Middleware (lib/prisma.ts) auto-filters ORM operations:
+  ✓ prisma.organization.findMany()
+  ✓ prisma.organization.count()
+  ✓ prisma.drive.findUnique()
+  etc.
+
+But DOES NOT filter raw SQL:
+  ✗ prisma.$queryRaw("SELECT FROM Organization")
+  ✗ prisma.$queryRawUnsafe(...)
+
+Raw SQL queries account for ~40% of database access in stats/admin endpoints.
+These queries were not updated when soft-delete was implemented.
+
+================================================================================
+REMEDIATION EFFORT
+================================================================================
+
+Effort Level: MEDIUM (1-2 days)
+  • All fixes are simple WHERE clause additions
+  • No API changes required
+  • No database migration needed
+  • Backward compatible
+  • Mostly copy-paste style fixes
+
+Complexity: LOW
+  • Pattern is identical across all files
+  • No new logic or algorithms needed
+  • Straightforward testing approach
+
+Risk: LOW
+  • Changes are additive (filtering only)
+  • Existing data not modified
+  • Can be rolled back easily
+  • No API contract changes
+
+================================================================================
+NEXT STEPS
+================================================================================
+
+IMMEDIATE (Today):
+  1. ✓ Review this audit report (DONE)
+  2. ✓ Review fix checklist (SOFT_DELETE_FIX_CHECKLIST.md) (DONE)
+  3. → Prioritize fixes based on impact (Priority 1-2 are critical)
+
+SHORT TERM (This week):
+  4. Implement fixes in order of priority
+  5. Add test cases for soft-delete filtering
+  6. Review and merge changes
+  7. Deploy to staging for verification
+
+LONG TERM (After fixes):
+  8. Add ESLint rules to prevent future issues
+  9. Update CLAUDE.md with soft-delete patterns
+  10. Add code review checklist for raw SQL queries
+
+================================================================================
+DETAILED AUDIT LOCATIONS
+================================================================================
+
+Full technical details available in:
+  • SOFT_DELETE_AUDIT_REPORT.md (technical details)
+  • SOFT_DELETE_FIX_CHECKLIST.md (line-by-line fixes)
+  • SOFT_DELETE_EXECUTIVE_SUMMARY.txt (this file)
+
+================================================================================
+KEY STATISTICS
+================================================================================
+
+Raw SQL Queries Audited:        45+
+Queries Missing Soft-Delete:    ~35
+Queries With Correct Filter:    ~10
+
+Data Models Affected:           5 (Organization, User, Drive, App, Interview)
+API Endpoints Affected:         7
+Database Tables Scanned:        8
+Lines of SQL Code Reviewed:     ~250
+
+================================================================================
+VERIFICATION APPROACH
+================================================================================
+
+After implementation, verify using:
+
+1. Create test organization
+2. Soft-delete it (isDeleted = true)
+3. Call stats endpoint
+4. Confirm deleted org NOT in count
+5. Repeat for all affected endpoints
+
+Example Test:
+  const org = await create({name: "test", slug: "test"});
+  const before = await getStats().totalOrgs;
+  await softDelete(org);
+  const after = await getStats().totalOrgs;
+  assert(after === before - 1); // Deleted org not counted
+
+================================================================================
+QUESTIONS?
+================================================================================
+
+Refer to:
+  • CLAUDE.md (Architecture section)
+  • prisma/schema.prisma (Model definitions)
+  • lib/prisma.ts (Middleware implementation)
+
+================================================================================
+                              END OF SUMMARY
+================================================================================

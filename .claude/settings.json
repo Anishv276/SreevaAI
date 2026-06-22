@@ -208,7 +208,19 @@
       "Skill(update-config)",
       "Skill(update-config:*)",
       "Bash(cat)",
-      "Bash(xargs grep -l \"role\")"
+      "Bash(xargs grep -l \"role\")",
+      "Bash(xargs grep -l \"silero\\\\|VAD\")",
+      "Bash(python -m py_compile interview/agent_providers.py interview/agent_runtime_support.py)",
+      "Bash(xargs -I {} basename {})",
+      "Bash(python -c \"import interview.agent_providers; import interview.agent_runtime_support; print\\('✓ All imports OK after cleanup'\\)\")",
+      "Bash(awk '{print $9, \"\\(\" $5 \"\\)\"}')",
+      "Bash(python -c \"import interview.agent_providers; import interview.agent_runtime_support; print\\('OK - All imports work after cleanup'\\)\")",
+      "PowerShell(Stop-Process -Id 12356 -Force -ErrorAction SilentlyContinue)",
+      "Bash(xargs grep -l \"auth/me\")",
+      "Bash(netstat -tuln)",
+      "PowerShell(cd \"c:\\\\Users\\\\vamsi\\\\OneDrive\\\\Documents\\\\SreevaAI\"; npm run worker 2>&1 | Tee-Object -FilePath \"$env:TEMP\\\\worker.log\")",
+      "Bash(curl -s http://localhost:3000/api/drives -H \"Authorization: Bearer test\")",
+      "Bash(sleep 15 && tail -100 /tmp/worker.log 2>/dev/null || echo \"Checking worker output...\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\vamsi\\OneDrive\\Desktop\\HR-updates\\scratch",

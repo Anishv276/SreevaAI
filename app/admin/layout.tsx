@@ -56,10 +56,10 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             console.error("[admin/layout] Failed to load org state:", error);
         }
     }
-    // Allow Super Admins to access admin routes for "inspections"
-    if (isSuperAdminRole(session.role)) {
-        // We skip the redirect to /super-admin here to allow viewing admin dashboards
-    } else if (!isAdminRole(session.role)) {
+    // All authenticated users can access admin (SuperAdmin or Org Admin)
+    const isSuperAdmin = isSuperAdminRole(session.role);
+    const isAdmin = isAdminRole(session.role);
+    if (!isSuperAdmin && !isAdmin) {
         redirect("/login");
     }
     // Real-time synchronization: prioritize DB state over session cookie for onboarding UI

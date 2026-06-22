@@ -63,7 +63,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         window.addEventListener("storage", handleStorageChange);
         return () => window.removeEventListener("storage", handleStorageChange);
     }, [router]);
-    // Background sliding session ping
+    // Background session ping - only every 10 minutes to reduce noise
     useEffect(() => {
         let lastActivity = Date.now();
         const updateActivity = () => { lastActivity = Date.now(); };
@@ -71,14 +71,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         window.addEventListener("mousemove", updateActivity, { passive: true });
         window.addEventListener("keydown", updateActivity, { passive: true });
         window.addEventListener("click", updateActivity, { passive: true });
-        // Check every 5 minutes
+        // Check every 10 minutes (increased from 5)
         const interval = setInterval(() => {
             const timeSinceLastActivity = Date.now() - lastActivity;
-            // If active in the last 5 minutes, ping the server to keep session alive
-            if (timeSinceLastActivity < 5 * 60 * 1000) {
-                fetch("/api/auth/me", { cache: "no-store" }).catch(() => {});
+            // If active in the last 10 minutes, ping the server to keep session alive
+            if (timeSinceLastActivity < 10 * 60 * 1000) {
+                fetch("/api/auth/me").catch(() => {});
             }
-        }, 5 * 60 * 1000);
+        }, 10 * 60 * 1000);
         return () => {
             window.removeEventListener("mousemove", updateActivity);
             window.removeEventListener("keydown", updateActivity);

@@ -1,0 +1,206 @@
+================================================================================
+                  FILE NAMING - VISUAL UNDERSTANDING GUIDE
+================================================================================
+
+THE 3-PART NAMING FORMULA
+================================================================================
+
+[SCOPE]_[WHAT IT PROCESSES/MANAGES]_[ACTION]
+
+Examples:
+
+  interview_executor
+  └─ interview: SCOPE (what system)
+  └─ executor: ACTION (runs/executes)
+
+  runtime_config
+  └─ runtime: SCOPE (at runtime)
+  └─ config: ACTION (configures)
+
+  text_processor
+  └─ text: WHAT (processes text)
+  └─ processor: ACTION (processes)
+
+  follow_up_strategy
+  └─ follow_up: WHAT (for follow-up questions)
+  └─ strategy: ACTION (defines strategy)
+
+================================================================================
+QUICK LOOKUP - FIND A FILE BY ITS ACTION
+================================================================================
+
+Need to... | File | What it does
+-----------|------|-------------
+RUN the interview | interview_executor.py | Executes entire interview
+SET UP config | runtime_config.py | Loads env vars, logging, state
+CLEAN TEXT | text_processor.py | Sanitizes, polishes, transforms text
+GET runtime tools | runtime_utilities.py | Config, state, text/transcript managers
+CREATE LLM/TTS/STT | provider_factory.py | Builds provider instances
+SAVE/LOAD data | database_layer.py | Reads/writes to database
+SCORE answers | answer_evaluator.py | Evaluates answers, detects signals
+ORCHESTRATE eval | evaluation_orchestrator.py | Manages eval workflow, saturation
+BUILD phase prompts | phase_prompt_builder.py | Creates greeting/warmup/interview prompts
+BUILD candidate context | candidate_context_builder.py | Parses resume & JD
+BUILD system prompt | system_prompt_builder.py | Assembles prompt layers
+DECIDE follow-up | follow_up_strategy.py | Defines probe strategy per signal
+EXTRACT resume/JD | data_extractor.py | Parses resume & job description
+GENERATE report | interview_report_generator.py | Creates final scorecard
+FIX pronunciation | speech_processor.py | Fixes text for TTS
+PARSE JSON/tokens | agent_utils.py | Generic helpers
+
+================================================================================
+VISUAL: HOW FILES CONNECT (Data Flow)
+================================================================================
+
+START: Candidate clicks "Begin Interview"
+  │
+  ├─→ runtime_config.py         (Load config: STT model, voice, etc.)
+  │
+  ├─→ provider_factory.py       (Create TTS, STT, LLM instances)
+  │
+  ├─→ data_extractor.py         (Parse resume & JD)
+  │
+  ├─→ candidate_context_builder.py (Build candidate context)
+  │
+  ├─→ phase_prompt_builder.py   (Build greeting prompt)
+  │
+  └─→ system_prompt_builder.py  (Assemble system prompt layers)
+       │
+       └─→ interview_executor.py (MAIN LOOP)
+            │
+            ├─→ text_processor.py (Clean candidate text)
+            │
+            ├─→ answer_evaluator.py (Score answer, detect signal)
+            │
+            ├─→ evaluation_orchestrator.py (Check saturation)
+            │
+            ├─→ follow_up_strategy.py (Plan follow-up if signal fired)
+            │
+            ├─→ phase_prompt_builder.py (Build next directive)
+            │
+            └─→ database_layer.py (Save transcript & scores)
+                 │
+                 └─→ (repeat per turn for 20 minutes)
+                      │
+                      └─→ interview_report_generator.py (Generate final report)
+                           │
+                           └─→ database_layer.py (Save report to DB)
+
+END: Report sent to HR
+
+================================================================================
+NAMING BY CATEGORY (Find files by type)
+================================================================================
+
+EXECUTION & SETUP:
+  interview_executor.py           ← runs interviews
+  runtime_config.py               ← sets up runtime
+  text_processor.py               ← text utilities
+  runtime_utilities.py            ← shared runtime classes
+
+EXTERNAL SYSTEMS:
+  provider_factory.py             ← creates TTS/STT/LLM
+  database_layer.py               ← database access
+  agent_utils.py                  ← generic helpers
+
+INTELLIGENCE (AI):
+  answer_evaluator.py             ← scores answers
+  evaluation_orchestrator.py       ← manages evaluation
+  phase_prompt_builder.py          ← builds prompts
+  candidate_context_builder.py     ← parses data
+  system_prompt_builder.py         ← assembles prompts
+  follow_up_strategy.py            ← defines strategy
+  data_extractor.py               ← extracts data
+
+REPORTING:
+  interview_report_generator.py   ← generates report
+
+SPEECH:
+  speech_processor.py             ← fixes pronunciation
+
+================================================================================
+KEY PRINCIPLE: NAME = FUNCTION
+================================================================================
+
+Each filename should answer:
+  ❓ "What does this code DO?"
+
+  interview_executor         → It EXECUTES interviews
+  runtime_config             → It CONFIGS the runtime
+  text_processor             → It PROCESSES text
+  answer_evaluator           → It EVALUATES answers
+  follow_up_strategy         → It STRATEGIZES follow-ups
+  speech_processor           → It PROCESSES speech
+  interview_report_generator → It GENERATES reports
+  candidate_context_builder  → It BUILDS context
+
+Not:
+  ❌ "What is this?" (vague)
+  ❌ "What system is this for?" (too broad)
+  ❌ "What module is this?" (internal detail)
+
+================================================================================
+CONSISTENCY = EASY TO UNDERSTAND
+================================================================================
+
+All files follow the same pattern:
+  [WHAT/SCOPE]_[ACTION]
+
+All builders:
+  phase_prompt_BUILDER
+  candidate_context_BUILDER
+  system_prompt_BUILDER
+
+All processors:
+  text_PROCESSOR
+  speech_PROCESSOR
+
+All generators/creators:
+  interview_report_GENERATOR
+  provider_FACTORY
+
+All evaluators:
+  answer_EVALUATOR
+
+All orchestrators:
+  evaluation_ORCHESTRATOR
+
+Once you understand the pattern, you can guess filenames!
+
+================================================================================
+BEGINNER SCENARIO: Find the right file
+================================================================================
+
+Scenario 1: "I need to understand how candidates are scored"
+  → Look for "evaluator" → answer_evaluator.py ✓
+
+Scenario 2: "Where are system prompts built?"
+  → Look for "builder" AND "prompt" → system_prompt_builder.py ✓
+
+Scenario 3: "I need to add a new TTS provider"
+  → Look for "provider" AND "factory" → provider_factory.py ✓
+
+Scenario 4: "Where is the main interview loop?"
+  → Look for "executor" → interview_executor.py ✓
+
+Scenario 5: "How is resume data extracted?"
+  → Look for "extractor" → data_extractor.py ✓
+
+Scenario 6: "Where are interview reports created?"
+  → Look for "generator" AND "report" → interview_report_generator.py ✓
+
+================================================================================
+REMEMBER
+================================================================================
+
+OLD NAMES: Generic, abstract, confusing
+  ✗ agent_runtime.py       (What does "agent_runtime" mean?)
+  ✗ eval_pipeline.py       (A pipeline for what?)
+  ✗ interview_phases.py    (Phases of what?)
+
+NEW NAMES: Specific, action-oriented, self-documenting
+  ✓ interview_executor.py          (Executes interviews!)
+  ✓ evaluation_orchestrator.py      (Orchestrates evaluation!)
+  ✓ phase_prompt_builder.py         (Builds prompts for phases!)
+
+================================================================================

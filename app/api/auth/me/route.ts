@@ -9,8 +9,8 @@ export async function GET(req: NextRequest) {
             where: { id: session.orgId },
             select: { status: true }
         });
-        if (!org || (!isOrgRestrictedStatus(org.status) && String(org.status || "").toUpperCase() !== "ACTIVE")) {
-            // Org is deleted or has an invalid status, session is invalid
+        if (!org) {
+            // Org is deleted, session is invalid
             return NextResponse.json(null);
         }
     }

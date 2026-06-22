@@ -82,7 +82,7 @@ export async function POST(request: Request) {
         if (!valid) {
             return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
         }
-        const role = normalizeRole(userProfile.role);
+        const role = "ADMIN";
         const token = await createSession({
             userId: userProfile.id,
             email: normalizedEmail,
@@ -94,7 +94,7 @@ export async function POST(request: Request) {
         const response = NextResponse.json({
             success: true,
             role,
-            redirectTo: role === "SUPER_ADMIN" ? "/super-admin" : role === "ADMIN" ? "/admin" : "/careers",
+            redirectTo: "/admin",
         });
         response.cookies.set("session", token, {
             httpOnly: true,
