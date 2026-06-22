@@ -542,8 +542,11 @@ async function processResumeScreeningJob(job: any) {
     const screeningCriteria = (() => {
       try { return JSON.parse(application?.drive?.screeningCriteria || "{}"); } catch { return {}; }
     })();
-    const threshold = application?.drive?.screeningThreshold || 60;
+    const dbThreshold = application?.drive?.screeningThreshold;
+    const threshold = dbThreshold || 60;
     const hasJd = Object.keys(extractedDetails).length > 0;
+
+    console.log(`[RESUME-WORKER] Threshold from DB: ${dbThreshold} (type: ${typeof dbThreshold}), Using: ${threshold}`);
 
     // ── 40% Extract + 60% Score (Python subprocess) ───────────────────────
     await job.updateProgress(40);
@@ -552,6 +555,8 @@ async function processResumeScreeningJob(job: any) {
       where: { id: applicationId },
       data: { resumeStatus: "scoring", updatedAt: new Date() },
     }).catch((e: any) => console.warn(`[RESUME-WORKER] Failed to update scoring status: ${e.message}`));
+    console.log(`[RESUME-WORKER] Updated status to "scoring". Waiting 500ms before Python...`);
+    await new Promise(r => setTimeout(r, 500)); // Give DB time to sync + frontend to poll
     console.log(`[RESUME-WORKER] Running Python pipeline (hasJd=${hasJd})...`);
 
     let result: any;
@@ -589,27 +594,31 @@ async function processResumeScreeningJob(job: any) {
     // ── Automatic ATS status: Determine based on score vs threshold ────────
     let resumeStatus = "pending";
     if (aiScore !== null) {
-      resumeStatus = aiScore >= threshold ? "shortlisted" : "rejected";
+      const comparison = aiScore >= threshold;
+      resumeStatus = comparison ? "shortlisted" : "rejected";
+      console.log(`[RESUME-WORKER] Score check: ${aiScore} >= ${threshold} = ${comparison} → ${resumeStatus}`);
+    } else {
+      console.log(`[RESUME-WORKER] No aiScore found, keeping resumeStatus as pending`);
     }
 
     // ── 80% Write to DB ───────────────────────────────────────────────────
     await job.updateProgress(80);
-    console.log(`[RESUME-WORKER] Saving — aiScore=${aiScore} threshold=${threshold} → resumeStatus=${resumeStatus} | hasReport=${!!reportJson}`);
+    console.log(`[RESUME-WORKER] Saving to DB — applicationId=${applicationId} aiScore=${aiScore} threshold=${threshold} resumeStatus=${resumeStatus}`);
 
-    await prisma.application.update({
+    const updateResult = await prisma.application.update({
       where: { id: applicationId },
       data: {
         resumeText,
         resumeData: JSON.stringify({ source: { bucket, key }, parsed: resumeData }),
         ...(aiScore   !== null && { aiScore }),
         ...(reportJson && { fullScanReport: reportJson, aiReport: reportJson }),
-        // Auto-update ATS status: if score >= threshold → shortlisted, else → rejected
-        // "screened" = extraction + scoring done, ready for admin review.
-        // frontend stops spinner on any value that is NOT processing/waiting/extracting.
         resumeStatus,
         updatedAt: new Date(),
       },
+      select: { id: true, aiScore: true, resumeStatus: true, updatedAt: true },
     });
+
+    console.log(`[RESUME-WORKER] DB Update Success: app=${updateResult.id} aiScore=${updateResult.aiScore} resumeStatus=${updateResult.resumeStatus}`);
 
     // ── 90% Billing ───────────────────────────────────────────────────────
     await job.updateProgress(90);
