@@ -998,10 +998,6 @@ async def _node_assemble(state: ReportState) -> dict:
 
     Weighted overall score formula:
       comm×0.15 + tech×0.30 + cred×0.20 + ps×0.25 + cot×0.10
-
-    Automatic ATS status update (resumeStatus):
-      If overall_score >= drive.screeningThreshold → resumeStatus = "shortlisted"
-      If overall_score < drive.screeningThreshold → resumeStatus = "rejected"
     """
     app_id           = state["app_id"]
     org_id           = state.get("org_id")
@@ -1066,24 +1062,6 @@ async def _node_assemble(state: ReportState) -> dict:
     try:
         pool = await DatabasePool.get()
         async with pool.acquire() as conn:
-            # Fetch drive screening threshold and determine ATS status
-            screening_threshold = 60  # default threshold
-            try:
-                threshold_row = await conn.fetchval(
-                    """SELECT d."screeningThreshold"
-                       FROM "Application" a
-                       JOIN "Drive" d ON a."driveId" = d.id
-                       WHERE a.id = $1""",
-                    app_id,
-                )
-                if threshold_row is not None:
-                    screening_threshold = int(threshold_row) if threshold_row else 60
-            except Exception as e:
-                logger.warning(f"[ATS] Could not fetch screening threshold for {app_id}: {e}")
-
-            # Determine ATS status (resumeStatus) based on score vs threshold
-            ats_status = "shortlisted" if overall_score >= screening_threshold else "rejected"
-
             # Update Interview table with scores
             await conn.execute(
                 """UPDATE "Interview"
@@ -1099,23 +1077,12 @@ async def _node_assemble(state: ReportState) -> dict:
                 app_id,
             )
 
-            # Update Application ATS status (resumeStatus) automatically based on score threshold
-            await conn.execute(
-                """UPDATE "Application"
-                   SET "resumeStatus"     = $1,
-                       "updatedAt"        = NOW()
-                   WHERE id               = $2""",
-                ats_status,
-                app_id,
-            )
-
         logger.info(
             "[REPORT] Written: app=%s overall=%d comm=%d tech=%d cred=%d ps=%d cot=%d "
-            "integrity=%d skills=%d behavioral_points=%d | ATS status=%s (score=%d vs threshold=%d)",
+            "integrity=%d skills=%d behavioral_points=%d",
             app_id, overall_score, comm, tech, cred, ps, cot,
             integrity_result["score"], len(skills_evaluated),
             len(behavioral_analysis.get("points", [])),
-            ats_status, overall_score, screening_threshold,
         )
     except Exception as e:
         logger.error("[REPORT] DB write failed for %s: %s", app_id, e, exc_info=True)
