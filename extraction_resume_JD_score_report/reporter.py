@@ -248,14 +248,5 @@ Return ONLY valid JSON matching this EXACT schema. No markdown. No code fences. 
         response_format={"type": "json_object"},
     )
     report = json.loads(completion.choices[0].message.content)
-    usage = getattr(completion, "usage", None)
-    prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
-    completion_tokens = getattr(usage, "completion_tokens", 0) or 0
-    prompt_details = getattr(usage, "prompt_tokens_details", None)
-    cached_tokens = getattr(prompt_details, "cached_tokens", 0) or 0
-    return report, {
-        "model": report_model,
-        "inputTokens": prompt_tokens,
-        "outputTokens": completion_tokens,
-        "cachedInputTokens": cached_tokens,
-    }
+    from billing.billing import extract_usage  # noqa: PLC0415
+    return report, extract_usage(completion, report_model)

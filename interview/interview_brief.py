@@ -309,14 +309,8 @@ async def generate_interview_brief(
             usage_data = chunk.usage
 
     if usage_sink is not None and usage_data is not None:
-        usage_sink({
-            "model": llm_model,
-            "inputTokens": int(getattr(usage_data, "prompt_tokens", 0) or 0),
-            "outputTokens": int(getattr(usage_data, "completion_tokens", 0) or 0),
-            "cachedInputTokens": int(
-                getattr(getattr(usage_data, "prompt_tokens_details", None), "cached_tokens", 0) or 0
-            ),
-        })
+        from billing.billing import extract_usage  # noqa: PLC0415
+        usage_sink(extract_usage(usage_data, llm_model))
 
     raw = "".join(chunks).strip()
     if not raw:

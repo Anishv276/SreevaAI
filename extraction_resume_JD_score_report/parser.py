@@ -99,13 +99,8 @@ def _call_llm(client: OpenAI, system: str, user: str, model: str) -> tuple[dict,
     content = completion.choices[0].message.content
     if not content:
         raise ValueError("OpenAI returned empty content")
-    usage = getattr(completion, "usage", None)
-    return json.loads(content), {
-        "model": model,
-        "inputTokens": getattr(usage, "prompt_tokens", 0) or 0,
-        "outputTokens": getattr(usage, "completion_tokens", 0) or 0,
-        "cachedInputTokens": getattr(getattr(usage, "prompt_tokens_details", None), "cached_tokens", 0) or 0,
-    }
+    from billing.billing import extract_usage  # noqa: PLC0415
+    return json.loads(content), extract_usage(completion, model)
 
 
 def _load_score_payload(json_text_or_path: str) -> str:

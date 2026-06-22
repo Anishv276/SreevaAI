@@ -275,11 +275,12 @@ async def evaluate_answer(
             if chunk.usage:
                 _usage = chunk.usage
 
-        _eval_llm_usage = {
-            "model": llm_model,
-            "inputTokens":       int(getattr(_usage, "prompt_tokens", 0) or 0) if _usage else 0,
-            "outputTokens":      int(getattr(_usage, "completion_tokens", 0) or 0) if _usage else 0,
-            "cachedInputTokens": int(getattr(getattr(_usage, "prompt_tokens_details", None), "cached_tokens", 0) or 0) if _usage else 0,
+        from billing.billing import extract_usage as _extract_usage  # noqa: PLC0415
+        # _usage is chunk.usage (not the full completion), so pass it as the
+        # completion arg — extract_usage reads .prompt_tokens/.completion_tokens
+        # directly when .usage is absent (falls back to the object itself).
+        _eval_llm_usage = _extract_usage(_usage, llm_model) if _usage else {
+            "model": llm_model, "inputTokens": 0, "outputTokens": 0, "cachedInputTokens": 0,
         }
 
         data: dict[str, Any] = json.loads(raw)
