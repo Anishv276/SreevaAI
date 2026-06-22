@@ -46,7 +46,6 @@ export async function POST(
                 id: true,
                 name: true,
                 users: {
-                    where: { orgRole: "ADMIN" },
                     orderBy: { createdAt: "asc" },
                     select: { id: true, email: true, name: true },
                 },

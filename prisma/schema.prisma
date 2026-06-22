@@ -55,7 +55,6 @@ model User {
   updatedAt       DateTime      @updatedAt
   password        String?
   orgId           String?
-  orgRole         String?
   resetOtp        String?
   resetOtpExpires DateTime?
   isDeleted       Boolean       @default(false)

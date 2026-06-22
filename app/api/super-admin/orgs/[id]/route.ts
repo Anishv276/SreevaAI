@@ -28,7 +28,6 @@ export async function GET(
             where: { id },
             include: {
                 users: {
-                    where: { orgRole: "ADMIN" },
                     select: { id: true, name: true, email: true }
                 }
             }
@@ -263,7 +262,7 @@ export async function PATCH(
             if (existingUser) {
                 // Find the actual primary admin for this org
                 const currentAdmin = await prisma.user.findFirst({
-                    where: { orgId: id, orgRole: "ADMIN" },
+                    where: { orgId: id },
                     orderBy: { createdAt: "asc" }
                 });
                 // Conflict: Email belongs to SOMEONE ELSE
@@ -308,9 +307,9 @@ export async function PATCH(
             }
             // 2. Update Primary Admin if email/password provided
             if (adminEmail !== undefined || (adminPassword !== undefined && String(adminPassword).trim())) {
-                // Find the first ORG_ADMIN
+                // Find the first org user
                 const admin = await tx.user.findFirst({
-                    where: { orgId: id, orgRole: "ADMIN" },
+                    where: { orgId: id },
                     orderBy: { createdAt: "asc" }
                 });
                 if (admin) {

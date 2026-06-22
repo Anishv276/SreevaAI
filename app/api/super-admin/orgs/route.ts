@@ -391,7 +391,6 @@ export async function POST(request: Request) {
                     id: userId,
                     email: normalizedAdminEmail,
                     name: userName,
-                    orgRole: "ADMIN",
                     password: hashedPassword,
                     orgId: org.id,
                 },
