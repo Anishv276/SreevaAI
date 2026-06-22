@@ -5,9 +5,26 @@ import time
 from contextvars import ContextVar
 from typing import Any
 from dotenv import load_dotenv
-load_dotenv(override=False)  # override=False: skip if env vars already set (avoids redundant disk reads)
+
+from interview.agent_runtime_utils import AgentConfig, MutableStateManager
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# INITIALIZATION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+load_dotenv(override=False)
+
 logger = logging.getLogger("interview-agent")
 logger.setLevel(logging.DEBUG)
+
+# Global mutable state manager — single source of truth for DB pool, billing, etc.
+_state_manager = MutableStateManager()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# LOGGING SETUP (JSON formatter + context filter + warning sampler)
+# ═══════════════════════════════════════════════════════════════════════════════
+
 _SESSION_CONTEXT_KEYS = (
     "session_id",
     "app_id",
@@ -26,11 +43,18 @@ _SESSION_CONTEXT_KEYS = (
     "job_title",
     "time_limit_mins",
 )
+
+
 def _sanitize_context_value(value: Any) -> Any:
+    """Safely coerce context values to JSON-serializable types."""
     if isinstance(value, (str, int, float, bool)) or value is None:
         return value
     return str(value)
+
+
 class JsonFormatter(logging.Formatter):
+    """Structured JSON logging formatter for CloudWatch/observability."""
+
     def format(self, record):
         log_record = {
             "timestamp": self.formatTime(record, self.datefmt),
@@ -42,33 +66,19 @@ class JsonFormatter(logging.Formatter):
         }
         if record.exc_info:
             log_record["exception"] = self.formatException(record.exc_info)
+
+        # Add custom fields (set via addFilter or set_log_context)
+        _EXCLUDED_RECORD_ATTRS = frozenset([
+            "args", "asctime", "created", "exc_info", "exc_text", "filename",
+            "funcName", "levelname", "levelno", "lineno", "module", "msecs",
+            "message", "msg", "name", "pathname", "process", "processName",
+            "relativeCreated", "stack_info", "thread", "threadName", "emit_full_context",
+        ])
         for key, value in record.__dict__.items():
-            if key not in [
-                "args",
-                "asctime",
-                "created",
-                "exc_info",
-                "exc_text",
-                "filename",
-                "funcName",
-                "levelname",
-                "levelno",
-                "lineno",
-                "module",
-                "msecs",
-                "message",
-                "msg",
-                "name",
-                "pathname",
-                "process",
-                "processName",
-                "relativeCreated",
-                "stack_info",
-                "thread",
-                "threadName",
-                "emit_full_context",
-            ]:
+            if key not in _EXCLUDED_RECORD_ATTRS:
                 log_record[key] = value
+
+        # Filter session context based on emit_full_context flag
         if not getattr(record, "emit_full_context", False):
             for key in _SESSION_CONTEXT_KEYS:
                 if key in log_record and key != "session_id":
@@ -77,30 +87,53 @@ class JsonFormatter(logging.Formatter):
             for key in _SESSION_CONTEXT_KEYS:
                 if key in log_record:
                     log_record[key] = _sanitize_context_value(log_record[key])
+
         return json.dumps(log_record, ensure_ascii=False)
+
+
+# Remove any default handlers and install our JSON formatter
 for handler in logger.handlers[:]:
     logger.removeHandler(handler)
+
 handler = logging.StreamHandler()
 handler.setFormatter(JsonFormatter())
 logger.addHandler(handler)
 logger.propagate = False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Log Context Management (ContextVar-based, async-safe)
+# ─────────────────────────────────────────────────────────────────────────────
+
 _LOG_CONTEXT_FIELDS: ContextVar[dict[str, Any]] = ContextVar("log_context_fields", default={})
+
+
 def set_log_context(fields: dict[str, Any]):
+    """Set session context fields for all subsequent logs in this context."""
     sanitized = {key: _sanitize_context_value(value) for key, value in fields.items()}
     return _LOG_CONTEXT_FIELDS.set(sanitized)
+
+
 def reset_log_context(token) -> None:
+    """Reset log context to prior state (counterpart to set_log_context)."""
     try:
         _LOG_CONTEXT_FIELDS.reset(token)
     except ValueError:
-        # Can happen during shutdown when callback executes in a different async context.
         logger.debug("[SESSION] reset_log_context skipped due to cross-context token")
+
+
 _LOG_SESSION_FILTER = os.environ.get("LOG_SESSION_FILTER", "").strip().lower()
+
+
 class _SessionLogContextFilter(logging.Filter):
+    """Attach ContextVar fields to every log record, with optional session filtering."""
+
     def filter(self, record: logging.LogRecord) -> bool:
         ctx = _LOG_CONTEXT_FIELDS.get({})
         for key, value in ctx.items():
             if not hasattr(record, key):
                 setattr(record, key, value)
+
         if _LOG_SESSION_FILTER:
             session_id = ctx.get("session_id", "")
             candidate = ctx.get("dispatch_candidate_name", "")
@@ -108,22 +141,33 @@ class _SessionLogContextFilter(logging.Filter):
             if haystack and _LOG_SESSION_FILTER not in haystack:
                 return False
         return True
+
+
 handler.addFilter(_SessionLogContextFilter())
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Warning Sampler (rate-limit noisy logs)
+# ─────────────────────────────────────────────────────────────────────────────
+
 class _RuntimeWarningSampler(logging.Filter):
+    """Rate-limit noisy warnings without hiding them entirely.
+
+    Keeps logs readable while preserving signals needed for debugging.
+    Always-drop patterns are suppressed. Sampled patterns are limited to
+    one emission per 30 seconds.
     """
-    Rate-limit noisy warnings instead of hiding them.
-    Keeps logs readable while preserving the exact signals needed for debugging.
-    """
+
     def __init__(self) -> None:
         super().__init__()
         self._last_seen: dict[str, float] = {}
         self._interval_seconds = 30.0
-        self._drop_always = (
+        self._drop_always = frozenset([
             "flush_done",
             "re-using existing connection",
             "unexpected response: type=text",
-        )
-        self._sampled = (
+        ])
+        self._sampled = frozenset([
             "unexpected message",
             "audio stream queue overflow",
             "inference is slower than realtime",
@@ -131,11 +175,14 @@ class _RuntimeWarningSampler(logging.Filter):
             "duplexclosed",
             "final transcript not received after timeout",
             "speech scheduling is paused",
-        )
+        ])
+
     def filter(self, record: logging.LogRecord) -> bool:
         msg = record.getMessage().lower()
+
         if any(pattern in msg for pattern in self._drop_always):
             return False
+
         for pattern in self._sampled:
             if pattern in msg:
                 now = time.time()
@@ -146,73 +193,88 @@ class _RuntimeWarningSampler(logging.Filter):
                 record.runtime_warning = pattern
                 record.runtime_warning_sampled = True
                 return True
+
         return True
+
+
+# Apply sampler to noisy dependencies
 for logger_name in ("livekit.plugins.cartesia", "livekit.plugins.silero", "livekit"):
     _logger = logging.getLogger(logger_name)
     _logger.addFilter(_RuntimeWarningSampler())
-# Flux: Deepgram's conversational STT, purpose-built for real-time voice agents.
-# Uses deepgram.STTv2 (not STT) → /v2/listen endpoint. Native turn detection
-# replaces endpointing_ms. Thresholds tuned for 20-min interviews where candidates
-# give 30s–2min answers with thinking pauses and fillers.
-STT_MODEL = "flux-general-en"
-# EndOfTurn confidence threshold. 0.70 reduces premature VAD resets on short
-# warmup-style answers ("Yeah. I'm ready."). Range: 0.5–0.9 (Deepgram default: 0.7).
-FLUX_EOT_THRESHOLD: float = 0.70
-# EagerEndOfTurn fires ~200ms early to warm up LLM. Must be <= FLUX_EOT_THRESHOLD.
-# Set to None to disable. When enabled, agent must handle TurnResumed by cancelling
-# any in-flight eval. Currently disabled — our eval gate is not wired for cancellation.
-FLUX_EAGER_EOT_THRESHOLD: float | None = None
-# Max silence before forced turn end regardless of confidence. 3500ms gives short
-# answers enough runway so Deepgram doesn't declare EOS while the candidate is still
-# speaking. Range: 500–10000 (Deepgram default: 5000).
-FLUX_EOT_TIMEOUT_MS: int = 3500
-LLM_MODEL = "gpt-4.1-mini"
-INTERVIEW_LLM_MODEL = LLM_MODEL
-INTERVIEW_TEMPERATURE = 0.75
-EVAL_LLM_MODEL = "gpt-4.1-nano"   # Scoring is deterministic (temp=0) — nano is ~3x faster TTFT than mini for classification tasks
-EVAL_TEMPERATURE = 0.0
-DEFAULT_VOICE_ID = "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"
-# Voice registry -- single source of truth for voice->provider+model mapping.
-# Provider is "CARTESIA" or "SARVAM". Model is the TTS model string for that provider.
-VOICE_REGISTRY: dict[str, dict[str, str]] = {
-    # Cartesia voices
-    "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc": {"provider": "CARTESIA", "model": "cartesia/sonic-3"},
-    "95d51f79-c397-46f9-b49a-23763d3eaa2d": {"provider": "CARTESIA", "model": "cartesia/sonic-3"},
-    "f786b574-daa5-4673-aa0c-cbe3e8534c02": {"provider": "CARTESIA", "model": "cartesia/sonic-3"},
-    "e07c00bc-4134-4eae-9ea4-1a55fb45746b": {"provider": "CARTESIA", "model": "cartesia/sonic-3"},
-    "5ee9feff-1265-424a-9d7f-8e4d431a12c7": {"provider": "CARTESIA", "model": "cartesia/sonic-3"},
-    "694f9389-aac1-45b6-b726-9d9369183238": {"provider": "CARTESIA", "model": "cartesia/sonic-3"},
-    "638385f3-3333-4f5d-85a2-3f820c64b732": {"provider": "CARTESIA", "model": "cartesia/sonic-3"},
-    "248be1fc-3d27-4452-9457-3705bf68bf8f": {"provider": "CARTESIA", "model": "cartesia/sonic-3"},
-    # Sarvam voices
-    "shubh":   {"provider": "SARVAM", "model": "bulbul:v3"},
-    "manan":   {"provider": "SARVAM", "model": "bulbul:v3"},
-    "ishita":  {"provider": "SARVAM", "model": "bulbul:v3"},
-    "shreya":  {"provider": "SARVAM", "model": "bulbul:v3"},
-    "priya":   {"provider": "SARVAM", "model": "bulbul:v3"},
-    "aditya":  {"provider": "SARVAM", "model": "bulbul:v3"},
-    "ritu":    {"provider": "SARVAM", "model": "bulbul:v3"},
-    "rahul":   {"provider": "SARVAM", "model": "bulbul:v3"},
-    "neha":    {"provider": "SARVAM", "model": "bulbul:v3"},
-    "pooja":   {"provider": "SARVAM", "model": "bulbul:v3"},
-    "rohan":   {"provider": "SARVAM", "model": "bulbul:v3"},
-    "simran":  {"provider": "SARVAM", "model": "bulbul:v3"},
-    "kavya":   {"provider": "SARVAM", "model": "bulbul:v3"},
-    "amit":    {"provider": "SARVAM", "model": "bulbul:v3"},
-    "dev":     {"provider": "SARVAM", "model": "bulbul:v3"},
-    "varun":   {"provider": "SARVAM", "model": "bulbul:v3"},
-    "kabir":   {"provider": "SARVAM", "model": "bulbul:v3"},
-    "tanya":   {"provider": "SARVAM", "model": "bulbul:v3"},
-    "sunny":   {"provider": "SARVAM", "model": "bulbul:v3"},
-}
-FIXED_INTERVIEW_DURATION_MINUTES = 20
-DATABASE_URL = os.environ.get("DATABASE_URL")
-AGENT_NAME = os.environ.get("LIVEKIT_AGENT_NAME", "ai_interviewer")
-APP_BASE_URL = (
-    os.environ.get("APP_URL")
-    or os.environ.get("NEXT_PUBLIC_APP_URL")
-    or "https://sreevaai.com"
-).rstrip("/")
-_DB_POOL: Any = None
-_DB_POOL_INIT_TASK: Any = None
-_PENDING_MANUAL_BILLING: dict[str, list[tuple[str, dict]]] = {}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# LEGACY CONSTANTS (re-exported from AgentConfig for backward compatibility)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_config = AgentConfig.get()
+
+STT_MODEL = _config.stt_model
+FLUX_EOT_THRESHOLD = _config.flux_eot_threshold
+FLUX_EAGER_EOT_THRESHOLD = _config.flux_eager_eot_threshold
+FLUX_EOT_TIMEOUT_MS = _config.flux_eot_timeout_ms
+
+LLM_MODEL = _config.llm_model
+INTERVIEW_LLM_MODEL = _config.llm_model
+INTERVIEW_TEMPERATURE = _config.interview_temperature
+EVAL_LLM_MODEL = _config.eval_llm_model
+EVAL_TEMPERATURE = _config.eval_temperature
+
+DEFAULT_VOICE_ID = _config.default_voice_id
+VOICE_REGISTRY = _config.voice_registry
+
+FIXED_INTERVIEW_DURATION_MINUTES = _config.fixed_interview_duration_minutes
+
+DATABASE_URL = _config.database_url
+AGENT_NAME = _config.agent_name
+APP_BASE_URL = _config.app_base_url
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MUTABLE STATE ACCESSORS (replaced direct module-level vars)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Backward-compatible getters/setters for _DB_POOL, _DB_POOL_INIT_TASK, _PENDING_MANUAL_BILLING
+# These are now stored in _state_manager instead of module-level variables.
+
+def get_db_pool():
+    """Get the database connection pool."""
+    return _state_manager.get_db_pool()
+
+
+def set_db_pool(pool: Any) -> None:
+    """Set the database connection pool."""
+    _state_manager.set_db_pool(pool)
+
+
+def get_db_pool_init_task():
+    """Get the DB pool init task."""
+    return _state_manager.get_db_pool_init_task()
+
+
+def set_db_pool_init_task(task: Any) -> None:
+    """Set the DB pool init task."""
+    _state_manager.set_db_pool_init_task(task)
+
+
+def get_pending_manual_billing(org_id: str) -> list:
+    """Get pending billing events for an org."""
+    return _state_manager.get_pending_billing(org_id)
+
+
+def append_pending_manual_billing(org_id: str, event: tuple) -> None:
+    """Append a billing event to pending accumulator."""
+    _state_manager.append_billing(org_id, event)
+
+
+def flush_pending_manual_billing_for_org(org_id: str) -> list:
+    """Flush (get and clear) billing events for an org."""
+    return _state_manager.flush_billing(org_id)
+
+
+# Old module-level variable names for compatibility
+# These are mutable and must be updated by agent_persistence.py and other modules
+# Initially None, but can be set via set_db_pool() / set_db_pool_init_task()
+_DB_POOL = None
+_DB_POOL_INIT_TASK = None
+_PENDING_MANUAL_BILLING = _state_manager._pending_manual_billing

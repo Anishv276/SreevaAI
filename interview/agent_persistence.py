@@ -25,6 +25,7 @@ from interview.agent_runtime_support import (
     _DB_POOL,
     _DB_POOL_INIT_TASK,
     logger,
+    set_db_pool,
 )
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -97,7 +98,7 @@ class DatabasePool:
             cls._init_task = asyncio.create_task(cls._create())
             try:
                 cls._pool = await cls._init_task
-                _DB_POOL = cls._pool  # keep module-level ref in sync
+                set_db_pool(cls._pool)  # keep module-level ref in sync
                 return cls._pool
             except Exception:
                 cls._init_task = None
