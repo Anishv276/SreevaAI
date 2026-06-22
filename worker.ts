@@ -605,6 +605,10 @@ async function processResumeScreeningJob(job: any) {
     await job.updateProgress(80);
     console.log(`[RESUME-WORKER] Saving to DB — applicationId=${applicationId} aiScore=${aiScore} threshold=${threshold} resumeStatus=${resumeStatus}`);
 
+    const parsedName  = resumeData?.full_name?.trim()  || "";
+    const parsedEmail = resumeData?.email?.trim()      || "";
+    const parsedPhone = resumeData?.phone?.trim()      || "";
+
     const updateResult = await prisma.application.update({
       where: { id: applicationId },
       data: {
@@ -612,6 +616,9 @@ async function processResumeScreeningJob(job: any) {
         resumeData: JSON.stringify({ source: { bucket, key }, parsed: resumeData }),
         ...(aiScore   !== null && { aiScore }),
         ...(reportJson && { fullScanReport: reportJson, aiReport: reportJson }),
+        ...(parsedName  && { fullName: parsedName }),
+        ...(parsedEmail && { email: parsedEmail }),
+        ...(parsedPhone && { phone: parsedPhone }),
         resumeStatus,
         updatedAt: new Date(),
       },

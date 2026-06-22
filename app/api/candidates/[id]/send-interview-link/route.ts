@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendInterviewInviteEmail } from "@/lib/mail";
 import { buildInterviewLink } from "@/lib/interview-links";
-import { getSession, isAdminRole } from "@/lib/auth";
+import { getSession, isAdminRole, isSuperAdminRole } from "@/lib/auth";
 import { getOrgBillingStatus } from "@/lib/credits";
 import { getInterviewQuotaSupportMessage } from "@/lib/interview-quota";
 import { appendCandidateActivity } from "@/lib/candidate-activity";
@@ -11,7 +11,8 @@ import { isInterviewTokenRequired } from "@/lib/interview-access";
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
     try {
         const session = await getSession();
-        if (!session || !isAdminRole(session.role)) {
+        const isSuperAdmin = isSuperAdminRole(session.role);
+        if (!session || (!isAdminRole(session.role) && !isSuperAdmin)) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
         const { id: applicationId } = await context.params;
@@ -38,10 +39,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
             console.error(`[INTERVIEW] Application not found for ID: ${applicationId}`);
             return NextResponse.json({ error: "Application not found" }, { status: 404 });
         }
-        if (session.orgId && application.drive?.orgId !== session.orgId) {
+        if (!isSuperAdmin && session.orgId && application.drive?.orgId !== session.orgId) {
             return NextResponse.json({ error: "Forbidden: Candidate belongs to another organization" }, { status: 403 });
         }
-        if (session.orgId) {
+        if (!isSuperAdmin && session.orgId) {
             const billingStatus = await getOrgBillingStatus(session.orgId);
             if (billingStatus.interviewQuotaTotal > 0 && !billingStatus.hasSufficientInterviews) {
                 return NextResponse.json(

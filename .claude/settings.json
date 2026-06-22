@@ -220,7 +220,10 @@
       "Bash(netstat -tuln)",
       "PowerShell(cd \"c:\\\\Users\\\\vamsi\\\\OneDrive\\\\Documents\\\\SreevaAI\"; npm run worker 2>&1 | Tee-Object -FilePath \"$env:TEMP\\\\worker.log\")",
       "Bash(curl -s http://localhost:3000/api/drives -H \"Authorization: Bearer test\")",
-      "Bash(sleep 15 && tail -100 /tmp/worker.log 2>/dev/null || echo \"Checking worker output...\")"
+      "Bash(sleep 15 && tail -100 /tmp/worker.log 2>/dev/null || echo \"Checking worker output...\")",
+      "Bash(xargs grep -l \"3 dots\\\\|DropdownMenu\\\\|MoreVertical\\\\|MoreHorizontal\\\\|three.dot\\\\|\\\\.\\\\.\\\\..*menu\")",
+      "Bash(xargs grep -l \"candidates\")",
+      "Bash(mkdir -p \"c:\\\\Users\\\\vamsi\\\\OneDrive\\\\Documents\\\\SreevaAI\\\\app\\\\api\\\\super-admin\\\\orgs\\\\[id]\\\\candidates\" 2>/dev/null; echo done)"
     ],
     "additionalDirectories": [
       "c:\\Users\\vamsi\\OneDrive\\Desktop\\HR-updates\\scratch",
@@ -229,7 +232,8 @@
       "C:\\",
       "C:\\Users\\vamsi\\OneDrive\\Desktop\\HR-updates",
       "c:\\Users\\vamsi\\OneDrive\\Desktop\\HR-updates\\.pycache_tmp",
-      "c:\\Users\\vamsi\\OneDrive\\Desktop\\HR-updates\\docs"
+      "c:\\Users\\vamsi\\OneDrive\\Desktop\\HR-updates\\docs",
+      "c:\\Users\\vamsi\\OneDrive\\Documents\\SreevaAI\\app\\api\\super-admin\\orgs\\[id]"
     ]
   }
 }
