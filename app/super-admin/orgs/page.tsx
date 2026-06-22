@@ -584,12 +584,6 @@ export default function OrgsPage() {
                                                         <Layers className="h-3.5 w-3.5 text-gray-400 group-hover:text-orange-500 transition-colors" />
                                                         VIEW USAGE
                                                     </DropdownMenuItem>
-                                                        <Link href={`/admin/candidates?orgId=${encodeURIComponent(org.id)}`} className="block w-full">
-                                                            <DropdownMenuItem className="cursor-pointer rounded-lg px-2.5 py-2 text-gray-600 hover:bg-gray-50 font-bold text-[10px] transition-all flex items-center gap-2.5 group">
-                                                                <Users className="h-3.5 w-3.5 text-gray-400 group-hover:text-orange-500 transition-colors" />
-                                                                VIEW CANDIDATES
-                                                            </DropdownMenuItem>
-                                                        </Link>
                                                         <Link href={`/super-admin/orgs/${org.id}`} className="block w-full">
                                                             <DropdownMenuItem className="cursor-pointer rounded-lg px-2.5 py-2 text-gray-600 hover:bg-gray-50 font-bold text-[10px] transition-all flex items-center gap-2.5 group">
                                                                 <Edit2 className="h-3.5 w-3.5 text-gray-400 group-hover:text-orange-500 transition-colors" />
