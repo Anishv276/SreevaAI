@@ -204,27 +204,53 @@ export async function PATCH(
             );
         }
         const body = parsed.data;
-        // -- SECURITY: Verify ownership ---------------------
+        // -- SECURITY: Verify ownership + FETCH SCORE & THRESHOLD -----
         const candidate = await prisma.application.findFirst({
-            where: { id, drive: { orgId } }
+            where: { id, drive: { orgId } },
+            select: {
+                id: true,
+                aiScore: true,
+                drive: {
+                    select: {
+                        screeningThreshold: true,
+                    }
+                }
+            }
         });
         if (!candidate) {
             return NextResponse.json({ error: "Candidate not found or unauthorized" }, { status: 404 });
         }
+
         const normalize = (value: unknown) => String(value || "").trim().toLowerCase().replace(/[_-]+/g, " ");
         const isShortlist = normalize(body.resumeStatus) === "shortlisted";
         const isRejected = normalize(body.resumeStatus) === "rejected";
 
+        // -- ENFORCE SCORE-BASED ATS STATUS ----
+        // If trying to shortlist/reject, validate against aiScore vs threshold
+        const threshold = candidate.drive?.screeningThreshold || 60;
+        const score = candidate.aiScore || 0;
+        let finalResumeStatus = body.resumeStatus;
+
+        if (isShortlist || isRejected) {
+            if (score < threshold) {
+                // Score is below threshold → must be rejected
+                finalResumeStatus = "rejected";
+            } else if (score >= threshold) {
+                // Score meets threshold → can be shortlisted
+                finalResumeStatus = "shortlisted";
+            }
+        }
+
         // -- UPDATE -----------------------------------------
         const dataToUpdate: any = {
-            ...(body.resumeStatus !== undefined && { resumeStatus: body.resumeStatus }),
+            ...(body.resumeStatus !== undefined && { resumeStatus: finalResumeStatus }),
             ...(body.interviewStatus !== undefined && { interviewStatus: body.interviewStatus }),
         };
-        if (isShortlist) {
+        if (normalize(finalResumeStatus) === "shortlisted") {
             dataToUpdate.resumeStatus = "shortlisted";
             dataToUpdate.interviewStatus = "pending";
         }
-        if (isRejected) {
+        if (normalize(finalResumeStatus) === "rejected") {
             dataToUpdate.resumeStatus = "rejected";
             dataToUpdate.interviewStatus = "Not Qualified";
         }
@@ -233,14 +259,20 @@ export async function PATCH(
             data: dataToUpdate,
             include: { drive: { select: { title: true, orgId: true } } },
         });
-        if (isShortlist || isRejected) {
-            const actionLabel = isShortlist
+        if (body.resumeStatus !== undefined && (isShortlist || isRejected)) {
+            const actualStatus = normalize(updated.resumeStatus);
+            const actionLabel = actualStatus === "shortlisted"
                 ? "Resume shortlisted"
-                : "Resume rejected";
+                : actualStatus === "rejected"
+                ? "Resume rejected"
+                : "Resume status updated";
+            const enforceNote = (normalize(body.resumeStatus) !== actualStatus)
+                ? ` [enforced: score ${score} vs threshold ${threshold}]`
+                : "";
             await appendCandidateActivity(id, {
                 type: "status_changed",
                 label: actionLabel,
-                details: `resume=${updated.resumeStatus}, interview=${updated.interviewStatus}`,
+                details: `resume=${updated.resumeStatus}, interview=${updated.interviewStatus}${enforceNote}`,
                 timestamp: new Date().toISOString(),
                 source: "hr",
             });
