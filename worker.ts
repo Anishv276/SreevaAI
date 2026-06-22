@@ -542,15 +542,16 @@ async function processResumeScreeningJob(job: any) {
     const screeningCriteria = (() => {
       try { return JSON.parse(application?.drive?.screeningCriteria || "{}"); } catch { return {}; }
     })();
-    const threshold = application?.drive?.screeningThreshold ?? 0;
+    const threshold = application?.drive?.screeningThreshold || 60;
     const hasJd = Object.keys(extractedDetails).length > 0;
 
     // ── 40% Extract + 60% Score (Python subprocess) ───────────────────────
     await job.updateProgress(40);
+    console.log(`[RESUME-WORKER] Updating status to "scoring"...`);
     await prisma.application.update({
       where: { id: applicationId },
       data: { resumeStatus: "scoring", updatedAt: new Date() },
-    }).catch(() => {});
+    }).catch((e: any) => console.warn(`[RESUME-WORKER] Failed to update scoring status: ${e.message}`));
     console.log(`[RESUME-WORKER] Running Python pipeline (hasJd=${hasJd})...`);
 
     let result: any;
@@ -585,15 +586,15 @@ async function processResumeScreeningJob(job: any) {
     const aiScore    = typeof scoreData?.score === "number" ? Math.round(scoreData.score) : null;
     const reportJson = scoreData ? JSON.stringify(scoreData) : null;
 
-    // ── Automatic ATS status based on score vs threshold ────────────────────
+    // ── Automatic ATS status: Determine based on score vs threshold ────────
     let resumeStatus = "pending";
-    if (aiScore !== null && threshold > 0) {
+    if (aiScore !== null) {
       resumeStatus = aiScore >= threshold ? "shortlisted" : "rejected";
     }
 
     // ── 80% Write to DB ───────────────────────────────────────────────────
     await job.updateProgress(80);
-    console.log(`[RESUME-WORKER] Saving — aiScore=${aiScore} threshold=${threshold} resumeStatus=${resumeStatus} hasReport=${!!reportJson}`);
+    console.log(`[RESUME-WORKER] Saving — aiScore=${aiScore} threshold=${threshold} → resumeStatus=${resumeStatus} | hasReport=${!!reportJson}`);
 
     await prisma.application.update({
       where: { id: applicationId },
@@ -753,8 +754,8 @@ if (isQueueEnabled("resume-processing")) {
     stalledInterval: 60 * 1000,
     maxStalledCount: 2,
     drainDelay: 300,
-    removeOnComplete: { age: 3600 },
-    removeOnFail:    { age: 3600 },
+    removeOnComplete: { age: 60 },
+    removeOnFail:    { age: 60 },
   }));
 
   resumeWorker.on("error", (err) => {
