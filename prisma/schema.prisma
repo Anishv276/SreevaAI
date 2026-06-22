@@ -16,7 +16,6 @@ model Organization {
   status                 String   @default("ACTIVE")
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
-  website                String?
   onboardingComplete     Boolean  @default(false)
   voiceId                String?  @default("9626c31c-bec5-4cca-baa8-f8ba9e84c8bc")
   allowedVoices          String[] @default([])

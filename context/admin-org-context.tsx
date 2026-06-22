@@ -6,7 +6,6 @@ export type OrgData = {
     orgId?: string | null;
     name?: string;
     plan?: string;
-    website?: string | null;
     voiceId?: string | null;
     allowedVoices?: string[];
     deepgramModel?: string | null;

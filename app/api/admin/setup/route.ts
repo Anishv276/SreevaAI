@@ -14,8 +14,8 @@ export async function POST(req: Request) {
             return NextResponse.json({ success: true });
         }
         const { company, passwords } = data;
-        if (!company?.name || !company?.website) {
-            return NextResponse.json({ error: "Company name and website are required." }, { status: 400 });
+        if (!company?.name) {
+            return NextResponse.json({ error: "Company name is required." }, { status: 400 });
         }
         await prisma.$transaction(async (tx) => {
             const userUpdate: any = {};
@@ -41,7 +41,6 @@ export async function POST(req: Request) {
                 where: { id: session.orgId as string },
                 data: {
                     name: company.name,
-                    website: company.website,
                     onboardingComplete: true,
                 }
             });

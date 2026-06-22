@@ -30,7 +30,6 @@ export default function SettingsPage() {
     const [profile, setProfile] = useState({ name: "", email: "" });
     const [company, setCompany] = useState({
         name: adminOrg?.name || "",
-        website: adminOrg?.website || "",
     });
     const [passwords, setPasswords] = useState({ current: "", next: "", confirm: "" });
     const [isNewPasswordValid, setIsNewPasswordValid] = useState(false);
@@ -210,7 +209,7 @@ export default function SettingsPage() {
                                     </div>
                                 </SettingsCard>
                                 {/* Company */}
-                                <SettingsCard title="Company Details" description="Your organization name and website.">
+                                <SettingsCard title="Company Details" description="Your organization name.">
                                     <div className="grid grid-cols-1 gap-5">
                                         <Field label="Company Name">
                                             <div className="relative">
@@ -219,17 +218,6 @@ export default function SettingsPage() {
                                                     className="pl-10 h-10 rounded-lg border-gray-200 bg-white font-medium focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all"
                                                     value={company.name}
                                                     onChange={e => setCompany(c => ({ ...c, name: e.target.value }))}
-                                                />
-                                            </div>
-                                        </Field>
-                                        <Field label="Website URL">
-                                            <div className="relative">
-                                                <Globe className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                                                <Input
-                                                    className="pl-10 h-10 rounded-lg border-gray-200 bg-white font-medium focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all"
-                                                    placeholder="https://company.com"
-                                                    value={company.website}
-                                                    onChange={e => setCompany(c => ({ ...c, website: e.target.value }))}
                                                 />
                                             </div>
                                         </Field>

@@ -30,7 +30,6 @@ export async function GET(request: Request) {
         const orgRows = await prisma.$queryRaw<Array<{
             name: string | null;
             plan: string | null;
-            website: string | null;
             onboardingComplete: boolean | null;
             status: string | null;
             statusControl: string | null;
@@ -47,7 +46,6 @@ export async function GET(request: Request) {
                 SELECT
                     o.name,
                     o.plan,
-                    o.website,
                     o."onboardingComplete",
                     o.status,
                     o."statusControl",
@@ -95,10 +93,9 @@ export async function PATCH(req: Request) {
             return NextResponse.json({ error: "Unauthorized: administrator access required" }, { status: 403 });
         }
         const body = await req.json();
-        const { name, website } = body;
+        const { name } = body;
         const data: Record<string, any> = {};
         if (name !== undefined) data.name = name;
-        if (website !== undefined) data.website = website;
         const updatedOrg = await prisma.organization.update({
             where: { id: session.orgId },
             data

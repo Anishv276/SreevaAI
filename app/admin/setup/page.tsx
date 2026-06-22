@@ -44,7 +44,7 @@ export default function OnboardingPage() {
     const [passwords, setPasswords] = useState({ current: "", next: "" });
     const [showPw, setShowPw] = useState({ current: false, next: false });
     const [pwError, setPwError] = useState<string | null>(null);
-    const [company, setCompany] = useState({ name: "", website: "" });
+    const [company, setCompany] = useState({ name: "" });
     const [isSaving, setIsSaving] = useState(false);
     const [showWelcomeCard, setShowWelcomeCard] = useState(false);
     useEffect(() => {
@@ -80,9 +80,7 @@ export default function OnboardingPage() {
         return () => clearTimeout(t);
     }, [company, isLoading]);
     const handleActivate = async () => {
-        if (!company.name || !company.website) { toast.error("Company name and website are required."); return; }
-        const urlRegex = /^(https?:\/\/)?([\da-z.-]+)\.([a-z.]{2,63})([/\w .-]*)*\/?$/;
-        if (!urlRegex.test(company.website)) { toast.error("Enter a valid website URL."); return; }
+        if (!company.name) { toast.error("Company name is required."); return; }
         if (passwords.next) {
             const { isValid, error: e } = validatePasswordStrength(passwords.next);
             if (!isValid) { setPwError(e || "Invalid password."); return; }
@@ -102,7 +100,7 @@ export default function OnboardingPage() {
             toast.error(err.message);
         } finally { setIsSaving(false); }
     };
-    const canActivate = !!(company.name && company.website);
+    const canActivate = !!(company.name);
     if (isLoading) return (
         <div className="h-screen flex items-center justify-center bg-gray-50">
             <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
@@ -184,14 +182,6 @@ export default function OnboardingPage() {
                                     placeholder="Acme Corp"
                                     value={company.name}
                                     onChange={e => setCompany({ ...company, name: e.target.value })}
-                                />
-                            </Field>
-                            <Field label="Official Website" required>
-                                <InputIcon
-                                    icon={<Globe className="h-3.5 w-3.5" />}
-                                    placeholder="acme.com"
-                                    value={company.website}
-                                    onChange={e => setCompany({ ...company, website: e.target.value })}
                                 />
                             </Field>
                         </div>
