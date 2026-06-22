@@ -10,7 +10,6 @@ model Organization {
   id                     String   @id
   name                   String
   slug                   String   @unique
-  logoUrl                String?
   plan                   String   @default("STARTER")
   maxActiveDrives        String   @default("Unlimited")
   proctoringSignals      Json?    @default("{\"tab_switch\": false, \"face_absence\": false, \"multiple_faces\": false, \"camera_disabled\": false, \"connection_lost\": false, \"latency_mismatch\": false, \"identity_mismatch\": false, \"microphone_disabled\": false, \"complexity_latency_mismatch\": false}")
@@ -81,7 +80,6 @@ model Drive {
   jdFileName         String?
   jdPreviewUrl       String?
   orgId              String?
-  location           String?
   deadline           DateTime?
   aiName             String?           @default("Ishitha")
   voiceId            String?           @default("9626c31c-bec5-4cca-baa8-f8ba9e84c8bc")

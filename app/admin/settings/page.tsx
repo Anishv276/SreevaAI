@@ -1,14 +1,13 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
     User, Building2, Lock, Globe, Mail, ShieldAlert,
-    AlertCircle, Zap, Upload, Eye, Trash2, Loader2, X, CheckCircle2,
+    AlertCircle, Zap, Loader2, X, CheckCircle2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAdminOrg } from "@/context/admin-org-context";
-import { ActionConfirmModal } from "@/components/ui/action-confirm-modal";
 import { useSearchParams } from "next/navigation";
 import { toast } from "@/components/ui/toast-custom";
 import { PasswordInput } from "@/components/ui/password-input";
@@ -28,17 +27,11 @@ export default function SettingsPage() {
         if (mapped && sections.some(s => s.id === mapped)) setActiveSection(mapped);
     }, [searchParams]);
     const [isLoading, setIsLoading] = useState(true);
-    const logoInputRef = useRef<HTMLInputElement>(null);
-    const [isUploadingLogo, setIsUploadingLogo] = useState(false);
     const [profile, setProfile] = useState({ name: "", email: "" });
     const [company, setCompany] = useState({
         name: adminOrg?.name || "",
         website: adminOrg?.website || "",
-        logoUrl: adminOrg?.logoUrl || "",
     });
-    const [isLogoModalOpen, setIsLogoModalOpen] = useState(false);
-    const [isLogoPreviewOpen, setIsLogoPreviewOpen] = useState(false);
-    const [isProcessingAction, setIsProcessingAction] = useState(false);
     const [passwords, setPasswords] = useState({ current: "", next: "", confirm: "" });
     const [isNewPasswordValid, setIsNewPasswordValid] = useState(false);
     const [pwError, setPwError] = useState("");
@@ -66,57 +59,6 @@ export default function SettingsPage() {
         };
         fetchAll();
     }, []);
-    const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        setIsUploadingLogo(true);
-        try {
-            const formData = new FormData();
-            formData.append("file", file);
-            const res = await fetch("/api/upload/logo", { method: "POST", body: formData });
-            if (res.ok) {
-                const { url } = await res.json();
-                setCompany(prev => {
-                    const updated = { ...prev, logoUrl: url };
-                    fetch("/api/admin/organization", {
-                        method: "PATCH",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify(updated),
-                    }).catch(err => console.error("Logo auto-save failed:", err));
-                    return updated;
-                });
-            }
-        } catch (err) {
-            console.error("Upload error:", err);
-        } finally {
-            setIsUploadingLogo(false);
-        }
-    };
-    const confirmLogoDelete = async () => {
-        if (!company.logoUrl) return;
-        setIsProcessingAction(true);
-        try {
-            await fetch("/api/upload/logo", {
-                method: "DELETE",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ url: company.logoUrl }),
-            });
-            setCompany(prev => {
-                const updated = { ...prev, logoUrl: "" };
-                fetch("/api/admin/organization", {
-                    method: "PATCH",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(updated),
-                }).catch(err => console.error("Logo delete save failed:", err));
-                return updated;
-            });
-            setIsLogoModalOpen(false);
-        } catch (err) {
-            console.error("Delete error:", err);
-        } finally {
-            setIsProcessingAction(false);
-        }
-    };
     const handleSave = async () => {
         setIsSaving(true);
         try {
@@ -268,54 +210,8 @@ export default function SettingsPage() {
                                     </div>
                                 </SettingsCard>
                                 {/* Company */}
-                                <SettingsCard title="Company Details" description="Your organization name, website, and branding.">
+                                <SettingsCard title="Company Details" description="Your organization name and website.">
                                     <div className="grid grid-cols-1 gap-5">
-                                        {/* Logo */}
-                                        <Field label="Company Logo">
-                                            <div className="flex items-center gap-6">
-                                                <div className="relative group flex-shrink-0">
-                                                    <div
-                                                        onClick={() => !company.logoUrl && logoInputRef.current?.click()}
-                                                        className={cn(
-                                                            "h-24 w-24 rounded-2xl border-2 border-dashed border-gray-100 bg-gray-50 flex items-center justify-center overflow-hidden transition-all group-hover:border-orange-200 group-hover:bg-orange-50 shadow-inner",
-                                                            !company.logoUrl && "cursor-pointer"
-                                                        )}
-                                                    >
-                                                        {isUploadingLogo ? (
-                                                            <Loader2 className="h-6 w-6 text-[#F97316] animate-spin" />
-                                                        ) : company.logoUrl ? (
-                                                            <img src={company.logoUrl} className="h-full w-full object-contain p-2" alt="Logo" />
-                                                        ) : (
-                                                            <div className="flex flex-col items-center gap-1 text-gray-300 group-hover:text-orange-400 transition-colors">
-                                                                <Upload className="h-6 w-6" />
-                                                                <span className="text-[9px] font-black uppercase tracking-widest">Upload</span>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                    {company.logoUrl && !isUploadingLogo && (
-                                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-all rounded-2xl flex items-center justify-center gap-1.5 backdrop-blur-[2px]">
-                                                            <button onClick={() => setIsLogoPreviewOpen(true)} className="h-8 w-8 bg-white text-gray-900 rounded-lg flex items-center justify-center hover:bg-[#F97316] hover:text-white transition-all">
-                                                                <Eye className="h-4 w-4" />
-                                                            </button>
-                                                            <button onClick={() => setIsLogoModalOpen(true)} className="h-8 w-8 bg-white text-red-500 rounded-lg flex items-center justify-center hover:bg-red-500 hover:text-white transition-all">
-                                                                <Trash2 className="h-4 w-4" />
-                                                            </button>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                                <div className="space-y-2">
-                                                    <input type="file" ref={logoInputRef} className="hidden" accept="image/*" onChange={handleLogoUpload} />
-                                                    <Button
-                                                        disabled={isUploadingLogo}
-                                                        onClick={() => logoInputRef.current?.click()}
-                                                        className="h-10 px-5 rounded-xl bg-gray-950 hover:bg-[#F97316] text-white font-bold transition-all"
-                                                    >
-                                                        {isUploadingLogo ? "Uploading…" : company.logoUrl ? "Change Logo" : "Upload Logo"}
-                                                    </Button>
-                                                    <p className="text-[11px] text-gray-400 font-medium">SVG or PNG with transparent background recommended.</p>
-                                                </div>
-                                            </div>
-                                        </Field>
                                         <Field label="Company Name">
                                             <div className="relative">
                                                 <Building2 className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -407,31 +303,6 @@ export default function SettingsPage() {
                     </div>
                 </div>
                 {/* Modals */}
-                <ActionConfirmModal
-                    isOpen={isLogoModalOpen}
-                    onClose={() => setIsLogoModalOpen(false)}
-                    onConfirm={confirmLogoDelete}
-                    title="Remove Company Logo"
-                    description="Are you sure you want to remove your company logo? This will revert your portal header and branding."
-                    confirmText="Confirm Remove"
-                    isLoading={isProcessingAction}
-                />
-                {isLogoPreviewOpen && company.logoUrl && (
-                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-8 backdrop-blur-xl bg-white/40">
-                        <div className="absolute inset-0" onClick={() => setIsLogoPreviewOpen(false)} />
-                        <div className="relative w-full max-w-2xl bg-white rounded-[2.5rem] border border-gray-100 shadow-[0_40px_100px_rgba(0,0,0,0.1)] p-12 py-16">
-                            <button onClick={() => setIsLogoPreviewOpen(false)} className="absolute top-8 right-8 h-12 w-12 bg-gray-50 rounded-2xl flex items-center justify-center text-gray-400 hover:text-gray-900 transition-all">
-                                <X className="h-6 w-6" />
-                            </button>
-                            <div className="space-y-8 text-center">
-                                <h3 className="text-2xl font-black text-gray-900 tracking-tight">Logo Preview</h3>
-                                <div className="bg-gray-50 rounded-3xl p-12 border border-dashed border-gray-200">
-                                    <img src={company.logoUrl} className="max-h-[280px] mx-auto object-contain" alt="Logo Preview" />
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                )}
                 {showOtpModal && (
                     <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 backdrop-blur-xl bg-white/30">
                         <div className="w-full max-w-lg bg-white border border-gray-100 rounded-[2rem] shadow-[0_50px_150px_rgba(0,0,0,0.15)] overflow-hidden">

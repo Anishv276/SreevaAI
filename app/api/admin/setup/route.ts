@@ -13,15 +13,12 @@ export async function POST(req: Request) {
         if (phase !== "complete") {
             return NextResponse.json({ success: true });
         }
-        const { profile, company, passwords } = data;
-        if (!profile?.name) {
-            return NextResponse.json({ error: "Full name is required." }, { status: 400 });
-        }
+        const { company, passwords } = data;
         if (!company?.name || !company?.website) {
             return NextResponse.json({ error: "Company name and website are required." }, { status: 400 });
         }
         await prisma.$transaction(async (tx) => {
-            const userUpdate: any = { name: profile.name };
+            const userUpdate: any = {};
             if (passwords?.next) {
                 const { isValid, error: strengthError } = validatePasswordStrength(passwords.next);
                 if (!isValid) throw new Error(strengthError);
@@ -37,13 +34,14 @@ export async function POST(req: Request) {
                 userUpdate.password = await bcrypt.hash(passwords.next, 10);
                 await invalidateUserSessions(session.userId);
             }
-            await tx.user.update({ where: { id: session.userId }, data: userUpdate });
+            if (Object.keys(userUpdate).length > 0) {
+                await tx.user.update({ where: { id: session.userId }, data: userUpdate });
+            }
             await tx.organization.update({
                 where: { id: session.orgId as string },
                 data: {
                     name: company.name,
                     website: company.website,
-                    logoUrl: company.logoUrl || null,
                     onboardingComplete: true,
                 }
             });

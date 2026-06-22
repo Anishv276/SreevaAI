@@ -14,7 +14,6 @@ import {
   Loader2,
   Lock,
   Mail,
-  MapPin,
   Mic,
   Pause,
   Play,
@@ -22,10 +21,8 @@ import {
   Search,
   Clock,
   Shield,
-  User,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { LocationAutocomplete } from "@/components/ui/location-autocomplete";
 import { toast } from "@/components/ui/toast-custom";
 import { ProctoringSignalsSection } from "@/components/super-admin/proctoring-signals-section";
 import { ALL_VOICES, DEFAULT_VOICE_ID, getVoiceById, type Voice } from "@/lib/constants/voices";
@@ -35,14 +32,12 @@ import { cn } from "@/lib/utils";
 type OrgFormState = {
   orgName: string;
   slug: string;
-  location: string;
   plan: OrgPlanId;
   maxActiveDrives: string;
   interviewQuotaTotal: string;
   recordingEnabled: boolean;
   recordingRetentionDays: string;
   proctoringSignals: ProctoringSignalToggles;
-  adminName: string;
   adminEmail: string;
   adminPassword: string;
   voiceId: string;
@@ -235,14 +230,12 @@ export default function NewOrgPage() {
   const [form, setForm] = useState<OrgFormState>(() => ({
     orgName: "",
     slug: "",
-    location: "",
     plan: DEFAULT_ORG_PLAN,
     maxActiveDrives: "Unlimited",
     interviewQuotaTotal: "100",
     recordingEnabled: false,
     recordingRetentionDays: "",
     proctoringSignals: getProctoringSignalsForPlan(DEFAULT_ORG_PLAN),
-    adminName: "",
     adminEmail: "",
     adminPassword: "",
     voiceId: DEFAULT_VOICE_ID,
@@ -422,12 +415,10 @@ export default function NewOrgPage() {
       const res = await fetch("/api/super-admin/orgs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
+        body: JSON.stringify({
           orgName: form.orgName.trim(),
           slug: form.slug.trim().toLowerCase(),
           plan: form.plan,
-          location: form.location.trim() || null,
-          adminName: form.adminName.trim() || null,
           adminEmail: form.adminEmail.trim(),
           adminPassword: form.adminPassword,
           maxActiveDrives: form.maxActiveDrives,
@@ -521,27 +512,11 @@ export default function NewOrgPage() {
               placeholder="client-slug"
               required
             />
-            <div className="md:col-span-2">
-              <Field label="Location" icon={MapPin}>
-                <LocationAutocomplete
-                  value={form.location}
-                  onChange={(value) => updateForm({ location: value })}
-                  placeholder="Mumbai, India"
-                />
-              </Field>
-            </div>
           </div>
         </section>
         <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
           <SectionHeader title="Administrative Access" description="Primary login credentials for the new organization." />
-          <div className="mt-6 grid gap-6 md:grid-cols-3">
-            <TextInput
-              label="Admin Name"
-              icon={User}
-              value={form.adminName}
-              onChange={(value) => updateForm({ adminName: value })}
-              placeholder="Full name"
-            />
+          <div className="mt-6 grid gap-6 md:grid-cols-2">
             <TextInput
               label="Login Email"
               icon={Mail}

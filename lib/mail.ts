@@ -172,10 +172,9 @@ export async function sendRejectionEmail({
 }
 // ─── 3. Interview Completed (admin notification) ─────────────────────────────
 export async function sendInterviewCompletedEmail({
-    adminEmail, adminName, candidateName, jobTitle, orgName, driveTitle, completedAt, reportLink,
+    adminEmail, candidateName, jobTitle, orgName, driveTitle, completedAt, reportLink,
 }: {
     adminEmail: string;
-    adminName: string;
     candidateName: string;
     jobTitle: string;
     orgName: string;
@@ -191,7 +190,7 @@ export async function sendInterviewCompletedEmail({
         ${header("Interview Completed", "New report ready to review")}
         <tr><td style="padding:32px 36px 0;">
           <p style="margin:0;font-size:15px;color:#404040;line-height:1.75;">
-            Hi ${adminName}, a candidate has just completed their AI interview. The AI-generated scorecard, transcript, and proctoring summary are ready for your review.
+            A candidate has just completed their AI interview. The AI-generated scorecard, transcript, and proctoring summary are ready for your review.
           </p>
           ${infoCard([
               { label: "Candidate", value: candidateName },
@@ -218,17 +217,16 @@ export async function sendInterviewCompletedEmail({
 }
 // ─── 4. Org Welcome ──────────────────────────────────────────────────────────
 export async function sendOrgWelcomeEmail({
-    email, orgName, adminName, tempPassword,
+    email, orgName, tempPassword,
 }: {
     email: string;
     orgName: string;
-    adminName: string;
     tempPassword?: string;
 }): Promise<MailResult> {
     const loginUrl = `${process.env.NEXT_PUBLIC_APP_URL || ""}/login`;
     const subject = `Your ${orgName} workspace on Sreeva AI is ready`;
     const html = wrapper(`
-        ${header("Workspace Ready", `Welcome aboard, ${adminName}!`)}
+        ${header("Workspace Ready", "Welcome to Sreeva AI!")}
         <tr><td style="padding:32px 36px 0;">
           <p style="margin:0;font-size:15px;color:#404040;line-height:1.75;">
             Your workspace for <strong style="color:#111;">${orgName}</strong> is live. You can now build recruitment drives, shortlist candidates, and run AI-powered interviews at scale.

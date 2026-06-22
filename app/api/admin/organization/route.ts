@@ -31,7 +31,6 @@ export async function GET(request: Request) {
             name: string | null;
             plan: string | null;
             website: string | null;
-            logoUrl: string | null;
             onboardingComplete: boolean | null;
             status: string | null;
             statusControl: string | null;
@@ -49,7 +48,6 @@ export async function GET(request: Request) {
                     o.name,
                     o.plan,
                     o.website,
-                    o."logoUrl",
                     o."onboardingComplete",
                     o.status,
                     o."statusControl",
@@ -97,27 +95,10 @@ export async function PATCH(req: Request) {
             return NextResponse.json({ error: "Unauthorized: administrator access required" }, { status: 403 });
         }
         const body = await req.json();
-        const { name, website, logoUrl } = body;
+        const { name, website } = body;
         const data: Record<string, any> = {};
         if (name !== undefined) data.name = name;
         if (website !== undefined) data.website = website;
-        if (logoUrl !== undefined) {
-            const currentOrg = await prisma.organization.findUnique({
-                where: { id: session.orgId },
-                select: { logoUrl: true }
-            });
-            const shouldDelete = currentOrg?.logoUrl && (!logoUrl || currentOrg.logoUrl !== logoUrl);
-            if (shouldDelete) {
-                try {
-                    const { deleteObject, getKeyFromUrl } = await import("@/lib/s3");
-                    const key = getKeyFromUrl(currentOrg.logoUrl || "");
-                    if (key) await deleteObject(process.env.R2_LOGOS_BUCKET || "logos", key);
-                } catch (err) {
-                    console.error("Logo delete failed:", err);
-                }
-            }
-            if (!logoUrl?.startsWith("blob:")) data.logoUrl = logoUrl;
-        }
         const updatedOrg = await prisma.organization.update({
             where: { id: session.orgId },
             data

@@ -75,10 +75,10 @@ export async function PATCH(
         const rawBody = await request.text();
         const body = rawBody.trim() ? JSON.parse(rawBody) : {};
         const {
-            name, plan, status, logoUrl, slug, location, maxActiveDrives,
+            name, plan, status, slug, maxActiveDrives,
             recordingEnabled, recordingRetentionDays,
             proctoringSignals,
-            adminName, adminEmail,
+            adminEmail,
             adminPassword,
             voiceId, allowedVoices,
             usageMetrics,
@@ -145,14 +145,11 @@ export async function PATCH(
             status !== undefined &&
             name === undefined &&
             plan === undefined &&
-            logoUrl === undefined &&
             slug === undefined &&
-            location === undefined &&
             maxActiveDrives === undefined &&
             recordingEnabled === undefined &&
             recordingRetentionDays === undefined &&
             proctoringSignals === undefined &&
-            adminName === undefined &&
             adminEmail === undefined &&
             adminPassword === undefined &&
             voiceId === undefined &&
@@ -188,9 +185,7 @@ export async function PATCH(
         if (status !== undefined) {
             updateData.status = directStatus;
         }
-        if (logoUrl !== undefined) updateData.logoUrl = logoUrl;
         if (slug !== undefined) updateData.slug = slug;
-        if (location !== undefined) updateData.location = location;
         const currentRecordingRetentionDays = normalizeRecordingRetentionDays(existingOrg.recordingRetentionDays);
         const currentRecordingEnabled =
             existingOrg.recordingEnabled === true && currentRecordingRetentionDays !== null;
@@ -311,8 +306,8 @@ export async function PATCH(
                     `
                 );
             }
-            // 2. Update Primary Admin if name/email/password provided
-            if (adminName !== undefined || adminEmail !== undefined || (adminPassword !== undefined && String(adminPassword).trim())) {
+            // 2. Update Primary Admin if email/password provided
+            if (adminEmail !== undefined || (adminPassword !== undefined && String(adminPassword).trim())) {
                 // Find the first ORG_ADMIN
                 const admin = await tx.user.findFirst({
                     where: { orgId: id, role: "ORG_ADMIN" },
@@ -321,7 +316,6 @@ export async function PATCH(
                 if (admin) {
                     primaryAdminId = admin.id;
                     const adminUpdate: Record<string, unknown> = {};
-                    if (adminName !== undefined) adminUpdate.name = adminName;
                     if (adminEmail !== undefined) adminUpdate.email = normalizeEmail(adminEmail);
                     if (adminPassword !== undefined && String(adminPassword).trim()) {
                         adminUpdate.password = await bcrypt.hash(String(adminPassword).trim(), 10);

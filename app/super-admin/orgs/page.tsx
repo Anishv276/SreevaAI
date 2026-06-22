@@ -72,7 +72,6 @@ interface Org {
     interviewsCompleted?: number;
     interviewQuotaTotal?: number;
     interviewQuotaUsed?: number;
-    logoUrl?: string;
     interviewCount?: number;
     _count?: {
         users: number;
@@ -481,15 +480,9 @@ export default function OrgsPage() {
                                     <tr key={org.id} className="hover:bg-gray-50/80 transition-colors">
                                         <td className="pl-5 py-4">
                                             <div className="flex items-center gap-3">
-                                                {org.logoUrl ? (
-                                                    <div className="h-8 w-8 rounded-lg border border-gray-100 bg-white p-1 shadow-sm overflow-hidden flex items-center justify-center flex-shrink-0">
-                                                        <img src={org.logoUrl} alt={org.name} className="h-full w-full object-contain" />
-                                                    </div>
-                                                ) : (
-                                                    <div className="h-8 w-8 rounded-lg bg-gray-100 text-gray-600 flex flex-shrink-0 items-center justify-center font-bold text-[10px] shadow-sm">
-                                                        {org.name[0].toUpperCase()}
-                                                    </div>
-                                                )}
+                                                <div className="h-8 w-8 rounded-lg bg-gray-100 text-gray-600 flex flex-shrink-0 items-center justify-center font-bold text-[10px] shadow-sm">
+                                                    {org.name[0].toUpperCase()}
+                                                </div>
                                                 <div className="flex flex-col min-w-0">
                                                     <span className="text-gray-900 font-bold text-[12px] truncate">{cleanName(org.name)}</span>
                                                     <div className="flex items-center gap-1.5 mt-0.5">

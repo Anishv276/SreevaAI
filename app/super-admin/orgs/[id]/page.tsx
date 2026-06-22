@@ -1,8 +1,7 @@
 "use client";
 import { useEffect, useState, use, useRef, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Building2, User, Mail, ShieldCheck, Globe, RefreshCw, Play, Pause, MapPin as MapPinIcon, ChevronRight, Coins, ChevronDown, Loader2, Shield, Layers, AudioLines, Search, Lock, Clock, Eye, EyeOff } from "lucide-react";
-import { LocationAutocomplete } from "@/components/ui/location-autocomplete";
+import { ArrowLeft, Building2, Mail, ShieldCheck, Globe, RefreshCw, Play, Pause, ChevronRight, Coins, ChevronDown, Loader2, Shield, Layers, AudioLines, Search, Lock, Clock, Eye, EyeOff } from "lucide-react";
 import { toast } from "@/components/ui/toast-custom";
 import { ProctoringSignalsSection } from "@/components/super-admin/proctoring-signals-section";
 import { ALL_VOICES, type Voice } from "@/lib/constants/voices";
@@ -99,7 +98,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
         name: "", slug: "", plan: DEFAULT_ORG_PLAN,
         maxActiveDrives: "Unlimited",
         proctoringSignals: getProctoringSignalsForPlan(DEFAULT_ORG_PLAN),
-        location: "", adminName: "", adminEmail: "", adminPassword: "",
+        adminEmail: "", adminPassword: "",
         voiceId: "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
         allowedVoices: [] as string[],
         recordingEnabled: false,
@@ -187,8 +186,6 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                     plan: normalizeOrgPlan(data.plan) || DEFAULT_ORG_PLAN,
                     maxActiveDrives: formatOrgLimitValue(data.maxActiveDrives),
                     proctoringSignals: normalizeProctoringSignals(data.proctoringSignals),
-                    location: data.location || "",
-                    adminName: data.users && data.users.length > 0 ? data.users[0].name : "",
                     adminEmail: data.users && data.users.length > 0 ? data.users[0].email : "",
                     adminPassword: "",
                     voiceId: data.voiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
@@ -266,19 +263,12 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                             <PremiumInput label="Company Name" icon={Building2} value={form.name} onChange={(e: any) => setForm(p => ({ ...p, name: e.target.value }))} placeholder="Reliance Group" required />
                             <PremiumInput label="URL Identifier" icon={Globe} value={form.slug} onChange={(e: any) => setForm(p => ({ ...p, slug: e.target.value.toLowerCase() }))} placeholder="slug-path" required />
                         </div>
-                        <div className="pt-6 border-t border-gray-100">
-                            <div className="space-y-2">
-                                <label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest"><MapPinIcon className="h-3 w-3 text-[#F97316]" />Location</label>
-                                <LocationAutocomplete value={form.location || ""} onChange={val => setForm(p => ({ ...p, location: val }))} placeholder="Mumbai, India" />
-                            </div>
-                        </div>
                     </div>
                 )}
                 {true && (
                     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
                         <SectionHeader title="Master Administrator" />
                         <div className="grid md:grid-cols-2 gap-6">
-                            <PremiumInput label="Admin Full Name" icon={User} value={form.adminName} onChange={(e: any) => setForm(p => ({ ...p, adminName: e.target.value }))} placeholder="Vikram Singh" required />
                             <PremiumInput label="Contact Email" icon={Mail} type="email" value={form.adminEmail} onChange={(e: any) => setForm(p => ({ ...p, adminEmail: e.target.value }))} placeholder="admin@reliance.com" required />
                         </div>
                         <div className="bg-orange-50/50 p-6 rounded-2xl border border-orange-100 mt-6 flex items-start gap-4">

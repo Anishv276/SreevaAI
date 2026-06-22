@@ -46,8 +46,8 @@ export function Sidebar() {
     const isSuperAdmin = user?.role === "SUPER_ADMIN";
     // ⚡ Read from shared context — no fetch needed (was 2 API calls per page load)
     const adminOrg = useAdminOrg();
-    const orgInfo = (adminOrg?.name || adminOrg?.logoUrl)
-        ? { name: adminOrg.name || "Sreeva AI", logoUrl: adminOrg.logoUrl || null }
+    const orgInfo = adminOrg?.name
+        ? { name: adminOrg.name || "Sreeva AI" }
         : null;
     const orgStatus = adminOrg?.status || "ACTIVE";
     const quotaLocked = isInterviewQuotaLocked(adminOrg ?? {});

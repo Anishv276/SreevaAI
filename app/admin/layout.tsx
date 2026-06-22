@@ -31,7 +31,6 @@ export default async function AdminLayout({ children }: { children: React.ReactN
                     onboardingComplete: true,
                     plan: true,
                     name: true,
-                    logoUrl: true,
                     website: true,
                     voiceId: true,
                     allowedVoices: true,
@@ -75,7 +74,6 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         initialData={{
             status: orgData.status,
             name: orgData.name,
-            logoUrl: orgData.logoUrl,
             plan: orgData.plan,
             website: orgData.website,
             voiceId: orgData.voiceId,

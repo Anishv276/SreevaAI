@@ -5,7 +5,6 @@ export type OrgData = {
     status: string;
     orgId?: string | null;
     name?: string;
-    logoUrl?: string | null;
     plan?: string;
     website?: string | null;
     voiceId?: string | null;
@@ -72,7 +71,6 @@ export function AdminOrgProvider({
                 ...(orgJson && {
                     status: String(orgJson.status || prev.status || "ACTIVE").toUpperCase(),
                     name: orgJson.name,
-                    logoUrl: orgJson.logoUrl,
                     plan: orgJson.plan,
                 }),
                 ...(creditsJson && {

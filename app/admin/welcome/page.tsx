@@ -15,7 +15,6 @@ export default function WelcomePage() {
     const [data, setData] = useState({
         name: "",
         company: adminOrg?.name || "Your Organization",
-        logoUrl: adminOrg?.logoUrl || "",
     });
     useEffect(() => {
         const fetchData = async () => {
@@ -25,7 +24,6 @@ export default function WelcomePage() {
                 setData({
                     name: prof.name || "Admin",
                     company: adminOrg?.name || "Your Organization",
-                    logoUrl: adminOrg?.logoUrl || ""
                 });
             } catch (err) {
                 console.error("Failed to fetch welcome data", err);
@@ -34,7 +32,7 @@ export default function WelcomePage() {
             }
         };
         fetchData();
-    }, [adminOrg?.logoUrl, adminOrg?.name]);
+    }, [adminOrg?.name]);
     const handleGoToDashboard = () => {
         router.push("/admin");
     };
@@ -109,11 +107,7 @@ export default function WelcomePage() {
                             >
                                 <div className="flex items-center gap-4">
                                     <div className="h-12 w-12 rounded-xl bg-orange-500 flex items-center justify-center text-white font-bold shadow-md">
-                                        {data.logoUrl ? (
-                                            <img src={data.logoUrl} className="h-full w-full object-contain p-2" alt="Logo" />
-                                        ) : (
-                                            data.company[0].toUpperCase()
-                                        )}
+                                        {data.company[0].toUpperCase()}
                                     </div>
                                     <div className="flex flex-col">
                                         <span className="text-[10px] font-bold uppercase text-gray-400 tracking-wider">Organization</span>

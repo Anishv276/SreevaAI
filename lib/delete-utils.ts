@@ -5,7 +5,6 @@ export type UrlDeletionTarget = {
 };
 export function inferBucketFromUrl(url: string, fallbackBucket: string) {
     const normalized = url.toLowerCase();
-    if (normalized.includes("logo")) return process.env.R2_LOGOS_BUCKET || "logos";
     if (normalized.includes("jd")) return process.env.R2_JDS_BUCKET || "jds";
     if (normalized.includes("interview")) return process.env.R2_INTERVIEW_BUCKET || "interviews";
     return fallbackBucket;

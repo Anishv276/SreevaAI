@@ -11,7 +11,6 @@ type OrgSummary = {
   slug: string;
   plan: string;
   status: string;
-  logoUrl: string | null;
   interviewQuotaTotal: number;
   interviewQuotaUsed: number;
 };
@@ -149,15 +148,9 @@ export default function SuperAdminBillingPage() {
                       )}
                     >
                       <div className="flex items-center gap-2">
-                        {org.logoUrl ? (
-                          <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center overflow-hidden rounded-md border border-gray-100 bg-white p-1">
-                            <img src={org.logoUrl} alt={org.name} className="h-full w-full object-contain" />
-                          </div>
-                        ) : (
-                          <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md bg-gray-900 text-[9px] font-bold text-white">
-                            {org.name[0]?.toUpperCase()}
-                          </div>
-                        )}
+                        <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md bg-gray-900 text-[9px] font-bold text-white">
+                          {org.name[0]?.toUpperCase()}
+                        </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center justify-between gap-2">
                             <h3 className="truncate text-[12px] font-semibold text-gray-900 group-hover:text-[#F97316]">{org.name}</h3>

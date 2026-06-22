@@ -1232,7 +1232,6 @@ if (isQueueEnabled("interview-finalization")) {
                 admins.map(admin =>
                   sendInterviewCompletedEmail({
                     adminEmail: admin.email,
-                    adminName: admin.name || "Admin",
                     candidateName: appForNotify?.fullName || "Candidate",
                     jobTitle: appForNotify?.drive?.title || "Unknown Role",
                     orgName: appForNotify?.drive?.organization?.name || "Sreeva AI",

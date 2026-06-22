@@ -13,7 +13,6 @@ interface Org {
     slug: string;
     plan: string;
     status: string;
-    logoUrl?: string | null;
     interviewQuotaTotal?: number;
     interviewQuotaUsed?: number;
 }
@@ -160,21 +159,9 @@ export default function SuperAdminDashboard() {
                                     <Link key={org.id} href={`/super-admin/orgs/${org.id}`}>
                                         <div className="group flex items-center justify-between p-3.5 rounded-xl border border-gray-100 bg-gray-50/30 hover:border-orange-100 hover:bg-white hover:shadow-sm transition-all duration-200">
                                             <div className="flex items-center gap-3">
-                                                {org.logoUrl ? (
-                                                    <div className="h-9 w-9 rounded-xl border border-gray-100 bg-white p-1.5 flex items-center justify-center shrink-0">
-                                                        <Image
-                                                            src={org.logoUrl}
-                                                            alt={org.name}
-                                                            width={36}
-                                                            height={36}
-                                                            className="h-full w-full object-contain"
-                                                        />
-                                                    </div>
-                                                ) : (
-                                                    <div className="h-9 w-9 rounded-xl bg-gray-900 text-white flex items-center justify-center font-bold text-sm shrink-0">
-                                                        {org.name[0]}
-                                                    </div>
-                                                )}
+                                                <div className="h-9 w-9 rounded-xl bg-gray-900 text-white flex items-center justify-center font-bold text-sm shrink-0">
+                                                    {org.name[0]}
+                                                </div>
                                                 <div>
                                                     <p className="text-sm font-bold text-gray-900 group-hover:text-orange-600 transition-colors leading-tight">{org.name}</p>
                                                     <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{org.plan || "Scale"}</p>

@@ -275,15 +275,14 @@ export async function POST(request: Request) {
         }
         const body = await request.json();
         const {
-            orgName, slug, plan, logoUrl, adminEmail, adminName, adminPassword,
+            orgName, slug, plan, adminEmail, adminPassword,
             maxActiveDrives,
             interviewQuotaTotal,
             recordingEnabled,
             recordingRetentionDays,
             proctoringSignals,
             voiceId, allowedVoices,
-            deepgramModel,
-            location
+            deepgramModel
         } = body;
         if (!orgName || !slug || !adminEmail || !adminPassword) {
             return NextResponse.json({ error: "orgName, slug, adminEmail, and adminPassword are required" }, { status: 400 });
@@ -359,7 +358,6 @@ export async function POST(request: Request) {
             const orgData: Prisma.OrganizationCreateInput & {
                 id: string;
                 usageMetrics: Prisma.InputJsonValue;
-                location: string | null;
             } = {
                 id: generateId("org", orgName),
                 name: orgName,
@@ -371,11 +369,9 @@ export async function POST(request: Request) {
                         : "Unlimited",
                 interviewQuotaTotal: Math.max(0, Math.round(Number(interviewQuotaTotal ?? 0) || 0)),
                 creditsUsed: 0,
-                logoUrl: logoUrl || null,
                 recordingEnabled: resolvedRecordingEnabled ? true : null,
                 recordingRetentionDays: resolvedRecordingEnabled ? resolvedRecordingRetentionDays : null,
                 usageMetrics: {},
-                location: location || null,
             };
             if (resolvedSignals !== undefined) {
                 orgData.proctoringSignals = resolvedSignals;
@@ -386,8 +382,7 @@ export async function POST(request: Request) {
                     next: { voiceId, allowedVoices, deepgramModel },
                 })
             );
-            const userName = adminName || normalizedAdminEmail.split("@")[0];
-            const userId = generateId("usr", userName);
+            const userId = generateId("usr", normalizedAdminEmail.split("@")[0]);
             const org = await tx.organization.create({
                 data: orgData,
             });
@@ -407,8 +402,7 @@ export async function POST(request: Request) {
         // -- Phase 4: Send Welcome Email (Non-blocking) --------------
         sendWelcomeViaResend({
             email: result.admin.email,
-            orgName: result.org.name,
-            adminName: result.admin.name || adminName
+            orgName: result.org.name
         }).catch(err => console.error("[WELCOME EMAIL ERROR]", err));
         return NextResponse.json({
             success: true,

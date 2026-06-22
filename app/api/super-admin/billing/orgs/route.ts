@@ -15,7 +15,6 @@ export async function GET() {
             slug: true,
             plan: true,
             status: true,
-            logoUrl: true,
             interviewQuotaTotal: true,
             interviewQuotaUsed: true,
             creditsUsed: true,

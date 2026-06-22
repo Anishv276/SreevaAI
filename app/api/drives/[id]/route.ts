@@ -53,7 +53,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
                     select: {
                         status: true,
                         name: true,
-                        logoUrl: true,
                         website: true,
                     },
                 },
