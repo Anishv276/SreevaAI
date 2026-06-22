@@ -56,11 +56,7 @@ from interview.agent_runtime_support import LLM_MODEL, logger, DATABASE_URL
 # does NOT import report_pipeline)
 # ---------------------------------------------------------------------------
 from interview.agent_persistence import DatabasePool
-
-def _persist_billing(org_id: str, feature: str, usage: dict) -> Any:
-    # Lazy import breaks the circular dep: agent_persistence → report_pipeline → agent_persistence
-    from interview.agent_persistence import persist_org_manual_billing_usage  # noqa: PLC0415
-    return persist_org_manual_billing_usage(org_id, feature, usage)
+from billing.billing import record_manual_usage as _persist_billing
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # SECTION 1 — Domain Models (Pydantic)
@@ -353,14 +349,9 @@ class ReportLLMClient:
 
     @staticmethod
     def usage_dict(u: Any, model: str) -> dict:
-        """Extract token counts from an OpenAI usage object."""
-        details = getattr(u, "prompt_tokens_details", None)
-        return {
-            "model":             model,
-            "inputTokens":       int(getattr(u, "prompt_tokens",    0) or 0) if u else 0,
-            "outputTokens":      int(getattr(u, "completion_tokens", 0) or 0) if u else 0,
-            "cachedInputTokens": int(getattr(details, "cached_tokens", 0) or 0) if u else 0,
-        }
+        """Extract token counts — delegates to billing.extract_usage()."""
+        from billing.billing import extract_usage  # noqa: PLC0415
+        return extract_usage(u, model)
 
 
 # Module-level singleton — instantiated once, reused for all calls.

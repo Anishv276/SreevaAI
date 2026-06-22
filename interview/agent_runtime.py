@@ -12,7 +12,6 @@ from interview.agent_utils import (
 )
 from interview.interview_phases import (
     build_greeting_text,
-    build_warmup_directive,
     build_interview_directive,
 )
 from interview.interview_brief import (
@@ -28,17 +27,19 @@ from interview.agent_providers import (
     build_stt,
 )
 from interview.agent_persistence import (
-    flush_pending_manual_billing,
     generate_interview_report,
     generate_interview_summary,
     get_interview_context,
     mark_interview_started,
     persist_answer_scores,
-    persist_interview_billing_snapshot,
-    persist_org_manual_billing_usage,
-    persist_org_usage_metrics,
     persist_transcript,
     update_interview_status,
+)
+from billing.billing import (
+    flush_billing as flush_pending_manual_billing,
+    record_manual_usage as persist_org_manual_billing_usage,
+    save_interview_billing as persist_interview_billing_snapshot,
+    save_org_usage_metrics as persist_org_usage_metrics,
 )
 from openai import AsyncOpenAI
 from pydantic import BaseModel, field_validator
@@ -486,12 +487,8 @@ async def _generate_probe_directive(
                 if getattr(chunk, "usage", None):
                     _usage = chunk.usage
         if usage_sink and _usage:
-            usage_sink({
-                "model":             llm_model,
-                "inputTokens":       int(getattr(_usage, "prompt_tokens", 0) or 0),
-                "outputTokens":      int(getattr(_usage, "completion_tokens", 0) or 0),
-                "cachedInputTokens": int(getattr(getattr(_usage, "prompt_tokens_details", None), "cached_tokens", 0) or 0),
-            })
+            from billing.billing import extract_usage as _extract_usage  # noqa: PLC0415
+            usage_sink(_extract_usage(_usage, llm_model))
         generated = "".join(chunks).strip()
         if not generated:
             raise ValueError("empty probe directive")
@@ -698,12 +695,8 @@ async def _generate_move_on_directive(
                 if getattr(chunk, "usage", None):
                     _usage = chunk.usage
         if usage_sink and _usage:
-            billing_usage = {
-                "model": llm_model,
-                "inputTokens": int(getattr(_usage, "prompt_tokens", 0) or 0),
-                "outputTokens": int(getattr(_usage, "completion_tokens", 0) or 0),
-                "cachedInputTokens": int(getattr(getattr(_usage, "prompt_tokens_details", None), "cached_tokens", 0) or 0),
-            }
+            from billing.billing import extract_usage as _extract_usage  # noqa: PLC0415
+            billing_usage = _extract_usage(_usage, llm_model)
             if billing_usage["inputTokens"] or billing_usage["outputTokens"] or billing_usage["cachedInputTokens"]:
                 usage_sink(billing_usage)
         generated = "".join(chunks).strip()
@@ -1382,6 +1375,13 @@ async def entrypoint(ctx: JobContext):
         *_brief_skills[:6],
         *[t.title for t in _interview_brief.topic_pool if t.topic_type in ("project", "work")][:4],
     ]))
+    # Full keyword set for phonetic registration: all topic titles + every tech_stack entry + JD skills
+    _tts_keywords: list[str] = list(dict.fromkeys([
+        *[t.title for t in _interview_brief.topic_pool],
+        *[tech for t in _interview_brief.topic_pool for tech in (t.tech_stack or [])],
+        *(_jd_skills or []),
+        *(_jd_nice or []),
+    ]))
     logger.info(
         "[BRIEF] ✓ Generated | band=%s | anchor=%r | topics=%d",
         _interview_brief.candidate_band,
@@ -1408,8 +1408,9 @@ async def entrypoint(ctx: JobContext):
         f"FOCUS: {', '.join(_interview_brief.focus_areas)}\n"
         f"RED FLAGS: {', '.join(_interview_brief.red_flags)}\n"
     )
-    # Inject dynamic skills/tools from brief topic pool into the phonetic transformer
-    tts_phonetic_processor.add_tools(base_coverage_items)
+    # Register all session keywords with the phonetic processor
+    tts_phonetic_processor.add_keywords(_tts_keywords)
+    logger.info("[TTS_PHONETIC] Registered %d keywords for this session", len(_tts_keywords))
     interview_directive_cached = build_interview_directive(
         band=candidate_band,
         resume_brief=None,
@@ -1455,7 +1456,6 @@ async def entrypoint(ctx: JobContext):
         candidate_name=candidate_first_name or candidate_name,
         job_title=job_title,
         time_limit_mins=time_limit_mins,
-        candidate_band=candidate_band,
         ai_name=_compact_optional(ctx_data.aiName),
         org_name=_compact_optional(ctx_data.orgName),
         org_location=_compact_optional(ctx_data.orgLocation),
@@ -1475,11 +1475,8 @@ async def entrypoint(ctx: JobContext):
     chat_ctx = llm.ChatContext()
     chat_ctx.add_message(role="system", content=system_prompt)
     chat_ctx.add_message(role="system", content=interview_directive_cached)
-    warmup_directive = build_warmup_directive(job_title=job_title, candidate_name=candidate_first_name or candidate_name)
-    chat_ctx.add_message(role="system", content=warmup_directive)
-    logger.info("[FLOW] System prompt ready  greeting  warmup  interview")
+    logger.info("[FLOW] System prompt ready  greeting  interview")
     logger.debug("[SYSTEM_PROMPT] Full system prompt:\n%s", system_prompt)
-    logger.debug("[WARMUP_DIRECTIVE] Content:\n%s", warmup_directive)
     logger.debug("[INTERVIEW_DIRECTIVE] Content:\n%s", interview_directive_cached)
     ctx.proc.userdata["candidate_band"] = candidate_band
     def _build_flux_session_keyterms() -> list[str]:
@@ -1599,11 +1596,7 @@ async def entrypoint(ctx: JobContext):
     # turn detector needed. turn_detection="stt" tells LiveKit to use Flux's EOT events.
     logger.info("[TURN_DETECTOR] Flux native EOT active (engine=%s)", getattr(stt_plugin, "_hr_stt_engine", "flux"))
     ai_name = ctx_data.aiName or "Ishita"
-    welcome_text = build_greeting_text(
-        candidate_first_name or candidate_name,
-        ai_name,
-        job_title,
-    )
+    welcome_text = build_greeting_text(candidate_first_name or candidate_name, ai_name)
     logger.info("[FLOW] Greeting precomputed during launching phase")
     session_kwargs = {
         "stt": stt_plugin,
@@ -3382,11 +3375,7 @@ async def entrypoint(ctx: JobContext):
     inactivity_nudge_speaking = False
     first_agent_turn_committed_at: float | None = None
     llm_spoke_event = asyncio.Event()
-    # Extended to 15s: greeting TTS takes ~6s, candidate answers at ~7-10s, and
-    # LiveKit/STT replays the same fragment when each new agent turn starts.
-    # Short window (6s) only caught 2-word echoes; 15s blocks replays through warmup.
-    greeting_echo_suppression_secs = 15.0
-    greeting_delivered_at: float | None = None  # Track when greeting finishes
+    greeting_delivered_at: float | None = None
     def reset_inactivity_clock(start_waiting: bool, preserve_nudge_flags: bool = False) -> None:
         nonlocal awaiting_candidate_response, awaiting_candidate_since, \
             inactivity_nudge_sent_for_current_prompt, _nudge_count, _last_nudge_at

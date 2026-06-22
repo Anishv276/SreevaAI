@@ -8,38 +8,13 @@ The single stage covers resume projects/work and JD skills. Hard moments
 from __future__ import annotations
 from typing import Any
 _BriefType = Any
-def build_greeting_text(candidate_name: str, ai_name: str, job_title: str) -> str:
+def build_greeting_text(candidate_name: str, ai_name: str) -> str:
     """Fixed greeting — natural, warm, consistent across all sessions."""
     name = (candidate_name or "").strip().split()[0] if candidate_name else "there"
     ai = (ai_name or "").strip() or "your interviewer"
     return f"Hi {name}, this is {ai}, your interviewer for today. Let's have a great conversation together. How are you doing?"
 
 
-def build_warmup_directive(job_title: str = "", candidate_name: str = "") -> str:
-    """
-    Warmup directive — LLM generates a warm, role-specific intro + readiness check.
-    The LLM reads what the candidate just said and responds naturally.
-    """
-    role = job_title.strip() if job_title else "this role"
-    name = (candidate_name or "").strip().split()[0] if candidate_name else "you"
-    return "\n".join([
-        "[DO NOT SAY ALOUD -- INTERNAL INSTRUCTION]",
-        "[WARMUP PHASE]",
-        "",
-        "The candidate just responded to your greeting. Now generate your warmup response.",
-        "",
-        "YOUR RESPONSE MUST DO THREE THINGS IN ORDER:",
-        f"  1. If they asked how you are doing: answer naturally. Say something like 'I'm doing great, {name},' or 'Doing well, thanks.' Keep it one short phrase. Do NOT skip this if they asked.",
-        f"  2. Give a warm one-line intro to the interview: mention you'd like to learn about their experience and what they bring to the {role} role. Keep it conversational, not corporate.",
-        "  3. Ask if they're ready to begin. One short direct question. Nothing more.",
-        "",
-        "RULES:",
-        "  - Three things only. Total response: 2-3 short sentences max.",
-        "  - Sound like a real person, not an HR script.",
-        "  - NEVER say: Absolutely, Great to hear, Thanks for sharing, Certainly, Wonderful.",
-        "  - NEVER mention projects, resume, skills, companies, or specific role requirements yet.",
-        "  - Do NOT start the interview. Wait for them to confirm they're ready.",
-    ])
 def _build_custom_questions_block(custom_questions: list[str] | None) -> str:
     cqs = [q.strip() for q in (custom_questions or []) if q.strip()]
     if not cqs:
@@ -114,29 +89,6 @@ def build_interview_directive(
         f"{_first_q_rule}\n"
         f"ONE question only. Stay on {anchor_name} until a [NEXT_TURN_DIRECTIVE] tells you to move."
     )
-    # -- Band-aware instinct ---------------------------------------------------
-    band_instinct = {
-        "fresher": (
-            "They're early-career. You want to understand HOW they think, not just what they've done.\n"
-            "Look for: did they understand why they built what they built? Can they explain a decision they made?\n"
-            "If they're vague, try: 'Walk me through one specific day of work on that.'"
-        ),
-        "mid": (
-            "They should have real ownership. Push past team language -- you want their specific contribution.\n"
-            "Look for: what they decided, what broke, what they'd do differently.\n"
-            "If they say 'we', ask: 'What was specifically yours in that?'"
-        ),
-        "experienced": (
-            "Expect depth and specifics. Vague answers are a red flag -- probe them.\n"
-            "Look for: end-to-end ownership, tradeoffs, real consequences of their decisions.\n"
-            "If an answer is too clean, ask what went wrong."
-        ),
-        "senior": (
-            "Peer-level conversation. You want strategic judgment and real stakes.\n"
-            "Look for: how they influenced others, what they built that outlasted them, hard calls they made.\n"
-            "Challenge their decisions -- seniors should defend them confidently."
-        ),
-    }.get(band, "Probe for real ownership and specific decisions, not summaries.")
     cq_block = _build_custom_questions_block(custom_questions)
     # Skills block — when brief is available, use its skill TopicItems directly
     # (richer: per-skill probe_focus, source, why_relevant). Fall back to
@@ -338,16 +290,13 @@ def build_interview_directive(
         f"MANDATORY QUOTA (complete all before wrap-up -- track quietly, never announce):\n"
         f"{mandatory_quota}\n\n"
         f"OPENING MOVE: {opening}\n\n"
-        f"YOUR INSTINCT FOR THIS CANDIDATE ({band.upper()}):\n{band_instinct}\n"
         f"{skills_block}"
         f"{cq_block}\n"
         f"HOW TO MOVE:\n"
-        f"  -> Always follow the [NEXT_TURN_DIRECTIVE] when present -- it tells you exactly what to do next.\n"
+        f"  -> Always follow the [NEXT_TURN_DIRECTIVE] when present -- it overrides everything below.\n"
         f"  -> Start with the anchor. Follow what they say -- a tool, a decision, something that broke.\n"
         f"{how_to_move_extra}"
         f"  -> When a skill comes up naturally in a project story, drill into it right there -- no need to wait.\n"
-        f"  -> ONE question per turn ONLY -- never bundle two questions together with 'and' or commas.\n"
-        f"  -> Short, warm, direct.\n"
         f"  -> Do NOT wrap up or say goodbye until the system signals you to.\n\n"
         f"IF TOPICS RUN DRY -- keep going with adaptive questions (pick what fits for {band.upper()}):\n"
         f"{_dry_run_questions}\n"

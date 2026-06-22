@@ -53,17 +53,6 @@ _BAND_SATURATION: dict[str, dict[str, dict]] = {
     },
 }
 
-# Signal penalties/bonuses applied to saturation contribution
-_SIGNAL_MODIFIERS: dict[str, float] = {
-    "ownership_ambiguous":    -0.30,
-    "example_evaded":         -0.30,
-    "depth_insufficient":     -0.20,
-    "surface_answer":         -0.20,
-    "tech_claim_unverified":  -0.30,
-    "claim_not_demonstrated": -0.25,
-    "new_tech_thread":        +0.20,  # positive signal — candidate showed initiative
-}
-
 
 # ---------------------------------------------------------------------------
 # TopicState — per-topic saturation tracking
@@ -121,8 +110,7 @@ class TopicState:
         return self.consecutive_low_yield >= self.dry_topic_cap
 
     def add_contribution(self, weighted: float, signal: str | None, turn: int | None = None) -> None:
-        signal_modifier = _SIGNAL_MODIFIERS.get(signal or "", 0.0)
-        contribution = max(0.0, _score_to_contribution(weighted) + signal_modifier)
+        contribution = max(0.0, _score_to_contribution(weighted))
         effective_base = self.base_turn_credit if contribution > 0.0 else 0.0
         self.saturation_score += effective_base + contribution
         self.follow_up_turns += 1
