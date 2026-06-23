@@ -1,10 +1,20 @@
 import { NextResponse } from "next/server";
 import { Queue } from "bullmq";
-import redisConnection from "@/lib/redis";
+import redisConnection, { getBullPrefix } from "@/lib/redis";
 import { JD_EXTRACTION_QUEUE_NAME } from "@/lib/jd-extraction";
 import { resumeQueue } from "@/lib/queue";
 import { recordOrgBillingUsage } from "@/lib/usage-metrics";
 import { getSession } from "@/lib/auth";
+
+async function getJdResultFromRedis(jobId: string) {
+  try {
+    const raw = await redisConnection.get(`jd-result:${jobId}`);
+    if (!raw) return null;
+    return JSON.parse(raw) as Record<string, any>;
+  } catch {
+    return null;
+  }
+}
 function hydrateJdExtraction(payload: { data?: Record<string, any> }) {
     return payload.data && typeof payload.data === "object" ? payload.data : {};
 }
@@ -26,7 +36,7 @@ export async function GET(
         return NextResponse.json({ error: "Not authorized" }, { status: 401 });
     }
     const callerOrgId = session.role === "SUPER_ADMIN" ? null : (session.orgId ?? null);
-    const queue = new Queue(JD_EXTRACTION_QUEUE_NAME, { connection: redisConnection });
+    const queue = new Queue(JD_EXTRACTION_QUEUE_NAME, { connection: redisConnection, prefix: getBullPrefix() });
     try {
         const readJob = async (candidateQueue: Queue, source: "jd" | "resume") => {
             const job = await candidateQueue.getJob(jobId);
@@ -102,6 +112,12 @@ export async function GET(
         const resumeResult = await readJob(resumeQueue, "resume");
         if (resumeResult) {
             return NextResponse.json(resumeResult, { status: resumeResult.status === "failed" ? 200 : 200 });
+        }
+        // BullMQ may have already evicted the completed job — check the plain Redis
+        // key written by the worker immediately after extraction finished.
+        const cachedResult = await getJdResultFromRedis(jobId);
+        if (cachedResult) {
+            return NextResponse.json(cachedResult);
         }
         return NextResponse.json({ status: "not_found" }, { status: 404 });
     } finally {

@@ -27,8 +27,8 @@ export type JdExtractionJobResult = {
   usage?: any;
 };
 const defaultJobOptions = {
-  removeOnComplete: { count: 10 }, // keep briefly for status polling
-  removeOnFail: { count: 25 },
+  removeOnComplete: { age: 300 }, // keep 5 min so frontend polling can read the result
+  removeOnFail: { age: 300 },
 };
 let _queue: Queue | null = null;
 function getQueue(): Queue {
