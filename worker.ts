@@ -16,6 +16,7 @@ import { recordOrgBillingUsage } from "./lib/usage-metrics";
 import { buildInterviewLink } from "./lib/interview-links";
 import { Prisma } from "@prisma/client";
 import { recordingRetentionQueue, invitationDeliveryQueue } from "./lib/queue";
+import { JD_EXTRACTION_QUEUE_NAME } from "./lib/jd-extraction";
 import {
   computeRecordingRetentionDueAt,
   deleteRecordingAsset,
@@ -643,7 +644,9 @@ async function processResumeScreeningJob(job: any) {
             cachedInputTokens: usageExtract.cachedInputTokens || 0,
             eventId: `resume-extraction:${job.id}`,
           },
-        }).catch(() => {});
+        }).catch((err: unknown) => {
+          console.error(`[BILLING] resumeExtraction billing failed for org=${orgId} job=${job.id}:`, err);
+        });
       }
       if (usageScore) {
         await recordOrgBillingUsage({
@@ -656,7 +659,9 @@ async function processResumeScreeningJob(job: any) {
             cachedInputTokens: usageScore.cachedInputTokens || 0,
             eventId: `resume-report:${job.id}`,
           },
-        }).catch(() => {});
+        }).catch((err: unknown) => {
+          console.error(`[BILLING] resumeReport billing failed for org=${orgId} job=${job.id}:`, err);
+        });
       }
     }
 
@@ -1631,6 +1636,101 @@ if (isQueueEnabled("jd-upload")) {
   ));
   jdUploadWorker.on("failed", (job, err) => {
     console.log(`[FATAL] JD Upload Job ${job?.id} failed: ${err.message}`);
+  });
+}
+
+/**
+ * 📄 JD EXTRACTION WORKER
+ * Processes jobs enqueued by /api/extract for JD files/text.
+ * Calls extract_pdf.py with doc_type=JD and returns { text, data, usage }.
+ * No DB writes — caller polls /api/extract/status/[jobId] for the result.
+ */
+if (isQueueEnabled("jd-extraction")) {
+  const jdExtractionWorker = trackWorker("jd-extraction", new Worker(
+    JD_EXTRACTION_QUEUE_NAME,
+    async (job) => {
+      console.log(`\n=================================================`);
+      console.log(`▶ [JD-EXTRACTION WORKER] PID=${process.pid} Job id="${job.id}" kind="${job.data?.kind}"`);
+      console.log(`=================================================\n`);
+      const { kind, orgOpenAIModel = "gpt-4.1-mini", orgId = null } = job.data || {};
+      if (!kind) throw new Error("Invalid JD extraction job: missing kind");
+
+      let text: string;
+      let tempFilePath: string | null = null;
+
+      if (kind === "text") {
+        // URL-scraped text — already extracted, just pass as stdin-free direct call
+        text = job.data.text || "";
+      } else if (kind === "file") {
+        // Buffer was serialised by BullMQ — reconstruct it
+        const raw = job.data.buffer;
+        const buf: Buffer = Buffer.isBuffer(raw) ? raw : Buffer.from(raw?.data ?? raw);
+        const ext = String(job.data.fileName || "jd.pdf").match(/\.[a-z0-9]+$/i)?.[0] || ".pdf";
+        tempFilePath = join(tmpdir(), `jd_extract_${String(job.id)}_${Date.now()}${ext}`);
+        await writeFile(tempFilePath, buf);
+        text = ""; // not used for file path
+      } else {
+        throw new Error(`Unknown JD extraction kind: ${kind}`);
+      }
+
+      try {
+        let result: any;
+        if (kind === "file" && tempFilePath) {
+          result = await runPythonJson([
+            "scripts/extract_pdf.py",
+            tempFilePath,
+            "JD",
+            orgOpenAIModel,
+          ], 120_000);
+        } else {
+          // text/url kind — write to a temp .txt file
+          const txtPath = join(tmpdir(), `jd_text_${String(job.id)}_${Date.now()}.txt`);
+          await writeFile(txtPath, text, "utf8");
+          try {
+            result = await runPythonJson([
+              "scripts/extract_pdf.py",
+              txtPath,
+              "JD",
+              orgOpenAIModel,
+            ], 120_000);
+          } finally {
+            await unlink(txtPath).catch(() => {});
+          }
+        }
+        if (result?.error) throw new Error(result.error);
+        if (orgId && result?.usage) {
+          await recordOrgBillingUsage({
+            orgId,
+            feature: "jdExtraction",
+            usage: {
+              model: result.usage.model,
+              inputTokens: result.usage.inputTokens || 0,
+              outputTokens: result.usage.outputTokens || 0,
+              cachedInputTokens: result.usage.cachedInputTokens || 0,
+              eventId: `jd-extraction:${job.id}`,
+            },
+          });
+        }
+        console.log(`[JD-EXTRACTION WORKER] Job ${job.id} completed`);
+        return {
+          text: result?.text || "",
+          data: result?.data || {},
+          usage: result?.usage || {},
+        };
+      } finally {
+        if (tempFilePath) await unlink(tempFilePath).catch(() => {});
+      }
+    },
+    {
+      connection: redisConnection,
+      prefix: BULL_PREFIX,
+      concurrency: 3,
+      removeOnComplete: { count: 10 },
+      removeOnFail: { count: 25 },
+    }
+  ));
+  jdExtractionWorker.on("failed", (job, err) => {
+    console.error(`[JD-EXTRACTION WORKER] Job ${job?.id} failed: ${err.message}`);
   });
 }
 

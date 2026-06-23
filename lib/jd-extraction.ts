@@ -1,5 +1,5 @@
 import { Queue } from "bullmq";
-import redisConnection from "./redis";
+import redisConnection, { getBullPrefix } from "./redis";
 export const JD_EXTRACTION_QUEUE_NAME = "jd-extraction";
 export type JdExtractionJobData =
   | {
@@ -35,6 +35,7 @@ function getQueue(): Queue {
   if (!_queue) {
     _queue = new Queue(JD_EXTRACTION_QUEUE_NAME, {
       connection: redisConnection,
+      prefix: getBullPrefix(),
       defaultJobOptions,
     });
   }

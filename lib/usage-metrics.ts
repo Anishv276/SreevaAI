@@ -65,7 +65,9 @@ function runBillingCommand(command: string, payload: Record<string, unknown>) {
         resolve();
         return;
       }
-      reject(new Error(parsed?.error || stderr || `billing command ${command} failed with code ${code}`));
+      const errorMsg = parsed?.error || stderr?.trim() || `billing command ${command} failed with code ${code}`;
+      console.error(`[usage-metrics] billing subprocess error: ${errorMsg}`);
+      reject(new Error(errorMsg));
     });
     child.stdin.end(JSON.stringify(payload));
   });

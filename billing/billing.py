@@ -1086,6 +1086,19 @@ class BillingRepository:
             raise
 
     @classmethod
+    async def record_org_billing_usage(cls, org_id: str, feature: str, usage: dict[str, Any]) -> None:
+        """Record a single external LLM usage event and flush it to DB immediately.
+
+        Used by non-agent callers (worker.ts JD/resume extraction) that spawn this
+        script as a subprocess and cannot share the in-process PendingBuffer across
+        process boundaries.
+        """
+        if not org_id or not usage or not DATABASE_URL:
+            return
+        PendingBuffer.push(org_id, feature, usage)
+        await cls.flush_pending(org_id)
+
+    @classmethod
     async def deduct_quota(cls, app_id: str, duration_seconds: Optional[float] = None) -> None:
         """Atomically deduct one interview quota slot. Idempotent via billedAt guard."""
         if not DATABASE_URL:
@@ -1294,7 +1307,7 @@ async def _main_cli() -> int:
         payload = json.loads(sys.stdin.read() or "{}")
         if command == "record-org-usage":
             await record_external_billing_usage(payload.get("orgId"), payload.get("feature", "interview"), payload.get("usage") or {})
-            _json_result(True)
+            _json_result(True, result="usage recorded")
             return 0
         if command == "deduct-interview-quota":
             await deduct_interview_quota(payload.get("appId") or payload.get("applicationId"), payload.get("durationSeconds"))

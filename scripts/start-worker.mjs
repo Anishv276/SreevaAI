@@ -24,7 +24,7 @@ const TSX_BIN = process.platform === "win32"
 const ENV_FILE = join(ROOT, ".env");
 
 const QUEUES = process.env.WORKER_QUEUES
-  || "resume-processing,invitation-delivery-queue,interview-start,interview-finalization,interview-snapshots,interview-recording,recording-retention-cleanup,jd-upload";
+  || "resume-processing,invitation-delivery-queue,interview-start,interview-finalization,interview-snapshots,interview-recording,recording-retention-cleanup,jd-upload,jd-extraction";
 
 function killTree(pid) {
   try {

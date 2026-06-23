@@ -539,27 +539,14 @@ export function HardwareCheck({
         };
         mr.start(250);
     }, [autoStopAndVerify, clearMicTimers]);
-    // Verify the mic check. Strategy:
-    //   1. If Web Speech API already captured a transcript → check it immediately (zero network latency).
-    //   2. Only call Deepgram if Web Speech gave nothing (e.g. browser blocked Web Speech, no mic data).
+    // Verify the mic check: send audio to Deepgram, match words, verify.
     const sendToDeepgram = useCallback(async (chunks: Blob[], mimeType: string) => {
         setIsVerifying(true);
         let timeoutId: number | null = null;
-        // Read from refs — never stale inside useCallback
-        const wsTranScript = liveTranscriptRef.current.trim() || sessionFinalTextRef.current.trim();
         const expand = (s: string) => s
             .replace(/i'm/gi, "i am").replace(/i've/gi, "i have").replace(/i'll/gi, "i will")
             .replace(/it's/gi, "it is").replace(/that's/gi, "that is").replace(/\bm\b/gi, "am");
         const norm = (s: string) => expand(s).toLowerCase().replace(/[^a-z\s]/g, " ").replace(/\s+/g, " ").trim();
-        const checkMatch = (transcript: string) => {
-            const spokenNorm = norm(transcript);
-            const targetNorm = norm(verifiedPhraseRef.current);
-            const targetWords = targetNorm.split(" ").filter(Boolean);
-            const spokenWords = new Set(spokenNorm.split(" ").filter(Boolean));
-            const matchedCount = targetWords.filter(w => spokenWords.has(w)).length;
-            return matchedCount >= Math.ceil(targetWords.length * 0.8);
-        };
-        // --- Deepgram Verification ---
         try {
             const audioBlob = await recordedAudioToLinear16Pcm(chunks, mimeType);
             const formData = new FormData();
@@ -585,7 +572,6 @@ export function HardwareCheck({
             }
         } catch (err) {
             console.error("[verify-speech]", err);
-            // Deepgram also failed — mic check simply doesn't verify; user sees retry prompt
         } finally {
             if (timeoutId !== null) window.clearTimeout(timeoutId);
             setIsVerifying(false);
@@ -596,19 +582,6 @@ export function HardwareCheck({
     }, [applicationId, clearMicTimers, interviewToken]);
     useEffect(() => {
         sendToDeepgramRef.current = sendToDeepgram;
-    }, [sendToDeepgram]);
-    // Stop recording and trigger verification
-    const stopAndVerify = useCallback(() => {
-        const mr = mediaRecorderRef.current;
-        if (!mr) return;
-        setIsRecording(false);
-        if (mr.state === "inactive") {
-            // Already stopped — use whatever chunks we have
-            sendToDeepgram(audioChunksRef.current, mr.mimeType);
-            return;
-        }
-        mr.onstop = () => sendToDeepgram(audioChunksRef.current, mr.mimeType);
-        try { mr.stop(); } catch (err) { console.error("[Record] stop error:", err); setIsVerifying(false); }
     }, [sendToDeepgram]);
     //  Audio visualizer
     const startVisualizer = useCallback(() => {
@@ -1009,10 +982,10 @@ export function HardwareCheck({
                                                     </div>
                                                 </div>
                                             </div>
-                                            {/* Live transcript — show target words with match highlighting */}
+                                            {/* Status text */}
                                             <p className="text-[11px] text-center font-semibold tracking-wide min-h-[18px]">
                                                 {isVerifying ? (
-                                                    <span className="text-gray-400 flex items-center justify-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> Verifying voice...</span>
+                                                    <span className="text-gray-400 flex items-center justify-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> Verifying...</span>
                                                 ) : liveTranscript ? (
                                                     (() => {
                                                         const targetWords = (verifiedPhrase || "").toLowerCase().replace(/[^a-z\s]/g, "").split(/\s+/).filter(Boolean);
@@ -1020,30 +993,30 @@ export function HardwareCheck({
                                                         const matchedCount = targetWords.filter(w => spokenSet.has(w)).length;
                                                         return (
                                                             <span className="text-orange-500 font-bold">
-                                                                {matchedCount}/{targetWords.length} words heard
+                                                                {matchedCount}/{targetWords.length} words matched
                                                             </span>
                                                         );
                                                     })()
                                                 ) : isRecording ? (
-                                                    <span className="text-orange-400 animate-pulse">Listening... read the sentence and click Stop</span>
+                                                    <span className="text-orange-400 animate-pulse">Listening...</span>
                                                 ) : (
-                                                    <span className="text-gray-300">Press Record, read the sentence, then press Stop</span>
+                                                    <span className="text-gray-300">Press Record and speak</span>
                                                 )}
                                             </p>
                                             {/* Mismatch error + retry */}
                                             {liveTranscript && !micVerified && !isVerifying && !isRecording && (
                                                 <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
                                                     className="flex flex-col items-center gap-1.5">
-                                                    <p className="text-[10px] text-red-500 font-semibold text-center">Didn&apos;t match. Please say the exact sentence and try again.</p>
+                                                    <p className="text-[10px] text-red-500 font-semibold text-center">Didn&apos;t match. Try again.</p>
                                                     <button
                                                         onClick={() => { retryMic(); }}
                                                         className="flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[10px] font-bold border border-gray-200 text-gray-600 bg-white hover:bg-gray-50 transition-all shadow-sm"
                                                     >
-                                                        <RefreshCw className="w-3 h-3" /> Try Again
+                                                        <RefreshCw className="w-3 h-3" /> Retry
                                                     </button>
                                                 </motion.div>
                                             )}
-                                            {/* Record / Stop buttons */}
+                                            {/* Record button */}
                                             <div className="flex items-center justify-center gap-3">
                                                 {!isRecording ? (
                                                     <button
@@ -1054,19 +1027,11 @@ export function HardwareCheck({
                                                         <Mic className="w-3.5 h-3.5" /> Record
                                                     </button>
                                                 ) : (
-                                                    <button
-                                                        onClick={stopAndVerify}
-                                                        className="flex items-center gap-2 rounded-full px-5 py-2 text-xs font-bold bg-red-500 hover:bg-red-600 text-white shadow-sm transition-all"
-                                                    >
-                                                        <span className="w-2.5 h-2.5 bg-white rounded-[2px]" /> Stop & Verify
-                                                    </button>
+                                                    <div className="text-xs font-bold text-orange-500 animate-pulse flex items-center gap-2">
+                                                        <span className="w-2 h-2 bg-orange-500 rounded-full animate-pulse" />
+                                                        Recording...
+                                                    </div>
                                                 )}
-                                            </div>
-                                            {/* Next Step stays hidden until the microphone check passes */}
-                                            <div className="flex justify-end pt-3 border-t border-gray-50">
-                                                <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-300">
-                                                    Finish mic verification to unlock next step
-                                                </span>
                                             </div>
                                         </div>
                                     )}

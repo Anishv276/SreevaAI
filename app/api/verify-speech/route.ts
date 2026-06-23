@@ -193,21 +193,6 @@ export async function POST(req: NextRequest) {
             length: fluxResult.transcript.length,
             requestId: fluxResult.requestId || null,
         });
-        const durationSeconds = Math.max(0, Number(fluxResult.durationSeconds || 0));
-        if (durationSeconds > 0) {
-            await recordOrgBillingUsage({
-                orgId,
-                feature: "interview",
-                usage: {
-                    model: "verify-speech",
-                    sttRuns: 1,
-                    sttProvider: "DEEPGRAM",
-                    sttModel: DEEPGRAM_VERIFY_MODEL,
-                    sttAudioSeconds: durationSeconds,
-                    eventId: `verify-speech:${applicationId}:${fluxResult.requestId || Date.now()}`,
-                },
-            });
-        }
         const transcript: string = fluxResult.transcript;
         if (!transcript) {
             console.warn("[verify-speech] Empty transcript from Deepgram");
@@ -222,6 +207,10 @@ export async function POST(req: NextRequest) {
         const norm = (s: string) => expand(s).toLowerCase().replace(/[^a-z\s]/g, " ").replace(/\s+/g, " ").trim();
         const spokenNorm = norm(transcript);
         const targetNorm = norm(targetPhrase);
+        if (!targetNorm) {
+            console.error("[verify-speech] Target phrase normalized to empty");
+            return NextResponse.json({ transcript, matched: false, error: "invalid_target_phrase" });
+        }
         console.log("[verify-speech] normalized transcript evaluated", {
             spokenWordCount: spokenNorm.split(" ").filter(Boolean).length,
             targetWordCount: targetNorm.split(" ").filter(Boolean).length,
@@ -247,14 +236,15 @@ export async function POST(req: NextRequest) {
         const wordRatio = spokenWords.length / Math.max(1, targetWords.length);
         if (wordRatio > 3.5 && matchedCount < Math.ceil(targetWords.length * 0.8)) {
             console.warn("[verify-speech] Transcript too long vs target (possible noise)", { spokenWords: spokenWords.length, targetWords: targetWords.length });
-            return NextResponse.json({ transcript, matched: false, matchedCount: 0, total: targetWords.length });
+            return NextResponse.json({ transcript, matched: false, matchedCount, total: targetWords.length });
         }
         // 80% threshold — handles accent/contraction/minor mishearing
         const matched = matchedCount >= Math.ceil(targetWords.length * 0.8);
         console.log("[verify-speech] matched:", matchedCount, "/", targetWords.length, "=>", matched);
         return NextResponse.json({ transcript, matched, matchedCount, total: targetWords.length });
     } catch (err) {
-        console.error("[verify-speech] Unexpected error:", err);
-        return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        console.error("[verify-speech] Unexpected error:", errorMsg, err);
+        return NextResponse.json({ error: errorMsg }, { status: 500 });
     }
 }

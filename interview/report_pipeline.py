@@ -56,7 +56,7 @@ from interview.agent_runtime_support import LLM_MODEL, logger, DATABASE_URL
 # does NOT import report_pipeline)
 # ---------------------------------------------------------------------------
 from interview.agent_persistence import DatabasePool
-from billing.billing import record_manual_usage as _persist_billing
+from billing.billing import record_external_billing_usage as _persist_billing
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # SECTION 1 — Domain Models (Pydantic)
