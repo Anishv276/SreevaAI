@@ -28,8 +28,8 @@ _CARTESIA_DEFAULT_MODEL = "cartesia/sonic-3"
 _CARTESIA_DEFAULT_VOICE = "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"
 _ELEVENLABS_DEFAULT_MODEL = "eleven_turbo_v2_5"
 _PROVIDER_DEFAULTS: dict[str, Any] = {
-    "cartesia_speed":          0.92,
-    "sarvam_pace":             0.92,
+    "cartesia_speed":          1.0,
+    "sarvam_pace":             1.2,
     # bulbul:v3 -- per Sarvam docs (https://docs.sarvam.ai/api-reference-docs/text-to-speech/stream)
     # 22050 Hz is recommended for streaming (24000 is higher quality but slower to generate)
     "sarvam_v3_sample_rate":   22050,
@@ -81,6 +81,7 @@ def build_sarvam_tts(
     language: str = "en-IN",
     model: str = "bulbul:v3",
     voice_id: str = "priya",
+    dict_id: str | None = None,
 ):
     api_key = os.getenv("SARVAM_API_KEY")
     if not api_key:
@@ -131,6 +132,11 @@ def build_sarvam_tts(
         tts_kwargs["temperature"] = d["sarvam_temperature"]
         # enable_preprocessing is v2-only in the plugin's send_task — the plugin
         # silently drops it for v3. v3 always preprocesses server-side. No-op here.
+        # dict_id: server-side pronunciation dictionary (v3 only). Passes custom
+        # pronunciations (kubernetes, vite, etc.) so the TTS engine gets them right
+        # without any client-side text mangling.
+        if dict_id:
+            tts_kwargs["dict_id"] = dict_id
     # Return sarvam.TTS directly — fresh WS per turn, no persistent connection.
     # The persistent-WS manager caused "no audio frames" failures because Sarvam
     # closes the socket after each "final" event and reusing it produced a silent

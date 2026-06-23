@@ -1236,20 +1236,20 @@ export function HardwareCheck({
                             )}
                         </AnimatePresence>
                     </div>
-                    {/* Terms & Policy Footer — always visible at bottom of right card */}
-                    <p className="text-[10px] text-gray-400 text-center leading-relaxed pt-3 border-t border-gray-100 mt-2">
-                        By proceeding, you agree to our{" "}
-                        <a href="/terms" target="_blank" rel="noopener noreferrer" className="text-orange-500 hover:underline font-semibold">
-                            Terms of Service
-                        </a>{" "}
-                        and{" "}
-                        <a href="/privacy" target="_blank" rel="noopener noreferrer" className="text-orange-500 hover:underline font-semibold">
-                            Privacy Policy
-                        </a>
-                        . This session will be recorded and monitored for quality and verification purposes.
-                    </p>
                 </div>
             </div>
+            {/* Terms & Policy Footer — moved to bottom of cards */}
+            <p className="text-[11px] text-gray-400 text-center leading-relaxed mt-6 max-w-3xl animate-fadeIn px-4">
+                By proceeding, you agree to our{" "}
+                <a href="/terms" target="_blank" rel="noopener noreferrer" className="text-orange-500 hover:underline font-semibold">
+                    Terms of Service
+                </a>{" "}
+                and{" "}
+                <a href="/privacy" target="_blank" rel="noopener noreferrer" className="text-orange-500 hover:underline font-semibold">
+                    Privacy Policy
+                </a>
+                . This session will be recorded and monitored for quality and verification purposes.
+            </p>
         </div>
     );
 }

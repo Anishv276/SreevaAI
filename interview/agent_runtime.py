@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import time
 from typing import Optional, Any
 import re
@@ -1533,10 +1534,20 @@ async def entrypoint(ctx: JobContext):
         "CARTESIA":   build_cartesia_tts,
     }.get(org_tts_provider, build_cartesia_tts)
     logger.info(f"[TTS] Using %s  voice=%s model=%s", org_tts_provider, voice_id, org_tts_model)
+    # For Sarvam v3: resolve the pronunciation dictionary ID once per session.
+    # get_or_create_dict_id() returns the cached env-var value on subsequent calls
+    # (no extra API round-trip), so this is fast after first deployment.
+    _sarvam_dict_id: str | None = None
+    if org_tts_provider == "SARVAM":
+        from interview.sarvam_pronunciation_dict import get_or_create_dict_id as _get_dict_id
+        _sarvam_api_key = os.environ.get("SARVAM_API_KEY", "")
+        if _sarvam_api_key:
+            _sarvam_dict_id = await _get_dict_id(_sarvam_api_key)
     tts_plugin = _tts_builder(
         language=lang_codes["tts"],
         model=org_tts_model,
         voice_id=voice_id,
+        **({"dict_id": _sarvam_dict_id} if _sarvam_dict_id else {}),
     )
     plugin_tts_characters = 0
     plugin_tts_audio_seconds = 0.0
@@ -1617,9 +1628,12 @@ async def entrypoint(ctx: JobContext):
             ),
         ),
         "use_tts_aligned_transcript": False,
+        # _tts_acronym_transform is skipped for Sarvam: pronunciation is handled
+        # server-side via dict_id + enable_preprocessing (always-on in v3).
+        # Running it for Sarvam caused double-normalization and the letter-reading bug.
         "tts_text_transforms": [
             "filter_emoji",
-            _tts_acronym_transform,
+            *([_tts_acronym_transform] if org_tts_provider != "SARVAM" else []),
             _single_question_transform,
         ],
         "aec_warmup_duration": 0.5,

@@ -250,7 +250,8 @@
       "Bash(sleep 5 && tail -20 /tmp/next-dev.log)",
       "Bash(dd if=/dev/zero bs=1024 count=10)",
       "Bash(curl -s -X POST http://localhost:3000/api/verify-speech -F 'audio=@-;filename=test.pcm;type=application/octet-stream' -F targetPhrase=test -F applicationId=test-app -F interviewToken=test-token -H 'X-Forwarded-For: 127.0.0.1')",
-      "Bash(tail -10 /tmp/next-dev.log)"
+      "Bash(tail -10 /tmp/next-dev.log)",
+      "Bash(tail -30 /tmp/next-dev.log | grep -E \"Compiled|error|ERROR\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\vamsi\\OneDrive\\Desktop\\HR-updates\\scratch",
