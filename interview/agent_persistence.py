@@ -139,9 +139,9 @@ async def get_interview_context(app_id: str) -> dict:
     _QUERY = """
     SELECT a."fullName", a."resumeText", a."resumeData", d.title, d.role AS "role",
            d."extractedDetails", d."screeningCriteria", d."orgId" AS "orgId",
-           d.location AS "driveLocation", d."interviewLanguage", d."interviewQuestions",
+           d."interviewLanguage", d."interviewQuestions",
            COALESCE(d."voiceId", o."voiceId") AS "voiceId",
-           COALESCE(d."aiName", 'Ishitha') AS "aiName", o.name AS "orgName", NULL::text AS "orgLocation",
+           COALESCE(d."aiName", 'Ishitha') AS "aiName", o.name AS "orgName",
            o."deepgramModel", o."proctoringSignals",
            ev.provider AS "voiceProvider", ev.model AS "voiceModel",
            i.status AS "interviewStatus"
@@ -172,8 +172,6 @@ async def get_interview_context(app_id: str) -> dict:
                 "jd":                 _build_jd_from_extracted(row["extractedDetails"]),
                 "orgId":              row["orgId"],
                 "orgName":            row["orgName"],
-                "orgLocation":        row["orgLocation"],
-                "driveLocation":      row["driveLocation"],
                 "language":           row["interviewLanguage"],
                 "timeLimit":          FIXED_INTERVIEW_DURATION_MINUTES,
                 "voiceId":            row["voiceId"],
