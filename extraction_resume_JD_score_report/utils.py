@@ -128,6 +128,10 @@ def _postprocess_jd_output(jd_data) -> dict:
     hints.setdefault("green_flags_to_reward", [])
     hints.setdefault("red_flags_to_watch", [])
     jd_data["scoring_hints"] = hints
+    # Ensure job_title is never empty — fall back to role_level as a last resort
+    if not jd_data.get("job_title", "").strip():
+        role_level = jd_data.get("role_level", "")
+        jd_data["job_title"] = f"{role_level.capitalize()} Role".strip() if role_level else "Unknown Role"
     return jd_data
 
 

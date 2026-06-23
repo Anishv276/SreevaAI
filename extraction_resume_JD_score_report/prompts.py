@@ -67,6 +67,8 @@ EXTRACTION RULES:
 8. NO SOFT SKILLS AS CRITERIA unless the JD gives a concrete proof signal.
 9. EXPERIENCE: "2-4 years" → min_years:2, max_years:4. "5+" → min_years:5, max_years:null.
 10. SENIORITY: intern=0-1yr | junior=1-3yr | mid=3-5yr | senior=5+yr | lead=manages others | manager=explicit management
+11. JOB TITLE: Extract the exact job title/role name from the JD (e.g. "Senior Software Engineer", "Product Manager", "Data Analyst"). NEVER return empty string — if no explicit title, infer from responsibilities and seniority signals.
+12. ROLE LEVEL: Infer from the title and seniority signals if not explicit.
 
 13. SCORING HINTS:
     green_flags_to_reward: 2-5 concrete differentiators that make a candidate stand out.
