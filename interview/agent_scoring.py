@@ -62,39 +62,32 @@ SIGNAL_DEFINITIONS = {
     },
 }
 
-# Priority order — if the LLM sees multiple signals, it picks the highest priority one.
-SIGNAL_PRIORITY = [
-    "tech_claim_unverified",    # 1 — catches dishonesty early
-    "claim_not_demonstrated",   # 2 — unsupported assertion
-    "ownership_ambiguous",      # 3 — credit clarity
-    "example_evaded",           # 4 — most common dodge
-    "depth_insufficient",       # 5 — answered WHAT not HOW
-    "surface_answer",           # 6 — correct but hollow
-    "new_tech_thread",          # 7 — positive, follow the thread
-]
-
-
 def _build_signal_prompt_block() -> str:
-    """Builds the signal definitions block for the LLM scoring prompt."""
     lines = [
-        "-- SIGNALS --",
-        "Detect at most ONE signal. Pick the highest-priority one that clearly fired.",
-        "If none clearly fired, return signal: null and signal_reason: null.",
+        "-- SIGNAL DETECTION --",
+        "Detect the ONE signal that best explains what this answer is MISSING given what the question asked.",
+        "Do NOT pick based on a fixed order. Reason about the gap first, then name it.",
         "",
-        "Priority order (if multiple seem to apply, pick the first one in this list):",
+        "Step 1 — Understand the question intent:",
+        "  What was the interviewer actually trying to learn?",
+        "  (personal ownership? technical mechanics? a real example? hands-on proof?)",
+        "",
+        "Step 2 — Evaluate what the answer gave:",
+        "  What is present? What is absent? Does the answer satisfy what the question needed?",
+        "",
+        "Step 3 — Pick the signal that names the most important missing thing:",
     ]
-    for i, name in enumerate(SIGNAL_PRIORITY, 1):
-        defn = SIGNAL_DEFINITIONS[name]
-        lines.append(f"\n{i}. {name}")
-        lines.append(f"   WHAT IT MEANS: {defn['description']}")
-        lines.append(f"   EXAMPLE: {defn['example']}")
-        lines.append(f"   DO NOT FIRE IF: {defn['not_this']}")
+    for name, defn in SIGNAL_DEFINITIONS.items():
+        lines.append(f"\n  {name}")
+        lines.append(f"    FIRE WHEN: {defn['description']}")
+        lines.append(f"    DO NOT FIRE IF: {defn['not_this']}")
     lines += [
+        "",
+        "If nothing meaningful is missing, return signal: null and signal_reason: null.",
         "",
         "signal_reason: quote the EXACT words from their answer that caused the signal to fire.",
         "  Good: \"we built the pipeline, the team decided\" (3-10 words from their actual answer)",
         "  Bad:  \"candidate used team language\" (your description, not their words)",
-        "If signal is null, signal_reason must also be null.",
     ]
     return "\n".join(lines)
 
@@ -236,12 +229,7 @@ async def evaluate_answer(
                             "  OR for CRITICAL topics depth >= 8, OR candidate genuinely cannot answer.\n\n"
                             f"-- BAND: {candidate_band.upper()} --\n"
                             f"{_band_note}\n\n"
-                            f"{_signal_block}\n\n"
-                            "RULES:\n"
-                            "  - Score THIS answer only, not the candidate overall\n"
-                            "  - reason quotes actual words from their answer (max 8 words)\n"
-                            "  - signal and signal_reason are both null when action=MOVE_ON\n"
-                            "  - signal_reason must be a direct quote from their answer, not your summary"
+                            f"{_signal_block}"
                         ),
                     },
                     {
