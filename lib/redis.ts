@@ -44,6 +44,8 @@ export function getBullPrefix(): string {
   return process.env.BULLMQ_PREFIX?.trim() || "bull";
 }
 
+const isBuildPhase = process.env.npm_lifecycle_event === "build" || process.env.NEXT_PHASE === "phase-production-build";
+
 function createRedisConnection(): IORedis {
   // Always creates a FRESH connection — never returns the shared singleton.
   return new IORedis(getRedisUrl() || DEFAULT_REDIS_URL, {
@@ -57,7 +59,16 @@ function createRedisConnection(): IORedis {
 }
 export { createRedisConnection };
 let redisConnection: IORedis;
-if (process.env.NODE_ENV === "production") {
+if (isBuildPhase) {
+  // During `next build`, no Redis is available. Return a lazy stub so that
+  // module-level imports succeed without triggering DNS lookups.
+  redisConnection = new IORedis(getRedisUrl() || DEFAULT_REDIS_URL, {
+    maxRetriesPerRequest: null,
+    lazyConnect: true,
+    enableReadyCheck: false,
+    retryStrategy: () => null,
+  });
+} else if (process.env.NODE_ENV === "production") {
   redisConnection = createRedisConnection();
 } else {
   if (!(global as any)._redisConnection) {
