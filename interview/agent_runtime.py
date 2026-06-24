@@ -203,7 +203,7 @@ from interview.prompt_layers import (
     build_evaluation_layer_prompt,
     build_system_prompt,
 )
-FINAL_WINDOW_SECONDS = 45
+CLOSING_TRIGGER_SECS = 20   # fire goodbye at T-20s so interview ends exactly at time limit
 # Custom-question normalisation constants  module-level so they are allocated once.
 _CUSTOM_Q_PREFIXES: tuple[str, ...] = (
     "ask him about",
@@ -772,11 +772,6 @@ class InterviewAgent(Agent):
         return ""
     def _select_turn_temperature(self, chat_ctx: llm.ChatContext) -> tuple[float, str]:
         """Pick LLM temperature by turn role using lightweight prompt-state heuristics."""
-        final_window_signal = self._latest_system_message_with_marker(
-            chat_ctx, "[SYSTEM ALERT: FINAL WINDOW]"
-        )
-        if final_window_signal:
-            return (INTERVIEW_TEMPERATURE, "greeting_rapport_closing")
         short_directive = self._latest_system_message_with_marker(
             chat_ctx, "[SHORT_RESPONSE_DIRECTIVE"
         )
@@ -1667,8 +1662,7 @@ async def entrypoint(ctx: JobContext):
     turn_count = 0
     warmup_complete = False  # True after candidate confirms the short readiness check
     # Interview state
-    _final_no_new_question_guard = False
-    _time_guard_active = False          # True when <= 20s remain -- blocks eval + signals
+    _closing_triggered = False           # True when <= 20s remain -- blocks eval + signals
     _candidate_turn_since_last_assistant = True
     proctoring_events: list = []       # timeline of risk signals for final report
     # Note: browser-side proctoring (face, tab, hardware) is recorded directly
@@ -1689,7 +1683,6 @@ async def entrypoint(ctx: JobContext):
     _question_asked_at: float = 0.0
     _answer_received_at: float = 0.0
     _custom_q_reminder_fired: bool = False
-    _custom_q_final_reminder_fired: bool = False
     _covered_topic_keys = CoveredTopics()  # single source of truth — normalized lowercase keys
     # Topics whose CLOSING / reflection question has already been asked. One-shot per topic.
     # Read inside the PROBE directive builder to avoid asking the reflection question twice
@@ -2500,8 +2493,8 @@ async def entrypoint(ctx: JobContext):
                 # Eval never picks topics or builds directives.
                 from interview.eval_pipeline import run_eval_and_build_directive
                 # Time guard -- no new questions in final 20s
-                if _time_guard_active:
-                    logger.info("[TIME_GUARD] turn=%d skipped", turn_snapshot)
+                if _closing_triggered:
+                    logger.info("[CLOSING] eval skipped at turn=%d -- closing in progress", turn_snapshot)
                     agent._directive_ready.set()
                     return
                 # MOVE_ON race guard (EDGE CASE ONLY):
@@ -2705,7 +2698,7 @@ async def entrypoint(ctx: JobContext):
                     # full window: deepen strong topics -> JD scenarios -> soft questions.
                     # Only fall through to WRAP_UP when time is genuinely low OR every
                     # secondary avenue is used up.
-                    _secondary_buffer_secs = FINAL_WINDOW_SECONDS + 120  # keep ~2min of room
+                    _secondary_buffer_secs = CLOSING_TRIGGER_SECS + 120  # keep ~2min of room
                     if _next_topic is None and _remaining_total_seconds_now() > _secondary_buffer_secs:
                         _old_key = _topic_short_key(_old_topic or "")
                         _secondary = _select_secondary_topic(_old_key)
@@ -2755,9 +2748,13 @@ async def entrypoint(ctx: JobContext):
                             "All planned interview topics have been covered.\n"
                             "[COVERED TOPICS -- DO NOT RE-OPEN ANY OF THESE]\n"
                             f"{_covered_list}\n"
-                            "Ask ONE warm closing question such as 'Of everything we've discussed, "
-                            "what are you most proud of?' or 'Anything you wish I'd asked about?'\n"
-                            "HARD RULE: Do NOT re-open any topic in the list above."
+                            "Keep the conversation going naturally. Ask ONE light follow-up such as "
+                            "'What kind of work are you most excited about right now?' or "
+                            "'Is there anything you wish we'd had more time to talk about?'\n"
+                            "HARD RULES:\n"
+                            "- Do NOT re-open any covered topic.\n"
+                            "- Do NOT say goodbye, thank you, all the best, or any closing phrase.\n"
+                            "- The system will close the interview at the right moment."
                         )
                         remove_system_messages_multi(chat_ctx, ("[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT"))
                         chat_ctx.add_message(role="system", content=_directive)
@@ -3392,13 +3389,10 @@ async def entrypoint(ctx: JobContext):
     greeting_delivered_at: float | None = None
     def reset_inactivity_clock(start_waiting: bool, preserve_nudge_flags: bool = False) -> None:
         nonlocal awaiting_candidate_response, awaiting_candidate_since, \
-            inactivity_nudge_sent_for_current_prompt, _nudge_count, _last_nudge_at
+            inactivity_nudge_sent_for_current_prompt
         awaiting_candidate_response = start_waiting
         if start_waiting:
             if preserve_nudge_flags and awaiting_candidate_since is not None:
-                # Scripted nudges make the agent speak briefly, but they should not
-                # reset the original silence timer. Keep measuring inactivity from
-                # the candidate's last real opportunity to answer.
                 pass
             else:
                 awaiting_candidate_since = time.monotonic()
@@ -3406,8 +3400,6 @@ async def entrypoint(ctx: JobContext):
             awaiting_candidate_since = None
         if not preserve_nudge_flags:
             inactivity_nudge_sent_for_current_prompt = False
-            _nudge_count = 0
-            _last_nudge_at = 0.0
         if start_waiting:
             logger.debug("[NUDGE] Inactivity clock started (awaiting candidate response)")
         else:
@@ -3577,33 +3569,20 @@ async def entrypoint(ctx: JobContext):
     disconnected_task = asyncio.create_task(disconnect_event.wait())
     total_seconds = time_limit_mins * 60
     # Inactivity timing:
-    #   10s silence -> gentle nudge
-    #   20s silence -> thinking-out-loud prompt
-    #   30s silence -> stronger help prompt
-    #   50s silence -> termination warning
-    #   60s silence -> end call
-    INACTIVITY_NUDGE_SECS = 10
-    INACTIVITY_NUDGE_INTERVAL = 10
-    INACTIVITY_NUDGE_MAX = 3         # 10s, 20s, 30s before warning
-    INACTIVITY_WARNING_SECS = 50
-    INACTIVITY_END_SECS = 60
-    TIME_GUARD_SECS = 20             # final 20s: block eval/signals, fire goodbye
-    final_timeout_announced = False
-    _nudge_count = 0                 # how many soft nudges already sent this turn
-    _last_nudge_at: float = 0.0      # monotonic time of last nudge sent
+    #   7s  silence -> soft nudge
+    #   15s silence -> warning
+    #   25s silence -> end call
+    INACTIVITY_NUDGE_SECS = 7
+    INACTIVITY_WARNING_SECS = 15
+    INACTIVITY_END_SECS = 25
     _name = candidate_first_name or candidate_name
-    _SOFT_NUDGES = [
-        f"Take your time, {_name}. I'm here when you're ready.",
-        "No rush at all. If it helps, feel free to think out loud.",
-        f"Are you still with me, {_name}? Just let me know if you need me to repeat the question.",
-    ]
+    _SOFT_NUDGE_TEXT = f"Take your time, {_name}. I'm here when you're ready."
     _INACTIVITY_WARNING_TEXT = (
-        f"It looks like you might have stepped away, {_name}. "
-        "I'll go ahead and pause our interview shortly if I don't hear from you."
+        f"Are you still there, {_name}? I'll go ahead and wrap up shortly if I don't hear from you."
     )
     _INACTIVITY_END_TEXT = (
-        "I'm going to end the session here since I haven't heard back. "
-        "Thank you so much for your time today."
+        f"I'll go ahead and end the session here. "
+        f"It was great speaking with you, {_name}. All the best!"
     )
     async def _deliver_nudge(text: str) -> None:
         # Scripted speech should not behave like a new interview question. Preserve
@@ -3674,81 +3653,29 @@ async def entrypoint(ctx: JobContext):
                 else:
                     logger.info("[FLOW] Custom Q 75%% checkpoint  all custom questions already asked")
                 _custom_q_reminder_fired = True
-        # Final-window custom question reminder  fires when <60s remain if any still unasked.
-        # At this point it's urgent: ask NOW, not gradually.
-        if (
-            warmup_complete
-            and _custom_questions
-            and not _custom_q_final_reminder_fired
-            and not is_agent_speaking
-            and remaining <= 60.0
-        ):
-            _unasked_cqs_final = [f"{i+1}. {cq.raw}" for i, cq in enumerate(_custom_questions) if not cq.asked]
-            if _unasked_cqs_final:
-                remove_system_messages(chat_ctx, "[CUSTOM Q REMINDER]")
-                chat_ctx.add_message(
-                    role="system",
-                    content=(
-                        f"[CUSTOM Q REMINDER  DO NOT SAY ALOUD]\n"
-                        f"URGENT  less than 60 seconds remain. These recruiter-required questions have NOT been asked yet. "
-                        f"Ask them immediately. Keep each one brief and natural:\n"
-                        f"{chr(10).join(_unasked_cqs_final)}"
-                    ),
-                )
-                logger.info(
-                    "[FLOW] Custom Q final-window reminder fired  %d still unasked",
-                    len(_unasked_cqs_final),
-                )
-            else:
-                logger.info("[FLOW] Custom Q final-window checkpoint  all custom questions covered")
-            _custom_q_final_reminder_fired = True
-        if (
-            remaining <= FINAL_WINDOW_SECONDS
-            and not _final_no_new_question_guard
-            and not is_agent_speaking
-        ):
-            _final_no_new_question_guard = True
-            chat_ctx.add_message(
-                role="system",
-                content=(
-                    f"[SYSTEM ALERT: FINAL WINDOW] Less than {FINAL_WINDOW_SECONDS} seconds remain. "
-                    "Do not ask any new questions. Briefly wrap up and close naturally."
-                ),
+        # --- T-20s: closing trigger ---
+        if remaining <= CLOSING_TRIGGER_SECS and not _closing_triggered:
+            _closing_triggered = True
+            logger.info("[CLOSING] Triggered at remaining=%.1fs", remaining)
+            _goodbye_candidate = (
+                f"Sorry to interrupt — we're coming up on time, so I'll wrap up here. "
+                f"It was great speaking with you, {candidate_first_name or candidate_name}. "
+                "Thanks so much for your time, and we'll be in touch soon!"
             )
-            logger.info(
-                "[TIMER] Final window active  remaining=%.1fs",
-                remaining,
-            )
-        # --- Final 20 seconds: time guard ---
-        # Activate the guard flag so eval dispatch and signal processing are blocked.
-        if remaining <= TIME_GUARD_SECS and not _time_guard_active:
-            _time_guard_active = True
-            logger.info("[TIME_GUARD] Activated at remaining=%.1fs -- eval/signals blocked", remaining)
-        if remaining <= TIME_GUARD_SECS and not final_timeout_announced:
-            final_timeout_announced = True
-            _goodbye = (
-                f"Thank you so much for your time today, {candidate_first_name or candidate_name}. "
-                "That wraps up our interview. All the very best!"
+            _goodbye_silence = (
+                f"We're just about at time, so I'll wrap up here. "
+                f"It was great speaking with you, {candidate_first_name or candidate_name}. "
+                "Thanks so much for your time, and we'll be in touch soon!"
             )
             try:
-                # Scenario 1: agent is mid-speech -- interrupt it immediately then say goodbye
-                if is_agent_speaking:
-                    logger.info("[TIME_GUARD] Agent speaking -- interrupting and delivering goodbye")
+                if is_candidate_speaking or is_agent_speaking:
                     session.interrupt()
-                    await asyncio.sleep(0.3)   # brief gap so interrupt flushes before next say()
-                    await session.say(_goodbye, allow_interruptions=False)
-                # Scenario 2: candidate is speaking -- politely cut in
-                elif is_candidate_speaking:
-                    logger.info("[TIME_GUARD] Candidate speaking -- interrupting and delivering goodbye")
-                    session.interrupt()
-                    await asyncio.sleep(0.2)
-                    await session.say(_goodbye, allow_interruptions=False)
-                # Scenario 3: silence -- just say goodbye cleanly
+                    await asyncio.sleep(0.3)
+                    await session.say(_goodbye_candidate, allow_interruptions=False)
                 else:
-                    logger.info("[TIME_GUARD] Silence -- delivering goodbye")
-                    await session.say(_goodbye, allow_interruptions=False)
+                    await session.say(_goodbye_silence, allow_interruptions=False)
             except Exception as e:
-                logger.warning("[TIME_GUARD] Goodbye delivery failed: %s", e)
+                logger.warning("[CLOSING] Goodbye delivery failed: %s", e)
             break
         inactivity_elapsed = (
             (time.monotonic() - awaiting_candidate_since)
@@ -3760,45 +3687,29 @@ async def entrypoint(ctx: JobContext):
             and not is_candidate_speaking
             and awaiting_candidate_response
             and inactivity_elapsed >= INACTIVITY_NUDGE_SECS
-            and not agent._waiting_for_eval  # never nudge while eval/MOVE_ON is processing
+            and not agent._waiting_for_eval
         )
-        # -- Soft nudges: fire every INACTIVITY_NUDGE_INTERVAL seconds, up to INACTIVITY_NUDGE_MAX times --
-        if (
-            _silence_active
-            and _nudge_count < INACTIVITY_NUDGE_MAX
-            and inactivity_elapsed < INACTIVITY_WARNING_SECS
-            and (time.monotonic() - _last_nudge_at) >= INACTIVITY_NUDGE_INTERVAL
-        ):
+        # 7s silence -> soft nudge (fires once per prompt)
+        if _silence_active and inactivity_elapsed < INACTIVITY_WARNING_SECS and not inactivity_nudge_sent_for_current_prompt:
             try:
-                nudge_text = _SOFT_NUDGES[_nudge_count % len(_SOFT_NUDGES)]
-                spawn_background_task(_deliver_nudge(nudge_text), f"inactivity_nudge_{_nudge_count}")
-                _nudge_count += 1
-                _last_nudge_at = time.monotonic()
-                logger.info("[NUDGE] Soft nudge #%d sent at %.0fs silence", _nudge_count, inactivity_elapsed)
+                spawn_background_task(_deliver_nudge(_SOFT_NUDGE_TEXT), "inactivity_nudge")
+                inactivity_nudge_sent_for_current_prompt = True
+                logger.info("[NUDGE] Soft nudge sent at %.0fs silence", inactivity_elapsed)
             except Exception as e:
                 logger.warning(f"[NUDGE] Failed to deliver soft nudge: {e}")
-        # -- Termination warning after INACTIVITY_WARNING_SECS --
-        if (
-            _silence_active
-            and not inactivity_nudge_sent_for_current_prompt
-            and inactivity_elapsed >= INACTIVITY_WARNING_SECS
-        ):
+        # 15s silence -> warning
+        if _silence_active and inactivity_elapsed >= INACTIVITY_WARNING_SECS and inactivity_elapsed < INACTIVITY_END_SECS:
             try:
                 spawn_background_task(_deliver_nudge(_INACTIVITY_WARNING_TEXT), "inactivity_warning")
-                inactivity_nudge_sent_for_current_prompt = True
-                logger.info("[NUDGE] Termination warning sent at %.0fs silence", inactivity_elapsed)
+                logger.info("[NUDGE] Warning sent at %.0fs silence", inactivity_elapsed)
             except Exception as e:
                 logger.warning(f"[NUDGE] Failed to deliver warning: {e}")
-        # -- End call after INACTIVITY_END_SECS --
-        if (
-            _silence_active
-            and inactivity_nudge_sent_for_current_prompt
-            and inactivity_elapsed >= INACTIVITY_END_SECS
-        ):
-            logger.info("[NUDGE] Ending interview due to inactivity (%ds)", int(inactivity_elapsed))
+        # 25s silence -> end call
+        if _silence_active and inactivity_elapsed >= INACTIVITY_END_SECS:
+            logger.info("[NUDGE] Ending interview due to inactivity (%.0fs)", inactivity_elapsed)
             try:
                 await session.say(_INACTIVITY_END_TEXT, allow_interruptions=False)
-                await asyncio.sleep(4.0)  # wait for TTS to fully play before disconnecting
+                await asyncio.sleep(3.0)
             except Exception as e:
                 logger.warning("[NUDGE] Failed to deliver inactivity ending line: %s", e)
             await _send_termination_signal("inactivity_timeout")
@@ -3810,28 +3721,9 @@ async def entrypoint(ctx: JobContext):
     # Check if we exited because of finish/disconnect or because time ran out
     time_expired = not finished_task.done() and not disconnected_task.done()
     if time_expired:
-        # Tailor the goodbye to how much content was actually exchanged.
-        # Avoid "we covered a lot" if the candidate barely spoke.
-        candidate_turns_final = sum(
-            1 for line in transcript_lines if re.match(r"^Candidate(\[\d+\])?:", line)
-        )
-        if candidate_turns_final >= 4:
-            goodbye_text = (
-                f"That concludes our interview, {candidate_first_name or candidate_name}. "
-                "Thank you for your time today. I'm ending the session now, and I wish you all the best."
-            )
-        else:
-            goodbye_text = (
-                f"That concludes our interview, {candidate_first_name or candidate_name}. "
-                "Thank you for joining today. I'm ending the session now, and I wish you all the best."
-            )
-        try:
-            await session.say(goodbye_text)
-            await asyncio.sleep(3.0)  # wait for TTS to fully play before disconnecting
-        except Exception:
-            pass
-        # FORCE DISCONNECT ROOM
-        logger.info(f"Session hard-terminated due to time limit ({time_limit_mins}m)")
+        # Goodbye was already spoken at T-20s inside the loop. Just signal disconnect.
+        logger.info(f"[CLOSING] Session ended at time limit ({time_limit_mins}m)")
+        await asyncio.sleep(3.0)  # allow TTS to finish before disconnecting
         await _send_termination_signal("time_expired")
         interview_marked_finished = True
         interview_finished_event.set()

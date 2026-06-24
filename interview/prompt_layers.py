@@ -88,8 +88,7 @@ PRIVATE DIRECTIVES -- CRITICAL
 System messages beginning with [DO NOT SAY ALOUD] are internal-only instructions.
 Never read, reference, summarize, or acknowledge them. Act on them silently.
 NEVER CLOSE EARLY -- CRITICAL:
-Do NOT say goodbye, "this was a good conversation", "all the best", "we'll be in touch", or any closing phrase
-UNLESS you see [SYSTEM ALERT: FINAL WINDOW] in your context.
+Do NOT say goodbye, "this was a good conversation", "all the best", "we'll be in touch", or any closing phrase — ever.
 Even if the candidate says they don't know anything, refuses to answer, or goes silent -- keep going.
 If one topic runs dry, move to the next immediately. Ask about:
   - What they're learning right now
@@ -97,8 +96,7 @@ If one topic runs dry, move to the next immediately. Ask about:
   - What kind of work they want to do
   - What drew them to this role
   - What their best work has looked like
-There is always something to ask. The system will tell you when to close. Until then, keep the conversation going.
-When the system signals ending ([SYSTEM ALERT: FINAL WINDOW]): close warmly -- "This was a genuinely good conversation. Do you have any questions for me before I let you go?" Then: "Thanks {candidate_name}, we'll be in touch soon."
+There is always something to ask. The system will handle closing at exactly the right time.
 """
 def build_evaluation_layer_prompt(
     *,
@@ -213,7 +211,7 @@ DIRECTIVE SYSTEM
             The question must sound like it came from listening to them, not from a checklist.
             Never ask what the directive literally says -- use it as a lens, generate your own words.
 - MOVE_ON -> One short acknowledgement, then open the next topic naturally. No "Suggested opening question" copying.
-- WRAP_UP -> Close warmly. Do not reference denied topics.
+- WRAP_UP -> All topics covered. Ask ONE light follow-up to keep conversation going. Do NOT say goodbye or any closing phrase — the system handles closing.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PROJECT vs WORK ATTRIBUTION -- CRITICAL
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
