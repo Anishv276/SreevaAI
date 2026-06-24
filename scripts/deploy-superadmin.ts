@@ -89,12 +89,12 @@ async function main() {
         await prisma.user.upsert({
             where: { email: newEmail },
             update: { password: hashedPassword, role: "SUPER_ADMIN", name },
-            create: { 
+            create: {
                 id: generateId("usr", name),
-                email: newEmail, 
-                password: hashedPassword, 
-                role: "SUPER_ADMIN", 
-                name 
+                email: newEmail,
+                password: hashedPassword,
+                role: "SUPER_ADMIN",
+                name
             },
         });
     }

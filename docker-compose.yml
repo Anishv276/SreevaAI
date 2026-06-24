@@ -1,6 +1,6 @@
 services:
   # Next.js Frontend + API
-  sreevaai-frontend:
+  frontend:
     build:
       context: .
       dockerfile: Dockerfile.frontend
@@ -29,7 +29,7 @@ services:
       - "traefik.http.services.sreevaai-app.loadbalancer.server.port=3000"
 
   # Background Worker (Handles Scoring & Emails)
-  sreevaai-worker:
+  worker:
     build:
       context: .
       dockerfile: Dockerfile.frontend
@@ -50,7 +50,7 @@ services:
       - 8.8.4.4
 
   # Python AI Agent (Backend)
-  sreevaai-agent:
+  python-backend:
     build:
       context: .
       dockerfile: Dockerfile

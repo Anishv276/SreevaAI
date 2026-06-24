@@ -251,7 +251,9 @@
       "Bash(dd if=/dev/zero bs=1024 count=10)",
       "Bash(curl -s -X POST http://localhost:3000/api/verify-speech -F 'audio=@-;filename=test.pcm;type=application/octet-stream' -F targetPhrase=test -F applicationId=test-app -F interviewToken=test-token -H 'X-Forwarded-For: 127.0.0.1')",
       "Bash(tail -10 /tmp/next-dev.log)",
-      "Bash(tail -30 /tmp/next-dev.log | grep -E \"Compiled|error|ERROR\")"
+      "Bash(tail -30 /tmp/next-dev.log | grep -E \"Compiled|error|ERROR\")",
+      "PowerShell(cd \"c:\\\\Users\\\\vamsi\\\\OneDrive\\\\Documents\\\\SreevaAI\"; $env:NEXT_TELEMETRY_DISABLED=1; npx next build --no-turbo 2>&1 | Out-String | Select-String -Pattern \"Type error|error TS|Failed to compile|Module not found|Cannot find\" -AllMatches | ForEach-Object { $_.Matches } | Select-Object -First 30)",
+      "PowerShell(cd \"c:\\\\Users\\\\vamsi\\\\OneDrive\\\\Documents\\\\SreevaAI\"; $env:NEXT_TELEMETRY_DISABLED=1; npx tsc --noEmit 2>&1 | head -100)"
     ],
     "additionalDirectories": [
       "c:\\Users\\vamsi\\OneDrive\\Desktop\\HR-updates\\scratch",
