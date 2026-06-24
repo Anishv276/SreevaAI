@@ -158,6 +158,7 @@ class IntegrityEngine:
         "camera_disabled":   -15.0,
         "microphone_disabled": -8.0,
         "identity_mismatch": -20.0,
+        "connection_lost":   -12.0,
     }
 
     _NEG_KEYS: frozenset[str] = frozenset(_NEG)
@@ -187,7 +188,6 @@ class IntegrityEngine:
             if sig in cls._NEG_KEYS:
                 score += cls._NEG[sig] * min(count, 3)
                 fired.append(sig)
-                score += cls._POS[sig]
 
         final = max(0, min(100, int(round(score))))
         band  = "HIGH" if final >= 80 else "MODERATE" if final >= 55 else "LOW"

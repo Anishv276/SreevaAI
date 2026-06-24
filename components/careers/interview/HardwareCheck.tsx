@@ -232,13 +232,11 @@ export function HardwareCheck({
     const visualLandmarkerRef = useRef<any>(null);
     const visualRafRef = useRef<number | null>(null);
     const [visualSignals, setVisualSignals] = useState({
-        alignment: false,
-        proximity: false,
         lighting: false,
     });
     const [visualStatusMsg, setVisualStatusMsg] = useState("Initializing visual integrity check...");
     const faceLocked = faceCountHistoryRef.current.filter(c => c === 1).length >= 3;
-    const visualReady = visualSignals.alignment && visualSignals.proximity && visualSignals.lighting;
+    const visualReady = faceLocked && visualSignals.lighting;
     useEffect(() => {
         if (cameraStatus !== "granted") return;
         let cancelled = false;
@@ -259,11 +257,6 @@ export function HardwareCheck({
                 });
                 if (cancelled) { landmarker.close(); return; }
                 visualLandmarkerRef.current = landmarker;
-                // Thresholds matching FaceProctoring
-                const CENTER_X_MIN = 0.35, CENTER_X_MAX = 0.65;
-                const CENTER_Y_MIN = 0.25, CENTER_Y_MAX = 0.55;
-                const PROX_MIN = 0.20, PROX_MAX = 0.55;
-                const LIGHT_MIN = 70, LIGHT_MAX = 200;
                 // Throttle lighting to avoid canvas layout thrashing every frame
                 let lastLightingCheck = 0;
                 let lastLightGood = false;
@@ -276,64 +269,45 @@ export function HardwareCheck({
                     try { result = visualLandmarkerRef.current.detectForVideo(video, performance.now()); }
                     catch { return; }
                     const numFaces = result.faceLandmarks?.length ?? 0;
-                    // -- Signal 03: Identity Lock (Temporal Consensus 3/5) --
-                    // We require exactly 1 face for stability.
                     faceCountHistoryRef.current.push(numFaces);
                     if (faceCountHistoryRef.current.length > 5) faceCountHistoryRef.current.shift();
                     const validFrames = faceCountHistoryRef.current.filter(c => c === 1).length;
                     const isIdentityLocked = validFrames >= 3;
                     if (!isIdentityLocked || numFaces !== 1) {
-                        setVisualSignals({ alignment: false, proximity: false, lighting: lastLightGood });
+                        setVisualSignals({ lighting: lastLightGood });
                         if (numFaces === 0) setVisualStatusMsg("No face detected. Please look at the camera.");
                         else if (numFaces > 1) setVisualStatusMsg("Multiple faces detected. Please ensure you are alone.");
-                        else setVisualStatusMsg("Stabilizing visual identity...");
+                        else setVisualStatusMsg("Stabilizing...");
                         return;
                     }
-                    // -- Defensive Check: Ensure landmarks exist and are an array --
+                    // Lighting check — sample from face bounding box
                     const landmarks = result.faceLandmarks[0];
-                    if (!landmarks || !Array.isArray(landmarks) || landmarks.length === 0) {
-                        setVisualSignals({ alignment: false, proximity: false, lighting: lastLightGood });
-                        return;
-                    }
-                    // Use numeric filtering to be 100% safe
-                    const xs = landmarks.filter(l => l && typeof l.x === 'number').map(l => l.x);
-                    const ys = landmarks.filter(l => l && typeof l.y === 'number').map(l => l.y);
-                    if (xs.length === 0 || ys.length === 0) return;
-                    const minX = Math.min(...xs), maxX = Math.max(...xs);
-                    const minY = Math.min(...ys), maxY = Math.max(...ys);
-                    const cx = (minX + maxX) / 2;
-                    const cy = (minY + maxY) / 2;
-                    // -- Signal 04: Focus Centering (0.35–0.65 / 0.25–0.55) --
-                    const isAligned = cx >= 0.35 && cx <= 0.65 && cy >= 0.25 && cy <= 0.55;
-                    // -- Signal 05: Proximity / Scale (0.20–0.55) --
-                    const widthRatio = maxX - minX;
-                    const isProxGood = widthRatio >= 0.20 && widthRatio <= 0.55;
-                    const now = performance.now();
-                    if (now - lastLightingCheck > 500) {
-                        lastLightingCheck = now;
-                        try {
-                            const lc = document.createElement("canvas");
-                            lc.width = 1; lc.height = 1;
-                            const lctx = lc.getContext("2d");
-                            if (lctx && video.videoWidth > 0) {
-                                lctx.drawImage(video, minX * video.videoWidth, minY * video.videoHeight, widthRatio * video.videoWidth, (maxY - minY) * video.videoHeight, 0, 0, 1, 1);
-                                const data = lctx.getImageData(0, 0, 1, 1).data;
-                                const brightness = 0.299 * data[0] + 0.587 * data[1] + 0.114 * data[2];
-                                // -- Signal 06: Lighting Quality (70–200) --
-                                lastLightGood = brightness >= 70 && brightness <= 200;
+                    if (landmarks && Array.isArray(landmarks) && landmarks.length > 0) {
+                        const xs = landmarks.filter(l => l && typeof l.x === 'number').map(l => l.x);
+                        const ys = landmarks.filter(l => l && typeof l.y === 'number').map(l => l.y);
+                        if (xs.length > 0 && ys.length > 0) {
+                            const minX = Math.min(...xs), maxX = Math.max(...xs);
+                            const minY = Math.min(...ys), maxY = Math.max(...ys);
+                            const widthRatio = maxX - minX;
+                            const now = performance.now();
+                            if (now - lastLightingCheck > 500) {
+                                lastLightingCheck = now;
+                                try {
+                                    const lc = document.createElement("canvas");
+                                    lc.width = 1; lc.height = 1;
+                                    const lctx = lc.getContext("2d");
+                                    if (lctx && video.videoWidth > 0) {
+                                        lctx.drawImage(video, minX * video.videoWidth, minY * video.videoHeight, widthRatio * video.videoWidth, (maxY - minY) * video.videoHeight, 0, 0, 1, 1);
+                                        const data = lctx.getImageData(0, 0, 1, 1).data;
+                                        const brightness = 0.299 * data[0] + 0.587 * data[1] + 0.114 * data[2];
+                                        lastLightGood = brightness >= 70 && brightness <= 200;
+                                    }
+                                } catch { }
                             }
-                        } catch (e) { }
+                        }
                     }
-                    setVisualSignals({ alignment: isAligned, proximity: isProxGood, lighting: lastLightGood });
-                    const errors: string[] = [];
-                    if (!isAligned) errors.push(cx < 0.35 ? "Move right" : cx > 0.65 ? "Move left" : "Center face");
-                    if (!isProxGood) errors.push(widthRatio < 0.20 ? "Move closer" : "Move further back");
-                    if (!lastLightGood) errors.push("Lighting is poor");
-                    if (errors.length > 0) {
-                        setVisualStatusMsg(errors.join(" | "));
-                    } else {
-                        setVisualStatusMsg("Face detected");
-                    }
+                    setVisualSignals({ lighting: lastLightGood });
+                    setVisualStatusMsg(lastLightGood ? "Face detected" : "Lighting is poor");
                 };
                 visualRafRef.current = requestAnimationFrame(checkVisuals);
             } catch (err) {
@@ -847,9 +821,9 @@ export function HardwareCheck({
                         ) : !cameraFullyReady && faceCountHistoryRef.current.filter(c => c === 1).length < 3 ? (
                             <span>No face detected. Please center your face.</span>
                         ) : cameraFullyReady ? (
-                            <span>Camera Secured &amp; Perfectly Aligned</span>
+                            <span>Camera Secured &amp; Ready</span>
                         ) : (
-                            <span>Adjust Position: {visualStatusMsg}</span>
+                            <span>{visualStatusMsg}</span>
                         )}
                     </div>
                 </div>
