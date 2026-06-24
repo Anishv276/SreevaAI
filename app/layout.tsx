@@ -20,7 +20,7 @@ export const metadata: Metadata = {
     template: "%s | Sreeva AI",
   },
   description: "Automate your hiring process with AI-driven screening and interviews using adaptive intelligence.",
-  keywords: ["AI Recruitment", "AI Interviewer", "Candidate Screening", "HR Automation", "Adaptive AI", "Sreeva AI", "technical interview automation", "automated hiring"],
+  keywords: ["AI Recruitment", "AI Interviewer", "Candidate Screening", "SreevaAI", "Adaptive AI", "Sreeva AI", "technical interview automation", "automated hiring"],
   authors: [{ name: "Sreeva AI Team" }],
   metadataBase: new URL("https://www.sreevaai.com"),
   icons: {
