@@ -1,4 +1,5 @@
 import asyncio
+import collections
 import json
 import os
 import time
@@ -31,6 +32,7 @@ from interview.agent_persistence import (
     generate_interview_report,
     generate_interview_summary,
     get_interview_context,
+    mark_interview_failed,
     mark_interview_started,
     persist_answer_scores,
     persist_transcript,
@@ -1176,19 +1178,38 @@ async def entrypoint(ctx: JobContext):
         return
     if isinstance(connect_result, Exception):
         raise connect_result
+    # Room is now connected — define the failure helper here so it can use ctx.room.
+    # Any failure AFTER this point must call _fail_interview() so:
+    #   1. DB is marked FAILED (Drive candidates page shows FAILED, not stuck IN_PROGRESS)
+    #   2. Frontend receives an error event and shows the support message to the candidate
+    async def _fail_interview(reason: str) -> None:
+        logger.error(f"[INTERVIEW_FAIL] app_id={app_id} reason={reason}")
+        await mark_interview_failed(app_id, reason=reason)
+        try:
+            payload = json.dumps({
+                "type": "interview_failed",
+                "message": "We're sorry — a technical issue occurred. Please contact our support team to reschedule your interview.",
+                "reason": reason,
+            }).encode("utf-8")
+            await ctx.room.local_participant.publish_data(payload, reliable=True)
+        except Exception as _sig_err:
+            logger.warning(f"[INTERVIEW_FAIL] Could not send failure signal to frontend: {_sig_err}")
     if isinstance(context_result, Exception):
         logger.error(f"Failed to load interview context from DB: {context_result}")
+        await _fail_interview("context_load_failed")
         return
     if not isinstance(context_result, dict):
         logger.error(f"Invalid DB context payload type: {type(context_result)}")
+        await _fail_interview("context_invalid_type")
         return
     try:
         ctx_data = InterviewContext(**context_result)
     except Exception as _ctx_err:
         logger.error("Invalid interview context from DB: %s", _ctx_err)
+        await _fail_interview("context_parse_failed")
         return
     # GUARD: Prevent re-entry if interview is already completed
-    if ctx_data.interviewStatus and str(ctx_data.interviewStatus).strip().upper() in ("COMPLETED", "NO_SHOW", "ABANDONED"):
+    if ctx_data.interviewStatus and str(ctx_data.interviewStatus).strip().upper() in ("COMPLETED", "NO_SHOW", "ABANDONED", "FAILED"):
         logger.warning(
             f"[GUARD] Interview {app_id} is already {ctx_data.interviewStatus}. "
             f"Rejecting duplicate job dispatch. Exiting immediately."
@@ -1688,7 +1709,7 @@ async def entrypoint(ctx: JobContext):
     # Read inside the PROBE directive builder to avoid asking the reflection question twice
     # on the same project.
     _topic_closing_fired: set[str] = set()
-    _asked_questions_log: list[str] = []       # last 6 questions asked verbatim, for duplicate prevention
+    _asked_questions_log: collections.deque = collections.deque(maxlen=6)  # EC-3: deque(maxlen) makes append atomic — no pop() race
     _reflection_probe_count: int = 0           # session-wide count of reflection probes used
 
     _first_interview_question_asked: bool = False  # True after first post-warmup AI question fires
@@ -1814,12 +1835,16 @@ async def entrypoint(ctx: JobContext):
                     logger.info("[SKILL_DEDUP] auto-covered %r via %r", skill_key, topic_title)
 
     def _strongest_uncovered_for_deepening(exclude_key: str) -> Optional[tuple[str, float]]:
+        # EC-1: _topic_states is a shared dict mutated by concurrent MOVE_ON events.
+        # Take a snapshot under the lock so we iterate a stable copy, not a dict
+        # that another coroutine is writing to mid-loop.
+        topic_states_snap = dict(_topic_states)
         best: Optional[tuple[str, float]] = None
         for t in _topic_pool:
             k = _topic_short_key(t)
             if not k or k == exclude_key or k in _deepened_topic_keys or k in _covered_topic_keys:
                 continue
-            ts = _topic_states.get(_normalize_topic_key(k))
+            ts = topic_states_snap.get(_normalize_topic_key(k))
             score = float(ts.get("saturation_score", 0.0)) if isinstance(ts, dict) else 0.0
             if score >= 2.0 and (best is None or score > best[1]):
                 best = (t, score)
@@ -2150,13 +2175,18 @@ async def entrypoint(ctx: JobContext):
             logger.debug(f"Ignored malformed data packet: {e}")
             return
     # Pre-start all background processing while user is on hardware check.
-    await session.start(
-        agent=agent,
-        room=ctx.room,
-        room_options=room_io.RoomOptions(
-            close_on_disconnect=False,
-        ),
-    )
+    try:
+        await session.start(
+            agent=agent,
+            room=ctx.room,
+            room_options=room_io.RoomOptions(
+                close_on_disconnect=False,
+            ),
+        )
+    except Exception as _session_start_err:
+        logger.error(f"[INTERVIEW_FAIL] session.start() failed for {app_id}: {_session_start_err}")
+        await _fail_interview("session_start_failed")
+        raise
     # --- Real-time Transcript Streaming is handled by LiveKit automatically ---
     async def _apply_eval_result(
         result: dict[str, Any],
@@ -2167,17 +2197,20 @@ async def entrypoint(ctx: JobContext):
         nonlocal answer_scores, _last_applied_eval_turn, \
             _topic_score_histories, _last_depth_decay_turn, \
             _eval_llm_usages_accumulated
-        if result_turn <= _last_applied_eval_turn:
-            logger.debug(
-                "[EVAL] skipping stale eval result turn=%d last_applied=%d",
-                result_turn, _last_applied_eval_turn,
-            )
-            return False
         quality_record = result.get("quality_record")
         signal_events = result.get("signal_events") or []
         if signal_events:
             proctoring_events.extend(signal_events)
         async with _session_state_lock:
+            # EC-5: stale-turn guard MUST be inside the lock. Without this, two concurrent
+            # evals for the same turn both pass the check before either updates the counter,
+            # then both append to answer_scores and _topic_score_histories — duplicate scores.
+            if result_turn <= _last_applied_eval_turn:
+                logger.debug(
+                    "[EVAL] skipping stale eval result turn=%d last_applied=%d",
+                    result_turn, _last_applied_eval_turn,
+                )
+                return False
             eval_usages = result.get("eval_llm_usages") or []
             if eval_usages:
                 _eval_llm_usages_accumulated.extend(eval_usages)
@@ -2259,8 +2292,11 @@ async def entrypoint(ctx: JobContext):
             append_transcript_line("Candidate", content)
             # Accumulate candidate answers for the current topic — used at MOVE_ON
             # to build grounded skill records instead of re-reading the transcript later.
+            # EC-4: append under the lock so it cannot interleave with the MOVE_ON block
+            # that reads then resets _current_topic_answers in the same lock acquisition.
             if warmup_complete and content.strip():
-                _current_topic_answers.append(content.strip())
+                async with _session_state_lock:
+                    _current_topic_answers.append(content.strip())
             lines_snap_eval = list(transcript_lines)
             question_snap = _last_interviewer_question
             answer_snap = content
@@ -2595,72 +2631,82 @@ async def entrypoint(ctx: JobContext):
                     _old_topic = _active_topic
                     _mark_topic_covered(_old_topic, answer_gist=(payload.get("answer") or ""))
                     # ── Ground-truth topic record ──────────────────────────────
-                    # Capture everything we know about this topic NOW — eval scores,
-                    # probe count, exit reason, actual candidate answers — so the
-                    # skill extraction LLM gets real signal instead of re-reading
-                    # the transcript cold after the session ends.
+                    # EC-1/EC-2/EC-4/EC-5: ALL shared state reads and writes for
+                    # this topic record must happen under one lock acquisition so
+                    # that a concurrent MOVE_ON (different session on same process)
+                    # or a concurrent candidate answer append cannot interleave:
+                    #   _topic_states        — read (EC-1)
+                    #   _topic_score_histories / _topic_depth_histories — read (EC-5)
+                    #   _current_topic_answers — read then reset (EC-4)
+                    #   _topic_records       — append (EC-2)
+                    # The entire block is one atomic snapshot-and-commit.
                     try:
-                        _old_key = _topic_short_key(_old_topic or "")
-                        _old_ts  = _topic_states.get(_normalize_topic_key(_old_key)) or {}
-                        # Extract tech skills from [bracket] in topic string
-                        _tech_brackets = re.findall(r"\[([^\]]+)\]", _old_topic or "")
-                        _tech_skills: list[str] = []
-                        for _chunk in _tech_brackets:
-                            for _tok in re.split(r"[;,]", _chunk):
-                                _tok = _tok.strip()
-                                if _tok:
-                                    _tech_skills.append(_tok)
-                        # Determine exit reason from saturation flags
-                        _exit_reason = (
-                            "explicit_denial" if _old_key in _covered_topic_keys
-                            else "weak_exit"  if _weak_exit
-                            else "saturated"  if _is_saturated
-                            else "dry_topic"  if _dry_topic
-                            else "eval_moveon"
-                        )
-                        # Compute avg scores across all turns on this topic
-                        _topic_normed_key = re.sub(r"[^a-z0-9]+", " ", _old_key.lower()).strip()
-                        _overall_hist = _topic_score_histories.get(_topic_normed_key, [])
-                        _depth_hist   = _topic_depth_histories.get(_topic_normed_key, [])
-                        _avg_overall  = round(sum(_overall_hist) / len(_overall_hist), 2) if _overall_hist else 0.0
-                        _avg_depth    = round(sum(_depth_hist)   / len(_depth_hist),   2) if _depth_hist   else 0.0
-                        # Current turn's scores
-                        _cur_clarity     = float(_qr.get("clarity",     0) or 0)
-                        _cur_depth       = float(_qr.get("depth",       0) or 0)
-                        _cur_specificity = float(_qr.get("specificity", 0) or 0)
-                        _cur_grounding   = float(_qr.get("grounding",   0) or 0)
-                        _cur_overall     = float(_qr.get("overall",     0) or 0)
-                        # Probe count = follow_up_turns from TopicState
-                        _probe_count = int(_old_ts.get("follow_up_turns", 0) or 0)
-                        _topic_record = {
-                            "topic":        _old_topic or "",
-                            "topic_key":    _old_key,
-                            "topic_type":   next((t.topic_type for t in _interview_brief.topic_pool if _topic_short_key_for_ordering(t.title) == _old_key), "project"),
-                            "exit_reason":  _exit_reason,
-                            "probe_count":  _probe_count,
-                            "scores": {
-                                "avg_overall":   _avg_overall,
-                                "avg_depth":     _avg_depth,
-                                "last_clarity":     _cur_clarity,
-                                "last_depth":       _cur_depth,
-                                "last_specificity": _cur_specificity,
-                                "last_grounding":   _cur_grounding,
-                                "last_overall":     _cur_overall,
-                            },
-                            "saturation_score": float(_old_ts.get("saturation_score", 0.0) or 0.0),
-                            "candidate_answers": list(_current_topic_answers[-6:]),  # last 6 answers on this topic
-                            "tech_skills": _tech_skills,
-                            "denied": _old_key in _covered_topic_keys,
-                        }
-                        _topic_records.append(_topic_record)
-                        logger.info(
-                            "[TOPIC_RECORD] turn=%d | recorded topic=%r exit=%s probes=%d avg_overall=%.1f answers=%d",
-                            turn_snapshot, _old_key, _exit_reason, _probe_count, _avg_overall, len(_current_topic_answers),
-                        )
+                        async with _session_state_lock:
+                            _old_key = _topic_short_key(_old_topic or "")
+                            _old_ts  = _topic_states.get(_normalize_topic_key(_old_key)) or {}
+                            # Extract tech skills from [bracket] in topic string
+                            _tech_brackets = re.findall(r"\[([^\]]+)\]", _old_topic or "")
+                            _tech_skills: list[str] = []
+                            for _chunk in _tech_brackets:
+                                for _tok in re.split(r"[;,]", _chunk):
+                                    _tok = _tok.strip()
+                                    if _tok:
+                                        _tech_skills.append(_tok)
+                            # Determine exit reason from saturation flags
+                            _exit_reason = (
+                                "explicit_denial" if _old_key in _covered_topic_keys
+                                else "weak_exit"  if _weak_exit
+                                else "saturated"  if _is_saturated
+                                else "dry_topic"  if _dry_topic
+                                else "eval_moveon"
+                            )
+                            # Compute avg scores across all turns on this topic
+                            _topic_normed_key = re.sub(r"[^a-z0-9]+", " ", _old_key.lower()).strip()
+                            _overall_hist = _topic_score_histories.get(_topic_normed_key, [])
+                            _depth_hist   = _topic_depth_histories.get(_topic_normed_key, [])
+                            _avg_overall  = round(sum(_overall_hist) / len(_overall_hist), 2) if _overall_hist else 0.0
+                            _avg_depth    = round(sum(_depth_hist)   / len(_depth_hist),   2) if _depth_hist   else 0.0
+                            # Current turn's scores
+                            _cur_clarity     = float(_qr.get("clarity",     0) or 0)
+                            _cur_depth       = float(_qr.get("depth",       0) or 0)
+                            _cur_specificity = float(_qr.get("specificity", 0) or 0)
+                            _cur_grounding   = float(_qr.get("grounding",   0) or 0)
+                            _cur_overall     = float(_qr.get("overall",     0) or 0)
+                            # Probe count = follow_up_turns from TopicState
+                            _probe_count = int(_old_ts.get("follow_up_turns", 0) or 0)
+                            _topic_record = {
+                                "topic":        _old_topic or "",
+                                "topic_key":    _old_key,
+                                "topic_type":   next((t.topic_type for t in _interview_brief.topic_pool if _topic_short_key_for_ordering(t.title) == _old_key), "project"),
+                                "exit_reason":  _exit_reason,
+                                "probe_count":  _probe_count,
+                                "scores": {
+                                    "avg_overall":   _avg_overall,
+                                    "avg_depth":     _avg_depth,
+                                    "last_clarity":     _cur_clarity,
+                                    "last_depth":       _cur_depth,
+                                    "last_specificity": _cur_specificity,
+                                    "last_grounding":   _cur_grounding,
+                                    "last_overall":     _cur_overall,
+                                },
+                                "saturation_score": float(_old_ts.get("saturation_score", 0.0) or 0.0),
+                                # EC-4: snapshot answers then reset atomically under the lock so
+                                # a candidate answer arriving during MOVE_ON is never silently lost.
+                                "candidate_answers": list(_current_topic_answers[-6:]),
+                                "tech_skills": _tech_skills,
+                                "denied": _old_key in _covered_topic_keys,
+                            }
+                            _topic_records.append(_topic_record)
+                            # EC-4: reset happens inside the same lock acquisition as the
+                            # snapshot above — any answer appended after this point belongs
+                            # to the next topic and will not be incorrectly included here.
+                            _current_topic_answers = []
+                            logger.info(
+                                "[TOPIC_RECORD] turn=%d | recorded topic=%r exit=%s probes=%d avg_overall=%.1f answers=%d",
+                                turn_snapshot, _old_key, _exit_reason, _probe_count, _avg_overall, len(_topic_records),
+                            )
                     except Exception as _tr_err:
                         logger.warning("[TOPIC_RECORD] Failed to record topic: %s", _tr_err)
-                    # Reset answer buffer for the next topic
-                    _current_topic_answers = []
                     _next_topic = _next_uncovered_topic(exclude=_old_topic)
                     # Pre-fire MOVE_ON directive generation in parallel — by the time
                     # we reach the await below it will already be done (or nearly so),
@@ -3282,11 +3328,12 @@ async def entrypoint(ctx: JobContext):
                             "[MOVE_ON] opener delivered (turn=%d) -- cleared opener_pending; next answer will be scored",
                             turn_count,
                         )
-                    # Track asked questions for duplicate prevention (keep last 6)
+                    # Track asked questions for duplicate prevention (keep last 6).
+                    # EC-3: _asked_questions_log is now a deque(maxlen=6) so append
+                    # is a single atomic operation — no separate pop() needed, no
+                    # IndexError possible, no lock required in this sync callback.
                     if _last_interviewer_question and _first_interview_question_asked:
                         _asked_questions_log.append(_last_interviewer_question[:120])
-                        if len(_asked_questions_log) > 6:
-                            _asked_questions_log.pop(0)
                     # First interview question just fired -- seal the opening move so the LLM
                     # cannot re-ask it. The base system prompt says "Open by asking about X"
                     # which conflicts with PROBE directives on subsequent turns. This message
@@ -3599,7 +3646,6 @@ async def entrypoint(ctx: JobContext):
             awaiting_candidate_since = time.monotonic()
     async def _send_termination_signal(reason: str):
         try:
-            import json
             payload = json.dumps({"type": "interview_terminated", "reason": reason}).encode("utf-8")
             await ctx.room.local_participant.publish_data(payload, reliable=True)
             logger.info(f"[NUDGE] Sent termination signal to frontend (reason={reason})")
@@ -3878,3 +3924,37 @@ async def entrypoint(ctx: JobContext):
             session.shutdown(drain=False)
         except Exception:
             pass
+async def _entrypoint_guarded(ctx: JobContext) -> None:
+    """Thin guard wrapper around entrypoint.
+    Any uncaught exception from the session body reaches here — we mark the
+    interview FAILED in DB and send the support message to the frontend before
+    re-raising so the LiveKit job runner still sees the failure.
+    """
+    app_id: str = ""
+    try:
+        # Pull app_id early so the except block can reference it even if entrypoint
+        # crashes before assigning it internally.
+        metadata = getattr(ctx.job, "metadata", "") or ""
+        try:
+            _meta = json.loads(metadata) if metadata.strip().startswith("{") else {}
+        except Exception:
+            _meta = {}
+        app_id = _meta.get("app_id") or _meta.get("appId") or ""
+        await entrypoint(ctx)
+    except Exception as _crash:
+        logger.error(f"[INTERVIEW_FAIL] Uncaught crash in entrypoint app_id={app_id}: {_crash}", exc_info=True)
+        if app_id:
+            try:
+                await mark_interview_failed(app_id, reason="uncaught_crash")
+            except Exception:
+                pass
+            try:
+                _payload = json.dumps({
+                    "type": "interview_failed",
+                    "message": "We're sorry — a technical issue occurred. Please contact our support team to reschedule your interview.",
+                    "reason": "uncaught_crash",
+                }).encode("utf-8")
+                await ctx.room.local_participant.publish_data(_payload, reliable=True)
+            except Exception:
+                pass
+        raise
