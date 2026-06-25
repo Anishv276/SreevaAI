@@ -31,65 +31,79 @@ SIGNAL_DEFINITIONS = {
         "not_this": "Candidate said 'I designed X' or 'my role was Y' — that's clear ownership, do NOT fire.",
     },
     "example_evaded": {
-        "description": "Interviewer asked for a specific example, story, or instance. Candidate responded with general theory, 'usually I...', 'typically we...', or described a type of thing rather than one real moment.",
-        "example": "Q: Tell me about a time you built an automation. A: Usually I start by mapping the requirements and then...",
-        "not_this": "Candidate gave a vague but real answer — even if short. Only fire if they clearly dodged the specific-instance request.",
+        "description": "Question asked for a specific real example, story, or instance — from any type of question (behavioral or open). Candidate responded with a general habit, theory, or pattern ('usually I...', 'typically we...', 'I always...') instead of describing one real moment that actually happened.",
+        "example": "Q: Tell me about a time you handled a difficult client. A: I usually stay calm and try to understand their perspective and then work through it.",
+        "not_this": "Do NOT fire if the candidate gave a real specific instance, even if briefly told or imperfectly worded. Only fire when the answer is clearly a general pattern, not a real event.",
     },
-    "depth_insufficient": {
-        "description": "Candidate said WHAT they did or built, but never explained HOW or WHY. The mechanics, decisions, and reasoning are completely absent.",
-        "example": "I built a lead qualification system using n8n. It worked well.",
-        "not_this": "Do NOT fire if candidate explained even one real decision or step. Only fire if it's purely WHAT with zero HOW.",
+    "answer_hollow": {
+        "description": "The answer described WHAT the candidate did but gave no HOW, no WHY, and no real operational detail. There is nothing in the answer that could not have been said by someone who only read about this type of work. This covers both: (a) missing reasoning — no decisions, no mechanics explained; and (b) missing texture — no numbers, no constraints, no real outcome. Fire this when both are absent together.",
+        "example": "I built a lead qualification system using n8n and it worked well for the client. / I handled the onboarding process and it went smoothly.",
+        "not_this": "Do NOT fire if the candidate explained even one real decision, one real constraint they hit, one real number, or one specific outcome. Only fire when the answer is hollow on ALL fronts — no HOW, no WHY, no operational detail.",
     },
-    "surface_answer": {
-        "description": "Answer is correct but entirely hollow — no specific names, no numbers, no real texture. Could have been said by anyone who read a Wikipedia article about the topic.",
-        "example": "I used automation tools to qualify leads based on certain criteria and it helped the client.",
-        "not_this": "Do NOT fire if ANY specific tool, metric, date, or real detail was named. Only fire when it's all generic.",
-    },
-    "tech_claim_unverified": {
-        "description": "Candidate named a specific technology or tool (e.g. n8n, Zapier, DuckDB) but their description of it was vague, incorrect, or showed no real hands-on knowledge.",
-        "example": "I used n8n for the automation. n8n is basically a workflow tool that connects things.",
-        "not_this": "Do NOT fire if they described what they actually DID with the tool, even briefly. Only fire when the tool is named but usage is hollow.",
-    },
-    "new_tech_thread": {
-        "description": "Candidate mentioned a tool, technology, or approach that was NOT on their resume and NOT in the job description. This is an unprompted reveal — worth following.",
-        "example": "I also tried using Instantly for the outreach part which wasn't in the original plan.",
-        "not_this": "Only fire if the tool is genuinely new/unexpected. Do NOT fire for tools already listed in the resume or JD.",
+    "functional_claim_unverified": {
+        "description": "Candidate named a specific tool, technology, method, framework, or capability — from ANY domain (technical, sales, HR, ops) — but gave no evidence of real hands-on usage. The name was dropped but nothing they said shows they actually worked with it. This applies equally to: tech tools (n8n, Salesforce), sales methods (MEDDIC, SPIN), HR practices (structured hiring, competency frameworks), or any claimed skill ('I'm strong at data analysis', 'I run structured processes').",
+        "example": "Tech: 'I used n8n for the automation — n8n is basically a workflow tool that connects things.' / Sales: 'I use SPIN selling in my discovery calls.' / HR: 'I always run structured interviews using competency frameworks.'",
+        "not_this": "Do NOT fire if they described what they actually DID with it — even one real operational detail, one thing they built, one problem they solved using it. Only fire when the name or claim is present but all description of actual usage is absent or hollow.",
     },
     "claim_not_demonstrated": {
-        "description": "Candidate made a strong claim about themselves ('I'm good at automation', 'I handled the whole pipeline', 'I always think about the user') but nothing they said before or after supports it with real evidence.",
-        "example": "I'm really strong with data analysis and I always make data-driven decisions. [No numbers, no examples anywhere in the answer.]",
-        "not_this": "Do NOT fire if the claim is backed by even one concrete example or number in the same answer.",
+        "description": "Candidate made a strong self-characterization ('I'm great at X', 'I always do Y', 'I owned the whole Z', 'I'm known for...') but nothing in the answer supports it. No example, no number, no outcome — just the assertion.",
+        "example": "I'm really strong with data analysis and I always make data-driven decisions. [Nothing in the answer demonstrates this — no dataset mentioned, no metric, no decision described.]",
+        "not_this": "Do NOT fire if the candidate backed the claim with at least one real, relevant example OR one concrete operational detail that is specific to that claim. A vague example ('I once built a dashboard') does NOT satisfy this — the example must be relevant to the specific claim and contain at least one real operational detail.",
     },
 }
 
 def _build_signal_prompt_block() -> str:
-    lines = [
-        "-- SIGNAL DETECTION --",
-        "Detect the ONE signal that best explains what this answer is MISSING given what the question asked.",
-        "Do NOT pick based on a fixed order. Reason about the gap first, then name it.",
-        "",
-        "Step 1 — Understand the question intent:",
-        "  What was the interviewer actually trying to learn?",
-        "  (personal ownership? technical mechanics? a real example? hands-on proof?)",
-        "",
-        "Step 2 — Evaluate what the answer gave:",
-        "  What is present? What is absent? Does the answer satisfy what the question needed?",
-        "",
-        "Step 3 — Pick the signal that names the most important missing thing:",
-    ]
-    for name, defn in SIGNAL_DEFINITIONS.items():
-        lines.append(f"\n  {name}")
-        lines.append(f"    FIRE WHEN: {defn['description']}")
-        lines.append(f"    DO NOT FIRE IF: {defn['not_this']}")
-    lines += [
-        "",
-        "If nothing meaningful is missing, return signal: null and signal_reason: null.",
-        "",
-        "signal_reason: quote the EXACT words from their answer that caused the signal to fire.",
-        "  Good: \"we built the pipeline, the team decided\" (3-10 words from their actual answer)",
-        "  Bad:  \"candidate used team language\" (your description, not their words)",
-    ]
-    return "\n".join(lines)
+    return """\
+-- SIGNAL DETECTION --
+Your job: find the ONE most important gap in this answer and name it with a signal.
+
+MANDATORY REASONING SEQUENCE — follow this order before picking any signal:
+
+STEP 1 — What did the question actually ask for?
+  Was it asking for: a specific real example? personal ownership? how/why something worked?
+  proof of hands-on experience with a tool/method? the outcome of the work?
+
+STEP 2 — Check each gap in this exact order. Fire the FIRST one that matches:
+
+  GAP A — Did they answer the actual question or dodge it with a general habit/pattern?
+    If the question asked for a real instance and they responded with "usually I..." or
+    "I always..." or described a type of behavior instead of a real event → fire: example_evaded
+    DO NOT FIRE if they gave a real specific instance, even if vague or short.
+
+  GAP B — Is their personal contribution invisible? Did they use "we/team/they" throughout
+    with zero mention of what they personally did, decided, or owned?
+    → fire: ownership_ambiguous
+    DO NOT FIRE if they said "I did X" or "my role was Y" anywhere.
+
+  GAP C — Did they make a strong self-claim ('I'm great at X', 'I owned the whole Y',
+    'I always do Z') with NOTHING in the answer to support it — no example, no number,
+    no outcome, no relevant detail?
+    → fire: claim_not_demonstrated
+    DO NOT FIRE if they backed the claim with even one real, relevant operational detail.
+
+  GAP D — Did they name a specific tool, method, framework, or skill but show ZERO evidence
+    of having actually used it? Applies to any domain: tech tools, sales methods, HR practices,
+    any named capability. The name was mentioned but nothing they said proves they worked with it.
+    → fire: functional_claim_unverified
+    DO NOT FIRE if they described even one real thing they did with it — a problem it solved,
+    a specific step they ran, a real outcome it produced.
+
+  GAP E — Is the answer hollow overall? No HOW, no WHY, no real operational detail anywhere.
+    Nothing a person couldn't say after reading one article. No decision explained, no constraint
+    mentioned, no real number, no specific outcome. The answer is correct but completely empty.
+    → fire: answer_hollow
+    DO NOT FIRE if they gave even one real decision, one real constraint, one real number,
+    or one specific outcome. Only fire when hollow on ALL fronts.
+
+STEP 3 — If none of the above gaps exist, the answer is sufficient. Return signal: null.
+
+SIGNAL REASON RULE:
+  signal_reason must be a SHORT EXACT QUOTE (3-12 words) from the candidate's actual answer
+  that is the clearest evidence the signal is firing.
+  GOOD: "we built the pipeline, the team decided"  ← their actual words
+  BAD:  "candidate used team language throughout"  ← your description, not their words
+  If signal is null → signal_reason must also be null.\
+"""
 
 
 async def evaluate_answer(
@@ -114,7 +128,7 @@ async def evaluate_answer(
     Returns:
       clarity, depth, specificity, grounding, overall  — quality scores
       action       — PROBE | MOVE_ON
-      signal       — one of the 7 signal names, or null
+      signal       — one of the 5 signal names, or null
       signal_reason — exact quote from their answer that triggered it, or null
       reason       — short phrase for the routing decision
     """
@@ -172,6 +186,106 @@ async def evaluate_answer(
 
     _signal_block = _build_signal_prompt_block()
 
+    def _build_system_prompt() -> str:
+        ctx = (
+            "You are an experienced interviewer scoring a candidate's answer.\n"
+            "Think like a senior hiring manager who has interviewed hundreds of people.\n"
+            "You know the difference between someone who did the work and someone who read about it.\n"
+            "Output ONLY valid JSON:\n"
+            '{"clarity":0-10,"depth":0-10,"specificity":0-10,"grounding":0-10,'
+            '"action":"PROBE" or "MOVE_ON",'
+            '"signal":"<name>" or null,"signal_reason":"<3-12 word exact quote>" or null,'
+            '"reason":"<one phrase from their answer that drove your call>"}\n\n'
+
+            f"Role: {job_title or 'not specified'} | Topic: {active_topic or 'general'}"
+            f" | Tag: {topic_tag} | Importance: {topic_importance}\n"
+        )
+        if topic_probe_focus:
+            ctx += f"Probe focus: {', '.join(topic_probe_focus)}\n"
+        ctx += (
+            "Tag context: RESUME_TOPIC = they claimed this experience, hold them to it. "
+            "JD_TOPIC = they may be learning, credit honest partial exposure. "
+            "ROLE_TOPIC = conceptual check, one grounded answer is enough.\n\n"
+
+            "This is voice-transcribed speech — score the meaning, not the grammar.\n\n"
+
+            "BEFORE YOU SCORE: Read the answer as a real interviewer would.\n"
+            "Ask yourself: does this person sound like they actually did this work?\n"
+            "Strip away fluency and polish. Look for the substance underneath.\n\n"
+
+            "── CLARITY (20%) ──────────────────────────────\n"
+            "Did they answer what was actually asked — not a safer, easier version of it?\n"
+            "A polished answer to the wrong question scores low. A rough answer to the right question scores high.\n"
+            "Low (0-4): off-topic, tangent, or answered a related but different question.\n"
+            "Mid (5-6): addressed the question but missed part of the intent or drifted.\n"
+            "High (7-10): directly answered what was asked. You got what you needed.\n"
+            f"{'FRESHER: forgive nervousness and rambling — did they try to answer it? ' if candidate_band == 'fresher' else ''}"
+            f"{'SENIOR/EXPERIENCED: precision expected. Tangents and pivots lower the score. ' if candidate_band in ('senior', 'experienced') else ''}\n\n"
+
+            "── DEPTH (35%) ────────────────────────────────\n"
+            "Did they explain the HOW and WHY — or just describe the WHAT?\n"
+            "Ask yourself: could someone who only read about this topic give the same answer?\n"
+            "If yes, depth is low. Real depth is specific to their situation, their constraints, their actual decisions.\n"
+            "Generic best-practices language ('I always start by understanding requirements') is not depth — cap at 5.\n"
+            "Low (0-4): described what happened, no reasoning behind it.\n"
+            "Mid (5-6): gave a real reason for a choice but it's thin — one layer, no constraint or tradeoff behind it.\n"
+            "High (7-10): explained a real decision AND why that decision made sense given their specific situation. "
+            "The best answers show a cause-effect chain — what they tried, what happened, why they adjusted.\n"
+            f"{'FRESHER: a simple genuine reason counts. One honest WHY = 5+. No tradeoffs expected.' if candidate_band == 'fresher' else ''}"
+            f"{'MID: expect at least one real constraint or tradeoff behind a decision. Generic reasoning = 4 max.' if candidate_band == 'mid' else ''}"
+            f"{'EXPERIENCED: expect competing options considered and a real tradeoff explained. Single-reason answers = 5 max.' if candidate_band == 'experienced' else ''}"
+            f"{'SENIOR: expect strategic judgment — why this over alternatives, second-order thinking. No tradeoff = 6 max.' if candidate_band == 'senior' else ''}\n\n"
+
+            "── SPECIFICITY (20%) ──────────────────────────\n"
+            "Did they give you operational detail that could only exist if they actually did this work?\n"
+            "This is NOT about tool names or software. Anyone can study a job description and name every tool in it.\n"
+            "Real specificity: a real number (quota, headcount, deal size, %, volume), a constraint they hit, "
+            "a specific failure they fixed, a real decision point, an outcome that actually happened, "
+            "a specific client type or team structure or process step that was theirs.\n"
+            "Tool names without usage context = no specificity. 'It went well' = no specificity. "
+            "'I usually handle X type of client' = pattern, not specificity.\n"
+            "Low (0-4): generic — anyone who read one article could say this.\n"
+            "Mid (5-6): one real operational detail that required being there.\n"
+            "High (7-10): multiple real details that together make the work traceable to a real event, not a type of event.\n"
+            f"{'FRESHER: any real operational detail counts, even small-scale internship numbers.' if candidate_band == 'fresher' else ''}"
+            f"{'MID: expect at least one real number or constraint. Vague operational language = 4 max.' if candidate_band == 'mid' else ''}"
+            f"{'EXPERIENCED/SENIOR: expect real scale and multiple concrete details. Generic descriptions = 3 max.' if candidate_band in ('experienced', 'senior') else ''}\n\n"
+
+            "── GROUNDING (25%) ────────────────────────────\n"
+            "Does this answer sound like someone who was there — or someone describing what being there is supposed to sound like?\n"
+            "Grounding is the hardest score to fake. Clarity, depth, and specificity can all be rehearsed. "
+            "Grounding requires details that only exist when you actually lived through something.\n"
+            "Signs of real grounding: something didn't go as planned. They remember it imperfectly "
+            "('around 40%, I don't remember exactly'). The detail is specific to their situation, not generic to the domain. "
+            "The outcome wasn't guaranteed. They reflect on what they'd do differently. "
+            "There's organisational texture — a real stakeholder, a real deadline, a real constraint from outside them.\n"
+            "Signs of a hollow answer: perfect linear story (problem → action → success). "
+            "Everything worked. Nothing was hard. The outcome is vague. "
+            "It sounds like a case study of how this work should go, not how it actually went.\n"
+            "An answer with no stated result or outcome cannot score above 5 — something must have happened.\n"
+            "Low (0-4): plausible but hollow. Reads like a description of the work, not a memory of doing it.\n"
+            "Mid (5-6): at least one grounding signal — a real result, a real friction point, a real constraint.\n"
+            "High (7-10): the story has texture. Something was hard or imperfect or specific to their situation. "
+            "You believe this person was actually there.\n"
+            f"{'FRESHER: a real outcome from a student project or internship counts. A failure they learned from = 6+. No org texture expected.' if candidate_band == 'fresher' else ''}"
+            f"{'MID: expect at least one friction point or specific outcome. Clean perfect narrative = 4 max.' if candidate_band == 'mid' else ''}"
+            f"{'EXPERIENCED: expect organisational texture and real constraints. Smooth polished story with no friction = 4 max.' if candidate_band == 'experienced' else ''}"
+            f"{'SENIOR: expect reflection or judgment under uncertainty. A perfect linear story with no tradeoff = 3 max.' if candidate_band == 'senior' else ''}\n\n"
+
+            "── ROUTING ─────────────────────────────────────\n"
+            "PROBE or MOVE_ON — decide as an interviewer, not by checking score thresholds.\n"
+            "The question is: do you have enough evidence to form a real judgment about this candidate on this topic?\n"
+            "PROBE when something is missing that matters — they described WHAT but not HOW, "
+            "they made a claim with nothing behind it, they gave a plausible answer with no real evidence in it, "
+            "or on a RESUME_TOPIC the answer felt rehearsed rather than lived.\n"
+            "MOVE_ON when you have enough — the question was answered, their role was clear, "
+            "at least one real decision or constraint or outcome was credibly described, "
+            "and asking again would not surface anything new.\n"
+            "MOVE_ON also when: the candidate genuinely has no experience here — probing only confirms the gap.\n\n"
+        )
+        ctx += _signal_block
+        return ctx
+
     logger.info(
         "[EVAL] > evaluate_answer | model=%s words=%d follow_ups=%d topic=%s",
         llm_model, word_count, topic_follow_up_count, active_topic or "?",
@@ -187,50 +301,7 @@ async def evaluate_answer(
                 messages=[
                     {
                         "role": "system",
-                        "content": (
-                            "You score a candidate interview answer and detect the ONE most important signal.\n"
-                            "Output ONLY valid JSON with exactly these fields:\n"
-                            "{\n"
-                            '  "clarity": 0-10,\n'
-                            '  "depth": 0-10,\n'
-                            '  "specificity": 0-10,\n'
-                            '  "grounding": 0-10,\n'
-                            '  "action": "PROBE" or "MOVE_ON",\n'
-                            '  "signal": "<signal_name>" or null,\n'
-                            '  "signal_reason": "<exact quote from their answer>" or null,\n'
-                            '  "reason": "one short phrase from their answer that drove your call"\n'
-                            "}\n\n"
-                            f"-- INTERVIEW CONTEXT --\n"
-                            f"Role: {job_title or 'not specified'}\n"
-                            f"Topic: {active_topic or 'general'}\n"
-                            f"Topic importance: {topic_importance}\n"
-                            f"Topic tag: {topic_tag}\n"
-                            + (f"Probe focus: {', '.join(topic_probe_focus)}\n" if topic_probe_focus else "")
-                            + "\nTag-based scoring:\n"
-                            "  RESUME_TOPIC: candidate claims direct experience — score depth and grounding hard.\n"
-                            "  JD_TOPIC: candidate may not know this — credit partial exposure fairly.\n"
-                            "  ROLE_TOPIC: conceptual check — one grounded answer is enough to MOVE_ON.\n\n"
-                            "-- THE 4 SCORES --\n"
-                            "clarity (0-10): Is the answer easy to follow?\n"
-                            "  0-2 disconnected | 3-5 followable but jumpy | 6-8 clear | 9-10 precise\n\n"
-                            "depth (0-10): Did they explain WHY or HOW, not just WHAT?\n"
-                            "  0-2 stated a fact | 3-5 some reasoning | 6-8 real decision/tradeoff | 9-10 cause-effect chain\n\n"
-                            "specificity (0-10): Real names, tools, numbers, dates?\n"
-                            "  0-2 completely generic | 3-5 vague | 6-8 named at least one real tool/metric | 9-10 names+numbers+timeline\n"
-                            "  Count EVERY real named tool. A named comparison ('X over Y') = specificity >= 6.\n\n"
-                            "grounding (0-10): Does this sound like real lived work?\n"
-                            "  0-2 pure theory | 3-5 plausible | 6-8 clearly from real experience | 9-10 rich imperfect detail\n"
-                            "  A real opinion from usage ('DuckDB used less storage') = grounding >= 5.\n\n"
-                            "FAIRNESS: This is voice-transcribed speech. Do NOT penalise bad grammar or filler words.\n"
-                            "Score the CONTENT. Extract substance from disfluent speech before scoring.\n\n"
-                            "-- ROUTING --\n"
-                            "PROBE — more can be pulled. Required when depth < 6 or grounding < 5 on RESUME_TOPIC.\n"
-                            "MOVE_ON — only when: depth >= 7 AND specificity >= 7 AND grounding >= 6,\n"
-                            "  OR for CRITICAL topics depth >= 8, OR candidate genuinely cannot answer.\n\n"
-                            f"-- BAND: {candidate_band.upper()} --\n"
-                            f"{_band_note}\n\n"
-                            f"{_signal_block}"
-                        ),
+                        "content": _build_system_prompt(),
                     },
                     {
                         "role": "user",
@@ -286,15 +357,15 @@ async def evaluate_answer(
         overall = (
             clarity * 0.20
             + depth * 0.35
-            + specificity * 0.30
-            + grounding * 0.15
+            + specificity * 0.20
+            + grounding * 0.25
         )
 
         action = str(data.get("action", "PROBE")).upper()
         if action not in ("PROBE", "MOVE_ON"):
             action = "PROBE"
 
-        # Validate signal against our 7 defined signals
+        # Validate signal against our 5 defined signals
         raw_signal = data.get("signal")
         signal = str(raw_signal).strip() if raw_signal else None
         if signal and signal not in SIGNAL_DEFINITIONS:
@@ -340,8 +411,8 @@ async def evaluate_answer(
             "clarity": 2.0, "depth": 1.0, "specificity": 1.0, "grounding": 1.0,
             "overall": 1.3,
             "action": "PROBE",
-            "signal": "depth_insufficient",
-            "signal_reason": "eval recovery — answer was too thin to score",
+            "signal": None,
+            "signal_reason": None,
             "reason": "eval recovery (llm slow/unavailable)",
             "is_eval_recovery": True,
         }
