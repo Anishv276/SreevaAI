@@ -254,7 +254,8 @@
       "Bash(tail -30 /tmp/next-dev.log | grep -E \"Compiled|error|ERROR\")",
       "PowerShell(cd \"c:\\\\Users\\\\vamsi\\\\OneDrive\\\\Documents\\\\SreevaAI\"; $env:NEXT_TELEMETRY_DISABLED=1; npx next build --no-turbo 2>&1 | Out-String | Select-String -Pattern \"Type error|error TS|Failed to compile|Module not found|Cannot find\" -AllMatches | ForEach-Object { $_.Matches } | Select-Object -First 30)",
       "PowerShell(cd \"c:\\\\Users\\\\vamsi\\\\OneDrive\\\\Documents\\\\SreevaAI\"; $env:NEXT_TELEMETRY_DISABLED=1; npx tsc --noEmit 2>&1 | head -100)",
-      "Bash(del \"c:\\\\Users\\\\vamsi\\\\OneDrive\\\\Documents\\\\SreevaAI\\\\app\\\\page.tsx\")"
+      "Bash(del \"c:\\\\Users\\\\vamsi\\\\OneDrive\\\\Documents\\\\SreevaAI\\\\app\\\\page.tsx\")",
+      "PowerShell(pip show livekit-plugins-elevenlabs 2>&1)"
     ],
     "additionalDirectories": [
       "c:\\Users\\vamsi\\OneDrive\\Desktop\\HR-updates\\scratch",
