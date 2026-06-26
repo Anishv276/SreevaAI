@@ -116,9 +116,14 @@ def build_interview_directive(
         if _brief_skills:
             _skill_lines = []
             for _st in _brief_skills:
-                _src_tag = "(JD required)" if _st.is_jd_must_have else "(resume)"
+                if _st.tag == "RESUME_TOPIC":
+                    _src_label = "[RESUME — they did this, probe depth]"
+                elif _st.tag == "JD_TOPIC":
+                    _src_label = "[JD REQUIRED — not claimed on resume, ask about exposure]"
+                else:  # ROLE_TOPIC
+                    _src_label = "[ROLE DEPTH — not on resume or JD, ask concept/approach]"
                 _focus = ", ".join(_st.probe_focus[:2]) if _st.probe_focus else ""
-                _line = f"  - {_st.title} {_src_tag}"
+                _line = f"  - {_st.title}  {_src_label}"
                 if _focus:
                     _line += f"  [probe: {_focus}]"
                 if _st.why_relevant:
@@ -126,10 +131,15 @@ def build_interview_directive(
                 _skill_lines.append(_line)
             skills_block = (
                 f"\nSKILLS TO COVER (ordered by role relevance):\n"
+                f"  FRAMING RULES BY TAG — follow these exactly:\n"
+                f"  [RESUME]    → They have done this. NEVER ask 'do you have experience'. Ask WHAT they built/decided/broke.\n"
+                f"  [JD REQUIRED] → Role needs it, candidate hasn't claimed it. Ask neutrally: 'This role uses X a lot — what's your exposure?'\n"
+                f"  [ROLE DEPTH]  → Not on resume, not in JD. Ask about understanding/approach: 'How do you think about X in practice?'\n"
                 + "\n".join(_skill_lines) + "\n"
                 + f"{_skill_probe_style}"
                 + "  -> If a skill already came up naturally in a project story, it's covered — don't ask again.\n"
-                + "  -> If the candidate denies a resume skill, ask once for clarification then move on.\n"
+                + "  -> If the candidate denies a RESUME skill, ask once for clarification then move on.\n"
+                + "  -> If the candidate has no exposure to a JD or ROLE DEPTH skill, accept it and move on.\n"
             )
         else:
             skills_block = ""

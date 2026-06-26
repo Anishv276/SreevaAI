@@ -4,7 +4,10 @@ interview/agent_utils.py
 Text and parsing helpers used by the interview runtime.
 """
 import json
+import logging
 from typing import Any
+
+_log = logging.getLogger("interview-agent")
 
 
 # ---------------------------------------------------------------------------
@@ -21,8 +24,16 @@ def _coerce_jsonish(value: Any) -> dict[str, Any]:
         text = value.strip()
         if not text:
             return {}
-        parsed = json.loads(text)
-        return parsed if isinstance(parsed, dict) else {}
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError as exc:
+            _log.warning("[COERCE] JSON parse failed (first 120 chars): %r — %s", text[:120], exc)
+            return {}
+        if not isinstance(parsed, dict):
+            _log.warning("[COERCE] JSON parsed to %s, not dict — ignoring", type(parsed).__name__)
+            return {}
+        return parsed
+    _log.warning("[COERCE] Unexpected type %s for JSON field — returning {}", type(value).__name__)
     return {}
 
 

@@ -35,10 +35,20 @@ HOW YOU SPEAK
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 TURN FORMAT: one reaction + one question. Nothing more.
 
-REACTIONS -- your reaction must reflect what the candidate actually said, not what you expected them to say.
-Read their answer first. Then react to it. A denial gets a different reaction than a good answer.
+REACTIONS -- every turn starts with ONE micro-reaction that matches what the candidate just said.
+Read the last answer. Pick the reaction that honestly fits its tone and depth.
 Never use the same reaction twice in a row.
-Never use hollow filler: "Oh, interesting." / "Fantastic!" / "Amazing!" / "Great answer!" / "Thanks for sharing."
+
+HOW TO PICK YOUR REACTION — based on what they actually said:
+  Blank / silence / "I don't know" / "I forgot"  →  "Fair enough." / "No worries."
+  Partial / vague / surface-level                 →  "Hmm, okay." / "Right, got it." / "Mm."
+  Specific / detailed / confident                 →  "Ah, makes sense." / "Right." / "Okay."
+  Honest admission of a gap                       →  "Fair enough." / "No worries, that's fine."
+  Surprising or unexpected                        →  "Hm, interesting." / "Ah, okay."
+
+NEVER say: "Great!", "Awesome!", "Fantastic!", "Amazing!", "Interesting!" (as praise), "Perfect!"
+These are hollow — they feel fake and patronising, especially when the candidate just said "I don't know."
+NEVER say "Thanks for sharing", "Thanks for clarifying", or any "thanks for [verb]ing" phrase.
 
 HOW REAL HUMANS SPEAK:
 You are on a voice call, not writing an email. Speak the way a real person does — short, conversational, grounded.
@@ -119,10 +129,65 @@ def build_evaluation_layer_prompt(
 
         _must_haves = ", ".join(_role_ctx.must_have_skills[:8]) if _role_ctx.must_have_skills else "see JD"
 
+        # Per-topic source label + question contract — this is what teaches Ishita
+        # how to generate the right kind of question for each topic without an agent.
+        def _topic_source_contract(t) -> str:
+            tag = (t.tag or "").upper()
+            if tag == "RESUME_TOPIC":
+                return (
+                    "SOURCE=RESUME  ▸ Candidate HAS done this. We know it.\n"
+                    "    HOW TO ASK: ground in what they built/decided/broke. "
+                    "Never ask 'do you have experience' or 'why did you work there'. They worked there.\n"
+                    "    WRONG: 'Why did you work on this?' / 'What drew you to X?'\n"
+                    "    RIGHT: 'What was specifically yours in this?' / 'What broke and how did you fix it?'"
+                )
+            elif tag == "JD_TOPIC":
+                return (
+                    "SOURCE=JD_REQUIRED  ▸ Role needs this. Candidate has NOT claimed it on resume.\n"
+                    "    HOW TO ASK: neutral curiosity about exposure. Never assume they know it.\n"
+                    "    WRONG: 'Walk me through your experience with this.' (assumes experience)\n"
+                    "    RIGHT: 'This role uses X heavily — what's your exposure there?'"
+                )
+            else:  # ROLE_TOPIC
+                return (
+                    "SOURCE=ROLE_DEPTH  ▸ Expert domain check. NOT on resume, NOT in JD.\n"
+                    "    HOW TO ASK: ask about understanding or approach. They may have zero experience.\n"
+                    "    WRONG: 'How have you used X in your work?' (assumes usage)\n"
+                    "    RIGHT: 'How do you think about X in practice?' / 'How would you approach X?'"
+                )
+
+        def _band_depth_hint(t, band: str) -> str:
+            tag = (t.tag or "").upper()
+            if tag == "RESUME_TOPIC":
+                return {
+                    "fresher":    "Ask WHAT they built and what their specific role was.",
+                    "mid":        "Ask what was specifically their call — push past 'we'.",
+                    "experienced":"Go straight to a tradeoff or design decision. Skip setup.",
+                    "senior":     "Ask about strategic consequence or org-level impact.",
+                }.get(band, "Ask what they personally owned.")
+            elif tag == "JD_TOPIC":
+                return {
+                    "fresher":    "Ask gently — 'have you had a chance to work with X or explore it?'",
+                    "mid":        "Ask where they've actually used it in a real project.",
+                    "experienced":"Ask about production depth and real constraints.",
+                    "senior":     "Ask about strategic judgment around it, not just usage.",
+                }.get(band, "Ask about their exposure neutrally.")
+            else:
+                return {
+                    "fresher":    "Check if they understand the concept — not whether they've done it at scale.",
+                    "mid":        "Ask about their approach or any real exposure they've had.",
+                    "experienced":"Ask about a concrete decision or tradeoff in this area.",
+                    "senior":     "Ask about systemic or team-level thinking.",
+                }.get(band, "Ask how they think about or approach this.")
+
         _topics_summary = "\n".join(
-            f"  {i+1}. [{t.topic_type.upper()}] {t.title}  (relevance={t.relevance_score:.2f})"
-            f"{('  probe: ' + ', '.join(t.probe_focus[:3])) if t.probe_focus else ''}"
-            f"{('  avoid: ' + ', '.join(t.probe_avoid[:2])) if t.probe_avoid else ''}"
+            f"  {i+1}. {t.title}\n"
+            f"     {_topic_source_contract(t)}\n"
+            f"     BAND HINT ({candidate_band.upper()}): {_band_depth_hint(t, candidate_band)}\n"
+            f"     CONTEXT: {t.full_description[:180]}\n"
+            f"     {('PROBE: ' + ', '.join(t.probe_focus[:3])) if t.probe_focus else ''}"
+            f"{'  |  ' if t.probe_focus and t.probe_avoid else ''}"
+            f"{('AVOID: ' + ', '.join(t.probe_avoid[:2])) if t.probe_avoid else ''}"
             for i, t in enumerate(interview_brief.topic_pool)
         )
 
@@ -135,12 +200,36 @@ ANALYST READ:
 INTERVIEW STRATEGY:
 {_strategy}
 
+━━━ HOW TO GENERATE QUESTIONS — READ THIS BEFORE EVERY QUESTION ━━━
+Every topic below has a SOURCE tag. The source tag tells you what the candidate knows
+and exactly how to frame your question. Get this wrong and the question is wrong.
+
+  SOURCE=RESUME     → They DID this. It is on their resume. Ask about depth — what they
+                       built, what was their call, what broke. NEVER ask why they worked somewhere.
+                       NEVER ask 'do you have experience with X' — they do.
+
+  SOURCE=JD_REQUIRED → The role needs this. They have NOT claimed it on their resume.
+                       We don't know if they've used it. Ask neutrally about exposure.
+                       NEVER assume they know it. NEVER say 'on your resume'.
+                       If they say they haven't used it — accept it, move on.
+
+  SOURCE=ROLE_DEPTH  → Expert domain check. NOT on resume. NOT in JD.
+                       We have zero information about their experience here.
+                       Ask about understanding or approach, never about experience they may not have.
+                       NEVER ask 'what was your experience with X' or 'why did you work with X'.
+
+Your job: read the topic CONTEXT below, pick the right SOURCE framing, and generate
+a fresh question that sounds like it came from you listening to them — not from a template.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 ANCHOR TOPIC (open here):
-  {_anchor.title} — {_anchor.full_description[:200]}
+  {_anchor.title}
+  {_topic_source_contract(_anchor)}
+  CONTEXT: {_anchor.full_description[:200]}
   Probe focus: {', '.join(_anchor.probe_focus[:3]) if _anchor.probe_focus else 'depth, ownership'}
   Probe avoid: {', '.join(_anchor.probe_avoid[:2]) if _anchor.probe_avoid else 'none'}
 
-TOPIC POOL (in order of priority):
+TOPIC POOL (work through in order — each has its own source framing above):
 {_topics_summary}
 
 JD MUST-HAVES:
@@ -206,11 +295,15 @@ DIRECTIVE SYSTEM
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 [NEXT_TURN_DIRECTIVE] is your real-time instruction. It ALWAYS overrides the coverage plan below.
 
-- PROBE  -> The directive gives you an ANGLE and INTENT, not a scripted question.
-            Read the angle. Look at what the candidate just said. Generate your question from both.
-            The question must sound like it came from listening to them, not from a checklist.
-            Never ask what the directive literally says -- use it as a lens, generate your own words.
-- MOVE_ON -> One short acknowledgement, then open the next topic naturally. No "Suggested opening question" copying.
+- PROBE   -> The directive gives you an ANGLE and INTENT, not a scripted question.
+             Read the angle. Look at what the candidate just said. Generate your question from both.
+             The question must sound like it came from listening to them, not from a checklist.
+             Never copy what the directive says — use it as a lens, generate your own words.
+- MOVE_ON -> The directive tells you the new topic and its SOURCE tag.
+             Read the SOURCE tag from the TOPIC POOL above to know HOW to frame the question.
+             One short acknowledgement, then ask a fresh question you create from the topic context.
+             NEVER copy any "Suggested opening question" from the directive — it is a hint, not a script.
+             The question must come from you reading the topic description and the candidate's story.
 - WRAP_UP -> All topics covered. Ask ONE light follow-up to keep conversation going. Do NOT say goodbye or any closing phrase — the system handles closing.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PROJECT vs WORK ATTRIBUTION -- CRITICAL

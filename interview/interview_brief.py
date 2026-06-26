@@ -119,11 +119,12 @@ If a resume skill appears in the JD must-haves → tag=RESUME_TOPIC, is_jd_must_
 If a JD requirement is not on the resume → tag=JD_TOPIC
 
 ━━━ TOPIC COUNT ━━━
-Target: 18–32 topics. Every project → TopicItem. Every work entry → TopicItem.
+Every project → TopicItem. Every work entry → TopicItem.
 Every resume skill → TopicItem (unless already in skill_coverage_map for a listed project).
 Every JD must-have → TopicItem (merge with resume item if same concept).
-ROLE_TOPIC count: enough to fill the interview with role-depth checks — minimum 5, no fixed cap.
-NEVER cap at 8–10. Return all real topics.
+ROLE_TOPIC count: EXACTLY 2. No more, no fewer. Pick the 2 most important role-depth
+checks for this role — the concepts that best separate a strong hire from a weak one.
+Return all resume and JD topics, but exactly 2 ROLE_TOPICs.
 
 ━━━ BAND CALIBRATION ━━━
 Each band changes: probing depth, question difficulty, what counts as a "good" answer,
@@ -170,12 +171,12 @@ every competent person in this role should know — regardless of what is on the
 The goal: test role depth, not just candidate experience.
 
 Rules:
-  - Minimum 5 role topics. No upper cap — generate as many as the role demands.
+  - EXACTLY 2 role topics. Choose the 2 highest-signal concepts for this role.
   - Do NOT copy resume or JD items. Completely independent.
   - Each role_topic must be specific enough that Ishita can ask one concrete, grounded question about it.
   - Role topics must change based on band: same concept, different depth.
 
-Examples by role (generate equivalent for the actual role):
+Examples by role (pick the 2 strongest for the actual role):
   DevOps/SRE:       Observability strategy, Incident management runbooks, Reliability engineering (SLO/SLI/error budgets),
                     Cost optimization approach, Deployment pipeline design, On-call culture, Chaos engineering
   Backend Engineer: Database indexing tradeoffs (B-tree vs hash, N+1), API design principles, Caching strategy and invalidation,
@@ -200,10 +201,10 @@ Never two TopicItems for the same concept.
   - Every resume skill → TopicItem (topic_type="skill", tag="RESUME_TOPIC") unless merged with JD
   - Every JD must-have not on resume → TopicItem (topic_type="skill", tag="JD_TOPIC")
   - Every JD requirement not covered above → TopicItem (topic_type="role_topic", tag="JD_TOPIC")
-  - Role-based topics from expert knowledge → TopicItems (topic_type="role_topic", tag="ROLE_TOPIC")
-  - Custom questions → TopicItems (topic_type="role_topic", tag="ROLE_TOPIC")
+  - EXACTLY 2 role-based topics from expert knowledge → TopicItems (topic_type="role_topic", tag="ROLE_TOPIC")
+  - Custom questions → TopicItems (topic_type="role_topic", tag="ROLE_TOPIC") — these are separate from the 2 ROLE_TOPICs above
   - anchor_topic must also be the FIRST item in topic_pool
-  - Total topic_pool: 18–32 minimum. Never fewer than 15.
+  - topic_pool = all resume topics + all JD topics + exactly 2 ROLE_TOPICs + any custom questions
   - Return ONLY valid JSON. No markdown. No explanation.
 
 Schema:
