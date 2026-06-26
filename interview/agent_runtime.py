@@ -382,7 +382,6 @@ async def _generate_probe_directive(
     prev_question: str,
     prev_answer: str,
     topic_follow_ups: int,
-    is_closing_tier: bool,
     topic_denied: bool,
     coverage_memory: str,
     asked_questions_log: list[str],
@@ -430,7 +429,6 @@ async def _generate_probe_directive(
         signal_reason=signal_reason,
         band=band,
         topic_follow_ups=topic_follow_ups,
-        is_closing_tier=is_closing_tier,
         topic_denied=topic_denied,
         prev_answer=prev_answer,
     )
@@ -532,7 +530,8 @@ async def _generate_move_on_directive(
     client: Any,
     llm_model: str = "gpt-4.1-mini",
     usage_sink: Optional[Any] = None,
-    topic_item: Optional[Any] = None,  # TopicItem from InterviewBrief — enriches directive
+    topic_item: Optional[Any] = None,
+    prev_answer: str = "",  # candidate's last answer — used to derive the right opening filler
 ) -> str:
     """
     Ask GPT-4.1-mini to generate a full MOVE_ON directive including the opening
@@ -592,73 +591,161 @@ async def _generate_move_on_directive(
             "Even if the analyst brief mentions a company nearby, do NOT assume this project\n"
             "was built there. Ask about the project on its own terms.\n"
         )
-    # Tag-based framing — the tag tells us what the candidate knows and how to open
+    # Tag-based framing — the tag tells us exactly what the candidate knows and how to open.
+    # This is the single most important framing rule: wrong tag = wrong question type.
+    #
+    # RESUME_TOPIC : candidate did this — we know it. Ask about what they built, owned, or decided.
+    #                NEVER ask if they did it. NEVER ask why they worked somewhere. They worked there.
+    # JD_TOPIC     : role requires this but candidate has NOT claimed it on their resume.
+    #                Ask neutrally — curious about exposure. Do NOT assume they know it.
+    # ROLE_TOPIC   : comes from expert domain knowledge, NOT resume or JD.
+    #                Candidate has no known experience here. Ask a concept/approach question.
+    #                NEVER ask "what was your experience with X" — they may have none.
     if source in ("RESUME_TOPIC", "resume_project", "resume_skill"):
-        # Candidate has direct experience here. Ask about what they built/did.
         _name_clause = (
-            "name the project (NOT any company -- this is a standalone personal project)"
+            "name the project itself (NOT any company — this is a standalone personal project)"
             if _is_standalone else
             "name the specific project or role"
         )
+        _band_depth = {
+            "fresher": (
+                f"Ask what they personally built and what their specific role was. "
+                f"Surface-level is fine — establish the basics first. "
+                f"Example: 'What exactly did you build in {new_topic_title} and what was specifically yours?'"
+            ),
+            "mid": (
+                f"Ask what was specifically theirs and what decision they made. "
+                f"Push past 'we'. "
+                f"Example: 'In {new_topic_title}, what part of it was completely your call — no team input?'"
+            ),
+            "experienced": (
+                f"Go straight to a tradeoff or design decision. Skip setup. "
+                f"Example: 'What was the hardest design call you made in {new_topic_title} and why did you make it that way?'"
+            ),
+            "senior": (
+                f"Ask about strategic judgment or org-level consequence. "
+                f"Example: 'What did {new_topic_title} change at the team or product level — not just technically?'"
+            ),
+        }.get(band, f"Ask what they personally owned and what decisions were theirs in {new_topic_title}.")
         _angle_guide = (
-            f"Tag: RESUME_TOPIC — the candidate has direct experience here.\n"
-            f"Frame as: what they personally built, their specific role, a decision they made, or what broke.\n"
-            f"Open by naming {_name_clause} and asking one concrete question grounded in it.\n"
-            f"NEVER say 'you mentioned' or 'on your resume' — just ask naturally about the work.\n"
-            f"NEVER open generically. Every word must be specific to {new_topic_title}."
+            f"TAG: RESUME_TOPIC\n"
+            f"CONTRACT: The candidate HAS direct experience here — this is on their resume. "
+            f"We are not checking if they did it. We KNOW they did. "
+            f"Ask about depth: what they built, what broke, what was their specific call.\n"
+            f"FORBIDDEN:\n"
+            f"  - NEVER ask 'why did you work at X' or 'what drew you to this role/company'\n"
+            f"  - NEVER ask 'do you have experience with' — they do\n"
+            f"  - NEVER say 'you mentioned' or 'on your resume'\n"
+            f"  - NEVER open generically — every word must be specific to {new_topic_title}\n"
+            f"Open by {_name_clause} and ask one concrete question.\n"
+            f"BAND ({band.upper()}) DEPTH GUIDE: {_band_depth}"
         )
     elif source in ("JD_TOPIC", "jd_skill"):
-        # Candidate has NOT claimed this. Ask neutrally — the role requires it.
+        _band_jd = {
+            "fresher": (
+                f"Ask gently — they may be new to this. "
+                f"Example: 'This role uses {new_topic_title} quite a bit — have you had a chance to work with it or explore it?'"
+            ),
+            "mid": (
+                f"Ask about real usage. "
+                f"Example: 'The role works heavily with {new_topic_title} — where have you actually used it in a project?'"
+            ),
+            "experienced": (
+                f"Ask about production depth. "
+                f"Example: 'This role needs strong {new_topic_title} — how have you used it under real production constraints?'"
+            ),
+            "senior": (
+                f"Ask about judgment, not just usage. "
+                f"Example: 'The role leans heavily on {new_topic_title} — where have you had to make strategic calls around it?'"
+            ),
+        }.get(band, f"Ask about their exposure to {new_topic_title} — the role requires it but they haven't claimed it.")
         _angle_guide = (
-            f"Tag: JD_TOPIC — this is required by the role, but the candidate has not claimed it on their resume.\n"
-            f"Frame as: the role requires this, curious about their exposure.\n"
-            f"Example framing: 'This role works a lot with {new_topic_title} — what's your experience there?'\n"
-            f"or: 'How have you approached {new_topic_title} in your work?'\n"
-            f"NEVER say 'you listed', 'you claimed', 'on your resume', or assume prior experience.\n"
-            f"If they say they haven't used it, accept that and move on — do not grill them."
+            f"TAG: JD_TOPIC\n"
+            f"CONTRACT: This is required by the role but the candidate has NOT claimed it on their resume. "
+            f"We do NOT know if they've used it. Ask neutrally — curious about exposure, not interrogating a gap.\n"
+            f"FORBIDDEN:\n"
+            f"  - NEVER say 'you listed', 'you claimed', 'on your resume', or assume prior experience\n"
+            f"  - NEVER ask 'why did you choose X' or 'what drew you to X' — no assumed history\n"
+            f"  - NEVER grill them if they say they haven't used it — accept and move on\n"
+            f"BAND ({band.upper()}) OPENING GUIDE: {_band_jd}"
         )
     elif source in ("ROLE_TOPIC", "role_topic"):
-        # Role knowledge check — not from resume or JD. Ask about understanding/approach.
         _probe_focus_str = "; ".join(topic_item.probe_focus[:3]) if (topic_item and topic_item.probe_focus) else ""
         _role_desc = (topic_item.full_description if topic_item else "") or new_topic
+        _band_role = {
+            "fresher": (
+                f"Ask conceptually — they're learning. Check if they understand the idea, not whether they've done it at scale. "
+                f"Example: 'How do you think about {new_topic_title} — what does it mean to you in practice?'"
+            ),
+            "mid": (
+                f"Ask about their approach or any real exposure. "
+                f"Example: 'How have you handled {new_topic_title} in your work — or how would you approach it?'"
+            ),
+            "experienced": (
+                f"Ask about a concrete decision or tradeoff they've seen or made. "
+                f"Example: 'Where have you had to make a real call around {new_topic_title} — what did you choose and why?'"
+            ),
+            "senior": (
+                f"Ask about strategic or systemic thinking. "
+                f"Example: 'How do you think about {new_topic_title} at the team or org level — not just technically?'"
+            ),
+        }.get(band, f"Ask how they think about or approach {new_topic_title} — not whether they've done it.")
         _angle_guide = (
-            f"Tag: ROLE_TOPIC — this is a role-depth check from expert knowledge, not from the resume or JD.\n"
-            f"Frame as: curious about their understanding or approach, not interrogating experience.\n"
+            f"TAG: ROLE_TOPIC\n"
+            f"CONTRACT: This comes from expert domain knowledge of the role — it is NOT on their resume and NOT in the JD. "
+            f"We have NO IDEA if they've ever worked with this. "
+            f"Ask about understanding, thinking, or approach — never assume they've done it.\n"
+            f"FORBIDDEN:\n"
+            f"  - NEVER ask 'what was your experience with X' — they may have zero experience\n"
+            f"  - NEVER ask 'why did you work with X' or 'what drew you to X'\n"
+            f"  - NEVER frame as if it's on their resume\n"
+            f"  - NEVER ask a generic 'what do you know about X?' — must be specific and grounded\n"
             f"Context: {_role_desc}\n"
-            f"Angle: {_probe_focus_str or 'what they know, how they think about it, any real usage'}\n"
-            f"NEVER expose the internal topic label. Ask a grounded, specific question — not 'what do you know about X?'.\n"
-            f"Example framing: 'How do you think about [specific aspect of {new_topic_title}] in practice?'"
+            f"Probe angle: {_probe_focus_str or 'their understanding, how they think about it, any real exposure'}\n"
+            f"BAND ({band.upper()}) OPENING GUIDE: {_band_role}"
         )
     else:
         _angle_guide = (
-            f"Open with a specific, grounded question about {new_topic_title} based on the brief context above."
+            f"Open with a specific, grounded question about {new_topic_title} based on the brief context above. "
+            f"Do NOT ask why they worked somewhere or what drew them to a company."
         )
     _system = (
         "You are writing an internal directive for an AI interviewer named Ishita. "
         "This directive is NEVER spoken aloud -- it is a system instruction she reads and acts on silently. "
         "Your job: write the full [NEXT_TURN_DIRECTIVE] block for a MOVE_ON moment.\n\n"
+        "━━━ TOPIC TAG CONTRACT — the most important rule ━━━\n"
+        "The SOURCE tag tells you what the candidate knows. Get this wrong and the question is wrong.\n\n"
+        "  RESUME_TOPIC  → Candidate HAS done this. It is on their resume.\n"
+        "                  NEVER ask 'do you have experience', 'why did you work there', or 'what drew you to X'.\n"
+        "                  They worked there. Ask about DEPTH: what they built, what was their call, what broke.\n"
+        "                  Wrong: 'Why did you work on QuickServe?'\n"
+        "                  Right:  'What was the hardest part of the backend you built for QuickServe?'\n\n"
+        "  JD_TOPIC      → Role requires this. Candidate has NOT claimed it on their resume.\n"
+        "                  We do not know if they've used it. Ask neutrally — curious about exposure.\n"
+        "                  NEVER assume prior experience. NEVER say 'you listed' or 'on your resume'.\n"
+        "                  Wrong: 'Walk me through your experience with Kubernetes.'\n"
+        "                  Right:  'This role works heavily with Kubernetes — what's your exposure there?'\n\n"
+        "  ROLE_TOPIC    → From expert domain knowledge. NOT on resume. NOT in JD.\n"
+        "                  We have NO IDEA if they've ever worked with this. Ask about understanding or approach.\n"
+        "                  NEVER ask 'what was your experience with X' — they may have zero.\n"
+        "                  NEVER ask 'why did you work with X' — there's no known history.\n"
+        "                  Wrong: 'How have you handled database indexing in your work?'\n"
+        "                  Right:  'How do you think about database indexing tradeoffs — B-tree vs hash, for instance?'\n\n"
+        "━━━ DIRECTIVE STRUCTURE ━━━\n"
         "The directive must include:\n"
         "1. DECISION: MOVE_ON\n"
         "2. TOPIC YOU ARE LEAVING: <old topic> -- CLOSED. Do NOT reference it.\n"
-        "3. NEW ACTIVE TOPIC: <new topic>\n"
+        "3. NEW ACTIVE TOPIC: <new topic>  [TAG: <RESUME_TOPIC|JD_TOPIC|ROLE_TOPIC>]\n"
         "4. WHAT WE KNOW: bullet points from the analyst brief about the new topic\n"
         "5. OPENING ANGLE: specific guidance on what angle Ishita should take -- what makes this topic interesting, "
         "what is worth probing, what the analyst brief flagged\n"
         "6. TRANSITION RULE: how to open (one short acknowledgement + natural question -- no 'Next up:', "
         "no 'Moving on to:', no 'Tell me about X what did you work on there?')\n"
         "7. FORBIDDEN PHRASES: list what Ishita must NOT say\n\n"
-        "Then write the OPENING QUESTION Ishita should ask -- labeled as:\n"
-        "SUGGESTED OPENING QUESTION: <question>\n\n"
-        "The question must:\n"
-        "- Be specific (name the project, tool, or a concrete detail). Only name a COMPANY\n"
-        "  if the context explicitly links the topic to that employer -- never guess an\n"
-        "  employer for a standalone/personal project (see ATTRIBUTION GUARD if present).\n"
-        "- Sound natural and curious -- not like a checklist item\n"
-        "- NEVER start with 'Can you' or 'Could you' -- sounds like a form, not a person\n"
-        "- Ask like someone genuinely curious about this specific topic and this specific person\n"
-        "- The opening question must emerge from the context above, not from a template\n"
-        "- Be ONE sentence only\n"
-        "- Be calibrated to the band (FRESHER=surface ownership + what/why; MID=decisions+tradeoffs; SENIOR=strategy+judgment)\n\n"
+        "Do NOT write a suggested question. Ishita generates her own question from the topic context.\n"
+        "Writing a suggested question creates a script she will copy — that is exactly what we are avoiding.\n"
+        "Instead, end with:\n"
+        "WHAT TO FIND OUT: one sentence on what the ideal answer to this topic would reveal.\n\n"
         "Output the directive as plain text. No markdown. No code blocks."
     )
     _user = (
@@ -667,6 +754,7 @@ async def _generate_move_on_directive(
         f"NEW TOPIC: {new_topic_title}\n"
         f"NEW TOPIC FULL CONTEXT: {new_topic}\n"
         f"SOURCE: {source}\n\n"
+        f"CANDIDATE'S LAST ANSWER: {prev_answer or '(not available)'}\n\n"
         f"ANALYST BRIEF CONTEXT FOR NEW TOPIC:\n{_brief_context or '(not available)'}\n\n"
         f"ANGLE GUIDANCE: {_angle_guide}\n"
         f"{_attribution_guard}\n"
@@ -707,26 +795,42 @@ async def _generate_move_on_directive(
         generated = "".join(chunks).strip()
         if not generated:
             raise ValueError("empty response")
-        if source in ("JD_TOPIC", "jd_skill") and re.search(
-            r"\b(you listed|you claimed|on your resume|in your resume|listed .*resume|resume .*listed)\b",
-            generated,
-            flags=re.I,
-        ):
-            raise ValueError("generated JD-only directive used resume-claim phrasing")
-        # Wrap in standard header/footer and append memory + cross-ref blocks
+        # Sanity check: directive must not contain a scripted question for Ishita to copy
+        if "SUGGESTED OPENING QUESTION" in generated.upper():
+            # Strip it — Ishita generates her own from topic context
+            generated = re.sub(
+                r"SUGGESTED OPENING QUESTION.*$", "", generated, flags=re.I | re.DOTALL
+            ).strip()
+        # Build filler instruction from the actual prev answer so the LLM
+        # picks a reaction that matches what the candidate really said —
+        # not a generic list it ignores.
+        _prev_trimmed = (prev_answer or "").strip()[:300]
+        if _prev_trimmed:
+            _filler_instruction = (
+                f"\n\nOPENING REACTION — derive from the candidate's last answer below:\n"
+                f"LAST ANSWER: \"{_prev_trimmed}\"\n\n"
+                "Read that answer and pick ONE micro-reaction (3-8 words) that honestly fits its tone:\n"
+                "  - Blank / silence / 'I don't know' / 'I forgot'  →  'Fair enough.' / 'No worries.'\n"
+                "  - Partial / vague / surface-level answer          →  'Hmm, okay.' / 'Right, got it.'\n"
+                "  - Confident / specific / detailed answer          →  'Ah, makes sense.' / 'Right.' / 'Okay.'\n"
+                "  - Surprising or unexpected answer                 →  'Hm, interesting.' / 'Ah, okay.'\n"
+                "  - Honest admission of gap                         →  'Fair enough.' / 'No worries, that's fine.'\n"
+                "NEVER say 'Great!', 'Awesome!', 'Fantastic!', 'Amazing!', or any hollow praise.\n"
+                "NEVER say 'Thanks for sharing' or any 'thanks for [verb]ing' phrase.\n"
+                "NEVER use the same reaction you used the turn before.\n"
+                f"NEVER reference the old topic '{old_topic_title}' — it is closed.\n"
+                "DO NOT wrap up, say goodbye, or add any closing phrase.\n"
+            )
+        else:
+            _filler_instruction = (
+                f"\n\nOPENING REACTION: One short natural lead-in (3-8 words). "
+                "NEVER say 'Great!', 'Awesome!', 'Fantastic!', or any hollow praise. "
+                "NEVER say 'Thanks for sharing'.\n"
+            )
         directive = (
             "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
             + generated
-            + "\n\nACKNOWLEDGEMENT RULES:\n"
-            "  - Start with ONE natural micro-reaction, 3-8 words, based on what the candidate just said.\n"
-            "  - Use varied human fillers: 'Right, that makes sense.', 'Hmm, okay.', 'Ah, okay.', "
-            "'Oh, interesting.', 'Fair enough.', 'No worries.'\n"
-            "  - For vague answers use 'Hmm, okay...' before clarifying. For honest gaps use 'Fair enough.' or 'No worries.'\n"
-            "  - Do not repeat the same acknowledgement two turns in a row.\n"
-            "  - NEVER say 'Thanks for sharing', 'Thanks for clarifying', or any 'thanks for [verb]ing' phrase.\n"
-            "  - NEVER end a sentence with 'hmm', 'umm', 'ahh', 'ohh', 'right', or 'yeah'.\n"
-            f"  - NEVER reference the old topic '{old_topic_title}' -- it is closed.\n"
-            "  - DO NOT wrap up, say goodbye, or add any closing phrase.\n"
+            + _filler_instruction
             + memory_block
             + cross_ref_rule
         )
@@ -1728,12 +1832,7 @@ async def entrypoint(ctx: JobContext):
     _answer_received_at: float = 0.0
     _custom_q_reminder_fired: bool = False
     _covered_topic_keys = CoveredTopics()  # single source of truth — normalized lowercase keys
-    # Topics whose CLOSING / reflection question has already been asked. One-shot per topic.
-    # Read inside the PROBE directive builder to avoid asking the reflection question twice
-    # on the same project.
-    _topic_closing_fired: set[str] = set()
     _asked_questions_log: collections.deque = collections.deque(maxlen=6)  # EC-3: deque(maxlen) makes append atomic — no pop() race
-    _reflection_probe_count: int = 0           # session-wide count of reflection probes used
 
     _first_interview_question_asked: bool = False  # True after first post-warmup AI question fires
     _awaiting_first_interview_question: bool = False  # warmup confirmed; next assistant turn must open interview
@@ -2270,7 +2369,7 @@ async def entrypoint(ctx: JobContext):
             _active_topic, _covered_topic_keys, _topic_states, \
             _last_applied_eval_turn, _topic_score_histories, \
             _awaiting_first_interview_question, \
-            _asked_questions_log, _reflection_probe_count, \
+            _asked_questions_log, \
             _last_question_topic, _topic_records, _current_topic_answers
         try:
             if not content or role != "user":
@@ -2760,6 +2859,7 @@ async def entrypoint(ctx: JobContext):
                                 llm_model=analysis_model,
                                 usage_sink=_eval_llm_usages_accumulated.append,
                                 topic_item=_pre_next_item,
+                                prev_answer=(payload.get("answer") or ""),
                             )
                         )
                     # SECONDARY PHASE -- do NOT wrap up early when the primary pool is
@@ -2859,57 +2959,35 @@ async def entrypoint(ctx: JobContext):
                     _old_topic_title = _topic_short_title(_old_topic or "")
                     _new_topic_title = _topic_short_title(_active_topic or "")
                     _memory_block = _covered_topic_keys.get_memory_block()
-                    # Cross-reference rule -- different phrasing depending on whether the
-                    # NEW topic is a resume_skill (fair to probe depth) or jd_skill
-                    # (don't quiz on theory; stay applied).
-                    if _src == "resume_skill":
-                        if _new_topic_title.lower() in {"ai", "ai tools"}:
-                            _cross_ref_rule = (
-                                "\n[CROSS-REFERENCE RULE -- applied AI skill]\n"
-                                "The candidate lists AI/AI tools, but this is a broad skill. Do NOT ask textbook AI theory "
-                                "such as supervised vs unsupervised learning. Ask one applied question about actual tools, "
-                                "agents, prompts, automations, or workflows they have used or built. If they say they do "
-                                "not know or do not remember, acknowledge once and pivot away."
-                            )
-                        else:
-                            _cross_ref_rule = (
-                                "\n[CROSS-REFERENCE RULE -- candidate may cite a covered project]\n"
-                                "If the candidate cites a project already in INTERVIEW MEMORY as evidence "
-                                f"for {_new_topic_title}, treat that project as KNOWN CONTEXT -- do NOT "
-                                "re-introduce it ('Let's move to ...'), do NOT ask what they built in it, "
-                                "and do NOT ask their role in it (already covered).\n"
-                                f"They CLAIM {_new_topic_title} on their resume, so probe SKILL-LEVEL depth.\n"
-                                "Pick ONE category and generate the equivalent question for the CURRENT skill:\n"
-                                f"  a) Mechanic / concept  -- how a core feature of {_new_topic_title} works\n"
-                                f"  b) Pitfall awareness   -- a common mistake or gotcha with {_new_topic_title}\n"
-                                f"  c) Tradeoff            -- when to use {_new_topic_title} vs an alternative, or when NOT to\n"
-                                f"  d) Hands-on debugging  -- how they'd debug a typical {_new_topic_title} problem\n"
-                                f"  e) Internals           -- what {_new_topic_title} does under the hood\n"
-                                "Calibrate to band: FRESHER -> (a)(b)(d); MID/SENIOR -> (c)(e).\n"
-                                "The question must be answerable WITHOUT re-explaining the project. It tests\n"
-                                "whether they actually know the skill, not just that they used it once.\n"
-                                "NEVER ask a question whose answer is already in INTERVIEW MEMORY."
-                            )
-                    elif _src == "jd_skill":
+                    # Cross-reference rule -- keyed on the topic TAG (RESUME_TOPIC /
+                    # JD_TOPIC / ROLE_TOPIC). This is the ONLY place that handles how to
+                    # treat a topic the candidate may already have touched. The source
+                    # framing itself ("we require X" vs "you built X") lives in the
+                    # directive's _angle_guide and Ishita's system prompt — not here.
+                    _topic_type = _next_brief_item.topic_type if _next_brief_item else ""
+                    if _src == "RESUME_TOPIC":
                         _cross_ref_rule = (
-                            "\n[CROSS-REFERENCE RULE -- JD-only skill, candidate does NOT claim it on resume]\n"
-                            "The candidate does NOT list this skill on their resume. The opener already asks\n"
-                            "whether they've worked with it. Based on their answer:\n"
-                            "  - If they say NO / never used it: acknowledge briefly and let the next MOVE_ON\n"
-                            "    pivot away. Do NOT push, do NOT quiz on theory.\n"
-                            "  - If they say YES and cite a project (possibly one already in INTERVIEW MEMORY):\n"
-                            "    stay APPLIED, not theoretical. Ask only what they actually did with it:\n"
-                            f"      * 'What specifically did you use {_new_topic_title} for in that project?'\n"
-                            "      * 'Did you build it from scratch or follow a tutorial?'\n"
-                            "      * 'What worked, what didn't?'\n"
-                            "    DO NOT ask about internals, mechanics, or theory -- they make no expertise\n"
-                            "    claim, so trivia-style questions are unfair."
+                            "\n[CROSS-REFERENCE RULE -- resume topic, candidate did this]\n"
+                            "If the candidate cites a project already in INTERVIEW MEMORY, treat it as KNOWN "
+                            "CONTEXT -- do NOT re-introduce it and do NOT re-ask what they built or their role.\n"
+                            "Probe DEPTH on the new topic: a decision they made, what broke, or a tradeoff.\n"
+                            "NEVER ask a question whose answer is already in INTERVIEW MEMORY."
                         )
-                    else:
+                    elif _src == "JD_TOPIC":
                         _cross_ref_rule = (
-                            "\n[CROSS-REFERENCE RULE]\n"
-                            "If the candidate cites a project already in INTERVIEW MEMORY, do NOT re-open it. "
-                            "Probe the NEW angle of the current topic instead."
+                            "\n[CROSS-REFERENCE RULE -- JD requirement, NOT claimed on resume]\n"
+                            "The candidate has NOT claimed this on their resume. Open by asking about exposure,\n"
+                            "not by assuming experience. Based on their answer:\n"
+                            "  - If they say they have NOT used it: acknowledge briefly, do NOT push or quiz theory.\n"
+                            "  - If they say they HAVE used it: stay APPLIED -- ask what they actually did with it,\n"
+                            "    not internals or trivia. They made no expertise claim."
+                        )
+                    else:  # ROLE_TOPIC
+                        _cross_ref_rule = (
+                            "\n[CROSS-REFERENCE RULE -- role-depth check, not on resume or JD]\n"
+                            "We have no information about their experience here. Ask about understanding or\n"
+                            "approach -- never assume they have done it. If they have no exposure, accept it\n"
+                            "and move on. Do NOT frame it as if it were on their resume."
                         )
                     # Use the pre-fired directive task if it matches the active topic,
                     # otherwise fall back to a fresh call (topic changed mid-flight).
@@ -2952,6 +3030,7 @@ async def entrypoint(ctx: JobContext):
                             llm_model=analysis_model,
                             usage_sink=_eval_llm_usages_accumulated.append,
                             topic_item=_new_topic_item,
+                            prev_answer=_prev_a,
                         )
                     # If LLM directive generation failed, use a minimal instruction
                     # that lets the LLM generate a natural question from the TOPIC_LOCK context.
@@ -2989,17 +3068,28 @@ async def entrypoint(ctx: JobContext):
                         "employer name to it. NEVER say '...at <Company>' about it.\n"
                         if "[standalone]" in (_active_topic or "").lower() else ""
                     )
-                    _source_lock = ""
-                    if _src == "jd_skill":
+                    # SOURCE RULE -- the one short line that tells Ishita HOW to frame the
+                    # opener based on the topic tag. Keyed on the real tag values.
+                    # This is what makes "we require so-and-so skill" (JD) differ from
+                    # "what did you build" (resume) and "how do you think about X" (role).
+                    if _src == "JD_TOPIC":
                         _source_lock = (
-                            "\nSOURCE RULE: This is a JD-only skill. The candidate did NOT list it on the resume. "
-                            "Do NOT say or imply 'you mentioned it on your resume', 'you listed it', or "
-                            "'your resume says'. Ask only whether they have worked with it.\n"
+                            "\nSOURCE: JD REQUIREMENT. The candidate has NOT claimed this on their resume.\n"
+                            "Frame it as 'this role requires X' and ask about their exposure. "
+                            "NEVER say 'you mentioned', 'you listed', or 'your resume says'. "
+                            "NEVER assume they have used it.\n"
                         )
-                    elif _src == "resume_skill":
+                    elif _src == "ROLE_TOPIC":
                         _source_lock = (
-                            "\nSOURCE RULE: This is a resume skill. It is fair to ask where they used it, "
-                            "but do not re-open a covered project.\n"
+                            "\nSOURCE: ROLE-DEPTH CHECK. Not on the resume, not in the JD.\n"
+                            "Ask about their understanding or approach -- 'how do you think about X' -- "
+                            "NEVER 'what was your experience with X'. They may have none.\n"
+                        )
+                    else:  # RESUME_TOPIC
+                        _source_lock = (
+                            "\nSOURCE: RESUME. The candidate has direct experience here.\n"
+                            "Ask about what they built, decided, or what broke. NEVER ask 'do you have "
+                            "experience with X' or 'why did you work there' -- they did.\n"
                         )
                     remove_system_messages_multi(chat_ctx, ("[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT"))
                     chat_ctx.add_message(role="system", content=_directive)
@@ -3010,9 +3100,9 @@ async def entrypoint(ctx: JobContext):
                         f"FULL CONTEXT: {_active_topic}\n"
                         f"{_lock_attribution}"
                         f"{_source_lock}"
-                        "Ask ONE natural, specific question to open the new topic. "
-                        "Use the SUGGESTED OPENING QUESTION in your directive above as your starting point. "
-                        "Do NOT say 'Tell me about X -- what did you work on there?' -- be more specific than that. "
+                        "Generate ONE fresh, specific question to open this topic, using the SOURCE framing above "
+                        "and the FULL CONTEXT. Do NOT copy any wording from the directive -- create your own. "
+                        "Do NOT say 'Tell me about X -- what did you work on there?' -- be more specific. "
                         "Do not mention tools, projects, or details from the previous topic."
                     ))
                     # One-shot guard: tell the next eval cycle to skip itself so
@@ -3027,30 +3117,6 @@ async def entrypoint(ctx: JobContext):
                     _prev_a = (payload.get("answer") or "").strip()
                     _topic_follow_ups = int((_new_topic_state_dict or {}).get("follow_up_turns", 0) or 0)
                     _depth_topic_key_lc = _topic_short_key(_active_topic or "").lower()
-                    _active_brief_item = next((t for t in _interview_brief.topic_pool if _topic_short_key_for_ordering(t.title).lower() == _depth_topic_key_lc), None)
-                    _depth_is_resume_project = bool(_active_topic) and (_active_brief_item is None or _active_brief_item.tag == 'RESUME_TOPIC')
-                    _depth_sat_score = float((_new_topic_state_dict or {}).get("saturation_score", 0.0) or 0.0)
-                    _depth_sat_thresh = float((_new_topic_state_dict or {}).get("saturation_threshold", 0.0) or 0.0)
-                    _depth_sat_ratio = (_depth_sat_score / _depth_sat_thresh) if _depth_sat_thresh > 0 else 0.0
-                    _is_closing_on_project = (
-                        _depth_is_resume_project
-                        and _topic_follow_ups >= 2
-                        and _depth_sat_ratio >= 0.6
-                        and _depth_topic_key_lc not in _topic_closing_fired
-                        and _reflection_probe_count < 2
-                    )
-                    if _is_closing_on_project:
-                        try:
-                            async with _session_state_lock:
-                                _topic_closing_fired.add(_depth_topic_key_lc)
-                                _reflection_probe_count += 1
-                            logger.info(
-                                "[AGENT] turn=%d | CLOSING tier fired for project %r (session_reflection_count=%d)",
-                                turn_snapshot, _depth_topic_key_lc, _reflection_probe_count,
-                            )
-                        except Exception as _closing_err:
-                            logger.warning("[AGENT] turn=%d | CLOSING tier setup failed: %s", turn_snapshot, _closing_err)
-                            _is_closing_on_project = False
                     # Fetch TopicItem for the active topic from the brief
                     _probe_brief_item = next(
                         (t for t in _interview_brief.topic_pool
@@ -3070,7 +3136,6 @@ async def entrypoint(ctx: JobContext):
                         prev_question=_prev_q,
                         prev_answer=_prev_a,
                         topic_follow_ups=_topic_follow_ups,
-                        is_closing_tier=_is_closing_on_project,
                         topic_denied=_topic_short_key(_active_topic or "").lower() in _covered_topic_keys,
                         coverage_memory=_covered_topic_keys.get_memory_block(),
                         asked_questions_log=list(_asked_questions_log),
