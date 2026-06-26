@@ -21,6 +21,7 @@ from interview.interview_brief import (
     TopicItem,
     generate_interview_brief,
 )
+from interview.band_classifier import classify_band
 from interview.agent_providers import (
     build_cartesia_tts,
     build_elevenlabs_tts,
@@ -1528,40 +1529,9 @@ async def entrypoint(ctx: JobContext):
     )
     _brief_openai_client: AsyncOpenAI = _SHARED_OPENAI_CLIENT
 
-    # ── Band seed: determined solely from resume experience (total_years + seniority_level) ──
-    _resume_exp = {}
-    if isinstance(structured_resume, dict):
-        _resume_exp = structured_resume.get("experience") or {}
-        # Some parsers nest under "parsed"
-        if not _resume_exp and "parsed" in structured_resume:
-            _resume_exp = (structured_resume["parsed"] or {}).get("experience") or {}
-    _total_years: float = float(_resume_exp.get("total_years") or 0)
-    _seniority: str = str(_resume_exp.get("seniority_level") or "").strip().lower()
-
-    # seniority_level is the primary signal; total_years is the fallback
-    _SENIORITY_TO_BAND = {
-        "intern":   "fresher",
-        "junior":   "fresher",
-        "mid":      "mid",
-        "senior":   "experienced",
-        "lead":     "experienced",
-        "manager":  "experienced",
-    }
-    if _seniority in _SENIORITY_TO_BAND:
-        _band_seed = _SENIORITY_TO_BAND[_seniority]
-    elif _total_years < 1.5:
-        _band_seed = "fresher"
-    elif _total_years < 4:
-        _band_seed = "mid"
-    elif _total_years < 8:
-        _band_seed = "experienced"
-    else:
-        _band_seed = "senior"
-
-    # Hard floor: if seniority is explicitly intern OR years < 1.5, always fresher
-    if _seniority == "intern" or _total_years < 1.5:
-        _band_seed = "fresher"
-
+    # ── Band seed: resume-only classification (seniority_level + total_years) ──
+    # Logic lives in interview/band_classifier.py — fully tested, no title heuristics.
+    _band_seed, _total_years, _seniority = classify_band(structured_resume)
     logger.info(
         "[BAND] seed=%s | total_years=%.1f | seniority=%s",
         _band_seed, _total_years, _seniority or "unknown",
