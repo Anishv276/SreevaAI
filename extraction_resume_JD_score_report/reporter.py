@@ -7,7 +7,7 @@ import json
 
 
 def generate_report_inline(
-    _jd_data, resume_data, jd_raw_text, resume_raw_text, score_result, client, report_model="gpt-4o-mini", screening_criteria=None
+    _jd_data, resume_data, jd_raw_text, resume_raw_text, score_result, client, report_model="gpt-5.4-mini", screening_criteria=None
 ):
     matched = score_result["skill_matching"]["matched_must"]
     missing = score_result["skill_matching"]["missing_must"]

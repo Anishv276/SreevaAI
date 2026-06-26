@@ -569,13 +569,13 @@ async function processResumeScreeningJob(job: any) {
         screening_criteria: screeningCriteria,
       });
       result = await runPythonJsonWithStdin(
-        ["scripts/extract_pdf.py", tempFilePath, "RESUME_AND_SCORE", "gpt-4.1-mini", "gpt-4.1-mini"],
+        ["scripts/extract_pdf.py", tempFilePath, "RESUME_AND_SCORE", "gpt-5.4-mini", "gpt-5.4-mini"],
         jdPayload,
         180_000,
       );
     } else {
       result = await runPythonJson(
-        ["scripts/extract_pdf.py", tempFilePath, "RESUME", "gpt-4.1-mini"],
+        ["scripts/extract_pdf.py", tempFilePath, "RESUME", "gpt-5.4-mini"],
         120_000,
       );
     }
@@ -696,7 +696,7 @@ async function processResumeFileExtractJob(job: any) {
     fileUrl = null,
     fileName = "resume.pdf",
     orgId = null,
-    orgOpenAIModel = "gpt-4.1-mini",
+    orgOpenAIModel = "gpt-5.4-mini",
   } = job.data || {};
   if (!key) {
     throw new Error("Invalid resume extraction job payload");
@@ -1652,7 +1652,7 @@ if (isQueueEnabled("jd-extraction")) {
       console.log(`\n=================================================`);
       console.log(`▶ [JD-EXTRACTION WORKER] PID=${process.pid} Job id="${job.id}" kind="${job.data?.kind}"`);
       console.log(`=================================================\n`);
-      const { kind, orgOpenAIModel = "gpt-4.1-mini", orgId = null } = job.data || {};
+      const { kind, orgOpenAIModel = "gpt-5.4-mini", orgId = null } = job.data || {};
       if (!kind) throw new Error("Invalid JD extraction job: missing kind");
 
       let text: string;

@@ -74,7 +74,7 @@ export async function POST(request: Request) {
         const type = typeRaw as "JD" | "RESUME";
         const isJd = typeRaw === "JD";
         // Fixed model policy per document type.
-        const orgOpenAIModel = isJd ? "gpt-4.1-mini" : "gpt-5.4-mini";
+        const orgOpenAIModel = "gpt-5.4-mini";
         if (isJd) {
             if (url) {
                 console.log("[SCRAPE_START]: Fetching URL:", url);

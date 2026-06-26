@@ -127,10 +127,10 @@ class DocumentParser:
     SCORE mode still delegates to the original scoring + report pipeline.
     """
 
-    RESUME_MODEL = "gpt-4o-mini"
-    RESUME_FALLBACK_MODEL = "gpt-4.1-mini"
-    JD_MODEL = "gpt-4.1-mini"
-    REPORT_MODEL = "gpt-4o-mini"
+    RESUME_MODEL = "gpt-5.4-mini"
+    RESUME_FALLBACK_MODEL = "gpt-5.4-mini"
+    JD_MODEL = "gpt-5.4-mini"
+    REPORT_MODEL = "gpt-5.4-mini"
 
     def parse(self, text: str, doc_type: str, model_override: str | None = None) -> dict:
         """
