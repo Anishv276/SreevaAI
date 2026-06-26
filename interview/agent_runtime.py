@@ -169,8 +169,10 @@ class CoveredTopics:
 _SHARED_OPENAI_CLIENT: AsyncOpenAI = AsyncOpenAI()
 from interview.agent_runtime_helpers import (
     _build_recent_context_block,
-    _single_question_transform,
+    _tts_sanitize_transform,
     _tts_acronym_transform,
+    _sarvam_normalize_transform,
+    make_sarvam_llm_rewrite_transform,
     polish_candidate_facing_text,
     remove_system_messages,
     remove_system_messages_multi,
@@ -1550,15 +1552,32 @@ async def entrypoint(ctx: JobContext):
         "CARTESIA":   build_cartesia_tts,
     }.get(org_tts_provider, build_cartesia_tts)
     logger.info(f"[TTS] Using %s  voice=%s model=%s", org_tts_provider, voice_id, org_tts_model)
-    # For Sarvam v3: resolve the pronunciation dictionary ID once per session.
-    # get_or_create_dict_id() returns the cached env-var value on subsequent calls
-    # (no extra API round-trip), so this is fast after first deployment.
+    # For Sarvam v3: build a per-session pronunciation dict that combines the
+    # shared base dict (infra/framework terms) with auto-generated pronunciations
+    # for this candidate's specific resume/JD keywords. Zero human maintenance —
+    # any tech term on any future resume is handled automatically.
     _sarvam_dict_id: str | None = None
+    _sarvam_llm_rewrite_transform = None
     if org_tts_provider == "SARVAM":
-        from interview.sarvam_pronunciation_dict import get_or_create_dict_id as _get_dict_id
+        from interview.sarvam_pronunciation_dict import (
+            get_or_create_base_dict_id as _get_base_dict_id,
+            get_session_dict_id as _get_session_dict_id,
+        )
         _sarvam_api_key = os.environ.get("SARVAM_API_KEY", "")
         if _sarvam_api_key:
-            _sarvam_dict_id = await _get_dict_id(_sarvam_api_key)
+            _base_dict_id = await _get_base_dict_id(_sarvam_api_key)
+            _sarvam_dict_id = await _get_session_dict_id(
+                _sarvam_api_key,
+                _tts_keywords,
+                base_dict_id=_base_dict_id,
+            )
+        # LLM rewrite transform: rewrites tech acronyms/terms to be TTS-friendly.
+        # Uses the shared OpenAI client (no extra connection cost) with gpt-4.1-nano.
+        # Sentence-buffered so latency impact is one nano call per sentence (~50ms).
+        _sarvam_llm_rewrite_transform = make_sarvam_llm_rewrite_transform(
+            _SHARED_OPENAI_CLIENT,
+            model="gpt-4.1-nano",
+        )
     tts_plugin = _tts_builder(
         language=lang_codes["tts"],
         model=org_tts_model,
@@ -1650,7 +1669,11 @@ async def entrypoint(ctx: JobContext):
         "tts_text_transforms": [
             "filter_emoji",
             *([_tts_acronym_transform] if org_tts_provider != "SARVAM" else []),
-            _single_question_transform,
+            # Sarvam path: regex normalizer first (fast, deterministic ALL-CAPS),
+            # then LLM rewriter (handles ambiguous/compound terms sentence by sentence).
+            *([_sarvam_normalize_transform] if org_tts_provider == "SARVAM" else []),
+            *([_sarvam_llm_rewrite_transform] if _sarvam_llm_rewrite_transform else []),
+            _tts_sanitize_transform,
         ],
         "aec_warmup_duration": 0.5,
     }

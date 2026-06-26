@@ -17,6 +17,18 @@ import re
 from interview.agent_runtime_support import logger
 from interview.agent_runtime_utils import TextSanitizer, TranscriptManager
 
+# ── LLM TTS rewrite prompt ────────────────────────────────────────────────────
+# Used by make_sarvam_llm_rewrite_transform(). Kept here so it's easy to tune.
+_TTS_REWRITE_SYSTEM_PROMPT = """\
+You rewrite text so it sounds natural when spoken aloud by a text-to-speech engine.
+Rules:
+- Expand ALL-CAPS acronyms by spacing their letters: RAG → R A G, LLMs → L L Ms, CICD → C I C D
+- Split concatenated tech terms into spoken words: pgvector → p g vector, LangChain → Lang Chain
+- Leave normal English words, numbers, and punctuation exactly as-is
+- Do NOT change meaning, add words, or explain anything
+- Return ONLY the rewritten sentence, nothing else\
+"""
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # TEXT SANITIZATION API (delegated to TextSanitizer)
@@ -111,21 +123,112 @@ async def _tts_acronym_transform(text_stream):
         yield tts_phonetic_processor.transform(chunk)
 
 
-async def _single_question_transform(text_stream):
-    """TTS text transform: sanitization + phonetic fixes per chunk.
+async def _sarvam_normalize_transform(text_stream):
+    """Regex-based fallback: letter-space ALL-CAPS acronyms and split CamelCase.
 
-    Applies transformations as chunks stream in, rather than buffering
-    the full LLM response first. This gives TTS engines full phoneme
-    context per sentence via sentence-boundary splitting in _push_sentences.
+    Runs before the LLM rewrite transform. Handles the deterministic cases
+    (pure ALL-CAPS words) so the LLM only needs to deal with ambiguous ones.
+    Also runs as the sole transform when no OpenAI client is available.
+    """
+    from interview.agent_runtime_utils import TextSanitizer
+    async for chunk in text_stream:
+        yield TextSanitizer.normalize_for_sarvam(chunk)
 
-    Suppresses output entirely if all chunks sanitize to empty (LLM echoed
-    a directive).
+
+def make_sarvam_llm_rewrite_transform(openai_client, model: str = "gpt-4.1-nano"):
+    """Return an async generator transform that rewrites TTS text via LLM.
+
+    The transform buffers incoming chunks until a sentence boundary (. ! ?)
+    then sends the complete sentence to gpt-4.1-nano for pronunciation rewriting.
+    This is necessary because the LLM streams word-by-word; rewriting fragments
+    produces garbled output.
+
+    Rewriting is sentence-level so latency impact is minimal — the first sentence
+    goes to Sarvam as soon as the LLM finishes it, not after the whole response.
+
+    Falls back to yielding original text on any API error — the interview never
+    breaks because of a rewrite failure.
 
     Args:
-        text_stream: async iterable of text chunks from LLM
+        openai_client: Shared AsyncOpenAI instance (reuses existing connection pool)
+        model: LLM model to use (default gpt-4.1-nano — fast and cheap)
+    """
+    import re as _re
 
-    Yields:
-        Cleaned and transformed chunks ready for TTS
+    # Sentence-ending punctuation — captures the punctuation + any trailing space
+    # so the space is included in the flushed chunk, not dropped between sentences.
+    _SENT_END = _re.compile(r'[.!?][ \t]*')
+
+    async def _rewrite_sentence(sentence: str) -> str:
+        """Call LLM to rewrite one sentence for TTS. Returns original on error."""
+        sentence = sentence.strip()
+        if not sentence:
+            return sentence
+
+        # Skip rewrite if the sentence has no ALL-CAPS words or camelCase — no-op
+        if not _re.search(r'[A-Z]{2,}|[a-z][A-Z]', sentence):
+            return sentence
+
+        try:
+            resp = await openai_client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": _TTS_REWRITE_SYSTEM_PROMPT},
+                    {"role": "user", "content": sentence},
+                ],
+                temperature=0.0,
+                max_tokens=len(sentence) * 3,  # rewrite can't be much longer
+                timeout=3.0,  # hard cap — never block TTS for more than 3s
+            )
+            rewritten = resp.choices[0].message.content or sentence
+            # Safety: if LLM returned something wildly longer, fall back
+            if len(rewritten) > len(sentence) * 4:
+                logger.warning("[TTS_REWRITE] LLM response too long, using original")
+                return sentence
+            logger.debug("[TTS_REWRITE] %r → %r", sentence[:60], rewritten[:60])
+            return rewritten.strip()
+        except Exception as exc:
+            logger.warning("[TTS_REWRITE] LLM rewrite failed (%s), using original", exc)
+            return sentence
+
+    async def _transform(text_stream):
+        buffer = ""
+        async for chunk in text_stream:
+            buffer += chunk
+            # Flush complete sentences as they arrive
+            while True:
+                m = _SENT_END.search(buffer)
+                if not m:
+                    break
+                # Split: content up to and including punctuation, trailing whitespace separate
+                sentence_with_punct = buffer[: m.end()].rstrip()
+                trailing_space = " " if buffer[m.end() - 1 :].startswith((" ", "\t")) or m.group(0)[-1] in (" ", "\t") else " "
+                buffer = buffer[m.end():]
+                rewritten = await _rewrite_sentence(sentence_with_punct)
+                yield rewritten + trailing_space
+
+        # Flush any remaining text (last sentence with no trailing punctuation)
+        if buffer.strip():
+            rewritten = await _rewrite_sentence(buffer)
+            yield rewritten
+
+    return _transform
+
+
+async def _tts_sanitize_transform(text_stream):
+    """Final TTS safety gate: strip directives, fix punctuation, suppress empty output.
+
+    Three jobs:
+    1. polish_candidate_facing_text — removes [DO NOT SAY ALOUD], [NEXT_TURN_DIRECTIVE]
+       and any other internal LLM control tags that must never reach TTS.
+    2. _apply_tts_phonetic_fixes — converts em-dashes → commas, strips markdown
+       (* _ ` ~), collapses ellipses — so Sarvam/Cartesia don't stumble on them.
+    3. Empty-output suppression — if the entire LLM turn sanitizes to nothing
+       (e.g. LLM echoed only a directive), yields nothing so TTS stays silent
+       instead of emitting a blank audio frame.
+
+    This runs last in the transform chain so it catches anything the upstream
+    transforms might have introduced.
     """
     emitted_any = False
     async for chunk in text_stream:
@@ -140,8 +243,8 @@ async def _single_question_transform(text_stream):
 
     if not emitted_any:
         logger.debug(
-            "[SINGLE_Q] Transform yielded empty after directive sanitization; "
-            "suppressing output (expected during STT fragment assembly)."
+            "[TTS_SANITIZE] Transform yielded empty — LLM turn was directive-only, "
+            "suppressing TTS output (expected during STT fragment assembly)."
         )
 
 

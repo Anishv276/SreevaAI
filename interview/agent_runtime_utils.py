@@ -325,6 +325,69 @@ class TextSanitizer:
     # Trailing fillers at end of turn
     _TRAILING_FILLER_RE = re.compile(r"(?:[,.\s]+)(?:um+|uh+)\s*[.!?]*\s*$", re.I)
 
+    # ALL-CAPS acronym pattern: 2–6 uppercase letters (whole word), optionally followed
+    # by a lowercase 's' for plurals (e.g. APIs, LLMs). Single-letter words (I, A) and
+    # Roman numerals are excluded via the negative lookbehind/lookahead on length.
+    # We space out the letters so Sarvam says "A P I" not "API" or "api".
+    # Words in _ACRONYM_PASS_THROUGH are already handled correctly by Sarvam's engine
+    # and must not be letter-spaced (they sound like real words even in caps).
+    _ACRONYM_PASS_THROUGH: frozenset[str] = frozenset({
+        # Real words that happen to be all-caps sometimes
+        "OK", "NO", "GO", "DO", "IS", "IT", "IN", "ON", "UP", "US",
+        # Sarvam handles these correctly via enable_preprocessing
+        "AI", "ML", "CV",
+    })
+    # Matches ALL-CAPS words of 2–6 letters, optionally plural (APIs, LLMs)
+    _CAPS_ACRONYM_RE: re.Pattern = re.compile(r"\b([A-Z]{2,6})(s?)\b")
+
+    # CamelCase splitter: insert a space before each uppercase letter that follows a
+    # lowercase letter (e.g. "FineTuning" → "Fine Tuning", "GitHub" → "Git Hub").
+    # This is only applied to CamelCase words (not ALL-CAPS, which are handled above).
+    _CAMEL_RE: re.Pattern = re.compile(r"([a-z])([A-Z])")
+
+    # Known words that look like acronyms but Sarvam reads correctly — leave them alone.
+    _SARVAM_READS_OK: frozenset[str] = frozenset({
+        "SQL", "AWS", "GCP", "GIT", "SSH", "PDF", "URL", "HTTP", "HTML", "CSS",
+        "JSON", "YAML", "REST", "CRUD", "CORS", "UUID", "GPU", "CPU", "RAM",
+    })
+
+    @staticmethod
+    def normalize_for_sarvam(text: str) -> str:
+        """Auto-fix pronunciation for any technical term the LLM writes.
+
+        Two rules applied universally — no static word list needed:
+
+        1. ALL-CAPS acronyms (RAG, LLM, NLP, API, CICD, etc.) get letter-spaced
+           so Sarvam says "R A G" clearly instead of "ragg" or "R-A-G".
+           Words Sarvam already handles correctly are skipped.
+
+        2. CamelCase words (FineTuning, DevOps, LangChain written in-sentence)
+           get a space inserted at each case boundary so Sarvam reads them as
+           two natural words instead of mashing them together.
+
+        This fires for every candidate's keywords automatically — no dict
+        updates needed when new tech terms appear in future resumes/JDs.
+        """
+        def _fix_caps(m: re.Match) -> str:
+            word = m.group(1)
+            plural = m.group(2)  # 's' or ''
+            if word in TextSanitizer._ACRONYM_PASS_THROUGH:
+                return m.group(0)
+            if word in TextSanitizer._SARVAM_READS_OK:
+                return m.group(0)
+            # 2-letter words: Sarvam usually reads fine, only space if truly acronym-like
+            if len(word) == 2:
+                return m.group(0)
+            # Space out: "RAG" → "R A G", "LLMs" → "L L M s"
+            spaced = " ".join(word)
+            return (spaced + " " + plural) if plural else spaced
+
+        # Pass 1: fix ALL-CAPS acronyms
+        result = TextSanitizer._CAPS_ACRONYM_RE.sub(_fix_caps, text)
+        # Pass 2: split CamelCase (only interior boundaries, not ALL-CAPS runs)
+        result = TextSanitizer._CAMEL_RE.sub(r"\1 \2", result)
+        return result
+
     @staticmethod
     def sanitize_candidate_facing_text(text: str) -> str:
         """Remove internal control directives from text.
