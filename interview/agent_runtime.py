@@ -48,7 +48,7 @@ from openai import AsyncOpenAI
 from pydantic import BaseModel, field_validator
 
 import re as _re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 
 class CoverageSource(str, Enum):
@@ -58,11 +58,12 @@ class CoverageSource(str, Enum):
 
 @dataclass
 class CoverageRecord:
-    short_key:     str
-    display_title: str
-    source:        CoverageSource
-    gist:          str = ""          # first ~25 words of candidate answer; "" for auto
-    via_topic:     str = ""          # parent topic title when source == AUTO_SKILL
+    short_key:      str
+    display_title:  str
+    source:         CoverageSource
+    gist:           str = ""          # first ~25 words of candidate answer; "" for auto
+    via_topic:      str = ""          # parent topic title when source == AUTO_SKILL
+    questions_asked: list[str] = field(default_factory=list)  # every question Ishita asked on this topic
 
 class CoveredTopics:
     """Single source of truth for all covered topics.
@@ -102,6 +103,7 @@ class CoveredTopics:
         source: CoverageSource,
         gist: str = "",
         via_topic: str = "",
+        questions_asked: Optional[list[str]] = None,
     ) -> None:
         """Rich add — always prefer this over add()."""
         k = self._norm(topic)
@@ -113,6 +115,7 @@ class CoveredTopics:
             source=source,
             gist=gist[:120].strip(),
             via_topic=via_topic,
+            questions_asked=[q.strip() for q in (questions_asked or []) if q and q.strip()],
         )
 
     # ------------------------------------------------------------------
@@ -134,33 +137,63 @@ class CoveredTopics:
         """
         Returns a formatted block for LLM directive injection.
 
+        Two sections:
+          1. TOPICS ALREADY COVERED — what was discussed and the gist of the answer
+          2. FORBIDDEN QUESTIONS  — every question already asked on any covered topic.
+             These are blocked GLOBALLY: never re-asked under any topic or framing.
+             This is what stops "How did you use LangGraph?" from firing again when
+             LangGraph was already discussed inside the Internship topic.
+
         Example output:
-          [COVERAGE MEMORY — already discussed, do not re-open]
-          - DataFlow Project: candidate described Kafka pipeline, Python as primary tech
-          - python (via DataFlow Project): covered in-depth during project — skip standalone
-          - custom Q "conflict resolution": candidate described mediation approach
+          [COVERAGE MEMORY — HARD RULES, NO EXCEPTIONS]
+          TOPICS ALREADY COVERED (do not re-open any of these):
+          - DataFlow Project — candidate said: built Kafka pipeline, Python primary tech
+          - python (covered inside DataFlow Project): skip standalone question
+
+          FORBIDDEN QUESTIONS (already asked — NEVER ask again under any topic or framing):
+            • "What did you build in DataFlow?" (asked during DataFlow Project)
+            • "How did Kafka fit into the pipeline?" (asked during DataFlow Project)
         """
         if not self._store:
             return ""
-        lines: list[str] = []
+        topic_lines: list[str] = []
+        forbidden_lines: list[str] = []
         for rec in list(self._store.values())[-limit:]:
             if rec.source == CoverageSource.AUTO_SKILL and rec.via_topic:
-                detail = f"covered in-depth during {rec.via_topic} discussion — skip standalone question"
-                lines.append(f"- {rec.display_title} (via {rec.via_topic}): {detail}")
+                topic_lines.append(
+                    f"- {rec.display_title} (covered inside {rec.via_topic}): skip standalone question"
+                )
             elif rec.source == CoverageSource.CUSTOM_Q:
-                gist_part = f": {rec.gist}" if rec.gist else ""
-                lines.append(f"- custom Q \"{rec.display_title}\"{gist_part}")
+                gist_part = f" — {rec.gist}" if rec.gist else ""
+                topic_lines.append(f"- custom Q \"{rec.display_title}\"{gist_part}")
             else:
-                gist_part = f": {rec.gist}" if rec.gist else ""
-                lines.append(f"- {rec.display_title}{gist_part}")
-        body = "\n".join(lines)
-        return (
-            "[COVERAGE MEMORY — already discussed, do not re-open]\n"
+                gist_part = f" — candidate said: {rec.gist}" if rec.gist else ""
+                topic_lines.append(f"- {rec.display_title}{gist_part}")
+            # Every question asked on this topic becomes a GLOBAL forbidden question.
+            for q in (rec.questions_asked or []):
+                forbidden_lines.append(f'    • "{q}" (asked during {rec.display_title})')
+        body = "\n".join(topic_lines)
+        block = (
+            "[COVERAGE MEMORY — HARD RULES, NO EXCEPTIONS]\n"
+            "TOPICS ALREADY COVERED (do not re-open any of these):\n"
             f"{body}\n"
-            "If candidate revisits a covered topic, acknowledge with the context above "
-            "('Yes, we covered X during Y — I have a clear picture, let\'s move on') "
-            "and redirect to the active topic. Do NOT probe a covered topic again.\n"
         )
+        if forbidden_lines:
+            block += (
+                "\nFORBIDDEN QUESTIONS (already asked — NEVER ask these again under any topic or any framing):\n"
+                + "\n".join(forbidden_lines)
+                + "\n"
+                "If the candidate raises a covered topic themselves, give ONE short acknowledgement "
+                "('Right, we covered that already — I have a good picture of it.') then immediately "
+                "ask about an UNCOVERED topic. Do NOT probe it further.\n"
+            )
+        else:
+            block += (
+                "If candidate revisits a covered topic, acknowledge briefly "
+                "('Yes, we covered X during Y — I have a clear picture, let\'s move on') "
+                "and redirect to the active topic. Do NOT probe a covered topic again.\n"
+            )
+        return block
 
 # Module-level singleton — reuses the HTTP/2 connection pool and TLS session
 # across all eval, directive, and brief calls for every interview session.
@@ -311,6 +344,37 @@ def _topic_short_key_for_ordering(topic: str) -> str:
     """Normalized key for deduplication and lookup (lowercase, no special chars)."""
     short = _topic_short_title(topic)
     return re.sub(r"[^a-z0-9]+", " ", short.lower()).strip()
+
+def _build_cross_ref_rule(source_tag: str) -> str:
+    """Cross-reference rule for a MOVE_ON directive, keyed on the topic TAG.
+    Tells Ishita how to treat a topic the candidate may already have touched.
+    Shared by both the pre-fired and the synchronous MOVE_ON paths so they stay
+    identical — the pre-fired path previously passed "" and lost this guidance.
+    """
+    if source_tag == "RESUME_TOPIC":
+        return (
+            "\n[CROSS-REFERENCE RULE -- resume topic, candidate did this]\n"
+            "If the candidate cites a project already in INTERVIEW MEMORY, treat it as KNOWN "
+            "CONTEXT -- do NOT re-introduce it and do NOT re-ask what they built or their role.\n"
+            "Probe DEPTH on the new topic: a decision they made, what broke, or a tradeoff.\n"
+            "NEVER ask a question whose answer is already in INTERVIEW MEMORY."
+        )
+    if source_tag == "JD_TOPIC":
+        return (
+            "\n[CROSS-REFERENCE RULE -- JD requirement, NOT claimed on resume]\n"
+            "The candidate has NOT claimed this on their resume. Open by asking about exposure,\n"
+            "not by assuming experience. Based on their answer:\n"
+            "  - If they say they have NOT used it: acknowledge briefly, do NOT push or quiz theory.\n"
+            "  - If they say they HAVE used it: stay APPLIED -- ask what they actually did with it,\n"
+            "    not internals or trivia. They made no expertise claim."
+        )
+    # ROLE_TOPIC (and any unknown tag)
+    return (
+        "\n[CROSS-REFERENCE RULE -- role-depth check, not on resume or JD]\n"
+        "We have no information about their experience here. Ask about understanding or\n"
+        "approach -- never assume they have done it. If they have no exposure, accept it\n"
+        "and move on. Do NOT frame it as if it were on their resume."
+    )
 
 def _sanitize_topic_title_for_speech(title: str) -> str:
     """Clean a topic title for spoken delivery.
@@ -1850,6 +1914,10 @@ async def entrypoint(ctx: JobContext):
     _topic_records: list[dict] = []
     # Running buffer of candidate answers for the CURRENT active topic (reset on MOVE_ON)
     _current_topic_answers: list[str] = []
+    # Running buffer of QUESTIONS Ishita asked on the CURRENT active topic (reset on MOVE_ON).
+    # Snapshotted into CoverageRecord.questions_asked when the topic is closed, so they become
+    # GLOBAL forbidden questions — preventing the same concept being re-asked under a later topic.
+    _current_topic_questions: list[str] = []
     # Lock protecting all shared session state that is written by background tasks.
     _session_state_lock = asyncio.Lock()
     # -- Agent-side topic tracker ----------------------------------------------
@@ -1922,15 +1990,41 @@ async def entrypoint(ctx: JobContext):
         Covered = completed, denied, skipped, or probed-to-saturation — all the same.
         """
         excluded_key = _topic_short_key(exclude or "")
+        # Full titles of topics already covered (exclude AUTO_SKILL — those are
+        # inferred sub-skills, not standalone topics, and would over-match).
+        _covered_full_titles = [
+            rec.display_title
+            for rec in _covered_topic_keys._store.values()
+            if rec.source != CoverageSource.AUTO_SKILL
+        ]
         for t in _topic_pool:
             k = _topic_short_key(t)
             if not k or k == excluded_key or k in _covered_topic_keys:
                 continue
+            # Semantic overlap guard: skip a topic whose concept was already discussed
+            # inside a prior topic (e.g. "LangGraph" skill when LangGraph was covered
+            # inside "Internship"). Uses the existing _topics_overlap heuristic.
+            if any(_topics_overlap(t, covered) for covered in _covered_full_titles):
+                _covered_topic_keys.add(t)  # auto-mark so it never resurfaces
+                logger.info(
+                    "[DEDUP] topic %r auto-skipped — concept overlaps an already-covered topic", k
+                )
+                continue
             return t
         return None
 
-    def _mark_topic_covered(topic: Optional[str], *, answer_gist: str = "") -> None:
-        """Single entry point for all topic completion — covered, denied, skipped, all go here."""
+    def _mark_topic_covered(
+        topic: Optional[str],
+        *,
+        answer_gist: str = "",
+        questions_asked: Optional[list[str]] = None,
+    ) -> None:
+        """Single entry point for all topic completion — covered, denied, skipped, all go here.
+
+        questions_asked: the questions Ishita asked on THIS topic. They are stored on the
+        CoverageRecord and surfaced in get_memory_block() as GLOBAL forbidden questions, so
+        the same concept is never re-asked under a later topic.
+        """
         if not topic:
             return
         k = _topic_short_key(topic)
@@ -1941,6 +2035,7 @@ async def entrypoint(ctx: JobContext):
             topic,
             source=CoverageSource.EXPLICIT,
             gist=" ".join(answer_gist.split()[:25]),
+            questions_asked=questions_asked,
         )
         logger.info("[COVERED] topic done: %r  (total covered: %d / %d)", k, len(_covered_topic_keys), len(_topic_pool))
         # Auto-cover skills the brief says are already covered by this topic
@@ -2370,7 +2465,8 @@ async def entrypoint(ctx: JobContext):
             _last_applied_eval_turn, _topic_score_histories, \
             _awaiting_first_interview_question, \
             _asked_questions_log, \
-            _last_question_topic, _topic_records, _current_topic_answers
+            _last_question_topic, _topic_records, _current_topic_answers, \
+            _current_topic_questions
         try:
             if not content or role != "user":
                 return
@@ -2751,7 +2847,15 @@ async def entrypoint(ctx: JobContext):
                 if _action == "MOVE_ON":
                     # -- Agent picks the next topic ----------------------------
                     _old_topic = _active_topic
-                    _mark_topic_covered(_old_topic, answer_gist=(payload.get("answer") or ""))
+                    # Snapshot the questions asked on the topic we are leaving BEFORE the
+                    # per-topic buffer is reset below, so they are recorded as GLOBAL
+                    # forbidden questions and never re-asked under a later topic.
+                    _closing_topic_questions = list(_current_topic_questions)
+                    _mark_topic_covered(
+                        _old_topic,
+                        answer_gist=(payload.get("answer") or ""),
+                        questions_asked=_closing_topic_questions,
+                    )
                     # ── Ground-truth topic record ──────────────────────────────
                     # EC-1/EC-2/EC-4/EC-5: ALL shared state reads and writes for
                     # this topic record must happen under one lock acquisition so
@@ -2823,9 +2927,13 @@ async def entrypoint(ctx: JobContext):
                             # snapshot above — any answer appended after this point belongs
                             # to the next topic and will not be incorrectly included here.
                             _current_topic_answers = []
+                            # Reset per-topic question buffer too — already snapshotted into
+                            # the CoverageRecord via _closing_topic_questions above.
+                            _current_topic_questions = []
                             logger.info(
-                                "[TOPIC_RECORD] turn=%d | recorded topic=%r exit=%s probes=%d avg_overall=%.1f answers=%d",
+                                "[TOPIC_RECORD] turn=%d | recorded topic=%r exit=%s probes=%d avg_overall=%.1f answers=%d q_forbidden=%d",
                                 turn_snapshot, _old_key, _exit_reason, _probe_count, _avg_overall, len(_topic_records),
+                                len(_closing_topic_questions),
                             )
                     except Exception as _tr_err:
                         logger.warning("[TOPIC_RECORD] Failed to record topic: %s", _tr_err)
@@ -2845,6 +2953,13 @@ async def entrypoint(ctx: JobContext):
                             _pre_next_item.tag if _pre_next_item else "RESUME_TOPIC"
                         )
                         _pre_old_title = _topic_short_title(_old_topic or "")
+                        # Coverage memory + cross-ref rule for the PRE-FIRED directive.
+                        # Previously these were "" — so the pre-fired directive (used in
+                        # ~90% of MOVE_ONs) had zero knowledge of what was already covered,
+                        # letting it re-ask concepts from earlier topics. Now it carries the
+                        # full forbidden-question list and the tag-appropriate cross-ref rule.
+                        _pre_memory_block = _covered_topic_keys.get_memory_block()
+                        _pre_cross_ref = _build_cross_ref_rule(_pre_next_src)
                         _move_on_directive_task = asyncio.ensure_future(
                             _generate_move_on_directive(
                                 old_topic_title=_pre_old_title,
@@ -2853,8 +2968,8 @@ async def entrypoint(ctx: JobContext):
                                 source=_pre_next_src,
                                 band=candidate_band,
                                 llm_brief=_candidate_llm_brief,
-                                memory_block="",
-                                cross_ref_rule="",
+                                memory_block=_pre_memory_block,
+                                cross_ref_rule=_pre_cross_ref,
                                 client=_eval_openai_client,
                                 llm_model=analysis_model,
                                 usage_sink=_eval_llm_usages_accumulated.append,
@@ -2965,30 +3080,7 @@ async def entrypoint(ctx: JobContext):
                     # framing itself ("we require X" vs "you built X") lives in the
                     # directive's _angle_guide and Ishita's system prompt — not here.
                     _topic_type = _next_brief_item.topic_type if _next_brief_item else ""
-                    if _src == "RESUME_TOPIC":
-                        _cross_ref_rule = (
-                            "\n[CROSS-REFERENCE RULE -- resume topic, candidate did this]\n"
-                            "If the candidate cites a project already in INTERVIEW MEMORY, treat it as KNOWN "
-                            "CONTEXT -- do NOT re-introduce it and do NOT re-ask what they built or their role.\n"
-                            "Probe DEPTH on the new topic: a decision they made, what broke, or a tradeoff.\n"
-                            "NEVER ask a question whose answer is already in INTERVIEW MEMORY."
-                        )
-                    elif _src == "JD_TOPIC":
-                        _cross_ref_rule = (
-                            "\n[CROSS-REFERENCE RULE -- JD requirement, NOT claimed on resume]\n"
-                            "The candidate has NOT claimed this on their resume. Open by asking about exposure,\n"
-                            "not by assuming experience. Based on their answer:\n"
-                            "  - If they say they have NOT used it: acknowledge briefly, do NOT push or quiz theory.\n"
-                            "  - If they say they HAVE used it: stay APPLIED -- ask what they actually did with it,\n"
-                            "    not internals or trivia. They made no expertise claim."
-                        )
-                    else:  # ROLE_TOPIC
-                        _cross_ref_rule = (
-                            "\n[CROSS-REFERENCE RULE -- role-depth check, not on resume or JD]\n"
-                            "We have no information about their experience here. Ask about understanding or\n"
-                            "approach -- never assume they have done it. If they have no exposure, accept it\n"
-                            "and move on. Do NOT frame it as if it were on their resume."
-                        )
+                    _cross_ref_rule = _build_cross_ref_rule(_src)
                     # Use the pre-fired directive task if it matches the active topic,
                     # otherwise fall back to a fresh call (topic changed mid-flight).
                     _new_topic_key_lc = _topic_short_key(_active_topic or "").lower()
@@ -3422,6 +3514,11 @@ async def entrypoint(ctx: JobContext):
                     # IndexError possible, no lock required in this sync callback.
                     if _last_interviewer_question and _first_interview_question_asked:
                         _asked_questions_log.append(_last_interviewer_question[:120])
+                        # Per-topic question buffer — snapshotted into CoverageRecord on MOVE_ON
+                        # so each question becomes a GLOBAL forbidden question (Fix: cross-topic
+                        # duplicate-question prevention). Skip secondary/soft "general" phases.
+                        if _last_question_topic not in ("general", "general conversation", None, ""):
+                            _current_topic_questions.append(_last_interviewer_question[:120])
                     # First interview question just fired -- seal the opening move so the LLM
                     # cannot re-ask it. The base system prompt says "Open by asking about X"
                     # which conflicts with PROBE directives on subsequent turns. This message
