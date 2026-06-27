@@ -6,18 +6,12 @@ def build_voice_layer_prompt(
     time_limit_mins: int,
     ai_name: str = "",
     org_name: str = "",
-    org_location: str = "",
-    drive_location: str = "",
 ) -> str:
     context_lines = []
     if ai_name:
         context_lines.append(f"- Interviewer name: {ai_name}")
     if org_name:
         context_lines.append(f"- Organization: {org_name}")
-    if org_location:
-        context_lines.append(f"- Organization location: {org_location}")
-    if drive_location:
-        context_lines.append(f"- Drive location: {drive_location}")
     context_block = "\n".join(context_lines) if context_lines else "- No extra context provided"
     return f"""You are {ai_name or 'Ishita'}, a senior talent partner at {org_name or 'the company'}.
 You are on a live voice call with {candidate_name} for the {job_title} role.
@@ -110,88 +104,81 @@ There is always something to ask. The system will handle closing at exactly the 
 """
 def build_evaluation_layer_prompt(
     *,
-    live_prompt_context: str,
     candidate_name: str,
     job_title: str,
     candidate_band: str = "mid",
-    interview_brief=None,  # InterviewBrief — when provided, structured sections replace text blob
+    interview_brief,
 ) -> str:
-    # When InterviewBrief is available, build a structured analyst brief from its fields.
-    # This gives Ishita a formed opinion: what to probe hard, what gaps exist, what to watch.
-    if interview_brief is not None:
-        _strategy = interview_brief.interview_strategy or ""
-        _summary  = interview_brief.candidate_summary or ""
-        _gaps     = interview_brief.candidate_fit_gaps or []
-        _flags    = interview_brief.red_flags or []
-        _focus    = interview_brief.focus_areas or []
-        _anchor   = interview_brief.anchor_topic
-        _role_ctx = interview_brief.role_context
+    _strategy = interview_brief.interview_strategy or ""
+    _summary  = interview_brief.candidate_summary or ""
+    _flags    = interview_brief.red_flags or []
+    _anchor   = interview_brief.anchor_topic
+    _role_ctx = interview_brief.role_context
 
-        _must_haves = ", ".join(_role_ctx.must_have_skills[:8]) if _role_ctx.must_have_skills else "see JD"
+    _must_haves = ", ".join(_role_ctx.must_have_skills[:8]) if _role_ctx.must_have_skills else "see JD"
 
-        # Per-topic source label + question contract — this is what teaches Ishita
-        # how to generate the right kind of question for each topic without an agent.
-        def _topic_source_contract(t) -> str:
-            tag = (t.tag or "").upper()
-            if tag == "RESUME_TOPIC":
-                return (
-                    "SOURCE=RESUME  ▸ Candidate HAS done this. We know it.\n"
-                    "    HOW TO ASK: ground in what they built/decided/broke. "
-                    "Never ask 'do you have experience' or 'why did you work there'. They worked there.\n"
-                    "    WRONG: 'Why did you work on this?' / 'What drew you to X?'\n"
-                    "    RIGHT: 'What was specifically yours in this?' / 'What broke and how did you fix it?'"
-                )
-            elif tag == "JD_TOPIC":
-                return (
-                    "SOURCE=JD_REQUIRED  ▸ Role needs this. Candidate has NOT claimed it on resume.\n"
-                    "    HOW TO ASK: neutral curiosity about exposure. Never assume they know it.\n"
-                    "    WRONG: 'Walk me through your experience with this.' (assumes experience)\n"
-                    "    RIGHT: 'This role uses X heavily — what's your exposure there?'"
-                )
-            else:  # ROLE_TOPIC
-                return (
-                    "SOURCE=ROLE_DEPTH  ▸ Expert domain check. NOT on resume, NOT in JD.\n"
-                    "    HOW TO ASK: ask about understanding or approach. They may have zero experience.\n"
-                    "    WRONG: 'How have you used X in your work?' (assumes usage)\n"
-                    "    RIGHT: 'How do you think about X in practice?' / 'How would you approach X?'"
-                )
+    def _topic_source_contract(t) -> str:
+        tag = (t.tag or "").upper()
+        if tag == "RESUME_TOPIC":
+            return (
+                "SOURCE=RESUME  ▸ Candidate HAS done this. We know it.\n"
+                "    HOW TO ASK: ground in what they built/decided/broke. "
+                "Never ask 'do you have experience' or 'why did you work there'. They worked there.\n"
+                "    WRONG: 'Why did you work on this?' / 'What drew you to X?'\n"
+                "    RIGHT: 'What was specifically yours in this?' / 'What broke and how did you fix it?'"
+            )
+        elif tag == "JD_TOPIC":
+            return (
+                "SOURCE=JD_REQUIRED  ▸ Role needs this. Candidate has NOT claimed it on resume.\n"
+                "    HOW TO ASK: neutral curiosity about exposure. Never assume they know it.\n"
+                "    WRONG: 'Walk me through your experience with this.' (assumes experience)\n"
+                "    RIGHT: 'This role uses X heavily — what's your exposure there?'"
+            )
+        else:  # ROLE_TOPIC
+            return (
+                "SOURCE=ROLE_DEPTH  ▸ Expert domain check. NOT on resume, NOT in JD.\n"
+                "    HOW TO ASK: ask about understanding or approach. They may have zero experience.\n"
+                "    WRONG: 'How have you used X in your work?' (assumes usage)\n"
+                "    RIGHT: 'How do you think about X in practice?' / 'How would you approach X?'"
+            )
 
-        def _band_depth_hint(t, band: str) -> str:
-            tag = (t.tag or "").upper()
-            if tag == "RESUME_TOPIC":
-                return {
-                    "fresher":    "Ask WHAT they built and what their specific role was.",
-                    "mid":        "Ask what was specifically their call — push past 'we'.",
-                    "experienced":"Go straight to a tradeoff or design decision. Skip setup.",
-                    "senior":     "Ask about strategic consequence or org-level impact.",
-                }.get(band, "Ask what they personally owned.")
-            elif tag == "JD_TOPIC":
-                return {
-                    "fresher":    "Ask gently — 'have you had a chance to work with X or explore it?'",
-                    "mid":        "Ask where they've actually used it in a real project.",
-                    "experienced":"Ask about production depth and real constraints.",
-                    "senior":     "Ask about strategic judgment around it, not just usage.",
-                }.get(band, "Ask about their exposure neutrally.")
-            else:
-                return {
-                    "fresher":    "Check if they understand the concept — not whether they've done it at scale.",
-                    "mid":        "Ask about their approach or any real exposure they've had.",
-                    "experienced":"Ask about a concrete decision or tradeoff in this area.",
-                    "senior":     "Ask about systemic or team-level thinking.",
-                }.get(band, "Ask how they think about or approach this.")
+    def _band_depth_hint(t, band: str) -> str:
+        tag = (t.tag or "").upper()
+        if tag == "RESUME_TOPIC":
+            return {
+                "fresher":    "Ask WHAT they built and what their specific role was.",
+                "mid":        "Ask what was specifically their call — push past 'we'.",
+                "experienced":"Go straight to a tradeoff or design decision. Skip setup.",
+                "senior":     "Ask about strategic consequence or org-level impact.",
+            }.get(band, "Ask what they personally owned.")
+        elif tag == "JD_TOPIC":
+            return {
+                "fresher":    "Ask gently — 'have you had a chance to work with X or explore it?'",
+                "mid":        "Ask where they've actually used it in a real project.",
+                "experienced":"Ask about production depth and real constraints.",
+                "senior":     "Ask about strategic judgment around it, not just usage.",
+            }.get(band, "Ask about their exposure neutrally.")
+        else:
+            return {
+                "fresher":    "Check if they understand the concept — not whether they've done it at scale.",
+                "mid":        "Ask about their approach or any real exposure they've had.",
+                "experienced":"Ask about a concrete decision or tradeoff in this area.",
+                "senior":     "Ask about systemic or team-level thinking.",
+            }.get(band, "Ask how they think about or approach this.")
 
-        _topics_summary = "\n".join(
-            f"  {i+1}. {t.title}\n"
-            f"     {_topic_source_contract(t)}\n"
-            f"     BAND HINT ({candidate_band.upper()}): {_band_depth_hint(t, candidate_band)}\n"
-            f"     CONTEXT: {t.full_description[:180]}\n"
-            f"     {('PROBE: ' + ', '.join(t.probe_focus[:3])) if t.probe_focus else ''}"
-            f"{'  |  ' if t.probe_focus and t.probe_avoid else ''}"
-            f"{('AVOID: ' + ', '.join(t.probe_avoid[:2])) if t.probe_avoid else ''}"
-            for i, t in enumerate(interview_brief.topic_pool)
-        )
+    _topics_summary = "\n".join(
+        f"  {i+1}. {t.title}\n"
+        f"     {_topic_source_contract(t)}\n"
+        f"     BAND HINT ({candidate_band.upper()}): {_band_depth_hint(t, candidate_band)}\n"
+        f"     CONTEXT: {t.full_description}\n"
+        f"     {('TECH: ' + ', '.join(t.tech_stack)) + chr(10) + '     ' if t.tech_stack else ''}"
+        f"     {('PROBE: ' + ', '.join(t.probe_focus[:3])) if t.probe_focus else ''}"
+        f"{'  |  ' if t.probe_focus and t.probe_avoid else ''}"
+        f"{('AVOID: ' + ', '.join(t.probe_avoid[:2])) if t.probe_avoid else ''}"
+        for i, t in enumerate(interview_brief.topic_pool)
+    )
 
-        brief_block = f"""CANDIDATE: {candidate_name}
+    brief_block = f"""CANDIDATE: {candidate_name}
 ROLE: {job_title}  |  BAND: {candidate_band.upper()}
 
 ANALYST READ:
@@ -225,7 +212,8 @@ a fresh question that sounds like it came from you listening to them — not fro
 ANCHOR TOPIC (open here):
   {_anchor.title}
   {_topic_source_contract(_anchor)}
-  CONTEXT: {_anchor.full_description[:200]}
+  CONTEXT: {_anchor.full_description}
+  {('TECH: ' + ', '.join(_anchor.tech_stack)) if _anchor.tech_stack else ''}
   Probe focus: {', '.join(_anchor.probe_focus[:3]) if _anchor.probe_focus else 'depth, ownership'}
   Probe avoid: {', '.join(_anchor.probe_avoid[:2]) if _anchor.probe_avoid else 'none'}
 
@@ -235,17 +223,8 @@ TOPIC POOL (work through in order — each has its own source framing above):
 JD MUST-HAVES:
   {_must_haves}
 
-FIT GAPS (probe these specifically):
-{chr(10).join('  - ' + g for g in _gaps) if _gaps else '  (none identified)'}
-
 RED FLAGS (watch for these — do not ignore):
-{chr(10).join('  ⚠ ' + f for f in _flags) if _flags else '  (none)'}
-
-FOCUS AREAS:
-{chr(10).join('  → ' + a for a in _focus) if _focus else '  (standard coverage)'}"""
-    else:
-        brief_block = live_prompt_context.strip() if live_prompt_context and live_prompt_context.strip() else "Resume data not available -- probe broadly based on job title."
-
+{chr(10).join('  ⚠ ' + f for f in _flags) if _flags else '  (none)'}"""
     # Band-specific evaluation posture -- what "good" looks like at each level
     band_eval = {
         "fresher": (

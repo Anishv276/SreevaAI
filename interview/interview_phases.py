@@ -53,8 +53,8 @@ def build_interview_directive(
         anchor_name = interview_brief.anchor_topic.title
         _brief_strategy_note = (
             f"ROLE STRATEGY: {interview_brief.interview_strategy}\n"
-            f"ANCHOR CONTEXT: {interview_brief.anchor_topic.full_description[:300]}\n"
-            f"FOCUS AREAS: {', '.join(interview_brief.focus_areas)}\n"
+            f"ANCHOR CONTEXT: {interview_brief.anchor_topic.full_description}\n"
+            + (f"ANCHOR TECH: {', '.join(interview_brief.anchor_topic.tech_stack)}\n" if interview_brief.anchor_topic.tech_stack else "")
         )
         if interview_brief.red_flags:
             _brief_strategy_note += f"RED FLAGS TO PROBE: {', '.join(interview_brief.red_flags)}\n"
@@ -124,10 +124,14 @@ def build_interview_directive(
                     _src_label = "[ROLE DEPTH — not on resume or JD, ask concept/approach]"
                 _focus = ", ".join(_st.probe_focus[:2]) if _st.probe_focus else ""
                 _line = f"  - {_st.title}  {_src_label}"
+                if _st.full_description:
+                    _line += f"\n      CONTEXT: {_st.full_description}"
+                if _st.tech_stack:
+                    _line += f"\n      TECH: {', '.join(_st.tech_stack)}"
                 if _focus:
-                    _line += f"  [probe: {_focus}]"
+                    _line += f"\n      [probe: {_focus}]"
                 if _st.why_relevant:
-                    _line += f"  — {_st.why_relevant}"
+                    _line += f"\n      — {_st.why_relevant}"
                 _skill_lines.append(_line)
             skills_block = (
                 f"\nSKILLS TO COVER (ordered by role relevance):\n"

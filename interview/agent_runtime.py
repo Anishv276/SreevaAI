@@ -589,7 +589,6 @@ async def _generate_move_on_directive(
     new_topic_title: str,
     source: str,
     band: str,
-    llm_brief: str,
     memory_block: str,
     cross_ref_rule: str,
     client: Any,
@@ -619,6 +618,8 @@ async def _generate_move_on_directive(
         parts = [f"TOPIC: {topic_item.title}"]
         if topic_item.full_description:
             parts.append(f"CONTEXT: {topic_item.full_description}")
+        if topic_item.tech_stack:
+            parts.append(f"TECH STACK: {', '.join(topic_item.tech_stack)}")
         if topic_item.why_relevant:
             parts.append(f"WHY RELEVANT: {topic_item.why_relevant}")
         if topic_item.probe_focus:
@@ -628,17 +629,6 @@ async def _generate_move_on_directive(
         if topic_item.impact:
             parts.append(f"IMPACT: {topic_item.impact}")
         _brief_context = "\n".join(parts)
-    elif llm_brief:
-        new_title_lc = new_topic_title.lower()
-        brief_lines = llm_brief.split("\n")
-        for i, line in enumerate(brief_lines):
-            if new_title_lc in line.lower():
-                start = max(0, i - 1)
-                end = min(len(brief_lines), i + 6)
-                _brief_context = "\n".join(brief_lines[start:end]).strip()
-                break
-        if not _brief_context:
-            _brief_context = llm_brief[:800]
     # Attribution guard: a STANDALONE / personal project must NEVER be tied to an
     # employer. The candidate's resume lists the project as standalone (the topic
     # string carries a [standalone] marker), so the brief's nearby company names
@@ -1233,8 +1223,6 @@ class InterviewContext(BaseModel):
     language: str
     orgId: Optional[str] = None
     orgName: Optional[str] = None
-    orgLocation: Optional[str] = None
-    driveLocation: Optional[str] = None
     aiName: Optional[str] = "Ishita"
     voiceId: Optional[str] = None
     voiceProvider: Optional[str] = None
@@ -1480,8 +1468,6 @@ async def entrypoint(ctx: JobContext):
         {
             "org_id": org_id,
             "org_name": _compact_optional(ctx_data.orgName),
-            "org_location": _compact_optional(ctx_data.orgLocation),
-            "drive_location": _compact_optional(ctx_data.driveLocation),
             "candidate": candidate_name,
             "candidate_first_name": candidate_first_name,
             "job_title": job_title,
@@ -1555,7 +1541,11 @@ async def entrypoint(ctx: JobContext):
     _brief_projects  = [t.title for t in _interview_brief.topic_pool if t.topic_type == "project"]
     _brief_work      = [t.title for t in _interview_brief.topic_pool if t.topic_type == "work"]
     _anchor_title    = _interview_brief.anchor_topic.title
-    _anchor_full     = f"{_interview_brief.anchor_topic.title} - {_interview_brief.anchor_topic.full_description}"
+    _anchor_topic_item = _interview_brief.anchor_topic
+    _anchor_full = (
+        f"{_anchor_topic_item.title} - {_anchor_topic_item.full_description}"
+        + (f" | Tech: {', '.join(_anchor_topic_item.tech_stack)}" if _anchor_topic_item.tech_stack else "")
+    )
     _anchor_type     = _interview_brief.anchor_topic.topic_type
     # Coverage items for TTS phonetic processor
     base_coverage_items = list(dict.fromkeys([
@@ -1578,8 +1568,6 @@ async def entrypoint(ctx: JobContext):
     logger.info("[BRIEF] strategy: %s", _interview_brief.interview_strategy[:120])
     if _interview_brief.red_flags:
         logger.info("[BRIEF] red_flags: %s", " | ".join(_interview_brief.red_flags))
-    if _interview_brief.focus_areas:
-        logger.info("[BRIEF] focus_areas: %s", " | ".join(_interview_brief.focus_areas))
     for _i, _t in enumerate(_interview_brief.topic_pool):
         logger.info(
             "[BRIEF] topic[%d] %-10s score=%.2f  %r  probe=%s",
@@ -1587,14 +1575,6 @@ async def entrypoint(ctx: JobContext):
             ",".join(_t.probe_focus[:3]) or "-",
         )
     # Compact text block for eval layer prompt
-    _candidate_llm_brief = (
-        f"ROLE: {_interview_brief.role_context.role_title}\n"
-        f"CANDIDATE: {_interview_brief.candidate_summary}\n"
-        f"STRATEGY: {_interview_brief.interview_strategy}\n"
-        f"ANCHOR: {_interview_brief.anchor_topic.title} — {_interview_brief.anchor_topic.full_description[:200]}\n"
-        f"FOCUS: {', '.join(_interview_brief.focus_areas)}\n"
-        f"RED FLAGS: {', '.join(_interview_brief.red_flags)}\n"
-    )
     # Register all session keywords with the phonetic processor
     tts_phonetic_processor.add_keywords(_tts_keywords)
     logger.info("[TTS_PHONETIC] Registered %d keywords for this session", len(_tts_keywords))
@@ -1645,11 +1625,8 @@ async def entrypoint(ctx: JobContext):
         time_limit_mins=time_limit_mins,
         ai_name=_compact_optional(ctx_data.aiName),
         org_name=_compact_optional(ctx_data.orgName),
-        org_location=_compact_optional(ctx_data.orgLocation),
-        drive_location=_compact_optional(ctx_data.driveLocation),
     )
     evaluation_layer_prompt = build_evaluation_layer_prompt(
-        live_prompt_context=_candidate_llm_brief,
         candidate_name=candidate_first_name or candidate_name,
         job_title=job_title,
         candidate_band=candidate_band,
@@ -2176,10 +2153,7 @@ async def entrypoint(ctx: JobContext):
         nonlocal launch_prereqs_signal_sent
         if launch_prereqs_signal_sent or disconnect_event.is_set():
             return
-        prefetch_ready = bool(
-            _candidate_llm_brief
-            and interview_directive_cached
-        )
+        prefetch_ready = bool(interview_directive_cached)
         greeting_ready = bool((welcome_text or "").strip())
         tts_warm_ready = True
         try:
@@ -2967,7 +2941,6 @@ async def entrypoint(ctx: JobContext):
                                 new_topic_title=_topic_short_title(_next_topic),
                                 source=_pre_next_src,
                                 band=candidate_band,
-                                llm_brief=_candidate_llm_brief,
                                 memory_block=_pre_memory_block,
                                 cross_ref_rule=_pre_cross_ref,
                                 client=_eval_openai_client,
@@ -3115,7 +3088,6 @@ async def entrypoint(ctx: JobContext):
                             new_topic_title=_new_topic_title,
                             source=_src,
                             band=candidate_band,
-                            llm_brief=_candidate_llm_brief,
                             memory_block=_memory_block,
                             cross_ref_rule=_cross_ref_rule,
                             client=_eval_openai_client,
@@ -3323,7 +3295,7 @@ async def entrypoint(ctx: JobContext):
                     "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
                     "DECISION: FIRST_QUESTION\n"
                     f"ANCHOR TOPIC: {_anchor_title}\n"
-                    f"FULL CONTEXT: {_anchor_ctx[:300]}\n"
+                    f"FULL CONTEXT: {_anchor_ctx}\n"
                     "YOUR RESPONSE THIS TURN:\n"
                     "  Ask your first interview question directly. Do NOT open with 'Great' or 'Perfect' alone.\n"
                     "  If you need a transition, make it a FULL SENTENCE tied to the topic, e.g.:\n"

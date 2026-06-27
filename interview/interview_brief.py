@@ -38,7 +38,6 @@ class TopicItem(BaseModel):
     full_description: str
     tech_stack: list[str] = Field(default_factory=list)
     impact: str = ""
-    source: str = ""           # "resume" | "jd" | "inferred"
     is_jd_must_have: bool = False
     relevance_score: float = 0.5
     why_relevant: str = ""
@@ -72,7 +71,6 @@ class RoleContext(BaseModel):
     role_title: str
     role_summary: str = ""
     must_have_skills: list[str] = Field(default_factory=list)
-    nice_to_have_skills: list[str] = Field(default_factory=list)
 
 
 class InterviewBrief(BaseModel):
@@ -83,8 +81,6 @@ class InterviewBrief(BaseModel):
     topic_pool: list[TopicItem] = Field(default_factory=list)
     skill_coverage_map: dict[str, list[str]] = Field(default_factory=dict)
     interview_strategy: str = ""
-    candidate_fit_gaps: list[str] = Field(default_factory=list)
-    focus_areas: list[str] = Field(default_factory=list)
     red_flags: list[str] = Field(default_factory=list)
 
     @field_validator("candidate_band", mode="before")
@@ -107,7 +103,7 @@ No raw JSON. No parsing needed. Your jobs:
   2. Select the anchor topic (most strategically valuable for this role + band)
   3. Generate role_topic TopicItems from YOUR expert domain knowledge of the role — not from resume or JD
   4. Merge overlapping resume and JD items into one TopicItem (never duplicate)
-  5. Write interview_strategy, focus_areas, red_flags, candidate_summary — calibrated to role and band
+  5. Write interview_strategy, red_flags, candidate_summary — calibrated to role and band
   6. The interview_strategy must be SPECIFIC to this exact role, band, and candidate — not generic filler
 
 ━━━ TOPIC TAGS (required on every TopicItem) ━━━
@@ -209,15 +205,13 @@ Never two TopicItems for the same concept.
 
 Schema:
 {
-  "role_context": { "role_title": str, "role_summary": str, "must_have_skills": [str], "nice_to_have_skills": [str] },
+  "role_context": { "role_title": str, "role_summary": str, "must_have_skills": [str] },
   "candidate_band": "fresher"|"mid"|"experienced"|"senior",
   "candidate_summary": str,
   "anchor_topic": TopicItem,
   "topic_pool": [TopicItem],
   "skill_coverage_map": { "skill_key": ["topic_id"] },
   "interview_strategy": str,
-  "candidate_fit_gaps": [str],
-  "focus_areas": [str],
   "red_flags": [str]
 }
 
@@ -230,7 +224,6 @@ TopicItem schema:
   "full_description": str,
   "tech_stack": [str],
   "impact": str,
-  "source": "resume"|"jd"|"inferred",
   "is_jd_must_have": bool,
   "relevance_score": float,
   "why_relevant": str,
@@ -245,7 +238,7 @@ OUTPUT SIZE RULES:
   - probe_avoid: max 2 items, 3–5 words each.
   - interview_strategy: 3–5 sentences. Must be specific to this role, band, and candidate — not generic.
   - candidate_summary: 1–2 sentences.
-  - candidate_fit_gaps / focus_areas / red_flags: up to 5 items each, short phrases.
+  - red_flags: up to 5 items, short phrases.
 """
 
 

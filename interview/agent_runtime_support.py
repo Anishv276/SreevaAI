@@ -36,8 +36,6 @@ _SESSION_CONTEXT_KEYS = (
     "dispatch_room_name",
     "org_id",
     "org_name",
-    "org_location",
-    "drive_location",
     "candidate",
     "candidate_first_name",
     "job_title",
