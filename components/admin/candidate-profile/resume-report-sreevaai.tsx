@@ -203,7 +203,8 @@ export type SreevaAIResumeViewModel = {
 function readableSummaryText(text: string, maxLen = 180) {
   const clean = String(text || "")
     .replace(/^flag:\s*/i, "")
-    .replace(/\[EV-[^\]]+\]/g, "")   // strip internal evidence citation tags
+    .replace(/\[EV-[^\]]+\]/g, "")                          // strip [EV-xxx] citation tags
+    .replace(/^(emerald|amber|rose|green|red|yellow):\s*/i, "") // strip tone-colour prefixes the LLM sometimes emits
     .replace(/\s+/g, " ")
     .trim();
   if (!clean) return "";
