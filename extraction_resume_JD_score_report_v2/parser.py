@@ -45,7 +45,7 @@ def _llm(client: OpenAI, system: str, user: str, model: str) -> tuple[dict, dict
     completion = client.chat.completions.create(
         model=model,
         temperature=0,
-        seed=42,
+        seed=0,  # fixed seed for deterministic extraction; value is arbitrary
         messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
         response_format={"type": "json_object"},
     )
