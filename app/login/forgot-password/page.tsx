@@ -125,7 +125,7 @@ function ForgotPasswordContent() {
         }
     };
     return (
-        <div className="min-h-screen bg-[#F7F6F3] flex items-center justify-center p-6 font-medium selection:bg-orange-100">
+        <div className="min-h-screen flex items-center justify-center p-6 font-medium selection:bg-violet-100">
             <div className="w-full max-w-md space-y-8 animate-fade-slide">
                 {/* Header Section */}
                 <div className="flex flex-col items-center gap-6 text-center">
@@ -134,10 +134,10 @@ function ForgotPasswordContent() {
                         {backText}
                     </Link>
                     <div className="h-16 w-16 rounded-2xl bg-white border border-gray-100 flex items-center justify-center shadow-sm relative group">
-                        <div className="absolute inset-0 bg-orange-50 rounded-2xl scale-0 group-hover:scale-100 transition-transform duration-500" />
-                        {step === "EMAIL" && <Mail className="w-6 h-6 text-gray-400 group-hover:text-[#F97316] transition-colors relative z-10" />}
-                        {step === "OTP" && <KeyRound className="w-6 h-6 text-gray-400 group-hover:text-[#F97316] transition-colors relative z-10" />}
-                        {step === "RESET" && <Lock className="w-6 h-6 text-gray-400 group-hover:text-[#F97316] transition-colors relative z-10" />}
+                        <div className="absolute inset-0 bg-violet-50 rounded-2xl scale-0 group-hover:scale-100 transition-transform duration-500" />
+                        {step === "EMAIL" && <Mail className="w-6 h-6 text-gray-400 group-hover:text-violet-600 transition-colors relative z-10" />}
+                        {step === "OTP" && <KeyRound className="w-6 h-6 text-gray-400 group-hover:text-violet-600 transition-colors relative z-10" />}
+                        {step === "RESET" && <Lock className="w-6 h-6 text-gray-400 group-hover:text-violet-600 transition-colors relative z-10" />}
                         {step === "SUCCESS" && <ShieldCheck className="w-6 h-6 text-emerald-500 relative z-10" />}
                     </div>
                     <div className="space-y-1">
@@ -160,7 +160,7 @@ function ForgotPasswordContent() {
                     {["EMAIL", "OTP", "RESET", "SUCCESS"].map((s, idx) => (
                         <div
                             key={s}
-                            className={`h-1 rounded-full transition-all duration-500 ${step === s ? "w-8 bg-[#F97316]" :
+                            className={`h-1 rounded-full transition-all duration-500 ${step === s ? "w-8 bg-violet-600" :
                                 idx < ["EMAIL", "OTP", "RESET", "SUCCESS"].indexOf(step) ? "w-4 bg-gray-900" : "w-4 bg-gray-200"
                                 }`}
                         />
@@ -168,7 +168,7 @@ function ForgotPasswordContent() {
                 </div>
                 {/* Content Area */}
                 <div className="bg-white border border-gray-100 rounded-3xl p-8 shadow-[0_40px_100px_rgba(0,0,0,0.03)] overflow-hidden relative group">
-                    <div className="absolute top-0 left-0 w-1 h-full bg-[#F97316]/50 opacity-0 group-hover:opacity-100 transition-all" />
+                    <div className="absolute top-0 left-0 w-1 h-full bg-violet-600/50 opacity-0 group-hover:opacity-100 transition-all" />
                     <AnimatePresence mode="wait">
                         {step === "EMAIL" && (
                             <motion.form
@@ -217,12 +217,12 @@ function ForgotPasswordContent() {
                                     <div className="flex flex-col items-center gap-2 text-center">
                                         <p className="text-[12px] font-bold text-gray-900 leading-tight">
                                             A 6-digit security code was sent to <br />
-                                            <span className="text-[#F97316] font-black">{email}</span>
+                                            <span className="text-violet-600 font-black">{email}</span>
                                         </p>
                                         <button
                                             type="button"
                                             onClick={() => setStep("EMAIL")}
-                                            className="mt-1 flex items-center gap-1.5 px-3 py-1 rounded-full bg-gray-50 text-[9px] font-black text-gray-400 uppercase tracking-widest hover:bg-orange-50 hover:text-[#F97316] transition-all border border-gray-100"
+                                            className="mt-1 flex items-center gap-1.5 px-3 py-1 rounded-full bg-gray-50 text-[9px] font-black text-gray-400 uppercase tracking-widest hover:bg-violet-50 hover:text-violet-600 transition-all border border-gray-100"
                                         >
                                             <ArrowLeft className="w-2.5 h-2.5" />
                                             Change Email
@@ -235,7 +235,7 @@ function ForgotPasswordContent() {
                                                     key={i}
                                                     className={cn(
                                                         "w-12 h-14 rounded-xl border-2 flex items-center justify-center text-xl font-black transition-all",
-                                                        otp[i] ? "border-[#F97316] bg-white text-[#F97316] shadow-[0_8px_20px_rgba(249,115,22,0.15)]" : "border-gray-100 bg-gray-50 text-gray-200"
+                                                        otp[i] ? "border-violet-500 bg-white text-violet-600 shadow-[0_8px_20px_rgba(124,58,237,0.15)]" : "border-gray-100 bg-gray-50 text-gray-200"
                                                     )}
                                                 >
                                                     {otp[i] || "0"}
@@ -254,13 +254,13 @@ function ForgotPasswordContent() {
                                     <div className="text-center mt-4">
                                         {resendTimer > 0 ? (
                                             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-                                                Resend code in <span className="text-[#F97316] font-black">{resendTimer}s</span>
+                                                Resend code in <span className="text-violet-600 font-black">{resendTimer}s</span>
                                             </p>
                                         ) : (
                                             <button
                                                 type="button"
                                                 onClick={() => handleSendOTP()}
-                                                className="text-[10px] font-black text-[#F97316] uppercase tracking-widest hover:underline"
+                                                className="text-[10px] font-black text-violet-600 uppercase tracking-widest hover:underline"
                                             >
                                                 Resend Code
                                             </button>
@@ -270,7 +270,7 @@ function ForgotPasswordContent() {
                                 <button
                                     type="submit"
                                     disabled={loading}
-                                    className="w-full h-14 rounded-2xl bg-[#F97316] text-white font-black text-[12px] tracking-[0.2em] uppercase shadow-[0_20px_40px_rgba(249,115,22,0.2)] hover:shadow-orange-200 hover:-translate-y-0.5 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-3"
+                                    className="w-full h-14 rounded-2xl bg-violet-600 text-white font-black text-[12px] tracking-[0.2em] uppercase shadow-[0_20px_40px_rgba(124,58,237,0.2)] hover:shadow-violet-200 hover:-translate-y-0.5 transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-3"
                                 >
                                     {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "VERIFY CODE"}
                                 </button>
@@ -347,7 +347,7 @@ function ForgotPasswordContent() {
                                 </div>
                                 <Link
                                     href={backLink}
-                                    className="inline-flex h-12 px-8 rounded-xl bg-[#F97316] text-white font-black text-[11px] tracking-widest uppercase shadow-lg shadow-orange-100 items-center justify-center hover:scale-105 transition-all"
+                                    className="inline-flex h-12 px-8 rounded-xl bg-violet-600 text-white font-black text-[11px] tracking-widest uppercase shadow-lg shadow-violet-100 items-center justify-center hover:scale-105 transition-all"
                                 >
                                     {(from === "settings" || from === "super-settings") ? "Return to Settings" : "Login to Workspace"}
                                 </Link>
@@ -373,8 +373,8 @@ function ForgotPasswordContent() {
 export default function ForgotPasswordPage() {
     return (
         <Suspense fallback={
-            <div className="min-h-screen bg-[#F7F6F3] flex items-center justify-center p-6">
-                <Loader2 className="w-8 h-8 animate-spin text-[#F97316]" />
+            <div className="min-h-screen flex items-center justify-center p-6">
+                <Loader2 className="w-8 h-8 animate-spin text-violet-600" />
             </div>
         }>
             <ForgotPasswordContent />

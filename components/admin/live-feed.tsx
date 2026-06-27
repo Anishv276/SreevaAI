@@ -17,7 +17,7 @@ interface FeedItem {
 function getIconProps(type: ActivityType) {
     switch (type) {
         case "application":
-            return { icon: UserPlus,   color: "#475569", bg: "bg-slate-100",   border: "border-slate-200" };
+            return { icon: UserPlus,   color: "#475569", bg: "bg-gray-100",   border: "border-gray-200" };
         case "interview_completed":
             return { icon: FileCheck,  color: "#10B981", bg: "bg-emerald-50",  border: "border-emerald-100" };
         case "rejection":
@@ -86,7 +86,7 @@ export function LiveFeed({ dateRange }: LiveFeedProps) {
     const { feedItems, loading, error, retry } = useActivityFeed(dateRange);
     const summary = summarize(feedItems);
     return (
-        <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+        <div className="premium-card overflow-hidden">
             {/* Header */}
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between px-6 py-5 border-b border-gray-100">
                 <div>

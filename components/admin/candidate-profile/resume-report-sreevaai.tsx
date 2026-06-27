@@ -749,7 +749,7 @@ export function ResumeReportSreevaAI({
               {/* Candidate Profile */}
               <div className="px-5 py-4">
                 <div className="flex items-center gap-4">
-                  <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-black/5 shadow-sm bg-slate-100">
+                  <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-black/5 shadow-sm bg-gray-100">
                     {model.displayAvatar ? <img src={model.displayAvatar} alt="" className="h-full w-full object-cover" /> : null}
                   </div>
                   <div className="min-w-0 flex-1">
@@ -828,7 +828,7 @@ export function ResumeReportSreevaAI({
                         item.label === "Red flags" ? "bg-rose-50 border-rose-100"
                         : item.tone === "emerald" ? "bg-[#F0FDF4] border-[#DCFCE7]"
                         : item.tone === "amber" ? "bg-amber-50 border-amber-100"
-                        : "bg-slate-50 border-slate-100"
+                        : "bg-violet-50 border-gray-100"
                       )}>
                         <div className="mb-2 flex items-center gap-2">
                           <span className={cn(
@@ -836,7 +836,7 @@ export function ResumeReportSreevaAI({
                             item.label === "Red flags" ? "bg-rose-200 text-rose-800"
                               : item.tone === "emerald" ? "bg-[#0D4D2E] text-white"
                               : item.tone === "amber" ? "bg-[#B86A00] text-white"
-                              : "bg-slate-200 text-slate-800"
+                              : "bg-gray-200 text-gray-800"
                           )}>{item.label}</span>
                         </div>
                         <p className={cn("text-[12px] leading-relaxed", item.label === "Red flags" ? "text-rose-900" : "text-[#374151]")}>{item.body}</p>
@@ -1029,12 +1029,12 @@ export function ResumeReportSreevaAI({
                   {listedSkills.length > 0 && (
                     <div>
                       <button type="button" onClick={() => setOpenListedSkills(!openListedSkills)}
-                        className="flex items-center justify-between w-full text-left py-1.5 hover:bg-slate-50/60 rounded-lg -mx-1.5 px-1.5 transition-colors">
+                        className="flex items-center justify-between w-full text-left py-1.5 hover:bg-violet-50/60 rounded-lg -mx-1.5 px-1.5 transition-colors">
                         <div className="flex items-center gap-2">
-                          <span className="text-[12px] font-bold text-slate-700">Listed in Resume</span>
-                          <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold text-slate-600">{listedSkills.length}</span>
+                          <span className="text-[12px] font-bold text-gray-700">Listed in Resume</span>
+                          <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[9px] font-bold text-gray-600">{listedSkills.length}</span>
                         </div>
-                        <ChevronDown className={cn("h-3.5 w-3.5 text-slate-400 transition-transform", openListedSkills ? "rotate-180" : "")} />
+                        <ChevronDown className={cn("h-3.5 w-3.5 text-gray-400 transition-transform", openListedSkills ? "rotate-180" : "")} />
                       </button>
                       {openListedSkills && (
                         <div className="mt-1 mb-1 flex flex-col divide-y divide-[#F3F4F6]">
@@ -1044,7 +1044,7 @@ export function ResumeReportSreevaAI({
                                 <span className="shrink-0 text-[10px] font-bold text-[#9CA3AF] w-4 text-right">{j + 1}</span>
                                 <p className="text-[12px] font-semibold text-[#6B7280] truncate">{s.name}</p>
                               </div>
-                              <span className="shrink-0 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[9.5px] font-bold text-slate-500">Listed</span>
+                              <span className="shrink-0 rounded-full border border-gray-200 bg-violet-50 px-2 py-0.5 text-[9.5px] font-bold text-gray-500">Listed</span>
                             </div>
                           ))}
                         </div>

@@ -64,12 +64,12 @@ export const CircularProgress = memo(function CircularProgress({
                 </svg>
                 <div className="absolute flex flex-col items-center justify-center">
                     <div className="flex items-baseline gap-0.5">
-                        <span className={cn("font-bold text-slate-900 leading-none", master ? "text-3xl" : "text-2xl")}>{value}</span>
-                        {max !== 100 && <span className="text-[10px] font-semibold text-slate-400">/{max}</span>}
+                        <span className={cn("font-bold text-gray-900 leading-none", master ? "text-3xl" : "text-2xl")}>{value}</span>
+                        {max !== 100 && <span className="text-[10px] font-semibold text-gray-400">/{max}</span>}
                     </div>
                 </div>
             </div>
-            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] text-center max-w-[90px] leading-tight">
+            <span className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em] text-center max-w-[90px] leading-tight">
                 {label}
             </span>
         </div>
@@ -80,10 +80,10 @@ export const SegmentedProgress = memo(function SegmentedProgress({ candValue, jd
     return (
         <div className="space-y-4">
             <div className="flex justify-between items-end">
-                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-[0.2em] leading-none">{label}</span>
+                <span className="text-[11px] font-bold text-gray-400 uppercase tracking-[0.2em] leading-none">{label}</span>
                 <div className="flex items-baseline gap-1">
-                    <span className="text-sm font-bold text-slate-900 leading-none">{candValue}</span>
-                    <span className="text-[9px] font-semibold text-slate-400 uppercase tracking-tighter">/ {jdValue} {unit}</span>
+                    <span className="text-sm font-bold text-gray-900 leading-none">{candValue}</span>
+                    <span className="text-[9px] font-semibold text-gray-400 uppercase tracking-tighter">/ {jdValue} {unit}</span>
                 </div>
             </div>
             <div className="flex gap-1.5 h-2.5">
@@ -92,7 +92,7 @@ export const SegmentedProgress = memo(function SegmentedProgress({ candValue, jd
                         key={i}
                         className={cn(
                             "flex-1 rounded-sm border transition-all",
-                            i < candValue ? "bg-blue-600 border-blue-600 shadow-sm" : "bg-transparent border-slate-200"
+                            i < candValue ? "bg-blue-600 border-blue-600 shadow-sm" : "bg-transparent border-gray-200"
                         )}
                     />
                 ))}
@@ -202,14 +202,14 @@ export const CommunicationDonutChart = memo(function CommunicationDonutChart({ m
                 </div>
             </div>
             <div className="flex min-w-0 flex-col justify-center sm:min-h-0">
-                <p className="mb-0.5 text-[9px] font-bold uppercase tracking-[0.2em] text-slate-400">Dimensions</p>
-                <p className="mb-2 text-[10px] leading-snug text-slate-500">Score shows in the chart center when you hover a segment or a row.</p>
+                <p className="mb-0.5 text-[9px] font-bold uppercase tracking-[0.2em] text-gray-400">Dimensions</p>
+                <p className="mb-2 text-[10px] leading-snug text-gray-500">Score shows in the chart center when you hover a segment or a row.</p>
                 <ul className="flex flex-col gap-1.5" role="list">
                     {metrics.map((m, i) => (
                         <li key={m.label} className="list-none">
                             <button
                                 type="button"
-                                className="group flex w-full min-w-0 cursor-pointer items-center gap-2.5 rounded-lg border border-transparent bg-transparent px-1 py-1.5 text-left transition-colors hover:border-slate-200 hover:bg-slate-50/80"
+                                className="group flex w-full min-w-0 cursor-pointer items-center gap-2.5 rounded-lg border border-transparent bg-transparent px-1 py-1.5 text-left transition-colors hover:border-gray-200 hover:bg-violet-50/80"
                                 onMouseEnter={() => setHovered(i)}
                                 onMouseLeave={() => setHovered(null)}
                                 onFocus={() => setHovered(i)}
@@ -220,7 +220,7 @@ export const CommunicationDonutChart = memo(function CommunicationDonutChart({ m
                                     style={{ backgroundColor: m.color }}
                                     aria-hidden
                                 />
-                                <span className="min-w-0 text-[10px] font-bold uppercase leading-normal tracking-wide text-slate-600 sm:text-[11px]">
+                                <span className="min-w-0 text-[10px] font-bold uppercase leading-normal tracking-wide text-gray-600 sm:text-[11px]">
                                     {m.label}
                                 </span>
                             </button>

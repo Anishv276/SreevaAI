@@ -4,7 +4,7 @@ export default function CandidatesLoading() {
         <div className="space-y-8 pb-12 animate-in-fade">
             <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
                 <div className="flex items-center gap-4">
-                    <Skeleton className="h-14 w-1.5 rounded-full" />
+                    <Skeleton className="h-8 w-40 rounded-lg" />
                     <div className="space-y-2">
                         <Skeleton className="h-10 w-48" />
                         <Skeleton className="h-4 w-32" />

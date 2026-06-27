@@ -83,13 +83,13 @@ export default function DrivesPage() {
     };
 
     return (
-        <div className="min-h-screen bg-gray-50/70 pb-16 animate-in fade-in duration-500">
+        <div className="space-y-6 pb-10 animate-in fade-in duration-500">
 
             {/* ── Page header ── */}
-            <div className="px-6 lg:px-10 pt-8 pb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                    <h1 className="text-[26px] font-extrabold text-gray-900 tracking-tight">Active Jobs</h1>
-                    <p className="text-[13px] text-gray-400 mt-0.5 font-medium">
+                    <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Active Jobs</h1>
+                    <p className="text-sm text-gray-400 mt-0.5">
                         {pagination.total} {pagination.total === 1 ? "job" : "jobs"} · Updated just now
                     </p>
                 </div>
@@ -99,19 +99,20 @@ export default function DrivesPage() {
                         <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
                         <Input
                             placeholder="Search jobs..."
-                            className="pl-10 h-9 w-52 border-gray-200 bg-white rounded-full text-[13px] shadow-sm focus:border-orange-400 focus:ring-1 focus:ring-orange-200"
+                            className="pl-10 h-9 w-52 bg-white rounded-xl text-sm shadow-none focus:ring-1 focus:ring-violet-400"
+                            style={{ border: "1px solid #E9E7FF" }}
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                         />
                     </div>
                     <DateFilter value={timeline} onChange={setTimeline} />
                     {driveCreationLocked ? (
-                        <button disabled className="h-9 px-4 rounded-full bg-gray-100 text-gray-400 font-semibold text-[13px] flex items-center gap-1.5 cursor-not-allowed border border-gray-200">
+                        <button disabled className="h-9 px-4 rounded-xl text-gray-400 font-medium text-sm flex items-center gap-1.5 cursor-not-allowed" style={{ background: "#F5F3FF", border: "1px solid #E9E7FF" }}>
                             <Lock className="h-3.5 w-3.5" /> {interviewAccessLocked ? "Locked" : "New Job"}
                         </button>
                     ) : (
                         <Link href="/admin/create-drive">
-                            <button className="h-9 px-5 rounded-full bg-[#F97316] hover:bg-orange-600 text-white font-bold text-[13px] flex items-center gap-1.5 shadow-sm transition-colors">
+                            <button className="btn-shimmer h-9 px-5 rounded-xl text-white font-semibold text-sm flex items-center gap-1.5 transition-all" style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)", boxShadow: "0 4px 12px rgba(124,58,237,0.25)" }}>
                                 <Plus className="h-4 w-4" /> New Job
                             </button>
                         </Link>
@@ -120,24 +121,24 @@ export default function DrivesPage() {
             </div>
 
             {/* ── Cards grid ── */}
-            <div className="px-6 lg:px-10">
+            <div>
                 {isLoading ? (
                     <div className="flex flex-col items-center justify-center py-36">
-                        <Loader2 className="h-9 w-9 text-[#F97316] animate-spin mb-3" />
-                        <p className="text-[12px] font-bold text-gray-400 uppercase tracking-widest">Loading jobs...</p>
+                        <Loader2 className="h-8 w-8 text-violet-500 animate-spin mb-3" />
+                        <p className="text-xs font-medium text-gray-400 uppercase tracking-widest">Loading jobs...</p>
                     </div>
                 ) : jobs.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-36 text-center max-w-xs mx-auto">
-                        <div className="h-16 w-16 rounded-2xl bg-orange-50 border border-orange-100 flex items-center justify-center mb-4">
-                            <Briefcase className="h-7 w-7 text-[#F97316]" />
+                        <div className="h-16 w-16 rounded-2xl flex items-center justify-center mb-4" style={{ background: "rgba(124,58,237,0.08)", border: "1px solid rgba(124,58,237,0.12)" }}>
+                            <Briefcase className="h-7 w-7 text-violet-600" />
                         </div>
-                        <h3 className="text-[16px] font-bold text-gray-800 mb-1.5">No active jobs yet</h3>
-                        <p className="text-[13px] text-gray-400 mb-6 leading-relaxed">
+                        <h3 className="text-base font-semibold text-gray-800 mb-1.5">No active jobs yet</h3>
+                        <p className="text-sm text-gray-400 mb-6 leading-relaxed">
                             Create your first job and candidates will appear automatically.
                         </p>
                         {!driveCreationLocked && (
                             <Link href="/admin/create-drive">
-                                <button className="h-9 px-5 rounded-full bg-[#F97316] hover:bg-orange-600 text-white font-bold text-[13px] flex items-center gap-1.5 shadow-sm transition-colors">
+                                <button className="btn-shimmer h-9 px-5 rounded-xl text-white font-semibold text-sm flex items-center gap-1.5" style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)", boxShadow: "0 4px 12px rgba(124,58,237,0.25)" }}>
                                     <Plus className="h-4 w-4" /> Create First Job
                                 </button>
                             </Link>
@@ -159,24 +160,25 @@ export default function DrivesPage() {
                                 <div
                                     key={drive.id}
                                     onClick={() => router.push(`/admin/candidates/drive/${encodeURIComponent(drive.id)}`)}
-                                    className="group relative bg-white rounded-2xl border border-gray-100 shadow-[0_1px_8px_rgba(0,0,0,0.06)] hover:shadow-[0_4px_24px_rgba(0,0,0,0.10)] hover:border-orange-200/60 transition-all duration-250 cursor-pointer flex flex-col overflow-hidden"
+                                    className="group relative bg-white rounded-2xl cursor-pointer flex flex-col overflow-hidden transition-all duration-200"
+                                    style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 4px rgba(124,58,237,0.04)" }}
+                                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = "#C4B5FD"; (e.currentTarget as HTMLElement).style.boxShadow = "0 6px 24px rgba(124,58,237,0.1)"; (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)"; }}
+                                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = "#E9E7FF"; (e.currentTarget as HTMLElement).style.boxShadow = "0 1px 4px rgba(124,58,237,0.04)"; (e.currentTarget as HTMLElement).style.transform = "translateY(0)"; }}
                                 >
-                                    {/* Orange top accent line */}
-                                    <div className="h-[3px] w-full bg-[#F97316]" />
+                                    {/* Violet top accent line */}
+                                    <div className="h-[3px] w-full" style={{ background: "linear-gradient(90deg, #8B5CF6, #3B82F6)" }} />
 
                                     {/* ── Card header ── */}
                                     <div className="px-5 pt-4 pb-4 flex items-start justify-between gap-3">
                                         <div className="flex items-start gap-3 min-w-0">
-                                            {/* Icon */}
-                                            <div className="h-10 w-10 rounded-xl bg-orange-50 border border-orange-100 flex items-center justify-center shrink-0 mt-0.5">
-                                                <Briefcase className="h-4.5 w-4.5 text-[#F97316]" />
+                                            <div className="h-10 w-10 rounded-xl flex items-center justify-center shrink-0 mt-0.5" style={{ background: "rgba(124,58,237,0.08)", border: "1px solid rgba(124,58,237,0.12)" }}>
+                                                <Briefcase className="h-4.5 w-4.5 text-violet-600" />
                                             </div>
                                             <div className="min-w-0">
-                                                {/* Mode pill */}
                                                 <span className={cn(
-                                                    "inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full mb-1.5",
+                                                    "inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full mb-1.5",
                                                     isInterviewOnly
-                                                        ? "bg-orange-50 text-[#F97316] border border-orange-200"
+                                                        ? "bg-violet-50 text-violet-600 border border-violet-200"
                                                         : "bg-gray-50 text-gray-500 border border-gray-200"
                                                 )}>
                                                     {isInterviewOnly
@@ -184,13 +186,11 @@ export default function DrivesPage() {
                                                         : <><SlidersHorizontal className="h-2.5 w-2.5" /> Scoring + Interview</>
                                                     }
                                                 </span>
-                                                {/* Title */}
-                                                <h3 className="text-[15px] font-extrabold text-gray-900 leading-snug tracking-tight line-clamp-2">
+                                                <h3 className="text-[15px] font-semibold text-gray-900 leading-snug tracking-tight line-clamp-2">
                                                     {drive.title}
                                                 </h3>
-                                                {/* Role */}
                                                 {drive.role && drive.role !== drive.title && (
-                                                    <p className="text-[12px] text-gray-400 font-medium mt-0.5 truncate">{drive.role}</p>
+                                                    <p className="text-xs text-gray-400 font-medium mt-0.5 truncate">{drive.role}</p>
                                                 )}
                                             </div>
                                         </div>
@@ -198,20 +198,20 @@ export default function DrivesPage() {
                                         {/* Menu */}
                                         <DropdownMenu>
                                             <DropdownMenuTrigger asChild onClick={e => e.stopPropagation()}>
-                                                <button className="h-8 w-8 rounded-lg border border-gray-100 bg-gray-50 hover:bg-gray-100 text-gray-400 hover:text-gray-700 flex items-center justify-center transition-colors shrink-0">
+                                                <button className="h-8 w-8 rounded-lg flex items-center justify-center transition-colors shrink-0 text-gray-400 hover:text-gray-700 hover:bg-gray-50" style={{ border: "1px solid #E9E7FF" }}>
                                                     <MoreHorizontal className="h-4 w-4" />
                                                 </button>
                                             </DropdownMenuTrigger>
-                                            <DropdownMenuContent align="end" className="w-48 p-1.5 rounded-xl bg-white border border-gray-100 shadow-xl">
+                                            <DropdownMenuContent align="end" className="w-48 p-1.5 rounded-xl bg-white shadow-xl" style={{ border: "1px solid #E9E7FF" }}>
                                                 <DropdownMenuItem
-                                                    className="rounded-lg py-2 px-3 text-gray-700 font-semibold text-[13px] cursor-pointer"
+                                                    className="rounded-lg py-2 px-3 text-gray-700 font-medium text-sm cursor-pointer"
                                                     onClick={(e) => { e.stopPropagation(); router.push(`/admin/create-drive?id=${drive.id}&mode=edit${orgId ? `&orgId=${orgId}` : ""}`); }}
                                                 >
                                                     <Edit className="h-3.5 w-3.5 mr-2 text-gray-400" /> Edit Details
                                                 </DropdownMenuItem>
                                                 <div className="h-px bg-gray-100 my-1 mx-1" />
                                                 <DropdownMenuItem
-                                                    className="rounded-lg py-2 px-3 text-red-600 font-semibold text-[13px] cursor-pointer focus:bg-red-50"
+                                                    className="rounded-lg py-2 px-3 text-red-600 font-medium text-sm cursor-pointer focus:bg-red-50"
                                                     onClick={(e) => { e.stopPropagation(); setDriveToDelete(drive.id); setIsDeleteModalOpen(true); }}
                                                 >
                                                     <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete
@@ -221,65 +221,66 @@ export default function DrivesPage() {
                                     </div>
 
                                     {/* ── Stats strip ── */}
-                                    <div className="mx-5 mb-4 grid grid-cols-3 rounded-xl border border-gray-100 bg-gray-50/60 divide-x divide-gray-100 overflow-hidden">
+                                    <div className="mx-5 mb-4 grid grid-cols-3 rounded-xl divide-x overflow-hidden" style={{ border: "1px solid #F0EEF8", background: "#FAFAFC", divideColor: "#F0EEF8" }}>
                                         <div className="px-3 py-2.5 text-center">
-                                            <p className="text-[20px] font-black text-gray-900 leading-none">{applicants}</p>
-                                            <p className="text-[10px] text-gray-400 font-semibold mt-0.5 flex items-center justify-center gap-1">
+                                            <p className="text-xl font-bold text-gray-900 leading-none tabular-nums">{applicants}</p>
+                                            <p className="text-[10px] text-gray-400 font-medium mt-0.5 flex items-center justify-center gap-1">
                                                 <Users className="h-2.5 w-2.5" /> Candidates
                                             </p>
                                         </div>
-                                        <div className="px-3 py-2.5 text-center">
+                                        <div className="px-3 py-2.5 text-center" style={{ borderLeft: "1px solid #F0EEF8" }}>
                                             <p className={cn(
-                                                "text-[12px] font-bold leading-tight",
+                                                "text-xs font-semibold leading-tight",
                                                 deadlineText ? (isExpired ? "text-red-500" : "text-gray-900") : "text-gray-300"
                                             )}>
                                                 {deadlineText ?? "—"}
                                             </p>
                                             <p className={cn(
-                                                "text-[10px] font-semibold mt-0.5 flex items-center justify-center gap-1",
+                                                "text-[10px] font-medium mt-0.5 flex items-center justify-center gap-1",
                                                 isExpired ? "text-red-400" : "text-gray-400"
                                             )}>
                                                 <Calendar className="h-2.5 w-2.5" />
                                                 {deadlineText ? (isExpired ? "Expired" : "Deadline") : "No deadline"}
                                             </p>
                                         </div>
-                                        <div className="px-3 py-2.5 text-center">
-                                            <p className="text-[12px] font-bold text-gray-900 leading-tight truncate">{language}</p>
-                                            <p className="text-[10px] text-gray-400 font-semibold mt-0.5 flex items-center justify-center gap-1">
+                                        <div className="px-3 py-2.5 text-center" style={{ borderLeft: "1px solid #F0EEF8" }}>
+                                            <p className="text-xs font-semibold text-gray-900 leading-tight truncate">{language}</p>
+                                            <p className="text-[10px] text-gray-400 font-medium mt-0.5 flex items-center justify-center gap-1">
                                                 <Globe className="h-2.5 w-2.5" /> Language
                                             </p>
                                         </div>
                                     </div>
 
                                     {/* ── Voice row ── */}
-                                    <div className="mx-5 mb-4 flex items-center gap-2.5 rounded-xl border border-gray-100 bg-gray-50/60 px-3.5 py-2.5">
-                                        <div className="h-7 w-7 rounded-lg bg-white border border-gray-200 flex items-center justify-center shrink-0">
-                                            <Mic className="h-3.5 w-3.5 text-[#F97316]" />
+                                    <div className="mx-5 mb-4 flex items-center gap-2.5 rounded-xl px-3.5 py-2.5" style={{ border: "1px solid #F0EEF8", background: "#FAFAFC" }}>
+                                        <div className="h-7 w-7 rounded-lg bg-white flex items-center justify-center shrink-0" style={{ border: "1px solid #E9E7FF" }}>
+                                            <Mic className="h-3.5 w-3.5 text-violet-500" />
                                         </div>
                                         <div className="min-w-0 flex-1">
-                                            <p className="text-[12px] font-bold text-gray-800 truncate">{voice?.name ?? "Default Voice"}</p>
+                                            <p className="text-xs font-semibold text-gray-800 truncate">{voice?.name ?? "Default Voice"}</p>
                                             <p className="text-[10px] text-gray-400 font-medium">{voice?.provider ?? "Cartesia"}</p>
                                         </div>
                                         {deadlineText && !isExpired && (
-                                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100 shrink-0">
+                                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100 shrink-0">
                                                 Open
                                             </span>
                                         )}
                                         {isExpired && (
-                                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-50 text-red-500 border border-red-100 shrink-0">
+                                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-500 border border-red-100 shrink-0">
                                                 Expired
                                             </span>
                                         )}
                                     </div>
 
                                     {/* ── CTA ── */}
-                                    <div className="px-5 pb-4 mt-auto">
+                                    <div className="px-5 pb-5 mt-auto">
                                         <button
                                             onClick={(e) => { e.stopPropagation(); router.push(`/admin/candidates/drive/${encodeURIComponent(drive.id)}`); }}
-                                            className="w-full h-10 rounded-xl bg-gray-900 hover:bg-[#F97316] text-white font-bold text-[13px] flex items-center justify-center gap-2 transition-colors duration-200 group/btn"
+                                            className="btn-shimmer w-full h-10 rounded-xl text-white font-semibold text-sm flex items-center justify-center gap-2 transition-all"
+                                            style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)", boxShadow: "0 4px 12px rgba(124,58,237,0.2)" }}
                                         >
                                             View Candidates
-                                            <ArrowUpRight className="h-3.5 w-3.5 group-hover/btn:translate-x-0.5 group-hover/btn:-translate-y-0.5 transition-transform" />
+                                            <ArrowUpRight className="h-3.5 w-3.5" />
                                         </button>
                                     </div>
                                 </div>
@@ -291,22 +292,24 @@ export default function DrivesPage() {
 
             {/* ── Pagination ── */}
             {!isLoading && jobs.length > 0 && pagination.totalPages > 1 && (
-                <div className="px-6 lg:px-10 mt-10 flex items-center justify-between">
-                    <p className="text-[12px] text-gray-400 font-medium">
-                        Showing <span className="font-bold text-gray-700">{(pagination.page - 1) * pagination.limit + 1}</span>–<span className="font-bold text-gray-700">{Math.min(pagination.page * pagination.limit, pagination.total)}</span> of <span className="font-bold text-gray-700">{pagination.total}</span>
+                <div className="mt-10 flex items-center justify-between">
+                    <p className="text-xs text-gray-400 font-medium">
+                        Showing <span className="font-semibold text-gray-700">{(pagination.page - 1) * pagination.limit + 1}</span>–<span className="font-semibold text-gray-700">{Math.min(pagination.page * pagination.limit, pagination.total)}</span> of <span className="font-semibold text-gray-700">{pagination.total}</span>
                     </p>
                     <div className="flex gap-2">
                         <button
                             disabled={pagination.page <= 1 || isLoading}
                             onClick={() => handlePageChange(pagination.page - 1)}
-                            className="h-9 px-5 rounded-full border border-gray-200 bg-white text-[13px] font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-30 transition-colors flex items-center gap-1.5"
+                            className="h-9 px-5 rounded-xl bg-white text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-30 transition-colors flex items-center gap-1.5"
+                            style={{ border: "1px solid #E9E7FF" }}
                         >
                             <ChevronRight className="h-4 w-4 rotate-180" /> Previous
                         </button>
                         <button
                             disabled={pagination.page >= pagination.totalPages || isLoading}
                             onClick={() => handlePageChange(pagination.page + 1)}
-                            className="h-9 px-5 rounded-full border border-gray-200 bg-white text-[13px] font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-30 transition-colors flex items-center gap-1.5"
+                            className="h-9 px-5 rounded-xl bg-white text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-30 transition-colors flex items-center gap-1.5"
+                            style={{ border: "1px solid #E9E7FF" }}
                         >
                             Next <ChevronRight className="h-4 w-4" />
                         </button>

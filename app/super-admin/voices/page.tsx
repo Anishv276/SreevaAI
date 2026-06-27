@@ -34,29 +34,29 @@ type Provider = "CARTESIA" | "SARVAM" | "ELEVENLABS";
 const PROVIDER_META: Record<Provider, { label: string; color: string; bg: string; border: string; dot: string; activeBg: string; activeText: string }> = {
   CARTESIA: {
     label: "Cartesia",
-    color: "text-slate-600",
-    bg: "bg-slate-50",
-    border: "border-slate-200",
+    color: "text-gray-600",
+    bg: "bg-violet-50",
+    border: "border-gray-200",
     dot: "bg-slate-400",
-    activeBg: "bg-slate-100",
-    activeText: "text-slate-800",
+    activeBg: "bg-gray-100",
+    activeText: "text-gray-800",
   },
   SARVAM: {
     label: "Sarvam",
-    color: "text-orange-600",
-    bg: "bg-orange-50",
-    border: "border-orange-200",
-    dot: "bg-orange-500",
-    activeBg: "bg-orange-100",
-    activeText: "text-orange-700",
+    color: "text-violet-600",
+    bg: "bg-violet-50",
+    border: "border-violet-200",
+    dot: "bg-violet-500",
+    activeBg: "bg-violet-100",
+    activeText: "text-violet-700",
   },
   ELEVENLABS: {
     label: "ElevenLabs",
-    color: "text-slate-900",
+    color: "text-gray-900",
     bg: "bg-white",
     border: "border-slate-300",
-    dot: "bg-slate-900",
-    activeBg: "bg-slate-900",
+    dot: "bg-gray-900",
+    activeBg: "bg-gray-900",
     activeText: "text-white",
   },
 };
@@ -210,35 +210,21 @@ export default function SuperAdminVoicesPage() {
     return (
       <div className="flex min-h-[70vh] items-center justify-center">
         <div className="flex flex-col items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-orange-50">
-            <Loader2 className="h-5 w-5 animate-spin text-orange-500" />
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-50">
+            <Loader2 className="h-5 w-5 animate-spin text-violet-500" />
           </div>
-          <p className="text-sm font-medium text-slate-500">Loading voice registry…</p>
+          <p className="text-sm font-medium text-gray-500">Loading voice registry…</p>
         </div>
       </div>
     );
   }
   return (
-    <div className="mx-auto max-w-5xl space-y-4 px-4 py-4 sm:px-6 lg:px-0">
-      {/* Back */}
-      <button
-        type="button"
-        onClick={() => router.back()}
-        className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-400 transition-colors hover:text-slate-700"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Back
-      </button>
+    <div className="space-y-6 pb-10 animate-in fade-in duration-500">
       {/* Page header */}
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-orange-500 to-orange-400 shadow-md shadow-orange-200">
-            <AudioWaveform className="h-5 w-5 text-white" />
-          </div>
-          <div>
-            <h1 className="text-lg font-extrabold tracking-tight text-slate-900">Voice Engine</h1>
-            <p className="text-xs font-medium text-slate-500">Manage TTS voices across Cartesia, Sarvam, and ElevenLabs</p>
-          </div>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Voice Engine</h1>
+          <p className="text-sm text-gray-400 mt-0.5">Manage TTS voices across Cartesia, Sarvam, and ElevenLabs</p>
         </div>
         {/* Quick stats — always visible in header */}
         <div className="flex items-center gap-2">
@@ -253,32 +239,32 @@ export default function SuperAdminVoicesPage() {
               </div>
             );
           })}
-          <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5">
-            <Zap className="h-3 w-3 text-orange-500" />
-            <span className="text-[11px] font-bold text-slate-600">Total</span>
-            <span className="text-[11px] font-extrabold tabular-nums text-slate-900">{totalActive}</span>
+          <div className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-violet-50 px-2.5 py-1.5">
+            <Zap className="h-3 w-3 text-violet-500" />
+            <span className="text-[11px] font-bold text-gray-600">Total</span>
+            <span className="text-[11px] font-extrabold tabular-nums text-gray-900">{totalActive}</span>
           </div>
         </div>
       </div>
       {/* Main grid */}
       <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
         {/* ── Left: Add Voice panel ── */}
-        <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
           {/* Panel header */}
-          <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3">
-            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-orange-100">
-              <Plus className="h-3.5 w-3.5 text-orange-600" />
+          <div className="flex items-center gap-2 border-b border-gray-100 px-4 py-3">
+            <div className="flex h-6 w-6 items-center justify-center rounded-md bg-violet-100">
+              <Plus className="h-3.5 w-3.5 text-violet-600" />
             </div>
             <div>
-              <p className="text-xs font-bold text-slate-900">Add Voice</p>
-              <p className="text-[11px] font-medium text-slate-400">Register a new voice to the engine</p>
+              <p className="text-xs font-bold text-gray-900">Add Voice</p>
+              <p className="text-[11px] font-medium text-gray-400">Register a new voice to the engine</p>
             </div>
           </div>
           <div className="space-y-3 p-4">
             {/* Provider selector */}
             <div className="space-y-1">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Provider</label>
-              <div className="grid grid-cols-3 gap-0.5 rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Provider</label>
+              <div className="grid grid-cols-3 gap-0.5 rounded-lg border border-gray-200 bg-violet-50 p-0.5">
                 {(["CARTESIA", "SARVAM", "ELEVENLABS"] as Provider[]).map((p) => {
                   const meta = PROVIDER_META[p];
                   const active = form.provider === p;
@@ -295,7 +281,7 @@ export default function SuperAdminVoicesPage() {
                         "rounded-md py-1.5 text-[10px] font-bold uppercase tracking-wider transition-all",
                         active
                           ? cn("shadow-sm", meta.activeBg, meta.activeText)
-                          : "text-slate-400 hover:text-slate-600"
+                          : "text-gray-400 hover:text-gray-600"
                       )}
                     >
                       {meta.label}
@@ -307,38 +293,38 @@ export default function SuperAdminVoicesPage() {
             {/* Voice ID or Sarvam picker */}
             {form.provider !== "SARVAM" ? (
               <div className="space-y-1">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Voice ID</label>
+                <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Voice ID</label>
                 <input
                   value={form.id}
                   onChange={(e) => setForm((p) => ({ ...p, id: e.target.value }))}
                   placeholder={form.provider === "CARTESIA" ? "Paste Cartesia voice ID…" : "Paste ElevenLabs voice ID…"}
-                  className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                  className="h-9 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm font-medium text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
                 />
               </div>
             ) : (
               <div className="space-y-1">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
                   Available Sarvam Voices
                 </label>
                 <div className="relative">
                   <button
                     type="button"
                     onClick={() => setShowSarvamPicker((p) => !p)}
-                    className="flex h-9 w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 outline-none transition hover:border-orange-300 focus:border-orange-400"
+                    className="flex h-9 w-full items-center justify-between rounded-lg border border-gray-200 bg-white px-3 text-sm font-medium text-gray-700 outline-none transition hover:border-violet-300 focus:border-violet-400"
                   >
-                    <span className={selectedSarvamIds.length ? "font-semibold text-slate-900" : "text-slate-400"}>
+                    <span className={selectedSarvamIds.length ? "font-semibold text-gray-900" : "text-gray-400"}>
                       {selectedSarvamIds.length > 0
                         ? `${selectedSarvamIds.length} voice${selectedSarvamIds.length > 1 ? "s" : ""} selected`
                         : missingSarvam.length === 0
                           ? "All voices already active"
                           : `${missingSarvam.length} voice${missingSarvam.length > 1 ? "s" : ""} available`}
                     </span>
-                    <ChevronDown className={cn("h-4 w-4 text-slate-400 transition-transform", showSarvamPicker && "rotate-180")} />
+                    <ChevronDown className={cn("h-4 w-4 text-gray-400 transition-transform", showSarvamPicker && "rotate-180")} />
                   </button>
                   {showSarvamPicker && (
-                    <div className="absolute z-20 mt-1.5 max-h-56 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
+                    <div className="absolute z-20 mt-1.5 max-h-56 w-full overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-xl">
                       {missingSarvam.length === 0 ? (
-                        <p className="px-4 py-3 text-xs font-medium text-slate-500">
+                        <p className="px-4 py-3 text-xs font-medium text-gray-500">
                           All Sarvam voices are already in the engine.
                         </p>
                       ) : (
@@ -348,11 +334,11 @@ export default function SuperAdminVoicesPage() {
                             return (
                               <label
                                 key={voice.id}
-                                className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 transition hover:bg-slate-50"
+                                className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 transition hover:bg-violet-50"
                               >
                                 <div className={cn(
                                   "flex h-4 w-4 shrink-0 items-center justify-center rounded border-2 transition",
-                                  checked ? "border-orange-500 bg-orange-500" : "border-slate-300"
+                                  checked ? "border-violet-500 bg-violet-500" : "border-slate-300"
                                 )}>
                                   {checked && <svg className="h-2.5 w-2.5 text-white" fill="none" viewBox="0 0 10 8"><path d="M1 4l3 3 5-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
                                 </div>
@@ -367,8 +353,8 @@ export default function SuperAdminVoicesPage() {
                                   className="sr-only"
                                 />
                                 <div className="min-w-0">
-                                  <p className="truncate text-sm font-semibold text-slate-900">{voice.name}</p>
-                                  <p className="truncate text-[11px] font-mono text-slate-400">{voice.id}</p>
+                                  <p className="truncate text-sm font-semibold text-gray-900">{voice.name}</p>
+                                  <p className="truncate text-[11px] font-mono text-gray-400">{voice.id}</p>
                                 </div>
                               </label>
                             );
@@ -392,7 +378,7 @@ export default function SuperAdminVoicesPage() {
               type="button"
               disabled={saving || (form.provider === "SARVAM" ? selectedSarvamIds.length === 0 : !form.id.trim())}
               onClick={form.provider === "SARVAM" ? addSarvam : onAdd}
-              className="flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-gradient-to-r from-orange-500 to-orange-400 text-xs font-bold text-white shadow-sm shadow-orange-200 transition hover:from-orange-600 hover:to-orange-500 disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-gradient-to-r from-violet-500 to-blue-400 text-xs font-bold text-white shadow-sm shadow-orange-200 transition hover:from-orange-600 hover:to-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
               {form.provider === "SARVAM"
@@ -404,35 +390,35 @@ export default function SuperAdminVoicesPage() {
           </div>
         </div>
         {/* ── Right: Active Registry ── */}
-        <div className="flex flex-col rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden" style={{ maxHeight: "calc(100vh - 180px)" }}>
+        <div className="flex flex-col rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden" style={{ maxHeight: "calc(100vh - 180px)" }}>
           {/* Header */}
-          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
+          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-gray-100 px-4 py-3">
             <div className="flex items-center gap-2">
-              <div className="flex h-6 w-6 items-center justify-center rounded-md bg-slate-100">
-                <Mic2 className="h-3.5 w-3.5 text-slate-600" />
+              <div className="flex h-6 w-6 items-center justify-center rounded-md bg-gray-100">
+                <Mic2 className="h-3.5 w-3.5 text-gray-600" />
               </div>
               <div>
-                <p className="text-xs font-bold text-slate-900">Active Registry</p>
-                <p className="text-[11px] font-medium text-slate-400">All voices selectable by organizations</p>
+                <p className="text-xs font-bold text-gray-900">Active Registry</p>
+                <p className="text-[11px] font-medium text-gray-400">All voices selectable by organizations</p>
               </div>
             </div>
             <div className="relative w-48">
-              <Search className="absolute left-2.5 top-1/2 h-3 w-3 -translate-y-1/2 text-slate-400" />
+              <Search className="absolute left-2.5 top-1/2 h-3 w-3 -translate-y-1/2 text-gray-400" />
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search voices…"
-                className="h-8 w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-3 text-xs font-medium text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-orange-400 focus:bg-white focus:ring-2 focus:ring-orange-100"
+                className="h-8 w-full rounded-lg border border-gray-200 bg-violet-50 pl-8 pr-3 text-xs font-medium text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-violet-400 focus:bg-white focus:ring-2 focus:ring-violet-100"
               />
               {search && (
                 <button type="button" onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2">
-                  <X className="h-3 w-3 text-slate-400 hover:text-slate-600" />
+                  <X className="h-3 w-3 text-gray-400 hover:text-gray-600" />
                 </button>
               )}
             </div>
           </div>
           {/* Provider tabs */}
-          <div className="flex shrink-0 border-b border-slate-100 px-4">
+          <div className="flex shrink-0 border-b border-gray-100 px-4">
             {(["CARTESIA", "SARVAM", "ELEVENLABS"] as Provider[]).map((p) => {
               const meta = PROVIDER_META[p];
               const count = byProvider[p].length;
@@ -445,15 +431,15 @@ export default function SuperAdminVoicesPage() {
                   className={cn(
                     "flex items-center gap-1.5 border-b-2 px-3 py-2.5 text-xs font-semibold transition-colors",
                     active
-                      ? "border-orange-500 text-orange-600"
-                      : "border-transparent text-slate-400 hover:text-slate-600"
+                      ? "border-violet-500 text-violet-600"
+                      : "border-transparent text-gray-400 hover:text-gray-600"
                   )}
                 >
                   <span className={cn("h-1.5 w-1.5 rounded-full transition", active ? meta.dot : "bg-slate-300")} />
                   {meta.label}
                   <span className={cn(
                     "rounded-full px-1.5 py-0.5 text-[10px] font-bold tabular-nums transition",
-                    active ? cn(meta.bg, meta.border, "border", meta.color) : "bg-slate-100 text-slate-400"
+                    active ? cn(meta.bg, meta.border, "border", meta.color) : "bg-gray-100 text-gray-400"
                   )}>
                     {count}
                   </span>
@@ -468,10 +454,10 @@ export default function SuperAdminVoicesPage() {
                 <div className={cn("flex h-10 w-10 items-center justify-center rounded-xl mb-2", PROVIDER_META[activeTab].bg)}>
                   <AudioWaveform className={cn("h-4 w-4", PROVIDER_META[activeTab].color)} />
                 </div>
-                <p className="text-xs font-semibold text-slate-700">
+                <p className="text-xs font-semibold text-gray-700">
                   {search ? "No voices match your search" : `No ${PROVIDER_META[activeTab].label} voices active`}
                 </p>
-                <p className="mt-0.5 text-[11px] font-medium text-slate-400">
+                <p className="mt-0.5 text-[11px] font-medium text-gray-400">
                   {search ? "Try a different search term" : "Add a voice using the panel on the left"}
                 </p>
               </div>
@@ -485,7 +471,7 @@ export default function SuperAdminVoicesPage() {
                   return (
                     <div
                       key={voice.id}
-                      className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5 transition hover:border-slate-300 hover:shadow-sm"
+                      className="flex items-center justify-between gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2.5 transition hover:border-slate-300 hover:shadow-sm"
                     >
                       {/* Voice info */}
                       <div className="flex items-center gap-2 min-w-0">
@@ -494,19 +480,19 @@ export default function SuperAdminVoicesPage() {
                         </div>
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5">
-                            <p className="truncate text-xs font-bold text-slate-900">{voice.name}</p>
+                            <p className="truncate text-xs font-bold text-gray-900">{voice.name}</p>
                             {custom && (
                               <span className="shrink-0 rounded border border-violet-200 bg-violet-50 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide text-violet-600">
                                 Custom
                               </span>
                             )}
                             {voice.gender && (
-                              <span className="shrink-0 rounded border border-slate-200 bg-slate-50 px-1 py-0.5 text-[9px] font-semibold capitalize text-slate-500">
+                              <span className="shrink-0 rounded border border-gray-200 bg-violet-50 px-1 py-0.5 text-[9px] font-semibold capitalize text-gray-500">
                                 {voice.gender}
                               </span>
                             )}
                           </div>
-                          <p className="truncate font-mono text-[10px] text-slate-400">{voice.id}</p>
+                          <p className="truncate font-mono text-[10px] text-gray-400">{voice.id}</p>
                         </div>
                       </div>
                       {/* Action buttons — always visible */}
@@ -520,8 +506,8 @@ export default function SuperAdminVoicesPage() {
                           className={cn(
                             "flex h-6 w-6 items-center justify-center rounded-md border transition",
                             isPlaying
-                              ? "border-orange-300 bg-orange-50 text-orange-600 hover:bg-orange-100"
-                              : "border-slate-200 bg-white text-slate-500 hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600",
+                              ? "border-violet-300 bg-violet-50 text-violet-600 hover:bg-violet-100"
+                              : "border-gray-200 bg-white text-gray-500 hover:border-violet-200 hover:bg-violet-50 hover:text-violet-600",
                             previewLoading && !isPlaying && "cursor-not-allowed opacity-40"
                           )}
                         >
@@ -539,7 +525,7 @@ export default function SuperAdminVoicesPage() {
                           disabled={saving}
                           onClick={() => submitAction("remove", { id: voice.id })}
                           title="Remove from engine"
-                          className="flex h-6 items-center rounded-md border border-slate-200 bg-white px-2 text-[10px] font-bold text-slate-600 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40"
+                          className="flex h-6 items-center rounded-md border border-gray-200 bg-white px-2 text-[10px] font-bold text-gray-600 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40"
                         >
                           Remove
                         </button>
@@ -550,7 +536,7 @@ export default function SuperAdminVoicesPage() {
                             disabled={saving}
                             onClick={() => submitAction("delete", { id: voice.id })}
                             title="Permanently delete"
-                            className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40"
+                            className="flex h-6 w-6 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40"
                           >
                             <Trash2 className="h-3 w-3" />
                           </button>

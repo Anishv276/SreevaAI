@@ -13,8 +13,9 @@ export async function GET() {
         const orgId = session.orgId;
         const awaitingReview = await prisma.application.findMany({
             where: {
-                drive: { orgId },
-                interview: { status: "COMPLETED" },
+                isDeleted: false,
+                drive: { orgId, isDeleted: false },
+                interview: { status: "COMPLETED", isDeleted: false },
                 resumeStatus: { notIn: ["SHORTLISTED", "shortlisted", "REJECTED", "rejected"] },
             },
             select: {
@@ -30,10 +31,11 @@ export async function GET() {
         });
         const inviteNotSent = await prisma.application.findMany({
             where: {
-                drive: { orgId },
+                isDeleted: false,
+                drive: { orgId, isDeleted: false },
                 OR: [
                     { interview: null },
-                    { interview: { inviteSentAt: null, status: "PENDING" } },
+                    { interview: { inviteSentAt: null, status: "PENDING", isDeleted: false } },
                 ],
                 resumeStatus: { notIn: ["REJECTED", "rejected"] },
             },
@@ -48,7 +50,8 @@ export async function GET() {
         });
         const shortlistedNoDecision = await prisma.application.findMany({
             where: {
-                drive: { orgId },
+                isDeleted: false,
+                drive: { orgId, isDeleted: false },
                 resumeStatus: { in: ["SHORTLISTED", "shortlisted"] },
             },
             select: {

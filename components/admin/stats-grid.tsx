@@ -69,8 +69,8 @@ export function StatsGrid({ dateRange }: StatsGridProps) {
     }
     if (loading || !stats) {
         return (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                {[...Array(8)].map((_, i) => (
+            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4">
+                {[...Array(6)].map((_, i) => (
                     <div key={i} className="h-28 rounded-2xl bg-gray-100 animate-pulse" />
                 ))}
             </div>
@@ -83,16 +83,18 @@ export function StatsGrid({ dateRange }: StatsGridProps) {
             value: s.activeDrives,
             sub: "Open positions",
             icon: Briefcase,
-            color: "text-gray-700",
-            iconBg: "bg-gray-100",
+            iconStyle: { background: "linear-gradient(135deg, rgba(124,58,237,0.1), rgba(59,130,246,0.08))" },
+            iconColor: "text-violet-600",
+            valueColor: "text-gray-900",
         },
         {
             label: "Uploaded",
             value: s.totalCandidates,
             sub: `+${s.applicationsToday} today`,
             icon: Users,
-            color: "text-blue-700",
-            iconBg: "bg-blue-50",
+            iconStyle: { background: "rgba(59,130,246,0.1)" },
+            iconColor: "text-blue-600",
+            valueColor: "text-gray-900",
             badge: s.appTrendDelta !== 0
                 ? { label: `${s.appTrendDelta > 0 ? "+" : ""}${s.appTrendDelta}`, up: s.appTrendDelta >= 0 }
                 : undefined,
@@ -102,8 +104,9 @@ export function StatsGrid({ dateRange }: StatsGridProps) {
             value: s.liveInterviews,
             sub: "Active sessions",
             icon: Radio,
-            color: "text-indigo-700",
-            iconBg: "bg-indigo-50",
+            iconStyle: { background: "rgba(139,92,246,0.1)" },
+            iconColor: "text-violet-600",
+            valueColor: "text-gray-900",
             pulse: s.liveInterviews > 0,
         },
         {
@@ -113,25 +116,27 @@ export function StatsGrid({ dateRange }: StatsGridProps) {
                 ? `${Math.round((s.interviewed / s.totalCandidates) * 100)}% of uploaded`
                 : "of uploaded",
             icon: Video,
-            color: "text-violet-700",
-            iconBg: "bg-violet-50",
+            iconStyle: { background: "rgba(109,40,217,0.1)" },
+            iconColor: "text-violet-700",
+            valueColor: "text-gray-900",
         },
         {
             label: "Shortlisted",
             value: s.shortlisted,
             sub: `${s.shortlistPassRate}% pass rate`,
             icon: Target,
-            color: "text-pink-700",
-            iconBg: "bg-pink-50",
+            iconStyle: { background: "rgba(96,165,250,0.12)" },
+            iconColor: "text-blue-500",
+            valueColor: "text-gray-900",
         },
-
         {
             label: "Candidate Rating",
             value: s.avgRating > 0 ? s.avgRating.toFixed(1) : "—",
             sub: s.avgRating > 0 ? "Avg. experience (1–5)" : "No ratings yet",
             icon: Star,
-            color: "text-amber-700",
-            iconBg: "bg-amber-50",
+            iconStyle: { background: "rgba(245,158,11,0.1)" },
+            iconColor: "text-amber-500",
+            valueColor: "text-gray-900",
         },
     ];
     return (
@@ -139,28 +144,40 @@ export function StatsGrid({ dateRange }: StatsGridProps) {
             initial="hidden"
             animate="show"
             variants={{ hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.06 } } }}
-            className="grid grid-cols-2 sm:grid-cols-4 gap-4"
+            className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4"
         >
             {cards.map((card, idx) => (
                 <motion.div
                     key={idx}
                     variants={{ hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.16, 1, 0.3, 1] as any } } }}
-                    className="bg-white rounded-2xl border border-gray-200 p-5 flex flex-col gap-3 hover:border-gray-300 hover:shadow-sm transition-all duration-200"
+                    className="bg-white rounded-2xl p-5 flex flex-col justify-between min-h-[120px] transition-all duration-200"
+                    style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}
+                    onMouseEnter={e => {
+                        (e.currentTarget as HTMLElement).style.borderColor = "#C4B5FD";
+                        (e.currentTarget as HTMLElement).style.boxShadow = "0 4px 16px rgba(124,58,237,0.08)";
+                        (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)";
+                    }}
+                    onMouseLeave={e => {
+                        (e.currentTarget as HTMLElement).style.borderColor = "#E9E7FF";
+                        (e.currentTarget as HTMLElement).style.boxShadow = "0 1px 3px rgba(124,58,237,0.04)";
+                        (e.currentTarget as HTMLElement).style.transform = "translateY(0)";
+                    }}
                 >
-                    <div className="flex items-start justify-between">
-                        <div className={cn("h-9 w-9 rounded-xl flex items-center justify-center", card.iconBg)}>
-                            <card.icon className={cn("h-4 w-4", card.color)} />
+                    {/* Top row: icon + badge/pulse */}
+                    <div className="flex items-start justify-between mb-3">
+                        <div className="h-9 w-9 rounded-xl flex items-center justify-center flex-shrink-0" style={card.iconStyle}>
+                            <card.icon className={cn("h-4 w-4", card.iconColor)} strokeWidth={1.75} />
                         </div>
                         <div className="flex items-center gap-2">
                             {card.pulse && (
                                 <span className="relative flex h-2 w-2">
-                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75" />
-                                    <span className="relative inline-flex h-2 w-2 rounded-full bg-indigo-500" />
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-75" />
+                                    <span className="relative inline-flex h-2 w-2 rounded-full bg-violet-500" />
                                 </span>
                             )}
                             {card.badge && (
                                 <span className={cn(
-                                    "text-[10px] font-bold px-1.5 py-0.5 rounded-md",
+                                    "text-[10px] font-semibold px-1.5 py-0.5 rounded-md",
                                     card.badge.up ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"
                                 )}>
                                     {card.badge.label}
@@ -168,14 +185,15 @@ export function StatsGrid({ dateRange }: StatsGridProps) {
                             )}
                         </div>
                     </div>
+                    {/* Bottom: value + label + sub */}
                     <div>
-                        <p className={cn("text-2xl font-bold tabular-nums tracking-tight", card.color)}>
+                        <p className={cn("text-2xl font-bold tabular-nums tracking-tight leading-none", card.valueColor)}>
                             {card.value}
                         </p>
-                        <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">
+                        <p className="text-xs font-semibold text-gray-500 mt-1.5 leading-tight">
                             {card.label}
                         </p>
-                        <p className="text-xs text-gray-400 mt-1">{card.sub}</p>
+                        <p className="text-[11px] text-gray-400 mt-0.5 leading-tight">{card.sub}</p>
                     </div>
                 </motion.div>
             ))}

@@ -23,12 +23,12 @@ const AVATAR_COLORS = [
     "bg-violet-500",
     "bg-pink-500",
     "bg-amber-500",
-    "bg-slate-500",
+    "bg-violet-500",
 ];
 const RANK_BADGE: Record<number, { bg: string; text: string; label: string }> = {
     0: { bg: "bg-amber-100",  text: "text-amber-700",  label: "#1" },
-    1: { bg: "bg-slate-100",  text: "text-slate-600",  label: "#2" },
-    2: { bg: "bg-orange-100", text: "text-orange-700", label: "#3" },
+    1: { bg: "bg-gray-100",  text: "text-gray-600",  label: "#2" },
+    2: { bg: "bg-violet-100", text: "text-violet-700", label: "#3" },
 };
 const STATUS_CONFIG: Record<string, { dot: string; text: string; bg: string; label: string }> = {
     Shortlisted:   { dot: "bg-emerald-500", text: "text-emerald-700", bg: "bg-emerald-50",  label: "Shortlisted" },
@@ -90,7 +90,7 @@ export function TopCandidates({ dateRange }: TopCandidatesProps) {
         return () => controller.abort();
     }, [dateRange, retryKey]);
     return (
-        <div className="bg-white rounded-2xl border border-gray-200 flex flex-col overflow-hidden">
+        <div className="premium-card flex flex-col overflow-hidden">
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
                 <div>

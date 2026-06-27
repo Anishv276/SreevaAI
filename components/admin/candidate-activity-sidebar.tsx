@@ -33,9 +33,9 @@ type Props = {
 function colorForType(type: CandidateActivityEvent["type"]) {
     switch (type) {
         case "resume_screened":
-            return "bg-orange-50 text-orange-600 border-orange-100";
+            return "bg-violet-50 text-violet-600 border-violet-100";
         case "status_changed":
-            return "bg-slate-50 text-slate-700 border-slate-200";
+            return "bg-violet-50 text-gray-700 border-gray-200";
         case "email_sent":
             return "bg-emerald-50 text-emerald-700 border-emerald-100";
         case "email_failed":
@@ -46,7 +46,7 @@ function colorForType(type: CandidateActivityEvent["type"]) {
         case "bulk_action":
             return "bg-violet-50 text-violet-700 border-violet-100";
         default:
-            return "bg-slate-50 text-slate-700 border-slate-200";
+            return "bg-violet-50 text-gray-700 border-gray-200";
     }
 }
 function iconForType(type: CandidateActivityEvent["type"]) {
@@ -155,30 +155,30 @@ export function CandidateActivitySidebar({ open, candidateId, candidateName, bac
                 className="absolute inset-0 bg-slate-950/30 backdrop-blur-[2px]"
                 onClick={onClose}
             />
-            <aside className="absolute right-0 top-0 h-full w-full max-w-2xl overflow-hidden border-l border-slate-200 bg-gradient-to-b from-white via-white to-slate-50 shadow-[0_20px_80px_rgba(15,23,42,0.18)]">
+            <aside className="absolute right-0 top-0 h-full w-full max-w-2xl overflow-hidden border-l border-gray-200 bg-gradient-to-b from-white via-white to-slate-50 shadow-[0_20px_80px_rgba(15,23,42,0.18)]">
                 <div className="flex h-full flex-col">
-                    <div className="border-b border-slate-200 bg-white/90 px-6 py-5 backdrop-blur">
+                    <div className="border-b border-gray-200 bg-white/90 px-6 py-5 backdrop-blur">
                         <div className="flex items-start justify-between gap-4">
                             <div className="min-w-0">
-                                <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.24em] text-slate-400">
-                                    <Activity className="h-3.5 w-3.5 text-[#F97316]" />
+                                <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.24em] text-gray-400">
+                                    <Activity className="h-3.5 w-3.5 text-[#7C3AED]" />
                                     Activity Flow
                                 </div>
                                 <h2 className="mt-2 truncate text-2xl font-black tracking-tight text-slate-950">
                                     {candidateTitle}
                                 </h2>
-                                <p className="mt-2 max-w-xl text-sm font-medium leading-6 text-slate-500">
+                                <p className="mt-2 max-w-xl text-sm font-medium leading-6 text-gray-500">
                                     Exact timestamps for status changes, emails, interview actions, and record updates.
                                 </p>
                             </div>
                             <div className="flex shrink-0 items-center gap-2">
                                 {backHref ? (
-                                    <Button asChild variant="outline" className="h-11 rounded-2xl border-slate-200 bg-white px-5 text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-50">
+                                    <Button asChild variant="outline" className="h-11 rounded-2xl border-gray-200 bg-white px-5 text-sm font-semibold text-gray-900 shadow-sm hover:bg-violet-50">
                                         <a href={backHref}>Open profile</a>
                                     </Button>
                                 ) : null}
                                 <button
-                                    className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 shadow-sm transition-colors hover:bg-slate-50 hover:text-slate-900"
+                                    className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-gray-200 bg-white text-gray-500 shadow-sm transition-colors hover:bg-violet-50 hover:text-gray-900"
                                     onClick={onClose}
                                     aria-label="Close activity panel"
                                 >
@@ -191,8 +191,8 @@ export function CandidateActivitySidebar({ open, candidateId, candidateName, bac
                         {loading ? (
                             <div className="flex h-full items-center justify-center">
                                 <div className="text-center">
-                                    <Loader2 className="mx-auto h-10 w-10 animate-spin text-orange-500" />
-                                    <p className="mt-3 text-xs font-black uppercase tracking-[0.24em] text-slate-400">
+                                    <Loader2 className="mx-auto h-10 w-10 animate-spin text-violet-500" />
+                                    <p className="mt-3 text-xs font-black uppercase tracking-[0.24em] text-gray-400">
                                         Loading activity...
                                     </p>
                                 </div>
@@ -205,10 +205,10 @@ export function CandidateActivitySidebar({ open, candidateId, candidateName, bac
                                 <p className="mt-2 font-medium">{error}</p>
                             </div>
                         ) : trail.length === 0 ? (
-                            <div className="rounded-[28px] border border-slate-200 bg-white p-8 text-center shadow-[0_6px_20px_rgba(15,23,42,0.06)]">
-                                <Clock3 className="mx-auto h-10 w-10 text-slate-300" />
-                                <p className="mt-3 text-base font-bold text-slate-900">No activity recorded yet</p>
-                                <p className="mt-1 text-sm font-medium leading-6 text-slate-500">
+                            <div className="rounded-[28px] border border-gray-200 bg-white p-8 text-center shadow-[0_6px_20px_rgba(15,23,42,0.06)]">
+                                <Clock3 className="mx-auto h-10 w-10 text-gray-300" />
+                                <p className="mt-3 text-base font-bold text-gray-900">No activity recorded yet</p>
+                                <p className="mt-1 text-sm font-medium leading-6 text-gray-500">
                                     Once HR shortlists, rejects, sends email, or starts interviews, the flow will appear here.
                                 </p>
                             </div>
@@ -233,23 +233,23 @@ export function CandidateActivitySidebar({ open, candidateId, candidateName, bac
                                                 ) : null}
                                             </div>
                                             <div className="min-w-0 flex-1 pb-2">
-                                                <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_6px_20px_rgba(15,23,42,0.06)]">
+                                                <div className="rounded-[28px] border border-gray-200 bg-white p-5 shadow-[0_6px_20px_rgba(15,23,42,0.06)]">
                                                     <div className="flex flex-wrap items-start justify-between gap-3">
                                                         <p className="text-base font-black leading-6 text-slate-950">
                                                             {item.label}
                                                         </p>
-                                                        <p className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">
+                                                        <p className="text-[11px] font-black uppercase tracking-[0.2em] text-gray-400">
                                                             {formatTimestamp(item.timestamp)}
                                                         </p>
                                                     </div>
                                                     {item.details ? (
-                                                        <p className="mt-2 text-sm font-medium leading-6 text-slate-600">
+                                                        <p className="mt-2 text-sm font-medium leading-6 text-gray-600">
                                                             {item.details}
                                                         </p>
                                                     ) : null}
-                                                    <div className="mt-4 flex flex-wrap items-center gap-2 text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">
+                                                    <div className="mt-4 flex flex-wrap items-center gap-2 text-[11px] font-black uppercase tracking-[0.18em] text-gray-400">
                                                         <span>{String(item.source || "system")}</span>
-                                                        <span className="text-slate-300">-</span>
+                                                        <span className="text-gray-300">-</span>
                                                         <span>{item.type.replace(/_/g, " ")}</span>
                                                     </div>
                                                 </div>

@@ -69,7 +69,7 @@ function CandidateStatsRow({ stats, isLoading }: { stats: Stats; isLoading: bool
         { label: "Shortlisted",  value: stats.shortlisted,       icon: Target,     color: "text-emerald-600", bg: "bg-emerald-50" },
         { label: "Rejected",     value: stats.rejected,           icon: UserX,      color: "text-rose-600",    bg: "bg-rose-50" },
         { label: "Live",         value: stats.interviewRunning,   icon: Clock,      color: "text-blue-600",    bg: "bg-blue-50",    pulse: stats.interviewRunning > 0 },
-        { label: "Pending",      value: stats.interviewPending,   icon: Clock,      color: "text-slate-500",   bg: "bg-slate-50" },
+        { label: "Pending",      value: stats.interviewPending,   icon: Clock,      color: "text-gray-500",   bg: "bg-violet-50" },
         { label: "Completed",    value: stats.interviewCompleted, icon: ShieldCheck,color: "text-emerald-600", bg: "bg-emerald-50" },
     ];
     if (isLoading && stats.shortlisted === 0) return (
@@ -231,7 +231,7 @@ export default function OrgCandidatesPage({ params }: { params: Promise<{ id: st
     const tableIsLoading = isLoading || !isCandidatesTableReady;
 
     return (
-        <div className="flex flex-col min-h-[135vh] space-y-8 pb-10 animate-in fade-in duration-700 font-sans" style={{ zoom: 0.7, transformOrigin: "top center" }}>
+        <div className="flex flex-col min-h-[135vh] space-y-8 pb-10 animate-in fade-in duration-700 font-sans" >
 
             {/* Header */}
             <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between mb-12">
@@ -244,13 +244,13 @@ export default function OrgCandidatesPage({ params }: { params: Promise<{ id: st
                         Back to Organizations
                     </button>
                     <div className="flex items-center gap-5 group">
-                        <div className="h-14 w-1.5 bg-gradient-to-b from-[#F97316] to-orange-500 rounded-full shadow-[0_0_15px_rgba(249,115,22,0.4)] transition-all duration-500 group-hover:h-16" />
+                        <div  />
                         <div className="space-y-1">
-                            <h1 className="text-4xl sm:text-5xl font-black text-gray-900 leading-none tracking-tighter">Candidates</h1>
+                            <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Candidates</h1>
                             <div className="flex items-center gap-3">
-                                <span className="h-1.5 w-1.5 rounded-full bg-[#F97316] animate-pulse" />
+                                <span className="h-1.5 w-1.5 rounded-full bg-[#7C3AED] animate-pulse" />
                                 <p className="text-gray-400 font-bold text-[13px] uppercase tracking-[0.2em]">
-                                    {orgName && <><span className="text-[#F97316]">{orgName}</span> · </>}
+                                    {orgName && <><span className="text-[#7C3AED]">{orgName}</span> · </>}
                                     {pagination.total} Total Candidates
                                 </p>
                             </div>
@@ -275,7 +275,7 @@ export default function OrgCandidatesPage({ params }: { params: Promise<{ id: st
 
             {/* Table card */}
             <div className="group relative bg-white/40 backdrop-blur-xl rounded-[2.5rem] border border-white/40 shadow-[0_8px_32px_rgba(0,0,0,0.03)] overflow-hidden transition-all duration-700 hover:shadow-[0_20px_60px_rgba(0,0,0,0.08)]">
-                <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-orange-400/0 via-[#F97316]/40 to-orange-400/0" />
+                <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-violet-400/0 via-[#7C3AED]/40 to-blue-400/0" />
 
                 {/* Filter bar */}
                 <div className="p-3 border-b border-white/40 bg-white/20">
@@ -301,7 +301,7 @@ export default function OrgCandidatesPage({ params }: { params: Promise<{ id: st
                                     { value: "all",         label: "All Status" },
                                     { value: "shortlisted", label: "Shortlisted", colorClass: "text-emerald-600" },
                                     { value: "rejected",    label: "Rejected",    colorClass: "text-rose-600" },
-                                    { value: "pending",     label: "Pending",     colorClass: "text-slate-600" },
+                                    { value: "pending",     label: "Pending",     colorClass: "text-gray-600" },
                                 ]} />
                             <PremiumFilter value={interviewFilter} onChange={setInterviewFilter} icon={Radio} placeholder="Interview"
                                 options={[
@@ -394,7 +394,7 @@ export default function OrgCandidatesPage({ params }: { params: Promise<{ id: st
                                                     "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest border-0 shadow-sm pointer-events-none",
                                                     mainStatus === "shortlisted" ? "bg-emerald-50 text-emerald-700" :
                                                     mainStatus === "rejected"    ? "bg-rose-50 text-rose-700" :
-                                                                                   "bg-slate-50 text-slate-500"
+                                                                                   "bg-violet-50 text-gray-500"
                                                 )}>
                                                     {mainStatusLabel}
                                                 </Badge>
@@ -406,7 +406,7 @@ export default function OrgCandidatesPage({ params }: { params: Promise<{ id: st
                                                     "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest border-0 shadow-sm pointer-events-none",
                                                     interviewDone                    ? "bg-emerald-50 text-emerald-700" :
                                                     interviewStage === "in progress" ? "bg-blue-50 text-blue-700" :
-                                                    interviewStage === "pending"     ? "bg-slate-50 text-slate-500" :
+                                                    interviewStage === "pending"     ? "bg-violet-50 text-gray-500" :
                                                                                        "bg-amber-50 text-amber-700"
                                                 )}>
                                                     {interviewLabel}
@@ -421,7 +421,7 @@ export default function OrgCandidatesPage({ params }: { params: Promise<{ id: st
                                         <TableCell className="py-5 text-center">
                                             <Link
                                                 href={`/super-admin/orgs/${orgId}/candidates/${c.id}?report=resume`}
-                                                className="inline-flex h-8 w-8 items-center justify-center rounded-full text-[#F97316] transition-colors hover:bg-orange-50"
+                                                className="inline-flex h-8 w-8 items-center justify-center rounded-full text-[#7C3AED] transition-colors hover:bg-violet-50"
                                                 title="Open resume report"
                                             >
                                                 <Eye className="h-4 w-4" />
@@ -492,7 +492,7 @@ export default function OrgCandidatesPage({ params }: { params: Promise<{ id: st
                     <div className="flex items-center gap-2">
                         <span className="text-[10px] font-black uppercase tracking-[0.22em] text-gray-400">Rows</span>
                         <Select value={String(pageSize)} onValueChange={v => setPageSize(Number(v))}>
-                            <SelectTrigger className="h-9 w-[120px] rounded-xl border-gray-200 bg-white text-sm font-bold text-gray-700 shadow-none focus:ring-2 focus:ring-orange-100">
+                            <SelectTrigger className="h-9 w-[120px] rounded-xl border-gray-200 bg-white text-sm font-bold text-gray-700 shadow-none focus:ring-2 focus:ring-violet-100">
                                 <SelectValue placeholder="Rows" />
                             </SelectTrigger>
                             <SelectContent className="rounded-xl border-gray-100">
@@ -507,13 +507,13 @@ export default function OrgCandidatesPage({ params }: { params: Promise<{ id: st
                     <Button variant="outline" size="sm"
                         disabled={pagination.page <= 1 || isLoading}
                         onClick={() => handlePageChange(pagination.page - 1)}
-                        className="h-10 px-6 rounded-xl border-gray-200 bg-white text-gray-500 font-bold hover:bg-gray-50 hover:text-[#F97316] disabled:opacity-30 transition-all shadow-none">
+                        className="h-10 px-6 rounded-xl border-gray-200 bg-white text-gray-500 font-bold hover:bg-gray-50 hover:text-[#7C3AED] disabled:opacity-30 transition-all shadow-none">
                         <ChevronLeft className="h-4 w-4 mr-1" /> Previous
                     </Button>
                     <Button variant="outline" size="sm"
                         disabled={pagination.page >= pagination.totalPages || isLoading}
                         onClick={() => handlePageChange(pagination.page + 1)}
-                        className="h-10 px-6 rounded-xl border-gray-200 bg-white text-gray-500 font-bold hover:bg-gray-50 hover:text-[#F97316] disabled:opacity-30 transition-all shadow-none">
+                        className="h-10 px-6 rounded-xl border-gray-200 bg-white text-gray-500 font-bold hover:bg-gray-50 hover:text-[#7C3AED] disabled:opacity-30 transition-all shadow-none">
                         Next <ChevronRight className="h-4 w-4 ml-1" />
                     </Button>
                 </div>

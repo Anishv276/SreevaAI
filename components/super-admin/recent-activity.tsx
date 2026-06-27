@@ -16,7 +16,7 @@ interface RecentActivityProps {
     onRetry?: () => void;
 }
 const ACTIVITY_CONFIG: Record<Activity["type"], { label: string; icon: React.ElementType; style: string }> = {
-    ORG: { label: "New Organization", icon: Building2, style: "bg-orange-50 text-orange-600 border-orange-100" },
+    ORG: { label: "New Organization", icon: Building2, style: "bg-violet-50 text-violet-600 border-violet-100" },
     DRIVE: { label: "New Hiring Drive", icon: Briefcase, style: "bg-blue-50 text-blue-600 border-blue-100" },
     CANDIDATE: { label: "Candidate Applied", icon: UserCheck, style: "bg-emerald-50 text-emerald-600 border-emerald-100" },
     INTERVIEW: { label: "Interview Completed", icon: Video, style: "bg-violet-50 text-violet-600 border-violet-100" },
@@ -76,7 +76,7 @@ export function RecentActivity({
                 </div>
                 {resolvedLoading ? (
                     <div className="flex justify-center py-10">
-                        <Loader2 className="h-6 w-6 animate-spin text-orange-500" />
+                        <Loader2 className="h-6 w-6 animate-spin text-violet-500" />
                     </div>
                 ) : resolvedError ? (
                     <div className="flex flex-col items-center py-10 gap-2">
@@ -106,7 +106,7 @@ export function RecentActivity({
                             return (
                                 <div
                                     key={i}
-                                    className="group flex items-center gap-3 p-3.5 rounded-xl border border-gray-100 bg-gray-50/30 hover:bg-white hover:border-orange-100 hover:shadow-sm transition-all duration-200"
+                                    className="group flex items-center gap-3 p-3.5 rounded-xl border border-gray-100 bg-gray-50/30 hover:bg-white hover:border-violet-100 hover:shadow-sm transition-all duration-200"
                                 >
                                     <div className={cn("h-9 w-9 rounded-xl border flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform", cfg.style)}>
                                         <Icon className="h-4 w-4" />
@@ -118,14 +118,14 @@ export function RecentActivity({
                                                 {formatDistanceToNow(new Date(activity.at), { addSuffix: true })}
                                             </p>
                                         </div>
-                                        <p className="text-sm font-bold text-gray-900 truncate group-hover:text-orange-600 transition-colors">{activity.detail}</p>
+                                        <p className="text-sm font-bold text-gray-900 truncate group-hover:text-violet-600 transition-colors">{activity.detail}</p>
                                         {activity.org && (
                                             <p className="text-[10px] text-gray-400 mt-0.5 truncate">
                                                 at <span className="font-semibold text-gray-600">{activity.org}</span>
                                             </p>
                                         )}
                                     </div>
-                                    <ChevronRight className="h-3.5 w-3.5 text-gray-200 group-hover:text-orange-400 group-hover:translate-x-0.5 transition-all shrink-0" />
+                                    <ChevronRight className="h-3.5 w-3.5 text-gray-200 group-hover:text-violet-400 group-hover:translate-x-0.5 transition-all shrink-0" />
                                 </div>
                             );
                         })}

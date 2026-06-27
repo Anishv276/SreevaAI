@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { Loader2, Coins, TrendingUp, Activity } from "lucide-react";
 import { cn } from "@/lib/utils";
 // 5 named colours + gray for "Other"
-const COLORS = ["#F97316", "#3B82F6", "#8B5CF6", "#EC4899", "#10B981", "#9CA3AF"];
+const COLORS = ["#7C3AED", "#3B82F6", "#8B5CF6", "#EC4899", "#10B981", "#9CA3AF"];
 function getColor(index: number, name: string) {
     if (name === "Other") return "#9CA3AF";
     return COLORS[index % COLORS.length];
@@ -113,19 +113,19 @@ export function OrgCreditPieChart({ stats = [], loading = false }: { stats?: Org
     const total = Math.round(stats.reduce((s, o) => s + o.creditsUsed, 0));
     const segments = stats.map((o, i) => ({ name: o.name, value: Math.round(o.creditsUsed), color: getColor(i, o.name) }));
     return (
-        <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm flex flex-col">
+        <div className="bg-white rounded-2xl p-6 flex flex-col" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
             <div className="flex items-start justify-between mb-5">
                 <div>
-                    <h3 className="text-base font-bold text-gray-900 tracking-tight">Credit Usage Split</h3>
+                    <h3 className="text-base font-semibold text-gray-900 tracking-tight">Credit Usage Split</h3>
                     <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">Global usage distribution</p>
                 </div>
-                <div className="h-9 w-9 rounded-xl bg-orange-50 flex items-center justify-center text-orange-600 border border-orange-100">
+                <div className="h-9 w-9 rounded-xl flex items-center justify-center text-violet-600" style={{ background: "rgba(124,58,237,0.08)", border: "1px solid rgba(124,58,237,0.12)" }}>
                     <TrendingUp className="h-4 w-4" />
                 </div>
             </div>
             {loading ? (
                 <div className="flex-1 flex items-center justify-center py-12">
-                    <Loader2 className="h-6 w-6 text-orange-500 animate-spin" />
+                    <Loader2 className="h-6 w-6 text-violet-500 animate-spin" />
                 </div>
             ) : stats.length === 0 ? (
                 <div className="flex-1 flex items-center justify-center py-12 text-sm font-bold text-gray-400 uppercase tracking-widest">
@@ -141,10 +141,10 @@ export function OrgInterviewPieChart({ stats = [], loading = false }: { stats?: 
     const total = stats.reduce((s, o) => s + o.count, 0);
     const segments = stats.map((o, i) => ({ name: o.name, value: o.count, color: getColor(i, o.name) }));
     return (
-        <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm flex flex-col">
+        <div className="bg-white rounded-2xl p-6 flex flex-col" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
             <div className="flex items-start justify-between mb-5">
                 <div>
-                    <h3 className="text-base font-bold text-gray-900 tracking-tight">Interview Split</h3>
+                    <h3 className="text-base font-semibold text-gray-900 tracking-tight">Interview Split</h3>
                     <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">Global engagement volume</p>
                 </div>
                 <div className="h-9 w-9 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 border border-blue-100">
@@ -173,10 +173,10 @@ export function OrgQuotaConsumption({ stats = [], loading = false }: { stats?: O
         return () => clearTimeout(t);
     }, [stats]);
     return (
-        <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm flex flex-col">
+        <div className="bg-white rounded-2xl p-6 flex flex-col" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
             <div className="flex items-start justify-between mb-5">
                 <div>
-                    <h3 className="text-base font-bold text-gray-900 tracking-tight">Quota Consumption</h3>
+                    <h3 className="text-base font-semibold text-gray-900 tracking-tight">Quota Consumption</h3>
                     <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">Interview quota used per org</p>
                 </div>
                 <div className="h-9 w-9 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600 border border-amber-100">
@@ -185,7 +185,7 @@ export function OrgQuotaConsumption({ stats = [], loading = false }: { stats?: O
             </div>
             {loading ? (
                 <div className="flex-1 flex items-center justify-center py-12">
-                    <Loader2 className="h-6 w-6 text-orange-500 animate-spin" />
+                    <Loader2 className="h-6 w-6 text-violet-500 animate-spin" />
                 </div>
             ) : stats.length === 0 ? (
                 <div className="flex-1 flex items-center justify-center py-12 text-sm font-bold text-gray-400 uppercase tracking-widest">
@@ -197,7 +197,7 @@ export function OrgQuotaConsumption({ stats = [], loading = false }: { stats?: O
                         const pct = org.total > 0 ? Math.round((org.used / org.total) * 100) : 0;
                         const color =
                             pct >= 90 ? "#EF4444" :
-                            pct >= 70 ? "#F97316" :
+                            pct >= 70 ? "#8B5CF6" :
                             pct >= 40 ? "#3B82F6" :
                             "#10B981";
                         return (

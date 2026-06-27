@@ -114,7 +114,7 @@ function CandidateStatsRow() {
         { label: "Shortlisted", value: stats.shortlisted, icon: Target, color: "text-emerald-600", bg: "bg-emerald-50" },
         { label: "Rejected", value: stats.rejected, icon: UserX, color: "text-rose-600", bg: "bg-rose-50" },
         { label: "Live", value: stats.interviewRunning, icon: Radio, color: "text-blue-600", bg: "bg-blue-50", pulse: stats.interviewRunning > 0 },
-        { label: "Pending", value: stats.interviewPending, icon: Clock, color: "text-slate-500", bg: "bg-slate-50" },
+        { label: "Pending", value: stats.interviewPending, icon: Clock, color: "text-gray-500", bg: "bg-violet-50" },
         { label: "Completed", value: stats.interviewCompleted, icon: ShieldCheck, color: "text-emerald-600", bg: "bg-emerald-50" },
     ];
     if (error) return (
@@ -124,14 +124,14 @@ function CandidateStatsRow() {
     );
     if (isLoading && stats.shortlisted === 0) return (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            {[...Array(6)].map((_, i) => <div key={i} className="h-20 rounded-2xl bg-white/40 animate-pulse border border-white/20" />)}
+            {[...Array(6)].map((_, i) => <div key={i} className="h-20 rounded-2xl bg-gray-100 animate-pulse" />)}
         </div>
     );
     return (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
             {kpis.map((kpi, idx) => (
                 <motion.div key={kpi.label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.05 }}
-                    className="group relative flex items-center gap-3 p-4 bg-white/40 backdrop-blur-xl rounded-2xl border border-white/40 shadow-sm hover:shadow-md transition-all duration-300">
+                    className="group relative flex items-center gap-3 p-4 bg-white rounded-2xl shadow-sm hover:shadow-md transition-all duration-200">
                     <div className={cn("h-10 w-10 rounded-xl flex items-center justify-center shrink-0 transition-transform group-hover:scale-110", kpi.bg, kpi.color)}>
                         <kpi.icon className={cn("h-5 w-5", (kpi as any).pulse && "animate-pulse")} />
                     </div>
@@ -407,18 +407,12 @@ export default function CandidatesPage() {
         finally { setIsBulkLoading(false); setEmailConfirm(null); }
     };
     return (
-        <div className="flex flex-col min-h-[135vh] space-y-8 pb-10 animate-in fade-in duration-700 font-sans" style={{ zoom: 0.7, transformOrigin: "top center" }}>
+        <div className="flex flex-col space-y-6 pb-10 animate-in fade-in duration-500">
             {/* Header */}
-            <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between mb-12">
-                <div className="flex items-center gap-5 group">
-                    <div className="h-14 w-1.5 bg-gradient-to-b from-[#F97316] to-orange-500 rounded-full shadow-[0_0_15px_rgba(249,115,22,0.4)] transition-all duration-500 group-hover:h-16" />
-                    <div className="space-y-1">
-                        <h1 className="text-4xl sm:text-5xl font-black text-gray-900 leading-none tracking-tighter">Candidates</h1>
-                        <div className="flex items-center gap-3">
-                            <span className="h-1.5 w-1.5 rounded-full bg-[#F97316] animate-pulse" />
-                            <p className="text-gray-400 font-bold text-[13px] uppercase tracking-[0.2em]">{pagination.total ?? 0} Total Candidates</p>
-                        </div>
-                    </div>
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                    <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Candidates</h1>
+                    <p className="text-sm text-gray-400 mt-0.5">{pagination.total ?? 0} total candidates</p>
                 </div>
             </div>
             <CandidateStatsRow />
@@ -449,8 +443,8 @@ export default function CandidatesPage() {
                     </div>
 
                     {/* Group 3: Interview Link — locked (not hidden) when suspended/quota */}
-                    <div className="rounded-2xl border border-orange-100 bg-orange-50/40 px-3 py-2.5">
-                        <p className="text-[9px] font-black uppercase tracking-[0.22em] text-orange-600 mb-2">Interview Link</p>
+                    <div className="rounded-2xl border border-violet-100 bg-violet-50/40 px-3 py-2.5">
+                        <p className="text-[9px] font-black uppercase tracking-[0.22em] text-violet-600 mb-2">Interview Link</p>
                         <div className="flex flex-wrap items-center gap-2">
                             <Button size="sm"
                                 onClick={isInterviewActionBlocked ? undefined : handleBulkSendInterviewLink}
@@ -484,24 +478,29 @@ export default function CandidatesPage() {
                 </div>
             )}
             {/* Table */}
-            <div className="group relative bg-white/40 backdrop-blur-xl rounded-[2.5rem] border border-white/40 shadow-[0_8px_32px_rgba(0,0,0,0.03)] overflow-hidden transition-all duration-700 hover:shadow-[0_20px_60px_rgba(0,0,0,0.08)]">
-                <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-orange-400/0 via-[#F97316]/40 to-orange-400/0" />
-                <div className="p-3 border-b border-white/40 bg-white/20">
-                    <div className="flex flex-col md:flex-row gap-4 items-center justify-between w-full">
-                        <div className="relative flex-1 max-w-2xl w-full group/search">
-                            <Search className="absolute left-4 top-3.5 h-4 w-4 text-gray-400 group-focus-within/search:text-black transition-colors" />
-                            <Input placeholder="Search by name, role, or email..."
-                                className="pl-11 h-12 border-transparent bg-white/60 rounded-2xl focus:bg-white focus:border-gray-200 focus:ring-8 focus:ring-gray-50/50 transition-all font-bold text-sm shadow-inner"
-                                value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
-                        </div>
-                        <div className="flex items-center gap-2.5 w-full md:w-auto overflow-x-auto pb-1 md:pb-0 no-scrollbar">
-                            <DateFilter value={timeline} onChange={setTimeline} />
+            <div className="bg-white rounded-2xl overflow-hidden" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
+                {/* Title bar */}
+                <div className="px-5 pt-5 pb-4" style={{ borderBottom: "1px solid #F0EEF8" }}>
+                    <h2 className="text-sm font-semibold text-gray-900">All Candidates</h2>
+                    <p className="text-xs text-gray-400 mt-0.5">{pagination.total ?? 0} total candidates across all job drives</p>
+                </div>
+                {/* Search + Filters toolbar */}
+                <div className="px-4 py-3 flex flex-col md:flex-row gap-3 items-center justify-between" style={{ borderBottom: "1px solid #F0EEF8" }}>
+                    <div className="relative flex-1 max-w-sm w-full">
+                        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+                        <Input placeholder="Search by name, role, or email..."
+                            className="pl-10 h-9 rounded-xl text-sm bg-gray-50"
+                            style={{ border: "1px solid #E9E7FF" }}
+                            value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <DateFilter value={timeline} onChange={setTimeline} />
                             <PremiumFilter value={resumeFilter} onChange={setResumeFilter} icon={Target} placeholder="Resume"
                                 options={[
                                     { value: "all", label: "All Status" },
                                     { value: "shortlisted", label: "Shortlisted", colorClass: "text-emerald-600" },
                                     { value: "rejected", label: "Rejected", colorClass: "text-rose-600" },
-                                    { value: "pending", label: "Pending", colorClass: "text-slate-600" },
+                                    { value: "pending", label: "Pending", colorClass: "text-gray-600" },
                                 ]} />
                             <PremiumFilter value={interviewFilter} onChange={setInterviewFilter} icon={Radio} placeholder="Interview"
                                 options={[
@@ -515,16 +514,15 @@ export default function CandidatesPage() {
                                     { value: "all", label: "All Job Roles" },
                                     ...jobs.map(job => ({ value: job.id.toString(), label: job.role || job.title || "Unknown Job" }))
                                 ]} />
-                        </div>
                     </div>
                 </div>
-                <div className="relative w-full overflow-auto max-h-[86vh]">
+                <div className="overflow-auto max-h-[72vh]">
                     <Table>
-                        <TableHeader className="bg-gray-50/50 sticky top-0 z-10 backdrop-blur-md">
-                            <TableRow className="border-b border-gray-100 hover:bg-transparent">
+                        <TableHeader className="sticky top-0 z-10" style={{ background: "#F9F8FF" }}>
+                            <TableRow className="hover:bg-transparent" style={{ borderBottom: "1px solid #F0EEF8" }}>
                                 <TableHead className="w-[56px] pl-6 font-bold uppercase tracking-wider text-[11px] text-gray-500">
                                     <button type="button" onClick={toggleSelectAll}
-                                        className="flex h-5 w-5 items-center justify-center rounded-md text-gray-400 hover:text-[#F97316] transition-colors">
+                                        className="flex h-5 w-5 items-center justify-center rounded-md text-gray-400 hover:text-violet-600 transition-colors">
                                         {isAllSelected ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
                                     </button>
                                 </TableHead>
@@ -558,8 +556,8 @@ export default function CandidatesPage() {
                                     <TableRow key={candidate.id}
                                         onClick={() => toggleSelection(candidate.id)}
                                         className={cn(
-                                            "group border-b border-white/20 hover:bg-white/40 transition-all duration-500 cursor-pointer",
-                                            selectedIds.has(candidate.id) && "bg-orange-50/30"
+                                            "group border-b hover:bg-violet-50/30 transition-all duration-150 cursor-pointer",
+                                            selectedIds.has(candidate.id) && "bg-violet-50/30"
                                         )}>
                                         <TableCell className="pl-6 py-5" onClick={e => e.stopPropagation()}>
                                             <Checkbox checked={selectedIds.has(candidate.id)} onCheckedChange={() => toggleSelection(candidate.id)} onClick={e => e.stopPropagation()} />
@@ -598,7 +596,7 @@ export default function CandidatesPage() {
                                                 <Badge variant="secondary" className={cn(
                                                     "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest border-0 shadow-sm pointer-events-none",
                                                     mainStatus === "shortlisted" ? "bg-emerald-50 text-emerald-700" :
-                                                        mainStatus === "rejected" ? "bg-rose-50 text-rose-700" : "bg-slate-50 text-slate-500"
+                                                        mainStatus === "rejected" ? "bg-rose-50 text-rose-700" : "bg-violet-50 text-gray-500"
                                                 )}>{mainStatusLabel}</Badge>
                                             </div>
                                         </TableCell>
@@ -616,7 +614,7 @@ export default function CandidatesPage() {
                                                     "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest border-0 shadow-sm pointer-events-none",
                                                     interviewStage === "completed" || interviewStage === "finished" ? "bg-emerald-50 text-emerald-700" :
                                                         interviewStage === "in progress" ? "bg-blue-50 text-blue-700" :
-                                                            interviewStage === "pending" ? "bg-slate-50 text-slate-500" : "bg-amber-50 text-amber-700"
+                                                            interviewStage === "pending" ? "bg-violet-50 text-gray-500" : "bg-amber-50 text-amber-700"
                                                 )}>{interviewStageLabel}</Badge>
                                             </div>
                                         </TableCell>
@@ -625,7 +623,7 @@ export default function CandidatesPage() {
                                                 href={orgIdParam
                                                     ? `/admin/candidates/${candidate.id}?report=resume&orgId=${encodeURIComponent(orgIdParam)}`
                                                     : `/admin/candidates/${candidate.id}?report=resume`}
-                                                className="inline-flex h-8 w-8 items-center justify-center rounded-full text-[#F97316] transition-colors hover:bg-orange-50"
+                                                className="inline-flex h-8 w-8 items-center justify-center rounded-full text-violet-600 transition-colors hover:bg-violet-50"
                                                 title="Open resume report">
                                                 <Eye className="h-4 w-4" />
                                             </Link>
@@ -720,7 +718,7 @@ export default function CandidatesPage() {
                 </div>
             </div>
             {/* Pagination */}
-            <div className="mt-auto flex flex-col gap-4 border-t border-white/20 bg-white/20 px-4 py-5 backdrop-blur-xl rounded-2xl lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-col gap-4 bg-white rounded-2xl px-4 py-4 lg:flex-row lg:items-center lg:justify-between" style={{ border: "1px solid #E9E7FF" }}>
                 <div className="flex flex-wrap items-center gap-3">
                     <p className="text-[13px] font-medium text-gray-500">
                         Showing <span className="text-gray-900 font-bold">{pagination.total > 0 ? (pagination.page - 1) * pageSize + 1 : 0}</span> to{" "}
@@ -731,7 +729,7 @@ export default function CandidatesPage() {
                     <div className="flex items-center gap-2">
                         <span className="text-[10px] font-black uppercase tracking-[0.22em] text-gray-400">Rows</span>
                         <Select value={String(pageSize)} onValueChange={(v) => { setPageSize(Number(v)); clearSelection(); }}>
-                            <SelectTrigger className="h-9 w-[120px] rounded-xl border-gray-200 bg-white text-sm font-bold text-gray-700 shadow-none focus:ring-2 focus:ring-orange-100">
+                            <SelectTrigger className="h-9 w-[120px] rounded-xl border-gray-200 bg-white text-sm font-bold text-gray-700 shadow-none focus:ring-2 focus:ring-violet-100">
                                 <SelectValue placeholder="Rows" />
                             </SelectTrigger>
                             <SelectContent className="rounded-xl border-gray-100">
@@ -744,11 +742,11 @@ export default function CandidatesPage() {
                 </div>
                 <div className="flex gap-3">
                     <Button variant="outline" size="sm" disabled={pagination.page <= 1 || isLoading} onClick={() => handlePageChange(pagination.page - 1)}
-                        className="h-10 px-6 rounded-xl border-gray-200 bg-white text-gray-500 font-bold hover:bg-gray-50 hover:text-[#F97316] disabled:opacity-30 transition-all shadow-none">
+                        className="h-10 px-6 rounded-xl border-gray-200 bg-white text-gray-500 font-bold hover:bg-gray-50 hover:text-violet-600 disabled:opacity-30 transition-all shadow-none">
                         <ChevronLeft className="h-4 w-4 mr-1" /> Previous
                     </Button>
                     <Button variant="outline" size="sm" disabled={pagination.page >= pagination.totalPages || isLoading} onClick={() => handlePageChange(pagination.page + 1)}
-                        className="h-10 px-6 rounded-xl border-gray-200 bg-white text-gray-500 font-bold hover:bg-gray-50 hover:text-[#F97316] disabled:opacity-30 transition-all shadow-none">
+                        className="h-10 px-6 rounded-xl border-gray-200 bg-white text-gray-500 font-bold hover:bg-gray-50 hover:text-violet-600 disabled:opacity-30 transition-all shadow-none">
                         Next <ChevronRight className="h-4 w-4 ml-1" />
                     </Button>
                 </div>

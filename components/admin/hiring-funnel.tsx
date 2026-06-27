@@ -81,7 +81,7 @@ export function HiringFunnel({ dateRange }: HiringFunnelProps) {
             : "0.0"
         : null;
     return (
-        <div className="bg-white/40 backdrop-blur-xl rounded-[2.5rem] border border-white/40 shadow-[0_8px_32px_rgba(0,0,0,0.03)] p-8 flex flex-col h-full group hover:shadow-[0_20px_60px_rgba(0,0,0,0.08)] transition-all duration-700">
+        <div className="premium-card p-6 flex flex-col h-full">
             {/* Header */}
             <div className="flex items-start justify-between mb-8">
                 <div>
@@ -96,7 +96,7 @@ export function HiringFunnel({ dateRange }: HiringFunnelProps) {
                     <div className="text-right">
                         <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-1">Total Pass</p>
                         <div className="flex items-baseline justify-end gap-1">
-                            <span className="text-2xl font-black text-slate-900 tracking-tighter">{passRate}%</span>
+                            <span className="text-2xl font-black text-gray-900 tracking-tighter">{passRate}%</span>
                         </div>
                     </div>
                 )}
@@ -152,7 +152,7 @@ export function HiringFunnel({ dateRange }: HiringFunnelProps) {
                                 {/* Conversion rate */}
                                 <div className="w-12 shrink-0 flex justify-end">
                                     {convRate != null ? (
-                                        <span className="text-[11px] font-black text-gray-400 group-hover/item:text-slate-700 transition-colors">
+                                        <span className="text-[11px] font-black text-gray-400 group-hover/item:text-gray-700 transition-colors">
                                             {convRate}%
                                         </span>
                                     ) : (

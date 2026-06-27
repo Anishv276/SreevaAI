@@ -155,7 +155,7 @@ export function InterviewOnlyCandidatesTable({ driveId, refreshKey }: { driveId:
         return (
             <div className="flex min-h-[40vh] items-center justify-center">
                 <div className="flex flex-col items-center gap-3">
-                    <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
+                    <Loader2 className="h-8 w-8 animate-spin text-violet-500" />
                     <p className="text-xs font-bold uppercase tracking-widest text-gray-400">Loading candidates...</p>
                 </div>
             </div>
@@ -173,7 +173,7 @@ export function InterviewOnlyCandidatesTable({ driveId, refreshKey }: { driveId:
                             <button className={cn(
                                 "flex items-center gap-1.5 h-8 px-3.5 rounded-full text-[12px] font-bold transition-all border focus:outline-none",
                                 activeTab !== "all"
-                                    ? "bg-[#F97316] text-white border-[#F97316] shadow-sm"
+                                    ? "bg-[#7C3AED] text-white border-[#7C3AED] shadow-sm"
                                     : "text-gray-600 border-gray-200 hover:border-gray-300 hover:text-gray-800 bg-white"
                             )}>
                                 {activeTab === "all" ? "Interview" :
@@ -193,10 +193,10 @@ export function InterviewOnlyCandidatesTable({ driveId, refreshKey }: { driveId:
                             {STATUS_TABS.map(tab => (
                                 <DropdownMenuItem key={tab.key} onClick={() => setActiveTab(tab.key)}
                                     className={cn("rounded-lg px-3 py-2 text-[12px] font-semibold cursor-pointer flex items-center justify-between",
-                                        activeTab === tab.key ? "text-[#F97316] bg-orange-50" : "text-gray-700"
+                                        activeTab === tab.key ? "text-[#7C3AED] bg-violet-50" : "text-gray-700"
                                     )}>
                                     {tab.label}
-                                    {activeTab === tab.key && <span className="h-1.5 w-1.5 rounded-full bg-[#F97316]" />}
+                                    {activeTab === tab.key && <span className="h-1.5 w-1.5 rounded-full bg-[#7C3AED]" />}
                                 </DropdownMenuItem>
                             ))}
                         </DropdownMenuContent>
@@ -211,7 +211,7 @@ export function InterviewOnlyCandidatesTable({ driveId, refreshKey }: { driveId:
                                 onClick={handleBulkSendInvite}
                                 disabled={isBulkLoading || isActionBlocked}
                                 className={cn("h-8 px-3 rounded-full border text-[12px] font-semibold flex items-center gap-1.5 disabled:opacity-50 transition-colors",
-                                    isActionBlocked ? "border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed" : "border-orange-200 bg-white text-[#F97316] hover:bg-orange-50")}
+                                    isActionBlocked ? "border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed" : "border-violet-200 bg-white text-[#7C3AED] hover:bg-violet-50")}
                             >
                                 {isActionBlocked ? <Lock className="h-3.5 w-3.5" /> : <RefreshCw className="h-3.5 w-3.5" />}
                                 Resend Invite ({selectedCount})
@@ -229,7 +229,7 @@ export function InterviewOnlyCandidatesTable({ driveId, refreshKey }: { driveId:
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
                         <Input
                             placeholder="Search candidates..."
-                            className="pl-8 h-8 w-48 border-gray-200 rounded-full text-[12px] font-medium focus:border-orange-400 focus:ring-1 focus:ring-orange-200 bg-gray-50"
+                            className="pl-8 h-8 w-48 border-gray-200 rounded-full text-[12px] font-medium focus:border-violet-400 focus:ring-1 focus:ring-violet-200 bg-gray-50"
                             value={searchTerm}
                             onChange={e => setSearchTerm(e.target.value)}
                         />

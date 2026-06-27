@@ -72,7 +72,7 @@ export function ScoreDistribution({ dateRange }: ScoreDistributionProps) {
     const yMax = Math.ceil(maxCount / 20) * 20 || 20;
     const CHART_H = 220; 
     return (
-        <div className="bg-white/40 backdrop-blur-xl rounded-[2.5rem] border border-white/60 shadow-[0_8px_32px_rgba(0,0,0,0.02)] p-8 flex flex-col h-full overflow-hidden hover:shadow-[0_20px_60px_rgba(0,0,0,0.06)] transition-all duration-700">
+        <div className="premium-card p-6 flex flex-col h-full overflow-hidden">
             {/* Header */}
             <div className="flex items-start justify-between mb-8">
                 <div>
@@ -91,7 +91,7 @@ export function ScoreDistribution({ dateRange }: ScoreDistributionProps) {
             {/* Chart Area */}
             {loading ? (
                 <div className="flex-1 flex items-center justify-center min-h-[250px]">
-                    <Loader2 className="h-8 w-8 text-slate-400 animate-spin" />
+                    <Loader2 className="h-8 w-8 text-gray-400 animate-spin" />
                 </div>
             ) : error ? (
                 <div className="flex-1 flex items-center justify-center">

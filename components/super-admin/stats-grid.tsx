@@ -98,8 +98,8 @@ export function SuperAdminStatsGrid({
             value: s.totalOrgs,
             trend: s.trends?.orgs ?? 0,
             icon: Building2,
-            color: "text-orange-600",
-            iconBg: "bg-orange-50",
+            color: "text-violet-600",
+            iconBg: "bg-violet-50",
         },
         {
             label: "Platform Admins",
@@ -154,7 +154,8 @@ export function SuperAdminStatsGrid({
                 <motion.div
                     key={idx}
                     variants={{ hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] } } }}
-                    className="bg-white rounded-2xl border border-gray-200 p-4 flex flex-col gap-3 hover:border-gray-300 hover:shadow-sm transition-all duration-200"
+                    className="bg-white rounded-2xl p-4 flex flex-col gap-3 transition-all duration-200"
+                    style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}
                 >
                     <div className="flex items-start justify-between">
                         <div className={cn("h-8 w-8 rounded-xl flex items-center justify-center", card.iconBg)}>

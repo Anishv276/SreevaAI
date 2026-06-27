@@ -88,11 +88,11 @@ export function LocationAutocomplete({
     return (
         <div className={cn("relative w-full", className)} ref={containerRef}>
             <div className="relative group">
-                <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#F97316] transition-colors">
+                <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-[#7C3AED] transition-colors">
                     {icon || <MapPinIcon className="h-4 w-4" />}
                 </div>
                 <Input
-                    className="pl-10 h-11 rounded-xl border-gray-200 bg-white font-medium focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all shadow-sm"
+                    className="pl-10 h-11 rounded-xl border-gray-200 bg-white font-medium focus:border-[#7C3AED] focus:ring-4 focus:ring-violet-100 transition-all shadow-sm"
                     placeholder={placeholder}
                     value={query}
                     onChange={(e) => {
@@ -103,7 +103,7 @@ export function LocationAutocomplete({
                     onFocus={() => setIsOpen(true)}
                 />
                 <div className="absolute right-3.5 top-1/2 -translate-y-1/2 flex items-center gap-2">
-                    {isLoading && <Loader2 className="h-3.5 w-3.5 animate-spin text-[#F97316]" />}
+                    {isLoading && <Loader2 className="h-3.5 w-3.5 animate-spin text-[#7C3AED]" />}
                     {query && (
                         <button 
                             type="button"
@@ -134,9 +134,9 @@ export function LocationAutocomplete({
                                         key={`${s.label}-${i}`}
                                         type="button"
                                         onClick={() => handleSelect(s)}
-                                        className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl hover:bg-orange-50 text-left transition-all group/item border border-transparent hover:border-orange-100 hover:shadow-sm"
+                                        className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl hover:bg-violet-50 text-left transition-all group/item border border-transparent hover:border-violet-100 hover:shadow-sm"
                                     >
-                                        <div className="h-8 w-8 rounded-lg bg-gray-50 flex items-center justify-center text-gray-400 group-hover/item:bg-white group-hover/item:text-[#F97316] shadow-sm transition-colors">
+                                        <div className="h-8 w-8 rounded-lg bg-gray-50 flex items-center justify-center text-gray-400 group-hover/item:bg-white group-hover/item:text-[#7C3AED] shadow-sm transition-colors">
                                             <Search className="h-4 w-4" />
                                         </div>
                                         <div className="flex-1">

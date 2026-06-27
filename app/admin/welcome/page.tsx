@@ -44,19 +44,19 @@ export default function WelcomePage() {
                     animate={{ opacity: 1 }}
                     className="flex flex-col items-center gap-4"
                 >
-                    <div className="h-10 w-10 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+                    <div className="h-10 w-10 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
                     <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Loading Workspace</p>
                 </motion.div>
             </div>
         );
     }
     return (
-        <main className="relative h-screen w-full overflow-hidden bg-white flex items-center justify-center font-sans tracking-tight">
+        <main className="relative h-screen w-full overflow-hidden flex items-center justify-center font-sans tracking-tight">
             {/* --- Background Mesh Gradients --- */}
             <div className="absolute inset-0 z-0">
-                <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-[#F97316]/10 rounded-full blur-[120px] animate-pulse" />
+                <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-[#7C3AED]/10 rounded-full blur-[120px] animate-pulse" />
                 <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-indigo-500/10 rounded-full blur-[120px] animate-pulse delay-700" />
-                <div className="absolute top-[20%] right-[10%] w-[30%] h-[30%] bg-orange-200/20 rounded-full blur-[100px]" />
+                <div className="absolute top-[20%] right-[10%] w-[30%] h-[30%] bg-violet-200/20 rounded-full blur-[100px]" />
             </div>
             {/* --- Content --- */}
             <div className="relative z-10 w-full max-w-2xl px-6">
@@ -74,7 +74,7 @@ export default function WelcomePage() {
                             <motion.div 
                                 initial={{ opacity: 0, scale: 0.8 }}
                                 animate={{ opacity: 1, scale: 1 }}
-                                className="h-16 w-16 bg-orange-500 text-white rounded-2xl flex items-center justify-center mx-auto mb-8 shadow-lg relative"
+                                className="h-16 w-16 bg-violet-500 text-white rounded-2xl flex items-center justify-center mx-auto mb-8 shadow-lg relative"
                             >
                                 <Rocket className="h-8 w-8" />
                             </motion.div>
@@ -86,7 +86,7 @@ export default function WelcomePage() {
                                     className="text-4xl font-bold text-gray-900 tracking-tight"
                                 >
                                     Welcome Home, <br />
-                                    <span className="text-orange-500 text-3xl">{data.name}</span>
+                                    <span className="text-violet-500 text-3xl">{data.name}</span>
                                 </motion.h1>
                                 <motion.div 
                                     initial={{ opacity: 0 }}
@@ -106,7 +106,7 @@ export default function WelcomePage() {
                                 className="bg-gray-50/50 border border-gray-100/50 rounded-2xl p-6 mb-12 flex items-center justify-between"
                             >
                                 <div className="flex items-center gap-4">
-                                    <div className="h-12 w-12 rounded-xl bg-orange-500 flex items-center justify-center text-white font-bold shadow-md">
+                                    <div className="h-12 w-12 rounded-xl bg-violet-500 flex items-center justify-center text-white font-bold shadow-md">
                                         {data.company[0].toUpperCase()}
                                     </div>
                                     <div className="flex flex-col">

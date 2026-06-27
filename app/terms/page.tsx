@@ -1,176 +1,169 @@
-'use client';
-import React, { useState, useEffect } from 'react';
-import Link from 'next/link';
-type Session = {
-    user: {
-        id: string;
-        name: string;
-        email: string;
-    };
-    role: "USER" | "ADMIN" | "SUPER_ADMIN";
-};
+"use client";
+import React, { useState, useEffect } from "react";
+import Link from "next/link";
+
 const footerGroups = [
-    {
-        title: "Product",
-        links: ["Adaptive Engine", "Skill Library", "Integrations", "Security"],
-    },
-    {
-        title: "Company",
-        links: ["Careers", "About Us", "Blog", "News"],
-    },
-    {
-        title: "Legal",
-        links: ["Privacy Policy", "Terms of Service", "Security"],
-    },
-    {
-        title: "Support",
-        links: ["Contact Sales", "Status", "Help Center"],
-    },
+    { title: "Product", links: ["Adaptive Engine", "Skill Library", "Integrations", "Security"] },
+    { title: "Company", links: ["Careers", "About Us", "Blog", "News"] },
+    { title: "Legal", links: ["Privacy Policy", "Terms of Service", "Security"] },
+    { title: "Support", links: ["Contact Sales", "Status", "Help Center"] },
 ];
+
+const bodyP: React.CSSProperties = { fontSize: 15, color: "#4B5563", lineHeight: 1.7, margin: "0 0 12px" };
+const sectionH: React.CSSProperties = { fontSize: 15, fontWeight: 700, color: "#111827", letterSpacing: "-0.01em", margin: "0 0 10px", paddingTop: 4 };
+const lnk: React.CSSProperties = { color: "#7C3AED", textDecoration: "none", fontWeight: 500 };
+const subH: React.CSSProperties = { fontSize: 14, fontWeight: 600, color: "#374151", marginBottom: 4, marginTop: 16 };
+
+const bullet = (items: string[]) => (
+    <ul style={{ listStyle: "none", padding: 0, margin: "0 0 12px", display: "flex", flexDirection: "column", gap: 6 }}>
+        {items.map(i => <li key={i} style={{ fontSize: 15, color: "#4B5563", lineHeight: 1.6 }}>• {i}</li>)}
+    </ul>
+);
+
 export default function TermsOfUse() {
-    const [session, setSession] = useState<Session | null>(null);
+    const [session, setSession] = useState<any>(null);
     useEffect(() => {
-        // Ensure page starts at the top
         window.scrollTo(0, 0);
-        const checkAuth = async () => {
-            try {
-                const res = await fetch("/api/auth/me");
-                if (res.ok) {
-                    const data = (await res.json()) as Session;
-                    setSession(data);
-                }
-            } catch (err) {
-                console.error("Auth check failed", err);
-            }
-        };
-        checkAuth();
+        fetch("/api/auth/me").then(r => r.ok ? r.json() : null).then(d => d && setSession(d)).catch(() => {});
     }, []);
-    const workspaceHref = session?.role === "SUPER_ADMIN" ? "/super-admin" : "/admin";
+    const ws = session?.role === "SUPER_ADMIN" ? "/super-admin" : "/admin";
+
     return (
-        <div className="min-h-screen bg-white text-slate-900">
+        <div style={{ minHeight: "100vh", background: "linear-gradient(180deg,#FFFFFF 0%,#FAFAFC 45%,#F5F3FF 100%)", fontFamily: "var(--font-geist-sans),system-ui,sans-serif", color: "#111827" }}>
             {/* Header */}
-            <header className="h-20 border-b border-slate-100">
-                <div className="mx-auto flex h-full max-w-[1320px] items-center justify-between px-6">
-                    <Link href="/" className="flex items-center gap-3 font-display text-2xl font-black text-slate-900">
-                        <img src="/sreevalogo.png" alt="Sreeva AI Logo" className="h-10 w-10 object-contain" />
-                        <span>Sreeva AI</span>
+            <header style={{ height: 64, borderBottom: "1px solid #E9E7FF", background: "rgba(255,255,255,0.92)", backdropFilter: "blur(12px)", position: "sticky", top: 0, zIndex: 50 }}>
+                <div style={{ maxWidth: 1280, margin: "0 auto", padding: "0 32px", height: "100%", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <Link href="/" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}>
+                        <img src="/sreevaailogo2.png" alt="Sreeva AI" style={{ width: 32, height: 32, objectFit: "contain", borderRadius: 4 }} />
+                        <span style={{ fontSize: 17, fontWeight: 700, color: "#111827", letterSpacing: "-0.02em" }}>Sreeva AI</span>
                     </Link>
-                    <div className="flex items-center gap-4">
-                        <Link
-                            href={session ? workspaceHref : "/login"}
-                            className="bg-black px-6 py-2 rounded font-bold text-white"
-                        >
-                            {session ? "Open Workspace" : "Login"}
-                        </Link>
-                    </div>
+                    <Link href={session ? ws : "/login"} style={{ height: 36, padding: "0 16px", borderRadius: 10, background: "linear-gradient(135deg,#8B5CF6,#3B82F6)", color: "white", fontSize: 14, fontWeight: 600, display: "inline-flex", alignItems: "center", textDecoration: "none", boxShadow: "0 4px 12px rgba(124,58,237,0.25)" }}>
+                        {session ? "Open Workspace" : "Sign In"}
+                    </Link>
                 </div>
             </header>
-            <main className="py-16">
-                <div className="mx-auto max-w-[800px] px-6 text-slate-800">
-                    <Link href="/#footer" className="inline-block mb-8 text-sm font-bold hover:underline">
-                        ← Back to Home
-                    </Link>
-                    <h1 className="text-3xl font-bold mb-2">TERMS OF USE</h1>
-                    <p className="mb-8 text-slate-500">Last Updated: April 26, 2026</p>
-                    <p className="mb-8">These Terms of Use govern your access to and use of the SreevaAI platform and services. By creating an account or using the platform, you agree to these Terms in full.</p>
-                    <h2 className="text-xl font-bold mt-8 mb-4">1. ELIGIBILITY</h2>
-                    <p className="mb-4">You must be at least 18 years old and have the legal authority to enter into these Terms on behalf of yourself or your organization.</p>
-                    <p className="mb-4">You are responsible for maintaining the confidentiality of your account credentials. We recommend using a strong password (12+ characters with numbers and symbols) and enabling two-factor authentication if available. All activity under your account is your responsibility. Notify support@sreevaai.com immediately if you suspect unauthorized access.</p>
-                    <h2 className="text-xl font-bold mt-8 mb-4">2. WHAT WE PROVIDE</h2>
-                    <p className="mb-4">SreevaAI is an AI-powered interview platform that helps you conduct automated first-round interviews with candidates. The platform includes:</p>
-                    <ul className="list-disc pl-6 mb-4 space-y-1">
-                        <li>Resume and job description analysis</li>
-                        <li>AI-powered video interviews with adaptive follow-up questions</li>
-                        <li>Behavioral and integrity assessment reports</li>
-                        <li>Interview recordings and transcripts</li>
-                        <li>Proctoring and authenticity verification</li>
-                    </ul>
-                    <h2 className="text-xl font-bold mt-8 mb-4">3. AI INTERVIEWS - HOW IT WORKS</h2>
-                    <p className="font-bold mb-2">Before Each Interview:</p>
-                    <p className="mb-4 italic">Candidates must be informed that the interview will be conducted by AI. You must display this message before the interview starts: "This interview will be conducted by an AI system. Your responses will be analyzed by AI. You will receive a score. You can request a human to review your score if you disagree."</p>
-                    <p className="mb-4">Candidates must click "I Agree" to proceed. No interview happens without their explicit consent.</p>
-                    <p className="font-bold mb-2">The Interview:</p>
-                    <p className="mb-4">The AI asks questions based on the job description and candidate resume. It listens to responses, detects follow-up opportunities, and generates a score based on competency, communication, and authenticity.</p>
-                    <p className="font-bold mb-2">After the Interview:</p>
-                    <p className="mb-4">Candidates receive their score and a summary of how their interview was evaluated. They can request human review by emailing support@sreevaai.com within 7 days. You must honor such requests and reconsider the assessment.</p>
-                    <p className="mb-4 font-bold">Important: AI recommendations are suggestions only. Final hiring decisions are your responsibility. Always independently verify AI assessments before rejecting any candidate.</p>
-                    <h2 className="text-xl font-bold mt-8 mb-4">4. BILLING</h2>
-                    <p className="font-bold mb-2">Billing Process:</p>
-                    <p className="mb-4">We charge your card on the 1st of each month for your monthly plan. Topups are charged when they occur. You'll receive an invoice after each charge.</p>
-                    <p className="font-bold mb-2">Refunds:</p>
-                    <p className="mb-4">Refunds are available within 7 days of purchase if you have not conducted any interviews, or if there was a platform error that prevented interviews from working. Contact support@sreevaai.com to request a refund with your account ID and invoice date. We'll respond within 5 business days.</p>
-                    <p className="mb-4">Pricing may change with 30 days written notice. Continued use after a price change takes effect means you accept the new rates.</p>
-                    <h2 className="text-xl font-bold mt-8 mb-4">5. YOUR RESPONSIBILITIES</h2>
-                    <p className="mb-4">You must ensure all use of the platform complies with applicable law in your jurisdiction. This includes:</p>
-                    <ul className="list-disc pl-6 mb-4 space-y-1">
-                        <li>Obtaining explicit consent from candidates before conducting interviews</li>
-                        <li>Complying with employment and anti-discrimination laws (you cannot ask about age, caste, religion, disability, marital status, or sexual orientation)</li>
-                        <li>Following data protection laws (India's DPDP Act 2023, GDPR if in EU, CCPA if in California)</li>
-                        <li>Honoring candidate opt-out and withdrawal requests</li>
-                        <li>Complying with employment laws where you hire</li>
-                    </ul>
-                    <p className="font-bold mb-2">You must not:</p>
-                    <ul className="list-disc pl-6 mb-4 space-y-1">
-                        <li>Discriminate based on protected characteristics</li>
-                        <li>Misuse candidate data</li>
-                        <li>Reverse engineer or attempt to access the platform's source code</li>
-                        <li>Resell or sublicense access without written permission</li>
-                        <li>Circumvent rate limits or billing</li>
-                        <li>Use the platform in any way that violates third-party rights</li>
-                    </ul>
-                    <p className="mb-4">If we discover non-compliance, we may suspend your account without prior notice.</p>
-                    <h2 className="text-xl font-bold mt-8 mb-4">6. INTELLECTUAL PROPERTY</h2>
-                    <p className="mb-4">All intellectual property in the platform (software, algorithms, interfaces, documentation) is owned by SreevaAI. These Terms grant you a limited, non-exclusive, revocable license to use the platform as described. You don't own the platform.</p>
-                    <p className="mb-4">You retain ownership of content you create (interview questions, candidate information, hiring decisions). By using the platform, you grant SreevaAI a limited license to process this content solely to provide the service.</p>
-                    <h2 className="text-xl font-bold mt-8 mb-4">7. DATA AND PRIVACY</h2>
-                    <p className="mb-4">Your use of the platform is governed by our Privacy Policy. When we process candidate data on your behalf, you are the data controller and we are the data processor. You are responsible for having a lawful basis for processing and obtaining all required consents.</p>
-                    <p className="mb-4">EU customers: A Data Processing Agreement is automatically provided. Email support@sreevaai.com to request it.</p>
-                    <h2 className="text-xl font-bold mt-8 mb-4">8. SERVICE AVAILABILITY</h2>
-                    <p className="mb-4">We aim for high availability but don't guarantee uninterrupted service. We're not liable for downtime caused by events outside our control (infrastructure failures, force majeure, scheduled maintenance).</p>
-                    <h2 className="text-xl font-bold mt-8 mb-4">9. DISCLAIMERS</h2>
-                    <p className="mb-4">The platform is provided "as is" and "as available." We make no warranty about fitness for a specific purpose or that it will meet your business needs. AI assessments are not professional advice and should not be the sole basis for hiring decisions.</p>
-                    <h2 className="text-xl font-bold mt-8 mb-4">10. LIABILITY</h2>
-                    <p className="mb-4">To the maximum extent permitted by law:</p>
-                    <p className="mb-4">We are not liable for indirect, consequential, or punitive damages (lost profits, lost data, reputational harm, etc.).</p>
-                    <p className="mb-4">Our total liability for direct damages will not exceed the amount you paid in the 3 months before your claim. This limit does NOT apply to: Data breaches, violation of employment law, or gross negligence.</p>
-                    <p className="mb-4 font-bold">You agree to use AI assessments as recommendations only. We're not liable for hiring outcomes based on AI scores.</p>
-                    <h2 className="text-xl font-bold mt-8 mb-4">11. INDEMNIFICATION</h2>
-                    <p className="mb-4">You agree to protect us against claims arising from: Your use of the platform in violation of law, discriminatory hiring practices, or violation of candidate privacy rights.</p>
-                    <p className="mb-4">We agree to protect you against claims arising from: Our platform bugs or security vulnerabilities, or our unauthorized use of your data.</p>
-                    <h2 className="text-xl font-bold mt-8 mb-4">12. TERMINATION</h2>
-                    <p className="mb-4">Either party may terminate access at any time. We may suspend your account immediately if you breach these Terms or engage in prohibited activities.</p>
-                    <h2 className="text-xl font-bold mt-8 mb-4">13. CHANGES TO THESE TERMS</h2>
-                    <p className="mb-4">We may update these Terms. Material changes will be communicated by email at least 30 days before taking effect. Continued use means you accept the updated Terms.</p>
-                    <h2 className="text-xl font-bold mt-8 mb-4">14. DISPUTE RESOLUTION</h2>
-                    <p className="mb-4">These Terms are governed by the laws of India. Any disputes will be resolved through good faith negotiation.</p>
-                    <h2 className="text-xl font-bold mt-8 mb-4">15. CONTACT</h2>
-                    <p className="mb-4">Questions? Email us at: support@sreevaai.com</p>
-                    <p className="mt-12 font-bold text-center">By using SreevaAI, you agree to these Terms.</p>
+
+            <main style={{ padding: "64px 32px 80px" }}>
+                <div style={{ maxWidth: 760, margin: "0 auto" }}>
+                    <Link href="/" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 500, color: "#7C3AED", textDecoration: "none", marginBottom: 32 }}>← Back to Home</Link>
+                    <div style={{ marginBottom: 48 }}>
+                        <div style={{ display: "inline-flex", alignItems: "center", padding: "4px 12px", borderRadius: 999, background: "#F5F3FF", border: "1px solid #E9E7FF", fontSize: 11, fontWeight: 600, color: "#7C3AED", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 16 }}>Legal</div>
+                        <h1 style={{ fontSize: "clamp(28px,4vw,40px)", fontWeight: 700, color: "#111827", letterSpacing: "-0.02em", lineHeight: 1.15, margin: "0 0 12px" }}>Terms of Use</h1>
+                        <p style={{ fontSize: 14, color: "#9CA3AF", margin: 0 }}>Last Updated: April 26, 2026</p>
+                    </div>
+                    <div style={{ background: "#FFFFFF", border: "1px solid #E9E7FF", borderRadius: 20, padding: "40px 48px", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
+                        <p style={bodyP}>These Terms of Use govern your access to and use of the SreevaAI platform and services. By creating an account or using the platform, you agree to these Terms in full.</p>
+
+                        <section style={{ marginBottom: 28 }}>
+                            <h2 style={sectionH}>1. ELIGIBILITY</h2>
+                            <p style={bodyP}>You must be at least 18 years old and have the legal authority to enter into these Terms on behalf of yourself or your organization.</p>
+                            <p style={bodyP}>You are responsible for maintaining the confidentiality of your account credentials. All activity under your account is your responsibility. Notify <a href="mailto:support@sreevaai.com" style={lnk}>support@sreevaai.com</a> immediately if you suspect unauthorized access.</p>
+                        </section>
+
+                        <section style={{ marginBottom: 28 }}>
+                            <h2 style={sectionH}>2. WHAT WE PROVIDE</h2>
+                            <p style={bodyP}>SreevaAI is an AI-powered interview platform that includes:</p>
+                            {bullet(["Resume and job description analysis","AI-powered video interviews with adaptive follow-up questions","Behavioral and integrity assessment reports","Interview recordings and transcripts","Proctoring and authenticity verification"])}
+                        </section>
+
+                        <section style={{ marginBottom: 28 }}>
+                            <h2 style={sectionH}>3. AI INTERVIEWS — HOW IT WORKS</h2>
+                            <p style={subH}>Before Each Interview:</p>
+                            <p style={bodyP}>Candidates must be informed that the interview will be conducted by AI and must click &quot;I Agree&quot; to proceed. No interview happens without their explicit consent.</p>
+                            <p style={subH}>The Interview:</p>
+                            <p style={bodyP}>The AI asks questions based on the job description and candidate resume, detects follow-up opportunities, and generates a score.</p>
+                            <p style={subH}>After the Interview:</p>
+                            <p style={bodyP}>Candidates receive their score and a summary. They can request human review within 7 days. You must honor such requests.</p>
+                            <p style={{ ...bodyP, fontWeight: 600, color: "#374151" }}>Important: AI recommendations are suggestions only. Final hiring decisions are your responsibility.</p>
+                        </section>
+
+                        <section style={{ marginBottom: 28 }}>
+                            <h2 style={sectionH}>4. BILLING</h2>
+                            <p style={subH}>Billing Process:</p>
+                            <p style={bodyP}>We charge your card on the 1st of each month. Top-ups are charged when they occur. You will receive an invoice after each charge.</p>
+                            <p style={subH}>Refunds:</p>
+                            <p style={bodyP}>Refunds are available within 7 days of purchase if you have not conducted any interviews, or if a platform error prevented interviews from working. Contact <a href="mailto:support@sreevaai.com" style={lnk}>support@sreevaai.com</a>.</p>
+                        </section>
+
+                        <section style={{ marginBottom: 28 }}>
+                            <h2 style={sectionH}>5. YOUR RESPONSIBILITIES</h2>
+                            <p style={bodyP}>You must ensure all use of the platform complies with applicable law in your jurisdiction, including:</p>
+                            {bullet(["Obtaining explicit consent from candidates before conducting interviews","Complying with employment and anti-discrimination laws","Following data protection laws (DPDP Act 2023, GDPR, CCPA)","Honoring candidate opt-out and withdrawal requests"])}
+                            <p style={bodyP}>You must not discriminate, misuse candidate data, reverse engineer the platform, resell access, or circumvent billing.</p>
+                        </section>
+
+                        <section style={{ marginBottom: 28 }}>
+                            <h2 style={sectionH}>6. INTELLECTUAL PROPERTY</h2>
+                            <p style={bodyP}>All intellectual property in the platform is owned by SreevaAI. You retain ownership of content you create (interview questions, candidate information, hiring decisions).</p>
+                        </section>
+
+                        <section style={{ marginBottom: 28 }}>
+                            <h2 style={sectionH}>7. DATA AND PRIVACY</h2>
+                            <p style={bodyP}>Your use of the platform is governed by our <Link href="/privacy" style={lnk}>Privacy Policy</Link>. You are the data controller; we are the data processor. You are responsible for having a lawful basis for processing and obtaining all required consents.</p>
+                        </section>
+
+                        <section style={{ marginBottom: 28 }}>
+                            <h2 style={sectionH}>8. SERVICE AVAILABILITY</h2>
+                            <p style={bodyP}>We aim for high availability but do not guarantee uninterrupted service. We are not liable for downtime caused by events outside our control.</p>
+                        </section>
+
+                        <section style={{ marginBottom: 28 }}>
+                            <h2 style={sectionH}>9. DISCLAIMERS</h2>
+                            <p style={bodyP}>The platform is provided &quot;as is.&quot; AI assessments are not professional advice and should not be the sole basis for hiring decisions.</p>
+                        </section>
+
+                        <section style={{ marginBottom: 28 }}>
+                            <h2 style={sectionH}>10. LIABILITY</h2>
+                            <p style={bodyP}>We are not liable for indirect, consequential, or punitive damages. Our total liability for direct damages will not exceed the amount you paid in the 3 months before your claim.</p>
+                        </section>
+
+                        <section style={{ marginBottom: 28 }}>
+                            <h2 style={sectionH}>11. INDEMNIFICATION</h2>
+                            <p style={bodyP}>You agree to protect us against claims arising from your use of the platform in violation of law, discriminatory hiring practices, or violation of candidate privacy rights.</p>
+                        </section>
+
+                        <section style={{ marginBottom: 28 }}>
+                            <h2 style={sectionH}>12. TERMINATION</h2>
+                            <p style={bodyP}>Either party may terminate access at any time. We may suspend your account immediately if you breach these Terms.</p>
+                        </section>
+
+                        <section style={{ marginBottom: 28 }}>
+                            <h2 style={sectionH}>13. CHANGES TO THESE TERMS</h2>
+                            <p style={bodyP}>Material changes will be communicated by email at least 30 days before taking effect. Continued use means you accept the updated Terms.</p>
+                        </section>
+
+                        <section style={{ marginBottom: 28 }}>
+                            <h2 style={sectionH}>14. DISPUTE RESOLUTION</h2>
+                            <p style={bodyP}>These Terms are governed by the laws of India. Disputes will be resolved through good faith negotiation.</p>
+                        </section>
+
+                        <section style={{ marginBottom: 0 }}>
+                            <h2 style={sectionH}>15. CONTACT</h2>
+                            <p style={{ ...bodyP, marginBottom: 0 }}>Questions? Email: <a href="mailto:support@sreevaai.com" style={lnk}>support@sreevaai.com</a></p>
+                        </section>
+
+                        <div style={{ marginTop: 40, paddingTop: 32, borderTop: "1px solid #F0EEF8", textAlign: "center" }}>
+                            <p style={{ fontSize: 14, fontWeight: 600, color: "#374151", margin: 0 }}>By using SreevaAI, you agree to these Terms.</p>
+                        </div>
+                    </div>
                 </div>
             </main>
-            {/* Footer */}
-            <footer className="border-t border-slate-100 bg-white py-12">
-                <div className="mx-auto grid max-w-[1320px] grid-cols-2 gap-8 px-6 md:grid-cols-4 lg:grid-cols-6">
-                    <div className="col-span-2">
-                        <div className="mb-4 flex items-center gap-3 text-xl font-bold text-slate-900">
-                            <img src="/sreevalogo.png" alt="Sreeva AI Logo" className="h-10 w-10 object-contain" />
-                            <span>Sreeva AI</span>
+
+            <footer style={{ borderTop: "1px solid #E9E7FF", background: "#FFFFFF", padding: "48px 32px" }}>
+                <div style={{ maxWidth: 1280, margin: "0 auto", display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", gap: 32 }}>
+                    <div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                            <img src="/sreevaailogo2.png" alt="" style={{ width: 28, height: 28, objectFit: "contain", borderRadius: 4 }} />
+                            <span style={{ fontSize: 15, fontWeight: 700, color: "#111827" }}>Sreeva AI</span>
                         </div>
-                        <p className="text-sm text-slate-500">© 2026 Sreeva AI. All rights reserved.</p>
+                        <p style={{ fontSize: 13, color: "#9CA3AF", margin: 0 }}>© 2026 Sreeva AI. All rights reserved.</p>
                     </div>
-                    {footerGroups.map((group) => (
-                        <div key={group.title}>
-                            <h5 className="mb-4 text-sm font-bold">{group.title}</h5>
-                            <ul className="space-y-2 text-sm text-slate-500">
-                                {group.links.map((item) => (
-                                    <li key={item}>
-                                        <Link 
-                                            href={item === "Terms of Service" ? "/terms" : item === "Privacy Policy" ? "/privacy" : "#"} 
-                                            className="hover:text-black"
-                                        >
-                                            {item}
-                                        </Link>
-                                    </li>
+                    {footerGroups.map(g => (
+                        <div key={g.title}>
+                            <h5 style={{ fontSize: 11, fontWeight: 600, color: "#374151", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12, marginTop: 0 }}>{g.title}</h5>
+                            <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+                                {g.links.map(item => (
+                                    <li key={item}><Link href={item === "Terms of Service" ? "/terms" : item === "Privacy Policy" ? "/privacy" : "#"} style={{ fontSize: 13, color: "#6B7280", textDecoration: "none" }}>{item}</Link></li>
                                 ))}
                             </ul>
                         </div>

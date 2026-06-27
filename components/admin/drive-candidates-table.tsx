@@ -68,11 +68,11 @@ function ScoreRangeFilter({
     return (
         <div className={cn(
             "flex items-center gap-2 h-9 px-3 rounded-full border transition-all duration-200 bg-white",
-            isFiltered ? "border-[#F97316] shadow-sm" : "border-gray-200 hover:border-gray-300"
+            isFiltered ? "border-[#7C3AED] shadow-sm" : "border-gray-200 hover:border-gray-300"
         )}>
             {/* Min label */}
             <span className="text-[11px] font-bold tabular-nums w-5 text-right flex-shrink-0"
-                style={{ color: isFiltered ? "#F97316" : "#9ca3af" }}>
+                style={{ color: isFiltered ? "#7C3AED" : "#9ca3af" }}>
                 {min}
             </span>
 
@@ -90,7 +90,7 @@ function ScoreRangeFilter({
                     <RadixSlider.Range
                         className="absolute h-full rounded-full"
                         style={{
-                            background: "#F97316",
+                            background: "#7C3AED",
                             transition: "left 80ms ease, right 80ms ease",
                         }}
                     />
@@ -101,8 +101,8 @@ function ScoreRangeFilter({
                     className="flex items-center justify-center rounded-full font-black cursor-grab active:cursor-grabbing focus:outline-none select-none"
                     style={{
                         width: 28, height: 28, fontSize: 9,
-                        background: isFiltered && min > 0 ? "#F97316" : "#ffffff",
-                        border: `2px solid ${isFiltered && min > 0 ? "#F97316" : "#d1d5db"}`,
+                        background: isFiltered && min > 0 ? "#7C3AED" : "#ffffff",
+                        border: `2px solid ${isFiltered && min > 0 ? "#7C3AED" : "#d1d5db"}`,
                         color: isFiltered && min > 0 ? "#ffffff" : "#374151",
                         boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
                         transition: "background 150ms, border-color 150ms, color 150ms",
@@ -117,8 +117,8 @@ function ScoreRangeFilter({
                     className="flex items-center justify-center rounded-full font-black cursor-grab active:cursor-grabbing focus:outline-none select-none"
                     style={{
                         width: 28, height: 28, fontSize: 9,
-                        background: isFiltered && max < 100 ? "#F97316" : "#ffffff",
-                        border: `2px solid ${isFiltered && max < 100 ? "#F97316" : "#d1d5db"}`,
+                        background: isFiltered && max < 100 ? "#7C3AED" : "#ffffff",
+                        border: `2px solid ${isFiltered && max < 100 ? "#7C3AED" : "#d1d5db"}`,
                         color: isFiltered && max < 100 ? "#ffffff" : "#374151",
                         boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
                         transition: "background 150ms, border-color 150ms, color 150ms",
@@ -131,7 +131,7 @@ function ScoreRangeFilter({
 
             {/* Max label */}
             <span className="text-[11px] font-bold tabular-nums w-5 flex-shrink-0"
-                style={{ color: isFiltered ? "#F97316" : "#9ca3af" }}>
+                style={{ color: isFiltered ? "#7C3AED" : "#9ca3af" }}>
                 {max}
             </span>
 
@@ -455,7 +455,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
         return (
             <div className="flex min-h-[40vh] items-center justify-center rounded-2xl border border-white/40 bg-white/60 backdrop-blur-xl shadow-[0_8px_24px_rgba(15,23,42,0.03)]">
                 <div className="flex flex-col items-center gap-3">
-                    <Loader2 className="h-10 w-10 animate-spin text-orange-500" />
+                    <Loader2 className="h-10 w-10 animate-spin text-violet-500" />
                     <p className="text-xs font-black uppercase tracking-[0.24em] text-gray-400">
                         Loading job candidates...
                     </p>
@@ -477,7 +477,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                             <button className={cn(
                                 "flex items-center gap-1.5 h-8 px-3.5 rounded-full text-[12px] font-bold transition-all border focus:outline-none",
                                 resumeFilter !== "all"
-                                    ? "bg-[#F97316] text-white border-[#F97316] shadow-sm"
+                                    ? "bg-[#7C3AED] text-white border-[#7C3AED] shadow-sm"
                                     : "text-gray-600 border-gray-200 hover:border-gray-300 hover:text-gray-800 bg-white"
                             )}>
                                 {resumeFilter === "all" ? "Shortlisted" :
@@ -502,10 +502,10 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                             ].map(opt => (
                                 <DropdownMenuItem key={opt.value} onClick={() => setResumeFilter(opt.value)}
                                     className={cn("rounded-lg px-3 py-2 text-[12px] font-semibold cursor-pointer flex items-center justify-between",
-                                        resumeFilter === opt.value ? "text-[#F97316] bg-orange-50" : "text-gray-700"
+                                        resumeFilter === opt.value ? "text-[#7C3AED] bg-violet-50" : "text-gray-700"
                                     )}>
                                     {opt.label}
-                                    {resumeFilter === opt.value && <span className="h-1.5 w-1.5 rounded-full bg-[#F97316]" />}
+                                    {resumeFilter === opt.value && <span className="h-1.5 w-1.5 rounded-full bg-[#7C3AED]" />}
                                 </DropdownMenuItem>
                             ))}
                         </DropdownMenuContent>
@@ -556,7 +556,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                         <button onClick={() => handleBulkStatus("shortlist")} disabled={isBulkLoading} className="h-8 px-3 rounded-full border border-emerald-200 bg-white text-[12px] font-semibold text-emerald-700 hover:bg-emerald-50 flex items-center gap-1.5 disabled:opacity-50 transition-colors"><Target className="h-3.5 w-3.5" /> Shortlist</button>
                         <button onClick={() => handleBulkStatus("reject")} disabled={isBulkLoading} className="h-8 px-3 rounded-full border border-rose-200 bg-white text-[12px] font-semibold text-rose-600 hover:bg-rose-50 flex items-center gap-1.5 disabled:opacity-50 transition-colors"><UserX className="h-3.5 w-3.5" /> Reject</button>
                         <button onClick={isSuspended ? undefined : openBulkSendEmailConfirm} disabled={isBulkLoading} className={cn("h-8 px-3 rounded-full border text-[12px] font-semibold flex items-center gap-1.5 disabled:opacity-50 transition-colors", isSuspended ? "border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed" : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50")}>{isSuspended ? <Lock className="h-3.5 w-3.5" /> : <Mail className="h-3.5 w-3.5" />} Email</button>
-                        <button onClick={isInterviewActionBlocked ? undefined : handleBulkSendInterviewLink} disabled={isBulkLoading} className={cn("h-8 px-3 rounded-full border text-[12px] font-semibold flex items-center gap-1.5 disabled:opacity-50 transition-colors", isInterviewActionBlocked ? "border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed" : "border-orange-200 bg-white text-[#F97316] hover:bg-orange-50")}>{isInterviewActionBlocked ? <Lock className="h-3.5 w-3.5" /> : <RefreshCw className="h-3.5 w-3.5" />} Resend</button>
+                        <button onClick={isInterviewActionBlocked ? undefined : handleBulkSendInterviewLink} disabled={isBulkLoading} className={cn("h-8 px-3 rounded-full border text-[12px] font-semibold flex items-center gap-1.5 disabled:opacity-50 transition-colors", isInterviewActionBlocked ? "border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed" : "border-violet-200 bg-white text-[#7C3AED] hover:bg-violet-50")}>{isInterviewActionBlocked ? <Lock className="h-3.5 w-3.5" /> : <RefreshCw className="h-3.5 w-3.5" />} Resend</button>
                         <button onClick={() => setDeleteConfirm({ mode: "bulk" })} disabled={isBulkLoading} className="h-8 px-3 rounded-full border border-red-200 bg-white text-[12px] font-semibold text-red-600 hover:bg-red-50 flex items-center gap-1.5 disabled:opacity-50 transition-colors"><Trash2 className="h-3.5 w-3.5" /> Delete ({selectedCount})</button>
                     </>)}
                     <ScoreRangeFilter
@@ -685,8 +685,8 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                                 {isExtracting ? (
                                                     <div className="flex flex-col gap-1.5">
                                                         <div className="flex items-center gap-2">
-                                                            <Loader2 className="h-3.5 w-3.5 animate-spin text-orange-500" />
-                                                            <span className="text-[12px] text-orange-600 font-semibold">
+                                                            <Loader2 className="h-3.5 w-3.5 animate-spin text-violet-500" />
+                                                            <span className="text-[12px] text-violet-600 font-semibold">
                                                                 {statusKey === "extracting" && "25%"}
                                                                 {statusKey === "scoring" && "50%"}
                                                                 {statusKey === "starting" || statusKey === "waiting" || statusKey === "processing" ? "25%" : "—"}
@@ -694,7 +694,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                                         </div>
                                                         {score > 0 && (
                                                             <span className={cn("text-[11px] font-semibold",
-                                                                score >= 80 ? "text-emerald-600" : score >= 50 ? "text-amber-600" : "text-orange-500"
+                                                                score >= 80 ? "text-emerald-600" : score >= 50 ? "text-amber-600" : "text-violet-500"
                                                             )}>Score: {score}%</span>
                                                         )}
                                                     </div>
@@ -710,7 +710,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                             <TableCell className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}>
                                                 <span className={cn(
                                                     "inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold border",
-                                                    isExtracting ? "bg-orange-50 text-orange-600 border-orange-200" :
+                                                    isExtracting ? "bg-violet-50 text-violet-600 border-violet-200" :
                                                     isFailed ? "bg-rose-50 text-rose-600 border-rose-200" :
                                                     statusKey === "rejected" ? "bg-rose-50 text-rose-600 border-rose-200" :
                                                     statusKey === "shortlisted" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
@@ -740,11 +740,11 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                             {/* Resume report */}
                                             <TableCell className="px-4 py-3.5 text-center" onClick={(e) => e.stopPropagation()}>
                                                 {isWaiting || isProcessing ? (
-                                                    <Loader2 className="h-3.5 w-3.5 animate-spin text-orange-400 mx-auto" />
+                                                    <Loader2 className="h-3.5 w-3.5 animate-spin text-violet-400 mx-auto" />
                                                 ) : isFailed ? (
                                                     <XCircle className="h-3.5 w-3.5 text-rose-400 mx-auto" />
                                                 ) : (
-                                                    <Link href={`/admin/candidates/${candidate.id}?report=resume&back=${encodeURIComponent(`/admin/candidates/drive/${driveId}`)}`} className="text-[12px] font-semibold text-orange-500 hover:text-orange-700 transition-colors">View</Link>
+                                                    <Link href={`/admin/candidates/${candidate.id}?report=resume&back=${encodeURIComponent(`/admin/candidates/drive/${driveId}`)}`} className="text-[12px] font-semibold text-violet-500 hover:text-violet-700 transition-colors">View</Link>
                                                 )}
                                             </TableCell>
                                             {/* Interview report */}

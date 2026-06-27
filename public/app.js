@@ -132,7 +132,18 @@
     });
   }, { rootMargin: '0px 0px -8% 0px', threshold: 0.05 });
 
-  document.querySelectorAll('[data-reveal], [data-words], .report, .bx-cost').forEach((el) => revealIO.observe(el));
+  document.querySelectorAll('[data-reveal], [data-words], .report, .bx-cost').forEach((el) => {
+    // ponytail: immediately reveal elements already in the viewport on load
+    const r = el.getBoundingClientRect();
+    if (r.top < window.innerHeight && r.bottom > 0) {
+      el.classList.add('is-visible');
+      if (el.hasAttribute('data-words')) {
+        el.querySelectorAll('.rw > span').forEach((s) => { s.style.transform = 'translateY(0)'; s.style.opacity = '1'; });
+      }
+    } else {
+      revealIO.observe(el);
+    }
+  });
 
   /* -----------------------------------------------------
      Number counters

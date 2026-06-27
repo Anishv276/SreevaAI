@@ -246,7 +246,7 @@ export function BillingContent({
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 24 }}>
             <div style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 24, padding: 28, boxShadow: "0 4px 20px rgba(0,0,0,0.03)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
-                <div style={{ width: 40, height: 40, borderRadius: 12, background: "#FFF7ED", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <div style={{ width: 40, height: 40, borderRadius: 12, background: "#F5F3FF", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <Sparkles style={{ width: 20, height: 20, color: ORANGE }} />
                 </div>
                 <div>
@@ -358,7 +358,7 @@ export function BillingContent({
                     style={{
                       padding: "6px 10px",
                       borderRadius: 999,
-                      background: "#FFF7ED",
+                      background: "#F5F3FF",
                       color: ORANGE,
                       fontSize: 11,
                       fontWeight: 800,
@@ -404,7 +404,7 @@ export function BillingContent({
           {showRechargeHelp ? (
             <div style={{ ...card, padding: 20, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <div style={{ width: 34, height: 34, borderRadius: 12, background: "#FFF7ED", color: ORANGE, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <div style={{ width: 34, height: 34, borderRadius: 12, background: "#F5F3FF", color: ORANGE, display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <Sparkles size={16} />
                 </div>
                 <div>
@@ -416,7 +416,7 @@ export function BillingContent({
                 href={getSupportComposeUrl({ subject: "Increase org quota request", body: "Hi support team,\n\nWe need more interviews. Please help us recharge.\n" })}
                 target="_blank" rel="noreferrer"
                 style={{
-                  background: "linear-gradient(135deg, #F97316, #ea6608)",
+                  background: "linear-gradient(135deg, #7C3AED, #ea6608)",
                   color: "#fff",
                   fontSize: 13,
                   fontWeight: 700,

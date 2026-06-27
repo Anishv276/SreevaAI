@@ -8,7 +8,7 @@ import { toast } from "@/components/ui/toast-custom";
 import { PasswordInput } from "@/components/ui/password-input";
 function SettingsCard({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
     return (
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-500">
+        <div className="bg-white rounded-2xl overflow-hidden animate-in fade-in duration-500" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
             <div className="px-8 py-6 border-b border-gray-50">
                 <h2 className="text-xl font-bold text-gray-900">{title}</h2>
                 {description && <p className="text-[13px] text-gray-500 font-medium mt-1 leading-relaxed">{description}</p>}
@@ -98,15 +98,12 @@ export default function SuperAdminSettingsPage() {
         }
     };
     return (
-        <div className="min-h-screen bg-[#FDFDFD] p-8 lg:p-12 text-gray-900 font-medium pb-24">
-            <div className="max-w-6xl mx-auto space-y-2 mb-8">
-                <div className="flex items-center gap-3">
-                    <div className="h-10 w-1.5 bg-gradient-to-b from-[#F97316] to-orange-400 rounded-full" />
-                    <h1 className="text-3xl font-extrabold tracking-tight">Settings</h1>
-                </div>
-                <p className="text-gray-500 font-medium ml-5">Manage your super-admin account</p>
+        <div className="space-y-6 pb-10 animate-in fade-in duration-500">
+            <div>
+                <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Settings</h1>
+                <p className="text-sm text-gray-400 mt-0.5">Manage your super-admin account</p>
             </div>
-            <div className="max-w-6xl mx-auto space-y-8">
+            <div className="max-w-2xl space-y-6">
                 <SettingsCard title="Update Password" description="Change your super-admin password with OTP verification.">
                     <form onSubmit={handleInitialSubmit} className="space-y-8">
                         <div className="grid gap-6 md:grid-cols-2">
@@ -136,7 +133,7 @@ export default function SuperAdminSettingsPage() {
                                 <button
                                     type="button"
                                     onClick={() => { window.location.href = "/login/forgot-password?from=super-settings"; }}
-                                    className="text-xs font-bold text-[#F97316] hover:underline flex items-center gap-1.5"
+                                    className="text-xs font-bold text-[#7C3AED] hover:underline flex items-center gap-1.5"
                                 >
                                     <Zap className="h-3 w-3" />
                                     Forgot current password? Recover account
@@ -156,7 +153,7 @@ export default function SuperAdminSettingsPage() {
                             </div>
                         )}
                         <div className="flex justify-end">
-                            <Button type="submit" disabled={sendingOtp || !currentPassword || !isNewPasswordValid || newPassword !== confirmPassword} className="bg-[#F97316] text-white hover:bg-orange-600 font-bold px-8 h-11">
+                            <Button type="submit" disabled={sendingOtp || !currentPassword || !isNewPasswordValid || newPassword !== confirmPassword} className="bg-[#7C3AED] text-white hover:bg-violet-600 font-bold px-8 h-11">
                                 {sendingOtp ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                                 Change Password
                             </Button>
@@ -173,7 +170,7 @@ export default function SuperAdminSettingsPage() {
                                     <span className="sr-only">Close</span>
                                     ×
                                 </button>
-                                <div className="h-20 w-20 rounded-[2rem] bg-orange-50 flex items-center justify-center text-[#F97316]">
+                                <div className="h-20 w-20 rounded-[2rem] bg-violet-50 flex items-center justify-center text-[#7C3AED]">
                                     <ShieldAlert className="h-8 w-8" />
                                 </div>
                             </div>
@@ -196,7 +193,7 @@ export default function SuperAdminSettingsPage() {
                                         {otpError}
                                     </div>
                                 )}
-                                <Button onClick={handleVerifyAndSave} disabled={loading || otp.length < 6} className="w-full h-14 bg-gray-950 text-white hover:bg-[#F97316]">
+                                <Button onClick={handleVerifyAndSave} disabled={loading || otp.length < 6} className="w-full h-14 bg-gray-950 text-white hover:bg-[#7C3AED]">
                                     {loading ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : null}
                                     Verify and Save
                                 </Button>

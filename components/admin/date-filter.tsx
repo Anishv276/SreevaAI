@@ -80,15 +80,15 @@ export function DateFilter({ value, onChange }: DateFilterProps) {
                             className={cn(
                                 "flex items-center justify-between w-full rounded-xl px-4 py-3 text-[13.5px] font-bold transition-all duration-150",
                                 value.type === p.key
-                                    ? "bg-orange-50 text-[#F97316]"
+                                    ? "bg-violet-50 text-violet-600"
                                     : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
                             )}
                         >
                             <div className="flex items-center gap-3">
-                                <p.icon className={cn("h-4 w-4", value.type === p.key ? "text-[#F97316]" : "text-gray-400")} />
+                                <p.icon className={cn("h-4 w-4", value.type === p.key ? "text-violet-600" : "text-gray-400")} />
                                 <span>{p.label}</span>
                             </div>
-                            {value.type === p.key && <Check className="h-4 w-4 text-[#F97316]" />}
+                            {value.type === p.key && <Check className="h-4 w-4 text-violet-600" />}
                         </button>
                     ))}
                     <div className="h-px bg-gray-50 my-1 mx-2" />
@@ -97,12 +97,12 @@ export function DateFilter({ value, onChange }: DateFilterProps) {
                         className={cn(
                             "flex items-center justify-between w-full rounded-xl px-4 py-3 text-[13.5px] font-bold transition-all duration-150",
                             value.type === "custom"
-                                ? "bg-orange-50 text-[#F97316]"
+                                ? "bg-violet-50 text-violet-600"
                                 : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
                         )}
                     >
                         <div className="flex items-center gap-3">
-                            <Calendar className={cn("h-4 w-4", value.type === "custom" ? "text-[#F97316]" : "text-gray-400")} />
+                            <Calendar className={cn("h-4 w-4", value.type === "custom" ? "text-violet-600" : "text-gray-400")} />
                             <span>Custom Range</span>
                         </div>
                         <ChevronDown className="h-4 w-4 -rotate-90 text-gray-300" />
@@ -111,7 +111,7 @@ export function DateFilter({ value, onChange }: DateFilterProps) {
             ) : (
                 <div className="p-5 space-y-4">
                     <div className="flex items-center justify-between mb-2">
-                        <button onClick={() => setView("presets")} className="text-[11px] font-black text-[#F97316] uppercase tracking-widest hover:opacity-70">← Presets</button>
+                        <button onClick={() => setView("presets")} className="text-[11px] font-semibold text-violet-600 uppercase tracking-widest hover:opacity-70">← Presets</button>
                         <span className="text-[11px] font-black text-gray-400 uppercase tracking-widest">Custom Scope</span>
                     </div>
                     <div className="space-y-3">
@@ -140,7 +140,8 @@ export function DateFilter({ value, onChange }: DateFilterProps) {
                             }
                         }}
                         disabled={!customFrom || !customTo}
-                        className="w-full h-10 bg-gray-900 text-white font-black text-xs uppercase tracking-[0.15em] rounded-xl hover:bg-[#F97316] disabled:opacity-30 transition-all shadow-lg"
+                        className="btn-shimmer w-full h-10 text-white font-semibold text-xs uppercase tracking-wider rounded-xl disabled:opacity-30 transition-all"
+                        style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)", boxShadow: "0 4px 12px rgba(124,58,237,0.25)" }}
                     >
                         Apply Filter
                     </button>
@@ -155,11 +156,12 @@ export function DateFilter({ value, onChange }: DateFilterProps) {
                 ref={triggerRef}
                 onClick={handleOpen}
                 className={cn(
-                    "flex items-center gap-1.5 h-8 px-3.5 rounded-full text-[12px] font-bold transition-all duration-150 border focus:outline-none",
+                    "flex items-center gap-1.5 h-8 px-3.5 rounded-full text-[12px] font-semibold transition-all duration-150 border focus:outline-none",
                     isActive
-                        ? "bg-[#F97316] text-white border-[#F97316] shadow-sm"
-                        : "text-gray-500 border-gray-200 hover:border-gray-300 hover:text-gray-700 bg-white"
+                        ? "text-white shadow-sm border-transparent"
+                        : "text-gray-500 border-gray-200 hover:border-violet-300 hover:text-violet-600 bg-white"
                 )}
+                style={isActive ? { background: "linear-gradient(135deg, #8B5CF6, #3B82F6)" } : undefined}
             >
                 <Calendar className="h-3.5 w-3.5" />
                 <span className="whitespace-nowrap">{getLabel()}</span>

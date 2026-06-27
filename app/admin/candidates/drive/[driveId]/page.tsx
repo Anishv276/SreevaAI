@@ -94,7 +94,7 @@ export default function DriveCandidatesPage() {
         return (
             <div className="min-h-screen flex items-center justify-center">
                 <div className="flex flex-col items-center gap-3">
-                    <Loader2 className="h-9 w-9 animate-spin text-[#F97316]" />
+                    <Loader2 className="h-9 w-9 animate-spin text-[#7C3AED]" />
                     <p className="text-sm font-semibold text-gray-400">Loading...</p>
                 </div>
             </div>
@@ -106,10 +106,10 @@ export default function DriveCandidatesPage() {
     const isInterviewOnly = drive?.interviewMode === "interview-only";
 
     return (
-        <div className="min-h-screen bg-gray-50/60 animate-in fade-in duration-500">
+        <div className="space-y-6 pb-10 animate-in fade-in duration-500">
 
             {/* ── STICKY TOP BAR: Back left | mode badge center | count right ── */}
-            <div className="flex items-center justify-between px-6 py-3 bg-white border-b border-gray-200 sticky top-0 z-30">
+            <div className="flex items-center justify-between px-4 py-3 bg-white sticky top-0 z-30 rounded-xl" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
                 {/* Left: Back */}
                 <Link
                     href="/admin/drives"
@@ -122,7 +122,7 @@ export default function DriveCandidatesPage() {
                 {/* Center: mode badge (read-only, set at creation) */}
                 <div className={`flex items-center gap-2 h-8 px-4 rounded-lg text-[13px] font-bold ${
                     isInterviewOnly
-                        ? "bg-orange-50 text-[#F97316] border border-orange-200"
+                        ? "bg-violet-50 text-[#7C3AED] border border-violet-200"
                         : "bg-gray-100 text-gray-600 border border-gray-200"
                 }`}>
                     {isInterviewOnly ? (
@@ -167,7 +167,7 @@ export default function DriveCandidatesPage() {
                         <input
                             type="text"
                             placeholder="Search across all candidates..."
-                            className="w-full h-9 pl-10 pr-4 rounded-full border border-gray-200 bg-gray-50 text-[13px] text-gray-600 placeholder-gray-400 focus:outline-none focus:border-orange-400 focus:bg-white transition-colors"
+                            className="w-full h-9 pl-10 pr-4 rounded-full border border-gray-200 bg-gray-50 text-[13px] text-gray-600 placeholder-gray-400 focus:outline-none focus:border-violet-400 focus:bg-white transition-colors"
                         />
                     </div>
 
@@ -180,7 +180,7 @@ export default function DriveCandidatesPage() {
                             setUploadOpen(true);
                         }}
                         disabled={!isInterviewOnly && quotaLocked}
-                        className="inline-flex h-9 items-center gap-2 rounded-full border border-gray-200 bg-white px-4 text-[13px] font-semibold text-gray-600 hover:border-orange-300 hover:text-[#F97316] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="inline-flex h-9 items-center gap-2 rounded-full border border-gray-200 bg-white px-4 text-[13px] font-semibold text-gray-600 hover:border-violet-300 hover:text-[#7C3AED] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {!isInterviewOnly && quotaLocked ? <Lock className="h-4 w-4" /> : <Upload className="h-4 w-4" />}
                         Bulk Upload
@@ -188,7 +188,7 @@ export default function DriveCandidatesPage() {
 
                     <button
                         onClick={() => setDrawerOpen(true)}
-                        className="inline-flex h-9 items-center gap-2 rounded-full bg-[#F97316] hover:bg-orange-600 px-5 text-[13px] font-bold text-white transition-colors shadow-sm"
+                        className="inline-flex h-9 items-center gap-2 rounded-full bg-[#7C3AED] hover:bg-violet-600 px-5 text-[13px] font-bold text-white transition-colors shadow-sm"
                     >
                         <Plus className="h-4 w-4" />
                         Add Candidate
@@ -197,14 +197,14 @@ export default function DriveCandidatesPage() {
 
                 {/* Tip banner */}
                 {!tipDismissed && (
-                    <div className="mx-6 mt-3 mb-1 flex items-center justify-between gap-3 rounded-xl border border-orange-100 bg-orange-50/50 px-4 py-2.5">
-                        <div className="flex items-center gap-2.5 text-[13px] text-orange-600 font-medium">
+                    <div className="mx-6 mt-3 mb-1 flex items-center justify-between gap-3 rounded-xl border border-violet-100 bg-violet-50/50 px-4 py-2.5">
+                        <div className="flex items-center gap-2.5 text-[13px] text-violet-600 font-medium">
                             <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/></svg>
                             {isInterviewOnly
                                 ? "Interview Only mode — interview links are sent automatically when you add a candidate."
                                 : "Scoring + Interview — upload resumes, AI scores them, shortlist, then send interview links."}
                         </div>
-                        <button onClick={() => setTipDismissed(true)} className="text-orange-400 hover:text-orange-600 transition-colors shrink-0">
+                        <button onClick={() => setTipDismissed(true)} className="text-violet-400 hover:text-violet-600 transition-colors shrink-0">
                             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
                         </button>
                     </div>
@@ -248,8 +248,8 @@ export default function DriveCandidatesPage() {
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
                         <div className="px-6 pt-6 pb-4">
                             <div className="flex items-start gap-4">
-                                <div className="h-10 w-10 rounded-xl bg-orange-50 border border-orange-200 flex items-center justify-center shrink-0">
-                                    <Edit3 className="h-5 w-5 text-[#F97316]" />
+                                <div className="h-10 w-10 rounded-xl bg-violet-50 border border-violet-200 flex items-center justify-center shrink-0">
+                                    <Edit3 className="h-5 w-5 text-[#7C3AED]" />
                                 </div>
                                 <div>
                                     <h2 className="text-[16px] font-bold text-gray-900">Edit Job Details</h2>
@@ -269,7 +269,7 @@ export default function DriveCandidatesPage() {
                             <Link
                                 href={`/admin/create-drive?id=${driveId}&mode=edit`}
                                 onClick={() => setEditWarningOpen(false)}
-                                className="h-9 px-5 rounded-xl bg-[#F97316] hover:bg-orange-600 text-[13px] font-bold text-white transition-colors flex items-center gap-2"
+                                className="h-9 px-5 rounded-xl bg-[#7C3AED] hover:bg-violet-600 text-[13px] font-bold text-white transition-colors flex items-center gap-2"
                             >
                                 <Edit3 className="h-3.5 w-3.5" />
                                 Continue to Edit

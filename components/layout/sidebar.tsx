@@ -14,11 +14,13 @@ import { useAuth } from "@/context/auth-context";
 import { motion } from "framer-motion";
 import { isInterviewQuotaLocked, isOrgRestrictedStatus } from "@/lib/interview-quota";
 import { useAdminOrg } from "@/context/admin-org-context";
+
 interface NavItem {
     icon: any;
     label: string;
     href: string;
 }
+
 const NAV_GROUPS: { items: NavItem[] }[] = [
     {
         items: [
@@ -35,6 +37,7 @@ const NAV_GROUPS: { items: NavItem[] }[] = [
         ]
     }
 ];
+
 export function Sidebar() {
     const pathname = usePathname();
     const router = useRouter();
@@ -44,7 +47,7 @@ export function Sidebar() {
     const [isLoggingOut, setIsLoggingOut] = useState(false);
     const { logout, user } = useAuth();
     const isSuperAdmin = user?.role === "SUPER_ADMIN";
-    // ⚡ Read from shared context — no fetch needed (was 2 API calls per page load)
+
     const adminOrg = useAdminOrg();
     const orgInfo = adminOrg?.name
         ? { name: adminOrg.name || "Sreeva AI" }
@@ -53,6 +56,7 @@ export function Sidebar() {
     const quotaLocked = isInterviewQuotaLocked(adminOrg ?? {});
     const modalRef = useRef<HTMLDivElement>(null);
     const isSuspended = isOrgRestrictedStatus(orgStatus);
+
     useEffect(() => {
         if (!showLogoutConfirm) return;
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -62,71 +66,61 @@ export function Sidebar() {
             const firstElement = focusableElements[0] as HTMLElement;
             const lastElement = focusableElements[focusableElements.length - 1] as HTMLElement;
             if (e.shiftKey) {
-                if (document.activeElement === firstElement) {
-                    lastElement.focus();
-                    e.preventDefault();
-                }
+                if (document.activeElement === firstElement) { lastElement.focus(); e.preventDefault(); }
             } else {
-                if (document.activeElement === lastElement) {
-                    firstElement.focus();
-                    e.preventDefault();
-                }
+                if (document.activeElement === lastElement) { firstElement.focus(); e.preventDefault(); }
             }
         };
         window.addEventListener("keydown", handleKeyDown);
-        // Focus the first button on mount
-        setTimeout(() => {
-            const firstButton = modalRef.current?.querySelector("button");
-            firstButton?.focus();
-        }, 50);
+        setTimeout(() => { modalRef.current?.querySelector("button")?.focus(); }, 50);
         return () => window.removeEventListener("keydown", handleKeyDown);
     }, [showLogoutConfirm]);
+
     const handleLogout = async () => {
         setIsLoggingOut(true);
-        try {
-            await logout();
-        } catch {
-            setIsLoggingOut(false);
-            setShowLogoutConfirm(false);
-        }
+        try { await logout(); }
+        catch { setIsLoggingOut(false); setShowLogoutConfirm(false); }
     };
+
     return (
         <>
             {/* LOGOUT CONFIRMATION MODAL */}
             {showLogoutConfirm && (
-                <div className="fixed inset-0 z-[1000] flex items-center justify-center p-6 pb-20 md:pb-6 font-inter">
+                <div className="fixed inset-0 z-[1000] flex items-center justify-center p-6">
                     <div
-                        className="absolute inset-0 bg-gray-900/40 backdrop-blur-sm"
+                        className="absolute inset-0 bg-gray-900/30 backdrop-blur-sm"
                         onClick={() => !isLoggingOut && setShowLogoutConfirm(false)}
                     />
                     <div
                         ref={modalRef}
-                        className="relative w-full max-w-md bg-white border border-gray-100 rounded-[2rem] shadow-[0_32px_80px_rgba(0,0,0,0.15)] overflow-hidden"
+                        className="relative w-full max-w-sm bg-white rounded-2xl overflow-hidden"
+                        style={{ border: "1px solid #E9E7FF", boxShadow: "0 25px 60px rgba(124,58,237,0.12)" }}
                     >
-                        <div className="p-8 text-center space-y-6">
+                        <div className="p-8 text-center space-y-5">
                             <div className="flex justify-center">
-                                <div className="h-20 w-20 rounded-3xl bg-red-50 text-red-500 flex items-center justify-center animate-pulse">
-                                    <ShieldAlert className="h-10 w-10" />
+                                <div className="h-14 w-14 rounded-2xl bg-red-50 text-red-500 flex items-center justify-center">
+                                    <ShieldAlert className="h-7 w-7" />
                                 </div>
                             </div>
-                            <div className="space-y-2">
-                                <h2 className="text-2xl font-bold text-gray-900 tracking-tight">Sign Out?</h2>
-                                <p className="text-sm font-medium text-gray-500 leading-relaxed">
-                                    You are about to end your session. Any unsaved changes in current job configurations might be lost.
+                            <div className="space-y-1.5">
+                                <h2 className="text-xl font-bold text-gray-900 tracking-tight">Sign Out?</h2>
+                                <p className="text-sm text-gray-500 leading-relaxed">
+                                    You are about to end your session. Any unsaved changes might be lost.
                                 </p>
                             </div>
-                            <div className="grid grid-cols-2 gap-3 pt-2">
+                            <div className="grid grid-cols-2 gap-3 pt-1">
                                 <button
                                     onClick={() => setShowLogoutConfirm(false)}
                                     disabled={isLoggingOut}
-                                    className="h-12 bg-gray-50 text-gray-600 rounded-2xl font-bold text-sm hover:bg-gray-100 transition-all active:scale-[0.98] border border-gray-100"
+                                    className="h-11 bg-gray-50 text-gray-600 rounded-xl font-semibold text-sm hover:bg-gray-100 transition-all border border-gray-100"
                                 >
                                     Stay Active
                                 </button>
                                 <button
                                     onClick={handleLogout}
                                     disabled={isLoggingOut}
-                                    className="h-12 bg-gray-900 text-white rounded-2xl font-bold text-sm shadow-xl shadow-gray-200 hover:bg-red-600 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                                    className="h-11 text-white rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2"
+                                    style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)", boxShadow: "0 4px 12px rgba(124,58,237,0.25)" }}
                                 >
                                     {isLoggingOut ? <Loader2 className="h-4 w-4 animate-spin" /> : "Sign Out"}
                                 </button>
@@ -135,96 +129,102 @@ export function Sidebar() {
                     </div>
                 </div>
             )}
+
             <aside
                 id="global-admin-sidebar"
-                className="hidden md:flex h-screen w-[240px] flex-col fixed left-0 top-0 z-50 bg-white border-r border-gray-200/50 font-inter"
+                className="hidden md:flex h-screen w-[240px] flex-col fixed left-0 top-0 z-50"
+                style={{
+                    background: "#FFFFFF",
+                    borderRight: "1px solid #E9E7FF",
+                    boxShadow: "2px 0 12px rgba(124, 58, 237, 0.04)",
+                }}
             >
-                {/* Logo Section */}
-                <div className="px-6 h-24 flex items-center">
-                    <div className="flex items-center gap-3 group cursor-pointer" onClick={() => router.push("/admin")}>
-                        <div className="h-8 w-8 flex items-center justify-center flex-shrink-0 transition-transform group-hover:scale-105 duration-300">
-                            <img src="/sreevalogo.png" alt="Sreeva AI" className="h-full w-full object-contain" />
-                        </div>
-                        <div className="flex flex-col min-w-0">
-                            <span className="text-[20px] font-black text-gray-900 leading-none tracking-tight truncate">
-                                Sreeva AI
-                            </span>
-                        </div>
+                {/* Logo */}
+                <div className="px-5 h-16 flex items-center" style={{ borderBottom: "1px solid #F0EEF8" }}>
+                    <div className="flex items-center gap-3 w-full cursor-pointer group" onClick={() => router.push("/admin")}>
+                        <img src="/sreevaailogo2.png" alt="Sreeva AI" className="h-8 w-8 object-contain rounded-md flex-shrink-0 transition-transform group-hover:scale-105 duration-200 shadow-sm" />
+                        <span className="text-[17px] font-bold text-gray-900 tracking-tight leading-none">
+                            Sreeva <span className="text-transparent bg-clip-text" style={{ backgroundImage: "linear-gradient(135deg, #8B5CF6, #3B82F6)" }}>AI</span>
+                        </span>
                     </div>
                 </div>
-                {/* Nav Menu */}
-                <nav className="flex-1 overflow-y-auto px-4 pt-10 pb-4 space-y-6 select-none custom-scrollbar">
-                    {/* Inspection Banner */}
+
+                {/* Nav */}
+                <nav className="flex-1 overflow-y-auto px-3 pt-6 pb-4 space-y-6 select-none custom-scrollbar">
+                    {/* Super-admin inspection banner */}
                     {isSuperAdmin && orgId && (
                         <motion.div
                             initial={{ opacity: 0, x: -20 }}
                             animate={{ opacity: 1, x: 0 }}
-                            className="mx-2 p-4 rounded-3xl bg-gray-900 shadow-xl border border-gray-800 relative overflow-hidden group/inspect"
+                            className="mx-1 p-4 rounded-2xl relative overflow-hidden"
+                            style={{ background: "linear-gradient(135deg, #7C3AED, #3B82F6)", boxShadow: "0 4px 16px rgba(124,58,237,0.25)" }}
                         >
-                            <div className="absolute top-0 right-0 w-24 h-24 bg-orange-500/10 rounded-full blur-2xl -mr-12 -mt-12 group-hover/inspect:scale-150 transition-transform duration-700" />
                             <div className="relative z-10 space-y-3">
                                 <div className="flex items-center gap-2">
-                                    <div className="h-5 w-5 rounded-lg bg-orange-500 flex items-center justify-center">
-                                        <Building2 className="h-3 w-3 text-white" />
-                                    </div>
-                                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Inspecting</span>
+                                    <Building2 className="h-3.5 w-3.5 text-white/80" />
+                                    <span className="text-[10px] font-bold text-white/70 uppercase tracking-widest">Inspecting</span>
                                 </div>
                                 <button
                                     onClick={() => router.push("/super-admin/orgs")}
-                                    className="w-full h-8 bg-white/5 hover:bg-white/10 text-white rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2 border border-white/10"
+                                    className="w-full h-8 bg-white/15 hover:bg-white/25 text-white rounded-xl text-[11px] font-semibold transition-all flex items-center justify-center gap-2 border border-white/20"
                                 >
-                                    <ArrowLeft className="h-3 w-3" /> Exit
+                                    <ArrowLeft className="h-3 w-3" /> Exit Inspection
                                 </button>
                             </div>
                         </motion.div>
                     )}
+
                     {NAV_GROUPS.map((group, gIdx) => (
-                        <div key={gIdx} className="space-y-1">
+                        <div key={gIdx} className="space-y-0.5">
                             {group.items.map((item) => {
                                 const isActive = pathname === item.href;
                                 const hrefWithOrg = orgId ? `${item.href}?orgId=${orgId}` : item.href;
                                 return (
-                                    <div key={item.label} className="space-y-1">
-                                        <div
-                                            onClick={() => router.push(hrefWithOrg)}
+                                    <div
+                                        key={item.label}
+                                        onClick={() => router.push(hrefWithOrg)}
+                                        className={cn(
+                                            "group relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 cursor-pointer",
+                                            isActive
+                                                ? "text-violet-700"
+                                                : "text-gray-500 hover:text-gray-800 hover:bg-gray-50"
+                                        )}
+                                        style={isActive ? {
+                                            background: "linear-gradient(135deg, rgba(139,92,246,0.1), rgba(59,130,246,0.06))",
+                                            border: "1px solid rgba(139,92,246,0.15)",
+                                        } : undefined}
+                                    >
+                                        <item.icon
+                                            strokeWidth={isActive ? 2 : 1.75}
                                             className={cn(
-                                                "group relative flex items-center justify-between px-4 py-3 rounded-xl text-[16px] font-extrabold transition-all duration-200 cursor-pointer overflow-hidden tracking-tight",
-                                                isActive
-                                                    ? "text-[#F97316]"
-                                                    : "text-gray-500 hover:text-gray-900 hover:bg-gray-50/80"
+                                                "h-4 w-4 flex-shrink-0 transition-colors duration-150",
+                                                isActive ? "text-violet-600" : "text-gray-400 group-hover:text-gray-600"
                                             )}
-                                        >
-                                            {isActive && (
-                                                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-transparent to-orange-100/50 pointer-events-none" />
-                                            )}
-                                            <div className="relative flex items-center gap-3 z-10">
-                                                <item.icon
-                                                    strokeWidth={isActive ? 2.5 : 2}
-                                                    className={cn(
-                                                        "h-[18px] w-[18px] transition-all duration-200",
-                                                        isActive ? "text-[#F97316]" : "text-gray-400 group-hover:text-gray-600"
-                                                    )}
-                                                />
-                                                <span className="tracking-tight">{item.label}</span>
-                                            </div>
-                                            {isActive && (
-                                                <div className="absolute right-0 top-1/2 -translate-y-1/2 w-[5px] h-6 rounded-l-full bg-[#F97316] shadow-[0_0_8px_rgba(249,115,22,0.4)]" />
-                                            )}
-                                        </div>
+                                        />
+                                        <span className="font-medium">{item.label}</span>
+                                        {isActive && (
+                                            <div
+                                                className="absolute right-2.5 top-1/2 -translate-y-1/2 w-1.5 h-5 rounded-full"
+                                                style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)" }}
+                                            />
+                                        )}
                                     </div>
                                 );
                             })}
-                            {gIdx < NAV_GROUPS.length - 1 && <div className="h-px bg-gray-100/60 mx-4 my-2" />}
+                            {gIdx < NAV_GROUPS.length - 1 && (
+                                <div className="h-px mx-2 my-3" style={{ background: "#F0EEF8" }} />
+                            )}
                         </div>
                     ))}
                 </nav>
-                {/* Footer Section */}
-                <div className="px-4 pb-6 pt-4 mt-auto">
+
+                {/* Footer */}
+                <div className="px-3 pb-5 pt-3" style={{ borderTop: "1px solid #F0EEF8" }}>
                     <button
                         onClick={() => setShowLogoutConfirm(true)}
-                        className="w-full group relative flex items-center gap-3 px-4 py-3 rounded-xl text-[16px] font-extrabold transition-all duration-200 cursor-pointer overflow-hidden text-gray-500 hover:text-rose-600 hover:bg-rose-50/80 tracking-tight"
+                        className="w-full group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 text-gray-500 hover:text-red-600 hover:bg-red-50"
                     >
-                        <LogOut strokeWidth={2} className="h-[18px] w-[18px] text-gray-400 group-hover:text-rose-500 transition-all duration-200" />
+                        <LogOut strokeWidth={1.75} className="h-4 w-4 text-gray-400 group-hover:text-red-500 transition-colors duration-150" />
                         <span>Sign Out</span>
                     </button>
                 </div>

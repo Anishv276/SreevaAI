@@ -535,10 +535,10 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
     };
     if (loading) {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-slate-50">
+            <div className="min-h-screen flex items-center justify-center">
                 <div className="flex flex-col items-center gap-4">
-                    <div className="h-12 w-12 rounded-2xl bg-orange-50 flex items-center justify-center animate-pulse">
-                        <Sparkles className="h-6 w-6 text-[#F97316]" />
+                    <div className="h-12 w-12 rounded-2xl bg-violet-50 flex items-center justify-center animate-pulse">
+                        <Sparkles className="h-6 w-6 text-[#7C3AED]" />
                     </div>
                     <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">Loading profile...</p>
                 </div>
@@ -547,7 +547,7 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
     }
     if (!candidate) {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-slate-50">
+            <div className="min-h-screen flex items-center justify-center">
                 <div className="flex flex-col items-center gap-4">
                     <div className="h-16 w-16 rounded-2xl bg-red-50 flex items-center justify-center">
                         <XCircle className="h-8 w-8 text-red-400" />
@@ -559,21 +559,21 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
     }
     if (reportMode === "resume") {
         return (
-            <div className="min-h-screen bg-slate-50">
+            <div className="min-h-screen">
                 <ResumeReportSreevaAI model={resumeReportModel} onBack={() => router.push(backHref)} />
             </div>
         );
     }
     if (reportMode === "interview" && interviewReportLocked) {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
-                <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+            <div className="min-h-screen flex items-center justify-center px-4">
+                <div className="w-full max-w-lg rounded-2xl bg-white p-8 text-center">
                     <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-50 text-amber-600">
                         <FileText className="h-6 w-6" />
                     </div>
                     <p className="text-sm font-black uppercase tracking-[0.18em] text-amber-700">Interview report locked</p>
-                    <h1 className="mt-3 text-2xl font-black text-slate-900">Available after the interview is finished</h1>
-                    <p className="mt-3 text-sm leading-6 text-slate-600">
+                    <h1 className="mt-3 text-2xl font-black text-gray-900">Available after the interview is finished</h1>
+                    <p className="mt-3 text-sm leading-6 text-gray-600">
                         This report opens only when the interview status is marked completed and the session has a completed timestamp.
                     </p>
                     <div className="mt-6 flex items-center justify-center gap-3">

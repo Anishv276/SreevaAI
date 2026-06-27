@@ -14,7 +14,7 @@ export function Steps({ steps, currentStep, onStepClick, isEditMode, maxStepReac
             <div className="absolute top-4 left-0 h-[2px] w-full bg-gray-200 rounded-full" />
             {/* Progress fill */}
             <div
-                className="absolute top-4 left-0 h-[2px] bg-[#F97316] rounded-full transition-all duration-500"
+                className="absolute top-4 left-0 h-[2px] bg-[#7C3AED] rounded-full transition-all duration-500"
                 style={{ width: `${(currentStep / (steps.length - 1)) * 100}%` }}
             />
             {steps.map((step, index) => {
@@ -30,11 +30,11 @@ export function Steps({ steps, currentStep, onStepClick, isEditMode, maxStepReac
                             className={cn(
                                 "flex h-8 w-8 items-center justify-center rounded-full border-2 bg-white transition-all duration-300",
                                 isCompleted
-                                    ? "border-[#F97316] bg-[#F97316] text-white cursor-pointer hover:opacity-80"
+                                    ? "border-[#7C3AED] bg-[#7C3AED] text-white cursor-pointer hover:opacity-80"
                                     : isCurrent
-                                        ? "border-[#F97316] text-[#F97316] shadow-[0_0_0_4px_rgba(249,115,22,0.15)]"
+                                        ? "border-[#7C3AED] text-[#7C3AED] shadow-[0_0_0_4px_rgba(124,58,237,0.15)]"
                                         : (isEditMode || wasReached)
-                                            ? "border-orange-200 text-orange-400 cursor-pointer hover:border-orange-300"
+                                            ? "border-violet-200 text-violet-400 cursor-pointer hover:border-violet-300"
                                             : "border-gray-300 text-gray-400 cursor-not-allowed"
                             )}
                         >
@@ -46,7 +46,7 @@ export function Steps({ steps, currentStep, onStepClick, isEditMode, maxStepReac
                         <span
                             className={cn(
                                 "text-[11px] font-semibold transition-colors whitespace-nowrap",
-                                isCurrent ? "text-[#F97316]" : (isCompleted || isEditMode || wasReached) ? "text-gray-600" : "text-gray-400"
+                                isCurrent ? "text-[#7C3AED]" : (isCompleted || isEditMode || wasReached) ? "text-gray-600" : "text-gray-400"
                             )}
                         >
                             {step}

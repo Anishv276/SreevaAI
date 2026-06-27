@@ -130,18 +130,15 @@ export default function SuperAdminSupportPage() {
         { label: "Closed", value: stats.closedCount, icon: ShieldAlert, color: "text-gray-600", bg: "bg-gray-100" },
     ]), [stats]);
     return (
-        <div className="max-w-6xl mx-auto space-y-5 pb-8">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between animate-fade-slide">
-                <div className="flex items-center gap-3 group">
-                    <div className="h-8 w-1 bg-[#F97316] rounded-full" />
-                    <div>
-                        <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Support Tickets</h1>
-                        <p className="text-gray-400 font-medium text-[10px] uppercase tracking-wider">Manage interview help requests</p>
-                    </div>
+        <div className="space-y-6 pb-10 animate-in fade-in duration-500">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                    <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Support Tickets</h1>
+                    <p className="text-sm text-gray-400 mt-0.5">Manage interview help requests</p>
                 </div>
                 <Link href="/super-admin">
-                    <button className="flex items-center gap-1.5 bg-white border border-gray-100 hover:border-gray-200 text-gray-500 text-[11px] font-bold px-3 py-1.5 rounded-lg transition-all">
-                        <ArrowRight className="h-3 w-3 rotate-180" />
+                    <button className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-xl bg-white text-sm font-medium text-gray-500 hover:text-violet-600 hover:bg-violet-50 transition-all" style={{ border: "1px solid #E9E7FF" }}>
+                        <ArrowRight className="h-3.5 w-3.5 rotate-180" />
                         Overview
                     </button>
                 </Link>
@@ -178,7 +175,7 @@ export default function SuperAdminSupportPage() {
                         <select
                             value={status}
                             onChange={(e) => setStatus(e.target.value)}
-                            className="h-8 rounded-lg border border-gray-200 bg-white px-2 text-[11px] font-bold text-gray-800 outline-none focus:border-orange-500 transition-colors"
+                            className="h-8 rounded-lg border border-gray-200 bg-white px-2 text-[11px] font-bold text-gray-800 outline-none focus:border-violet-500 transition-colors"
                         >
                             <option value="ALL">Status: All</option>
                             <option value="OPEN">Open</option>
@@ -199,7 +196,7 @@ export default function SuperAdminSupportPage() {
                 </div>
                 {loading ? (
                     <div className="py-16 flex justify-center">
-                        <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
+                        <Loader2 className="h-8 w-8 animate-spin text-violet-500" />
                     </div>
                 ) : tickets.length === 0 ? (
                     <div className="py-16 text-center space-y-4">
@@ -257,7 +254,7 @@ export default function SuperAdminSupportPage() {
                                                     </p>
                                                     <button 
                                                         onClick={() => setViewTicket(ticket)}
-                                                        className="text-gray-300 hover:text-orange-500 transition-colors shrink-0"
+                                                        className="text-gray-300 hover:text-violet-500 transition-colors shrink-0"
                                                     >
                                                         <Eye className="h-3 w-3" />
                                                     </button>
@@ -296,7 +293,7 @@ export default function SuperAdminSupportPage() {
                                                                 key={s}
                                                                 className={cn(
                                                                     "flex cursor-pointer items-center justify-between rounded-lg px-2.5 py-2 text-[10px] font-bold",
-                                                                    ticket.status === s ? "bg-orange-50 text-orange-600" : "text-gray-700 hover:bg-gray-50"
+                                                                    ticket.status === s ? "bg-violet-50 text-violet-600" : "text-gray-700 hover:bg-gray-50"
                                                                 )}
                                                                 onClick={() => handleUpdateStatus(ticket.id, s)}
                                                             >

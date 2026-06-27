@@ -92,7 +92,7 @@ export function CandidateRatingForm({
                         className="bg-white border border-gray-100 rounded-[2.5rem] p-8 sm:p-10 shadow-[0_18px_50px_rgba(0,0,0,0.05)]"
                     >
                         <div className="mb-8 text-center">
-                            <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-orange-50 text-orange-600">
+                            <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-50 text-violet-600">
                                 <Sparkles className="h-6 w-6" />
                             </div>
                             <h2 className="text-3xl font-black text-gray-900 tracking-tight">{title}</h2>
@@ -117,8 +117,8 @@ export function CandidateRatingForm({
                                                 className={cn(
                                                     "rounded-2xl border px-2 py-4 text-center transition-all duration-200",
                                                     active
-                                                        ? "border-orange-300 bg-orange-50 shadow-md shadow-orange-100"
-                                                        : "border-gray-200 bg-white hover:border-orange-200 hover:bg-orange-50/60"
+                                                        ? "border-violet-300 bg-violet-50 shadow-md shadow-orange-100"
+                                                        : "border-gray-200 bg-white hover:border-violet-200 hover:bg-violet-50/60"
                                                 )}
                                             >
                                                 <div className="text-3xl leading-none">{option.emoji}</div>
@@ -146,8 +146,8 @@ export function CandidateRatingForm({
                                                 className={cn(
                                                     "rounded-full border px-4 py-2 text-sm font-semibold transition-all duration-200",
                                                     active
-                                                        ? "border-orange-300 bg-orange-50 text-orange-700 shadow-sm"
-                                                        : "border-gray-200 bg-gray-50 text-gray-600 hover:border-orange-200 hover:bg-orange-50/60"
+                                                        ? "border-violet-300 bg-violet-50 text-violet-700 shadow-sm"
+                                                        : "border-gray-200 bg-gray-50 text-gray-600 hover:border-violet-200 hover:bg-violet-50/60"
                                                 )}
                                             >
                                                 {chip}
@@ -173,7 +173,7 @@ export function CandidateRatingForm({
                                                     "flex items-center justify-between rounded-2xl border px-4 py-3 text-left transition-all duration-200",
                                                     active
                                                         ? "border-gray-900 bg-gray-900 text-white shadow-lg"
-                                                        : "border-gray-200 bg-white text-gray-700 hover:border-orange-200 hover:bg-orange-50/60"
+                                                        : "border-gray-200 bg-white text-gray-700 hover:border-violet-200 hover:bg-violet-50/60"
                                                 )}
                                             >
                                                 <span className="text-sm font-semibold">{option}</span>
@@ -194,7 +194,7 @@ export function CandidateRatingForm({
                                         value={notes}
                                         onChange={(e) => setNotes(e.target.value.slice(0, 150))}
                                         placeholder="Took too long on one topic / skipped something important..."
-                                        className="h-28 w-full resize-none rounded-2xl border border-gray-200 bg-gray-50/50 py-4 pl-11 pr-4 text-sm font-medium text-gray-700 outline-none transition-all placeholder:text-gray-400 focus:border-orange-300 focus:bg-white focus:ring-2 focus:ring-orange-200"
+                                        className="h-28 w-full resize-none rounded-2xl border border-gray-200 bg-gray-50/50 py-4 pl-11 pr-4 text-sm font-medium text-gray-700 outline-none transition-all placeholder:text-gray-400 focus:border-violet-300 focus:bg-white focus:ring-2 focus:ring-violet-200"
                                     />
                                     <div className="mt-2 text-right text-[11px] font-semibold text-gray-400">
                                         {notes.length}/150

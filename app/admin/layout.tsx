@@ -87,18 +87,11 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             }}
         >
         <AdminStatusGate initialStatus={orgData.status}>
-        <div className="flex min-h-screen bg-[#F8F9FB] relative font-sans editorial-theme">
-            {/*  Background Deck: Aurora Blobs  */}
+        <div className="flex min-h-screen relative font-sans editorial-theme" style={{ background: "linear-gradient(180deg, #FFFFFF 0%, #FAFAFC 45%, #F5F3FF 100%)", backgroundAttachment: "fixed" }}>
+            {/* Subtle violet aurora blobs */}
             <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
-                <div 
-                    className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-orange-100/30 blur-[120px] animate-[aurora-float_18s_infinite_ease-in-out]"
-                />
-                <div 
-                    className="absolute bottom-[-10%] right-[-5%] w-[35%] h-[35%] rounded-full bg-blue-50/40 blur-[100px] animate-[aurora-float_22s_infinite_ease-in-out_reverse]" 
-                />
-                <div 
-                    className="absolute top-[20%] right-[10%] w-[25%] h-[25%] rounded-full bg-purple-50/20 blur-[80px] animate-[aurora-float_25s_infinite_ease-in-out]" 
-                />
+                <div className="absolute top-[-10%] right-[-5%] w-[38%] h-[38%] rounded-full bg-violet-100/35 blur-[130px] animate-[aurora-float_20s_infinite_ease-in-out]" />
+                <div className="absolute bottom-[-8%] left-[-5%] w-[32%] h-[32%] rounded-full bg-blue-100/30 blur-[110px] animate-[aurora-float_25s_infinite_ease-in-out_reverse]" />
             </div>
             {/* Real-time State Synchronization */}
             <OnboardingRedirect needsOnboarding={needsOnboarding} />
@@ -119,7 +112,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
                     ` }} />
                     <main className="min-h-screen">
                         <LowCreditsBanner orgStatus={orgData.status} />
-                        <div id="admin-content-inner" className="max-w-full mx-auto px-4 pb-4 pt-4 md:px-8 md:pb-8 lg:px-10 lg:pb-10">
+                        <div id="admin-content-inner" className="px-6 pt-6 pb-10 md:px-8 md:pt-8 lg:px-10">
                             {children}
                         </div>
                     </main>

@@ -211,7 +211,7 @@ const BADGE_PILL: Record<IntelBadgeTone, string> = {
   sky: "border-sky-200/90 bg-sky-100 text-sky-800",
   amber: "border-amber-200/90 bg-amber-100 text-amber-900",
   emerald: "border-emerald-200/90 bg-emerald-100 text-emerald-800",
-  slate: "border-slate-200/90 bg-slate-100 text-slate-700",
+  slate: "border-gray-200/90 bg-gray-100 text-gray-700",
 };
 const PROCTORING_DISPLAY: Record<string, { title: string; why: string; risk: string }> = {
   face_absence: { title: "Face not visible", why: "Camera detected no face during the interview. The candidate may have looked away, turned off the camera, or left the frame.", risk: "High - indicates the candidate was not actively present in front of the camera." },

@@ -177,10 +177,10 @@ export function AuditLogModal({
     };
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
-            <DialogContent className="max-w-[1500px] h-[92vh] p-0 overflow-hidden bg-[#F8FAFF] border border-slate-200 shadow-[0_30px_100px_rgba(15,23,42,0.12)] rounded-[3rem] font-inter">
+            <DialogContent className="max-w-[1500px] h-[92vh] p-0 overflow-hidden bg-[#F8FAFF] border border-gray-200 shadow-[0_30px_100px_rgba(15,23,42,0.12)] rounded-[3rem] font-inter">
                 <div className="flex flex-col h-full">
                     {/* Premium Header Area */}
-                    <DialogHeader className="px-10 py-8 border-b border-slate-200/60 bg-white/40 backdrop-blur-2xl backdrop-blur-md">
+                    <DialogHeader className="px-10 py-8 border-b border-gray-200/60 bg-white/40 backdrop-blur-2xl backdrop-blur-md">
                         <div className="flex items-center justify-between w-full">
                             <div className="flex items-center gap-6">
                                 <div className="h-16 w-16 rounded-[1.75rem] bg-gray-900 text-white flex items-center justify-center shadow-xl shadow-gray-900/10 rotate-3 transform transition-all hover:rotate-0">
@@ -189,9 +189,9 @@ export function AuditLogModal({
                                 <div className="space-y-1">
                                     <div className="flex items-center gap-3">
                                         <DialogTitle className="text-3xl font-black text-gray-900 tracking-tighter">Integrity Audit</DialogTitle>
-                                        <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-50 border border-slate-200 shadow-sm">
+                                        <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-violet-50 border border-gray-200 shadow-sm">
                                             <div className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-pulse" />
-                                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest leading-none">Secured Feed</span>
+                                            <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest leading-none">Secured Feed</span>
                                         </div>
                                     </div>
                                     <DialogDescription className="text-sm font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
@@ -207,7 +207,7 @@ export function AuditLogModal({
                                 <div className="h-10 w-px bg-gray-200" />
                                 <button 
                                     onClick={onClose}
-                                    className="group flex items-center gap-3 px-6 py-3 rounded-2xl bg-gray-900 text-white hover:bg-orange-600 transition-all duration-300 shadow-xl shadow-gray-900/10 hover:shadow-orange-600/20 active:scale-95"
+                                    className="group flex items-center gap-3 px-6 py-3 rounded-2xl bg-gray-900 text-white hover:bg-violet-600 transition-all duration-300 shadow-xl shadow-gray-900/10 hover:shadow-orange-600/20 active:scale-95"
                                 >
                                     <span className="text-xs font-black uppercase tracking-widest">Exit Audit</span>
                                     <div className="h-5 w-5 rounded-full bg-white/20 flex items-center justify-center group-hover:bg-white/30">
@@ -220,7 +220,7 @@ export function AuditLogModal({
                     {/* Main Content Area */}
                     <div className="flex-1 flex min-h-0 overflow-hidden">
                         {/* Sidebar: Signals List */}
-                        <div className="w-[360px] flex-none border-r border-slate-200/60 bg-[#F1F5FF]/40 flex flex-col overflow-hidden">
+                        <div className="w-[360px] flex-none border-r border-gray-200/60 bg-[#F1F5FF]/40 flex flex-col overflow-hidden">
                             <div className="flex-1 overflow-y-auto custom-scrollbar p-6 overscroll-contain space-y-4 overscroll-contain">
                                 <h4 className="px-2 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Signal Frequency</h4>
                                 {groupedEvents.length === 0 ? (
@@ -241,7 +241,7 @@ export function AuditLogModal({
                                             className={cn(
                                                 "w-full p-5 rounded-3xl border-2 transition-all duration-300 text-left",
                                                 selectedEvent === group.type 
-                                                    ? "bg-white border-orange-300 shadow-xl shadow-orange-900/10 ring-1 ring-orange-100" 
+                                                    ? "bg-white border-violet-300 shadow-xl shadow-orange-900/10 ring-1 ring-orange-100" 
                                                     : "bg-white border-gray-200 hover:border-gray-300 hover:shadow-md"
                                             )}
                                         >
@@ -275,7 +275,7 @@ export function AuditLogModal({
                             ) : (
                                 <div className="flex-1 flex flex-col min-h-0 overflow-hidden p-8 gap-6">
                                     {/* Detailed Header - Fixed */}
-                                    <div className="flex-none p-6 rounded-[2.5rem] bg-white border border-slate-200 shadow-md shadow-slate-200/50 flex items-center gap-6">
+                                    <div className="flex-none p-6 rounded-[2.5rem] bg-white border border-gray-200 shadow-md shadow-slate-200/50 flex items-center gap-6">
                                         <div className={cn(
                                             "h-14 w-14 rounded-2xl flex items-center justify-center shadow-lg",
                                             selectedGroup.severity === "high" ? "bg-rose-500 text-white" : "bg-amber-500 text-white"
@@ -290,7 +290,7 @@ export function AuditLogModal({
                                     {/* Workspace Area - Explicit Height Limit */}
                                     <div className="flex-1 grid grid-cols-[0.92fr_1.08fr] gap-6 min-h-0 items-stretch">
                                         {/* Occurrences Col */}
-                                        <div className="flex flex-col h-full min-h-0 bg-white rounded-[3rem] overflow-hidden border border-slate-200 shadow-xl shadow-slate-200/50">
+                                        <div className="flex flex-col h-full min-h-0 bg-white rounded-[3rem] overflow-hidden border border-gray-200 shadow-xl shadow-slate-200/50">
                                             <div className="p-7 pb-4 border-b border-gray-100">
                                                 <h6 className="text-[11px] font-black uppercase tracking-[0.2em] text-gray-400">Occurrences</h6>
                                             </div>
@@ -311,12 +311,12 @@ export function AuditLogModal({
                                                         }}
                                                         className={cn(
                                                             "w-full text-left p-4 rounded-[1.6rem] border transition-all min-h-[88px]",
-                                                            i === selectedOccurrence ? "bg-white border-orange-400 border-2 shadow-xl shadow-orange-950/5 scale-[1.02]" : "bg-white border-slate-200/80 hover:border-slate-300 hover:shadow-md shadow-sm"
+                                                            i === selectedOccurrence ? "bg-white border-violet-400 border-2 shadow-xl shadow-orange-950/5 scale-[1.02]" : "bg-white border-gray-200/80 hover:border-slate-300 hover:shadow-md shadow-sm"
                                                         )}
                                                     >
                                                         <div className="flex items-center justify-between mb-1.5">
                                                             <span className="text-[9px] font-black text-gray-400">FRAME #{i+1}</span>
-                                                            <span className="text-[11px] font-bold text-orange-500">
+                                                            <span className="text-[11px] font-bold text-violet-500">
                                                                 {formatRelativeTime(ev.timestamp || 0)} 
                                                                 <span className="ml-2 text-gray-400 font-medium">@ {formatAbsoluteTime(ev.timestamp || 0)}</span>
                                                             </span>
@@ -328,7 +328,7 @@ export function AuditLogModal({
                                         </div>
                                         {/* Visual Evidence Col */}
                                         <div className="flex flex-col min-h-0 gap-5 overflow-hidden">
-                                            <div className="flex-none rounded-[2.5rem] overflow-hidden border border-slate-200 bg-slate-950 shadow-2xl">
+                                            <div className="flex-none rounded-[2.5rem] overflow-hidden border border-gray-200 bg-slate-950 shadow-2xl">
                                                 <div className="px-6 py-4 flex items-center justify-between border-b border-white/10">
                                                     <div>
                                                         <h6 className="text-[11px] font-black uppercase tracking-[0.2em] text-white/50">Recording</h6>

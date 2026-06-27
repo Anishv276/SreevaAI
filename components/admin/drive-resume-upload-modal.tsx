@@ -82,7 +82,7 @@ export function DriveResumeUploadModal({ open, onOpenChange, driveId, driveName,
                         onClick={() => !files.length && inputRef.current?.click()}
                         className={cn(
                             "rounded-xl border-2 border-dashed transition-all duration-150",
-                            dragging ? "border-orange-200 bg-orange-50/40" : files.length === 0
+                            dragging ? "border-violet-200 bg-violet-50/40" : files.length === 0
                                 ? "cursor-pointer border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50/50"
                                 : "border-zinc-100 bg-zinc-50/30"
                         )}
@@ -92,7 +92,7 @@ export function DriveResumeUploadModal({ open, onOpenChange, driveId, driveName,
                         {files.length === 0 ? (
                             <div className="flex flex-col items-center justify-center py-10 text-center select-none">
                                 <div className={cn("mb-3 flex h-12 w-12 items-center justify-center rounded-xl transition-colors",
-                                    dragging ? "bg-orange-100 text-orange-500" : "bg-zinc-100 text-zinc-400")}>
+                                    dragging ? "bg-violet-100 text-violet-500" : "bg-zinc-100 text-zinc-400")}>
                                     <UploadCloud className="h-5 w-5" />
                                 </div>
                                 <p className="text-[13px] font-semibold text-zinc-700">
@@ -173,7 +173,7 @@ export function DriveResumeUploadModal({ open, onOpenChange, driveId, driveName,
                         <button onClick={upload} disabled={!files.length || uploading || locked || done}
                             className={cn(
                                 "flex h-8 items-center gap-1.5 rounded-lg px-4 text-[12px] font-semibold text-white transition disabled:opacity-40",
-                                done ? "bg-emerald-500" : "bg-orange-500 hover:bg-orange-600"
+                                done ? "bg-emerald-500" : "bg-violet-500 hover:bg-violet-600"
                             )}>
                             {done ? <><CheckCircle2 className="h-3.5 w-3.5" /> Done</>
                                 : uploading ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Uploading…</>

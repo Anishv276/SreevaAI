@@ -85,7 +85,7 @@ export function NeedsAction() {
         ? data.awaitingReview.length + data.inviteNotSent.length + data.shortlistedNoDecision.length
         : 0;
     return (
-        <div className="bg-white rounded-2xl border border-gray-200 flex flex-col overflow-hidden">
+        <div className="premium-card flex flex-col overflow-hidden">
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
                 <div>
@@ -156,7 +156,7 @@ export function NeedsAction() {
                                                 key={item.id}
                                                 variants={{ hidden: { opacity: 0, x: -6 }, visible: { opacity: 1, x: 0 } }}
                                                 onClick={() => router.push(`/admin/candidates/${item.id}`)}
-                                                className="group flex items-center gap-3 px-3 py-2.5 rounded-xl border border-gray-100 bg-gray-50/40 hover:bg-white hover:border-gray-200 hover:shadow-sm transition-all duration-150 cursor-pointer"
+                                                className="group flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white transition-all duration-150 transition-all duration-150 cursor-pointer"
                                             >
                                                 {/* Avatar */}
                                                 <div

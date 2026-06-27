@@ -91,7 +91,7 @@ function overallMeta(label: string | null): OverallMeta {
         case "great":
             return { label: "Great", tone: "text-emerald-700", badgeClass: "bg-emerald-50 text-emerald-700 border-emerald-100" };
         case "loved it":
-            return { label: "Loved it", tone: "text-orange-700", badgeClass: "bg-orange-50 text-orange-700 border-orange-100" };
+            return { label: "Loved it", tone: "text-violet-700", badgeClass: "bg-violet-50 text-violet-700 border-violet-100" };
         default:
             return { label: "Not rated", tone: "text-gray-500", badgeClass: "bg-gray-50 text-gray-500 border-gray-100" };
     }
@@ -149,16 +149,16 @@ export default function SuperAdminFeedbackPage() {
         () => [
             { label: "Total Feedback", value: stats.total, icon: MessageSquare, color: "text-blue-600", bg: "bg-blue-50" },
             { label: "With Rating", value: stats.withRatingCount, icon: CheckCircle2, color: "text-emerald-600", bg: "bg-emerald-50" },
-            { label: "With Notes", value: stats.withNotesCount, icon: Mail, color: "text-orange-600", bg: "bg-orange-50" },
+            { label: "With Notes", value: stats.withNotesCount, icon: Mail, color: "text-violet-600", bg: "bg-violet-50" },
             { label: "Today", value: stats.todayCount, icon: Clock3, color: "text-gray-700", bg: "bg-gray-100" },
         ],
         [stats]
     );
     return (
-        <div className="max-w-6xl mx-auto space-y-5 pb-8">
+        <div className="space-y-6 pb-10 animate-in fade-in duration-500">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between animate-fade-slide">
                 <div className="flex items-center gap-3 group">
-                    <div className="h-8 w-1 bg-[#F97316] rounded-full" />
+                    <div className="h-8 w-1 bg-[#7C3AED] rounded-full" />
                     <div>
                         <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Candidate Feedback</h1>
                         <p className="text-gray-400 font-medium text-[10px] uppercase tracking-wider">Review post-interview responses in detail</p>
@@ -214,7 +214,7 @@ export default function SuperAdminFeedbackPage() {
                 </div>
                 {loading ? (
                     <div className="py-16 flex justify-center">
-                        <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
+                        <Loader2 className="h-8 w-8 animate-spin text-violet-500" />
                     </div>
                 ) : feedbacks.length === 0 ? (
                     <div className="py-16 text-center space-y-4">
@@ -278,7 +278,7 @@ export default function SuperAdminFeedbackPage() {
                                                 <td className="pr-5 py-4 text-right">
                                                     <button
                                                         onClick={() => setViewFeedback(feedback)}
-                                                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase border bg-white border-gray-200 text-gray-700 shadow-sm transition-all hover:bg-orange-50 hover:text-orange-600 hover:border-orange-100 active:scale-[0.98]"
+                                                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase border bg-white border-gray-200 text-gray-700 shadow-sm transition-all hover:bg-violet-50 hover:text-violet-600 hover:border-violet-100 active:scale-[0.98]"
                                                     >
                                                         View Details
                                                     </button>
@@ -377,7 +377,7 @@ export default function SuperAdminFeedbackPage() {
                                                     parsed.aiQuestions.map((chip) => (
                                                         <span
                                                             key={chip}
-                                                            className="rounded-full border border-orange-100 bg-orange-50 px-3 py-1.5 text-[11px] font-semibold text-orange-700"
+                                                            className="rounded-full border border-violet-100 bg-violet-50 px-3 py-1.5 text-[11px] font-semibold text-violet-700"
                                                         >
                                                             {chip}
                                                         </span>

@@ -241,7 +241,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
         return (
             <div className="min-h-screen bg-white">
                 <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-xl border-b border-gray-100 px-8 py-10 lg:px-12">
-                    <div className="max-w-7xl mx-auto space-y-12">
+                    <div className="space-y-6">
                          <div className="h-10 w-1 bg-gray-100 rounded-full" />
                          <Skeleton className="h-10 w-64" />
                     </div>
@@ -255,7 +255,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
     return (
         <div className="min-h-screen bg-white">
             <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-xl border-b border-gray-100 px-8 py-10 lg:px-12">
-                <div className="max-w-7xl mx-auto space-y-10">
+                <div className="space-y-6">
                     <div className="flex flex-col md:flex-row md:items-start justify-between gap-6">
                         <div className="space-y-4">
                             <button 
@@ -266,9 +266,9 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                                 Back to Registry
                             </button>
                             <div className="flex items-center gap-4">
-                                <div className="h-10 w-1 bg-[#F97316] rounded-full" />
+                                <div className="h-10 w-1 bg-[#7C3AED] rounded-full" />
                                 <div>
-                                    <h1 className="text-4xl font-black text-gray-900 tracking-tighter leading-none">Active Jobs</h1>
+                                    <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Active Jobs</h1>
                                     <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px] mt-2 italic">{org?.name}  {formatOrgPlan(org?.plan) || "Enterprise"} Panel</p>
                                 </div>
                             </div>
@@ -311,7 +311,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                                 : "text-gray-400 hover:text-gray-600 hover:bg-white/50"
                             }`}
                         >
-                            <Briefcase className={`h-4 w-4 ${view === "drives" ? "text-[#F97316]" : "text-gray-300"}`} />
+                            <Briefcase className={`h-4 w-4 ${view === "drives" ? "text-[#7C3AED]" : "text-gray-300"}`} />
                             Active Jobs
                         </button>
                     </div>
@@ -319,7 +319,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
             </header>
             <main className="max-w-7xl mx-auto p-8 lg:p-12 animate-fade-slide">
                 {view === "drives" && (
-                    <div className="space-y-12">
+                    <div className="space-y-6">
                          {drives.length === 0 ? (
                             <div className="py-32 text-center bg-gray-50/50 rounded-[3rem] border border-dashed border-gray-200">
                                 <Briefcase className="h-12 w-12 text-gray-200 mx-auto mb-4" />
@@ -380,7 +380,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                                             <p className="text-gray-900 font-black text-xs leading-none">{can.role}</p>
                                             <p className="text-[9px] font-black text-gray-300 tracking-widest mt-1.5 opacity-60">Remote</p>
                                         </div>
-                                        <div className="text-center text-lg font-black text-[#F97316] bg-orange-50 h-12 w-12 flex items-center justify-center rounded-2xl mx-auto shadow-sm">
+                                        <div className="text-center text-lg font-black text-[#7C3AED] bg-violet-50 h-12 w-12 flex items-center justify-center rounded-2xl mx-auto shadow-sm">
                                             {can.score}
                                         </div>
                                         <div className="text-center">

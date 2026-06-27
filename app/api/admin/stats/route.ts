@@ -44,17 +44,26 @@ export async function GET(req: NextRequest) {
 
                 COUNT(*) FILTER (
                     WHERE i."status" = 'COMPLETED' AND i."completedAt" >= ${start}
+                    AND (i."isDeleted" = false OR i."isDeleted" IS NULL)
                 )::INT AS interviewed,
-                COUNT(*) FILTER (WHERE i."status" = 'IN_PROGRESS')::INT AS "liveInterviews",
-                COUNT(*) FILTER (WHERE i."status" = 'COMPLETED' AND a."aiScore" IS NULL)::INT AS "needsReview",
-                COUNT(*) FILTER (WHERE i."createdAt" >= ${start})::INT AS invited
+                COUNT(*) FILTER (
+                    WHERE i."status" = 'IN_PROGRESS'
+                    AND (i."isDeleted" = false OR i."isDeleted" IS NULL)
+                )::INT AS "liveInterviews",
+                COUNT(*) FILTER (
+                    WHERE i."status" = 'COMPLETED' AND a."aiScore" IS NULL
+                    AND (i."isDeleted" = false OR i."isDeleted" IS NULL)
+                )::INT AS "needsReview",
+                COUNT(*) FILTER (
+                    WHERE i."createdAt" >= ${start}
+                    AND (i."isDeleted" = false OR i."isDeleted" IS NULL)
+                )::INT AS invited
             FROM "Application" a
             JOIN "Drive" d ON d.id = a."driveId"
             LEFT JOIN "Interview" i ON i."applicationId" = a.id
             WHERE d."orgId" = ${orgId}
               AND a."isDeleted" = false
               AND d."isDeleted" = false
-              AND i."isDeleted" = false
         `;
         const driveStats = await prisma.$queryRaw<DriveStatsRow[]>`
             SELECT
