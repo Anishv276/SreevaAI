@@ -336,6 +336,12 @@ def _build_skill_evidence_map(resume_data: dict, resume_raw_text: str = "") -> t
         " ".join(resume_skills.get("domain_skills", []) or []),
         " ".join(c.get("claim", "") for c in (resume_data.get("core_claims", []) or [])),
         " ".join(ev.get("text", "") for ev in (resume_data.get("evidence_items", []) or [])),
+        # Include project descriptions and technologies — critical for scoring
+        " ".join(proj.get("description", "") for proj in (resume_data.get("projects", []) or [])),
+        " ".join(
+            " ".join(str(t) for t in (proj.get("technologies", []) or []))
+            for proj in (resume_data.get("projects", []) or [])
+        ),
         resume_raw_text[:3000],  # catch skills buried in prose (Zapier, Chroma, Git, etc.)
     ])).lower()
 
@@ -1035,6 +1041,11 @@ def compute_score(
         text = ev.get("text", "")
         if text:
             evidence_texts.append((text, ev.get("source_company", ""), ev.get("evidence_level", 1)))
+    # Include project descriptions as Level 4 evidence
+    for proj in (resume_data.get("projects", []) or []):
+        text = proj.get("description", "")
+        if text:
+            evidence_texts.append((text, proj.get("name", "project"), 4))
 
     semantic_index = SemanticSkillIndex(
         jd_criteria, resume_skill_names, evidence_texts, client=openai_client
