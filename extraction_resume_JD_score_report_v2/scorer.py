@@ -287,11 +287,16 @@ def _build_skill_evidence_map(resume_data: dict, resume_raw_text: str = "") -> t
                 _add(tech, company, "high", "work_history", company)
                 all_names.append(tech)
 
-    # From projects
+    # From projects — owner-built projects with real depth count as work_history level
     for proj in projects:
+        proj_name = proj.get("name", "project")
+        is_owner = proj.get("ownership_level", "") == "owner"
+        # A project with owner-level ownership scores as work_history (not just "project")
+        # This is critical for freshers/students whose projects ARE their primary evidence.
+        proj_source = "work_history" if is_owner else "project"
         for tech in (proj.get("technologies", []) or []):
             if tech and isinstance(tech, str):
-                _add(tech, proj.get("name", "project"), "medium", "project")
+                _add(tech, proj_name, "medium", proj_source)
                 all_names.append(tech)
 
     # From keywords
@@ -606,16 +611,23 @@ def _match_criterion(
     # requiring the resume to have been extracted with JD-awareness.
     if result == MatchResult.does_not_meet and ccategory in ("responsibility", "ownership", "domain"):
         # Pull skill-like tokens from the criterion (normalized words that map to a known skill)
+        # Tokens from criterion name that exist in resume's proven skills
         criterion_skill_tokens = set()
         for raw_word in re.split(r"[\s,/\-]+", cname):
             nk = _normalize(raw_word)
             if nk and len(nk) >= 2 and nk in resume_normalized:
                 criterion_skill_tokens.add(nk)
+
+        # Keywords from criterion for project description matching
+        crit_keywords = {_normalize(w) for w in re.split(r"[\s,/\-]+", cname) if len(w) > 3}
+
+        best_ev_level_1b = 0
+        matched_text_1b = ""
+        matched_company_1b = ""
+        matched_id_1b = ""
+
+        # Check evidence_items (needs skill token overlap)
         if criterion_skill_tokens:
-            best_ev_level_1b = 0
-            matched_text_1b = ""
-            matched_company_1b = ""
-            matched_id_1b = ""
             for ev in evidence_items:
                 proves_norms = {_normalize(p) for p in ev.get("proves", [])}
                 if criterion_skill_tokens & proves_norms:
@@ -625,21 +637,40 @@ def _match_criterion(
                         matched_text_1b = ev.get("text", "")
                         matched_company_1b = ev.get("source_company", "")
                         matched_id_1b = ev.get("id", "")
-            if best_ev_level_1b >= 4:
-                result, ev_type = MatchResult.meets, EvidenceSource.work_history
-                confidence = 0.80
-            elif best_ev_level_1b >= 3:
-                result, ev_type = MatchResult.partially_meets, EvidenceSource.work_history
-                confidence = 0.65
-            if result != MatchResult.does_not_meet:
-                match_source = MatchSource(
-                    match_type=MatchType.exact,
-                    matched_skill=", ".join(sorted(criterion_skill_tokens)),
-                    evidence_item_id=matched_id_1b,
-                    evidence_text=matched_text_1b,
-                    source_company=matched_company_1b,
-                    ev_source=ev_type,
-                )
+
+        # Check project descriptions unconditionally — covers "Build RAG systems"
+        # matching a project that built a RAG pipeline, even when criterion tokens
+        # don't map to resume_normalized (common for domain-description criteria)
+        for proj in (resume_data.get("projects", []) or []):
+            proj_desc = (proj.get("description", "") or "").lower()
+            proj_techs = {_normalize(t) for t in (proj.get("technologies", []) or [])}
+            proj_all = proj_desc + " " + " ".join(proj_techs)
+            tech_overlap = criterion_skill_tokens & proj_techs
+            domain_hit = any(kw in proj_all for kw in crit_keywords if len(kw) >= 4)
+            if tech_overlap or domain_hit:
+                is_owner = proj.get("ownership_level", "") == "owner"
+                lvl = 3 if is_owner else 2
+                if lvl > best_ev_level_1b:
+                    best_ev_level_1b = lvl
+                    matched_text_1b = proj.get("description", "")[:120]
+                    matched_company_1b = proj.get("name", "project")
+                    matched_id_1b = f"proj-{proj.get('id', '')}"
+
+        if best_ev_level_1b >= 4:
+            result, ev_type = MatchResult.meets, EvidenceSource.work_history
+            confidence = 0.80
+        elif best_ev_level_1b >= 3:
+            result, ev_type = MatchResult.partially_meets, EvidenceSource.work_history
+            confidence = 0.65
+        if result != MatchResult.does_not_meet:
+            match_source = MatchSource(
+                match_type=MatchType.exact,
+                matched_skill=matched_company_1b or ", ".join(sorted(criterion_skill_tokens)),
+                evidence_item_id=matched_id_1b,
+                evidence_text=matched_text_1b,
+                source_company=matched_company_1b,
+                ev_source=ev_type,
+            )
 
     # ── Pass 2: exact normalized skill match ─────────────────────────────────
     if result == MatchResult.does_not_meet and ccategory == "skill":
@@ -667,6 +698,40 @@ def _match_criterion(
                 matched_skill=resume_normalized[norm_cname],
                 evidence_text=ev_text_for_match,
                 source_company=ev_company,
+                ev_source=ev_type,
+            )
+
+    # ── Pass 2b: compound skill criterion ("React.js and Next.js", "Flask and FastAPI") ──
+    # JD criteria often bundle multiple skills into one name. Split and check each token.
+    if result == MatchResult.does_not_meet and ccategory == "skill":
+        # Split on commas, "and", "&", slashes
+        tokens = re.split(r"[,&/]|\band\b", cname, flags=re.IGNORECASE)
+        _SRC_RANK = {"work_history_outcome": 5, "work_history": 4, "project": 3, "listed": 2, "inferred": 1}
+        best_src = "listed"
+        best_token = ""
+        best_company = ""
+        for token in tokens:
+            ntok = _normalize(token.strip())
+            if not ntok or len(ntok) < 2:
+                continue
+            if ntok in resume_normalized:
+                ev_info = skill_evidence_map.get(ntok, {})
+                src = ev_info.get("source", "listed")
+                if _SRC_RANK.get(src, 0) > _SRC_RANK.get(best_src, 0):
+                    best_src = src
+                    best_token = resume_normalized[ntok]
+                    best_company = ev_info.get("company", "")
+        if best_token:
+            ev_src = EvidenceSource(best_src) if best_src in EvidenceSource.__members__.values() else EvidenceSource.listed
+            if best_src in ("work_history_outcome", "work_history"):
+                result, ev_type = MatchResult.meets, ev_src
+            else:
+                result, ev_type = MatchResult.partially_meets, EvidenceSource.listed
+            confidence = 0.80
+            match_source = MatchSource(
+                match_type=MatchType.exact,
+                matched_skill=best_token,
+                source_company=best_company,
                 ev_source=ev_type,
             )
 
@@ -1053,6 +1118,42 @@ def compute_score(
 
     # ── 4. Score each criterion ───────────────────────────────────────────────
     evidence_items = resume_data.get("evidence_items", []) or []
+
+    # Synthesize project evidence_items when extraction didn't create them.
+    # This fixes the case where v1 extraction stored projects[] but left evidence_items
+    # with only volunteer/work-history entries — common for freshers with project-only resumes.
+    existing_project_proves: set[str] = set()
+    for ev in evidence_items:
+        if ev.get("type") == "project":
+            for p in ev.get("proves", []):
+                existing_project_proves.add(_normalize(p))
+
+    for proj in (resume_data.get("projects", []) or []):
+        techs = [t for t in (proj.get("technologies", []) or []) if t]
+        if not techs:
+            continue
+        norm_techs = {_normalize(t) for t in techs}
+        # Only synthesize if project technologies aren't already in project evidence_items
+        if not norm_techs.issubset(existing_project_proves):
+            is_owner = proj.get("ownership_level", "") == "owner"
+            ev_level = 3 if is_owner else 2
+            proj_desc = proj.get("description", "")
+            text = proj_desc[:300] if proj_desc else f"Built {proj.get('name', 'project')} using {', '.join(techs[:6])}"
+            evidence_items = list(evidence_items) + [{
+                "id": f"synth-proj-{proj.get('id', proj.get('name', 'p'))}",
+                "type": "project",
+                "source_ref_id": proj.get("id"),
+                "source_company": proj.get("name", "project"),
+                "source_role": None,
+                "text": text,
+                "proves": techs,
+                "evidence_level": ev_level,
+                "ownership": "owner" if is_owner else "contributor",
+                "has_metric": False,
+                "metric": None,
+                "confidence": 0.8,
+            }]
+            existing_project_proves.update(norm_techs)
 
     criteria_results: list[CriterionResult] = []
     must_matched_weight = must_total_weight = 0.0

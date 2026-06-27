@@ -223,29 +223,36 @@ ASSESSMENT RULES:
      Copy exact bullet text. Exclude vague bullets like "improved performance", "enhanced user experience".
    - business_domain: the industry/domain of this company (e.g. "fintech", "edtech", "e-commerce", "B2B SaaS").
 
-3. EVIDENCE ITEMS — extract the 2–5 strongest pieces of evidence per role (not per bullet):
-   - text: the exact bullet or claim (copy verbatim from bullet_points).
+3. EVIDENCE ITEMS — extract the 2–5 strongest pieces of evidence per role AND per project:
+   Include work_history AND project evidence items. Projects count as real evidence.
+   - text: the exact bullet or claim (copy verbatim).
    - proves: list of canonical skill keys OR JD criteria names this evidence demonstrates.
+   - type: "work_history" for roles, "project" for projects.
+   - source_ref_id: the role/project id this evidence comes from.
+   - source_company: company name for work_history; project name for projects.
    - evidence_level:
-     5 = owner-level role + quantified metric (e.g. "Led Redis cache layer, reducing API latency by 40% at Swiggy")
-     4 = owner-level role + clear outcome but no hard number
-     3 = contributor-level role with quantified metric
-     2 = personal/academic project, OR contributor with only qualitative outcome
-     1 = listed in skills section only, no supporting work history
+     5 = work_history, owner-level, quantified metric ("Led Redis cache layer, reducing API latency by 40%")
+     4 = work_history, owner-level, clear outcome but no hard number
+     3 = work_history contributor with metric, OR owner-built project with real technical depth
+         (multi-component system, integrates APIs, real deployment — not a tutorial clone)
+     2 = simple personal/hobby project, OR contributor with only qualitative outcome
+     1 = listed in skills section only, no supporting evidence
      RULE: NEVER assign 5 without BOTH "owner" ownership AND a number/% in the text.
      RULE: NEVER assign 4 or 5 for skills_section items.
+     RULE: A student/fresher who built a complete end-to-end project with owner ownership
+           (e.g. RAG pipeline, OCR system, meeting assistant) should receive level 3.
    - has_metric: true ONLY if the text contains a number, %, or currency amount.
-   - metric: extract the exact metric string if present (e.g. "40% latency reduction").
-   - confidence: 0.9 if evidence is unambiguous, 0.7 if reasonable inference, 0.5 if stretch.
+   - metric: extract the exact metric string if present.
+   - confidence: 0.9 if unambiguous, 0.7 if reasonable inference, 0.5 if stretch.
 
-4. SKILLS — build from evidence, not from the skills_section:
+4. SKILLS — build from evidence, including both work_history AND projects:
    - technical[]: languages and frameworks with evidence in work_history or projects.
    - tools[]: platforms, cloud, databases, DevOps tools with evidence.
    - domain_skills[]: business capabilities (e.g. "payment processing", "real-time systems") — NO tech names.
    For each skill, set source_strength based on highest-quality evidence:
      "work_history_outcome" = appears in a role with a quantified impact signal
      "work_history" = appears in a role but no quantified outcome
-     "project" = appears only in projects
+     "project" = appears only in projects (set this for students/freshers with real projects)
      "listed" = only in skills_section, never in any role or project
 
 5. CAREER TIMELINE:
