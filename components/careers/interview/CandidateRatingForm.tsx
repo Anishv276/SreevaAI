@@ -1,10 +1,11 @@
 "use client";
 import { useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { CheckCircle2, Loader2, MessageSquare, Sparkles } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { CheckCircle2, Loader2, MessageSquare, Sparkles, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+
 type UnderstandingLevel = "Always understood me" | "Mostly understood me" | "Sometimes missed my point" | "Rarely understood me";
+
 const overallOptions = [
     { value: 1, emoji: "😞", label: "Terrible" },
     { value: 2, emoji: "😐", label: "Okay" },
@@ -12,6 +13,7 @@ const overallOptions = [
     { value: 4, emoji: "😄", label: "Great" },
     { value: 5, emoji: "🤩", label: "Loved it" },
 ];
+
 const questionChips = [
     "Relevant to my resume",
     "Repetitive",
@@ -20,21 +22,24 @@ const questionChips = [
     "Felt robotic",
     "Well structured",
 ];
+
 const understandingOptions: UnderstandingLevel[] = [
     "Always understood me",
     "Mostly understood me",
     "Sometimes missed my point",
     "Rarely understood me",
 ];
+
 export type CandidateRatingPayload = {
     overallFeeling: string | null;
     aiQuestions: string[];
     understanding: UnderstandingLevel | null;
     notes: string;
 };
+
 export function CandidateRatingForm({
-    title = "Candidate Rating",
-    subtitle = "Tell us how the interview felt so we can improve the AI.",
+    title = "Final step",
+    subtitle = "Your feedback is required. Please take a moment to rate your experience.",
     mode = "live",
     onSubmit,
     onSubmitted,
@@ -51,14 +56,17 @@ export function CandidateRatingForm({
     const [notes, setNotes] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [submitted, setSubmitted] = useState(false);
+
     const canSubmit = useMemo(() => {
         return mode === "preview" || overallFeeling !== null;
     }, [mode, overallFeeling]);
+
     const toggleQuestionTag = (tag: string) => {
         setSelectedQuestionTags((prev) =>
             prev.includes(tag) ? prev.filter((item) => item !== tag) : [...prev, tag]
         );
     };
+
     const submit = async () => {
         if (!canSubmit || isSubmitting) return;
         if (mode === "preview") {
@@ -80,8 +88,9 @@ export function CandidateRatingForm({
             setIsSubmitting(false);
         }
     };
+
     return (
-        <div className="w-full max-w-2xl mx-auto px-6 font-sans">
+        <div className="w-full max-w-5xl mx-auto px-4 sm:px-6 font-sans">
             <AnimatePresence mode="wait">
                 {!submitted ? (
                     <motion.div
@@ -89,24 +98,40 @@ export function CandidateRatingForm({
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -10 }}
-                        className="bg-white border border-gray-100 rounded-[2.5rem] p-8 sm:p-10 shadow-[0_18px_50px_rgba(0,0,0,0.05)]"
+                        className="bg-white rounded-2xl overflow-hidden flex flex-col lg:flex-row shadow-[0_1px_3px_rgba(124,58,237,0.04)]"
+                        style={{ border: "1px solid #E9E7FF" }}
                     >
-                        <div className="mb-8 text-center">
-                            <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-50 text-violet-600">
-                                <Sparkles className="h-6 w-6" />
-                            </div>
-                            <h2 className="text-3xl font-black text-gray-900 tracking-tight">{title}</h2>
-                            <p className="mt-2 text-[12px] font-bold uppercase tracking-widest text-gray-400">
-                                {subtitle}
-                            </p>
-                        </div>
-                        <div className="space-y-8">
-                            <section className="space-y-4">
-                                <div>
-                                    <h3 className="text-base font-black text-gray-900">1. How did the interview feel overall?</h3>
-                                    <p className="text-sm text-gray-500">Pick the closest feeling.</p>
+                        {/* LEFT COLUMN */}
+                        <div className="lg:w-2/5 p-8 lg:p-10 bg-[#FAFAFC] border-b lg:border-b-0 lg:border-r border-[#F0EEF8] flex flex-col justify-between">
+                            <div>
+                                <div className="flex items-center gap-3 mb-8">
+                                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white shadow-sm border border-[#E9E7FF] text-violet-600">
+                                        <Sparkles className="h-5 w-5" />
+                                    </div>
+                                    <div>
+                                        <div className="font-semibold text-gray-900 text-sm">SreevaAI</div>
+                                        <div className="text-xs text-gray-400">AI Interviewer</div>
+                                    </div>
                                 </div>
-                                <div className="grid grid-cols-5 gap-2 sm:gap-3">
+                                <h2 className="text-2xl font-semibold text-gray-900 tracking-tight">{title}</h2>
+                                <p className="mt-3 text-sm text-gray-500 leading-relaxed">
+                                    {subtitle}
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* RIGHT COLUMN */}
+                        <div className="lg:w-3/5 p-8 lg:p-10 space-y-8 bg-white">
+                            <div className="mb-4">
+                                <h3 className="text-base font-semibold text-gray-900">
+                                    Please share your feedback <span className="text-red-500">*</span>
+                                </h3>
+                                <p className="text-sm text-gray-400 mt-0.5">We value your opinion.</p>
+                            </div>
+
+                            <section className="space-y-3">
+                                <div className="text-sm font-semibold text-gray-700">1. How did the interview feel overall?</div>
+                                <div className="grid grid-cols-5 gap-2">
                                     {overallOptions.map((option) => {
                                         const active = overallFeeling === option.value;
                                         return (
@@ -115,14 +140,14 @@ export function CandidateRatingForm({
                                                 type="button"
                                                 onClick={() => setOverallFeeling(option.value)}
                                                 className={cn(
-                                                    "rounded-2xl border px-2 py-4 text-center transition-all duration-200",
+                                                    "flex flex-col items-center justify-center rounded-xl border p-3 transition-all duration-200",
                                                     active
-                                                        ? "border-violet-300 bg-violet-50 shadow-md shadow-orange-100"
-                                                        : "border-gray-200 bg-white hover:border-violet-200 hover:bg-violet-50/60"
+                                                        ? "border-violet-300 bg-violet-50"
+                                                        : "border-[#E9E7FF] bg-[#F9FAFB] hover:border-violet-200 hover:bg-violet-50/30"
                                                 )}
                                             >
-                                                <div className="text-3xl leading-none">{option.emoji}</div>
-                                                <div className="mt-2 text-[11px] font-black uppercase tracking-[0.14em] text-gray-600">
+                                                <div className="text-2xl leading-none">{option.emoji}</div>
+                                                <div className={cn("mt-2 text-[10px] font-semibold uppercase tracking-wider", active ? "text-violet-700" : "text-gray-500")}>
                                                     {option.label}
                                                 </div>
                                             </button>
@@ -130,11 +155,9 @@ export function CandidateRatingForm({
                                     })}
                                 </div>
                             </section>
-                            <section className="space-y-4">
-                                <div>
-                                    <h3 className="text-base font-black text-gray-900">2. How were the AI's questions?</h3>
-                                    <p className="text-sm text-gray-500">Tap all that apply.</p>
-                                </div>
+
+                            <section className="space-y-3">
+                                <div className="text-sm font-semibold text-gray-700">2. How were the AI's questions?</div>
                                 <div className="flex flex-wrap gap-2">
                                     {questionChips.map((chip) => {
                                         const active = selectedQuestionTags.includes(chip);
@@ -144,10 +167,10 @@ export function CandidateRatingForm({
                                                 type="button"
                                                 onClick={() => toggleQuestionTag(chip)}
                                                 className={cn(
-                                                    "rounded-full border px-4 py-2 text-sm font-semibold transition-all duration-200",
+                                                    "rounded-xl border px-3 py-1.5 text-xs font-medium transition-all duration-200",
                                                     active
-                                                        ? "border-violet-300 bg-violet-50 text-violet-700 shadow-sm"
-                                                        : "border-gray-200 bg-gray-50 text-gray-600 hover:border-violet-200 hover:bg-violet-50/60"
+                                                        ? "border-violet-300 bg-violet-50 text-violet-700"
+                                                        : "border-[#E9E7FF] bg-[#F9FAFB] text-gray-600 hover:border-violet-200 hover:bg-violet-50/30"
                                                 )}
                                             >
                                                 {chip}
@@ -156,11 +179,9 @@ export function CandidateRatingForm({
                                     })}
                                 </div>
                             </section>
-                            <section className="space-y-4">
-                                <div>
-                                    <h3 className="text-base font-black text-gray-900">3. Did the AI understand what you were saying?</h3>
-                                    <p className="text-sm text-gray-500">Choose one option.</p>
-                                </div>
+
+                            <section className="space-y-3">
+                                <div className="text-sm font-semibold text-gray-700">3. Did the AI understand what you were saying?</div>
                                 <div className="grid gap-2">
                                     {understandingOptions.map((option) => {
                                         const active = understanding === option;
@@ -170,50 +191,58 @@ export function CandidateRatingForm({
                                                 type="button"
                                                 onClick={() => setUnderstanding(option)}
                                                 className={cn(
-                                                    "flex items-center justify-between rounded-2xl border px-4 py-3 text-left transition-all duration-200",
+                                                    "flex items-center justify-between rounded-xl border px-4 py-3 text-left transition-all duration-200",
                                                     active
-                                                        ? "border-gray-900 bg-gray-900 text-white shadow-lg"
-                                                        : "border-gray-200 bg-white text-gray-700 hover:border-violet-200 hover:bg-violet-50/60"
+                                                        ? "border-violet-400 bg-violet-50/80 text-violet-900"
+                                                        : "border-[#E9E7FF] bg-[#F9FAFB] text-gray-700 hover:border-violet-200 hover:bg-violet-50/30"
                                                 )}
                                             >
-                                                <span className="text-sm font-semibold">{option}</span>
-                                                {active ? <CheckCircle2 className="h-4 w-4" /> : <div className="h-4 w-4 rounded-full border border-current opacity-30" />}
+                                                <span className="text-sm">{option}</span>
+                                                {active ? <CheckCircle2 className="h-4 w-4 text-violet-600" /> : <div className="h-4 w-4 rounded-full border border-gray-300" />}
                                             </button>
                                         );
                                     })}
                                 </div>
                             </section>
-                            <section className="space-y-4">
-                                <div>
-                                    <h3 className="text-base font-black text-gray-900">4. Anything we should know?</h3>
-                                    <p className="text-sm text-gray-500">Optional, max 150 characters.</p>
-                                </div>
+
+                            <section className="space-y-3">
+                                <div className="text-sm font-semibold text-gray-700">4. Anything we should know?</div>
                                 <div className="relative">
-                                    <MessageSquare className="pointer-events-none absolute left-4 top-4 h-4 w-4 text-gray-300" />
+                                    <MessageSquare className="absolute left-3.5 top-3.5 h-4 w-4 text-gray-400" />
                                     <textarea
                                         value={notes}
                                         onChange={(e) => setNotes(e.target.value.slice(0, 150))}
-                                        placeholder="Took too long on one topic / skipped something important..."
-                                        className="h-28 w-full resize-none rounded-2xl border border-gray-200 bg-gray-50/50 py-4 pl-11 pr-4 text-sm font-medium text-gray-700 outline-none transition-all placeholder:text-gray-400 focus:border-violet-300 focus:bg-white focus:ring-2 focus:ring-violet-200"
+                                        placeholder="Took too long on one topic..."
+                                        className="h-24 w-full resize-none rounded-xl text-sm outline-none transition-all py-3 pl-10 pr-4 text-gray-700 placeholder:text-gray-400"
+                                        style={{ border: "1px solid #E9E7FF", backgroundColor: "#F9FAFB" }}
+                                        onFocus={e => { e.target.style.borderColor = "#7C3AED"; e.target.style.boxShadow = "0 0 0 3px rgba(124,58,237,0.1)"; e.target.style.background = "#fff"; }}
+                                        onBlur={e => { e.target.style.borderColor = "#E9E7FF"; e.target.style.boxShadow = "none"; e.target.style.background = "#F9FAFB"; }}
                                     />
-                                    <div className="mt-2 text-right text-[11px] font-semibold text-gray-400">
+                                    <div className="mt-1.5 text-right text-xs text-gray-400">
                                         {notes.length}/150
                                     </div>
                                 </div>
                             </section>
-                            <Button
-                                type="button"
-                                onClick={submit}
-                                disabled={!canSubmit || isSubmitting}
-                                className={cn(
-                                    "w-full h-14 rounded-2xl font-bold uppercase tracking-widest text-[12px] transition-all shadow-lg",
-                                    canSubmit
-                                        ? "bg-gray-900 text-white hover:bg-black shadow-gray-900/10"
-                                        : "bg-gray-100 text-gray-400 cursor-not-allowed shadow-none"
-                                )}
-                            >
-                                {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : mode === "preview" ? "Preview Only" : "Submit Rating"}
-                            </Button>
+
+                            <div className="flex justify-end pt-2">
+                                <button
+                                    type="button"
+                                    onClick={submit}
+                                    disabled={!canSubmit || isSubmitting}
+                                    className="inline-flex items-center justify-center gap-2 h-10 px-6 rounded-xl text-sm font-medium text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                    style={canSubmit ? {
+                                        background: "linear-gradient(135deg, #8B5CF6, #3B82F6)",
+                                        boxShadow: "0 4px 14px rgba(124,58,237,0.3)"
+                                    } : { background: "#D1D5DB" }}
+                                >
+                                    {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : (
+                                        <>
+                                            {mode === "preview" ? "Preview Only" : "Complete Interview"}
+                                            <ArrowRight className="w-4 h-4" />
+                                        </>
+                                    )}
+                                </button>
+                            </div>
                         </div>
                     </motion.div>
                 ) : (
@@ -223,15 +252,15 @@ export function CandidateRatingForm({
                         animate={{ opacity: 1, scale: 1 }}
                         className="text-center"
                     >
-                        <div className="bg-white border border-gray-100 rounded-[2.5rem] p-12 shadow-[0_18px_50px_rgba(0,0,0,0.05)]">
-                            <div className="w-20 h-20 bg-green-50 rounded-3xl flex items-center justify-center mx-auto mb-8">
-                                <CheckCircle2 className="w-10 h-10 text-green-500" />
+                        <div className="bg-white rounded-2xl p-12 shadow-[0_1px_3px_rgba(124,58,237,0.04)]" style={{ border: "1px solid #E9E7FF" }}>
+                            <div className="w-16 h-16 bg-emerald-50 rounded-xl flex items-center justify-center mx-auto mb-6">
+                                <CheckCircle2 className="w-8 h-8 text-emerald-500" />
                             </div>
-                            <h2 className="text-3xl font-bold text-gray-900 tracking-tight mb-3">Thank you</h2>
-                            <p className="text-gray-500 font-medium text-base mb-6 leading-relaxed">
+                            <h2 className="text-2xl font-semibold text-gray-900 tracking-tight mb-2">Thank you</h2>
+                            <p className="text-gray-500 text-sm mb-6">
                                 Your response has been recorded.
                             </p>
-                            <p className="text-xs font-bold uppercase tracking-widest text-gray-400">
+                            <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">
                                 Candidate rating submitted.
                             </p>
                         </div>
@@ -241,3 +270,4 @@ export function CandidateRatingForm({
         </div>
     );
 }
+

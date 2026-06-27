@@ -1486,18 +1486,29 @@ async def entrypoint(ctx: JobContext):
                 logger.debug("[SESSION] log context token already reset in a different async context")
     ctx.add_shutdown_callback(_log_shutdown)
     # Org-specific model settings.
-    # Resolve voice  provider + model from registry.
-    voice_id = str(ctx_data.voiceId or DEFAULT_VOICE_ID)
-    voice_entry = VOICE_REGISTRY.get(voice_id)
-    if voice_entry:
-        org_tts_provider = voice_entry["provider"]
-        org_tts_model = voice_entry["model"]
+    # Resolve voice provider + model from DB or registry.
+    db_provider = str(ctx_data.voiceProvider or "").strip().upper()
+    db_model = str(ctx_data.voiceModel or "").strip()
+    voice_id = str(ctx_data.voiceId or "")
+
+    # Respect DB provider first
+    if db_provider and db_provider in _TTS_DEFAULT_MODELS:
+        org_tts_provider = db_provider
+        org_tts_model = db_model or _TTS_DEFAULT_MODELS[db_provider]
+        if not voice_id:
+            if db_provider == "ELEVENLABS":
+                voice_id = "l7kNoIfnJKPg7779LI2t"
+            elif db_provider == "SARVAM":
+                voice_id = "ishita"
+            else:
+                voice_id = DEFAULT_VOICE_ID
     else:
-        db_provider = str(ctx_data.voiceProvider or "").strip().upper()
-        db_model = str(ctx_data.voiceModel or "").strip()
-        if db_provider in _TTS_DEFAULT_MODELS:
-            org_tts_provider = db_provider
-            org_tts_model = db_model or _TTS_DEFAULT_MODELS[db_provider]
+        # Fallback to registry based on voice_id, or global default
+        voice_id = voice_id or DEFAULT_VOICE_ID
+        voice_entry = VOICE_REGISTRY.get(voice_id)
+        if voice_entry:
+            org_tts_provider = voice_entry["provider"]
+            org_tts_model = voice_entry["model"]
         else:
             fallback_voice = VOICE_REGISTRY[DEFAULT_VOICE_ID]
             org_tts_provider = fallback_voice["provider"]

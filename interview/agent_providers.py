@@ -160,6 +160,11 @@ def build_elevenlabs_tts(
     api_key = os.getenv("ELEVENLABS_API_KEY")
     if not api_key:
         raise RuntimeError("ELEVENLABS_API_KEY is not set")
+    
+    # Safeguard against Cartesia UUID leaks or empty DB voice IDs
+    if not voice_id or "-" in voice_id:
+        voice_id = "l7kNoIfnJKPg7779LI2t"
+        
     supported = _elevenlabs_supported_params()
     tts_kwargs: dict[str, Any] = {}
     if "api_key" in supported:
