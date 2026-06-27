@@ -2,12 +2,12 @@
 parser.py v2 — Two-pass resume extraction + JD extraction with rank-based weights.
 
 Resume extraction:
-  Call 1 (gpt-4o-mini, structural): dates, companies, titles, bullet_points — facts only.
-  Call 2 (gpt-4o, semantic): ownership, impact, evidence_items — grounded in Call 1 output.
+  Call 1 (structural): dates, companies, titles, bullet_points — facts only.
+  Call 2 (semantic): ownership, impact, evidence_items — grounded in Call 1 output.
   Call 2 receives JD criteria so evidence_items can tag which criteria they prove.
 
 JD extraction:
-  Single call (gpt-4.1-mini) → criteria with priority_rank.
+  Single call → criteria with priority_rank.
   Weights computed deterministically by _compute_criterion_weights in scorer.py.
 
 Score mode:
@@ -17,9 +17,7 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import sys
-from typing import Any
 
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -143,28 +141,25 @@ def _merge_resume(structural: dict, semantic: dict) -> dict:
     return merged
 
 
-class DocumentParser:
-    STRUCTURAL_MODEL = "gpt-4o-mini"
-    SEMANTIC_MODEL = "gpt-4o"
-    JD_MODEL = "gpt-4.1-mini"
-    REPORT_MODEL = "gpt-4o-mini"
-    STRUCTURAL_FALLBACK = "gpt-4.1-mini"
-    SEMANTIC_FALLBACK = "gpt-4o-mini"
+MODEL = "gpt-5.4-mini"
 
+
+class DocumentParser:
     def parse(self, text: str, doc_type: str, model_override: str | None = None) -> dict:
         client = _get_client()
+        model = model_override or MODEL
         if doc_type == "JD":
-            return self._parse_jd(client, text, model_override or self.JD_MODEL)
+            return self._parse_jd(client, text, model)
         if doc_type == "RESUME":
-            return self._parse_resume(client, text, jd_criteria=None)
+            return self._parse_resume(client, text, model, jd_criteria=None)
         if doc_type == "SCORE":
-            return self._run_score(client, text, model_override)
+            return self._run_score(client, text, model)
         raise ValueError(f"Unknown doc_type: {doc_type!r}")
 
-    def parse_resume_with_jd(self, text: str, jd_criteria: list[dict]) -> dict:
+    def parse_resume_with_jd(self, text: str, jd_criteria: list[dict], model_override: str | None = None) -> dict:
         """Used by pipeline when JD is already available — passes criteria to semantic pass."""
         client = _get_client()
-        return self._parse_resume(client, text, jd_criteria=jd_criteria)
+        return self._parse_resume(client, text, model_override or MODEL, jd_criteria=jd_criteria)
 
     # ── JD ────────────────────────────────────────────────────────────────────
 
@@ -177,46 +172,22 @@ class DocumentParser:
     # ── Resume: two-pass ──────────────────────────────────────────────────────
 
     def _parse_resume(
-        self, client: OpenAI, text: str, jd_criteria: list[dict] | None
+        self, client: OpenAI, text: str, model: str, jd_criteria: list[dict] | None
     ) -> dict:
-        # Pass 1: structural
         print("--- [AI] Resume pass 1: structural extraction... ---", file=sys.stderr, flush=True)
-        structural, usage1 = self._call_with_fallback(
-            client,
-            RESUME_STRUCTURAL_SYSTEM,
-            build_resume_structural_prompt(text),
-            self.STRUCTURAL_MODEL,
-            self.STRUCTURAL_FALLBACK,
-        )
+        structural, usage1 = _llm(client, RESUME_STRUCTURAL_SYSTEM, build_resume_structural_prompt(text), model)
 
-        # Pass 2: semantic (grounded in structural output + JD criteria)
         print("--- [AI] Resume pass 2: semantic assessment... ---", file=sys.stderr, flush=True)
-        semantic, usage2 = self._call_with_fallback(
-            client,
-            RESUME_SEMANTIC_SYSTEM,
-            build_resume_semantic_prompt(structural, jd_criteria),
-            self.SEMANTIC_MODEL,
-            self.SEMANTIC_FALLBACK,
-        )
+        semantic, usage2 = _llm(client, RESUME_SEMANTIC_SYSTEM, build_resume_semantic_prompt(structural, jd_criteria), model)
 
         merged = _merge_resume(structural, semantic)
-
         usage = {
-            "model": f"{usage1.get('model')}+{usage2.get('model')}",
+            "model": model,
             "inputTokens": (usage1.get("inputTokens", 0) or 0) + (usage2.get("inputTokens", 0) or 0),
             "outputTokens": (usage1.get("outputTokens", 0) or 0) + (usage2.get("outputTokens", 0) or 0),
             "cachedInputTokens": (usage1.get("cachedInputTokens", 0) or 0) + (usage2.get("cachedInputTokens", 0) or 0),
         }
         return {"data": merged, "usage": usage}
-
-    def _call_with_fallback(
-        self, client: OpenAI, system: str, user: str, model: str, fallback: str
-    ) -> tuple[dict, dict]:
-        try:
-            return _llm(client, system, user, model)
-        except Exception as exc:
-            print(f"--- [AI] {model} failed: {exc}. Retrying with {fallback}... ---", file=sys.stderr, flush=True)
-            return _llm(client, system, user, fallback)
 
     # ── Score ─────────────────────────────────────────────────────────────────
 
@@ -252,7 +223,7 @@ class DocumentParser:
         )
 
         print("--- [AI] Generating report... ---", file=sys.stderr, flush=True)
-        report_model = model_override or self.REPORT_MODEL
+        report_model = model_override or MODEL
         try:
             report, report_usage = generate_report(
                 jd_data, resume_data, jd_raw_text, resume_raw_text,
