@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 
 from dotenv import load_dotenv
@@ -44,6 +45,7 @@ def _llm(client: OpenAI, system: str, user: str, model: str) -> tuple[dict, dict
     completion = client.chat.completions.create(
         model=model,
         temperature=0,
+        seed=42,
         messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
         response_format={"type": "json_object"},
     )
@@ -230,18 +232,30 @@ class DocumentParser:
                 score_result, client, report_model, screening_criteria,
             )
 
-            # Strip LLM-written keys that must come from scorer
+            # Strip keys that MUST come from scorer, not LLM
             LOCKED = {
                 "score", "base_score", "human_layer", "human_adjustment", "human_judgment",
                 "status", "breakdown", "skill_matching", "exp_status", "hard_rejected",
                 "rejection_reasons", "candidate_years", "jd_min_years",
-                "fit_radar", "work_history", "education", "core_claims",
-                "uncertain_areas", "skill_depth",
-            }
+                "work_history", "education", "core_claims", "uncertain_areas", "skill_depth",
+            }  # fit_radar intentionally NOT locked — reporter generates it, we keep it
             for k in LOCKED:
                 report.pop(k, None)
 
-            # Assemble final output (scorer data takes precedence over LLM fields)
+            # Strip [EV-xxx] citation tags from all text fields before storing in DB
+            _EV_RE = re.compile(r"\[EV-[^\]]+\]")
+            _COLOUR_RE = re.compile(r"^(emerald|amber|rose|green|red|yellow):\s*", re.IGNORECASE)
+            def _clean(v: object) -> object:
+                if isinstance(v, str):
+                    return _COLOUR_RE.sub("", _EV_RE.sub("", v)).strip()
+                if isinstance(v, list):
+                    return [_clean(i) for i in v]
+                if isinstance(v, dict):
+                    return {k2: _clean(v2) for k2, v2 in v.items()}
+                return v
+            report = {k: _clean(v) for k, v in report.items()}
+
+            # Assemble final output — scorer data takes precedence over LLM fields
             final = {
                 "score": score_result["score"],
                 "base_score": score_result["base_score"],
