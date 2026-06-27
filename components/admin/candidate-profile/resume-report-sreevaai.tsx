@@ -203,6 +203,7 @@ export type SreevaAIResumeViewModel = {
 function readableSummaryText(text: string, maxLen = 180) {
   const clean = String(text || "")
     .replace(/^flag:\s*/i, "")
+    .replace(/\[EV-[^\]]+\]/g, "")   // strip internal evidence citation tags
     .replace(/\s+/g, " ")
     .trim();
   if (!clean) return "";
@@ -575,9 +576,12 @@ export function buildSreevaAIResumeViewModel(i: {
     const label = `${r.role || "Role"} @ ${r.company || " "}`;
     // Primary body: LLM-written recruiter_summary from work_history_annotated
     // Fallback: responsibilities or impact signals from raw parse
-    const primaryBody = r.recruiter_summary
+    const stripEv = (s: string) => s.replace(/\[EV-[^\]]+\]/g, "").replace(/\s+/g, " ").trim();
+    const primaryBody = stripEv(
+      r.recruiter_summary
       || (Array.isArray(r.responsibilities) && r.responsibilities.length > 0 ? r.responsibilities.slice(0, 2).join(" ") : "")
-      || (Array.isArray(r.impact_signals) && r.impact_signals.length > 0 ? r.impact_signals.slice(0, 2).join(" ") : "");
+      || (Array.isArray(r.impact_signals) && r.impact_signals.length > 0 ? r.impact_signals.slice(0, 2).join(" ") : "")
+    );
     // Compact metadata strip appended only when we have something meaningful to add
     const metaParts = [
       r.ownership_level && r.ownership_level !== "unclear" ? `${r.ownership_level} ownership` : "",
@@ -627,18 +631,23 @@ export function buildSreevaAIResumeViewModel(i: {
     careerLines,
     resumeUrl: c.resumeUrl || null,
     reviewStrip: (() => {
-      // Human review always wins
-      const human = i.humanLayer;
-      const humanReason = human?.summary && human.summary.trim().length > 10 ? human.summary.trim() : "";
-      if (humanReason) {
-        const verdictWord = decisionStamp === "SHORTLISTED" ? "Shortlisted" : decisionStamp === "REJECTED" ? "Rejected" : "Borderline";
-        return `${verdictWord} by human reviewer: ${humanReason}`.replace(/\s+/g, " ").trim();
-      }
-      // AI decision_reason is the primary signal
-      if (i.decisionReason && i.decisionReason.trim().length > 10) {
-        return i.decisionReason.trim();
-      }
-      return "";
+      // Use LLM-generated decision_reason as the primary note — it's a recruiter narrative
+      // covering skills, experience, strengths, and gaps from the full report.
+      // Human layer summary is an internal technical scorecard string, not for display.
+      const aiReason = i.decisionReason
+        ? String(i.decisionReason)
+            .replace(/\[EV-[^\]]+\]/g, "")   // strip citation tags
+            .replace(/\s+/g, " ")
+            .trim()
+        : "";
+      if (aiReason.length > 10) return aiReason;
+      // Fallback: generate a minimal note from score data
+      const verdictWord = decisionStamp === "SHORTLISTED" ? "Shortlisted" : decisionStamp === "REJECTED" ? "Rejected" : "Borderline";
+      const matched = Array.isArray(i.skillMatching?.matched_must) ? i.skillMatching.matched_must : [];
+      const missing = Array.isArray(i.skillMatching?.missing_must) ? i.skillMatching.missing_must : [];
+      const matchStr = matched.length ? `Matched: ${matched.slice(0, 3).join(", ")}.` : "";
+      const missStr = missing.length ? ` Missing: ${missing.slice(0, 2).join(", ")}.` : "";
+      return `${verdictWord}.${matchStr ? " " + matchStr : ""}${missStr}`.trim();
     })(),
   };
 }
