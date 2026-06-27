@@ -24,7 +24,6 @@ import argparse
 # Add parent dir to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from extraction_resume_JD_score_report.scorer import compute_score as score_v1
 from extraction_resume_JD_score_report_v2.scorer import compute_score as score_v2
 
 # -- Test fixtures -------------------------------------------------------------
@@ -482,98 +481,60 @@ def _verdict(score: int, status: str, expected_range: tuple, expected_status: st
 def run_tests() -> list[dict]:
     results = []
     for case in CASES:
-        v1 = score_v1(case["jd"], case["resume"])
-        v2 = score_v2(case["jd"], case["resume"])
-
-        v1_verdict = _verdict(v1["score"], v1["status"], case["expected_range"], case["expected_status"])
-        v2_verdict = _verdict(v2["score"], v2["status"], case["expected_range"], case["expected_status"])
-
-        # Criterion-level analysis
-        v1_meets = sum(1 for c in v1.get("criteria_results", []) if c.get("result") == "meets")
-        v2_meets = sum(1 for c in v2.get("criteria_results", []) if isinstance(c, dict) and c.get("result") == "meets")
-        v2_semantic = v2.get("semantic_matches", [])
-
+        r = score_v2(case["jd"], case["resume"])
+        verdict = _verdict(r["score"], r["status"], case["expected_range"], case["expected_status"])
+        meets = sum(1 for c in r.get("criteria_results", []) if isinstance(c, dict) and c.get("result") == "meets")
         results.append({
             "id": case["id"],
             "label": case["label"],
             "expected_range": f"{case['expected_range'][0]}-{case['expected_range'][1]}",
             "expected_status": case["expected_status"],
-            "v1_score": v1["score"],
-            "v1_status": v1["status"],
-            "v1_verdict": v1_verdict,
-            "v1_breakdown": v1["breakdown"],
-            "v1_criteria_meets": v1_meets,
-            "v2_score": v2["score"],
-            "v2_status": v2["status"],
-            "v2_verdict": v2_verdict,
-            "v2_breakdown": v2["breakdown"],
-            "v2_criteria_meets": v2_meets,
-            "v2_semantic_matches": v2_semantic,
-            "v2_human_adjustment": v2["human_layer"].get("human_adjustment", 0),
-            "v2_hard_rejected": v2.get("hard_rejected", False),
-            "v2_matched_must": v2["skill_matching"]["matched_must"],
-            "v2_missing_must": v2["skill_matching"]["missing_must"],
+            "score": r["score"],
+            "status": r["status"],
+            "verdict": verdict,
+            "breakdown": r["breakdown"],
+            "criteria_meets": meets,
+            "semantic_matches": r.get("semantic_matches", []),
+            "human_adjustment": r["human_layer"].get("human_adjustment", 0),
+            "hard_rejected": r.get("hard_rejected", False),
+            "matched_must": r["skill_matching"]["matched_must"],
+            "missing_must": r["skill_matching"]["missing_must"],
         })
     return results
 
 
 def print_report(results: list[dict]) -> None:
-    divider = "=" * 100
+    print("\n" + "=" * 80)
+    print("  ATS PIPELINE SCORING TEST")
+    print("=" * 80)
 
-    print("\n" + "=" * 100)
-    print("  ATS PIPELINE v1 vs v2 -- SCORING COMPARISON")
-    print("=" * 100)
-
-    v1_pass = sum(1 for r in results if r["v1_verdict"] == PASS_MARK)
-    v2_pass = sum(1 for r in results if r["v2_verdict"] == PASS_MARK)
+    passed = sum(1 for r in results if r["verdict"] == PASS_MARK)
 
     for r in results:
-        print(f"\n{'-'*100}")
+        print(f"\n{'-'*80}")
         print(f"  Case {r['id']}: {r['label']}")
         print(f"  Expected: {r['expected_status']} | Score {r['expected_range']}")
-        print(f"{'-'*100}")
-        print(f"  {'':30s}  {'V1':>20s}  {'V2':>20s}  {'CHANGE':>12s}")
-        print(f"  {'Score':30s}  {r['v1_score']:>20d}  {r['v2_score']:>20d}  {r['v2_score']-r['v1_score']:>+12d}")
-        print(f"  {'Status':30s}  {r['v1_status']:>20s}  {r['v2_status']:>20s}")
-        print(f"  {'Verdict':30s}  {r['v1_verdict']:>20s}  {r['v2_verdict']:>20s}")
-        print(f"  {'Criteria met (must-have)':30s}  {r['v1_criteria_meets']:>20d}  {r['v2_criteria_meets']:>20d}")
-        print(f"  {'Skills score':30s}  {r['v1_breakdown']['skills_score']:>17d}/50  {r['v2_breakdown']['skills_score']:>17d}/50")
-        print(f"  {'Exp score':30s}  {r['v1_breakdown']['exp_score']:>17d}/15  {r['v2_breakdown']['exp_score']:>17d}/15")
-        print(f"  {'Career score':30s}  {r['v1_breakdown']['career_score']:>17d}/15  {r['v2_breakdown']['career_score']:>17d}/15")
-        print(f"  {'Human adjustment':30s}  {'n/a':>20s}  {r['v2_human_adjustment']:>+20d}")
-        print(f"  {'Hard rejected':30s}  {'n/a':>20s}  {str(r['v2_hard_rejected']):>20s}")
+        print(f"{'-'*80}")
+        print(f"  {'Score':<30s}  {r['score']:>10d}   {r['verdict']}")
+        print(f"  {'Status':<30s}  {r['status']:>10s}")
+        print(f"  {'Criteria met (must-have)':<30s}  {r['criteria_meets']:>10d}")
+        print(f"  {'Skills score':<30s}  {r['breakdown']['skills_score']:>9d}/50")
+        print(f"  {'Exp score':<30s}  {r['breakdown']['exp_score']:>9d}/15")
+        print(f"  {'Career score':<30s}  {r['breakdown']['career_score']:>9d}/15")
+        print(f"  {'Human adjustment':<30s}  {r['human_adjustment']:>+10d}")
+        print(f"  {'Hard rejected':<30s}  {str(r['hard_rejected']):>10s}")
 
-        if r["v2_semantic_matches"]:
-            print(f"\n  Semantic matches used by v2:")
-            for sm in r["v2_semantic_matches"][:3]:
+        if r["semantic_matches"]:
+            print(f"\n  Semantic matches:")
+            for sm in r["semantic_matches"][:3]:
                 print(f"    '{sm['criterion']}' -> '{sm['matched_to']}' (sim={sm['similarity']:.2f}) -> {sm['result']}")
 
-        if r["v2_missing_must"]:
-            print(f"\n  v2 missing must-have: {r['v2_missing_must'][:4]}")
+        if r["missing_must"]:
+            print(f"\n  Missing must-have: {r['missing_must'][:4]}")
 
-    print(f"\n{'='*100}")
-    print(f"  SUMMARY: v1 passed {v1_pass}/{len(results)} cases | v2 passed {v2_pass}/{len(results)} cases")
-    print()
-
-    # Overall assessment table
-    print("  ARCHITECTURE COMPARISON")
-    print(f"  {'Dimension':<40s} {'v1':>20s} {'v2':>20s}")
-    print(f"  {divider[:80]}")
-    rows = [
-        ("Resume extraction passes", "1 (combined)", "2 (structural + semantic)"),
-        ("Evidence level 5 requires metric+owner", "No (any owner)", "Yes (enforced)"),
-        ("Skill source tied to evidence_items", "No (job-level)", "Yes (per-skill)"),
-        ("Skill matching beyond exact+aliases", "Static dict (200 entries)", "Semantic embeddings"),
-        ("Criterion weight computation", "LLM arithmetic (unreliable)", "Rank-based deterministic"),
-        ("Hard rejection threshold", "All critical fail", "≥60% critical fail"),
-        ("Cross-validation of total_years", "No", "Yes (from work_history)"),
-        ("Criterion-level MatchSource trace", "No", "Yes (every criterion)"),
-        ("Report grounding verification", "No", "Yes (company name check)"),
-        ("Bias preprocessing", "No", "Graduation year redaction"),
-    ]
-    for label, v1val, v2val in rows:
-        print(f"  {label:<40s} {v1val:>20s} {v2val:>20s}")
-    print(f"{'='*100}\n")
+    print(f"\n{'='*80}")
+    print(f"  SUMMARY: {passed}/{len(results)} cases passed")
+    print(f"{'='*80}\n")
 
 
 if __name__ == "__main__":

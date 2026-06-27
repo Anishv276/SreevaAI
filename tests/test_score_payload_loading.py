@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from extraction_resume_JD_score_report import parser as score_parser
+from extraction_resume_JD_score_report_v2 import parser as score_parser
 
 
 def test_run_score_accepts_temp_json_file_path(monkeypatch):
@@ -21,7 +21,7 @@ def test_run_score_accepts_temp_json_file_path(monkeypatch):
 
     captured = {}
 
-    def fake_compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
+    def fake_compute_score(jd_data, resume_data, threshold=70, screening_criteria=None, resume_raw_text="", openai_client=None):
         captured["jd_data"] = jd_data
         captured["resume_data"] = resume_data
         captured["threshold"] = threshold
@@ -38,13 +38,15 @@ def test_run_score_accepts_temp_json_file_path(monkeypatch):
             "rejection_reasons": [],
             "candidate_years": 5,
             "jd_min_years": None,
+            "criteria_results": [],
+            "semantic_matches": [],
         }
 
-    def fake_generate_report_inline(*args, **kwargs):
-        return {"fit_radar": {}, "decision_reason": "ok. Sentence two here. Sentence three here."}, {"model": "gpt-4o-mini", "inputTokens": 0, "outputTokens": 0, "cachedInputTokens": 0}
+    def fake_generate_report(*args, **kwargs):
+        return {"fit_radar": {}, "decision_reason": "ok. Sentence two here. Sentence three here."}, {"model": "gpt-5.4-mini", "inputTokens": 0, "outputTokens": 0, "cachedInputTokens": 0}
 
-    monkeypatch.setattr(score_parser, "_compute_score", fake_compute_score)
-    monkeypatch.setattr(score_parser, "_generate_report_inline", fake_generate_report_inline)
+    monkeypatch.setattr(score_parser, "compute_score", fake_compute_score)
+    monkeypatch.setattr(score_parser, "generate_report", fake_generate_report)
 
     parser = score_parser.DocumentParser()
     result = parser._run_score(client=object(), json_text=str(payload_path), model_override=None)
@@ -60,7 +62,7 @@ def test_run_score_still_accepts_raw_json_text(monkeypatch):
     payload = {"jd": {}, "resume": {}, "threshold": 60, "screening_criteria": {}}
     captured = {}
 
-    def fake_compute_score(jd_data, resume_data, threshold=70, screening_criteria=None):
+    def fake_compute_score(jd_data, resume_data, threshold=70, screening_criteria=None, resume_raw_text="", openai_client=None):
         captured["threshold"] = threshold
         return {
             "score": 80,
@@ -74,13 +76,15 @@ def test_run_score_still_accepts_raw_json_text(monkeypatch):
             "rejection_reasons": [],
             "candidate_years": None,
             "jd_min_years": None,
+            "criteria_results": [],
+            "semantic_matches": [],
         }
 
-    def fake_generate_report_inline(*args, **kwargs):
-        return {"fit_radar": {}, "decision_reason": "raw. Sentence two here. Sentence three here."}, {"model": "gpt-4o-mini", "inputTokens": 0, "outputTokens": 0, "cachedInputTokens": 0}
+    def fake_generate_report(*args, **kwargs):
+        return {"fit_radar": {}, "decision_reason": "raw. Sentence two here. Sentence three here."}, {"model": "gpt-5.4-mini", "inputTokens": 0, "outputTokens": 0, "cachedInputTokens": 0}
 
-    monkeypatch.setattr(score_parser, "_compute_score", fake_compute_score)
-    monkeypatch.setattr(score_parser, "_generate_report_inline", fake_generate_report_inline)
+    monkeypatch.setattr(score_parser, "compute_score", fake_compute_score)
+    monkeypatch.setattr(score_parser, "generate_report", fake_generate_report)
 
     parser = score_parser.DocumentParser()
     result = parser._run_score(client=object(), json_text=json.dumps(payload), model_override=None)

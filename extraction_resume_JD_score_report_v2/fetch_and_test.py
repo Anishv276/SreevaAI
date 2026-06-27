@@ -22,7 +22,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from openai import OpenAI
-from extraction_resume_JD_score_report.scorer import compute_score as score_v1
 from extraction_resume_JD_score_report_v2.scorer import compute_score as score_v2
 
 
@@ -160,66 +159,52 @@ def run(drive_id_override: str | None = None):
 
     screening = drive["screening_criteria"]
 
-    # ── Run both scorers ──────────────────────────────────────────────────────
+    # ── Run scorer ────────────────────────────────────────────────────────────
     oai = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
-    print("\n=== Running v1 scorer ===")
+    print("=== Running scorer ===")
     try:
-        v1 = score_v1(jd_data, resume_data, threshold=70, screening_criteria=screening)
+        result = score_v2(jd_data, resume_data, threshold=70, screening_criteria=screening,
+                          resume_raw_text=app["resume_text"], openai_client=oai)
     except Exception as e:
-        print(f"v1 ERROR: {e}")
-        v1 = None
+        print(f"ERROR: {e}")
+        cur.close(); conn.close()
+        return
 
-    print("=== Running v2 scorer (with semantic embeddings) ===")
-    try:
-        v2 = score_v2(jd_data, resume_data, threshold=70, screening_criteria=screening, resume_raw_text=app["resume_text"], openai_client=oai)
-    except Exception as e:
-        print(f"v2 ERROR: {e}")
-        v2 = None
-
-    # ── Print comparison ──────────────────────────────────────────────────────
+    # ── Print results ─────────────────────────────────────────────────────────
     print("\n" + "=" * 80)
     print(f"  RESULTS: {app['full_name']} vs {drive['title']}")
     print("=" * 80)
 
     prod = app["existing_score"]
-    v1s = v1["score"] if v1 else "ERROR"
-    v2s = v2["score"] if v2 else "ERROR"
+    bd = result.get("breakdown", {})
+    print(f"\n  {'Metric':<35} {'Production':>12} {'Scorer':>10}")
+    print(f"  {'-'*60}")
+    print(f"  {'Score':<35} {str(prod or 'n/a'):>12} {result['score']:>10}")
+    print(f"  {'Status':<35} {'n/a':>12} {result['status']:>10}")
+    print(f"  {'Skills':<35} {'':>12} {bd.get('skills_score',0):>9}/50")
+    print(f"  {'Experience':<35} {'':>12} {bd.get('exp_score',0):>9}/15")
+    print(f"  {'Career quality':<35} {'':>12} {bd.get('career_score',0):>9}/15")
+    print(f"  {'Domain fit':<35} {'':>12} {bd.get('domain_score',0):>9}/10")
+    print(f"  {'Human adjustment':<35} {'':>12} {result['human_layer'].get('human_adjustment',0):>+10}")
+    print(f"  {'Hard rejected':<35} {'':>12} {str(result.get('hard_rejected',False)):>10}")
 
-    print(f"\n  {'Metric':<35} {'Production':>12} {'v1':>10} {'v2':>10}")
-    print(f"  {'-'*70}")
-    print(f"  {'Score':<35} {str(prod or 'n/a'):>12} {str(v1s):>10} {str(v2s):>10}")
+    print(f"\n  Matched : {result['skill_matching']['matched_must']}")
+    print(f"  Missing : {result['skill_matching']['missing_must']}")
 
-    if v1 and v2:
-        print(f"  {'Status':<35} {'n/a':>12} {v1['status']:>10} {v2['status']:>10}")
-        bd1 = v1.get("breakdown", {})
-        bd2 = v2.get("breakdown", {})
-        print(f"  {'Skills score'::<35} {'':>12} {bd1.get('skills_score',0):>9}/50 {bd2.get('skills_score',0):>9}/50")
-        print(f"  {'Experience score':<35} {'':>12} {bd1.get('exp_score',0):>9}/15 {bd2.get('exp_score',0):>9}/15")
-        print(f"  {'Career quality':<35} {'':>12} {bd1.get('career_score',0):>9}/15 {bd2.get('career_score',0):>9}/15")
-        print(f"  {'Domain fit':<35} {'':>12} {bd1.get('domain_score',0):>9}/10 {bd2.get('domain_score',0):>9}/10")
-        print(f"  {'Human adjustment (v2)':<35} {'':>12} {'n/a':>10} {v2['human_layer'].get('human_adjustment',0):>+10}")
-        print(f"  {'Hard rejected (v2)':<35} {'':>12} {'n/a':>10} {str(v2.get('hard_rejected',False)):>10}")
+    sm = result.get("semantic_matches", [])
+    if sm:
+        print(f"\n  Semantic matches:")
+        for s in sm:
+            print(f"    '{s['criterion']}' -> '{s['matched_to']}' (sim={s['similarity']:.2f}) -> {s['result']}")
 
-        print(f"\n  Criteria matched (v1): {v1['skill_matching']['matched_must']}")
-        print(f"  Criteria missing (v1): {v1['skill_matching']['missing_must']}")
-        print(f"\n  Criteria matched (v2): {v2['skill_matching']['matched_must']}")
-        print(f"  Criteria missing (v2): {v2['skill_matching']['missing_must']}")
+    print(f"\n  Human layer: {result['human_layer'].get('summary','')}")
 
-        sm = v2.get("semantic_matches", [])
-        if sm:
-            print(f"\n  Semantic matches used by v2 (embedding path):")
-            for s in sm:
-                print(f"    '{s['criterion']}' -> '{s['matched_to']}' (sim={s['similarity']:.2f}) -> {s['result']}")
-
-        print(f"\n  v2 human layer summary: {v2['human_layer'].get('summary','')}")
-
-        # Per-criterion breakdown (v2)
-        print(f"\n  Per-criterion detail (v2):")
-        for cr in v2.get("criteria_results", []):
-            ms = cr.get("match_source", {})
-            mt = ms.get("match_type", "none")
-            print(f"    [{cr['priority']:8s}] {cr['criterion']:<40s} -> {cr['result']:<20s} via {mt} (contrib: {cr.get('score_contribution',0):.1f})")
+    print(f"\n  Per-criterion:")
+    for cr in result.get("criteria_results", []):
+        ms = cr.get("match_source", {})
+        mt = ms.get("match_type", "none")
+        print(f"    [{cr['priority']:8s}] {cr['criterion']:<40s} -> {cr['result']:<20s} via {mt} (contrib: {cr.get('score_contribution',0):.1f})")
 
     print("\n" + "=" * 80)
     cur.close()
