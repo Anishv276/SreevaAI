@@ -3,6 +3,9 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim())
   : ['geophagous-delicately-augustus.ngrok-free.app'];
 const nextConfig: NextConfig = {
+  async rewrites() {
+    return [{ source: "/", destination: "/index.html" }];
+  },
   poweredByHeader: false,
   images: {
     remotePatterns: [

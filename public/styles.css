@@ -1845,6 +1845,10 @@ section { position: relative; }
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
 }
+.currency-toggle { display:flex; align-items:center; gap:8px; margin-bottom:32px; }
+.cur-btn { font-family:var(--mono); font-size:11px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; padding:6px 14px; border-radius:999px; border:1px solid #ececea; background:#fff; color:var(--muted); cursor:pointer; transition:all .2s; }
+.cur-btn.active { background:#1c1b1b; color:#fff; border-color:#1c1b1b; }
+.cur-rate { font-family:var(--mono); font-size:11px; color:var(--muted); margin-left:4px; }
 .plans {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

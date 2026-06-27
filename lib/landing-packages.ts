@@ -10,6 +10,7 @@ export type LandingPackage = {
   topup: string;
   cta: string;
   featured: boolean;
+  description?: string;
   features: string[];
 };
 export const LANDING_PACKAGES: LandingPackage[] = [
@@ -20,13 +21,22 @@ export const LANDING_PACKAGES: LandingPackage[] = [
     suffix: "/mo",
     interviewsIncluded: "30 interviews included",
     pricePerInterview: "$3.30",
-    topup: "$4.50/interview",
+    topup: "$4.00/interview",
     cta: "Book Demo",
     featured: false,
+    description: "For teams piloting AI screening on 1–2 roles.",
     features: [
-      "30 interviews included",
-      "Up to 20 min per interview",
-      "Top-up: $4.50/interview",
+      "30 Interviews / month",
+      "1 Active drive",
+      "Resume screening",
+      "Adaptive AI Interview",
+      "Smart follow-ups",
+      "AI Interview Report",
+      "7 days Recording storage",
+      "Email Support",
+      "ATS integrations",
+      "Multilingual interviews",
+      "Top-up: $4.00/interview"
     ],
   },
   {
@@ -36,13 +46,23 @@ export const LANDING_PACKAGES: LandingPackage[] = [
     suffix: "/mo",
     interviewsIncluded: "100 interviews included",
     pricePerInterview: "$2.99",
-    topup: "$3.50/interview",
+    topup: "$3.00/interview",
     cta: "Book Demo",
     featured: true,
+    description: "For teams hiring across multiple roles each month.",
     features: [
-      "100 interviews included",
-      "Up to 20 min per interview",
-      "Top-up: $3.50/interview",
+      "100 Interviews / month",
+      "5 Active drives",
+      "Resume screening",
+      "Adaptive AI Interview",
+      "Smart follow-ups",
+      "AI Interview Report",
+      "Basic Integrity & proctoring",
+      "14 days Recording storage",
+      "Priority email Support",
+      "ATS integrations",
+      "Multilingual interviews",
+      "Top-up: $3.00/interview"
     ],
   },
   {
@@ -52,13 +72,23 @@ export const LANDING_PACKAGES: LandingPackage[] = [
     suffix: "/mo",
     interviewsIncluded: "300 interviews included",
     pricePerInterview: "$2.33",
-    topup: "$2.80/interview",
+    topup: "$2.50/interview",
     cta: "Book Demo",
     featured: false,
+    description: "For high-volume hiring or agencies.",
     features: [
-      "300 interviews included",
-      "Up to 20 min per interview",
-      "Top-up: $2.80/interview",
+      "300 Interviews / month",
+      "10 Active drives",
+      "Resume screening",
+      "Adaptive AI Interview",
+      "Smart follow-ups",
+      "AI Interview Report",
+      "Advanced Integrity & proctoring",
+      "30 days Recording storage",
+      "Priority + onboarding assist",
+      "ATS integrations",
+      "Multilingual interviews",
+      "Top-up: $2.50/interview"
     ],
   },
   {
@@ -72,9 +102,18 @@ export const LANDING_PACKAGES: LandingPackage[] = [
     cta: "Talk to Us",
     featured: false,
     features: [
-      "600+ interviews",
-      "Custom interview duration",
-      "Top-ups included or custom",
+      "600+ Interviews / month",
+      "Unlimited Active drives",
+      "Resume screening",
+      "Adaptive AI Interview",
+      "Smart follow-ups",
+      "AI Interview Report",
+      "Advanced + custom policies",
+      "Custom Recording storage",
+      "Dedicated CSM Support",
+      "ATS integrations (priority access)",
+      "Multilingual interviews (early pilots)",
+      "Top-up: Custom"
     ],
   },
 ];
