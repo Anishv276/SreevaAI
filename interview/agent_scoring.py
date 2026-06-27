@@ -296,6 +296,7 @@ async def evaluate_answer(
             client.chat.completions.create(
                 model=llm_model,
                 temperature=EVAL_TEMPERATURE,
+                seed=0,
                 max_tokens=200,
                 stream=True,
                 messages=[
