@@ -290,7 +290,6 @@ async def generate_interview_brief(
     stream = await openai_client.chat.completions.create(
         model=llm_model,
         temperature=0,
-        seed=0,
         response_format={"type": "json_object"},
         max_tokens=5000,
         stream=True,
