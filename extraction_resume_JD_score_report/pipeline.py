@@ -17,6 +17,7 @@ if _scripts_dir not in sys.path:
 
 from extraction_resume_JD_score_report.extractor import DocumentExtractor
 from extraction_resume_JD_score_report.parser import DocumentParser
+from extraction_resume_JD_score_report_v2.parser import DocumentParser as DocumentParserV2
 # reporter.py exposes generate_report_inline() — called internally via DocumentParser.
 # No class-level import needed here.
 
@@ -218,8 +219,8 @@ class HRPipeline:
         sys.stderr.write("--- [50%] Running deterministic scoring & AI report generation... ---\n")
         sys.stderr.flush()
         
-        # For SCORE, parse the JSON payload directly (this internally runs scoring + reporting)
-        parser = DocumentParser()
+        # For SCORE, use v2 parser (production-grade 6-pass matching + semantic indexing)
+        parser = DocumentParserV2()
         result = parser.parse(json_text, "SCORE", model_override)
         
         sys.stderr.write("--- [75%] Compiling final candidate assessment... ---\n")
