@@ -253,12 +253,7 @@ from interview.agent_runtime_helpers import (
 )
 from interview.agent_runtime_support import (
     INTERVIEW_TEMPERATURE,
-    DEFAULT_VOICE_ID,
-    EVAL_LLM_MODEL,
-    INTERVIEW_LLM_MODEL,
-    VOICE_REGISTRY,
     FIXED_INTERVIEW_DURATION_MINUTES,
-    STT_MODEL,
     logger,
     reset_log_context,
     set_log_context,
@@ -299,12 +294,7 @@ _LANGUAGE_CODES: dict[str, dict[str, str]] = {
     "English": {"stt": "en-US", "tts": "en"},
     "Hindi":   {"stt": "hi",    "tts": "hi"},
 }
-# TTS provider lookup tables  O(1) replacement for if/elif chains.
-_TTS_DEFAULT_MODELS: dict[str, str] = {
-    "SARVAM":     "bulbul:v3",
-    "ELEVENLABS": "eleven_turbo_v2_5",
-    "CARTESIA":   "cartesia/sonic-3",
-}
+# ponytail: _TTS_DEFAULT_MODELS deleted — all model values come from org DB row now
 # Compiled once  matches greeting echo fragments that leak back into STT after AI speaks.
 _GREETING_ECHO_RE = re.compile(
     r"^\s*(?:hi|hello|hey|okay|ok|yeah|yes|yep|mmhmm|mhm|good morning|good afternoon)\s*$",
@@ -1179,9 +1169,14 @@ class InterviewContext(BaseModel):
     orgName: Optional[str] = None
     aiName: Optional[str] = "Ishita"
     voiceId: Optional[str] = None
-    voiceProvider: Optional[str] = None
-    voiceModel: Optional[str] = None
-    deepgramModel: Optional[str] = None
+    # AI model config from org row
+    sttModel: Optional[str] = None
+    ttsProvider: Optional[str] = None
+    ttsModel: Optional[str] = None
+    llmInterviewLive: Optional[str] = None
+    llmInterviewEval: Optional[str] = None
+    llmInterviewBrief: Optional[str] = None
+    llmInterviewReport: Optional[str] = None
     resumeData: Any = None
     extractedDetails: Any = None
     screeningCriteria: Any = None
@@ -1444,37 +1439,14 @@ async def entrypoint(ctx: JobContext):
             except ValueError:
                 logger.debug("[SESSION] log context token already reset in a different async context")
     ctx.add_shutdown_callback(_log_shutdown)
-    # Org-specific model settings.
-    # Resolve voice provider + model from DB or registry.
-    db_provider = str(ctx_data.voiceProvider or "").strip().upper()
-    db_model = str(ctx_data.voiceModel or "").strip()
-    voice_id = str(ctx_data.voiceId or "")
-
-    # Respect DB provider first
-    if db_provider and db_provider in _TTS_DEFAULT_MODELS:
-        org_tts_provider = db_provider
-        org_tts_model = db_model or _TTS_DEFAULT_MODELS[db_provider]
-        if not voice_id:
-            if db_provider == "ELEVENLABS":
-                voice_id = "l7kNoIfnJKPg7779LI2t"
-            elif db_provider == "SARVAM":
-                voice_id = "ishita"
-            else:
-                voice_id = DEFAULT_VOICE_ID
-    else:
-        # Fallback to registry based on voice_id, or global default
-        voice_id = voice_id or DEFAULT_VOICE_ID
-        voice_entry = VOICE_REGISTRY.get(voice_id)
-        if voice_entry:
-            org_tts_provider = voice_entry["provider"]
-            org_tts_model = voice_entry["model"]
-        else:
-            fallback_voice = VOICE_REGISTRY[DEFAULT_VOICE_ID]
-            org_tts_provider = fallback_voice["provider"]
-            org_tts_model = fallback_voice["model"]
-    interview_llm_model: str = INTERVIEW_LLM_MODEL
+    # All AI model config comes directly from the org DB row (set via Super Admin → AI Models).
+    # All values come from org DB (set via Super Admin → AI Models). Schema defaults ensure non-null.
+    org_tts_provider: str = str(ctx_data.ttsProvider).strip().upper()
+    org_tts_model: str   = str(ctx_data.ttsModel).strip()
+    voice_id: str        = str(ctx_data.voiceId).strip()
+    interview_llm_model: str         = str(ctx_data.llmInterviewLive).strip()
     interview_llm_temperature: float = INTERVIEW_TEMPERATURE
-    analysis_model = EVAL_LLM_MODEL
+    analysis_model: str              = str(ctx_data.llmInterviewEval).strip()
     lang_codes = _LANGUAGE_CODES.get(interview_lang)
     if not lang_codes:
         raise RuntimeError(f"Unsupported interview language in DB: {interview_lang}")
@@ -1500,7 +1472,7 @@ async def entrypoint(ctx: JobContext):
         jd_data=extracted_details or {},
         custom_questions=_interview_questions or [],
         openai_client=_brief_openai_client,
-        # brief uses its own fast model (gpt-4.1), not the eval model
+        llm_model=str(ctx_data.llmInterviewBrief).strip(),
         usage_sink=_eval_llm_usages_accumulated.append,
     )
     # Use the LLM's band assessment — more accurate than mechanical inference
@@ -1660,7 +1632,7 @@ async def entrypoint(ctx: JobContext):
     # Silero ONNX model is no longer needed — saves ~200ms prewarm startup time.
     flux_session_keyterms = _build_flux_session_keyterms()
     logger.info("[STT_FLUX] static session keyterms prepared: %d extra terms", len(flux_session_keyterms))
-    stt_plugin = build_stt(language_code=lang_codes["stt"], keyterms=flux_session_keyterms)
+    stt_plugin = build_stt(language_code=lang_codes["stt"], keyterms=flux_session_keyterms, model_override=ctx_data.sttModel)
     _tts_builder = {
         "SARVAM":     build_sarvam_tts,
         "ELEVENLABS": build_elevenlabs_tts,
@@ -1707,7 +1679,7 @@ async def entrypoint(ctx: JobContext):
         # Sentence-buffered so latency impact is one nano call per sentence (~50ms).
         _sarvam_llm_rewrite_transform = make_sarvam_llm_rewrite_transform(
             _SHARED_OPENAI_CLIENT,
-            model="gpt-4.1-nano",
+            model=analysis_model,
         )
     tts_plugin = _tts_builder(
         language=lang_codes["tts"],
@@ -3968,7 +3940,7 @@ async def entrypoint(ctx: JobContext):
         tts_provider=org_tts_provider,
         tts_model=org_tts_model,
         stt_provider="DEEPGRAM",
-        stt_model=STT_MODEL,
+        stt_model=str(ctx_data.sttModel),
         plugin_tts_characters=billable_tts_characters,
         plugin_tts_audio_seconds=plugin_tts_audio_seconds,
         plugin_stt_audio_seconds=plugin_stt_audio_seconds,
@@ -3996,7 +3968,7 @@ async def entrypoint(ctx: JobContext):
                             job_title,
                             proctoring_data=_proctoring_snap,
                             org_id=org_id,
-                            llm_model=analysis_model,
+                            llm_model=str(ctx_data.llmInterviewReport).strip(),
                             jd_json=_coerce_jsonish(extracted_details) if extracted_details else None,
                             topic_records=list(_topic_records),
                         )
@@ -4037,7 +4009,7 @@ async def entrypoint(ctx: JobContext):
             tts_provider=org_tts_provider,
             tts_model=org_tts_model,
             stt_provider="DEEPGRAM",
-            stt_model=STT_MODEL,
+            stt_model=str(ctx_data.sttModel),
             plugin_tts_characters=billable_tts_characters,
             plugin_tts_audio_seconds=plugin_tts_audio_seconds,
             plugin_stt_audio_seconds=plugin_stt_audio_seconds,
@@ -4070,6 +4042,9 @@ async def entrypoint(ctx: JobContext):
                         "llmOutputTokens": int(_llm_out),
                         "ttsChars": int(billable_tts_characters or 0),
                         "sttSeconds": round(float(plugin_stt_audio_seconds or 0), 1),
+                        "ttsProvider": org_tts_provider,
+                        "sttProvider": "deepgram",
+                        "llmProvider": "openai",
                     }),
                     app_id,
                 )
