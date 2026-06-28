@@ -757,9 +757,14 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                                     </div>
                                                     {(interviewStatusKey === "completed" || interviewStatusKey === "finished") && (
                                                         <span className="text-[11px] font-semibold text-gray-400 ml-[16px]">
-                                                            {candidate.interview?.completedAt 
-                                                                ? new Date(candidate.interview.completedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" }) 
+                                                            {candidate.interview?.completedAt
+                                                                ? new Date(candidate.interview.completedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" })
                                                                 : "Today"}
+                                                        </span>
+                                                    )}
+                                                    {candidate.interview?.isTest && (
+                                                        <span className="ml-[16px] text-[9px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full" style={{ background: "#FEF3C7", color: "#B45309" }}>
+                                                            TEST
                                                         </span>
                                                     )}
                                                 </div>

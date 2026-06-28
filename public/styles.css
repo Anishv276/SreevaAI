@@ -1,4 +1,4 @@
-﻿/* ============================================
+/* ============================================
    Sreeva AI — editorial site
    Violet design system — Sreeva AI
    ============================================ */
@@ -368,16 +368,7 @@ section { position: relative; }
 .hero-title .ital { font-size: inherit; line-height: inherit; }
 .hero-title .rfx { font-style: italic; }
 
-@keyframes rfx-colour {
-  0%   { color: #7C3AED; } /* violet */
-  33%  { color: #1c1b1b; }           /* near-black */
-  66%  { color: rgba(28,27,27,.35); } /* muted grey */
-  100% { color: #7C3AED; } /* loops */
-}
-.rfx-shift {
-  display: inline;
-  animation: rfx-colour 3s linear 0.6s infinite;
-}
+.rfx-shift { display: inline; color: var(--primary); }
 
 .hero-subline {
   max-width: 34rem;
@@ -2204,4 +2195,5 @@ table.detail td.feat { font-weight: 500; color: var(--ink); }
   /* Plans single column already at 600px, just tighten */
   .plan-amt { font-size: 40px; }
 }
+
 

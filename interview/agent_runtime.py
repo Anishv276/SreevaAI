@@ -47,10 +47,48 @@ from billing.billing import (
 )
 from openai import AsyncOpenAI
 from pydantic import BaseModel, field_validator
+import urllib.request
+import urllib.error
 
 import re as _re
 from dataclasses import dataclass, field
 from enum import Enum
+
+# ─── Test Event Logger (for /test page debugging) ──────────────────────────────
+async def log_test_event(app_id: str, event_type: str, message: str, data: dict = None) -> None:
+    """Send event to /api/test/events for live debugging on /test page."""
+    # Always log for test sessions (check if app_id looks like a test app)
+    if not app_id:
+        return
+    try:
+        import aiohttp
+        payload = {
+            "applicationId": app_id,
+            "event": event_type,
+            "message": message,
+            "data": data or {}
+        }
+        # Try async HTTP first, fall back to sync if aiohttp not available
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    "http://localhost:3000/api/test/events",
+                    json=payload,
+                    timeout=aiohttp.ClientTimeout(total=1)
+                ) as resp:
+                    pass
+        except (ImportError, ModuleNotFoundError):
+            # Fallback to sync HTTP
+            payload_json = json.dumps(payload).encode("utf-8")
+            req = urllib.request.Request(
+                "http://localhost:3000/api/test/events",
+                data=payload_json,
+                headers={"Content-Type": "application/json"},
+                method="POST"
+            )
+            urllib.request.urlopen(req, timeout=1)
+    except Exception as e:
+        logger.debug("[TEST_EVENT_LOG] Failed to log event: %s", e)
 
 class CoverageSource(str, Enum):
     EXPLICIT  = "explicit"    # agent explicitly moved on after probing
@@ -1004,13 +1042,10 @@ class InterviewAgent(Agent):
             async for chunk in text:
                 buf += chunk
                 if is_elevenlabs:
-                    # ElevenLabs manages its own internal buffering via chunk_length_schedule.
-                    # Push tokens as they arrive — sentence-splitting here would restart the
-                    # WebSocket synthesis context per sentence causing gaps and choppy audio.
-                    self._record_tts_text(chunk)
-                    tts_stream.push_text(chunk)
-                    n += 1
-                    continue
+                    # Buffer by sentence for ElevenLabs — pushing raw tokens causes it to
+                    # synthesize mid-word (e.g. "Multi" before "Channel") producing garbled
+                    # audio. Fall through to the same sentence-buffer logic used for Sarvam.
+                    pass
                 while True:
                     m = _TTS_SENT_END_RE.search(buf)
                     if m:
@@ -1029,7 +1064,7 @@ class InterviewAgent(Agent):
                         n += 1
                     else:
                         break
-            if not is_elevenlabs and buf.strip():
+            if buf.strip():
                 pushed_text = buf.strip()
                 self._record_tts_text(pushed_text)
                 tts_stream.push_text(pushed_text)
@@ -1207,10 +1242,15 @@ async def entrypoint(ctx: JobContext):
     # fire the DB fetch in parallel with the room connect handshake.
     app_id = ctx.room.name.replace("interview_", "")
     dispatch_metadata = parse_dispatch_metadata(getattr(ctx.job, "metadata", ""))
+    _is_test_session: bool = bool(dispatch_metadata.get("isTest", False))
+    _skip_report: bool = bool(dispatch_metadata.get("skipReport", False))
+    if _is_test_session:
+        logger.info("[TEST_SESSION] Running in TEST mode | skipReport=%s", _skip_report)
     session_log_context: dict[str, Any] = {
         "session_id": app_id,
         "app_id": app_id,
         "room_name": ctx.room.name,
+        "is_test": _is_test_session,
     }
     if dispatch_metadata:
         session_log_context.update({
@@ -2477,6 +2517,11 @@ async def entrypoint(ctx: JobContext):
             # Commit candidate text immediately so transcript persistence and eval context
             # use the same canonical source of truth as Interview.interviewTranscript.
             append_transcript_line("Candidate", content)
+            # Test event: response received
+            spawn_background_task(
+                log_test_event(app_id, "response_received", f"Candidate: {content[:60]}..." if len(content) > 60 else f"Candidate: {content}"),
+                "test_event_response_received"
+            )
             # Accumulate candidate answers for the current topic — used at MOVE_ON
             # to build grounded skill records instead of re-reading the transcript later.
             # EC-4: append under the lock so it cannot interleave with the MOVE_ON block
@@ -2672,12 +2717,22 @@ async def entrypoint(ctx: JobContext):
                     len((payload.get("answer") or "").split()),
                 )
                 logger.debug("[EVAL] turn=%d | answer=%r", turn_snapshot, (payload.get("answer") or "")[:120])
+                # Test event: eval started
+                spawn_background_task(
+                    log_test_event(app_id, "eval_start", f"Evaluating answer on topic: {_scoring_topic_log}"),
+                    "test_event_eval_start"
+                )
                 # EVAL IS THE SINGLE SOURCE OF TRUTH.
                 # run_eval_and_build_directive NEVER returns None and NEVER raises:
                 # recovery (slow/failed LLM) is owned inside eval, which always returns
                 # a real, topic-advancing result with a serialized topic_state_dict.
                 # The agent therefore has NO fallback path -- it trusts eval's return.
                 _eval_result_inline: dict = await run_eval_and_build_directive(payload, _eval_openai_client)
+                # Test event: eval done
+                spawn_background_task(
+                    log_test_event(app_id, "eval_done", f"Eval complete | action={_eval_result_inline.get('action', 'PROBE')}"),
+                    "test_event_eval_done"
+                )
                 # -- Unpack eval result ----------------------------------------
                 _action_from_eval   = str(_eval_result_inline.get("action", "PROBE")).upper()
                 _eval_signal        = _eval_result_inline.get("signal")         # str | None
@@ -2709,6 +2764,17 @@ async def entrypoint(ctx: JobContext):
                     turn_snapshot, _sat_after, _sat_thresh, _is_saturated, _weak_exit, _dry_topic,
                     _action_from_eval, _action
                 )
+                # Test events: log decision
+                if _action == "MOVE_ON":
+                    spawn_background_task(
+                        log_test_event(app_id, "move_on", f"Moving to next topic | sat={_sat_after:.1f}/{_sat_thresh:.1f}"),
+                        "test_event_move_on"
+                    )
+                else:
+                    spawn_background_task(
+                        log_test_event(app_id, "probe", f"Probing further | sat={_sat_after:.1f}/{_sat_thresh:.1f}"),
+                        "test_event_probe"
+                    )
                 # Log scores
                 logger.info(
                     "[TURN_RESULT] turn=%-2d | topic=%-35s | "
@@ -3103,6 +3169,10 @@ async def entrypoint(ctx: JobContext):
             logger.error("[EVAL] _process_user_conversation_item failed turn=%d: %s", turn_snapshot, e, exc_info=True)
             agent._waiting_for_eval = False
             agent._directive_ready.set()
+    _FIXED_WARMUP_TEXT = (
+        "Right, so this'll be a fairly casual conversation — I'm just curious to know more about "
+        "what you've worked on and how you think about things. Are you all set to begin?"
+    )
     async def _handle_completed_user_turn(_turn_ctx, new_message) -> None:
         nonlocal _answer_received_at, _candidate_turn_since_last_assistant, \
             warmup_complete, _awaiting_first_interview_question
@@ -3118,6 +3188,33 @@ async def entrypoint(ctx: JobContext):
             logger.info("[GATE] Candidate spoke before greeting  blocked")
             return
         turn_snapshot = turn_count
+        # Turn 1 = candidate's reply to the greeting. Deliver fixed warmup via session.say()
+        # so the LLM never generates this line (it was producing unpredictable filler).
+        if turn_snapshot == 1 and not warmup_complete:
+            agent._waiting_for_eval = True
+            agent._directive_ready.clear()
+            await _process_user_conversation_item(content, "user", turn_snapshot)
+            append_transcript_line("Candidate", content)
+            try:
+                await session.say(_FIXED_WARMUP_TEXT, allow_interruptions=False)
+                append_transcript_line("Interviewer", _FIXED_WARMUP_TEXT)
+                logger.info("[WARMUP] Fixed warmup delivered via session.say()")
+            except Exception as _w_err:
+                logger.warning("[WARMUP] session.say() warmup failed: %s", _w_err)
+            finally:
+                # Update phase status and release gate — candidate will answer warmup next
+                remove_system_messages(chat_ctx, "[PHASE_STATUS]")
+                chat_ctx.add_message(
+                    role="system",
+                    content=(
+                        "[PHASE_STATUS -- DO NOT SAY ALOUD]\n"
+                        "GREETING: DONE. WARMUP QUESTION: ALREADY ASKED — do not repeat it.\n"
+                        "Wait silently for candidate's answer. DO NOT say anything until [NEXT_TURN_DIRECTIVE] arrives."
+                    ),
+                )
+                agent._waiting_for_eval = False
+                agent._directive_ready.set()
+            return
         # Dynamic warmup (Option B): LLM decides readiness, not a fixed turn count.
         # Warmup ends when the candidate signals they are ready to begin.
         # We detect this by checking their response for readiness markers.
@@ -3617,9 +3714,8 @@ async def entrypoint(ctx: JobContext):
                             content=(
                                 "[PHASE_STATUS -- DO NOT SAY ALOUD]\n"
                                 "GREETING: DONE. You have already said hello and introduced yourself.\n"
-                                "DO NOT greet again, re-introduce yourself, or ask 'how are you doing' again.\n"
-                                "CURRENT PHASE: WARMUP -- respond to what they said, briefly introduce the interview, ask if ready.\n"
-                                "Do NOT mention projects, resume items, skills, companies, or specific tools yet."
+                                "DO NOT greet again or re-introduce yourself.\n"
+                                "WARMUP QUESTION WILL BE DELIVERED AUTOMATICALLY — do not generate it."
                             ),
                         )
                         break
@@ -3882,53 +3978,50 @@ async def entrypoint(ctx: JobContext):
         _final_scores    = list(answer_scores)
         _transcript_snap = list(transcript_lines)
         _proctoring_snap = dict(proctoring_data) if proctoring_data else {}
-        # REC-04: report and summary are independent — run in parallel.
-        # generate_interview_summary builds its own content from scores_context
-        # which report writes to DB; summary reads from DB via scores_context arg.
-        # We run report first to get scores_context, then summary immediately after.
-        # Since summary needs scores_context from report, we use a two-phase gather:
-        # Phase 1: report (produces scores_context)
-        # Phase 2: summary (consumes scores_context) — fired immediately after report done
-        # Both phases run as background tasks so session shutdown isn't blocked.
-        scores_context = None
-        async def _run_report_then_summary() -> None:
-            nonlocal scores_context
-            try:
-                logger.info("[REPORT] Generating with answer_scores=%d turns", len(_final_scores))
-                async with asyncio.timeout(300):
-                    scores_context = await generate_interview_report(
-                        app_id,
-                        _transcript_snap,
-                        _final_scores,
-                        job_title,
-                        proctoring_data=_proctoring_snap,
-                        org_id=org_id,
-                        llm_model=analysis_model,
-                        jd_json=_coerce_jsonish(extracted_details) if extracted_details else None,
-                        topic_records=list(_topic_records),
-                    )
-                logger.info("[REPORT] Completed. scores_context keys=%s",
-                            list(scores_context.keys()) if scores_context else None)
-            except asyncio.TimeoutError:
-                logger.warning(f"[REPORT] Timed out for {app_id} after 5 min")
-            except Exception as e:
-                logger.error(f"[REPORT] Failed for {app_id}: {e}")
-            # Summary runs immediately after report regardless of report success/failure
-            try:
-                async with asyncio.timeout(60):
-                    await generate_interview_summary(
-                        app_id,
-                        _transcript_snap,
-                        job_title,
-                        org_id=org_id,
-                        llm_model=analysis_model,
-                        scores_context=scores_context,
-                    )
-            except asyncio.TimeoutError:
-                logger.warning(f"[SUMMARY] Timed out for {app_id} after 60s")
-            except Exception as e:
-                logger.error(f"[SUMMARY] Failed for {app_id}: {e}")
-        await _run_report_then_summary()
+        if _is_test_session and _skip_report:
+            # ponytail: test session with report disabled — skip all LLM report/summary calls
+            logger.info("[REPORT] Skipped (test session with skipReport=True) for %s", app_id)
+        else:
+            # REC-04: report and summary are independent — run in parallel.
+            scores_context = None
+            async def _run_report_then_summary() -> None:
+                nonlocal scores_context
+                try:
+                    logger.info("[REPORT] Generating with answer_scores=%d turns", len(_final_scores))
+                    async with asyncio.timeout(300):
+                        scores_context = await generate_interview_report(
+                            app_id,
+                            _transcript_snap,
+                            _final_scores,
+                            job_title,
+                            proctoring_data=_proctoring_snap,
+                            org_id=org_id,
+                            llm_model=analysis_model,
+                            jd_json=_coerce_jsonish(extracted_details) if extracted_details else None,
+                            topic_records=list(_topic_records),
+                        )
+                    logger.info("[REPORT] Completed. scores_context keys=%s",
+                                list(scores_context.keys()) if scores_context else None)
+                except asyncio.TimeoutError:
+                    logger.warning(f"[REPORT] Timed out for {app_id} after 5 min")
+                except Exception as e:
+                    logger.error(f"[REPORT] Failed for {app_id}: {e}")
+                # Summary runs immediately after report regardless of report success/failure
+                try:
+                    async with asyncio.timeout(60):
+                        await generate_interview_summary(
+                            app_id,
+                            _transcript_snap,
+                            job_title,
+                            org_id=org_id,
+                            llm_model=analysis_model,
+                            scores_context=scores_context,
+                        )
+                except asyncio.TimeoutError:
+                    logger.warning(f"[SUMMARY] Timed out for {app_id} after 60s")
+                except Exception as e:
+                    logger.error(f"[SUMMARY] Failed for {app_id}: {e}")
+            await _run_report_then_summary()
     # Queue accumulated eval/brief/directive LLM usage before writing the exact
     # interview snapshot so recent-interview rows match the org-level totals.
     for _eval_usage in _eval_llm_usages_accumulated:
@@ -3953,6 +4046,37 @@ async def entrypoint(ctx: JobContext):
         logger.error(f"[USAGE] Failed to persist interview billing snapshot for {app_id}: {e}")
         raise
     await flush_pending_manual_billing(org_id)
+    # For test sessions: write cost metrics to testBillingMetrics column
+    if _is_test_session:
+        try:
+            pool = await __import__("interview.agent_persistence", fromlist=["DatabasePool"]).DatabasePool.get()
+            _usage_snap = latest_session_usage or session.usage
+            _llm_in  = getattr(_usage_snap, "input_tokens",  0) or 0
+            _llm_out = getattr(_usage_snap, "output_tokens", 0) or 0
+            # rough cost estimate (GPT-4o pricing, update if model changes)
+            _llm_cost = round((_llm_in * 2.5 + _llm_out * 10) / 1_000_000, 6)
+            _tts_cost = round((billable_tts_characters or 0) * 0.000015, 6)
+            _stt_cost = round((plugin_stt_audio_seconds or 0) * 0.0043 / 60, 6)
+            async with pool.acquire() as _conn:
+                await _conn.execute(
+                    """UPDATE "Interview" SET "testBillingMetrics" = $1::jsonb, "updatedAt" = NOW()
+                       WHERE "applicationId" = $2""",
+                    json.dumps({
+                        "skipReport": _skip_report,
+                        "llmCost": _llm_cost,
+                        "ttsCost": _tts_cost,
+                        "sttCost": _stt_cost,
+                        "llmInputTokens": int(_llm_in),
+                        "llmOutputTokens": int(_llm_out),
+                        "ttsChars": int(billable_tts_characters or 0),
+                        "sttSeconds": round(float(plugin_stt_audio_seconds or 0), 1),
+                    }),
+                    app_id,
+                )
+            logger.info("[TEST_BILLING] Saved metrics for %s | llm=$%.4f tts=$%.4f stt=$%.4f",
+                        app_id, _llm_cost, _tts_cost, _stt_cost)
+        except Exception as _tb_err:
+            logger.warning("[TEST_BILLING] Failed to save metrics: %s", _tb_err)
     # Cancel any leftover fire-and-forget work so job teardown is instant.
     if background_tasks:
         logger.debug(f"[SHUTDOWN] Cancelling {len(background_tasks)} background task(s)")

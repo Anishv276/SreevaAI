@@ -184,16 +184,14 @@ def build_elevenlabs_tts(
         "model":                 resolved_model,
         "voice_id":              voice_id,
         "voice_settings":        voice_settings,
-        # apply_text_normalization='on' forces ElevenLabs to always expand
-        # numbers, currency, dates — turbo_v2_5 handles this reliably.
-        "apply_text_normalization": "on",
-        # turbo_v2_5 supports SSML — enable so <break> tags work if needed.
-        "enable_ssml_parsing":   True,
-        # chunk_length_schedule: 120 chars minimum gives the model enough
-        # context to infer intonation before generating the first audio chunk.
-        "chunk_length_schedule": [120, 160, 250, 290],
-        # sync_alignment=True: word-level timing from ElevenLabs (default True,
-        # but explicit so it's visible and not accidentally overridden).
+        # 'auto' lets ElevenLabs decide — 'on' was spelling out tech terms letter-by-letter.
+        "apply_text_normalization": "auto",
+        # SSML off — we don't send SSML tags.
+        "enable_ssml_parsing":   False,
+        # No chunk_length_schedule → auto_mode=True → ElevenLabs uses its own SentenceTokenizer.
+        # This is better than our manual chunking: it waits for full phrases before synthesizing
+        # so names like "Multi Channel Lead Qualification System" are spoken as a whole, not letter-by-letter.
+        # sync_alignment=True: word-level timing (default True, explicit for visibility).
         "sync_alignment":        True,
     }
     if pronunciation_dict_locators:

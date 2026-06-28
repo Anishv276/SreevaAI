@@ -144,6 +144,8 @@ model Interview {
   recording                  Json?           @default("{}")
   skillRatings               Json?           @default("[]")
   isDeleted                  Boolean         @default(false)
+  isTest                     Boolean         @default(false)
+  testBillingMetrics         Json?           @default("{}")
   application                Application     @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   supportTickets             SupportTicket[]
 
@@ -151,6 +153,7 @@ model Interview {
   @@index([status, completedAt(sort: Desc)])
   @@index([status, updatedAt(sort: Desc)])
   @@index([updatedAt(sort: Desc)])
+  @@index([isTest])
 }
 
 model SupportTicket {

@@ -106,7 +106,7 @@ export async function GET(request: Request) {
                 where,
                 include: {
                     drive: { select: { title: true, role: true } },
-                    interview: { select: { inviteSentAt: true, status: true, completedAt: true } },
+                    interview: { select: { inviteSentAt: true, status: true, completedAt: true, isTest: true } },
                 },
                 orderBy:
                     sortBy === "score"
@@ -174,6 +174,10 @@ export async function GET(request: Request) {
                 screeningProgress: progress,
                 screeningStage: stage,
                 inviteSentAt: app.interview?.inviteSentAt ?? null,
+                interview: app.interview ? {
+                    completedAt: app.interview.completedAt,
+                    isTest: app.interview.isTest,
+                } : null,
                 createdAt: app.createdAt,
                 date: new Date(app.createdAt).toLocaleDateString(),
             };

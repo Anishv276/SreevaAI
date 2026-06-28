@@ -1,6 +1,6 @@
 "use client";
 import React from "react";
-import { Building2, Search, RefreshCw, ChevronRight } from "lucide-react";
+import { Building2, Search, RefreshCw, ChevronRight, FlaskConical, Cpu, Volume2, Mic } from "lucide-react";
 import { BillingContent } from "@/components/admin/billing/billing-content";
 import { formatOrgPlan } from "@/lib/org-plans";
 import { formatLandingPackageForOrgPlan } from "@/lib/landing-packages";
@@ -14,6 +14,104 @@ type OrgSummary = {
   interviewQuotaTotal: number;
   interviewQuotaUsed: number;
 };
+type TestBillingRow = {
+  id: string; candidate: string; drive: string; date: string;
+  duration: string; llmCost: number; ttsCost: number; sttCost: number; totalCost: number;
+};
+type TestBillingTotals = { llmCost: number; ttsCost: number; sttCost: number; totalCost: number };
+
+function TestBillingSection({ orgId }: { orgId: string }) {
+  const [data, setData] = React.useState<{ rows: TestBillingRow[]; totals: TestBillingTotals; count: number } | null>(null);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    setLoading(true);
+    fetch(`/api/test/billing?orgId=${encodeURIComponent(orgId)}`)
+      .then(r => r.json())
+      .then(d => { setData(d); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [orgId]);
+
+  const fmt = (n: number) => n < 0.001 ? "<$0.001" : `$${n.toFixed(4)}`;
+
+  return (
+    <div className="bg-white rounded-2xl overflow-hidden mt-4" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
+      <div className="px-5 py-4 flex items-center gap-2.5" style={{ borderBottom: "1px solid #F0EEF8" }}>
+        <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: "#FEF3C7" }}>
+          <FlaskConical className="w-3.5 h-3.5" style={{ color: "#B45309" }} />
+        </div>
+        <div>
+          <h2 className="text-sm font-semibold text-gray-900">Testing Usage</h2>
+          <p className="text-xs text-gray-400 mt-0.5">LLM · TTS · STT costs for test runs — not billed to org</p>
+        </div>
+        {data && (
+          <div className="ml-auto flex items-center gap-3">
+            <div className="text-right">
+              <p className="text-xs text-gray-400">Total cost</p>
+              <p className="text-sm font-semibold text-gray-900">{fmt(data.totals.totalCost)}</p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {loading ? (
+        <div className="p-8 text-center">
+          <RefreshCw className="w-4 h-4 animate-spin text-violet-400 mx-auto mb-2" />
+          <p className="text-xs text-gray-400">Loading test usage...</p>
+        </div>
+      ) : !data || data.count === 0 ? (
+        <div className="p-8 text-center">
+          <p className="text-sm text-gray-400">No test runs for this organization yet.</p>
+        </div>
+      ) : (
+        <>
+          {/* Totals row */}
+          <div className="px-5 py-3 grid grid-cols-3 gap-4" style={{ borderBottom: "1px solid #F0EEF8", background: "#FAFAFC" }}>
+            {([
+              { icon: <Cpu className="w-3.5 h-3.5" />, label: "LLM", value: fmt(data.totals.llmCost) },
+              { icon: <Volume2 className="w-3.5 h-3.5" />, label: "TTS", value: fmt(data.totals.ttsCost) },
+              { icon: <Mic className="w-3.5 h-3.5" />, label: "STT", value: fmt(data.totals.sttCost) },
+            ] as const).map(({ icon, label, value }) => (
+              <div key={label} className="flex items-center gap-2">
+                <span className="text-gray-400">{icon}</span>
+                <div>
+                  <p className="text-xs text-gray-400">{label}</p>
+                  <p className="text-sm font-semibold text-gray-900">{value}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Table */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr style={{ background: "#F9F8FF", borderBottom: "1px solid #F0EEF8" }}>
+                  {["Candidate", "Drive", "Duration", "LLM", "TTS", "STT", "Total"].map(h => (
+                    <th key={h} className="px-4 py-3 text-left font-semibold text-xs text-gray-400 uppercase tracking-wider">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {data.rows.map((row, i) => (
+                  <tr key={row.id} style={{ borderBottom: i < data.rows.length - 1 ? "1px solid #F0EEF8" : "none" }}>
+                    <td className="px-4 py-3 text-sm text-gray-900 font-medium">{row.candidate}</td>
+                    <td className="px-4 py-3 text-sm text-gray-500">{row.drive}</td>
+                    <td className="px-4 py-3 text-xs text-gray-400">{row.duration}</td>
+                    <td className="px-4 py-3 text-xs font-mono text-gray-600">{fmt(row.llmCost)}</td>
+                    <td className="px-4 py-3 text-xs font-mono text-gray-600">{fmt(row.ttsCost)}</td>
+                    <td className="px-4 py-3 text-xs font-mono text-gray-600">{fmt(row.sttCost)}</td>
+                    <td className="px-4 py-3 text-xs font-mono font-semibold text-gray-800">{fmt(row.totalCost)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 export default function SuperAdminBillingPage() {
   const [orgs, setOrgs] = React.useState<OrgSummary[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -175,6 +273,7 @@ export default function SuperAdminBillingPage() {
         </aside>
         <section className="min-w-0">
           {selectedOrg ? (
+            <>
               <BillingContent
                 creditsEndpoint={creditsUrl}
                 historyEndpoint={historyUrl}
@@ -184,6 +283,8 @@ export default function SuperAdminBillingPage() {
                 showCreditInternals={true}
                 showCreditsUsedInHistory={true}
               />
+              <TestBillingSection orgId={selectedOrg.id} />
+            </>
           ) : (
             <div className="rounded-2xl border border-gray-200 bg-white p-12 text-center text-gray-500">
               Select an organization to view billing.
