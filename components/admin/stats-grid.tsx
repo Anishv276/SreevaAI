@@ -1,37 +1,47 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
 import {
-    Users, Briefcase, Video, UserCheck,
-    Clock, Target, Radio, Star
+    Users, Briefcase, ClipboardCheck, Star,
+    XCircle, TrendingUp
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
 import type { DateRange } from "./date-filter";
+
 interface StatsData {
     activeDrives: number;
     totalCandidates: number;
     applicationsToday: number;
     appTrendDelta: number;
+    interviewedDelta: number;
+    shortlistedDelta: number;
+    rejectedDelta: number;
     interviewed: number;
     shortlisted: number;
-    shortlistPassRate: number;
-    liveInterviews: number;
-    avgRating: number;
+    rejected: number;
+    avgScore: number;
 }
 interface StatsGridProps {
     dateRange: DateRange;
+    initialData?: StatsData | null;
 }
 function buildUrl(range: DateRange) {
     const base = "/api/admin/stats";
     if (range.type === "custom") return `${base}?range=custom&from=${range.from}&to=${range.to}`;
     return `${base}?range=${range.type}`;
 }
-export function StatsGrid({ dateRange }: StatsGridProps) {
+export function StatsGrid({ dateRange, initialData }: StatsGridProps) {
     const [stats, setStats] = useState<StatsData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [retryKey, setRetryKey] = useState(0);
     useEffect(() => {
+        if (initialData) {
+            setStats(initialData);
+            setLoading(false);
+            setError(null);
+            return;
+        }
         const controller = new AbortController();
         const { signal } = controller;
         const loadStats = async () => {
@@ -77,66 +87,81 @@ export function StatsGrid({ dateRange }: StatsGridProps) {
         );
     }
     const s = stats;
+
+    function deltaSub(delta: number | undefined, unit = "") {
+        if (delta == null) return "No previous data";
+        const abs = Math.abs(delta);
+        const up = delta >= 0;
+        const arrow = up ? "\u2191" : "\u2193";
+        const label = `${arrow} ${abs}${unit} vs prior period`;
+        return label;
+    }
+    function deltaColor(delta: number | undefined, isInverted = false) {
+        if (delta == null || delta === 0) return "text-gray-400";
+        const positive = delta > 0;
+        return (positive !== isInverted) ? "text-green-500" : "text-red-500";
+    }
+
     const cards = [
         {
             label: "Active Jobs",
             value: s.activeDrives,
-            sub: "Open positions",
+            sub: "All non-deleted drives",
             icon: Briefcase,
-            iconStyle: { background: "linear-gradient(135deg, rgba(124,58,237,0.1), rgba(59,130,246,0.08))" },
-            iconColor: "text-violet-600",
+            iconStyle: { background: "#F3E8FF" },
+            iconColor: "text-purple-600",
             valueColor: "text-gray-900",
+            subColor: "text-gray-400",
         },
         {
-            label: "Uploaded",
+            label: "Total Candidates",
             value: s.totalCandidates,
-            sub: `+${s.applicationsToday} today`,
+            sub: deltaSub(s.appTrendDelta),
             icon: Users,
-            iconStyle: { background: "rgba(59,130,246,0.1)" },
-            iconColor: "text-blue-600",
+            iconStyle: { background: "#E0F2FE" },
+            iconColor: "text-blue-500",
             valueColor: "text-gray-900",
-            badge: s.appTrendDelta !== 0
-                ? { label: `${s.appTrendDelta > 0 ? "+" : ""}${s.appTrendDelta}`, up: s.appTrendDelta >= 0 }
-                : undefined,
+            subColor: deltaColor(s.appTrendDelta),
         },
         {
-            label: "Live Now",
-            value: s.liveInterviews,
-            sub: "Active sessions",
-            icon: Radio,
-            iconStyle: { background: "rgba(139,92,246,0.1)" },
-            iconColor: "text-violet-600",
-            valueColor: "text-gray-900",
-            pulse: s.liveInterviews > 0,
-        },
-        {
-            label: "Interviewed",
+            label: "Interviews Completed",
             value: s.interviewed,
-            sub: s.totalCandidates
-                ? `${Math.round((s.interviewed / s.totalCandidates) * 100)}% of uploaded`
-                : "of uploaded",
-            icon: Video,
-            iconStyle: { background: "rgba(109,40,217,0.1)" },
-            iconColor: "text-violet-700",
+            sub: deltaSub(s.interviewedDelta),
+            icon: ClipboardCheck,
+            iconStyle: { background: "#DCFCE7" },
+            iconColor: "text-green-500",
             valueColor: "text-gray-900",
+            subColor: deltaColor(s.interviewedDelta),
         },
         {
             label: "Shortlisted",
             value: s.shortlisted,
-            sub: `${s.shortlistPassRate}% pass rate`,
-            icon: Target,
-            iconStyle: { background: "rgba(96,165,250,0.12)" },
-            iconColor: "text-blue-500",
-            valueColor: "text-gray-900",
-        },
-        {
-            label: "Candidate Rating",
-            value: s.avgRating > 0 ? s.avgRating.toFixed(1) : "—",
-            sub: s.avgRating > 0 ? "Avg. experience (1–5)" : "No ratings yet",
+            sub: deltaSub(s.shortlistedDelta),
             icon: Star,
-            iconStyle: { background: "rgba(245,158,11,0.1)" },
+            iconStyle: { background: "#FEF3C7" },
             iconColor: "text-amber-500",
             valueColor: "text-gray-900",
+            subColor: deltaColor(s.shortlistedDelta),
+        },
+        {
+            label: "Rejected",
+            value: s.rejected || 0,
+            sub: deltaSub(s.rejectedDelta),
+            icon: XCircle,
+            iconStyle: { background: "#FEE2E2" },
+            iconColor: "text-red-500",
+            valueColor: "text-gray-900",
+            subColor: deltaColor(s.rejectedDelta, true),
+        },
+        {
+            label: "Avg. Interview Score",
+            value: `${s.avgScore || 0}%`,
+            sub: "Across completed interviews",
+            icon: TrendingUp,
+            iconStyle: { background: "#F3E8FF" },
+            iconColor: "text-purple-600",
+            valueColor: "text-gray-900",
+            subColor: "text-gray-400",
         },
     ];
     return (
@@ -169,31 +194,19 @@ export function StatsGrid({ dateRange }: StatsGridProps) {
                             <card.icon className={cn("h-4 w-4", card.iconColor)} strokeWidth={1.75} />
                         </div>
                         <div className="flex items-center gap-2">
-                            {card.pulse && (
-                                <span className="relative flex h-2 w-2">
-                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-75" />
-                                    <span className="relative inline-flex h-2 w-2 rounded-full bg-violet-500" />
-                                </span>
-                            )}
-                            {card.badge && (
-                                <span className={cn(
-                                    "text-[10px] font-semibold px-1.5 py-0.5 rounded-md",
-                                    card.badge.up ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"
-                                )}>
-                                    {card.badge.label}
-                                </span>
-                            )}
                         </div>
                     </div>
                     {/* Bottom: value + label + sub */}
                     <div>
-                        <p className={cn("text-2xl font-bold tabular-nums tracking-tight leading-none", card.valueColor)}>
+                        <div className="flex items-center gap-2 mb-1.5">
+                            <p className="text-xs font-semibold text-gray-500 leading-tight">
+                                {card.label}
+                            </p>
+                        </div>
+                        <p className={cn("text-3xl font-bold tabular-nums tracking-tight leading-none mb-2", card.valueColor)}>
                             {card.value}
                         </p>
-                        <p className="text-xs font-semibold text-gray-500 mt-1.5 leading-tight">
-                            {card.label}
-                        </p>
-                        <p className="text-[11px] text-gray-400 mt-0.5 leading-tight">{card.sub}</p>
+                        <p className={cn("text-[11px] font-medium leading-tight", card.subColor)}>{card.sub}</p>
                     </div>
                 </motion.div>
             ))}

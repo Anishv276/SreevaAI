@@ -394,50 +394,7 @@ def _sanitize_topic_title_for_speech(title: str) -> str:
     # Collapse whitespace.
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
     return cleaned
-def _build_secondary_directive(secondary: dict, *, job_title: str) -> str:
-    """Build the [NEXT_TURN_DIRECTIVE] for a SECONDARY-PHASE move (used when the
-    primary resume/skill pool is exhausted but time remains, so the agent keeps the
-    interview going instead of wrapping up early).
-    phase = "deepen"      -> go deeper on a strong topic the candidate answered well
-    phase = "jd_scenario" -> turn a JD must-have skill into a real situational question
-    phase = "soft"        -> a warm, always-answerable wind-down question
-    """
-    phase = secondary.get("phase")
-    if phase == "deepen":
-        topic = secondary.get("topic", "")
-        title = _topic_short_title(topic)
-        return (
-            "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
-            "DECISION: DEEPEN\n"
-            f"TOPIC CONTEXT: {topic}\n"
-            f"The candidate answered well on {title} earlier. You have time -- go DEEPER now.\n"
-            "Ask ONE harder follow-up that pushes past the surface: a real tradeoff they made,\n"
-            "what broke or almost broke, a number/scale, or what they would change if rebuilding it.\n"
-            "Do NOT re-ask what they already told you -- build on it. ONE question. Sound curious, not repetitive.\n"
-            "Do NOT wrap up or say goodbye -- the interview is still in progress."
-        )
-    if phase == "jd_scenario":
-        skill = secondary.get("topic", "")
-        return (
-            "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
-            "DECISION: JD_SCENARIO\n"
-            f"JD REQUIREMENT: {skill}\n"
-            f"This is a must-have for the {job_title or 'role'}. Turn it into a REAL situational question --\n"
-            "not 'have you used X?'. Ask how they would approach a concrete task that needs this skill,\n"
-            "e.g. 'If you had to set up X for a new campaign from scratch, how would you start?'\n"
-            "If they clearly have no idea, accept it briefly and the next turn will move on.\n"
-            "ONE question. Practical and concrete. Do NOT wrap up or say goodbye."
-        )
-    # soft
-    q = secondary.get("question", "What are you most excited to work on next?")
-    return (
-        "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
-        "DECISION: SOFT\n"
-        "You have time left and the resume/JD topics are covered. Keep it warm and human.\n"
-        f"Ask this (or a close natural variant): \"{q}\"\n"
-        "ONE question. Friendly, low-pressure. Do NOT wrap up or say goodbye yet."
-    )
-async def _generate_probe_directive(
+def _build_probe_directive(
     *,
     signal: Optional[str],
     signal_reason: Optional[str],
@@ -451,22 +408,17 @@ async def _generate_probe_directive(
     coverage_memory: str,
     asked_questions_log: list[str],
     topic_transcript: list[str],
-    client: Any,
-    llm_model: str = "gpt-4.1-mini",
-    usage_sink: Optional[Any] = None,
 ) -> str:
     """
-    Builds a probe directive that tells the interview LLM what SIGNAL fired,
-    what it means, what ANGLE to pursue, and what the probe family demands.
-    No scripted question — Ishita generates the question herself from the
-    live conversation, guided by the signal context and family definition.
-    """
-    import logging as _logging
-    from interview.probe_strategy import get_probe_context
-    _log = _logging.getLogger("interview-agent")
+    Builds the probe directive synchronously — no LLM call.
+    All inputs come from the eval result + topic brief already in memory.
+    The interview LLM (Ishita) reads this and generates her own question.
 
-    # -- Topic brief block --
-    _topic_ctx = ""
+    Eliminates the middle directive LLM call, collapsing 3 calls/turn → 2.
+    """
+    from interview.probe_strategy import get_probe_context
+
+    # Topic brief block
     if topic_item is not None:
         parts = [f"TOPIC: {topic_item.title}"]
         if topic_item.full_description:
@@ -475,20 +427,18 @@ async def _generate_probe_directive(
             parts.append(f"INTERESTING ANGLES: {', '.join(topic_item.probe_focus)}")
         if topic_item.probe_avoid:
             parts.append(f"SKIP: {', '.join(topic_item.probe_avoid)}")
-        if topic_item.why_relevant:
-            parts.append(f"WHY THIS MATTERS: {topic_item.why_relevant}")
         _topic_ctx = "\n".join(parts)
     else:
         _topic_ctx = f"TOPIC: {active_topic}"
 
-    # -- Conversation thread (last 8 lines so directive LLM sees full back-and-forth) --
+    # Last N lines of the conversation thread
     _thread = "\n".join(topic_transcript[-8:]) if topic_transcript else (
         f"Interviewer: {prev_question}\nCandidate: {prev_answer}"
     )
 
     _asked = "\n".join(f"  - {q}" for q in asked_questions_log[-6:])
 
-    # -- Signal probe context from probe_strategy --
+    # Full probe context from probe_strategy — what fired, what to do, what to skip
     _probe_ctx = get_probe_context(
         signal=signal,
         signal_reason=signal_reason,
@@ -498,88 +448,59 @@ async def _generate_probe_directive(
         prev_answer=prev_answer,
     )
 
-    _system = (
-        "You are a senior interviewer coach writing a PRIVATE DIRECTIVE for Ishita, an AI interviewer.\n"
-        "This directive is NEVER spoken aloud. Ishita reads it, then generates her OWN question\n"
-        "from the live conversation. She does not copy your words.\n\n"
-        "YOUR JOB: Tell Ishita what the signal means, what angle to pursue, and what to find out.\n"
-        "Do NOT write a question. A scripted question makes her sound robotic.\n\n"
-        "Output format (plain text, no markdown):\n"
-        "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
-        f"DECISION: PROBE ({(signal or 'depth').upper()})\n"
-        "WHAT THE CANDIDATE REVEALED: 1-2 lines — what is interesting, missing, or suspicious in what they just said\n"
-        "ANGLE TO PURSUE: The specific thread worth pulling — reference their actual words, not a generic description\n"
-        "INTENT: What Ishita is trying to find out and why this angle matters right now\n"
-        "FORBIDDEN: 1-2 specific things NOT to do this turn\n\n"
-        "Rules:\n"
-        "- NO question ever. Ishita generates the question herself.\n"
-        "- ANGLE must quote or reference something from the conversation thread — never generic.\n"
-        "- One angle only. Sharp and specific beats broad and general."
+    # Filler guidance — classify prev answer intent so Ishita's reaction is connected
+    _prev_lower = (prev_answer or "").lower().strip()
+    if not _prev_lower or any(p in _prev_lower for p in ("i don't know", "i forgot", "i don't remember", "not sure", "can't recall")):
+        _filler_hint = "FILLER: 'No worries.' or 'Fair enough.' — they couldn't recall."
+    elif len(_prev_lower.split()) <= 8:
+        _filler_hint = "FILLER: 'Hmm, okay.' or 'Right.' — short answer, acknowledge briefly."
+    elif any(p in _prev_lower for p in ("i think", "probably", "maybe", "i believe", "kind of", "sort of")):
+        _filler_hint = "FILLER: 'Hmm, okay.' or 'Mm.' — they hedged, don't praise it."
+    else:
+        _filler_hint = "FILLER: 'Ah, makes sense.' or 'Right.' or 'Okay.' — substantive answer."
+
+    parts_out = [
+        f"[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]",
+        f"DECISION: PROBE ({(signal or 'depth').upper()})",
+        f"",
+        f"TOPIC BRIEF:",
+        _topic_ctx,
+        f"",
+        f"CONVERSATION THREAD:",
+        _thread,
+        f"",
+        f"SIGNAL & PROBE CONTEXT:",
+        _probe_ctx,
+        f"",
+        _filler_hint,
+        "FILLER RULES: Never 'Great!', 'Awesome!', 'Fantastic!'. Never 'Thanks for sharing'.",
+        "Filler and question must feel like one connected turn — not two separate things.",
+        f"",
+    ]
+    if _asked:
+        parts_out += [
+            "QUESTIONS ALREADY ASKED — do NOT repeat these angles or rephrasings:",
+            _asked,
+            "",
+        ]
+    if coverage_memory:
+        parts_out.append(coverage_memory)
+
+    parts_out += [
+        "QUESTION RULES:",
+        "- Ask EXACTLY ONE question. One question mark. Not two. Not 'and also'.",
+        "- Keep it under 20 words. Real interviewers ask one sharp thing then listen.",
+        "- The question must reference something specific from the conversation thread above.",
+        "- Do NOT write anything here — Ishita generates the question herself from this context.",
+    ]
+
+    directive = "\n".join(parts_out)
+    import logging as _logging
+    _logging.getLogger("interview-agent").info(
+        "[PROBE_DIRECTIVE] built (no LLM) | topic=%r signal=%s | %d chars",
+        active_topic[:60], signal or "none", len(directive),
     )
-
-    _user = (
-        f"BAND: {band.upper()}\n\n"
-        f"TOPIC BRIEF:\n{_topic_ctx}\n\n"
-        f"CONVERSATION THREAD:\n{_thread}\n\n"
-        f"SIGNAL & PROBE CONTEXT:\n{_probe_ctx}\n\n"
-        + (f"QUESTIONS ALREADY ASKED (do NOT repeat these angles):\n{_asked}\n\n" if _asked else "")
-        + (f"{coverage_memory}\n" if coverage_memory else "")
-        + "Write the directive now."
-    )
-
-    try:
-        chunks: list[str] = []
-        _usage = None
-        async with asyncio.timeout(8.0):
-            stream = await client.chat.completions.create(
-                model=llm_model,
-                messages=[
-                    {"role": "system", "content": _system},
-                    {"role": "user",   "content": _user},
-                ],
-                temperature=0.3,
-                max_tokens=400,
-                stream=True,
-                stream_options={"include_usage": True},
-                store=True,
-                metadata={"call_type": "probe_directive", "band": band, "signal": signal or "none"},
-                prediction={"type": "content", "content": (
-                    "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
-                    f"DECISION: PROBE ({(signal or 'depth').upper()})\n"
-                    "WHAT THE CANDIDATE REVEALED: "
-                )},
-            )
-            async for chunk in stream:
-                if chunk.choices and chunk.choices[0].delta.content:
-                    chunks.append(chunk.choices[0].delta.content)
-                if getattr(chunk, "usage", None):
-                    _usage = chunk.usage
-        if usage_sink and _usage:
-            from billing.billing import extract_usage as _extract_usage  # noqa: PLC0415
-            usage_sink(_extract_usage(_usage, llm_model))
-        generated = "".join(chunks).strip()
-        if not generated:
-            raise ValueError("empty probe directive")
-        _log.info("[PROBE_LLM] Generated | topic=%r signal=%s | %d chars",
-                  active_topic[:60], signal or "none", len(generated))
-        return generated
-
-    except Exception as exc:
-        _log.warning("[PROBE_LLM] generation failed (%s) — fallback", exc)
-        _thread_fallback = "\n".join(topic_transcript[-4:]) if topic_transcript else (
-            f"Interviewer: {prev_question}\nCandidate: {prev_answer}"
-        )
-        _signal_line = f"SIGNAL: {signal} — {signal_reason}" if signal else "No specific signal detected."
-        return (
-            f"[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
-            f"DECISION: PROBE ({(signal or 'depth').upper()})\n"
-            f"WHAT THE CANDIDATE REVEALED: Their answer left something specific unresolved.\n"
-            f"{_signal_line}\n"
-            f"ANGLE TO PURSUE: Find the most concrete or surprising thing in their last answer and pull that thread.\n"
-            f"INTENT: Understand what they actually did or decided — not just what they say they did.\n"
-            f"CONVERSATION THREAD:\n{_thread_fallback}\n"
-            f"FORBIDDEN: Do not ask a generic question. Do not repeat an already-asked angle."
-        )
+    return directive
 
 
 async def _generate_move_on_directive(
@@ -656,108 +577,85 @@ async def _generate_move_on_directive(
     # ROLE_TOPIC   : comes from expert domain knowledge, NOT resume or JD.
     #                Candidate has no known experience here. Ask a concept/approach question.
     #                NEVER ask "what was your experience with X" — they may have none.
+    _topic_type_hint = (topic_item.topic_type if topic_item else "") or ""
+    _probe_focus_str = "; ".join(topic_item.probe_focus[:3]) if (topic_item and topic_item.probe_focus) else ""
+
     if source in ("RESUME_TOPIC", "resume_project", "resume_skill"):
-        _name_clause = (
-            "name the project itself (NOT any company — this is a standalone personal project)"
-            if _is_standalone else
-            "name the specific project or role"
-        )
+        _standalone_note = (
+            "NOTE: This is a standalone personal project — not built at any employer. "
+            "Never attach a company name to it.\n"
+        ) if _is_standalone else ""
+        _type_context = {
+            "project": "a project they personally built",
+            "work":    "a role or job they held",
+            "skill":   "a skill they listed on their resume",
+        }.get(_topic_type_hint, "something from their resume")
         _band_depth = {
-            "fresher": (
-                f"Ask what they personally built and what their specific role was. "
-                f"Surface-level is fine — establish the basics first. "
-                f"Example: 'What exactly did you build in {new_topic_title} and what was specifically yours?'"
-            ),
-            "mid": (
-                f"Ask what was specifically theirs and what decision they made. "
-                f"Push past 'we'. "
-                f"Example: 'In {new_topic_title}, what part of it was completely your call — no team input?'"
-            ),
-            "experienced": (
-                f"Go straight to a tradeoff or design decision. Skip setup. "
-                f"Example: 'What was the hardest design call you made in {new_topic_title} and why did you make it that way?'"
-            ),
-            "senior": (
-                f"Ask about strategic judgment or org-level consequence. "
-                f"Example: 'What did {new_topic_title} change at the team or product level — not just technically?'"
-            ),
-        }.get(band, f"Ask what they personally owned and what decisions were theirs in {new_topic_title}.")
+            "fresher":    "Establish what they personally built and what their specific role was. Surface-level is fine.",
+            "mid":        "Push past team language — ask what was specifically their own call or ownership.",
+            "experienced":"Skip setup. Go straight to a tradeoff, design decision, or what broke.",
+            "senior":     "Probe strategic judgment — what it changed, what the stakes were, what they'd do differently.",
+        }.get(band, "Ask what they personally owned and what decisions were theirs.")
         _angle_guide = (
-            f"TAG: RESUME_TOPIC\n"
-            f"CONTRACT: The candidate HAS direct experience here — this is on their resume. "
-            f"We are not checking if they did it. We KNOW they did. "
-            f"Ask about depth: what they built, what broke, what was their specific call.\n"
-            f"FORBIDDEN:\n"
-            f"  - NEVER ask 'why did you work at X' or 'what drew you to this role/company'\n"
-            f"  - NEVER ask 'do you have experience with' — they do\n"
-            f"  - NEVER say 'you mentioned' or 'on your resume'\n"
-            f"  - NEVER open generically — every word must be specific to {new_topic_title}\n"
-            f"Open by {_name_clause} and ask one concrete question.\n"
-            f"BAND ({band.upper()}) DEPTH GUIDE: {_band_depth}"
+            f"SOURCE: RESUME_TOPIC — {_type_context}.\n"
+            f"{_standalone_note}"
+            f"The candidate HAS done this. We know it from their resume. We are not checking if they did it.\n"
+            f"Your job: set clear context for the candidate so they know exactly which project/role/skill "
+            f"is being discussed, then ask ONE question that goes into depth.\n\n"
+            f"CONTEXT-SETTING PRINCIPLE:\n"
+            f"The candidate is on a voice call. They need to know what you're asking about before they can answer. "
+            f"Reference the topic naturally in the question itself — not with a formulaic opener, "
+            f"but by building the topic name into a real question. "
+            f"For a project: ask about something specific to that project. "
+            f"For a work role: ask about something specific to that company or role. "
+            f"For a skill: ask about a real scenario where they used it.\n\n"
+            f"DEPTH TARGET ({band.upper()}): {_band_depth}\n"
+            f"FORBIDDEN: 'do you have experience', 'why did you work there', 'what drew you to X', "
+            f"'tell me about your background' — these are generic and give the candidate no context."
         )
     elif source in ("JD_TOPIC", "jd_skill"):
         _band_jd = {
-            "fresher": (
-                f"Ask gently — they may be new to this. "
-                f"Example: 'This role uses {new_topic_title} quite a bit — have you had a chance to work with it or explore it?'"
-            ),
-            "mid": (
-                f"Ask about real usage. "
-                f"Example: 'The role works heavily with {new_topic_title} — where have you actually used it in a project?'"
-            ),
-            "experienced": (
-                f"Ask about production depth. "
-                f"Example: 'This role needs strong {new_topic_title} — how have you used it under real production constraints?'"
-            ),
-            "senior": (
-                f"Ask about judgment, not just usage. "
-                f"Example: 'The role leans heavily on {new_topic_title} — where have you had to make strategic calls around it?'"
-            ),
-        }.get(band, f"Ask about their exposure to {new_topic_title} — the role requires it but they haven't claimed it.")
+            "fresher":    "Ask gently — they may be new to this. Check for any exposure, even self-taught or exploratory.",
+            "mid":        "Ask about real usage in a project — not theory, not self-description.",
+            "experienced":"Ask about production depth — constraints, tradeoffs, real consequences.",
+            "senior":     "Ask about strategic calls — where they've had to make judgment calls around it.",
+        }.get(band, "Ask about their exposure neutrally — the role needs it, they haven't claimed it.")
         _angle_guide = (
-            f"TAG: JD_TOPIC\n"
-            f"CONTRACT: This is required by the role but the candidate has NOT claimed it on their resume. "
-            f"We do NOT know if they've used it. Ask neutrally — curious about exposure, not interrogating a gap.\n"
-            f"FORBIDDEN:\n"
-            f"  - NEVER say 'you listed', 'you claimed', 'on your resume', or assume prior experience\n"
-            f"  - NEVER ask 'why did you choose X' or 'what drew you to X' — no assumed history\n"
-            f"  - NEVER grill them if they say they haven't used it — accept and move on\n"
-            f"BAND ({band.upper()}) OPENING GUIDE: {_band_jd}"
+            f"SOURCE: JD_TOPIC — this is required by the job description.\n"
+            f"The candidate has NOT claimed this on their resume. We do not know if they've used it.\n"
+            f"Your job: make it clear to the candidate WHY you're asking — tell them the role needs this — "
+            f"then ask ONE question that checks their exposure without assuming they have any.\n\n"
+            f"CONTEXT-SETTING PRINCIPLE:\n"
+            f"The candidate needs to understand the question's origin: this is a role requirement, not a resume claim. "
+            f"Make that clear naturally in the question — e.g. frame it as 'this role involves a lot of X' "
+            f"before asking what their exposure is. Don't just ask 'have you used X?' with no context.\n\n"
+            f"DEPTH TARGET ({band.upper()}): {_band_jd}\n"
+            f"FORBIDDEN: 'you listed', 'on your resume', 'walk me through your experience with' (assumes experience), "
+            f"grilling them if they say they haven't used it."
         )
     elif source in ("ROLE_TOPIC", "role_topic"):
-        _probe_focus_str = "; ".join(topic_item.probe_focus[:3]) if (topic_item and topic_item.probe_focus) else ""
-        _role_desc = (topic_item.full_description if topic_item else "") or new_topic
+        _role_desc = (topic_item.full_description if topic_item else "") or ""
         _band_role = {
-            "fresher": (
-                f"Ask conceptually — they're learning. Check if they understand the idea, not whether they've done it at scale. "
-                f"Example: 'How do you think about {new_topic_title} — what does it mean to you in practice?'"
-            ),
-            "mid": (
-                f"Ask about their approach or any real exposure. "
-                f"Example: 'How have you handled {new_topic_title} in your work — or how would you approach it?'"
-            ),
-            "experienced": (
-                f"Ask about a concrete decision or tradeoff they've seen or made. "
-                f"Example: 'Where have you had to make a real call around {new_topic_title} — what did you choose and why?'"
-            ),
-            "senior": (
-                f"Ask about strategic or systemic thinking. "
-                f"Example: 'How do you think about {new_topic_title} at the team or org level — not just technically?'"
-            ),
-        }.get(band, f"Ask how they think about or approach {new_topic_title} — not whether they've done it.")
+            "fresher":    "Ask about the concept — do they understand what it means and why it matters?",
+            "mid":        "Ask about any real exposure or how they'd approach it if given the problem.",
+            "experienced":"Ask about a concrete decision or tradeoff in this space — real stakes, not theory.",
+            "senior":     "Ask about systemic or organizational thinking — how does it play out at team/org scale?",
+        }.get(band, "Ask how they think about or would approach this — they may have zero prior experience.")
         _angle_guide = (
-            f"TAG: ROLE_TOPIC\n"
-            f"CONTRACT: This comes from expert domain knowledge of the role — it is NOT on their resume and NOT in the JD. "
-            f"We have NO IDEA if they've ever worked with this. "
-            f"Ask about understanding, thinking, or approach — never assume they've done it.\n"
-            f"FORBIDDEN:\n"
-            f"  - NEVER ask 'what was your experience with X' — they may have zero experience\n"
-            f"  - NEVER ask 'why did you work with X' or 'what drew you to X'\n"
-            f"  - NEVER frame as if it's on their resume\n"
-            f"  - NEVER ask a generic 'what do you know about X?' — must be specific and grounded\n"
-            f"Context: {_role_desc}\n"
-            f"Probe angle: {_probe_focus_str or 'their understanding, how they think about it, any real exposure'}\n"
-            f"BAND ({band.upper()}) OPENING GUIDE: {_band_role}"
+            f"SOURCE: ROLE_TOPIC — this comes from expert domain knowledge of the role.\n"
+            f"It is NOT on the candidate's resume and NOT in the job description. "
+            f"We have no idea if they've worked with this.\n"
+            f"Your job: introduce the topic clearly so the candidate understands what's being asked — "
+            f"then ask ONE question that checks their thinking or approach, not their experience history.\n\n"
+            f"CONTEXT-SETTING PRINCIPLE:\n"
+            f"The candidate has no anchor for this question. Give them one — explain in one short phrase "
+            f"why this matters for the role before asking. Something like 'for a role like this, X matters a lot' "
+            f"or 'one thing that comes up a lot in this work is X'. Then ask your question.\n\n"
+            f"DEPTH TARGET ({band.upper()}): {_band_role}\n"
+            f"CONTEXT FROM BRIEF: {_role_desc}\n"
+            f"PROBE ANGLES: {_probe_focus_str or 'their understanding, reasoning, how they would approach it'}\n"
+            f"FORBIDDEN: 'what was your experience with X' (assumes experience), 'why did you work with X', "
+            f"'what do you know about X?' (generic), framing it as if it's on their resume."
         )
     else:
         _angle_guide = (
@@ -766,42 +664,53 @@ async def _generate_move_on_directive(
         )
     _system = (
         "You are writing an internal directive for an AI interviewer named Ishita. "
-        "This directive is NEVER spoken aloud -- it is a system instruction she reads and acts on silently. "
-        "Your job: write the full [NEXT_TURN_DIRECTIVE] block for a MOVE_ON moment.\n\n"
-        "━━━ TOPIC TAG CONTRACT — the most important rule ━━━\n"
-        "The SOURCE tag tells you what the candidate knows. Get this wrong and the question is wrong.\n\n"
-        "  RESUME_TOPIC  → Candidate HAS done this. It is on their resume.\n"
-        "                  NEVER ask 'do you have experience', 'why did you work there', or 'what drew you to X'.\n"
-        "                  They worked there. Ask about DEPTH: what they built, what was their call, what broke.\n"
-        "                  Wrong: 'Why did you work on QuickServe?'\n"
-        "                  Right:  'What was the hardest part of the backend you built for QuickServe?'\n\n"
-        "  JD_TOPIC      → Role requires this. Candidate has NOT claimed it on their resume.\n"
-        "                  We do not know if they've used it. Ask neutrally — curious about exposure.\n"
-        "                  NEVER assume prior experience. NEVER say 'you listed' or 'on your resume'.\n"
-        "                  Wrong: 'Walk me through your experience with Kubernetes.'\n"
-        "                  Right:  'This role works heavily with Kubernetes — what's your exposure there?'\n\n"
-        "  ROLE_TOPIC    → From expert domain knowledge. NOT on resume. NOT in JD.\n"
-        "                  We have NO IDEA if they've ever worked with this. Ask about understanding or approach.\n"
-        "                  NEVER ask 'what was your experience with X' — they may have zero.\n"
-        "                  NEVER ask 'why did you work with X' — there's no known history.\n"
-        "                  Wrong: 'How have you handled database indexing in your work?'\n"
-        "                  Right:  'How do you think about database indexing tradeoffs — B-tree vs hash, for instance?'\n\n"
+        "This directive is NEVER spoken aloud — it is a private instruction she reads and acts on silently.\n\n"
+        "Your job: write the [NEXT_TURN_DIRECTIVE] block for a MOVE_ON moment. "
+        "You will be given the new topic, its source tag, the analyst brief, and the candidate's last answer. "
+        "From all of this, tell Ishita exactly what she should find out and how to open — not what to say.\n\n"
+
+        "━━━ THE CORE PRINCIPLE ━━━\n"
+        "Ishita is on a live voice call. The candidate cannot see a screen. "
+        "They have no idea what topic is coming next. "
+        "Your directive must ensure Ishita's first question gives the candidate enough context to answer. "
+        "A question with no context — 'What was your biggest challenge?' — is unanswerable without knowing what it refers to.\n\n"
+
+        "HOW GOOD INTERVIEWERS OPEN A NEW TOPIC:\n"
+        "They don't say 'Next question' or 'Moving on'. They build the topic name INTO the question naturally.\n"
+        "  RESUME project: 'You built the multi-channel lead qualifier — what was the trickiest part to get right?'\n"
+        "  RESUME work role: 'At DataFlow you were building pipelines — what did you personally own end to end?'\n"
+        "  RESUME skill: 'You've worked with Kafka — where did you actually use it and at what scale?'\n"
+        "  JD requirement: 'This role deals with Kubernetes a lot — what's your experience with it so far?'\n"
+        "  ROLE topic: 'One thing that matters a lot in this kind of role is observability — how do you think about it?'\n"
+        "Notice: the topic name is in the question. The candidate immediately knows the context.\n\n"
+
+        "━━━ SOURCE TAG RULES ━━━\n"
+        "  RESUME_TOPIC → Candidate did this. We know it. Never ask if they did it.\n"
+        "                 Ask about depth: what they built, what was their call, what broke, what they'd change.\n"
+        "                 Never: 'why did you work there', 'do you have experience', 'what drew you to X'\n\n"
+        "  JD_TOPIC     → Role requires it. Candidate hasn't claimed it. We don't know if they've used it.\n"
+        "                 Ask neutrally — frame it as a role requirement, not a resume claim.\n"
+        "                 Never: assume experience, 'walk me through your experience with X'\n\n"
+        "  ROLE_TOPIC   → Expert domain check. Not on resume, not in JD. They may have zero experience.\n"
+        "                 Ask about their thinking or approach — not their history with it.\n"
+        "                 Never: 'what was your experience with X', frame it as if it's on their resume\n\n"
+
         "━━━ DIRECTIVE STRUCTURE ━━━\n"
-        "The directive must include:\n"
-        "1. DECISION: MOVE_ON\n"
-        "2. TOPIC YOU ARE LEAVING: <old topic> -- CLOSED. Do NOT reference it.\n"
-        "3. NEW ACTIVE TOPIC: <new topic>  [TAG: <RESUME_TOPIC|JD_TOPIC|ROLE_TOPIC>]\n"
-        "4. WHAT WE KNOW: bullet points from the analyst brief about the new topic\n"
-        "5. OPENING ANGLE: specific guidance on what angle Ishita should take -- what makes this topic interesting, "
-        "what is worth probing, what the analyst brief flagged\n"
-        "6. TRANSITION RULE: how to open (one short acknowledgement + natural question -- no 'Next up:', "
-        "no 'Moving on to:', no 'Tell me about X what did you work on there?')\n"
-        "7. FORBIDDEN PHRASES: list what Ishita must NOT say\n\n"
-        "Do NOT write a suggested question. Ishita generates her own question from the topic context.\n"
-        "Writing a suggested question creates a script she will copy — that is exactly what we are avoiding.\n"
-        "Instead, end with:\n"
-        "WHAT TO FIND OUT: one sentence on what the ideal answer to this topic would reveal.\n\n"
-        "Output the directive as plain text. No markdown. No code blocks."
+        "Write in plain text, no markdown:\n"
+        "DECISION: MOVE_ON\n"
+        "TOPIC YOU ARE LEAVING: <old topic> — CLOSED. Do not reference it again.\n"
+        "NEW ACTIVE TOPIC: <new topic>  [TAG: <source>]\n"
+        "WHAT WE KNOW: 2-3 bullet points about the new topic from the analyst brief\n"
+        "OPENING ANGLE: The specific thing worth probing first — what question to open with conceptually, "
+        "and what context Ishita must give the candidate so they understand what's being asked\n"
+        "WHAT TO FIND OUT: one sentence on what a good answer to this topic would reveal\n"
+        "FORBIDDEN: 2-3 specific things Ishita must NOT say or do on this topic\n\n"
+
+        "Do NOT write the actual question. Ishita generates it herself from your guidance.\n"
+        "Do NOT write 'Suggested question:' or any scripted line she would copy verbatim.\n"
+        "ONE question only — Ishita must ask one thing and then listen. "
+        "No compound questions, no 'and also', no multi-part asks.\n\n"
+        "Output plain text only. No markdown. No code blocks."
     )
     _user = (
         f"BAND: {band.upper()}\n"
@@ -861,25 +770,33 @@ async def _generate_move_on_directive(
         # not a generic list it ignores.
         _prev_trimmed = (prev_answer or "").strip()[:300]
         if _prev_trimmed:
+            # Classify the candidate's answer intent so the filler is contextually correct
+            _prev_lc = _prev_trimmed.lower()
+            if not _prev_lc or any(p in _prev_lc for p in ("i don't know", "i forgot", "i don't remember", "not sure", "can't recall")):
+                _intent_hint = "They couldn't recall or said they don't know → use 'No worries.' or 'Fair enough.'"
+            elif len(_prev_lc.split()) <= 8:
+                _intent_hint = "Very short answer, possibly surface-level → use 'Hmm, okay.' or 'Right.'"
+            elif any(p in _prev_lc for p in ("i think", "probably", "maybe", "i believe", "kind of", "sort of")):
+                _intent_hint = "They hedged or were vague → use 'Hmm, okay.' or 'Mm.' to acknowledge without validating"
+            else:
+                _intent_hint = "Substantive answer → use 'Ah, makes sense.' or 'Right.' or 'Okay.'"
             _filler_instruction = (
-                f"\n\nOPENING REACTION — derive from the candidate's last answer below:\n"
-                f"LAST ANSWER: \"{_prev_trimmed}\"\n\n"
-                "Read that answer and pick ONE micro-reaction (3-8 words) that honestly fits its tone:\n"
-                "  - Blank / silence / 'I don't know' / 'I forgot'  →  'Fair enough.' / 'No worries.'\n"
-                "  - Partial / vague / surface-level answer          →  'Hmm, okay.' / 'Right, got it.'\n"
-                "  - Confident / specific / detailed answer          →  'Ah, makes sense.' / 'Right.' / 'Okay.'\n"
-                "  - Surprising or unexpected answer                 →  'Hm, interesting.' / 'Ah, okay.'\n"
-                "  - Honest admission of gap                         →  'Fair enough.' / 'No worries, that's fine.'\n"
+                f"\n\nOPENING REACTION — must respond to what the candidate actually said:\n"
+                f"THEIR LAST ANSWER: \"{_prev_trimmed}\"\n"
+                f"ANSWER INTENT: {_intent_hint}\n"
+                "Pick ONE micro-reaction (3-8 words) that matches the intent above.\n"
+                "The reaction and the new question must feel like one connected turn — "
+                "not a reaction to silence followed by an unrelated question.\n"
                 "NEVER say 'Great!', 'Awesome!', 'Fantastic!', 'Amazing!', or any hollow praise.\n"
                 "NEVER say 'Thanks for sharing' or any 'thanks for [verb]ing' phrase.\n"
-                "NEVER use the same reaction you used the turn before.\n"
+                "NEVER use the same reaction as the previous turn.\n"
                 f"NEVER reference the old topic '{old_topic_title}' — it is closed.\n"
                 "DO NOT wrap up, say goodbye, or add any closing phrase.\n"
             )
         else:
             _filler_instruction = (
-                f"\n\nOPENING REACTION: One short natural lead-in (3-8 words). "
-                "NEVER say 'Great!', 'Awesome!', 'Fantastic!', or any hollow praise. "
+                "\n\nOPENING REACTION: One short natural lead-in (3-8 words). "
+                "NEVER say 'Great!', 'Awesome!', 'Fantastic!', or hollow praise. "
                 "NEVER say 'Thanks for sharing'.\n"
             )
         directive = (
@@ -1840,7 +1757,180 @@ async def entrypoint(ctx: JobContext):
         nonlocal latest_session_usage
         latest_session_usage = event.usage
         # Intentionally keep usage collection silent to avoid terminal spam.
-    agent = InterviewAgent(instructions=system_prompt, chat_ctx=chat_ctx)
+    from livekit.agents import function_tool
+    from livekit.agents.beta.tools import EndCallTool
+
+    # ── Candidate meta-intent tools ──────────────────────────────────────────
+    # Replace regex pattern-matching with LLM-driven tool calls.
+    # The LLM decides when to call these based on semantic understanding of what
+    # the candidate said — not string matching on their exact words.
+
+    @function_tool
+    async def candidate_asked_to_repeat() -> str:
+        """
+        Call this when the candidate asks you to repeat, clarify, or rephrase the question.
+        Examples of when to call:
+          - "Can you repeat that?"
+          - "I didn't catch what you said"
+          - "Sorry, say that again"
+          - "What was the question?"
+          - "Could you rephrase that?"
+        Do NOT call this if they are answering the question (even poorly).
+        Only call when they are explicitly asking for a repetition or clarification.
+        """
+        last_q = (_last_interviewer_question or "").strip()
+        directive = (
+            "[META_QUESTION_DIRECTIVE - DO NOT SAY ALOUD]\n"
+            "The candidate asked you to repeat or simplify the question.\n"
+            f"Repeat this question in simpler, shorter words: \"{last_q}\"\n"
+            "Do not score their request. Ask only the repeated question. Keep it under 15 words."
+        )
+        remove_system_messages_multi(chat_ctx, (
+            "[META_QUESTION_DIRECTIVE", "[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT",
+        ))
+        chat_ctx.add_message(role="system", content=directive)
+        logger.info("[META_TOOL] candidate_asked_to_repeat fired")
+        return "Repeat the question now in simpler words. Do not add anything else."
+
+    @function_tool
+    async def candidate_asked_to_skip() -> str:
+        """
+        Call this when the candidate explicitly asks to skip or change the current question.
+        Examples of when to call:
+          - "Can we move to a different question?"
+          - "I'd like to skip this"
+          - "Can you ask me something else?"
+          - "Let's move on"
+          - "I don't want to answer this one"
+        Do NOT call this if they are saying "I don't know" but still trying to answer.
+        Only call when they are clearly asking to move away from the current question entirely.
+        """
+        nonlocal _active_topic
+        async with _session_state_lock:
+            _mark_topic_covered(_active_topic, answer_gist="candidate requested skip")
+            _next = _next_uncovered_topic(exclude=_active_topic)
+            if _next:
+                _active_topic = _next
+        directive = (
+            "[META_QUESTION_DIRECTIVE - DO NOT SAY ALOUD]\n"
+            "The candidate asked to skip this question. Respect it — no explanation needed.\n"
+            "Say one short natural acknowledgement ('Sure, no problem.' / 'Of course.') "
+            f"then ask ONE question about: {_topic_short_title(_active_topic or 'the next topic')}.\n"
+            f"FULL CONTEXT: {_active_topic}\n"
+            "Do not mention the skipped topic again."
+        )
+        remove_system_messages_multi(chat_ctx, (
+            "[META_QUESTION_DIRECTIVE", "[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT",
+        ))
+        chat_ctx.add_message(role="system", content=directive)
+        logger.info("[META_TOOL] candidate_asked_to_skip fired | new topic=%r", _active_topic)
+        return "Acknowledge briefly and ask about the next topic."
+
+    @function_tool
+    async def candidate_asked_about_company() -> str:
+        """
+        Call this when the candidate asks about the company — what it does, what it is,
+        or wants general company information before continuing.
+        Examples:
+          - "What does this company do?"
+          - "Tell me about the company"
+          - "What is this organisation?"
+          - "Which company is this for?"
+        """
+        org = _compact_optional(ctx_data.orgName) or "the company"
+        role = job_title or "this role"
+        directive = (
+            "[META_QUESTION_DIRECTIVE - DO NOT SAY ALOUD]\n"
+            "The candidate asked about the company. Answer briefly like a real interviewer would, "
+            "then continue the interview.\n"
+            f"Say one short sentence: '{org} is the company, and today we're assessing fit for the {role} role.'\n"
+            "Then immediately ask ONE interview question — continue from where you left off."
+        )
+        remove_system_messages_multi(chat_ctx, (
+            "[META_QUESTION_DIRECTIVE", "[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT",
+        ))
+        chat_ctx.add_message(role="system", content=directive)
+        logger.info("[META_TOOL] candidate_asked_about_company fired")
+        return "Answer their company question briefly, then continue the interview."
+
+    @function_tool
+    async def candidate_asked_about_role() -> str:
+        """
+        Call this when the candidate asks what the role involves, what GTM means,
+        or wants clarification about the job itself before answering.
+        Examples:
+          - "What does the role involve?"
+          - "What is GTM?"
+          - "Can you explain what you mean by that?"
+          - "What kind of work is this?"
+        Do NOT call this for general knowledge questions about industry topics.
+        Only call when they are asking about THIS specific role or interview context.
+        """
+        role = job_title or "this role"
+        directive = (
+            "[META_QUESTION_DIRECTIVE - DO NOT SAY ALOUD]\n"
+            "The candidate asked about the role. Give a brief one-sentence answer, then continue.\n"
+            f"Describe the {role} in one short sentence covering what it involves day-to-day.\n"
+            "Then ask ONE interview question — continue from where you left off."
+        )
+        remove_system_messages_multi(chat_ctx, (
+            "[META_QUESTION_DIRECTIVE", "[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT",
+        ))
+        chat_ctx.add_message(role="system", content=directive)
+        logger.info("[META_TOOL] candidate_asked_about_role fired")
+        return "Answer their role question briefly, then continue the interview."
+
+    @function_tool
+    async def candidate_asking_about_process() -> str:
+        """
+        Call this when the candidate asks questions about the interview itself —
+        why certain questions are being asked, what stage they are at, how long it takes,
+        or what information you are collecting.
+        Examples:
+          - "Why are you asking this?"
+          - "What stage are we at?"
+          - "How much longer will this take?"
+          - "What are you trying to find out?"
+        """
+        role = job_title or "this role"
+        directive = (
+            "[META_QUESTION_DIRECTIVE - DO NOT SAY ALOUD]\n"
+            "The candidate asked about the interview process. Answer in one sentence, then continue.\n"
+            f"Say: 'I'm just trying to get a clear picture of your experience and how you think — "
+            f"it helps us assess fit for the {role} role.'\n"
+            "Then ask ONE interview question — continue from where you left off."
+        )
+        remove_system_messages_multi(chat_ctx, (
+            "[META_QUESTION_DIRECTIVE", "[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT",
+        ))
+        chat_ctx.add_message(role="system", content=directive)
+        logger.info("[META_TOOL] candidate_asking_about_process fired")
+        return "Answer their process question in one sentence, then continue."
+
+    _end_call_tool = EndCallTool(
+        extra_description=(
+            "End the interview when you have naturally concluded — after saying goodbye, "
+            "thanking the candidate, or wishing them well. "
+            "Do NOT end mid-interview while topics are still being discussed. "
+            "Only end when you have explicitly wrapped up and the conversation is complete."
+        ),
+        delete_room=True,
+        end_instructions=(
+            "The interview is now complete. Say a warm, natural goodbye to the candidate — "
+            "something like 'It was great speaking with you, we'll be in touch soon!' "
+            "Keep it brief, genuine, and positive. Do not repeat anything from the interview."
+        ),
+    )
+
+    _interview_tools = [
+        candidate_asked_to_repeat,
+        candidate_asked_to_skip,
+        candidate_asked_about_company,
+        candidate_asked_about_role,
+        candidate_asking_about_process,
+        *_end_call_tool.tools,
+    ]
+    agent = InterviewAgent(instructions=system_prompt, chat_ctx=chat_ctx, tools=_interview_tools)
     # CRITICAL: Agent.__init__ does `self._chat_ctx = chat_ctx.copy(...)`, creating a
     # SEPARATE ChatContext (new items list) from the local `chat_ctx` above. LiveKit
     # generates every reply from `agent._chat_ctx` (see AgentActivity: it does
@@ -1888,13 +1978,6 @@ async def entrypoint(ctx: JobContext):
 
     _first_interview_question_asked: bool = False  # True after first post-warmup AI question fires
     _awaiting_first_interview_question: bool = False  # warmup confirmed; next assistant turn must open interview
-    # Secondary-phase coverage: once the primary resume/skill pool is exhausted but
-    # meaningful time remains, the agent does NOT wrap up early. It progresses through
-    # deepen-strong -> JD-scenario -> soft topics so the full ~20 min is used like a
-    # real interview. These sets track what secondary coverage has already been used.
-
-    _deepened_topic_keys: set[str] = set()     # topics re-opened in secondary deepening phase
-    _soft_questions_asked: int = 0             # count of soft/wind-down questions used
     # Per-topic ground-truth records built at MOVE_ON time — replaces end-of-session
     # LLM transcript re-reading for skill extraction. Each entry is appended when the
     # agent closes a topic so eval scores, probe count, exit reason, and candidate
@@ -1914,18 +1997,21 @@ async def entrypoint(ctx: JobContext):
     # and reused every turn in the inline eval payload and topic selection.
     def _build_topic_pool() -> list[str]:
         """
-        Build resume topic pool and skill topic pool from InterviewBrief.
-        Topics are sorted by relevance_score (LLM-assigned), filtered by role.
-        Unified single Topic Pool — RESUME_TOPIC, JD_TOPIC, and ROLE_TOPIC all in one flat list.
-        Ordered by the brief's relevance_score (LLM-assigned). Anchor always first.
-        Each topic is a full context string: "Title - Description [tech1, tech2]"
+        Build unified topic pool from InterviewBrief.
+        Every topic from the brief enters the pool — RESUME_TOPIC, JD_TOPIC, ROLE_TOPIC.
+        Anchor always first. Each entry: "Title - Description [tech1, tech2] |TAG=RESUME_TOPIC"
+        The |TAG= suffix lets directive builders know how to frame the question without
+        a separate lookup into the brief every time.
+        Covered topics are removed from this list on MOVE_ON so len(_topic_pool) always
+        reflects how many topics remain to be asked.
         """
         def _item_to_full_str(item: "TopicItem") -> str:
             desc = item.full_description.strip()
             tech = ", ".join(item.tech_stack) if item.tech_stack else ""
+            base = f"{item.title} - {desc}" if desc else item.title
             if tech:
-                return f"{item.title} - {desc} [{tech}]"
-            return f"{item.title} - {desc}" if desc else item.title
+                base = f"{base} [{tech}]"
+            return f"{base} |TAG={item.tag}|TYPE={item.topic_type}"
 
         seen: set[str] = set()
         pool: list[str] = []
@@ -1948,7 +2034,8 @@ async def entrypoint(ctx: JobContext):
 
         return pool
 
-    # Unified topic pool: RESUME_TOPIC + JD_TOPIC + ROLE_TOPIC in one flat list
+    # Unified topic pool — shrinks as topics are covered.
+    # _topic_pool is the single source of truth for what remains.
     _topic_pool: list[str] = _build_topic_pool()
 
 
@@ -1994,8 +2081,9 @@ async def entrypoint(ctx: JobContext):
             # inside "Internship"). Uses the existing _topics_overlap heuristic.
             if any(_topics_overlap(t, covered) for covered in _covered_full_titles):
                 _covered_topic_keys.add(t)  # auto-mark so it never resurfaces
+                _topic_pool[:] = [x for x in _topic_pool if _topic_short_key(x) != k]
                 logger.info(
-                    "[DEDUP] topic %r auto-skipped — concept overlaps an already-covered topic", k
+                    "[DEDUP] topic %r auto-removed — concept overlaps an already-covered topic", k
                 )
                 continue
             return t
@@ -2025,7 +2113,10 @@ async def entrypoint(ctx: JobContext):
             gist=" ".join(answer_gist.split()[:25]),
             questions_asked=questions_asked,
         )
-        logger.info("[COVERED] topic done: %r  (total covered: %d / %d)", k, len(_covered_topic_keys), len(_topic_pool))
+        # Physically remove from pool so len(_topic_pool) reflects remaining work
+        # and the pool never re-surfaces a finished topic even if _covered_topic_keys lookup fails.
+        _topic_pool[:] = [t for t in _topic_pool if _topic_short_key(t) != k]
+        logger.info("[COVERED] topic done: %r  (pool_remaining=%d covered=%d)", k, len(_topic_pool), len(_covered_topic_keys))
         # Auto-cover skills the brief says are already covered by this topic
         topic_key_lc = k.lower()
         for skill_id, covering_topic_ids in _interview_brief.skill_coverage_map.items():
@@ -2039,45 +2130,6 @@ async def entrypoint(ctx: JobContext):
                     )
                     logger.info("[SKILL_DEDUP] auto-covered %r via %r", skill_key, topic_title)
 
-    def _strongest_uncovered_for_deepening(exclude_key: str) -> Optional[tuple[str, float]]:
-        # EC-1: _topic_states is a shared dict mutated by concurrent MOVE_ON events.
-        # Take a snapshot under the lock so we iterate a stable copy, not a dict
-        # that another coroutine is writing to mid-loop.
-        topic_states_snap = dict(_topic_states)
-        best: Optional[tuple[str, float]] = None
-        for t in _topic_pool:
-            k = _topic_short_key(t)
-            if not k or k == exclude_key or k in _deepened_topic_keys or k in _covered_topic_keys:
-                continue
-            ts = topic_states_snap.get(_normalize_topic_key(k))
-            score = float(ts.get("saturation_score", 0.0)) if isinstance(ts, dict) else 0.0
-            if score >= 2.0 and (best is None or score > best[1]):
-                best = (t, score)
-        return best
-    # Soft / wind-down questions for the final stretch -- band-agnostic, always answerable.
-    _SOFT_QUESTIONS: list[str] = [
-        "What kind of work do you most enjoy doing day-to-day?",
-        "What are you actively learning or building right now?",
-        "What drew you to this specific role?",
-        "Where do you want to grow technically over the next year?",
-        "What does your best work look like -- give me one concrete example.",
-    ]
-    def _select_secondary_topic(exclude_key: str) -> Optional[dict]:
-        """When the topic pool is exhausted but time remains:
-        (1) deepen the strongest answered topic, (2) soft question."""
-        nonlocal _soft_questions_asked
-        # Phase 1: deepen a strong topic (one deeper pass each).
-        strong = _strongest_uncovered_for_deepening(exclude_key)
-        if strong is not None:
-            topic_str, _score = strong
-            _deepened_topic_keys.add(_topic_short_key(topic_str))
-            return {"phase": "deepen", "topic": topic_str}
-        # Phase 2: soft question.
-        if _soft_questions_asked < len(_SOFT_QUESTIONS):
-            q = _SOFT_QUESTIONS[_soft_questions_asked]
-            _soft_questions_asked += 1
-            return {"phase": "soft", "question": q}
-        return None
     # Stopwords that carry no identity -- ignored when measuring topic overlap.
     _OVERLAP_STOPWORDS = frozenset({
         # Generic English
@@ -2213,94 +2265,6 @@ async def entrypoint(ctx: JobContext):
         if not session_start_time:
             return float(time_limit_mins * 60)
         return max(0.0, float(time_limit_mins * 60) - (time.time() - session_start_time))
-    def _candidate_meta_intent(text: str) -> Optional[str]:
-        """Classify candidate turns that are about the interview itself.
-        These must be handled before scoring. Otherwise a real human question
-        like "what is this company about?" gets scored as a bad answer to the
-        previous interview question and the agent feels like a bot.
-        """
-        t = re.sub(r"\s+", " ", (text or "").lower()).strip()
-        if not t:
-            return None
-        if any(m in t for m in (
-            "can you repeat", "could you repeat", "repeat that", "repeat the question",
-            "say that again", "say again", "didn't get you", "didnt get you",
-            "didn't hear", "didnt hear", "didn't catch", "didnt catch",
-            "what was the question", "what are you asking",
-        )):
-            return "repeat"
-        if any(m in t for m in (
-            "what is this company", "what's this company", "what company is this",
-            "tell me about the company", "explain me the company", "company about",
-        )):
-            return "company"
-        if any(m in t for m in (
-            "what do you mean gtm", "what is gtm", "what's gtm",
-            "what do you mean by gtm", "gtm role", "what is the role",
-            "explain the role", "what does this role mean",
-        )):
-            return "role"
-        if any(m in t for m in (
-            "should i use", "which tool should", "what tool should",
-            "zapier or", "or some other tool", "which one should i",
-        )):
-            return "tool_choice"
-        if any(m in t for m in (
-            "can we shift", "can we change", "change the question",
-            "shift to new question", "skip this", "skip the question",
-            "new question",
-        )):
-            return "skip"
-        if any(m in t for m in (
-            "why are you asking", "what stage", "which stage",
-            "what are you trying to collect", "what information you are trying",
-        )):
-            return "process"
-        return None
-    def _meta_answer_directive(intent: str) -> str:
-        org = _compact_optional(ctx_data.orgName) or "the company"
-        role = job_title or "this role"
-        last_q = (_last_interviewer_question or "").strip()
-        if intent == "repeat":
-            return (
-                "[META_QUESTION_DIRECTIVE - DO NOT SAY ALOUD]\n"
-                "The candidate asked you to repeat or simplify the question.\n"
-                f"Repeat this question in simpler words: \"{last_q}\"\n"
-                "Do not score their request. Ask only the repeated question."
-            )
-        if intent == "company":
-            return (
-                "[META_QUESTION_DIRECTIVE - DO NOT SAY ALOUD]\n"
-                "The candidate asked what the company is about. Answer like a real interviewer first.\n"
-                f"Say one short sentence: \"{org} is hiring for this role, and today I'm mainly checking how your automation and GTM thinking fit the work.\"\n"
-                f"Then continue with ONE concise interview question for the {role} role. Do not ignore their question."
-            )
-        if intent == "role":
-            return (
-                "[META_QUESTION_DIRECTIVE - DO NOT SAY ALOUD]\n"
-                "The candidate asked what GTM/the role means. Answer first, then continue.\n"
-                "Say one short sentence explaining that GTM means go-to-market: outreach, lead generation, campaign workflows, and conversion improvement.\n"
-                "Then ask ONE simple question about which of those areas they have actually worked on."
-            )
-        if intent == "tool_choice":
-            return (
-                "[META_QUESTION_DIRECTIVE - DO NOT SAY ALOUD]\n"
-                "The candidate is asking which tool to choose, not answering the interview question.\n"
-                "Answer briefly: either Zapier or n8n can be valid; what matters is why they choose it for the workflow.\n"
-                "Then ask ONE question: which tool would they choose for that workflow and why?"
-            )
-        if intent == "skip":
-            return (
-                "[META_QUESTION_DIRECTIVE - DO NOT SAY ALOUD]\n"
-                "The candidate asked to change or skip the question. Respect it.\n"
-                "Acknowledge naturally with a short reaction like 'Fair enough.' or 'No worries.' "
-                "Then ask ONE different question from a new uncovered topic. Do not mention the skipped topic again."
-            )
-        return (
-            "[META_QUESTION_DIRECTIVE - DO NOT SAY ALOUD]\n"
-            f"The candidate asked about the interview process. Answer in one short sentence: you are mapping fit for the {role} role.\n"
-            "Then ask exactly one concise question from the current stage objective."
-        )
     @ctx.room.on("disconnected")
     def on_disconnected(reason):
         disconnect_event.set()
@@ -2507,88 +2471,6 @@ async def entrypoint(ctx: JobContext):
                 persist_transcript(app_id, lines_snap_eval, session_start_time, partial=True),
                 f"transcript_save_turn_{turn_snapshot}",
             )
-            _meta_intent = _candidate_meta_intent(answer_snap)
-            if _meta_intent and not is_warmup_response:
-                if _meta_intent == "skip":
-                    async with _session_state_lock:
-                        _mark_topic_covered(_active_topic, answer_gist=answer_snap)
-                        _next_after_skip = _next_uncovered_topic(exclude=_active_topic)
-                        if _next_after_skip:
-                            _active_topic = _next_after_skip
-                            _last_question_topic = _topic_short_title(_active_topic or "")
-                async with _session_state_lock:
-                    answer_scores.append({
-                        "question": question_snap or _last_interviewer_question or "",
-                        "answer": answer_snap,
-                        "clarity": 0, "depth": 0, "specificity": 0, "grounding": 0,
-                        "overall": 0.0,
-                        "signals": [],
-                        "concerns": [],
-                        "is_meta_question": True,
-                        "topic": _active_topic or "general",
-                    })
-                spawn_background_task(
-                    persist_answer_scores(app_id, list(answer_scores)),
-                    f"scores_meta_turn_{turn_snapshot}",
-                )
-                remove_system_messages_multi(chat_ctx, (
-                    "[META_QUESTION_DIRECTIVE", "[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT",
-                ))
-                chat_ctx.add_message(
-                    role="system",
-                    content=_meta_answer_directive(_meta_intent),
-                )
-                if _meta_intent == "skip" and _active_topic:
-                    _skip_topic_key = _topic_short_key(_active_topic or "")
-                    _skip_topic_rule = ""
-                    if _skip_topic_key in {"ai", "ai tools"}:
-                        _skip_topic_rule = (
-                            "\nAI SKILL RULE: Ask about actual AI tools, agents, prompts, or workflows "
-                            "they have used or built. Do not ask supervised vs unsupervised learning "
-                            "or any textbook AI theory."
-                        )
-                    chat_ctx.add_message(
-                        role="system",
-                        content=(
-                            "[TOPIC_LOCK - CRITICAL INSTRUCTION]\n"
-                            "The candidate asked to skip the previous question. Respect that.\n"
-                            f"NEW ACTIVE TOPIC: {_topic_short_title(_active_topic)}\n"
-                            f"FULL CONTEXT: {_active_topic}\n"
-                            "Ask one different, concrete question on this new topic. Do not reference the skipped topic."
-                            f"{_skip_topic_rule}"
-                        ),
-                    )
-                logger.info(
-                    "[META] turn=%d intent=%s -- skipped eval/scoring and injected response directive",
-                    turn_snapshot, _meta_intent,
-                )
-                agent._move_on_opener_pending = False
-                agent._waiting_for_eval = False
-                agent._directive_ready.set()
-                return
-            # Candidate meta-question handling:
-            # if they ask "why these questions / what stage", answer briefly and continue.
-            meta_q = content.lower()
-            if any(
-                marker in meta_q
-                for marker in (
-                    "what stage",
-                    "which stage",
-                    "why are you asking",
-                    "what are you trying to collect",
-                    "what information you are trying",
-                )
-            ):
-                remove_system_messages(chat_ctx, "[META_QUESTION_DIRECTIVE]")
-                chat_ctx.add_message(
-                    role="system",
-                    content=(
-                        "[META_QUESTION_DIRECTIVE - DO NOT SAY ALOUD]\n"
-                        f"Candidate asked why/stage. Respond in one short sentence: "
-                        f"you are mapping fit for the {job_title} role. Then ask exactly one concise "
-                        "question from the current stage objective. Do not keep explaining."
-                    ),
-                )
             # Inject structured recent Q&A context for callbacks and follow-up context.
             if _last_interviewer_question and turn_snapshot > 1:
                 recent_context = _build_recent_context_block(
@@ -2961,50 +2843,13 @@ async def entrypoint(ctx: JobContext):
                                 prev_answer=(payload.get("answer") or ""),
                             )
                         )
-                    # SECONDARY PHASE -- do NOT wrap up early when the primary pool is
-                    # exhausted but meaningful time remains. A real interviewer uses the
-                    # full window: deepen strong topics -> JD scenarios -> soft questions.
-                    # Only fall through to WRAP_UP when time is genuinely low OR every
-                    # secondary avenue is used up.
-                    _secondary_buffer_secs = CLOSING_TRIGGER_SECS + 120  # keep ~2min of room
-                    if _next_topic is None and _remaining_total_seconds_now() > _secondary_buffer_secs:
-                        _old_key = _topic_short_key(_old_topic or "")
-                        _secondary = _select_secondary_topic(_old_key)
-                        if _secondary is not None:
-                            _sec_directive = _build_secondary_directive(
-                                _secondary, job_title=job_title,
-                            )
-                            if _secondary.get("phase") in ("deepen", "jd_scenario") and _secondary.get("topic"):
-                                async with _session_state_lock:
-                                    _active_topic = _secondary["topic"]
-                                _last_question_topic = _topic_short_title(_active_topic or "")
-                            else:
-                                # SOFT phase: no resume/JD topic owns this answer. Point the
-                                # active topic at a neutral label so the soft answer does NOT
-                                # accumulate saturation against (and corrupt) the last real topic.
-                                async with _session_state_lock:
-                                    _active_topic = "general conversation"
-                                _last_question_topic = "general"
-                            remove_system_messages_multi(chat_ctx, ("[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT"))
-                            chat_ctx.add_message(role="system", content=_sec_directive)
-                            agent._move_on_opener_pending = True
-                            logger.info(
-                                "[AGENT] turn=%d | SECONDARY PHASE=%s injected (remaining=%.0fs) topic=%r",
-                                turn_snapshot, _secondary.get("phase"),
-                                _remaining_total_seconds_now(), _secondary.get("topic") or _secondary.get("question"),
-                            )
-                            logger.info("[EVAL] turn=%d | releasing LLM gate -- Ishita will speak now", turn_snapshot)
-                            agent._waiting_for_eval = False
-                            agent._directive_ready.set()
-                            return
-                    # Bug-1 fix (Change G): if everything is covered, do not loop
-                    # back to a finished topic -- inject a wrap-up directive instead.
+                    # When all topics are covered, go straight to WRAP_UP.
                     if _next_topic is None:
                         async with _session_state_lock:
                             _active_topic = "general conversation"
                         _last_question_topic = "general"
                         logger.info(
-                            "[AGENT] turn=%d | all topics + secondary phases covered (remaining=%.0fs) -- wrap-up",
+                            "[AGENT] turn=%d | all topics covered (remaining=%.0fs) -- wrap-up",
                             turn_snapshot, _remaining_total_seconds_now(),
                         )
                         _covered_list = "\n".join(
@@ -3013,16 +2858,17 @@ async def entrypoint(ctx: JobContext):
                         _directive = (
                             "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
                             "DECISION: WRAP_UP\n"
-                            "All planned interview topics have been covered.\n"
+                            "All planned interview topics have been covered. The interview is complete.\n"
                             "[COVERED TOPICS -- DO NOT RE-OPEN ANY OF THESE]\n"
                             f"{_covered_list}\n"
-                            "Keep the conversation going naturally. Ask ONE light follow-up such as "
-                            "'What kind of work are you most excited about right now?' or "
-                            "'Is there anything you wish we'd had more time to talk about?'\n"
+                            "Wrap up the interview naturally and warmly. "
+                            "Say something like 'That covers everything I wanted to go through — it was great speaking with you!' "
+                            "or 'I think I have a good picture now, thanks so much for your time.' "
+                            "Keep it brief and genuine. Then call the end_call tool to close the session.\n"
                             "HARD RULES:\n"
                             "- Do NOT re-open any covered topic.\n"
-                            "- Do NOT say goodbye, thank you, all the best, or any closing phrase.\n"
-                            "- The system will close the interview at the right moment."
+                            "- Do NOT keep asking questions — the interview is done.\n"
+                            "- Call end_call after your closing line."
                         )
                         remove_system_messages_multi(chat_ctx, ("[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT"))
                         chat_ctx.add_message(role="system", content=_directive)
@@ -3202,7 +3048,7 @@ async def entrypoint(ctx: JobContext):
                     # transcript. Take the last 8 lines so the probe LLM sees the
                     # full back-and-forth, not just the most recent exchange.
                     _topic_thread_lines = lines_snap_eval[-8:] if lines_snap_eval else []
-                    _directive = await _generate_probe_directive(
+                    _directive = _build_probe_directive(
                         signal=_eval_signal,
                         signal_reason=_eval_signal_reason,
                         band=(payload.get("band") or candidate_band or "mid").lower(),
@@ -3215,9 +3061,6 @@ async def entrypoint(ctx: JobContext):
                         coverage_memory=_covered_topic_keys.get_memory_block(),
                         asked_questions_log=list(_asked_questions_log),
                         topic_transcript=_topic_thread_lines,
-                        client=_eval_openai_client,
-                        llm_model=analysis_model,
-                        usage_sink=_eval_llm_usages_accumulated.append,
                     )
                     remove_system_messages_multi(chat_ctx, ("[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT"))
                     chat_ctx.add_message(role="system", content=_directive)
@@ -3412,8 +3255,11 @@ async def entrypoint(ctx: JobContext):
                         t for t in _expected_key.split()
                         if len(t) >= 3 and t not in _OVERLAP_STOPWORDS
                     }
+                    # Normalize the question the same way for token matching
+                    # (strips hyphens/punctuation so "multi-channel" → "multi channel")
+                    _q_normalized = re.sub(r"[^a-z0-9]+", " ", _q_lower_check)
                     _q_mentions_expected = bool(_expected_tokens) and any(
-                        t in _q_lower_check for t in _expected_tokens
+                        t in _q_normalized for t in _expected_tokens
                     )
                     # Does the question clearly name a DIFFERENT pooled topic?
                     _drifted_to_other = False
@@ -3432,7 +3278,7 @@ async def entrypoint(ctx: JobContext):
                             t for t in _ok.split()
                             if len(t) >= 4 and t not in _OVERLAP_STOPWORDS
                         }
-                        if _other_tokens and all(t in _q_lower_check for t in _other_tokens):
+                        if _other_tokens and all(t in _q_normalized for t in _other_tokens):
                             _drifted_to_other = True
                             break
                     # Follow-up: no explicit topic name, no other topic named, but the
@@ -3442,11 +3288,12 @@ async def entrypoint(ctx: JobContext):
                     _looks_like_context_followup = (
                         not _q_mentions_expected
                         and not _drifted_to_other
-                        and any(marker in _q_lower_check for marker in (
+                        and any(marker in _q_normalized for marker in (
                             "you mentioned", "you said", "when you say", "when you mentioned",
                             "how did you", "what did you", "what was", "walk me through",
                             "tell me more", "can you share", "approximately", "if you were to",
                             "what kind of", "what were the", "what were you",
+                            "what exactly", "tell me about", "can you explain",
                         ))
                     )
                     # Pronoun follow-up: short question, no explicit topic name, no other
@@ -3454,7 +3301,7 @@ async def entrypoint(ctx: JobContext):
                     _looks_like_pronoun_followup = (
                         not _q_mentions_expected
                         and not _drifted_to_other
-                        and len(_q_lower_check.split()) <= 18
+                        and len(_q_normalized.split()) <= 18
                     )
                     _topic_confirmed = (
                         not _closing_question
@@ -4050,7 +3897,7 @@ async def entrypoint(ctx: JobContext):
                 logger.warning(f"[SUMMARY] Timed out for {app_id} after 60s")
             except Exception as e:
                 logger.error(f"[SUMMARY] Failed for {app_id}: {e}")
-        spawn_background_task(_run_report_then_summary(), "report_and_summary")
+        await _run_report_then_summary()
     # Queue accumulated eval/brief/directive LLM usage before writing the exact
     # interview snapshot so recent-interview rows match the org-level totals.
     for _eval_usage in _eval_llm_usages_accumulated:

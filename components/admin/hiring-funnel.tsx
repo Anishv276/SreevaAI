@@ -11,9 +11,11 @@ interface FunnelData {
     interviewed: number;
     shortlisted: number;
     shortlistPassRate: number;
+    offered?: number;
 }
 interface HiringFunnelProps {
     dateRange: DateRange;
+    initialData?: FunnelData | null;
 }
 function buildUrl(range: DateRange) {
     const base = "/api/admin/stats";
@@ -27,17 +29,24 @@ function rangeLabel(range: DateRange) {
     return "from" in range ? `${(range as any).from} – ${(range as any).to}` : "Custom";
 }
 const STAGES = [
-    { key: "uploaded",     label: "Uploaded",     color: "#3B82F6", darkColor: "#2563EB" },
-    { key: "shortlisted",  label: "Shortlisted",   color: "#15803D", darkColor: "#166534" },
-    { key: "invited",      label: "Invited",       color: "#1D4ED8", darkColor: "#1E40AF" },
-    { key: "interviewed",  label: "Interviewed",   color: "#16A34A", darkColor: "#15803D" },
+    { key: "uploaded",     label: "Uploaded",     color: "#8B5CF6", darkColor: "#7C3AED" },
+    { key: "invited",      label: "Invited",      color: "#3B82F6", darkColor: "#2563EB" },
+    { key: "interviewed",  label: "Interviewed",  color: "#06B6D4", darkColor: "#0891B2" },
+    { key: "shortlisted",  label: "Shortlisted",  color: "#10B981", darkColor: "#059669" },
+    { key: "offered",      label: "Offered",      color: "#F59E0B", darkColor: "#D97706" },
 ] as const;
-export function HiringFunnel({ dateRange }: HiringFunnelProps) {
+export function HiringFunnel({ dateRange, initialData }: HiringFunnelProps) {
     const [data, setData] = useState<FunnelData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [retryKey, setRetryKey] = useState(0);
     useEffect(() => {
+        if (initialData) {
+            setData(initialData);
+            setLoading(false);
+            setError(null);
+            return;
+        }
         const controller = new AbortController();
         const signal = controller.signal;
         const fetchData = async () => {
@@ -70,9 +79,10 @@ export function HiringFunnel({ dateRange }: HiringFunnelProps) {
     };
     const stages = data ? [
         { key: "uploaded",    label: "Uploaded",    value: data.totalCandidates },
-        { key: "shortlisted", label: "Shortlisted",  value: data.shortlisted },
-        { key: "invited",     label: "Invited",      value: data.invited },
-        { key: "interviewed", label: "Interviewed",  value: data.interviewed },
+        { key: "invited",     label: "Invited",     value: data.invited },
+        { key: "interviewed", label: "Interviewed", value: data.interviewed },
+        { key: "shortlisted", label: "Shortlisted", value: data.shortlisted },
+        { key: "offered",     label: "Offered",     value: data.offered || 0 },
     ] : [];
     const maxVal = stages.length ? Math.max(...stages.map(s => s.value), 1) : 1;
     const passRate = data

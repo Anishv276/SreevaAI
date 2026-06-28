@@ -1,4 +1,4 @@
-﻿"""
+"""
 agent_persistence.py -- Production-level interview data persistence layer.
 Architecture (4 layers):
   1. DatabasePool         -- singleton asyncpg pool with health-check
@@ -342,6 +342,7 @@ async def persist_question_by_question_analysis(app_id: str, answer_scores: list
             "topic_saturation_score":      float(s.get("topic_saturation_score",     0) or 0),
             "topic_saturation_threshold":  float(s.get("topic_saturation_threshold", 0) or 0),
             "is_warmup":                   bool(s.get("is_warmup", False)),
+            "response_latency_sec":        float(s.get("response_latency_sec") or 0.0),
         }
         for i, s in enumerate(answer_scores, 1)
     ]

@@ -156,7 +156,7 @@ export function DateFilter({ value, onChange }: DateFilterProps) {
                 ref={triggerRef}
                 onClick={handleOpen}
                 className={cn(
-                    "flex items-center gap-1.5 h-8 px-3.5 rounded-full text-[12px] font-semibold transition-all duration-150 border focus:outline-none",
+                    "flex items-center gap-1.5 h-9 px-3.5 rounded-xl text-[13px] font-semibold transition-all duration-150 border focus:outline-none",
                     isActive
                         ? "text-white shadow-sm border-transparent"
                         : "text-gray-500 border-gray-200 hover:border-violet-300 hover:text-violet-600 bg-white"

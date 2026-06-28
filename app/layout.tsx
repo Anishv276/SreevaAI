@@ -8,6 +8,7 @@ import { AuthProvider } from "@/context/auth-context";
 import { CandidatesProvider } from "@/context/candidates-context";
 import { Toaster } from "@/components/ui/toast-custom";
 import ClarityAnalytics from "@/components/clarity-analytics";
+import { ViewTransitions } from "next-view-transitions";
 export const metadata: Metadata = {
   title: {
     default: "Sreeva AI - AI-Powered Recruitment Platform",
@@ -63,11 +64,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" suppressHydrationWarning className={GeistSans.variable}>
-      <head>
-        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap" />
-      </head>
-      <body className="font-sans antialiased" suppressHydrationWarning>
+    <ViewTransitions>
+      <html lang="en" suppressHydrationWarning className={GeistSans.variable}>
+        <head>
+          <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap" />
+        </head>
+        <body className="font-sans antialiased" suppressHydrationWarning>
         <Script
           src="https://www.googletagmanager.com/gtag/js?id=G-LRB7QT4RJR"
           strategy="afterInteractive"
@@ -82,16 +84,16 @@ export default function RootLayout({
         </Script>
         <ClarityAnalytics />
         <AuthProvider>
-          <Suspense fallback={
-            <div className="min-h-screen flex flex-col items-center justify-center bg-white" aria-label="Loading Sreeva AI">
-              <img src="/sreevaailogo2.png" alt="Sreeva AI" className="h-16 w-16 mb-4 animate-pulse" />
-              <p className="text-2xl font-bold text-slate-900" aria-hidden="true">Sreeva AI</p>
-              <p className="text-slate-500 mt-2 animate-pulse">Setting up your AI-powered interview environment...</p>
-            </div>
-          }>
-            <JobsProvider>
-              <CandidatesProvider>
-                {children}
+            <Suspense fallback={
+              <div className="min-h-screen flex flex-col items-center justify-center bg-white" aria-label="Loading Sreeva AI">
+                <img src="/sreevaailogo2.png" alt="Sreeva AI" className="h-16 w-16 mb-4 animate-pulse" />
+                <p className="text-2xl font-bold text-slate-900" aria-hidden="true">Sreeva AI</p>
+                <p className="text-slate-500 mt-2 animate-pulse">Setting up your AI-powered interview environment...</p>
+              </div>
+            }>
+              <JobsProvider>
+                <CandidatesProvider>
+                  {children}
                 <Toaster />
               </CandidatesProvider>
             </JobsProvider>
@@ -99,5 +101,6 @@ export default function RootLayout({
         </AuthProvider>
       </body>
     </html>
+    </ViewTransitions>
   );
 }

@@ -86,6 +86,8 @@ NATURAL FILLERS (use freely to open a turn): "Hmm, so—" / "Right, and—" / "O
 TURN DISCIPLINE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ONE question per turn. No exceptions. Pick the sharpest one. Acknowledgment is one sentence max.
+ONE question means ONE question mark. Not two. Not "and also...". Not "how did X and what was Y?".
+Keep it under 20 words. A real interviewer asks one thing, then listens.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 PRIVATE DIRECTIVES -- CRITICAL
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

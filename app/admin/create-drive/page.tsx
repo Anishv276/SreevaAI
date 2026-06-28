@@ -362,9 +362,9 @@ function CreateDriveForm() {
             </p>
           </div>
           <a href={getSupportComposeUrl(interviewAccessLocked
-              ? { subject: "Interview quota support request", body: isSuspended ? "Hi support team,\n\nOur account is suspended by Super Admin. Please help us restore access.\n" : "Hi support team,\n\nPlease help us restore interview access for our account.\n" }
-              : { subject: "Upgrade plan request", body: "Hi support team,\n\nWe would like to upgrade our plan to create more jobs.\n" }
-            )}
+            ? { subject: "Interview quota support request", body: isSuspended ? "Hi support team,\n\nOur account is suspended by Super Admin. Please help us restore access.\n" : "Hi support team,\n\nPlease help us restore interview access for our account.\n" }
+            : { subject: "Upgrade plan request", body: "Hi support team,\n\nWe would like to upgrade our plan to create more jobs.\n" }
+          )}
             target="_blank" rel="noreferrer"
             className="btn-shimmer inline-flex items-center gap-2 h-10 px-6 rounded-xl text-sm font-medium text-white"
             style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)", boxShadow: "0 4px 14px rgba(124,58,237,0.3)" }}>
@@ -388,25 +388,50 @@ function CreateDriveForm() {
             {isEditAction ? "Update your job and screening configuration." : "Set up your job, interview, and screening in one place."}
           </p>
         </div>
-        <button
-          onClick={() => router.push(isEditMode ? "/admin/drives" : "/admin")}
-          className="inline-flex items-center gap-1.5 h-9 px-3 rounded-xl bg-white text-sm font-medium text-gray-600 hover:text-violet-600 hover:bg-violet-50 transition-all self-start sm:self-auto"
-          style={{ border: "1px solid #E9E7FF" }}>
-          <ChevronLeft className="h-4 w-4" />
-          {isEditMode ? "Back to Jobs" : "Back"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => router.push(isEditMode ? "/admin/drives" : "/admin")}
+            className="inline-flex items-center justify-center h-10 px-4 rounded-xl bg-white text-sm font-medium text-gray-600 hover:text-violet-600 hover:bg-violet-50 transition-all self-start sm:self-auto"
+            style={{ border: "1px solid #E9E7FF" }}>
+            <ChevronLeft className="h-4 w-4" />
+            {isEditAction ? "Cancel" : "Back"}
+          </button>
+          <button
+            type="button"
+            onClick={handlePublish}
+            disabled={isSavingDraft}
+            className="btn-shimmer inline-flex items-center justify-center gap-2 h-10 px-6 rounded-xl text-sm font-medium text-white transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+            style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)", boxShadow: isSavingDraft ? "none" : "0 4px 14px rgba(124,58,237,0.3)" }}>
+            {isSavingDraft ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
+            {isSavingDraft ? "Saving…" : isEditAction ? "Update Job" : "Create Job"}
+          </button>
+        </div>
       </div>
 
-      {/* Two-column grid — left cell stretches full height, inner div is sticky */}
-      <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-5">
+      {/* Two-column grid — fixed height so the page doesn't scroll, only columns scroll if needed */}
+      <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-4 items-start h-[calc(100vh-100px)] min-h-0">
 
-        {/* ── LEFT COLUMN: sticky inner wrapper ── */}
-        <div className="relative">
-        <div className="space-y-4 lg:sticky lg:top-8">
+        {/* ── LEFT COLUMN (Static, compacted to fit without scroll) ── */}
+        <div className="flex flex-col gap-3 h-full overflow-hidden pb-2">
 
           {/* Interview Mode card */}
           <Card>
-            <CardHeader icon={<LayoutList className="h-3.5 w-3.5" />} title="Interview Mode" />
+            <div className="flex items-center gap-2 mb-3 justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="h-7 w-7 rounded-xl flex items-center justify-center flex-shrink-0 text-[#7C3AED]"
+                  style={{ background: "linear-gradient(135deg, rgba(139,92,246,0.1), rgba(59,130,246,0.07))", border: "1px solid rgba(139,92,246,0.18)" }}>
+                  <LayoutList className="h-3.5 w-3.5" />
+                </div>
+                <p className="text-sm font-semibold text-gray-900 leading-tight">Interview Mode</p>
+              </div>
+              {!isEditMode && (
+                <div className="flex items-center gap-1.5 rounded-lg px-2 py-1 flex-shrink-0"
+                  style={{ background: "#FFFBEB", border: "1px solid #FDE68A" }}>
+                  <svg className="h-3 w-3 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" /></svg>
+                  <p className="text-[10px] text-amber-700 font-medium">Permanent</p>
+                </div>
+              )}
+            </div>
             <div className="space-y-2">
               {[
                 { value: "ats", label: "Scoring + Interview", Icon: LayoutList, desc: "Upload resumes → AI scores → you shortlist → send link.", badge: "Full Pipeline" },
@@ -450,13 +475,6 @@ function CreateDriveForm() {
                 );
               })}
             </div>
-            {!isEditMode && (
-              <div className="mt-3 flex items-start gap-2 rounded-xl px-3 py-2.5"
-                style={{ background: "#FFFBEB", border: "1px solid #FDE68A" }}>
-                <svg className="h-3.5 w-3.5 text-amber-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" /></svg>
-                <p className="text-[11px] text-amber-700 leading-snug"><strong>Permanent.</strong> Cannot be changed after creation.</p>
-              </div>
-            )}
           </Card>
 
           {/* Job Details card */}
@@ -507,29 +525,10 @@ function CreateDriveForm() {
             </div>
           </Card>
 
-          {/* Publish button (left col, bottom — visible without scroll on large screens) */}
-          <div className="flex gap-2">
-            <button
-              onClick={() => router.push(isEditMode ? "/admin/drives" : "/admin")}
-              className="inline-flex items-center justify-center h-10 px-4 rounded-xl bg-white text-sm font-medium text-gray-600 hover:text-violet-600 hover:bg-violet-50 transition-all"
-              style={{ border: "1px solid #E9E7FF" }}>
-              {isEditAction ? "Cancel" : "Back"}
-            </button>
-            <button
-              type="button"
-              onClick={handlePublish}
-              disabled={isSavingDraft}
-              className="btn-shimmer flex-1 inline-flex items-center justify-center gap-2 h-10 rounded-xl text-sm font-medium text-white transition-all disabled:opacity-70 disabled:cursor-not-allowed"
-              style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)", boxShadow: isSavingDraft ? "none" : "0 4px 14px rgba(124,58,237,0.3)" }}>
-              {isSavingDraft ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
-              {isSavingDraft ? "Saving…" : isEditAction ? "Update Job" : "Create Job"}
-            </button>
-          </div>
-        </div>
         </div>
 
         {/* ── RIGHT COLUMN: JD + Interview Setup + Screening ── */}
-        <div className="space-y-4">
+        <div className="flex flex-col gap-4 h-full overflow-y-auto pr-2 pb-10" style={{ scrollbarWidth: "thin" }}>
 
           {/* JD Upload */}
           <Card>
@@ -571,7 +570,7 @@ function CreateDriveForm() {
 
 function Card({ children }: { children: React.ReactNode }) {
   return (
-    <div className="bg-white rounded-2xl p-5"
+    <div className="bg-white rounded-2xl p-4"
       style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
       {children}
     </div>
@@ -580,7 +579,7 @@ function Card({ children }: { children: React.ReactNode }) {
 
 function CardHeader({ icon, title, subtitle }: { icon: React.ReactNode; title: string; subtitle?: string }) {
   return (
-    <div className="flex items-center gap-2.5 mb-4">
+    <div className="flex items-center gap-2.5 mb-3">
       <div className="h-7 w-7 rounded-xl flex items-center justify-center flex-shrink-0 text-[#7C3AED]"
         style={{ background: "linear-gradient(135deg, rgba(139,92,246,0.1), rgba(59,130,246,0.07))", border: "1px solid rgba(139,92,246,0.18)" }}>
         {icon}

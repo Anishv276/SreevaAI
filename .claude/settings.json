@@ -282,7 +282,16 @@
       "Bash(sed -i 's/  100% { color: #7C3AED; \\\\/\\\\* loops \\\\*\\\\/$/  100% { color: #7C3AED; } \\\\/\\\\* loops \\\\*\\\\//' public/styles.css)",
       "Bash(xargs grep -l \"usage\\\\|consumption\\\\|quota\" -i)",
       "Bash(xargs grep -l \"usage\\\\|consumption\" -i)",
-      "Bash(npx tsx --no-warnings -e ' *)"
+      "Bash(npx tsx --no-warnings -e ' *)",
+      "Bash(python -c \"print\\(sum\\(1 for _ in open\\(r'c:\\\\Users\\\\vamsi\\\\OneDrive\\\\Documents\\\\SreevaAI\\\\interview\\\\agent_runtime.py'\\)\\)\\)\")",
+      "Bash(python -c \"print\\(sum\\(1 for _ in open\\(r'c:\\\\Users\\\\vamsi\\\\OneDrive\\\\Documents\\\\SreevaAI\\\\interview\\\\interview_phases.py'\\)\\)\\)\")",
+      "Bash(python -c \"import interview.agent_runtime\")",
+      "Bash(python -c \"from livekit.agents.beta.tools import EndCallTool; print\\('ok'\\)\")",
+      "WebFetch(domain:docs.livekit.io)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(python -c \"from livekit.agents import function_tool; print\\('ok'\\)\")",
+      "Bash(xargs grep -l \"billing\\\\|usage\\\\|record\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\vamsi\\OneDrive\\Desktop\\HR-updates\\scratch",

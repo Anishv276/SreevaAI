@@ -1,5 +1,5 @@
 "use client";
-import Link from "next/link";
+import { Link } from 'next-view-transitions';
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
     LayoutDashboard, PlusCircle, Users, Settings,

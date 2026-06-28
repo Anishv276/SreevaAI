@@ -30,10 +30,9 @@ export async function GET(req: NextRequest) {
         const scoreGroups = await prisma.$queryRaw<Array<ScoreGroupRow>>(Prisma.sql`
             SELECT
                 CASE
-                    WHEN a."aiScore" < 20 THEN '0-20'
-                    WHEN a."aiScore" < 40 THEN '20-40'
-                    WHEN a."aiScore" < 60 THEN '40-60'
-                    WHEN a."aiScore" < 80 THEN '60-80'
+                    WHEN a."aiScore" < 40 THEN '0-39'
+                    WHEN a."aiScore" < 60 THEN '40-59'
+                    WHEN a."aiScore" < 80 THEN '60-79'
                     ELSE '80-100'
                 END AS label,
                 COUNT(*)::INT AS count
@@ -50,11 +49,10 @@ export async function GET(req: NextRequest) {
             GROUP BY label
         `);
         const bands = [
-            { label: "0-20", min: 0, max: 20, color: "#EF4444", tier: "Below threshold" },
-            { label: "20-40", min: 20, max: 40, color: "#DC2626", tier: "Below threshold" },
-            { label: "40-60", min: 40, max: 60, color: "#D97706", tier: "Average" },
-            { label: "60-80", min: 60, max: 80, color: "#3B82F6", tier: "Good" },
-            { label: "80-100", min: 80, max: 101, color: "#16A34A", tier: "Excellent" },
+            { label: "0-39", min: 0, max: 39, color: "#EF4444", tier: "Below (0-39)" },
+            { label: "40-59", min: 40, max: 59, color: "#F59E0B", tier: "Average (40-59)" },
+            { label: "60-79", min: 60, max: 79, color: "#3B82F6", tier: "Good (60-79)" },
+            { label: "80-100", min: 80, max: 100, color: "#8B5CF6", tier: "Excellent (80-100)" },
         ];
         let total = 0;
         const distribution = bands.map((band) => {

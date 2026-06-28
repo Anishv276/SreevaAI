@@ -62,6 +62,7 @@ export interface CandidateStats {
     interviewRunning: number;
     interviewPending: number;
     interviewCompleted: number;
+    readyForHire: number;
 }
 interface CandidatesContextType {
     candidates: Candidate[];
@@ -104,7 +105,8 @@ export function CandidatesProvider({ children }: { children: React.ReactNode }) 
         rejected: 0,
         interviewRunning: 0,
         interviewPending: 0,
-        interviewCompleted: 0
+        interviewCompleted: 0,
+        readyForHire: 0
     });
     const [isHydrated, setIsHydrated] = useState(false);
     const pathname = usePathname();

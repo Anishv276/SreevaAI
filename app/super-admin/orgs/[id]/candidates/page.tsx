@@ -170,7 +170,7 @@ export default function OrgCandidatesPage({ params }: { params: Promise<{ id: st
     // Initial org name fetch
     useEffect(() => {
         fetch(`/api/super-admin/orgs/${orgId}`)
-            .then(r => r.ok ? r.json() : {})
+            .then(r => r.ok ? r.json() : ({} as any))
             .then(d => setOrgName(d?.name ?? ""))
             .catch(() => {});
     }, [orgId]);

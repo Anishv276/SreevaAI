@@ -106,7 +106,7 @@ export async function GET(request: Request) {
                 where,
                 include: {
                     drive: { select: { title: true, role: true } },
-                    interview: { select: { inviteSentAt: true, status: true } },
+                    interview: { select: { inviteSentAt: true, status: true, completedAt: true } },
                 },
                 orderBy:
                     sortBy === "score"
@@ -133,7 +133,8 @@ export async function GET(request: Request) {
             rejected: 0,
             interviewRunning: 0,
             interviewPending: 0,
-            interviewCompleted: 0
+            interviewCompleted: 0,
+            readyForHire: 0
         };
         statsResult.forEach((group: any) => {
             const count = group._count._all;
@@ -144,6 +145,9 @@ export async function GET(request: Request) {
             if (intStatus === 'inprogress' || intStatus === 'in progress') statsRow.interviewRunning += count;
             if (intStatus === 'pending') statsRow.interviewPending += count;
             if (intStatus === 'finished' || intStatus === 'completed') statsRow.interviewCompleted += count;
+            if (resStatus === 'shortlisted' && (intStatus === 'finished' || intStatus === 'completed')) {
+                statsRow.readyForHire += count;
+            }
         });
         const formattedCandidates = candidates.map((app) => {
             let progress = null as number | null;
@@ -166,7 +170,7 @@ export async function GET(request: Request) {
                 role: app.drive?.role || app.drive?.title || "Unknown Role",
                 score: app.aiScore || 0,
                 status: app.resumeStatus,
-                interviewStatus: app.interviewStatus,
+                interviewStatus: app.interview?.status || app.interviewStatus,
                 screeningProgress: progress,
                 screeningStage: stage,
                 inviteSentAt: app.interview?.inviteSentAt ?? null,
@@ -188,6 +192,7 @@ export async function GET(request: Request) {
                 interviewRunning: Number(statsRow.interviewRunning ?? 0),
                 interviewPending: Number(statsRow.interviewPending ?? 0),
                 interviewCompleted: Number(statsRow.interviewCompleted ?? 0),
+                readyForHire: Number(statsRow.readyForHire ?? 0),
             }
         }, {
             headers: {

@@ -11,10 +11,10 @@ import { isInterviewTokenRequired } from "@/lib/interview-access";
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
     try {
         const session = await getSession();
-        const isSuperAdmin = isSuperAdminRole(session.role);
-        if (!session || (!isAdminRole(session.role) && !isSuperAdmin)) {
+        if (!session || (!isAdminRole(session.role) && !isSuperAdminRole(session.role))) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
+        const isSuperAdmin = isSuperAdminRole(session.role);
         const { id: applicationId } = await context.params;
         if (!applicationId) {
             console.error("[INTERVIEW] Missing applicationId in params");

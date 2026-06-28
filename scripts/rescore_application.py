@@ -64,8 +64,16 @@ def rescore(identifier: str, dry_run: bool = False):
 
     # Generate report too
     from extraction_resume_JD_score_report_v2.reporter import generate_report
+    from billing.billing import record_external_billing_usage
+    import asyncio
     try:
-        report, _ = generate_report(jd, resume, "", resume_text, score_result, oai, "gpt-4o-mini", screening)
+        report, report_usage = generate_report(jd, resume, "", resume_text, score_result, oai, "gpt-4o-mini", screening)
+        # Bill the org that owns this drive for the rescore LLM call
+        cur.execute('SELECT "orgId" FROM "Drive" WHERE id=%s', (drive_id,))
+        org_row = cur.fetchone()
+        if org_row and org_row[0] and report_usage.get("inputTokens"):
+            asyncio.run(record_external_billing_usage(org_row[0], "resumeReport", report_usage))
+            print(f"[BILLING] Recorded resumeReport usage: {report_usage.get('inputTokens')} in / {report_usage.get('outputTokens')} out tokens")
         from extraction_resume_JD_score_report_v2.parser import DocumentParser
         LOCKED = {"score","status","breakdown","skill_matching","exp_status","hard_rejected","rejection_reasons","candidate_years","jd_min_years","fit_radar","work_history","education","core_claims","uncertain_areas","skill_depth"}
         for k in LOCKED: report.pop(k, None)

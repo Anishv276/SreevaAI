@@ -326,7 +326,6 @@ REPORTER_SYSTEM = (
     "from the provided evidence library using its [EV-xxx] citation ID. "
     "FORBIDDEN in all output: 'strong background', 'passionate', 'experienced in', 'has worked with', "
     "'demonstrates proficiency', score numbers in narrative text. "
-    "REQUIRED sentence pattern: 'At [Company], [built/led/owned] [specific thing] using [tool] — [outcome/scale/metric]'. "
     "BIAS: zero tolerance — no inference from name, nationality, gender, age, or education prestige. "
     "Output ONLY valid JSON. No markdown. No code fences."
 )
@@ -398,66 +397,141 @@ GLOBAL RULES:
 - Every factual sentence MUST name a company, tool, project, or metric from THIS resume.
 - Cite evidence by [EV-id] when referencing an evidence_item.
 - FORBIDDEN: vague adjectives, score numbers in prose, demographic inferences.
-- Tone: direct, specific, professional. Rejected candidates get honest gaps, not unkind language.
+- Tone: direct, specific, professional.
+- CHARACTER LIMITS ARE HARD: bodies that exceed them will be cut off mid-sentence on screen.
 
-1. recruiter_snapshot (string — 3 sentences)
-   S1: What they can do TODAY — deepest skill, strongest role, best evidence with [EV-id].
-   S2: How they match THIS role — must-haves matched/missed specifically.
-   S3: Biggest gap OR strongest differentiator.
+━━━ SECTION 1 — FIT RADAR ━━━
 
-2. fit_radar (0–100 each — YOUR independent judgment, NOT score breakdown copy):
-   - must_haves: % of JD must-haves confirmed in work history or projects (not merely listed).
-     Missing must-haves pull this down. Each missed critical = -15 to -20 pts.
-   - exp_depth: % experience quality — years vs minimum, ownership level, building vs assisting.
-   - domain_fit: % industry alignment — ramp-time risk. 100=exact match, 50=adjacent, 20=mismatch.
-   - skill_breadth: % confirmed tech stack width across distinct areas. Listed-only = 20 max.
-   - evidence_quality: % resume backed by verifiable proof — metrics, ownership, system names.
+Output "fit_radar" (0–100 each) — YOUR independent judgment, NOT a copy of the score breakdown:
+- role_fit: What % of JD must-haves + good-to-haves does the resume actually cover via evidence (not just listing)? 100 = every requirement proven, 50 = partial/adjacent, 20 = major gaps.
+- tech_depth: Mastery vs. exposure. Owner-level system builds = high. Contributor on others' systems = mid. Skills-section-only = low.
+- proven_impact: Achievement density. % of resume backed by metrics, quantified outcomes, or clear ownership — not just duty descriptions.
+- hire_risk: INVERTED (100 = no risk, 0 = high risk). Penalise: short tenures, stagnation, domain mismatch, stale core skills.
+- growth_velocity: Career trajectory speed (0–100, neutral=50). Reward scope/title escalation, ownership level rising over time. Penalise short stints or declining trajectory.
 
-3. fit_radar_notes (1–2 sentences per axis naming specific skill/company/metric that drove score UP or DOWN).
+Output "fit_radar_notes" — one sharp sentence per axis grounded in THIS resume's specific evidence.
+  - DO NOT write generic explanations of what the axis means.
+  - DO name the specific signal that drove the score. Examples:
+    - role_fit: "Covers React, Node.js, and PostgreSQL from JD but missing the required AWS Lambda experience."
+    - tech_depth: "Led microservices rebuild at Razorpay [EV-003] — owner-level system design, not just feature work."
+    - proven_impact: "Only 2 of 6 roles carry quantified outcomes; remainder are duty descriptions with no metrics."
+    - hire_risk: "Three stints under 8 months in the last 4 years; stability concern for a senior hire."
+    - growth_velocity: "IC contributor throughout with no title or scope escalation across 5 roles."
 
-4. skill_match_rows (6–12 items — confirmed technical skills only):
-   - name: canonical skill name
-   - stars: 1–5 (5=multiple high-impact owner roles + metrics; 1=text mention only)
-   - evidence_note: one phrase, e.g. "3 years at Razorpay, production scale" or "Personal project only"
+━━━ SECTION 2 — AI SUMMARY (3 cards) ━━━
 
-5. work_history_annotated (one entry per role):
-   - company, role, start_date (MMM YYYY), end_date (MMM YYYY or Present), duration_months, is_current
-   - recruiter_summary: 2–3 sentences — what built, tools used, scope, outcome. Name specifics with [EV-id].
-   - technologies_used: [string]
-   - ownership_level, impact_strength
+LIMIT: Each body is displayed at 13px in a fixed card. Write 2–3 complete sentences.
+Target 200–280 characters per body — enough to say something meaningful, short enough to read in 5 seconds.
+No filler phrases ("is a", "demonstrates", "has shown"). Start with the strongest signal immediately.
+Cite [EV-id] only when it fits naturally.
 
-6. experience_assessment: {{"years": {candidate_years}, "vs_required": "{candidate_years} yrs vs {jd_min_years} yrs required"}}
+HOW TO WRITE EACH CARD:
+Think: "If I had 10 seconds to tell a hiring manager the ONE thing they must know, what is it?"
+Answer that question first. Then add ONE follow-up sentence with the specific proof or gap.
 
-7. candidate_potential: {{"for_this_role": "High"|"Medium"|"Low"}}
+Cards:
+1. label="Executive Summary", tone="emerald"|"amber"|"rose"
+   S1: Their professional identity in one punchy line — role type + strongest domain + scale/context.
+   S2: The single most impressive concrete thing they built or owned, with company and outcome.
+   Example: "Backend engineer specializing in high-throughput payment systems with 6 years at fintech scale. Built Razorpay's settlement engine [EV-001] processing 50M transactions/day — sole architect and owner."
 
-8. decision_reason (EXACTLY 4 sentences):
-   S1: Decisive verdict + top skill WHERE proven (company + scope/metric + [EV-id]).
-   S2: Experience + ownership quality (years, seniority, building vs assisting, company type).
-   S3: Strongest differentiator OR most important gap — specific tool/company/metric.
-   S4: Concrete recommendation. Shortlisted: what to probe. Borderline: what would push through. Rejected: what would need to change.
+2. label="JD Alignment", tone="emerald"|"amber"|"rose"
+   S1: The strongest match to THIS specific JD — name the exact skills or responsibilities that align.
+   S2: The most critical gap vs. THIS JD — what the JD requires that is absent or weak in the resume.
+   Example: "Covers all three core JD requirements: React, Node.js, and PostgreSQL — each with production-scale work history. Missing the required AWS Lambda experience; only on-prem and GCP deployments visible in resume."
 
-9. strengths (EXACTLY 3 items):
-   - label: 3–5 word noun phrase naming the specific strength (e.g. "Node.js ownership at Swiggy")
-   - body: 1–2 sentences with company, tool, metric, outcome. Cite [EV-id].
+3. label="Primary Risk", tone="rose" (always rose)
+   S1: The single biggest reason this hire might fail — be specific, not generic.
+   S2: Why it matters for THIS role specifically, or what evidence makes it a real concern.
+   Example: "Three tenures under 8 months in the last 4 years signal a retention risk for a senior long-term hire. No role shows ownership of a system beyond feature-level contribution — a gap for a role requiring architectural independence."
 
-10. weaknesses (EXACTLY 3 items):
-    - label: 3–5 word noun phrase naming the specific gap
-    - body: what is missing, why it matters for THIS role, what would resolve it.
+━━━ SECTION 3 — STRENGTHS & WEAKNESSES ━━━
 
-11. ai_summary (EXACTLY 4 cards):
-    - "Core Skills": confirmed vs JD. emerald=80%+ matched, amber=partial, rose=weak.
-    - "Experience": years vs minimum + ownership. emerald=meets+owner, amber=close/contributor, rose=short.
-    - "Applied Depth": skills in work vs listed. emerald=majority in work, amber=mixed, rose=mostly listed.
-    - "Risks": 1–2 specific blockers. Always rose. Name the skill/gap/mismatch.
+LIMIT: Each body is clipped at 260 characters on screen. Write tight — every word must land.
+MANDATORY STRUCTURE for every body:
+  [Specific fact from resume — company/project/metric] → [what this proves or why it's a risk for THIS role]
 
-12. citations_used (array of [EV-id] strings you cited — used for grounding verification).
+ANTI-PATTERNS (will produce useless output — never do these):
+  ✗ "Demonstrated strong ownership across multiple roles" — too vague, names nothing
+  ✗ "Has experience with high-scale systems" — still vague
+  ✗ "Shows repeated ability to..." — pattern-talk without the evidence
+  ✓ "Owned payment gateway rebuild at Razorpay [EV-003] and fraud pipeline at Juspay — two owner-level fintech systems proves this is a builder, not just a contributor."
+  ✓ "All 5 roles list Python but only 1 (Juspay, 8 months) has a quantified outcome — depth is unverifiable for a senior mandate."
+
+strengths (EXACTLY 3 — pick the 3 most DEFENSIBLE advantages grounded in resume evidence):
+BEFORE writing, ask: "What are the top 3 things this person has provably done that most candidates at this level haven't?"
+- label: 3–5 word conceptual frame. NOT skill names ("Strong Python"). Use role/outcome frames:
+  "Fintech System Ownership", "0-to-1 Product Delivery", "High-Scale API Architecture", "Multi-Domain Ownership", "Quantified Impact Track Record"
+- body: Lead with the strongest specific fact. End with what it means for THIS role. ≤ 260 chars.
+
+weaknesses (EXACTLY 3 — pick the 3 most IMPACTFUL gaps or risks for THIS specific JD):
+BEFORE writing, ask: "What are the top 3 things that could make this hire fail or underperform in this exact role?"
+- label: 3–5 word risk frame. "No Architectural Ownership", "Tenure Instability Risk", "Missing Domain Context", "Unverified Depth Claims", "Contributor-Only Track Record"
+- body: Lead with the specific evidence that proves the gap. End with why it matters for THIS role. ≤ 260 chars.
+
+━━━ SECTION 4 — DECISION REASON ━━━
+
+decision_reason: EXACTLY 3 sentences. This is shown directly to HR as the shortlisting note.
+S1: Decisive verdict — the top skill proven WHERE (company + metric/scope).
+S2: Key gap or mismatch — what is missing or weak relative to the JD.
+S3: Concrete recommendation: what to probe (shortlisted), what would tip the decision (borderline), or what would need to change (rejected).
+Keep it under 400 characters total. No preamble, no hedging, no restating status.
+
+━━━ SECTION 5 — CAREER TIMELINE ━━━
+
+work_history_annotated (one entry per role from the structured resume):
+- company, role, start_date ("MMM YYYY"), end_date ("MMM YYYY" or "Present"), duration_months, is_current
+- recruiter_summary: EXACTLY 1–2 sentences. Structure: "[what they owned/built] using [tech stack]. [outcome or scale if available]."
+  HARD LIMIT: ≤ 180 characters. No preamble like "In this role..." or "Responsible for...".
+  Example: "Owned the real-time fraud detection pipeline in Python + Kafka. Reduced false-positive rate by 30% [EV-004]."
+- technologies_used: [string] — copy from resume, max 6 items
+- ownership_level: "owner"|"contributor"|"unclear"
+- impact_strength: "high"|"medium"|"low"
+
+━━━ SECTION 6 — SKILL RATINGS ━━━
+
+skill_match_rows (6–12 items — JD-relevant skills only, technical skills only):
+- name: canonical skill name
+- stars: 1–5
+  5 = multiple owner-level roles with this skill + quantified outcome
+  4 = owner-level in one role OR contributor with strong outcome
+  3 = contributor role with this skill, no strong outcome
+  2 = project only (personal/academic)
+  1 = skills-section mention only, no supporting evidence
+- evidence_note: ONE phrase ≤ 60 chars. e.g. "3 yrs at Razorpay, prod scale" or "Personal project only" or "Skills section only"
+
+skill_matching:
+- matched_must: COPY verbatim from LOCKED SCORING RESULTS above.
+- missing_must: COPY verbatim from LOCKED SCORING RESULTS above.
+- matched_good: COPY verbatim from LOCKED SCORING RESULTS above.
+- must_have_details: For each skill in matched_must, add one entry:
+  - name: skill name (must match matched_must entry exactly)
+  - evidence: 1 sentence — WHERE in the resume this skill is proven and HOW (company + role + outcome/scale). ≤ 140 chars.
+    Example: "Built REST APIs at Razorpay using Node.js, serving 10M daily requests [EV-002]."
+
+━━━ SECTION 7 — OTHER FIELDS ━━━
+
+recruiter_snapshot (string — 3 sentences):
+S1: What they can do TODAY — deepest skill + strongest role + best evidence [EV-id].
+S2: How they match THIS role — must-haves matched/missed specifically.
+S3: Biggest gap OR strongest differentiator.
+
+experience_assessment: {{"years": {candidate_years}, "vs_required": "{candidate_years} yrs vs {jd_min_years} yrs required"}}
+
+candidate_potential: {{"for_this_role": "High"|"Medium"|"Low"}}
 
 Return ONLY valid JSON:
 {{
   "recruiter_snapshot": "string",
-  "fit_radar": {{"must_haves": 0, "exp_depth": 0, "domain_fit": 0, "skill_breadth": 0, "evidence_quality": 0}},
-  "fit_radar_notes": {{"must_haves": "string", "exp_depth": "string", "domain_fit": "string", "skill_breadth": "string", "evidence_quality": "string"}},
+  "fit_radar": {{"role_fit": 0, "tech_depth": 0, "proven_impact": 0, "hire_risk": 0, "growth_velocity": 0}},
+  "fit_radar_notes": {{"role_fit": "string", "tech_depth": "string", "proven_impact": "string", "hire_risk": "string", "growth_velocity": "string"}},
   "skill_match_rows": [{{"name":"string","stars":0,"evidence_note":"string"}}],
+  "skill_matching": {{
+    "matched_must": ["string"],
+    "missing_must": ["string"],
+    "matched_good": ["string"],
+    "must_have_details": [{{"name":"string","evidence":"string"}}]
+  }},
   "experience_assessment": {{"years": {candidate_years}, "vs_required": "string"}},
   "work_history_annotated": [{{"company":"string","role":"string","start_date":"string","end_date":"string","duration_months":0,"is_current":false,"recruiter_summary":"string","technologies_used":["string"],"ownership_level":"string","impact_strength":"string"}}],
   "candidate_potential": {{"for_this_role": "string"}},
@@ -465,11 +539,9 @@ Return ONLY valid JSON:
   "strengths": [{{"label":"string","body":"string"}},{{"label":"string","body":"string"}},{{"label":"string","body":"string"}}],
   "weaknesses": [{{"label":"string","body":"string"}},{{"label":"string","body":"string"}},{{"label":"string","body":"string"}}],
   "ai_summary": [
-    {{"label":"Core Skills","body":"string","tone":"emerald|amber|rose"}},
-    {{"label":"Experience","body":"string","tone":"emerald|amber|rose"}},
-    {{"label":"Applied Depth","body":"string","tone":"emerald|amber|rose"}},
-    {{"label":"Risks","body":"string","tone":"rose"}}
-  ],
-  "citations_used": ["string"]
+    {{"label":"Executive Summary","body":"string","tone":"emerald|amber|rose"}},
+    {{"label":"JD Alignment","body":"string","tone":"emerald|amber|rose"}},
+    {{"label":"Primary Risk","body":"string","tone":"rose"}}
+  ]
 }}
 """

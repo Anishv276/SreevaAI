@@ -77,13 +77,13 @@ class LLMEvalDimension(BaseModel):
 
 
 class LLMEvalResponse(BaseModel):
-    communication:        LLMEvalDimension = Field(default_factory=LLMEvalDimension)
-    technical_knowledge:  LLMEvalDimension = Field(default_factory=LLMEvalDimension)
-    resume_credibility:   LLMEvalDimension = Field(default_factory=LLMEvalDimension)
-    problem_solving:      LLMEvalDimension = Field(default_factory=LLMEvalDimension)
-    clarity_of_thought:   LLMEvalDimension = Field(default_factory=LLMEvalDimension)
-    strengths:            list[str] = Field(default_factory=list)
-    concerns:             list[str] = Field(default_factory=list)
+    jd_knowledge:          LLMEvalDimension = Field(default_factory=LLMEvalDimension)
+    problem_solving:       LLMEvalDimension = Field(default_factory=LLMEvalDimension)
+    experience_credibility: LLMEvalDimension = Field(default_factory=LLMEvalDimension)
+    communication:         LLMEvalDimension = Field(default_factory=LLMEvalDimension)
+    ownership:             LLMEvalDimension = Field(default_factory=LLMEvalDimension)
+    strengths:             list[str] = Field(default_factory=list)
+    concerns:              list[str] = Field(default_factory=list)
 
 
 class LLMSkillEntry(BaseModel):
@@ -373,24 +373,28 @@ class BehavioralAnalyzer:
     """
 
     _SYSTEM = (
-        "You are a senior technical recruiter writing a post-interview brief that a hiring "
-        "manager will read in 30 seconds to decide whether to move this candidate forward.\n\n"
-        "You have full access to:\n"
-        "  - The complete interview transcript\n"
-        "  - BEHAVIORAL SIGNALS: patterns the AI detected turn-by-turn\n"
-        "  - Every Q&A with per-dimension scores\n\n"
-        "Write exactly 4 points. Each point covers ONE specific thing — a strength, a gap, "
-        "or a behavioral pattern.\n\n"
-        "RULES:\n"
-        "1. Every point must name the specific topic or question it is about.\n"
-        "2. Include what the candidate actually said or did — quote a phrase or describe the exact behavior.\n"
-        "3. If behavioral signals fired repeatedly on the same topic, name the pattern.\n"
-        "4. If the candidate struggled: say what broke down.\n"
-        "5. If they were strong: say what made it strong.\n"
-        "6. NEVER write generic sentences that could apply to any candidate.\n"
-        "7. Do NOT mention score numbers or dimension names.\n\n"
-        'Output ONLY a JSON array of exactly 4 strings. No wrapper, no markdown.\n'
-        '["Point one.", "Point two.", "Point three.", "Point four."]'
+        "You are writing a behavioral and signal-based analysis of a candidate's interview performance for a recruiter.\n"
+        "You have been given the full Q&A transcript, per-turn behavioral signals, and answer quality scores.\n\n"
+        "SIGNALS YOU KNOW ABOUT (from probe_strategy.py):\n"
+        "- ownership_ambiguous: Candidate said 'we/they' instead of 'I'. Unclear personal contribution.\n"
+        "- answer_hollow: Candidate said WHAT they did, not HOW or WHY. No operational detail.\n"
+        "- example_evaded: Asked for a real story. Got theory or 'usually I do X' instead.\n"
+        "- functional_claim_unverified: Named a tool/method vaguely. Couldn't prove hands-on usage.\n"
+        "- claim_not_demonstrated: Made a strong self-claim with no evidence to back it up.\n\n"
+        "YOUR JOB: Write 4-5 analysis points. Each point is a FULL PARAGRAPH (5-8 sentences).\n\n"
+        "REQUIRED COVERAGE - You MUST address all of these:\n"
+        "1. Knowledge Depth: Did they explain the mechanics behind their answers? Did they give real numbers, steps, or architecture details? Or did they stay at the definition level?\n"
+        "2. Probe Handling: When the interviewer followed up or dug deeper, what happened? Did they expand with detail, pivot to vague language, evade with examples, or admit gaps?\n"
+        "3. Implementation Evidence: Did they demonstrate real hands-on experience? Or did they speak in theory? Quote the specific answer that best proves or disproves this.\n"
+        "4. Ownership & Credibility: When discussing projects or work, did they use 'I' with specific ownership? Or did they hide behind 'we/the team'? Reference actual Q&A moments.\n"
+        "5. Interview Consistency: Did performance hold across all topics? Where did they peak and where did they collapse? What pattern does this show a recruiter?\n\n"
+        "HARD RULES:\n"
+        "- Every paragraph MUST reference a specific question, topic, or near-exact quote from the transcript.\n"
+        "- Do NOT write a sentence that could apply to any other candidate.\n"
+        "- Do NOT use filler praise like 'showed enthusiasm' or 'had a positive attitude'.\n"
+        "- Do NOT mention score numbers or dimension names.\n\n"
+        'Output ONLY a JSON array of 4-5 strings. Each string is a full paragraph. No markdown.\n'
+        '["Paragraph one...", "Paragraph two..."]'
     )
 
     @staticmethod
@@ -530,64 +534,157 @@ _behavioral_analyzer = BehavioralAnalyzer()
 # Compact field names (cm/tk/rc/ps/ct) reduce output tokens by ~30%.
 # ═══════════════════════════════════════════════════════════════════════════════
 
-_EVAL_SYSTEM = """You are a senior recruiter and talent evaluator reviewing a complete AI-conducted interview.
----
-STEP 1 — BEFORE YOU SCORE ANYTHING, read the entire transcript and form these opinions:
-"str": Every genuine strength you observed — written like you're telling a colleague what stood out.
-  - Name the specific moment, tool, question, or answer. Not "good communicator" — but "walked through the Zapier workflow trigger-to-action without being prompted."
-  - If nothing genuine stands out, return an empty array. Do NOT invent. Do NOT pad.
-  - No floor. Zero is honest. Four is the max.
-  - Each item is ONE sentence. Sharp. Specific. Could not apply to any other candidate.
-"con": Every genuine concern — written with the same directness you'd use in a debrief call.
-  - If they contradicted their resume, name what they claimed and what they couldn't explain.
-  - If they went blank on a follow-up, say which topic.
-  - If every answer was surface-level with no depth, say that.
-  - No floor. Zero means no concerns. Four is the max.
-  - Do NOT soften. Do NOT hedge.
----
-STEP 2 — SCORE exactly 5 dimensions. For each produce:
-- "s": integer 0-100
-- "ev": ONE sentence — written like a recruiter's verbal note. Must name something SPECIFIC from this interview.
+_EVAL_SYSTEM = """You are a senior technical recruiter and talent evaluator. You have been handed a complete AI-conducted interview transcript and the job description the candidate applied for.
+
+YOUR EVALUATION FRAMEWORK
+==========================
+Before scoring anything, determine the candidate's experience level from the transcript:
+- FRESHER: Student, recent graduate, 0-1 year experience, only has projects/internships
+- MID-LEVEL: 1-4 years, some production exposure, works under guidance
+- EXPERIENCED: 4+ years, production systems, owns decisions, leads others
+This classification changes what "good" looks like on every dimension.
+
+STEP 1 — Read the transcript fully. Form your opinions before outputting anything.
+
+"str": Exactly 3 genuine strengths — sharp, one sentence each, named to this specific candidate.
+  Example good: "Explained exactly why they chose Kafka over RabbitMQ and stated the throughput numbers from their own load tests."
+  Example bad: "Good communication throughout."
+  No padding. If fewer than 3 genuine strengths exist, return fewer.
+
+"con": Exactly 3 genuine concerns — sharp, one sentence each, no softening.
+  Name the exact topic and what broke down (blank answer, contradicted resume, surface-level only, refused probe).
+  No padding. If fewer than 3 real concerns exist, return fewer.
+
+STEP 2 — Score 5 dimensions. Each score requires:
+- "s": integer 0-100 (use the FULL range — do NOT cluster around 50-70)
+- "ev": ONE sharp sentence starting with a specific action/quote from the interview. No generic praise.
+  Example good: "Described the exact retry-with-backoff logic they implemented in the billing microservice when asked about failure handling."
+  Example bad: "Showed good knowledge of backend systems."
+
 SCORING PHILOSOPHY:
-- Do NOT inflate. Weak candidate = weak scores. Use the full 0-100 range.
-- Refused to answer / went blank / pure filler → 0-20.
-- Textbook answer, no personal evidence → 21-45.
-- 76-100 only when there is real, verifiable, specific depth in the transcript.
-DIMENSION 1 — cm (communication, weight 15%)
-Score: How clearly and confidently did they express themselves across the ENTIRE interview?
-  0-20: Incomprehensible — constant restarts
-  21-45: Frequently unclear — hedged, lost the point mid-answer
-  46-65: Passable — mostly followable, inconsistent
-  66-80: Good — clear and direct, minor slips
-  81-100: Excellent — precise, structured, confident under every challenge
-DIMENSION 2 — tk (technical_knowledge, weight 30%)
-Score: Did they show REAL hands-on knowledge — or just vocabulary?
-  0-20: Nothing — repeated the question or went silent
-  21-45: Surface — knows terms, can't explain mechanics
-  46-65: Partial — real in 1-2 areas, weak elsewhere
-  66-80: Solid — concrete examples, named tools, process explained
-  81-100: Deep — specific details, real numbers, step-by-step, held every probe
-DIMENSION 3 — rc (resume_credibility, weight 20%)
-Score: Did their live answers hold up against their resume claims?
-  0-20: Claims completely unsupported — couldn't explain their own experience
-  21-45: Significant gaps — most items vague or contradicted under probing
-  46-65: Mixed — some held, some fell apart
-  66-80: Credible — most backed with real detail, minor gaps
-  81-100: Fully credible — every claim explained with evidence, nothing contradicted
-DIMENSION 4 — ps (problem_solving, weight 25%)
-Score: Can they think through a problem — or do they recite answers?
-  0-20: No reasoning — restated facts, silent on follow-ups
-  21-45: Facts only — no structure, no tradeoff thinking
-  46-65: Some structure — basic answers, fell apart under pressure
-  66-80: Logical — named tradeoffs, handled probes clearly
-  81-100: Sophisticated — framed independently, named tradeoffs unprompted
-DIMENSION 5 — ct (clarity_of_thought, weight 10%)
-Score: Was their thinking organized — or did they dump everything and hope?
-  0-20: Stream of consciousness — no clear point in any answer
-  21-45: Frequently drifted — missed what was actually asked
-  46-65: Inconsistent — structured sometimes, scattered in others
-  66-80: Clear — most answers structured, minor drift
-  81-100: Sharp — framed every answer, landed a clear point
+  0-20  = Blank, wrong, or pure filler. No usable signal.
+  21-45 = Surface only. Vocabulary without mechanics. Pattern-matched a textbook answer.
+  46-65 = Partial. Real in 1-2 areas, gaps elsewhere. Needed probing to get anything useful.
+  66-80 = Solid. Concrete examples. Named tools, processes, decisions. Held most probes.
+  81-100 = Deep and specific. Real numbers, real trade-offs, step-by-step. Held every probe including unexpected ones.
+
+---
+DIMENSION 1 — jk (JD Knowledge, weight 30%)
+Does this candidate understand the actual role they applied for? Score how well their answers align with
+the specific responsibilities, required skills, and expectations stated in the JD.
+
+FRESHER baseline: Score based on relevant coursework, projects, or internships that touch the JD skills.
+  A fresher who built a CRUD app using the tech stack in the JD and can explain it mechanically = 55-65.
+  A fresher who can only name the technologies from the JD without any implementation = 25-35.
+
+EXPERIENCED baseline: Score based on direct, production-level experience with JD requirements.
+  Claims 3 years with the core JD skill but cannot explain basic implementation details = max 35.
+  Demonstrated hands-on knowledge of the specific JD requirements with production evidence = 70-85.
+
+SCORING ANCHORS:
+  0-20:  No connection to role requirements. Answered generic questions but showed no JD-specific knowledge.
+  21-45: Knows the technology names from the JD but cannot explain how they work in context of the role.
+  46-65: Relevant knowledge in 1-2 JD areas. Missing coverage of key requirements.
+  66-80: Solid alignment with JD. Named specific tools/responsibilities from the JD with working examples.
+  81-100: Exceptional fit. Covered all major JD requirements with specific, verifiable evidence.
+
+---
+DIMENSION 2 — ps (Problem Solving, weight 25%)
+This is NOT about whether the final answer was correct. It measures HOW they reason through problems:
+- Did they frame the problem before answering? (structured approach)
+- Did they name trade-offs without being prompted? (depth of thinking)
+- When given a follow-up or counter-example, did they adapt or repeat the same answer? (adaptability)
+- Did they ask a clarifying question when a problem was ambiguous? (intellectual honesty)
+- Did they reason about failure modes, edge cases, or second-order effects? (systems thinking)
+- When they didn't know something, did they reason from first principles or go silent? (reasoning ability)
+
+FRESHER baseline: Evaluate reasoning potential, not production experience.
+  A fresher who cannot give a correct answer but clearly reasons through it logically = 55-65.
+  A fresher who goes silent or just says "I don't know" on every hard question = 15-25.
+
+EXPERIENCED baseline: Evaluate structured independent reasoning, not just reciting known solutions.
+  Named trade-offs, constraints, and decision factors without being asked = strong signal.
+  Only gave the textbook answer and stalled on follow-ups = 30-45 regardless of seniority.
+
+SCORING ANCHORS:
+  0-20:  No reasoning. Restated the question. Went silent on every follow-up.
+  21-45: Reactive. Answered surface but could not reason beyond it. No trade-offs, no structure.
+  46-65: Basic structure. Understood the problem, gave a reasonable first answer, but fell apart under probing.
+  66-80: Logical and adaptive. Named trade-offs. Adapted when challenged. Handled most probes.
+  81-100: Sophisticated. Framed independently. Named trade-offs unprompted. Showed second-order thinking.
+
+---
+DIMENSION 3 — ec (Experience Credibility, weight 20%)
+Did their live answers hold up against what they claimed on their resume or in their intro?
+This is about verifying lived experience, not testing knowledge.
+
+FRESHER baseline: Do NOT penalize for lacking production experience.
+  Evaluate whether their project/internship descriptions are genuine and specific:
+  - Named the specific problem they solved, not just the technology
+  - Described their personal contribution (what "I" did vs what "we" did)
+  - When probed on their project, could explain architecture decisions they made
+  - Could walk through a specific bug they fixed or feature they built
+  FRESHER with strong project credibility = 60-75. Vague project descriptions = 30-45.
+
+EXPERIENCED baseline: Much higher bar.
+  - Named specific outcomes with real metrics (latency reduced, coverage increased, users served)
+  - Described their personal decisions ("I chose X over Y because...")
+  - When probed on a claim, gave more detail, not vaguer answers
+  - If they said they "led" something, they could describe what leadership actually meant in that context
+  EXPERIENCED claiming 5 years but giving vague, textbook answers on their own stated work = 20-35.
+
+SCORING ANCHORS:
+  0-20:  Major contradictions. Claimed significant experience they cannot explain at all.
+  21-45: Significant vagueness. Most experience was team-framed or contradicted under probing.
+  46-65: Mixed. Some items held, others fell apart or stayed vague despite probing.
+  66-80: Credible. Most experience backed with specific detail. Minor gaps.
+  81-100: Fully credible. Every claim explained with evidence. Nothing contradicted.
+
+---
+DIMENSION 4 — cm (Communication, weight 15%)
+Was their communication clear, direct, and structured across the entire interview?
+This is a threshold signal — a score below 30 fails regardless of technical scores.
+
+FRESHER baseline: Same standard as experienced. Clear thinking is independent of seniority.
+Score based on:
+  - Did they directly answer the question asked (not a related question)?
+  - Was the answer followable without asking for clarification?
+  - Did they structure their response (beginning, middle, point)?
+  - Did they use excessive hedging ("I think maybe", "kind of", "sort of") throughout?
+  - When corrected or challenged, did they respond clearly or became circular/defensive?
+
+SCORING ANCHORS:
+  0-20:  Incomprehensible. Circular. Could not land a point. Constant restarts.
+  21-45: Frequently unclear. Heavy hedging. Lost the thread. Answered a different question.
+  46-65: Passable. Followable but inconsistent. Structured sometimes, scattered in others.
+  66-80: Clear and direct. Most answers structured. Landed the point. Minor slips.
+  81-100: Precise and confident. Every answer structured. No wasted words. Held clarity under pressure.
+
+---
+DIMENSION 5 — od (Ownership, weight 10%)
+Did they actually build, lead, or decide — or did they participate and observe?
+Do NOT score on confidence or communication style. Score ONLY on evidence of personal responsibility.
+
+FRESHER baseline: Ownership for freshers shows as:
+  - "I" vs "we" in project descriptions
+  - Describing design decisions they made, even small ones
+  - Going beyond the assignment (self-initiated improvement, additional feature, fix they spotted unprompted)
+  - Curiosity about the role (asked a thoughtful question about the problem space)
+  - Accountable when describing what went wrong ("I missed X" not "the team didn't do Y")
+
+EXPERIENCED baseline: Much higher bar.
+  - Named specific decisions they personally made with the trade-offs they weighed
+  - Described impact in first person with specific metrics
+  - Showed what they do when no one tells them what to do
+  - Described accountability in a failure ("I shipped the bug and I fixed it" vs "we had an incident")
+  - Proactively mentioned going beyond their stated role
+
+SCORING ANCHORS:
+  0-20:  Pure observer. Used "we" for everything. Blame-shifted on failures. Passive throughout.
+  21-45: Minimal ownership. Some personal examples but mostly team-framed or passive.
+  46-65: Present ownership. Owned their work in stated examples. Some proactive signals.
+  66-80: Strong ownership. Clear personal contributions. Initiative shown. Good accountability.
+  81-100: Exceptional. Multiple unprompted examples of going beyond. High self-direction. Named impact.
 ---
 OUTPUT ONLY valid JSON matching the schema exactly. No markdown. No extra keys."""
 
@@ -601,58 +698,73 @@ _EVAL_JSON_SCHEMA = {
             "properties": {
                 "str": {"type": "array", "items": {"type": "string"}},
                 "con": {"type": "array", "items": {"type": "string"}},
-                "cm":  {"type": "object", "properties": {"s": {"type": "integer"}, "ev": {"type": "string"}}, "required": ["s", "ev"], "additionalProperties": False},
-                "tk":  {"type": "object", "properties": {"s": {"type": "integer"}, "ev": {"type": "string"}}, "required": ["s", "ev"], "additionalProperties": False},
-                "rc":  {"type": "object", "properties": {"s": {"type": "integer"}, "ev": {"type": "string"}}, "required": ["s", "ev"], "additionalProperties": False},
+                "jk":  {"type": "object", "properties": {"s": {"type": "integer"}, "ev": {"type": "string"}}, "required": ["s", "ev"], "additionalProperties": False},
                 "ps":  {"type": "object", "properties": {"s": {"type": "integer"}, "ev": {"type": "string"}}, "required": ["s", "ev"], "additionalProperties": False},
-                "ct":  {"type": "object", "properties": {"s": {"type": "integer"}, "ev": {"type": "string"}}, "required": ["s", "ev"], "additionalProperties": False},
+                "ec":  {"type": "object", "properties": {"s": {"type": "integer"}, "ev": {"type": "string"}}, "required": ["s", "ev"], "additionalProperties": False},
+                "cm":  {"type": "object", "properties": {"s": {"type": "integer"}, "ev": {"type": "string"}}, "required": ["s", "ev"], "additionalProperties": False},
+                "od":  {"type": "object", "properties": {"s": {"type": "integer"}, "ev": {"type": "string"}}, "required": ["s", "ev"], "additionalProperties": False},
             },
-            "required": ["str", "con", "cm", "tk", "rc", "ps", "ct"],
+            "required": ["str", "con", "jk", "ps", "ec", "cm", "od"],
             "additionalProperties": False,
         },
     },
 }
 
-_SKILLS_FROM_RECORDS_SYSTEM = """You are writing a technical skill breakdown for the hiring team after an interview.
-You will receive structured topic records captured by the interviewer at the moment each topic was closed.
+_SKILLS_FROM_RECORDS_SYSTEM = """You are a senior technical evaluator writing a skill breakdown for the hiring team after a structured AI interview.
+You will receive structured topic records from the interview.
 
-YOUR JOB: Group everything the candidate demonstrated into DOMAIN CATEGORIES, not individual topics.
-Use these category names (pick only those relevant to the role and what was actually discussed):
-  Frontend, Backend, APIs & Integrations, Databases, DevOps & Infrastructure, Cloud, Mobile,
-  Data & Analytics, AI/ML, System Design, Testing & QA, Security, Product & Domain Knowledge,
-  Leadership & Process, Communication & Clarity
+YOUR JOB:
+Group the topics discussed into 3-5 broad DOMAIN CATEGORIES based on what was actually discussed in the interview.
+Do NOT create a category if there is no interview evidence for it.
 
-For each category:
-- score: 1-10 based on how well the candidate demonstrated knowledge ACROSS all topics in that category
-- evidence: ONE sharp sentence quoting or closely paraphrasing something specific they said
+FOR EACH CATEGORY:
+- skill: A concise, industry-standard category name (e.g. "Backend Development", "System Design", "Frontend Engineering")
+- score: 1-10 reflecting actual demonstrated ability. Use the full range. Do NOT cluster around 5-7.
+  1-3: Could not explain even basics when asked. Major gaps.
+  4-5: Knew terminology but couldn't explain mechanics. Surface-level only.
+  6-7: Explained concepts correctly. Some hands-on knowledge. Gaps when probed deeper.
+  8-9: Demonstrated real working knowledge. Held probes. Gave specific implementation details.
+  10: Exceptional depth. Could teach this. No gaps found.
+- evidence: A detailed paragraph (4-6 sentences) explaining exactly why this score was given.
+  Reference specific questions, the candidate's actual answers, whether they held up under probing,
+  what they got right, what they missed, and what it means about their practical capability.
+  NO generic praise. NO sentences that could apply to any other candidate.
 
-SCORING RULES (1-10):
-- Base: avg_overall of topics mapped to this category
-- Penalties: explicit_denial in any topic → cap category at 3, dry_topic → cap at 4, weak_exit → deduct 1
-- Strong probe handling (probe_count <= 1, avg_overall >= 7) → add 0.5
-- Round to nearest integer, clamp 1-10
-- Only include categories where you have real evidence from the transcript
+SCORING ADJUSTMENTS:
+- If the candidate said "I don't know" or denied a topic → cap that category at 3.
+- If they answered vaguely and couldn't give specifics when probed → cap at 5.
+- If they answered confidently AND held up to 1+ follow-up probes → bump up by 1.
+
+OUTPUT ONLY valid JSON matching the schema exactly. No markdown."""
+
+_SKILLS_QA_SYSTEM = """You are a senior technical evaluator writing a skill breakdown for the hiring team after an AI-conducted interview.
+You will receive every question-answer pair from the interview session.
+
+YOUR JOB:
+Group the skills, topics, and technologies discussed in the interview into 3-5 broad DOMAIN CATEGORIES.
+Do NOT create a category for something that was never asked about.
+
+FOR EACH CATEGORY:
+- skill: Industry-standard category name (e.g. "Backend Development", "Database Design", "Cloud & Infrastructure")
+- score: 1-10 reflecting actual demonstrated ability. Use the FULL range honestly.
+  1-3: Couldn't explain even basics. Gave wrong answers or stayed silent.
+  4-5: Knew vocabulary but not mechanics. No practical detail when probed.
+  6-7: Solid conceptual understanding. Some hands-on detail. Slight gaps at depth.
+  8-9: Real working knowledge. Gave specific implementation steps, trade-offs, or error scenarios.
+  10: Mastery-level. Taught it, held every probe, cited real systems or numbers.
+- evidence: A 4-6 sentence paragraph explaining the score with specific proof from the transcript.
+  MUST include: what question was asked, what they actually said, how deep their answer went,
+  whether they could give implementation details, and whether they crumbled or held firm under follow-ups.
+  NO generic statements like "showed good understanding" without quoting what they said.
+
+SCORING RULES:
+- If they said "I don't know" → score 1-2 for that category.
+- If they stayed at definitions without HOW or WHY → score 4-5.
+- If they gave mechanics + 1 real example → score 6-7.
+- If they gave mechanics + real example + held a probe → score 8-9.
 
 OUTPUT ONLY valid JSON matching the schema exactly. No markdown."""
 
-_SKILLS_QA_SYSTEM = """You are writing a technical skill breakdown for the hiring team after an interview.
-You will receive every question-answer pair with pre-scored dimensions (clarity, depth, specificity, grounding — each 0-10).
-
-YOUR JOB: Group what the candidate demonstrated into DOMAIN CATEGORIES — not individual topics or tools.
-Use these category names (pick only those relevant to the role and what was actually discussed):
-  Frontend, Backend, APIs & Integrations, Databases, DevOps & Infrastructure, Cloud, Mobile,
-  Data & Analytics, AI/ML, System Design, Testing & QA, Security, Product & Domain Knowledge,
-  Leadership & Process, Communication & Clarity
-
-For each category:
-- score: 1-10 based on how well the candidate demonstrated that domain across all relevant Q&As
-- evidence: ONE sharp sentence quoting or closely paraphrasing something specific they said
-
-SCORING (1-10): base = avg(clarity, depth, specificity, grounding) for Q&As in that category.
-Adjust UP for specific details/numbers, DOWN for vague answers or "I don't know". Clamp 1-10.
-Only include categories where the candidate actually spoke about something in that domain.
-
-OUTPUT ONLY valid JSON matching the schema exactly. No markdown."""
 
 _SKILLS_JSON_SCHEMA = {
     "type": "json_schema",
@@ -667,9 +779,9 @@ _SKILLS_JSON_SCHEMA = {
                     "items": {
                         "type": "object",
                         "properties": {
-                            "skill":    {"type": "string"},
+                            "skill":    {"type": "string", "description": "The dynamic category name, e.g., 'Frontend Development'"},
                             "score":    {"type": "integer"},
-                            "evidence": {"type": "string"},
+                            "evidence": {"type": "string", "description": "In-depth analysis of why this score was given"},
                         },
                         "required": ["skill", "score", "evidence"],
                         "additionalProperties": False,
@@ -682,37 +794,73 @@ _SKILLS_JSON_SCHEMA = {
     },
 }
 
-_SUMMARY_SYSTEM = """You are a senior talent partner writing a confidential post-interview brief for the hiring team.
-Write 3-5 bullet points. Each bullet is ONE clear sentence.
-Rules for what to cover:
-- Cover only what actually mattered in THIS interview.
-- If they were strong in one specific area, name it with the exact thing they said or did.
-- If they were weak across the board, all bullets can be negative.
-- If integrity was flagged, name it explicitly.
-- Do NOT write a bullet for every dimension.
-Rules for how to write:
-- Sound like a recruiter giving a verbal debrief, not a bot.
-- Never write a sentence that could apply to any other candidate.
-- No scores, no numbers, no percentages.
-- No softening negative findings.
-- Never invent positives not in the evidence.
-- Never use gender-biased language.
-- Each bullet starts with a dash (-).
-OUTPUT ONLY the bullet points. No markdown fences. No extra text."""
-
-_VERDICT_SYSTEM = """You are a senior hiring manager writing a final verdict for an interview.
-Write ONE paragraph. 80-120 words. No more.
+_SUMMARY_SYSTEM = """You are a senior talent partner writing a post-interview brief for the hiring team.
+Write EXACTLY 3 bullet points. Each bullet is ONE crisp sentence.
 Rules:
-- Start with exactly one of: STRONG HIRE / HIRE / MAYBE / REJECT — then a colon, then your reasoning.
-- Name the single strongest signal and the single biggest concern — from the evidence, not generic.
-- End with exactly one action sentence: what should happen next.
-- No scores, no numbers, no hedging. Strong opinion, accountable.
-- Write like you are telling the hiring manager face to face.
-OUTPUT ONLY the paragraph. No markdown fences. No extra text."""
+- Bullet 1: The single most important technical signal from this interview. Name the exact topic and what they demonstrated or failed to demonstrate. Include what they said.
+- Bullet 2: The biggest behavioral pattern observed across the entire interview. Reference the exact moment or pattern that proves it.
+- Bullet 3: One sharp hiring implication. What does this person look like in the role 30 days in? What is the risk or gain?
+- No softening. No filler. Every sentence unique to this candidate. No scores or numbers.
+- Start each with a dash (-).
+OUTPUT ONLY the 3 dashes. No markdown. No extra text."""
+
+_VERDICT_SYSTEM = """You are a senior hiring manager making the final call after an interview.
+You have the full picture: dimension scores, skill ratings, strengths, concerns, and interview evidence.
+
+YOUR JOB:
+Make a single, conclusive hiring decision with an evidence-backed score and justification.
+Recruiters will rely on this to make or kill an offer. Be precise and accountable.
+
+SCORING THE CANDIDATE (0-100):
+Calculate the score holistically, NOT as a mathematical average. Consider:
+1. JD Fit (30%): How well did their demonstrated skills match the role's actual requirements?
+2. Technical Depth (25%): Did they show real working knowledge with mechanics and implementation details?
+3. Problem Solving (20%): Did they reason through hard questions? Handle pressure? Adapt when probed?
+4. Ownership & Credibility (15%): Were their claims backed by concrete evidence? Did they own their work?
+5. Consistency (10%): Did performance hold across all topics or collapse under pressure in key areas?
+
+SCORE CALIBRATION:
+0-30: Major gaps in basics. Cannot perform the role.
+31-50: Surface-level knowledge only. High ramp-up cost. Significant risk.
+51-65: Some competence but key gaps. Hire only for junior/support roles with mentorship.
+66-79: Solid candidate. Some depth missing but capable. Hold if senior role, hire if junior.
+80-89: Strong performer. Can contribute immediately. Minor gaps acceptable.
+90-100: Exceptional. Exceeds bar for the role.
+
+DECISION RULES:
+- "Hire": score >= 70 AND no critical gaps in role-required skills.
+- "Hold": score 50-69 OR strong in some areas but missing a key requirement.
+- "Reject": score < 50 OR demonstrated inability in core role requirements.
+
+JUSTIFICATION — Write 3 sharp bullet points starting with "-":
+- Bullet 1: The single strongest positive signal from the entire interview. Name the exact topic, what they said or did, and why it matters for this role.
+- Bullet 2: The single biggest gap, risk, or concern. Name the specific moment where they failed or fell short. Be blunt.
+- Bullet 3: The final verdict sentence. State the decision clearly, name the key reason, and what should happen next (move forward, hold for X reason, reject because Y).
+No score numbers. No hedging. No generic language. Every sentence must be specific to this candidate's actual interview performance.
+
+OUTPUT ONLY valid JSON matching the provided schema EXACTLY. No markdown fences."""
+
+_VERDICT_JSON_SCHEMA = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "verdict_response",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "decision":      {"type": "string", "enum": ["Hire", "Hold", "Reject"]},
+                "score":         {"type": "integer", "description": "Holistic 0-100 score based on the entire interview."},
+                "justification": {"type": "string", "description": "Concise, evidence-backed justification paragraph."}
+            },
+            "required": ["decision", "score", "justification"],
+            "additionalProperties": False,
+        },
+    },
+}
 
 
 def _parse_eval_compact(raw: str) -> LLMEvalResponse:
-    """Map compact field names (cm/tk/rc/ps/ct) back to full LLMEvalResponse model."""
+    """Map compact field names (jk/ps/ec/cm/od) back to full LLMEvalResponse model."""
     data = json.loads(raw)
 
     def _dim(key: str) -> LLMEvalDimension:
@@ -720,11 +868,11 @@ def _parse_eval_compact(raw: str) -> LLMEvalResponse:
         return LLMEvalDimension(score=d.get("s", 0), evidence=d.get("ev", ""))
 
     return LLMEvalResponse(
-        communication=_dim("cm"),
-        technical_knowledge=_dim("tk"),
-        resume_credibility=_dim("rc"),
+        jd_knowledge=_dim("jk"),
         problem_solving=_dim("ps"),
-        clarity_of_thought=_dim("ct"),
+        experience_credibility=_dim("ec"),
+        communication=_dim("cm"),
+        ownership=_dim("od"),
         strengths=list(data.get("str", [])),
         concerns=list(data.get("con", [])),
     )
@@ -794,10 +942,37 @@ async def _node_signals(state: ReportState) -> dict:
     )
 
     jd_json = state.get("jd_json") or {}
-    jd_context = (
-        "JOB DESCRIPTION:\n" + json.dumps(jd_json, ensure_ascii=False)[:2000]
-        if jd_json else "No JD provided — assess based on role title only."
-    )
+    # Extract structured JD context + experience level for the eval prompt
+    if jd_json:
+        jd_str = json.dumps(jd_json, ensure_ascii=False)[:2500]
+        # Detect experience level hint from JD fields
+        exp_years = (
+            jd_json.get("experience_years")
+            or jd_json.get("min_experience")
+            or jd_json.get("experience")
+            or jd_json.get("years_of_experience")
+            or ""
+        )
+        seniority = (
+            jd_json.get("seniority")
+            or jd_json.get("level")
+            or jd_json.get("job_level")
+            or ""
+        )
+        exp_hint = ""
+        if exp_years:
+            exp_hint = f" (requires {exp_years} years experience)"
+        elif seniority:
+            sl = str(seniority).lower()
+            if any(x in sl for x in ["junior", "fresher", "entry", "graduate", "intern"]):
+                exp_hint = " (entry-level / fresher role)"
+            elif any(x in sl for x in ["senior", "lead", "principal", "staff", "architect"]):
+                exp_hint = " (senior / experienced role)"
+        jd_context = (
+            f"JOB DESCRIPTION{exp_hint}:\n{jd_str}"
+        )
+    else:
+        jd_context = "No JD provided — assess based on role title only."
 
     # Extract behavioral signals from per-turn scores for downstream nodes
     interview_scores = state.get("interview_scores", [])
@@ -908,8 +1083,6 @@ async def _node_llm_calls(state: ReportState) -> dict:
         or _total_turns * 90
     )
 
-    # Predicted Outputs prefix for eval — skips generating fixed header tokens
-    eval_prediction = {"type": "content", "content": '{"str":[],"con":[],"cm":{"s":'}
 
     # ── Run all 3 LLM calls in parallel ────────────────────────────────────
     (eval_raw, eval_usage), (skills_raw, skills_usage), (behavioral_result, beh_usages) = (
@@ -917,13 +1090,12 @@ async def _node_llm_calls(state: ReportState) -> dict:
             _llm.call(LLMCallSpec(
                 system=_EVAL_SYSTEM,
                 user=eval_user,
-                max_tokens=900,
-                timeout=45.0,
+                max_tokens=1100,
+                timeout=55.0,
                 response_format=_EVAL_JSON_SCHEMA,
                 call_type="report_eval",
                 org_id=org_id,
                 app_id=app_id,
-                prediction=eval_prediction,
                 llm_model=llm_model,
             )),
             _llm.call(LLMCallSpec(
@@ -979,11 +1151,11 @@ async def _node_llm_calls(state: ReportState) -> dict:
         skills_result = LLMSkillsResponse()
 
     logger.info(
-        "[REPORT] LLM done: app=%s comm=%d tech=%d cred=%d ps=%d cot=%d skills=%d behavioral=%d",
+        "[REPORT] LLM done: app=%s jk=%d ps=%d ec=%d cm=%d od=%d skills=%d behavioral=%d",
         app_id,
-        eval_result.communication.score, eval_result.technical_knowledge.score,
-        eval_result.resume_credibility.score, eval_result.problem_solving.score,
-        eval_result.clarity_of_thought.score, len(skills_result.skills),
+        eval_result.jd_knowledge.score, eval_result.problem_solving.score,
+        eval_result.experience_credibility.score, eval_result.communication.score,
+        eval_result.ownership.score, len(skills_result.skills),
         len(behavioral_result.get("points", [])),
     )
     return {
@@ -1009,15 +1181,17 @@ async def _node_assemble(state: ReportState) -> dict:
     behavioral_analysis = state.get("behavioral_analysis") or {"points": []}
     behavioral_signals  = state.get("behavioral_signals", [])
 
-    # Dimension scores
-    comm = eval_result.communication.score
-    tech = eval_result.technical_knowledge.score
-    cred = eval_result.resume_credibility.score
-    ps   = eval_result.problem_solving.score
-    cot  = eval_result.clarity_of_thought.score
+    # Dimension scores — new 5-dimension framework
+    jk  = eval_result.jd_knowledge.score
+    ps  = eval_result.problem_solving.score
+    ec  = eval_result.experience_credibility.score
+    cm  = eval_result.communication.score
+    od  = eval_result.ownership.score
 
+    # Weighted overall: JD Knowledge 30% + Problem Solving 25% + Experience Credibility 20%
+    #                   + Communication 15% + Ownership 10%
     overall_score = max(0, min(100, int(round(
-        comm * 0.15 + tech * 0.30 + cred * 0.20 + ps * 0.25 + cot * 0.10
+        jk * 0.30 + ps * 0.25 + ec * 0.20 + cm * 0.15 + od * 0.10
     ))))
 
     skill_ratings_list = [
@@ -1038,11 +1212,11 @@ async def _node_assemble(state: ReportState) -> dict:
 
     score_breakdown_report = {
         "dimensions": [
-            {"name": "Communication",               "score": comm, "evidence": eval_result.communication.evidence},
-            {"name": "Technical & Subject Knowledge","score": tech, "evidence": eval_result.technical_knowledge.evidence},
-            {"name": "Resume Credibility",          "score": cred, "evidence": eval_result.resume_credibility.evidence},
-            {"name": "Problem Solving",             "score": ps,   "evidence": eval_result.problem_solving.evidence},
-            {"name": "Clarity of Thought",          "score": cot,  "evidence": eval_result.clarity_of_thought.evidence},
+            {"name": "JD Knowledge",            "score": jk, "evidence": eval_result.jd_knowledge.evidence},
+            {"name": "Problem Solving",          "score": ps, "evidence": eval_result.problem_solving.evidence},
+            {"name": "Experience Credibility",   "score": ec, "evidence": eval_result.experience_credibility.evidence},
+            {"name": "Communication",            "score": cm, "evidence": eval_result.communication.evidence},
+            {"name": "Ownership",               "score": od, "evidence": eval_result.ownership.evidence},
         ],
         "overall":   overall_score,
         "integrity": {
@@ -1078,9 +1252,9 @@ async def _node_assemble(state: ReportState) -> dict:
             )
 
         logger.info(
-            "[REPORT] Written: app=%s overall=%d comm=%d tech=%d cred=%d ps=%d cot=%d "
+            "[REPORT] Written: app=%s overall=%d jk=%d ps=%d ec=%d cm=%d od=%d "
             "integrity=%d skills=%d behavioral_points=%d",
-            app_id, overall_score, comm, tech, cred, ps, cot,
+            app_id, overall_score, jk, ps, ec, cm, od,
             integrity_result["score"], len(skills_evaluated),
             len(behavioral_analysis.get("points", [])),
         )
@@ -1088,20 +1262,20 @@ async def _node_assemble(state: ReportState) -> dict:
         logger.error("[REPORT] DB write failed for %s: %s", app_id, e, exc_info=True)
 
     scores_context = {
-        "overall":             overall_score,
-        "communication":       comm,
-        "technical_knowledge": tech,
-        "resume_credibility":  cred,
-        "problem_solving":     ps,
-        "clarity_of_thought":  cot,
-        "integrity_score":     integrity_result["score"],
-        "integrity_band":      integrity_result["band"],
-        "skills_evaluated":    skills_evaluated,
-        "signal_summary":      state.get("signal_context", "none"),
-        "dimensions":          score_breakdown_report["dimensions"],
-        "skill_ratings":       skill_ratings_list,
-        "strengths":           eval_result.strengths,
-        "concerns":            eval_result.concerns,
+        "overall":                overall_score,
+        "jd_knowledge":           jk,
+        "problem_solving":        ps,
+        "experience_credibility": ec,
+        "communication":          cm,
+        "ownership":              od,
+        "integrity_score":        integrity_result["score"],
+        "integrity_band":         integrity_result["band"],
+        "skills_evaluated":       skills_evaluated,
+        "signal_summary":         state.get("signal_context", "none"),
+        "dimensions":             score_breakdown_report["dimensions"],
+        "skill_ratings":          skill_ratings_list,
+        "strengths":              eval_result.strengths,
+        "concerns":               eval_result.concerns,
     }
     return {"scores_context": scores_context}
 
@@ -1257,9 +1431,9 @@ async def generate_interview_summary(
             _llm.call(LLMCallSpec(
                 system=_VERDICT_SYSTEM,
                 user=shared_user,
-                max_tokens=200,
+                max_tokens=250,
                 timeout=60.0,
-                response_format={"type": "text"},
+                response_format=_VERDICT_JSON_SCHEMA,
                 temperature=0.1,
                 call_type="report_verdict",
                 org_id=org_id or "",
@@ -1282,13 +1456,19 @@ async def generate_interview_summary(
             logger.warning("[SUMMARY] Both outputs empty for %s — skipping save", app_id)
             return
 
+        try:
+            verdict_parsed = json.loads(verdict_text)
+        except Exception:
+            # Fallback if the LLM didn't return valid JSON
+            verdict_parsed = {"decision": "Hold", "score": 50, "justification": verdict_text.strip()}
+
         pool = await DatabasePool.get()
         async with pool.acquire() as conn:
             await conn.execute(
                 """UPDATE "Interview"
                    SET "interviewSummary" = COALESCE("interviewSummary", '{}') || $1::jsonb
                    WHERE "applicationId"  = $2""",
-                json.dumps({"summary": summary_text, "decision_note": verdict_text}),
+                json.dumps({"summary": summary_text, "decision_note": verdict_parsed}),
                 app_id,
             )
         logger.info("[SUMMARY] Written summary + verdict for %s", app_id)
@@ -1297,3 +1477,4 @@ async def generate_interview_summary(
         logger.warning("[SUMMARY] Timed out for %s", app_id)
     except Exception as e:
         logger.error("[SUMMARY] Failed for %s: %s", app_id, e, exc_info=True)
+

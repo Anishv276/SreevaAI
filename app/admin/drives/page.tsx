@@ -221,7 +221,7 @@ export default function DrivesPage() {
                                     </div>
 
                                     {/* ── Stats strip ── */}
-                                    <div className="mx-5 mb-4 grid grid-cols-3 rounded-xl divide-x overflow-hidden" style={{ border: "1px solid #F0EEF8", background: "#FAFAFC", divideColor: "#F0EEF8" }}>
+                                    <div className="mx-5 mb-4 grid grid-cols-3 rounded-xl divide-x divide-[#F0EEF8] overflow-hidden" style={{ border: "1px solid #F0EEF8", background: "#FAFAFC" }}>
                                         <div className="px-3 py-2.5 text-center">
                                             <p className="text-xl font-bold text-gray-900 leading-none tabular-nums">{applicants}</p>
                                             <p className="text-[10px] text-gray-400 font-medium mt-0.5 flex items-center justify-center gap-1">

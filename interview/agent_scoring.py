@@ -145,20 +145,35 @@ async def evaluate_answer(
             "action": "MOVE_ON", "signal": None, "signal_reason": None, "reason": "empty answer",
         }
 
-    # Short explicit denial — zero scores, no signal, MOVE_ON
-    _denial_re = re.compile(
-        r"^(no\.?\s*)?(i\s+)?(don'?t|do not|can'?t|cannot|didn'?t|did not|never|haven'?t|have not)\s+"
-        r"(remember|recall|know|do|work on|build|make|create|used|worked|done|tried)?"
-        r"(\s*(it|that|this|anything))?\s*[.!?]*$",
+    # Denial detection — two distinct cases:
+    #   pure denial  : answer is ONLY a denial phrase, nothing substantive follows → zero + MOVE_ON
+    #   denial + continuation : candidate starts with "I don't know" but then adds real content
+    #                           → score normally, don't short-circuit
+    _denial_phrases_re = re.compile(
+        r"\b(don'?t|do not|can'?t|cannot|didn'?t|did not|never|haven'?t|have not)\s+"
+        r"(remember|recall|know|used|worked|tried|built|done|do|create|make|work on)?\b"
+        r"|\bI forgot\b|\bno idea\b|\bnot sure\b",
         re.IGNORECASE,
     )
-    _answer_stripped = candidate_answer.strip().lower()
-    if len(candidate_answer.split()) <= 10 and _denial_re.match(_answer_stripped):
-        logger.info("[EVAL] short-circuit: denial detected (%r)", candidate_answer[:60])
+    _answer_stripped = candidate_answer.strip()
+    _answer_words = _answer_stripped.split()
+    _has_denial = bool(_denial_phrases_re.search(_answer_stripped))
+    # "continuation" = meaningful words after the denial phrase (conjunction + more content)
+    _continuation_re = re.compile(
+        r"\b(but|however|although|though|except|actually|what i|what we|i did|i built|i used|i worked)\b",
+        re.IGNORECASE,
+    )
+    _has_continuation = bool(_continuation_re.search(_answer_stripped))
+    # Pure denial: short answer, denial present, no real continuation
+    if _has_denial and not _has_continuation and len(_answer_words) <= 15:
+        logger.info("[EVAL] short-circuit: pure denial (%r)", candidate_answer[:60])
         return {
             "clarity": 0, "depth": 0, "specificity": 0, "grounding": 0, "overall": 0.0,
             "action": "MOVE_ON", "signal": None, "signal_reason": None, "reason": "explicit denial",
         }
+    # Denial + continuation: let eval score it, but cap scores so a "I don't know but..."
+    # answer can't accidentally saturate a topic — the agent will keep probing.
+    _is_partial_denial = _has_denial and _has_continuation
 
     word_count = len(candidate_answer.strip().split())
     recent_context = "\n".join(transcript_lines[-6:]) if transcript_lines else ""
@@ -194,8 +209,12 @@ async def evaluate_answer(
             "Output ONLY valid JSON:\n"
             '{"clarity":0-10,"depth":0-10,"specificity":0-10,"grounding":0-10,'
             '"action":"PROBE" or "MOVE_ON",'
-            '"signal":"<name>" or null,"signal_reason":"<3-12 word exact quote>" or null,'
+            '"signal": one of exactly ["ownership_ambiguous","example_evaded","answer_hollow",'
+            '"functional_claim_unverified","claim_not_demonstrated"] or null,'
+            '"signal_reason":"<3-12 word exact quote from their answer>" or null,'
             '"reason":"<one phrase from their answer that drove your call>"}\n\n'
+            "CRITICAL: signal must be one of the 5 names above or null. "
+            "Never invent a new signal name. Never put the candidate's words as the signal.\n\n"
 
             f"Role: {job_title or 'not specified'} | Topic: {active_topic or 'general'}"
             f" | Tag: {topic_tag} | Importance: {topic_importance}\n"
@@ -208,7 +227,12 @@ async def evaluate_answer(
             "ROLE_TOPIC = conceptual check, one grounded answer is enough.\n\n"
 
             "This is voice-transcribed speech — score the meaning, not the grammar.\n\n"
-
+            + (
+                "PARTIAL DENIAL NOTE: The candidate started with 'I don't know' or 'I forgot' "
+                "but then added some content. Score what content exists, but cap all scores at 5 max. "
+                "Action must be PROBE — do not MOVE_ON on a partial denial.\n\n"
+                if _is_partial_denial else ""
+            ) +
             "BEFORE YOU SCORE: Read the answer as a real interviewer would.\n"
             "Ask yourself: does this person sound like they actually did this work?\n"
             "Strip away fluency and polish. Look for the substance underneath.\n\n"

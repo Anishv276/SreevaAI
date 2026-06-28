@@ -4,7 +4,7 @@ import { Suspense } from "react";
 import { getSession, isAdminRole, isSuperAdminRole } from "@/lib/auth";
 import { redirect } from "next/navigation";
 export const metadata: Metadata = {
-  robots: { index: false, follow: false },
+    robots: { index: false, follow: false },
 };
 import { cn } from "@/lib/utils";
 import { OnboardingRedirect } from "@/components/admin/onboarding-redirect";
@@ -67,61 +67,62 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     const showSidebar = !needsOnboarding;
     return (
         <>
-        <AdminOrgProvider
-            status={orgData.status}
-            orgId={session.orgId}
-        initialData={{
-            status: orgData.status,
-            name: orgData.name,
-            plan: orgData.plan,
-            voiceId: orgData.voiceId,
-            allowedVoices: orgData.allowedVoices,
-            deepgramModel: orgData.deepgramModel,
-            interviewQuotaTotal: orgData.interviewQuotaTotal != null ? Number(orgData.interviewQuotaTotal) : undefined,
-            interviewQuotaUsed: orgData.interviewQuotaUsed != null ? Number(orgData.interviewQuotaUsed) : undefined,
-            interviewQuotaRemaining: orgData.interviewQuotaTotal != null
-                ? Math.max(0, Number(orgData.interviewQuotaTotal) - Number(orgData.interviewQuotaUsed || 0))
-                : undefined,
-            maxActiveDrives: orgData.maxActiveDrives ?? undefined,
-            activeDriveCount: orgData.activeDriveCount ?? undefined,
-            }}
-        >
-        <AdminStatusGate initialStatus={orgData.status}>
-        <div className="flex min-h-screen relative font-sans editorial-theme" style={{ background: "linear-gradient(180deg, #FFFFFF 0%, #FAFAFC 45%, #F5F3FF 100%)", backgroundAttachment: "fixed" }}>
-            {/* Subtle violet aurora blobs */}
-            <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
-                <div className="absolute top-[-10%] right-[-5%] w-[38%] h-[38%] rounded-full bg-violet-100/35 blur-[130px] animate-[aurora-float_20s_infinite_ease-in-out]" />
-                <div className="absolute bottom-[-8%] left-[-5%] w-[32%] h-[32%] rounded-full bg-blue-100/30 blur-[110px] animate-[aurora-float_25s_infinite_ease-in-out_reverse]" />
-            </div>
-            {/* Real-time State Synchronization */}
-            <OnboardingRedirect needsOnboarding={needsOnboarding} />
-                <div className="relative z-10 flex w-full">
-                    {showSidebar && (
-                        <Suspense fallback={<div className="w-64 bg-white/50 animate-pulse" />}>
-                            <Sidebar />
-                        </Suspense>
-                    )}
-                    <div id="admin-main-wrapper" className={cn(
-                        "flex-1 min-w-0 transition-all duration-500 ease-in-out",
-                        showSidebar && "md:pl-[240px]"
-                    )}>
-                    <style dangerouslySetInnerHTML={{ __html: `
+            <AdminOrgProvider
+                status={orgData.status}
+                orgId={session.orgId}
+                initialData={{
+                    status: orgData.status,
+                    name: orgData.name,
+                    plan: orgData.plan,
+                    voiceId: orgData.voiceId,
+                    allowedVoices: orgData.allowedVoices,
+                    deepgramModel: orgData.deepgramModel,
+                    interviewQuotaTotal: orgData.interviewQuotaTotal != null ? Number(orgData.interviewQuotaTotal) : undefined,
+                    interviewQuotaUsed: orgData.interviewQuotaUsed != null ? Number(orgData.interviewQuotaUsed) : undefined,
+                    interviewQuotaRemaining: orgData.interviewQuotaTotal != null
+                        ? Math.max(0, Number(orgData.interviewQuotaTotal) - Number(orgData.interviewQuotaUsed || 0))
+                        : undefined,
+                    maxActiveDrives: orgData.maxActiveDrives ?? undefined,
+                    activeDriveCount: orgData.activeDriveCount ?? undefined,
+                }}
+            >
+                <AdminStatusGate initialStatus={orgData.status}>
+                    <div className="flex min-h-screen relative font-sans editorial-theme" style={{ background: "linear-gradient(180deg, #FFFFFF 0%, #FAFAFC 45%, #F5F3FF 100%)", backgroundAttachment: "fixed" }}>
+                        {/* Subtle violet aurora blobs */}
+                        <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
+                            <div className="absolute top-[-10%] right-[-5%] w-[38%] h-[38%] rounded-full bg-violet-100/35 blur-[130px] animate-[aurora-float_20s_infinite_ease-in-out]" />
+                            <div className="absolute bottom-[-8%] left-[-5%] w-[32%] h-[32%] rounded-full bg-blue-100/30 blur-[110px] animate-[aurora-float_25s_infinite_ease-in-out_reverse]" />
+                        </div>
+                        {/* Real-time State Synchronization */}
+                        <OnboardingRedirect needsOnboarding={needsOnboarding} />
+                        <div className="relative z-10 flex w-full">
+                            {showSidebar && (
+                                <Suspense fallback={<div className="w-64 bg-white/50 animate-pulse" />}>
+                                    <Sidebar />
+                                </Suspense>
+                            )}
+                            <div id="admin-main-wrapper" className={cn(
+                                "flex-1 min-w-0 transition-all duration-500 ease-in-out",
+                                showSidebar && "md:pl-[240px]"
+                            )}>
+                                <style dangerouslySetInnerHTML={{
+                                    __html: `
                         body.reports-mode #global-admin-sidebar { display: none !important; }
                         body.reports-mode #admin-main-wrapper { padding-left: 0 !important; }
                         body.reports-mode #admin-content-inner { padding: 0 !important; max-width: 100% !important; }
                     ` }} />
-                    <main className="min-h-screen">
-                        <LowCreditsBanner orgStatus={orgData.status} />
-                        <div id="admin-content-inner" className="px-6 pt-6 pb-10 md:px-8 md:pt-8 lg:px-10">
-                            {children}
+                                <main className="min-h-screen flex flex-col">
+                                    <LowCreditsBanner orgStatus={orgData.status} />
+                                    <div id="admin-content-inner" className="flex-1 flex flex-col px-6 pt-6 pb-10 md:px-8 md:pt-8 lg:px-10">
+                                        {children}
+                                    </div>
+                                </main>
+                            </div>
                         </div>
-                    </main>
-                </div>
-            </div>
-        </div>
-        </AdminStatusGate>
-        </AdminOrgProvider>
-        <Toaster />
+                    </div>
+                </AdminStatusGate>
+            </AdminOrgProvider>
+            <Toaster />
         </>
     );
 }
