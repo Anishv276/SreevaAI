@@ -9,7 +9,7 @@ function asProvider(value: unknown): "CARTESIA" | "SARVAM" | "ELEVENLABS" | null
   return null;
 }
 function defaultModelForProvider(provider: "CARTESIA" | "SARVAM" | "ELEVENLABS") {
-  if (provider === "ELEVENLABS") return "eleven_turbo_v2_5";
+  if (provider === "ELEVENLABS") return "eleven_flash_v2_5";
   return provider === "SARVAM" ? "bulbul:v3" : "cartesia/sonic-3";
 }
 function normalizeGender(value: unknown): "male" | "female" | null {

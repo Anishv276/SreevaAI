@@ -45,6 +45,7 @@ export default function DriveCandidatesPage() {
 
     const adminOrg = useAdminOrg();
     const quotaLocked = isInterviewQuotaLocked(adminOrg ?? {});
+    const { stats, pagination } = useCandidates();
 
     useEffect(() => {
         if (!driveId) return;
@@ -102,7 +103,6 @@ export default function DriveCandidatesPage() {
         );
     }
 
-    const { stats, pagination } = useCandidates();
     const applicantCount = pagination.total || drive?.applicants || 0;
     const isInterviewOnly = drive?.interviewMode === "interview-only";
 

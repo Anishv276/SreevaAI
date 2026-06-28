@@ -8,13 +8,12 @@ Supported providers:
   LLM: OpenAI only
 """
 from __future__ import annotations
-import inspect
 import os
 from typing import Any, Sequence
 from livekit.plugins import cartesia, deepgram, openai, sarvam
 try:
-    from livekit.plugins import elevenlabs  # type: ignore[attr-defined]
-except Exception:  # pragma: no cover - plugin may not be installed in all environments
+    from livekit.plugins import elevenlabs
+except Exception:  # pragma: no cover
     elevenlabs = None
 from interview.agent_runtime_support import (
     LLM_MODEL,
@@ -27,6 +26,7 @@ from interview.agent_utils import _cartesia_plugin_model
 _CARTESIA_DEFAULT_MODEL = "cartesia/sonic-3"
 _CARTESIA_DEFAULT_VOICE = "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"
 _ELEVENLABS_DEFAULT_MODEL = "eleven_turbo_v2_5"
+_ELEVENLABS_DEFAULT_VOICE = "EXAVITQu4vr4xnSDxMaL"  # ElevenLabs Rachel
 _PROVIDER_DEFAULTS: dict[str, Any] = {
     "cartesia_speed":          1.0,
     "sarvam_pace":             1.2,
@@ -142,43 +142,62 @@ def build_sarvam_tts(
     # closes the socket after each "final" event and reusing it produced a silent
     # ACK on the next turn. Fresh-per-turn is reliable and simple.
     return sarvam.TTS(**tts_kwargs)
-def _elevenlabs_supported_params() -> set[str]:
-    if elevenlabs is None:
-        return set()
-    try:
-        sig = inspect.signature(elevenlabs.TTS.__init__)
-        return set(sig.parameters.keys()) - {"self"}
-    except Exception:
-        return set()
 def build_elevenlabs_tts(
     language: str = "en",
     model: str = _ELEVENLABS_DEFAULT_MODEL,
     voice_id: str = "",
+    pronunciation_dict_locators: list | None = None,
 ):
     if elevenlabs is None:
-        raise RuntimeError("livekit elevenlabs plugin is not installed")
+        raise RuntimeError("livekit-plugins-elevenlabs is not installed")
     api_key = os.getenv("ELEVENLABS_API_KEY")
     if not api_key:
         raise RuntimeError("ELEVENLABS_API_KEY is not set")
-    
-    # Safeguard against Cartesia UUID leaks or empty DB voice IDs
+    # Reject Cartesia UUIDs or empty IDs that leaked from the DB
     if not voice_id or "-" in voice_id:
-        voice_id = "l7kNoIfnJKPg7779LI2t"
-        
-    supported = _elevenlabs_supported_params()
-    tts_kwargs: dict[str, Any] = {}
-    if "api_key" in supported:
-        tts_kwargs["api_key"] = api_key
-    if "model" in supported:
-        tts_kwargs["model"] = model or _ELEVENLABS_DEFAULT_MODEL
-    elif "model_id" in supported:
-        tts_kwargs["model_id"] = model or _ELEVENLABS_DEFAULT_MODEL
-    if "voice" in supported:
-        tts_kwargs["voice"] = voice_id
-    elif "voice_id" in supported:
-        tts_kwargs["voice_id"] = voice_id
-    if "language" in supported:
-        tts_kwargs["language"] = language
+        voice_id = _ELEVENLABS_DEFAULT_VOICE
+    resolved_model = model or _ELEVENLABS_DEFAULT_MODEL
+    voice_settings = elevenlabs.VoiceSettings(
+        # 0.35 — low stability = more emotional variation per sentence.
+        # High stability sounds robotic/monotone; 0.35 lets the voice
+        # respond to the emotional weight of what it's saying.
+        stability=0.35,
+        # 0.85 — high fidelity to the original voice recording.
+        # Keeps the voice sounding like itself even with low stability.
+        similarity_boost=0.85,
+        # 0.25 — small non-zero style amplifies the voice's natural
+        # expressiveness. Zero is flat; anything above 0.4 adds latency.
+        style=0.25,
+        # True — speaker boost enhances clarity and presence on turbo_v2_5.
+        # Worth the small latency cost for interview quality on this model.
+        use_speaker_boost=True,
+        # 0.95 — very slightly below 1.0 gives a calmer, more considered
+        # interviewer pace. Turbo is already fast; 0.95 keeps it natural.
+        speed=0.95,
+    )
+    logger.info(
+        "[ELEVENLABS_TTS] model=%s voice=%s language=%s api_key_len=%d",
+        resolved_model, voice_id, language, len(api_key),
+    )
+    tts_kwargs: dict[str, Any] = {
+        "api_key":               api_key,
+        "model":                 resolved_model,
+        "voice_id":              voice_id,
+        "voice_settings":        voice_settings,
+        # apply_text_normalization='on' forces ElevenLabs to always expand
+        # numbers, currency, dates — turbo_v2_5 handles this reliably.
+        "apply_text_normalization": "on",
+        # turbo_v2_5 supports SSML — enable so <break> tags work if needed.
+        "enable_ssml_parsing":   True,
+        # chunk_length_schedule: 120 chars minimum gives the model enough
+        # context to infer intonation before generating the first audio chunk.
+        "chunk_length_schedule": [120, 160, 250, 290],
+        # sync_alignment=True: word-level timing from ElevenLabs (default True,
+        # but explicit so it's visible and not accidentally overridden).
+        "sync_alignment":        True,
+    }
+    if pronunciation_dict_locators:
+        tts_kwargs["pronunciation_dictionary_locators"] = pronunciation_dict_locators
     return elevenlabs.TTS(**tts_kwargs)
 # Base keyterms that are always included regardless of role/JD.
 # Extra role/resume/JD terms can be passed at STT construction time. Avoid

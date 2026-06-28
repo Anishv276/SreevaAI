@@ -17,6 +17,44 @@ import re
 from interview.agent_runtime_support import logger
 from interview.agent_runtime_utils import TextSanitizer, TranscriptManager
 
+# ── ElevenLabs text normalization ─────────────────────────────────────────────
+# flash_v2_5 has weaker normalization than multilingual_v2. Pre-normalize before
+# sending to ElevenLabs so numbers, symbols, and double-punctuation are clean.
+_EL_NORMALIZE: tuple[tuple[re.Pattern, str], ...] = (
+    # Double-comma fillers the LLM writes ("Ah,, okay" / "Right,, so") → single comma
+    (re.compile(r",{2,}"), ","),
+    # Trailing comma before space then word → keep as-is (valid breath pause)
+    # Percent → words
+    (re.compile(r"(\d+)\s*%"), lambda m: f"{m.group(1)} percent"),
+    # Currency: $50k / $1,000 / $50
+    (re.compile(r"\$(\d[\d,]*)[kK]\b"), lambda m: f"{m.group(1).replace(',','')} thousand dollars"),
+    (re.compile(r"\$(\d[\d,]*)\b"), lambda m: f"{m.group(1).replace(',','')} dollars"),
+    # Plain large numbers with commas (50,000 → 50000 so TTS reads it as a number not "fifty comma zero zero zero")
+    (re.compile(r"\b(\d{1,3}(?:,\d{3})+)\b"), lambda m: m.group(1).replace(",", "")),
+    # Ordinals: 1st 2nd 3rd 4th
+    (re.compile(r"\b1st\b"), "first"),
+    (re.compile(r"\b2nd\b"), "second"),
+    (re.compile(r"\b3rd\b"), "third"),
+    (re.compile(r"\b(\d+)th\b"), lambda m: f"{m.group(1)}th"),
+    # Strip markdown bold/italic that leaked through
+    (re.compile(r"\*{1,2}([^*]+)\*{1,2}"), r"\1"),
+)
+
+
+def _normalize_for_elevenlabs(text: str) -> str:
+    for pattern, replacement in _EL_NORMALIZE:
+        if callable(replacement):
+            text = pattern.sub(replacement, text)
+        else:
+            text = pattern.sub(replacement, text)
+    return text
+
+
+async def _elevenlabs_normalize_transform(text_stream):
+    """Pre-normalize text for ElevenLabs flash_v2_5 before synthesis."""
+    async for chunk in text_stream:
+        yield _normalize_for_elevenlabs(chunk)
+
 # ── LLM TTS rewrite prompt ────────────────────────────────────────────────────
 # Used by make_sarvam_llm_rewrite_transform(). Kept here so it's easy to tune.
 _TTS_REWRITE_SYSTEM_PROMPT = """\
@@ -62,18 +100,8 @@ def polish_candidate_facing_text(text: str) -> str:
     return TextSanitizer.polish_candidate_facing_text(text)
 
 
-def _apply_tts_phonetic_fixes(text: str) -> str:
-    """Apply phonetic fixes for TTS speech synthesis.
-
-    Args:
-        text: Text to apply fixes to
-
-    Returns:
-        Text with TTS-friendly phonetic transformations
-
-    Delegates to TextSanitizer.apply_tts_phonetic_fixes()
-    """
-    return TextSanitizer.apply_tts_phonetic_fixes(text)
+def _apply_tts_phonetic_fixes(text: str, provider: str = "") -> str:
+    return TextSanitizer.apply_tts_phonetic_fixes(text, provider=provider)
 
 
 def _enforce_single_question(text: str) -> str:
@@ -215,37 +243,35 @@ def make_sarvam_llm_rewrite_transform(openai_client, model: str = "gpt-4.1-nano"
     return _transform
 
 
-async def _tts_sanitize_transform(text_stream):
-    """Final TTS safety gate: strip directives, fix punctuation, suppress empty output.
+def make_tts_sanitize_transform(provider: str = ""):
+    """Return a tts_sanitize transform bound to the given TTS provider.
 
-    Three jobs:
-    1. polish_candidate_facing_text — removes [DO NOT SAY ALOUD], [NEXT_TURN_DIRECTIVE]
-       and any other internal LLM control tags that must never reach TTS.
-    2. _apply_tts_phonetic_fixes — converts em-dashes → commas, strips markdown
-       (* _ ` ~), collapses ellipses — so Sarvam/Cartesia don't stumble on them.
-    3. Empty-output suppression — if the entire LLM turn sanitizes to nothing
-       (e.g. LLM echoed only a directive), yields nothing so TTS stays silent
-       instead of emitting a blank audio frame.
-
-    This runs last in the transform chain so it catches anything the upstream
-    transforms might have introduced.
+    ElevenLabs preserves em-dashes and ellipses for natural pacing.
+    Sarvam/Cartesia collapse them to commas.
     """
-    emitted_any = False
-    async for chunk in text_stream:
-        cleaned = polish_candidate_facing_text(chunk)
-        cleaned = _enforce_single_question(cleaned)
-        cleaned = _apply_tts_phonetic_fixes(cleaned)
-        if cleaned:
-            if not emitted_any:
-                logger.debug(f"[TTS_FIRST_CHUNK] First chunk to TTS: {cleaned[:120]!r}")
-            emitted_any = True
-            yield cleaned
+    async def _transform(text_stream):
+        emitted_any = False
+        async for chunk in text_stream:
+            cleaned = polish_candidate_facing_text(chunk)
+            cleaned = _enforce_single_question(cleaned)
+            cleaned = _apply_tts_phonetic_fixes(cleaned, provider=provider)
+            if cleaned:
+                if not emitted_any:
+                    logger.debug("[TTS_FIRST_CHUNK] First chunk to TTS: %r", cleaned[:120])
+                emitted_any = True
+                yield cleaned
+        if not emitted_any:
+            logger.debug(
+                "[TTS_SANITIZE] Transform yielded empty — LLM turn was directive-only, "
+                "suppressing TTS output (expected during STT fragment assembly)."
+            )
+    return _transform
 
-    if not emitted_any:
-        logger.debug(
-            "[TTS_SANITIZE] Transform yielded empty — LLM turn was directive-only, "
-            "suppressing TTS output (expected during STT fragment assembly)."
-        )
+
+async def _tts_sanitize_transform(text_stream):
+    """Default sanitize transform (Sarvam/Cartesia). Use make_tts_sanitize_transform() for provider-aware version."""
+    async for chunk in make_tts_sanitize_transform()(text_stream):
+        yield chunk
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

@@ -318,7 +318,15 @@ async def _create_dict(api_key: str, pronunciations: dict[str, str]) -> str:
             files={"file": ("pronunciations.json", io.BytesIO(payload), "application/json")},
         )
         resp.raise_for_status()
-        return resp.json()["dictionary_id"]
+        data = resp.json()
+        # Sarvam API returns either {"dictionary_id": "..."} or {"id": "..."}
+        if isinstance(data, dict):
+            dict_id = data.get("dictionary_id") or data.get("id") or ""
+        else:
+            dict_id = str(data or "")
+        if not dict_id:
+            raise RuntimeError(f"Sarvam create dict returned no ID: {data!r}")
+        return dict_id
 
 
 async def _update_dict(api_key: str, dict_id: str, pronunciations: dict[str, str]) -> None:
@@ -362,7 +370,7 @@ async def get_or_create_base_dict_id(api_key: str) -> Optional[str]:
         logger.info("[SARVAM_DICT] Created base dict %s (%d words)", dict_id, len(_BASE_PRONUNCIATIONS))
         return dict_id
     except Exception as exc:
-        logger.warning("[SARVAM_DICT] Failed to create base dict: %s", exc)
+        logger.warning("[SARVAM_DICT] Failed to create base dict: %s — interviews continue without pronunciation dict", exc)
         return None
 
 

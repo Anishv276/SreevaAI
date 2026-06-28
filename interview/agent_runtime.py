@@ -203,8 +203,9 @@ class CoveredTopics:
 _SHARED_OPENAI_CLIENT: AsyncOpenAI = AsyncOpenAI()
 from interview.agent_runtime_helpers import (
     _build_recent_context_block,
-    _tts_sanitize_transform,
+    make_tts_sanitize_transform,
     _tts_acronym_transform,
+    _elevenlabs_normalize_transform,
     _sarvam_normalize_transform,
     make_sarvam_llm_rewrite_transform,
     polish_candidate_facing_text,
@@ -461,25 +462,21 @@ def _build_probe_directive(
 
     parts_out = [
         f"[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]",
-        f"DECISION: PROBE ({(signal or 'depth').upper()})",
         f"",
-        f"TOPIC BRIEF:",
-        _topic_ctx,
+        f"You are still on {active_topic}. Dig deeper.",
         f"",
-        f"CONVERSATION THREAD:",
+        f"WHAT THE CANDIDATE JUST SAID:",
         _thread,
         f"",
-        f"SIGNAL & PROBE CONTEXT:",
+        f"WHAT TO PROBE:",
         _probe_ctx,
         f"",
         _filler_hint,
-        "FILLER RULES: Never 'Great!', 'Awesome!', 'Fantastic!'. Never 'Thanks for sharing'.",
-        "Filler and question must feel like one connected turn — not two separate things.",
         f"",
     ]
     if _asked:
         parts_out += [
-            "QUESTIONS ALREADY ASKED — do NOT repeat these angles or rephrasings:",
+            "DO NOT ask these again (already covered):",
             _asked,
             "",
         ]
@@ -487,11 +484,10 @@ def _build_probe_directive(
         parts_out.append(coverage_memory)
 
     parts_out += [
-        "QUESTION RULES:",
-        "- Ask EXACTLY ONE question. One question mark. Not two. Not 'and also'.",
-        "- Keep it under 20 words. Real interviewers ask one sharp thing then listen.",
-        "- The question must reference something specific from the conversation thread above.",
-        "- Do NOT write anything here — Ishita generates the question herself from this context.",
+        "NOW: React to what they said (one short phrase), then ask your follow-up question.",
+        "One question mark. Never two questions in one turn.",
+        "The question can have 1-3 sentences of natural setup before the actual question — that's fine.",
+        "Grounded in what they just told you. Never 'Can you' or 'Could you'. Never 'Great!' or 'Awesome!'.",
     ]
 
     directive = "\n".join(parts_out)
@@ -1004,8 +1000,17 @@ class InterviewAgent(Agent):
         async def _push_sentences(tts_stream) -> None:
             buf = ""
             n = 0
+            is_elevenlabs = type(tts_engine).__module__.startswith("livekit.plugins.elevenlabs")
             async for chunk in text:
                 buf += chunk
+                if is_elevenlabs:
+                    # ElevenLabs manages its own internal buffering via chunk_length_schedule.
+                    # Push tokens as they arrive — sentence-splitting here would restart the
+                    # WebSocket synthesis context per sentence causing gaps and choppy audio.
+                    self._record_tts_text(chunk)
+                    tts_stream.push_text(chunk)
+                    n += 1
+                    continue
                 while True:
                     m = _TTS_SENT_END_RE.search(buf)
                     if m:
@@ -1017,9 +1022,6 @@ class InterviewAgent(Agent):
                             tts_stream.push_text(pushed_text)
                             n += 1
                     elif len(buf) >= _TTS_MAX_BUFFER_CHARS:
-                        # No sentence boundary found but buffer is large — push now
-                        # so TTS starts generating instead of waiting for a period that
-                        # may never come (e.g. LLM response with no punctuation).
                         pushed_text = buf.strip() + " "
                         buf = ""
                         self._record_tts_text(pushed_text)
@@ -1027,13 +1029,13 @@ class InterviewAgent(Agent):
                         n += 1
                     else:
                         break
-            if buf.strip():
+            if not is_elevenlabs and buf.strip():
                 pushed_text = buf.strip()
                 self._record_tts_text(pushed_text)
                 tts_stream.push_text(pushed_text)
                 n += 1
             tts_stream.end_input()
-            logger.info("[TTS] Streamed %d sentence(s) via WebSocket", n)
+            logger.info("[TTS] Streamed %d chunk(s) via WebSocket", n)
         try:
             if tts_engine.capabilities.streaming:
                 async with tts_engine.stream(conn_options=conn_options) as stream:
@@ -1631,6 +1633,22 @@ async def entrypoint(ctx: JobContext):
     # any tech term on any future resume is handled automatically.
     _sarvam_dict_id: str | None = None
     _sarvam_llm_rewrite_transform = None
+    _elevenlabs_pronunciation_locators: list | None = None
+    if org_tts_provider == "ELEVENLABS":
+        # ElevenLabs pronunciation dictionary locators (analogous to Sarvam's dict_id).
+        # ELEVENLABS_PRONUNCIATION_DICT_ID can be set to a pre-created dictionary ID
+        # from the ElevenLabs API. When absent, apply_text_normalization='auto' handles
+        # standard normalization and the agent runs without custom pronunciations.
+        _el_dict_id = os.environ.get("ELEVENLABS_PRONUNCIATION_DICT_ID", "").strip()
+        if _el_dict_id:
+            from livekit.plugins.elevenlabs import PronunciationDictionaryLocator
+            _elevenlabs_pronunciation_locators = [
+                PronunciationDictionaryLocator(
+                    pronunciation_dictionary_id=_el_dict_id,
+                    version_id=os.environ.get("ELEVENLABS_PRONUNCIATION_DICT_VERSION", "").strip(),
+                )
+            ]
+            logger.info("[ELEVENLABS_TTS] pronunciation dict: id=%s", _el_dict_id)
     if org_tts_provider == "SARVAM":
         from interview.sarvam_pronunciation_dict import (
             get_or_create_base_dict_id as _get_base_dict_id,
@@ -1656,6 +1674,7 @@ async def entrypoint(ctx: JobContext):
         model=org_tts_model,
         voice_id=voice_id,
         **({"dict_id": _sarvam_dict_id} if _sarvam_dict_id else {}),
+        **({"pronunciation_dict_locators": _elevenlabs_pronunciation_locators} if _elevenlabs_pronunciation_locators else {}),
     )
     plugin_tts_characters = 0
     plugin_tts_audio_seconds = 0.0
@@ -1735,18 +1754,19 @@ async def entrypoint(ctx: JobContext):
                 backchannel_boundary=(1.0, 3.5),
             ),
         ),
-        "use_tts_aligned_transcript": False,
-        # _tts_acronym_transform is skipped for Sarvam: pronunciation is handled
-        # server-side via dict_id + enable_preprocessing (always-on in v3).
-        # Running it for Sarvam caused double-normalization and the letter-reading bug.
+        "use_tts_aligned_transcript": org_tts_provider == "ELEVENLABS",
+        # Client-side acronym transform:
+        # - Cartesia: needs it (no server-side normalization)
+        # - ElevenLabs: apply_text_normalization='auto' handles it server-side — skip
+        # - Sarvam: dict_id + enable_preprocessing always-on — skip (caused letter-reading bug)
         "tts_text_transforms": [
             "filter_emoji",
-            *([_tts_acronym_transform] if org_tts_provider != "SARVAM" else []),
-            # Sarvam path: regex normalizer first (fast, deterministic ALL-CAPS),
-            # then LLM rewriter (handles ambiguous/compound terms sentence by sentence).
+            *([_tts_acronym_transform] if org_tts_provider == "CARTESIA" else []),
+            *([_elevenlabs_normalize_transform] if org_tts_provider == "ELEVENLABS" else []),
+            # Sarvam path: regex normalizer first, then LLM rewriter for ambiguous terms.
             *([_sarvam_normalize_transform] if org_tts_provider == "SARVAM" else []),
             *([_sarvam_llm_rewrite_transform] if _sarvam_llm_rewrite_transform else []),
-            _tts_sanitize_transform,
+            make_tts_sanitize_transform(org_tts_provider),
         ],
         "aec_warmup_duration": 0.5,
     }
@@ -3147,18 +3167,17 @@ async def entrypoint(ctx: JobContext):
                 role="system",
                 content=(
                     "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
-                    "DECISION: FIRST_QUESTION\n"
-                    f"ANCHOR TOPIC: {_anchor_title}\n"
-                    f"FULL CONTEXT: {_anchor_ctx}\n"
-                    "YOUR RESPONSE THIS TURN:\n"
-                    "  Ask your first interview question directly. Do NOT open with 'Great' or 'Perfect' alone.\n"
-                    "  If you need a transition, make it a FULL SENTENCE tied to the topic, e.g.:\n"
-                    f"    'Let's jump right in — [question about {_anchor_title}]?'\n"
-                    f"    'Alright, let's get into it — [question about {_anchor_title}]?'\n"
-                    "  The question must be specific to the anchor topic context above — not generic.\n"
-                    f"  Follow the FIRST QUESTION RULE from the interview directive for band={candidate_band}.\n"
-                    "  ONE question only. Do not list topics, do not explain the process.\n"
-                    "  Sound natural — like a real interviewer starting a conversation, not reading a script."
+                    f"Start the interview. Topic: {_anchor_title}.\n"
+                    f"Context: {_anchor_ctx}\n\n"
+                    "Say ONE short thing (3-6 words max) then ask your first question — topic name built into it.\n"
+                    "Examples of good openers:\n"
+                    f"  'So, {_anchor_title} — what did you personally build there?'\n"
+                    f"  'Let's talk about {_anchor_title}. What was specifically yours?'\n"
+                    f"  'Alright — the {_anchor_title}. Where did you start?'\n"
+                    "Do NOT say 'let's dive in', 'just to set the stage', 'so moving forward', or any preamble.\n"
+                    "Do NOT say 'Great!' or 'Perfect!' or any hollow reaction to their warmup answer.\n"
+                    "Do NOT explain the interview process or list what you'll cover.\n"
+                    "ONE question mark. Can be 1-3 sentences with natural setup. Grounded in the topic context above."
                 ),
             )
             logger.info(
@@ -3408,6 +3427,18 @@ async def entrypoint(ctx: JobContext):
                     # will inject the warmup-done directive and release the gate.
                     agent._waiting_for_eval = True
                     agent._directive_ready.clear()
+                    # Update PHASE_STATUS so if LLM fires again before candidate replies
+                    # it knows the warmup question is ALREADY spoken — don't repeat it.
+                    remove_system_messages(chat_ctx, "[PHASE_STATUS]")
+                    chat_ctx.add_message(
+                        role="system",
+                        content=(
+                            "[PHASE_STATUS -- DO NOT SAY ALOUD]\n"
+                            "GREETING: DONE. WARMUP QUESTION: ALREADY ASKED — do not repeat it.\n"
+                            "You already asked if they are ready. Wait silently for their answer.\n"
+                            "DO NOT say anything until [NEXT_TURN_DIRECTIVE] arrives."
+                        ),
+                    )
                     logger.info("[LLM_GATE] Gated after warmup readiness check — waiting for candidate answer")
                 elif _is_interview_turn:
                     agent._waiting_for_eval = True

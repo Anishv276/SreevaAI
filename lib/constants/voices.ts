@@ -8,6 +8,12 @@ export interface Voice {
   tags?: string[];
 }
 export const ALL_VOICES: Voice[] = [
+  // ElevenLabs
+  { id: "EXAVITQu4vr4xnSDxMaL", name: "Rachel",  provider: "ELEVENLABS", model: "eleven_turbo_v2_5", gender: "female", description: "Calm & Professional",    tags: ["Default", "Recommended"] },
+  { id: "JBFqnCBsd6RMkjVDRZzb", name: "George",  provider: "ELEVENLABS", model: "eleven_turbo_v2_5", gender: "male",   description: "Warm & Authoritative",   tags: ["Professional"] },
+  { id: "Xb7hH8MSUJpSbSDYk0k2", name: "Chris",   provider: "ELEVENLABS", model: "eleven_turbo_v2_5", gender: "male",   description: "Natural & Conversational", tags: ["Casual"] },
+  { id: "ODq5zmih8GrVes37Dizd", name: "Patrick", provider: "ELEVENLABS", model: "eleven_turbo_v2_5", gender: "male",   description: "Deep & Engaging",        tags: ["Confident"] },
+  { id: "l7kNoIfnJKPg7779LI2t", name: "Aria",    provider: "ELEVENLABS", model: "eleven_turbo_v2_5", gender: "female", description: "Bright & Energetic",     tags: ["Friendly"] },
   // Cartesia
   { id: "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc", name: "Jacqueline", provider: "CARTESIA", model: "cartesia/sonic-3", gender: "female", description: "Refined & Professional", tags: ["Verified", "Stable", "Corporate"] },
   { id: "95d51f79-c397-46f9-b49a-23763d3eaa2d", name: "Arushi",     provider: "CARTESIA", model: "cartesia/sonic-3", gender: "female", description: "Hinglish Speaker",        tags: ["Bilingual", "Indian Accent", "Warm"] },
@@ -38,10 +44,10 @@ export const ALL_VOICES: Voice[] = [
   { id: "tanya",   name: "Tanya",   provider: "SARVAM", model: "bulbul:v3", gender: "female", description: "Clear Female",                   tags: ["Concise"] },
   { id: "sunny",   name: "Sunny",   provider: "SARVAM", model: "bulbul:v3", gender: "male",   description: "Friendly Youth",                 tags: ["Casual"] },
 ];
-export const DEFAULT_VOICE_ID = "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc";
+export const DEFAULT_VOICE_ID = "EXAVITQu4vr4xnSDxMaL"; // ElevenLabs Rachel
 export function getVoiceById(id: string): Voice | undefined {
   return ALL_VOICES.find(v => v.id === id);
 }
 export function getProviderForVoice(id: string): "CARTESIA" | "SARVAM" | "ELEVENLABS" {
-  return getVoiceById(id)?.provider ?? "CARTESIA";
+  return getVoiceById(id)?.provider ?? "ELEVENLABS";
 }

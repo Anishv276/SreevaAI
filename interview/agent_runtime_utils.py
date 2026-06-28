@@ -17,7 +17,7 @@ import os
 import logging
 import re
 from typing import Any, Optional, Dict
-from dataclasses import dataclass, field
+
 from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger("interview-agent")
@@ -73,7 +73,7 @@ class AgentConfig:
         self._eval_temperature = float(os.environ.get("EVAL_TEMPERATURE", "0.0"))
 
         # Voice Configuration
-        self._default_voice_id = os.environ.get("DEFAULT_VOICE_ID", "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc").strip()
+        self._default_voice_id = os.environ.get("DEFAULT_VOICE_ID", "EXAVITQu4vr4xnSDxMaL").strip()  # ElevenLabs Rachel
         self._voice_registry = self._build_voice_registry()
 
         # Interview Configuration
@@ -182,6 +182,12 @@ class AgentConfig:
             "694f9389-aac1-45b6-b726-9d9369183238": {"provider": "CARTESIA", "model": "cartesia/sonic-3"},
             "638385f3-3333-4f5d-85a2-3f820c64b732": {"provider": "CARTESIA", "model": "cartesia/sonic-3"},
             "248be1fc-3d27-4452-9457-3705bf68bf8f": {"provider": "CARTESIA", "model": "cartesia/sonic-3"},
+            # ElevenLabs voices (voice IDs from ElevenLabs voice library)
+            "EXAVITQu4vr4xnSDxMaL": {"provider": "ELEVENLABS", "model": "eleven_turbo_v2_5"},  # Rachel
+            "JBFqnCBsd6RMkjVDRZzb": {"provider": "ELEVENLABS", "model": "eleven_turbo_v2_5"},  # George
+            "Xb7hH8MSUJpSbSDYk0k2": {"provider": "ELEVENLABS", "model": "eleven_turbo_v2_5"},  # Chris
+            "ODq5zmih8GrVes37Dizd": {"provider": "ELEVENLABS", "model": "eleven_turbo_v2_5"},  # Patrick
+            "l7kNoIfnJKPg7779LI2t": {"provider": "ELEVENLABS", "model": "eleven_turbo_v2_5"},  # Aria
             # Sarvam voices
             "shubh":   {"provider": "SARVAM", "model": "bulbul:v3"},
             "manan":   {"provider": "SARVAM", "model": "bulbul:v3"},
@@ -312,12 +318,22 @@ class TextSanitizer:
     )
 
     # TTS phonetic fixes (preserve speech flow for voice synthesis)
+    # Fixes for Sarvam/Cartesia: collapse em-dashes and ellipses they can't handle
     _TTS_PHONETIC_FIXES: tuple[tuple[re.Pattern, str], ...] = (
         (re.compile(r"\s*[–—]\s*"), ", "),
         (re.compile(r"\s*-{2,}\s*"), ", "),
         (re.compile(r"(?<=[a-zA-Z])-(?=[a-zA-Z])"), ""),
         (re.compile(r"\.{2,}"), ", "),
         (re.compile(r"[`*_~]"), ""),
+        (re.compile(r"\b(Hmm|Mm|Ah|Oh|Right|Yeah|So|Well|Okay)\b(?!\s*[,.\?!])"), r"\1,"),
+        (re.compile(r" {2,}"), " "),
+    )
+    # ElevenLabs-specific fixes: preserve em-dashes and ellipses (ElevenLabs uses them
+    # for natural pauses), only strip markdown and normalize filler punctuation.
+    _TTS_PHONETIC_FIXES_ELEVENLABS: tuple[tuple[re.Pattern, str], ...] = (
+        (re.compile(r"\s*-{2,}\s*"), "— "),          # double-hyphen → em-dash (ElevenLabs pause)
+        (re.compile(r"(?<=[a-zA-Z])-(?=[a-zA-Z])"), " "),  # hyphenated-words → spaced
+        (re.compile(r"[`*_~]"), ""),                   # strip markdown
         (re.compile(r"\b(Hmm|Mm|Ah|Oh|Right|Yeah|So|Well|Okay)\b(?!\s*[,.\?!])"), r"\1,"),
         (re.compile(r" {2,}"), " "),
     )
@@ -454,16 +470,18 @@ class TextSanitizer:
         return result
 
     @staticmethod
-    def apply_tts_phonetic_fixes(text: str) -> str:
+    def apply_tts_phonetic_fixes(text: str, provider: str = "") -> str:
         """Apply phonetic fixes for TTS speech synthesis.
 
-        Args:
-            text: Text to apply fixes to
-
-        Returns:
-            Text with TTS-friendly phonetic transformations
+        ElevenLabs preserves em-dashes and ellipses as natural pause cues.
+        Sarvam/Cartesia collapse them to commas to avoid mispronunciation.
         """
-        for pattern, replacement in TextSanitizer._TTS_PHONETIC_FIXES:
+        fixes = (
+            TextSanitizer._TTS_PHONETIC_FIXES_ELEVENLABS
+            if provider.upper() == "ELEVENLABS"
+            else TextSanitizer._TTS_PHONETIC_FIXES
+        )
+        for pattern, replacement in fixes:
             text = pattern.sub(replacement, text)
         return text
 
