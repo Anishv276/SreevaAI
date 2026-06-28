@@ -82,8 +82,8 @@ export function InterviewSetup({ formData, updateFormData, allowLanguageSelectio
 
     const getAvailableVoices = () => {
         const whitelist: string[] = Array.isArray(formData.allowedVoices) ? formData.allowedVoices : [];
-        if (whitelist.length === 0) return voices;
-        return voices.filter(v => whitelist.includes(v.id));
+        // allowedVoices set via Super Admin → AI Models. Empty = org not configured yet.
+        return whitelist.length === 0 ? [] : voices.filter(v => whitelist.includes(v.id));
     };
 
     const handleVoiceChange = (voiceId: string) => {
@@ -294,6 +294,9 @@ export function InterviewSetup({ formData, updateFormData, allowLanguageSelectio
                                 </div>
                             </div>
                             <div className="overflow-y-auto flex-1">
+                                {getAvailableVoices().length === 0 ? (
+                                    <p className="text-xs text-gray-400 text-center py-6 px-4">No voices configured. Set allowed voices in Super Admin → AI Models.</p>
+                                ) : null}
                                 {getAvailableVoices()
                                     .filter(v => v.name.toLowerCase().includes(voiceSearch.toLowerCase()) || v.description.toLowerCase().includes(voiceSearch.toLowerCase()) || v.tags?.some(t => t.toLowerCase().includes(voiceSearch.toLowerCase())))
                                     .map(v => (

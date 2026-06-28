@@ -55,8 +55,7 @@ class AgentConfig:
     _instance: Optional[AgentConfig] = None
 
     def __init__(self) -> None:
-        # STT Configuration
-        self._stt_model = os.environ.get("STT_MODEL", "flux-general-en").strip()
+        # STT Configuration — stt_model comes from org DB, not env
         self._flux_eot_threshold = float(os.environ.get("FLUX_EOT_THRESHOLD", "0.70"))
         self._flux_eager_eot_threshold_str = os.environ.get("FLUX_EAGER_EOT_THRESHOLD", "").strip()
         self._flux_eager_eot_threshold = (
@@ -66,15 +65,10 @@ class AgentConfig:
         )
         self._flux_eot_timeout_ms = int(os.environ.get("FLUX_EOT_TIMEOUT_MS", "3500"))
 
-        # LLM Configuration
-        self._llm_model = os.environ.get("INTERVIEW_LLM_MODEL", "gpt-4.1-mini").strip()
-        self._eval_llm_model = os.environ.get("EVAL_LLM_MODEL", "gpt-4.1-nano").strip()
+        # LLM models are now per-org from DB (set via Super Admin → AI Models).
+        # Only temperature is still env-configurable (not model-specific, applies globally).
         self._interview_temperature = float(os.environ.get("INTERVIEW_TEMPERATURE", "0.75"))
         self._eval_temperature = float(os.environ.get("EVAL_TEMPERATURE", "0.0"))
-
-        # Voice Configuration
-        self._default_voice_id = os.environ.get("DEFAULT_VOICE_ID", "EXAVITQu4vr4xnSDxMaL").strip()  # ElevenLabs Rachel
-        self._voice_registry = self._build_voice_registry()
 
         # Interview Configuration
         self._fixed_interview_duration_minutes = int(os.environ.get("FIXED_INTERVIEW_DURATION_MINUTES", "20"))
@@ -102,10 +96,6 @@ class AgentConfig:
 
     # ── STT Properties ──
     @property
-    def stt_model(self) -> str:
-        return self._stt_model
-
-    @property
     def flux_eot_threshold(self) -> float:
         return self._flux_eot_threshold
 
@@ -119,33 +109,12 @@ class AgentConfig:
 
     # ── LLM Properties ──
     @property
-    def llm_model(self) -> str:
-        return self._llm_model
-
-    @property
-    def eval_llm_model(self) -> str:
-        return self._eval_llm_model
-
-    @property
     def interview_temperature(self) -> float:
         return self._interview_temperature
 
     @property
     def eval_temperature(self) -> float:
         return self._eval_temperature
-
-    # ── Voice Properties ──
-    @property
-    def default_voice_id(self) -> str:
-        return self._default_voice_id
-
-    @property
-    def voice_registry(self) -> Dict[str, Dict[str, str]]:
-        return self._voice_registry.copy()
-
-    def get_voice_provider(self, voice_id: str) -> Optional[Dict[str, str]]:
-        """Get provider info for a voice ID. Returns None if not found."""
-        return self._voice_registry.get(voice_id)
 
     # ── Interview Properties ──
     @property
@@ -165,50 +134,6 @@ class AgentConfig:
     def app_base_url(self) -> str:
         return self._app_base_url
 
-    @staticmethod
-    def _build_voice_registry() -> Dict[str, Dict[str, str]]:
-        """Build voice registry from hardcoded values.
-
-        In future, could be loaded from env var or external config.
-        Returns a dict mapping voice_id -> {provider, model}
-        """
-        return {
-            # Cartesia voices
-            "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc": {"provider": "CARTESIA", "model": "cartesia/sonic-3"},
-            "95d51f79-c397-46f9-b49a-23763d3eaa2d": {"provider": "CARTESIA", "model": "cartesia/sonic-3"},
-            "f786b574-daa5-4673-aa0c-cbe3e8534c02": {"provider": "CARTESIA", "model": "cartesia/sonic-3"},
-            "e07c00bc-4134-4eae-9ea4-1a55fb45746b": {"provider": "CARTESIA", "model": "cartesia/sonic-3"},
-            "5ee9feff-1265-424a-9d7f-8e4d431a12c7": {"provider": "CARTESIA", "model": "cartesia/sonic-3"},
-            "694f9389-aac1-45b6-b726-9d9369183238": {"provider": "CARTESIA", "model": "cartesia/sonic-3"},
-            "638385f3-3333-4f5d-85a2-3f820c64b732": {"provider": "CARTESIA", "model": "cartesia/sonic-3"},
-            "248be1fc-3d27-4452-9457-3705bf68bf8f": {"provider": "CARTESIA", "model": "cartesia/sonic-3"},
-            # ElevenLabs voices (voice IDs from ElevenLabs voice library)
-            "EXAVITQu4vr4xnSDxMaL": {"provider": "ELEVENLABS", "model": "eleven_turbo_v2_5"},  # Rachel
-            "JBFqnCBsd6RMkjVDRZzb": {"provider": "ELEVENLABS", "model": "eleven_turbo_v2_5"},  # George
-            "Xb7hH8MSUJpSbSDYk0k2": {"provider": "ELEVENLABS", "model": "eleven_turbo_v2_5"},  # Chris
-            "ODq5zmih8GrVes37Dizd": {"provider": "ELEVENLABS", "model": "eleven_turbo_v2_5"},  # Patrick
-            "l7kNoIfnJKPg7779LI2t": {"provider": "ELEVENLABS", "model": "eleven_turbo_v2_5"},  # Aria
-            # Sarvam voices
-            "shubh":   {"provider": "SARVAM", "model": "bulbul:v3"},
-            "manan":   {"provider": "SARVAM", "model": "bulbul:v3"},
-            "ishita":  {"provider": "SARVAM", "model": "bulbul:v3"},
-            "shreya":  {"provider": "SARVAM", "model": "bulbul:v3"},
-            "priya":   {"provider": "SARVAM", "model": "bulbul:v3"},
-            "aditya":  {"provider": "SARVAM", "model": "bulbul:v3"},
-            "ritu":    {"provider": "SARVAM", "model": "bulbul:v3"},
-            "rahul":   {"provider": "SARVAM", "model": "bulbul:v3"},
-            "neha":    {"provider": "SARVAM", "model": "bulbul:v3"},
-            "pooja":   {"provider": "SARVAM", "model": "bulbul:v3"},
-            "rohan":   {"provider": "SARVAM", "model": "bulbul:v3"},
-            "simran":  {"provider": "SARVAM", "model": "bulbul:v3"},
-            "kavya":   {"provider": "SARVAM", "model": "bulbul:v3"},
-            "amit":    {"provider": "SARVAM", "model": "bulbul:v3"},
-            "dev":     {"provider": "SARVAM", "model": "bulbul:v3"},
-            "varun":   {"provider": "SARVAM", "model": "bulbul:v3"},
-            "kabir":   {"provider": "SARVAM", "model": "bulbul:v3"},
-            "tanya":   {"provider": "SARVAM", "model": "bulbul:v3"},
-            "sunny":   {"provider": "SARVAM", "model": "bulbul:v3"},
-        }
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

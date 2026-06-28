@@ -33,6 +33,7 @@ interface HardwareCheckProps {
     onRetry?: () => void;
     isStarting?: boolean;
     errorMessage?: string | null;
+    slotCountdownSecs?: number | null;
     candidateName?: string;
     applicationId?: string;
     interviewToken?: string;
@@ -117,6 +118,7 @@ export function HardwareCheck({
     applicationId = "unknown",
     interviewToken = "",
     title = "Environment Check",
+    slotCountdownSecs = null,
 }: HardwareCheckProps) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
@@ -156,6 +158,8 @@ export function HardwareCheck({
     // Keep ref in sync with state so useCallback closures always read the current phrase
     useEffect(() => { verifiedPhraseRef.current = verifiedPhrase; }, [verifiedPhrase]);
     const [canBeginNow, setCanBeginNow] = useState(false);
+    // slotCountdownSecs > 0 means button is locked until countdown hits 0
+    const isSlotLocked = slotCountdownSecs !== null && slotCountdownSecs > 0;
     useEffect(() => {
         setCanBeginNow(true);
     }, []);
@@ -1189,22 +1193,31 @@ export function HardwareCheck({
                                         >
                                             Back
                                         </button>
-                                        <button
-                                            onClick={handleBeginInterview}
-                                            disabled={!allReady || isStarting || snapshotUploading || !canBeginNow}
-                                            className={cn(
-                                                "rounded-full px-8 py-3 text-xs font-bold transition-all shadow-md flex items-center gap-2",
-                                                allReady && !isStarting && !snapshotUploading && canBeginNow
-                                                    ? "bg-gradient-to-r from-violet-500 to-blue-400 hover:from-orange-600 hover:to-blue-500 text-white shadow-lg shadow-orange-500/10"
-                                                    : "bg-gray-100 text-gray-400 cursor-not-allowed border border-transparent"
+                                        <div className="flex flex-col items-end gap-1">
+                                            {isSlotLocked && slotCountdownSecs !== null && (
+                                                <span className="text-[10px] font-bold text-orange-500 tabular-nums">
+                                                    Timing Remaining: {String(Math.floor(slotCountdownSecs / 60)).padStart(2, "0")}:{String(slotCountdownSecs % 60).padStart(2, "0")}
+                                                </span>
                                             )}
-                                        >
-                                            {isStarting || snapshotUploading ? (
-                                                <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Securing...</>
-                                            ) : (
-                                                <><Zap className="w-3.5 h-3.5" /> Begin Interview</>
-                                            )}
-                                        </button>
+                                            <button
+                                                onClick={handleBeginInterview}
+                                                disabled={!allReady || isStarting || snapshotUploading || !canBeginNow || isSlotLocked}
+                                                className={cn(
+                                                    "rounded-full px-8 py-3 text-xs font-bold transition-all shadow-md flex items-center gap-2",
+                                                    allReady && !isStarting && !snapshotUploading && canBeginNow && !isSlotLocked
+                                                        ? "bg-gradient-to-r from-violet-500 to-blue-400 hover:from-orange-600 hover:to-blue-500 text-white shadow-lg shadow-orange-500/10"
+                                                        : "bg-gray-100 text-gray-400 cursor-not-allowed border border-transparent"
+                                                )}
+                                            >
+                                                {isStarting || snapshotUploading ? (
+                                                    <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Securing...</>
+                                                ) : isSlotLocked ? (
+                                                    <><Zap className="w-3.5 h-3.5" /> Begin Interview</>
+                                                ) : (
+                                                    <><Zap className="w-3.5 h-3.5" /> Begin Interview</>
+                                                )}
+                                            </button>
+                                        </div>
                                     </div>
                                 </motion.div>
                             )}

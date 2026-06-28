@@ -314,7 +314,28 @@
       "PowerShell(cd \"c:\\\\Users\\\\vamsi\\\\OneDrive\\\\Documents\\\\SreevaAI\"; npx tsc --noEmit 2>&1 | Where-Object { $_ -match \"app/test|api/test\" })",
       "Bash(npx tsc *)",
       "PowerShell(Get-Process node -ErrorAction SilentlyContinue)",
-      "PowerShell(\"Processes killed\")"
+      "PowerShell(\"Processes killed\")",
+      "PowerShell(New-Item -ItemType Directory -Force \"C:\\\\Users\\\\vamsi\\\\OneDrive\\\\Documents\\\\SreevaAI\\\\app\\\\super-admin\\\\models\")",
+      "PowerShell(cd \"C:\\\\Users\\\\vamsi\\\\OneDrive\\\\Documents\\\\SreevaAI\"; npx tsc --noEmit 2>&1 | Where-Object { $_ -match \"ai-models-config|ai-provider-config|super-admin/models|agent_\" })",
+      "PowerShell(cd \"C:\\\\Users\\\\vamsi\\\\OneDrive\\\\Documents\\\\SreevaAI\"; $errors = npx tsc --noEmit 2>&1; $errors | Where-Object { $_ -match \"models|ai-provider|ai-models|extract\" })",
+      "PowerShell(cd \"C:\\\\Users\\\\vamsi\\\\OneDrive\\\\Documents\\\\SreevaAI\"; npx tsc --noEmit 2>&1 | Out-String | Select-String -Pattern \"\\(models|ai-provider|ai-models|extract/route\\)\" -AllMatches | ForEach-Object { $_.Line })",
+      "PowerShell(cd \"C:\\\\Users\\\\vamsi\\\\OneDrive\\\\Documents\\\\SreevaAI\"; npx tsc --noEmit 2>$null | Where-Object { $_ -match \"ai-models|ai-provider|super-admin/models|admin/layout|extract/route|voice-preview\" })",
+      "PowerShell(cd \"C:\\\\Users\\\\vamsi\\\\OneDrive\\\\Documents\\\\SreevaAI\"; npx tsc --noEmit 2>$null | Where-Object { $_ -match \"ai-models|ai-provider|super-admin/models|admin/layout|voice-preview|extract/route|admin-org\" })",
+      "PowerShell(cd \"C:\\\\Users\\\\vamsi\\\\OneDrive\\\\Documents\\\\SreevaAI\"; npx tsc --noEmit 2>$null | Where-Object { $_ -match \"orgs/new|models/page|interview-setup|super-admin/orgs/route|ai-models\" } | Select-Object -First 20)",
+      "PowerShell(cd \"C:\\\\Users\\\\vamsi\\\\OneDrive\\\\Documents\\\\SreevaAI\"; npx tsc --noEmit 2>$null | Where-Object { $_ -match \"orgs/new|models/page|interview-setup|super-admin/orgs/route|ai-models\" })",
+      "Bash(xargs grep -l -i \"bull\\\\|queue\\\\|bullmq\")",
+      "PowerShell(cd \"C:\\\\Users\\\\vamsi\\\\OneDrive\\\\Documents\\\\SreevaAI\"; npx tsc --noEmit 2>$null | Where-Object { $_ -match \"models\" })",
+      "PowerShell(cd \"C:\\\\Users\\\\vamsi\\\\OneDrive\\\\Documents\\\\SreevaAI\"; npx tsc --noEmit 2>$null | Where-Object { $_ -match \"models/page|orgs/\\\\[id\\\\]/view\" })",
+      "PowerShell(cd \"C:\\\\Users\\\\vamsi\\\\OneDrive\\\\Documents\\\\SreevaAI\"; npx tsc --noEmit 2>$null | Where-Object { $_ -match \"orgs/\\\\[id\\\\]/page\" })",
+      "Bash(mkdir -p \"c:/Users/vamsi/OneDrive/Documents/SreevaAI/app/api/schedule/[token]\")",
+      "PowerShell(cd \"C:\\\\Users\\\\vamsi\\\\OneDrive\\\\Documents\\\\SreevaAI\"; npx tsc --noEmit 2>$null | Where-Object { $_ -match \"orgs/page|orgs/\\\\[id\\\\]/view\" })",
+      "Bash(mkdir -p \"c:/Users/vamsi/OneDrive/Documents/SreevaAI/app/schedule/[token]\")",
+      "Bash(curl -s http://localhost:3000/super-admin/orgs)",
+      "Bash(pkill -f \"npm run dev\")",
+      "Bash(pkill -f \"node.*next\")",
+      "Bash(curl -s \"http://localhost:3000/super-admin/orgs\")",
+      "Bash(curl -s http://localhost:3000/super-admin/orgs/test)",
+      "Bash(git show *)"
     ],
     "additionalDirectories": [
       "c:\\Users\\vamsi\\OneDrive\\Desktop\\HR-updates\\scratch",
@@ -325,7 +346,9 @@
       "c:\\Users\\vamsi\\OneDrive\\Desktop\\HR-updates\\.pycache_tmp",
       "c:\\Users\\vamsi\\OneDrive\\Desktop\\HR-updates\\docs",
       "c:\\Users\\vamsi\\OneDrive\\Documents\\SreevaAI\\app\\api\\super-admin\\orgs\\[id]",
-      "C:\\Users\\vamsi\\OneDrive\\Documents\\SreevaAI\\app\\admin\\candidates\\drive\\[driveId]"
+      "C:\\Users\\vamsi\\OneDrive\\Documents\\SreevaAI\\app\\admin\\candidates\\drive\\[driveId]",
+      "c:\\Users\\vamsi\\OneDrive\\Documents\\SreevaAI\\app\\api\\schedule",
+      "c:\\Users\\vamsi\\OneDrive\\Documents\\SreevaAI\\app\\schedule"
     ]
   },
   "enabledPlugins": {

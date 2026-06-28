@@ -16,7 +16,6 @@ try:
 except Exception:  # pragma: no cover
     elevenlabs = None
 from interview.agent_runtime_support import (
-    LLM_MODEL,
     FLUX_EOT_THRESHOLD,
     FLUX_EAGER_EOT_THRESHOLD,
     FLUX_EOT_TIMEOUT_MS,
@@ -220,18 +219,15 @@ def _merge_flux_keyterms(extra_keyterms: Sequence[str] | None = None) -> list[st
         if len(merged) >= 100:
             break
     return merged
-def build_stt(language_code: str = "en", keyterms: Sequence[str] | None = None):
-    """Build a Deepgram Flux STTv2 instance for live interview sessions.
-    Flux uses /v2/listen (not /v1). Turn detection is native — EOT events drive all turn boundaries.
-    No separate VAD needed (Flux natively provides End-of-Turn detection).
-    Language: flux-general-en for English-only, flux-general-multi for multilingual.
-    For Hindi (Sarvam TTS sessions), pass language_code="hi" to use flux-general-multi.
+def build_stt(language_code: str = "en", keyterms: Sequence[str] | None = None, model_override: str | None = None):
+    """Build a Deepgram STTv2 instance. model_override comes from org DB (set in Super Admin → AI Models).
+    When not overridden, flux-general-en is used for English and flux-general-multi for other languages.
     """
-    # Resolve model: multilingual model when non-English language requested.
-    # language_hint is only valid on flux-general-multi — sending it to flux-general-en
-    # returns HTTP 400. For English we always use flux-general-en (better accuracy).
     is_multilingual = language_code not in ("en", "en-US", "en-IN", "en-GB")
-    resolved_model = "flux-general-multi" if is_multilingual else "flux-general-en"
+    if model_override and model_override.strip():
+        resolved_model = model_override.strip()
+    else:
+        resolved_model = "flux-general-multi" if is_multilingual else "flux-general-en"
     flux_keyterms = _merge_flux_keyterms(keyterms)
     stt_kwargs: dict[str, Any] = {
         "model":          resolved_model,
@@ -274,5 +270,5 @@ def build_stt(language_code: str = "en", keyterms: Sequence[str] | None = None):
     setattr(stt_v2, "_hr_stt_engine", "deepgram_flux")
     setattr(stt_v2, "_hr_turn_detection_mode", "stt")
     return stt_v2
-def build_llm(model: str = LLM_MODEL, temperature: float = 0.6):
+def build_llm(model: str, temperature: float = 0.6):
     return openai.LLM(model=model, temperature=temperature)

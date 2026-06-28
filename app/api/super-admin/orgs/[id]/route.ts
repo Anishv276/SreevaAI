@@ -211,10 +211,7 @@ export async function PATCH(
         }
         Object.assign(
             updateData,
-            normalizeOrgAiConfig({
-                current: existingOrg,
-                next: { voiceId, allowedVoices },
-            })
+            normalizeOrgAiConfig({ voiceId, allowedVoices })
         );
         // Usage metrics — internal API cost tracking, untouched by billing
         if (usageMetrics !== undefined) {

@@ -201,6 +201,12 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         } catch { }
     }, []);
     const [isInitiallyLocked, setIsInitiallyLocked] = useState(false);
+    // scheduledAt from API — used for the slot countdown gate
+    const [scheduledAt, setScheduledAt] = useState<Date | null>(null);
+    // Seconds until button unlocks (2 min before slot)
+    const [slotCountdownSecs, setSlotCountdownSecs] = useState<number | null>(null);
+    // Button unlocks 2 min before slot; waiting room opens 5 min before (handled by server)
+    const BUTTON_UNLOCK_BEFORE_MS = 2 * 60 * 1000;
     useEffect(() => {
         let active = true;
         (async () => {
@@ -211,11 +217,26 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 const data = await res.json();
                 if (!active) return;
                 if (!res.ok && data.error) {
-                    setBlockedAccessTitle(data.code === "DRIVE_CLOSED" ? "Job Closed" : "Access Restricted");
-                    setBlockedAccessMessage(data.error);
-                    setIsInitiallyLocked(true);
-                    // Keep phase as loading so HardwareCheck doesn't mount
+                    if (data.code === "TOO_EARLY" && data.scheduledAt) {
+                        // Waiting room opened — show hardware check but gate the Begin button
+                        const slot = new Date(data.scheduledAt);
+                        setScheduledAt(slot);
+                        setSlotCountdownSecs(Math.ceil((slot.getTime() - BUTTON_UNLOCK_BEFORE_MS - Date.now()) / 1000));
+                        setPhase("check");
+                    } else {
+                        const titleMap: Record<string, string> = {
+                            DRIVE_CLOSED: "Job Closed",
+                            SLOT_EXPIRED: "Slot Expired",
+                            NOT_SCHEDULED: "Not Scheduled",
+                            INTERVIEW_COMPLETED: "Interview Completed",
+                            IN_PROGRESS: "Interview In Progress",
+                        };
+                        setBlockedAccessTitle(titleMap[data.code] || "Access Restricted");
+                        setBlockedAccessMessage(data.error);
+                        setIsInitiallyLocked(true);
+                    }
                 } else {
+                    if (data.scheduledAt) setScheduledAt(new Date(data.scheduledAt));
                     setPhase("check");
                 }
             } catch (err) {
@@ -224,6 +245,18 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         })();
         return () => { active = false; };
     }, [id, interviewToken]);
+
+    // Countdown tick — counts down to (slot - 2 min); when <= 0, button unlocks
+    useEffect(() => {
+        if (!scheduledAt || slotCountdownSecs === null) return;
+        if (slotCountdownSecs <= 0) return; // already unlocked
+        const interval = setInterval(() => {
+            const secsLeft = Math.ceil((scheduledAt.getTime() - BUTTON_UNLOCK_BEFORE_MS - Date.now()) / 1000);
+            setSlotCountdownSecs(secsLeft);
+            if (secsLeft <= 0) clearInterval(interval);
+        }, 1000);
+        return () => clearInterval(interval);
+    }, [scheduledAt, slotCountdownSecs]);
     //  Face violation handler 
     const handleFaceViolation = useCallback((
         eventType: string,
@@ -397,12 +430,12 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             window.removeEventListener("pagehide", handleExit);
         };
     }, [id, phase]);
+    // Single condition: agent ready — slot time is checked by token API
+    // (Server won't issue token if outside ±5 min window, so we know slot time is OK here)
     useEffect(() => {
         if (phase !== "launching") return;
         if (!isAgentReady || agentReadyCommittedRef.current) return;
         agentReadyCommittedRef.current = true;
-        // Start the countdown timer exactly NOW — greeting audio is playing in the browser.
-        // The timer was not started during launching so it counts from this moment.
         setPhase("interview");
     }, [phase, isAgentReady]);
     useEffect(() => {
@@ -455,11 +488,13 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 }
                 const apiError = String(data?.error || "Invalid token payload");
                 const errorCode = String(data?.code || "").toUpperCase();
-                const isInProgress = errorCode === "IN_PROGRESS" || /in progress/i.test(apiError);
+                const isInProgress = errorCode === "IN_PROGRESS" || errorCode === "INTERVIEW_IN_PROGRESS" || /in progress/i.test(apiError);
                 const isCompleted = errorCode === "INTERVIEW_COMPLETED" || /interview has been completed|already completed|completed interview/i.test(apiError);
                 const isDriveClosed = errorCode === "DRIVE_CLOSED";
-                const isLinkExpired = errorCode === "LINK_EXPIRED";
-                const isFinalized = !isDriveClosed && !isLinkExpired && /already finalized|session has expired|invalid token|invalid token payload|token expiry|token expired/i.test(apiError);
+                const isSlotExpired = errorCode === "SLOT_EXPIRED";
+                const isTooEarly = errorCode === "TOO_EARLY";
+                const isLinkExpired = errorCode === "LINK_EXPIRED" || isSlotExpired;
+                const isFinalized = !isDriveClosed && !isLinkExpired && !isTooEarly && /already finalized|session has expired|invalid token|invalid token payload|token expiry|token expired/i.test(apiError);
                 if (isInProgress) {
                     return {
                         ok: false,
@@ -479,6 +514,13 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         ok: false,
                         title: "Job closed",
                         message: "This job posting is no longer accepting applications. The recruitment drive has ended.",
+                    };
+                }
+                if (isSlotExpired) {
+                    return {
+                        ok: false,
+                        title: "Slot expired",
+                        message: "You missed your scheduled interview slot. Please contact your recruiter to reschedule.",
                     };
                 }
                 if (isLinkExpired || isFinalized) {
@@ -679,7 +721,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     // Hard timeout: if agent never becomes ready within 1.5 minutes (90s), show a popup and return to check.
     useEffect(() => {
         if (phase !== "launching") return;
-        if (launchTimeoutCheck >= 90 && !agentReadyCommittedRef.current) {
+        if (launchTimeoutCheck >= 300 && !agentReadyCommittedRef.current) {
             setJoinError("AI interviewer didn't respond in time. Please reload the website and try again.");
             connectionAttemptRef.current += 1;
             void resetToHardwareCheck("AI interviewer didn't respond in time. Please reload the website and try again.");
@@ -1002,6 +1044,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                             applicationId={id}
                             interviewToken={interviewToken}
                             title={`${organizationName ? `${organizationName} - ` : ""}${interviewRoleLabel} Interview Check`}
+                            slotCountdownSecs={slotCountdownSecs}
                         />
                     </motion.div>
                 )}
@@ -1028,25 +1071,26 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                                 <p className="text-[11px] font-bold text-zinc-500 uppercase tracking-[0.25em] max-w-[300px]">
                                     {isAgentReady
                                         ? `Agent ready in ${agentReadyLatencyMs ?? 0}ms. Starting interview...`
-                                        : "Please wait - connecting your AI interviewer."}
+                                        : "Please wait — connecting your AI interviewer."}
                                 </p>
                             </div>
                             <div className="flex items-center gap-2">
-                                {(["Mic & Camera", "Room Link", "AI Agent"] as const).map((step, i) => {
-                                    const done = i === 0 ? true : i === 1 ? !!token : isAgentReady;
-                                    return (
-                                        <div key={step} className="flex items-center gap-2">
-                                            <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest border transition-all ${done
-                                                ? "bg-green-500/10 border-green-500/30 text-green-400"
-                                                : "bg-zinc-800 border-zinc-700 text-zinc-500"
-                                                }`}>
-                                                {done ? <CheckCircle2 className="w-3 h-3" /> : <Loader2 className="w-3 h-3 animate-spin" />}
-                                                {step}
-                                            </div>
-                                            {i < 2 && <div className="w-4 h-px bg-zinc-700" />}
+                                {([
+                                    { label: "Mic & Camera", done: true },
+                                    { label: "Room Link", done: !!token },
+                                    { label: "AI Agent", done: isAgentReady },
+                                ]).map((step, i, arr) => (
+                                    <div key={step.label} className="flex items-center gap-2">
+                                        <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest border transition-all ${step.done
+                                            ? "bg-green-500/10 border-green-500/30 text-green-400"
+                                            : "bg-zinc-800 border-zinc-700 text-zinc-500"
+                                            }`}>
+                                            {step.done ? <CheckCircle2 className="w-3 h-3" /> : <Loader2 className="w-3 h-3 animate-spin" />}
+                                            {step.label}
                                         </div>
-                                    );
-                                })}
+                                        {i < arr.length - 1 && <div className="w-4 h-px bg-zinc-700" />}
+                                    </div>
+                                ))}
                             </div>
                             {launchRecoveryMessage && (
                                 <motion.div

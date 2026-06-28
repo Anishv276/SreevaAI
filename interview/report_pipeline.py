@@ -1,36 +1,36 @@
-"""
+﻿"""
 report_pipeline.py
 ==================
 Self-contained post-interview report pipeline.
 
 Architecture:
-  ┌─────────────────────────────────────────────────────────────────┐
-  │  Domain Models   (Pydantic)  — typed contracts for all I/O      │
-  │  IntegrityEngine (OOP)       — deterministic signal scorer      │
-  │  BehavioralAnalyzer (OOP)    — LLM narrative from signals       │
-  │  ReportLLMClient (OOP)       — singleton AsyncOpenAI + retry    │
-  │  LangGraph Pipeline          — fan-out DAG: 3 nodes, 2 parallel │
-  │  Public API                  — generate_interview_report()      │
-  │                                generate_interview_summary()     │
-  └─────────────────────────────────────────────────────────────────┘
+  â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+  â”‚  Domain Models   (Pydantic)  â€” typed contracts for all I/O      â”‚
+  â”‚  IntegrityEngine (OOP)       â€” deterministic signal scorer      â”‚
+  â”‚  BehavioralAnalyzer (OOP)    â€” LLM narrative from signals       â”‚
+  â”‚  ReportLLMClient (OOP)       â€” singleton AsyncOpenAI + retry    â”‚
+  â”‚  LangGraph Pipeline          â€” fan-out DAG: 3 nodes, 2 parallel â”‚
+  â”‚  Public API                  â€” generate_interview_report()      â”‚
+  â”‚                                generate_interview_summary()     â”‚
+  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 
 LangGraph execution order:
-  [signals]  →  [llm_calls + behavioral]  →  [assemble + persist]
-      ↑                    ↑                          ↑
+  [signals]  â†’  [llm_calls + behavioral]  â†’  [assemble + persist]
+      â†‘                    â†‘                          â†‘
   deterministic        parallel asyncio.gather    writes to DB
 
 DSA choices:
-  - Counter (O(n)) for signal aggregation          — no nested loops
-  - frozenset for tool-keyword noise filter        — O(1) membership
-  - dict.fromkeys for ordered dedup                — O(n), stable order
-  - heapq / sorted with key for topic ranking      — O(n log n)
-  - all state is TypedDict (structural subtyping)  — zero runtime overhead
+  - Counter (O(n)) for signal aggregation          â€” no nested loops
+  - frozenset for tool-keyword noise filter        â€” O(1) membership
+  - dict.fromkeys for ordered dedup                â€” O(n), stable order
+  - heapq / sorted with key for topic ranking      â€” O(n log n)
+  - all state is TypedDict (structural subtyping)  â€” zero runtime overhead
 
 OOP choices:
   - IntegrityEngine: encapsulates weight tables + scoring formula
   - BehavioralAnalyzer: encapsulates prompt builder + LLM call
   - ReportLLMClient: singleton pattern, exponential retry, streaming
-  - LLMCallSpec: dataclass — immutable call descriptor passed to client
+  - LLMCallSpec: dataclass â€” immutable call descriptor passed to client
 """
 from __future__ import annotations
 
@@ -49,19 +49,20 @@ from pydantic import BaseModel, Field, field_validator
 from typing_extensions import TypedDict
 
 from interview.agent_utils import truncate_to_tokens
-from interview.agent_runtime_support import LLM_MODEL, logger, DATABASE_URL
+from interview.agent_runtime_support import logger, DATABASE_URL
+_LLM_DEFAULT = "gpt-4.1-mini"  # ponytail: fallback only â€” callers should pass org's llmInterviewReport
 
 # ---------------------------------------------------------------------------
-# Re-import DB pool from persistence layer (no circular dep — persistence
+# Re-import DB pool from persistence layer (no circular dep â€” persistence
 # does NOT import report_pipeline)
 # ---------------------------------------------------------------------------
 from interview.agent_persistence import DatabasePool
 from billing.billing import record_external_billing_usage as _persist_billing
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 1 — Domain Models (Pydantic)
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# SECTION 1 â€” Domain Models (Pydantic)
 # All LLM response shapes and shared data contracts live here.
-# ═══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 class LLMEvalDimension(BaseModel):
     score:    int = Field(default=0, ge=0, le=100)
@@ -104,13 +105,13 @@ class LLMSkillsResponse(BaseModel):
     skills: list[LLMSkillEntry] = Field(default_factory=list)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 2 — LangGraph State
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# SECTION 2 â€” LangGraph State
 # TypedDict = zero runtime cost, full static typing, LangGraph-native.
-# ═══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 class ReportState(TypedDict, total=False):
-    # ── Inputs ──────────────────────────────────────────────────────────────
+    # â”€â”€ Inputs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     app_id:            str
     transcript_lines:  list[str]
     interview_scores:  list[dict]   # warmup filtered out before graph entry
@@ -121,34 +122,34 @@ class ReportState(TypedDict, total=False):
     llm_model:         str
     jd_json:           dict | None
     topic_records:     list[dict]   # per-topic MOVE_ON ground-truth from agent
-    # ── Computed by node: signals ────────────────────────────────────────────
+    # â”€â”€ Computed by node: signals â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     integrity_result:  dict
     signal_context:    str
     jd_context:        str
     behavioral_signals: list[dict]
-    # ── Computed by node: llm_calls ─────────────────────────────────────────
+    # â”€â”€ Computed by node: llm_calls â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     eval_result:       LLMEvalResponse
     skills_result:     LLMSkillsResponse
     behavioral_analysis: dict
-    # ── Final output ─────────────────────────────────────────────────────────
+    # â”€â”€ Final output â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     scores_context:    dict | None
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 3 — IntegrityEngine (OOP + DSA)
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# SECTION 3 â€” IntegrityEngine (OOP + DSA)
 #
 # Encapsulates signal weight tables and the O(n) weighted scoring formula.
 # frozenset for O(1) membership, Counter for O(n) aggregation.
-# ═══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 class IntegrityEngine:
     """Deterministic integrity scorer: 0-100, band HIGH/MODERATE/LOW.
 
-    Weight tables are class-level constants — shared across all instances,
+    Weight tables are class-level constants â€” shared across all instances,
     no per-call allocation. Counter aggregation is O(n) with no nested loops.
     """
 
-    # Browser-side proctoring signals only — these are what integrity score measures.
+    # Browser-side proctoring signals only â€” these are what integrity score measures.
     # Behavioural signals (ownership_ambiguity, depth_decay, etc.) are NOT here;
     # they go to BehavioralAnalyzer, not the integrity score.
     _NEG: dict[str, float] = {
@@ -170,7 +171,7 @@ class IntegrityEngine:
     ) -> dict:
         """O(n) integrity score from browser-side proctoring events only.
 
-        browser_signals — events written by the frontend during the interview
+        browser_signals â€” events written by the frontend during the interview
                           (tab_switch, face_absence, multiple_faces, etc.)
         Behavioural signals (ownership_ambiguity, etc.) are excluded by design.
         """
@@ -199,12 +200,12 @@ class IntegrityEngine:
         }
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 4 — SkillFilter (DSA)
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# SECTION 4 â€” SkillFilter (DSA)
 #
 # O(n) dedup with frozenset noise filter. Keeps only domain-level skill names,
 # strips single-word tools/libraries that add no signal to the report.
-# ═══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 class SkillFilter:
     _NOISE: frozenset[str] = frozenset({
@@ -240,12 +241,12 @@ class SkillFilter:
         return result
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 5 — ReportLLMClient (OOP singleton + retry)
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# SECTION 5 â€” ReportLLMClient (OOP singleton + retry)
 #
 # Single AsyncOpenAI instance reused across all calls (avoids cold HTTP setup).
 # Exponential backoff on transient errors. Streaming with usage capture.
-# ═══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 @dataclass(frozen=True)
 class LLMCallSpec:
@@ -260,7 +261,7 @@ class LLMCallSpec:
     org_id:          str        = ""
     app_id:          str        = ""
     prediction:      dict | None = None
-    llm_model:       str        = LLM_MODEL
+    _LLM_DEFAULT:       str        = _LLM_DEFAULT
 
 
 class ReportLLMClient:
@@ -297,7 +298,7 @@ class ReportLLMClient:
                 chunks: list[str] = []
                 usage_data = None
                 kwargs: dict[str, Any] = dict(
-                    model=spec.llm_model,
+                    model=spec._LLM_DEFAULT,
                     temperature=spec.temperature,
                     max_tokens=spec.max_tokens,
                     stream=True,
@@ -349,21 +350,21 @@ class ReportLLMClient:
 
     @staticmethod
     def usage_dict(u: Any, model: str) -> dict:
-        """Extract token counts — delegates to billing.extract_usage()."""
+        """Extract token counts â€” delegates to billing.extract_usage()."""
         from billing.billing import extract_usage  # noqa: PLC0415
         return extract_usage(u, model)
 
 
-# Module-level singleton — instantiated once, reused for all calls.
+# Module-level singleton â€” instantiated once, reused for all calls.
 _llm = ReportLLMClient()
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 6 — BehavioralAnalyzer (OOP)
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# SECTION 6 â€” BehavioralAnalyzer (OOP)
 #
 # Encapsulates the signal-analysis prompt builder and LLM call.
-# Moved here from behavioral_analysis.py — no external dependency needed.
-# ═══════════════════════════════════════════════════════════════════════════════
+# Moved here from behavioral_analysis.py â€” no external dependency needed.
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 class BehavioralAnalyzer:
     """Generates 4 plain-English behavioral analysis points for the HR team.
@@ -417,7 +418,7 @@ class BehavioralAnalyzer:
             f"Interviewer turns: {ai_turns} | Scored answers: {scored}"
         )
 
-        # Aggregate signals — O(n), stable topic order via dict.fromkeys
+        # Aggregate signals â€” O(n), stable topic order via dict.fromkeys
         if behavioral_signals:
             grouped: dict[str, list[dict]] = {}
             for ev in behavioral_signals:
@@ -436,7 +437,7 @@ class BehavioralAnalyzer:
                 )
                 line = f"  {name} x{len(evs)} {location}"
                 if reasons:
-                    line += f" — {reasons}"
+                    line += f" â€” {reasons}"
                 sig_lines.append(line)
             parts.append("BEHAVIORAL SIGNALS\n" + "\n".join(sig_lines))
         else:
@@ -457,7 +458,7 @@ class BehavioralAnalyzer:
             sig = s.get("signal")
             if sig:
                 reason = s.get("signal_reason", "")
-                block += f"\n    SIGNAL: {sig}" + (f" — {reason}" if reason else "")
+                block += f"\n    SIGNAL: {sig}" + (f" â€” {reason}" if reason else "")
             qa_lines.append(block)
 
         if qa_lines:
@@ -472,7 +473,7 @@ class BehavioralAnalyzer:
         duration_sec:       int,
         behavioral_signals: list[dict],
         *,
-        llm_model: str = LLM_MODEL,
+        _LLM_DEFAULT: str = _LLM_DEFAULT,
         org_id:    str = "",
         app_id:    str = "",
     ) -> tuple[dict, list[dict]]:
@@ -492,7 +493,7 @@ class BehavioralAnalyzer:
             temperature=0.2,
             org_id=org_id,
             app_id=app_id,
-            llm_model=llm_model,
+            _LLM_DEFAULT=_LLM_DEFAULT,
         )
         try:
             raw, usage = await _llm.call(spec)
@@ -506,7 +507,7 @@ class BehavioralAnalyzer:
                     points = []
             except Exception:
                 points = [
-                    l.strip().lstrip("-•").strip()
+                    l.strip().lstrip("-â€¢").strip()
                     for l in raw.splitlines()
                     if len(l.strip()) > 20
                 ]
@@ -515,10 +516,10 @@ class BehavioralAnalyzer:
                 "[BEHAVIORAL] %d points | signals=%d tokens=%d+%d",
                 len(result["points"]),
                 len(behavioral_signals),
-                _llm.usage_dict(usage, llm_model)["inputTokens"],
-                _llm.usage_dict(usage, llm_model)["outputTokens"],
+                _llm.usage_dict(usage, _LLM_DEFAULT)["inputTokens"],
+                _llm.usage_dict(usage, _LLM_DEFAULT)["outputTokens"],
             )
-            return result, [_llm.usage_dict(usage, llm_model)]
+            return result, [_llm.usage_dict(usage, _LLM_DEFAULT)]
         except Exception as e:
             logger.error("[BEHAVIORAL] LLM call failed: %s", e, exc_info=True)
             return {"points": []}, []
@@ -527,12 +528,12 @@ class BehavioralAnalyzer:
 _behavioral_analyzer = BehavioralAnalyzer()
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 7 — Static LLM Prompts + JSON Schemas
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# SECTION 7 â€” Static LLM Prompts + JSON Schemas
 #
-# System prompts are byte-identical on every call → prompt cache hits.
+# System prompts are byte-identical on every call â†’ prompt cache hits.
 # Compact field names (cm/tk/rc/ps/ct) reduce output tokens by ~30%.
-# ═══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 _EVAL_SYSTEM = """You are a senior technical recruiter and talent evaluator. You have been handed a complete AI-conducted interview transcript and the job description the candidate applied for.
 
@@ -544,19 +545,19 @@ Before scoring anything, determine the candidate's experience level from the tra
 - EXPERIENCED: 4+ years, production systems, owns decisions, leads others
 This classification changes what "good" looks like on every dimension.
 
-STEP 1 — Read the transcript fully. Form your opinions before outputting anything.
+STEP 1 â€” Read the transcript fully. Form your opinions before outputting anything.
 
-"str": Exactly 3 genuine strengths — sharp, one sentence each, named to this specific candidate.
+"str": Exactly 3 genuine strengths â€” sharp, one sentence each, named to this specific candidate.
   Example good: "Explained exactly why they chose Kafka over RabbitMQ and stated the throughput numbers from their own load tests."
   Example bad: "Good communication throughout."
   No padding. If fewer than 3 genuine strengths exist, return fewer.
 
-"con": Exactly 3 genuine concerns — sharp, one sentence each, no softening.
+"con": Exactly 3 genuine concerns â€” sharp, one sentence each, no softening.
   Name the exact topic and what broke down (blank answer, contradicted resume, surface-level only, refused probe).
   No padding. If fewer than 3 real concerns exist, return fewer.
 
-STEP 2 — Score 5 dimensions. Each score requires:
-- "s": integer 0-100 (use the FULL range — do NOT cluster around 50-70)
+STEP 2 â€” Score 5 dimensions. Each score requires:
+- "s": integer 0-100 (use the FULL range â€” do NOT cluster around 50-70)
 - "ev": ONE sharp sentence starting with a specific action/quote from the interview. No generic praise.
   Example good: "Described the exact retry-with-backoff logic they implemented in the billing microservice when asked about failure handling."
   Example bad: "Showed good knowledge of backend systems."
@@ -569,7 +570,7 @@ SCORING PHILOSOPHY:
   81-100 = Deep and specific. Real numbers, real trade-offs, step-by-step. Held every probe including unexpected ones.
 
 ---
-DIMENSION 1 — jk (JD Knowledge, weight 30%)
+DIMENSION 1 â€” jk (JD Knowledge, weight 30%)
 Does this candidate understand the actual role they applied for? Score how well their answers align with
 the specific responsibilities, required skills, and expectations stated in the JD.
 
@@ -589,7 +590,7 @@ SCORING ANCHORS:
   81-100: Exceptional fit. Covered all major JD requirements with specific, verifiable evidence.
 
 ---
-DIMENSION 2 — ps (Problem Solving, weight 25%)
+DIMENSION 2 â€” ps (Problem Solving, weight 25%)
 This is NOT about whether the final answer was correct. It measures HOW they reason through problems:
 - Did they frame the problem before answering? (structured approach)
 - Did they name trade-offs without being prompted? (depth of thinking)
@@ -614,7 +615,7 @@ SCORING ANCHORS:
   81-100: Sophisticated. Framed independently. Named trade-offs unprompted. Showed second-order thinking.
 
 ---
-DIMENSION 3 — ec (Experience Credibility, weight 20%)
+DIMENSION 3 â€” ec (Experience Credibility, weight 20%)
 Did their live answers hold up against what they claimed on their resume or in their intro?
 This is about verifying lived experience, not testing knowledge.
 
@@ -641,9 +642,9 @@ SCORING ANCHORS:
   81-100: Fully credible. Every claim explained with evidence. Nothing contradicted.
 
 ---
-DIMENSION 4 — cm (Communication, weight 15%)
+DIMENSION 4 â€” cm (Communication, weight 15%)
 Was their communication clear, direct, and structured across the entire interview?
-This is a threshold signal — a score below 30 fails regardless of technical scores.
+This is a threshold signal â€” a score below 30 fails regardless of technical scores.
 
 FRESHER baseline: Same standard as experienced. Clear thinking is independent of seniority.
 Score based on:
@@ -661,8 +662,8 @@ SCORING ANCHORS:
   81-100: Precise and confident. Every answer structured. No wasted words. Held clarity under pressure.
 
 ---
-DIMENSION 5 — od (Ownership, weight 10%)
-Did they actually build, lead, or decide — or did they participate and observe?
+DIMENSION 5 â€” od (Ownership, weight 10%)
+Did they actually build, lead, or decide â€” or did they participate and observe?
 Do NOT score on confidence or communication style. Score ONLY on evidence of personal responsibility.
 
 FRESHER baseline: Ownership for freshers shows as:
@@ -731,9 +732,9 @@ FOR EACH CATEGORY:
   NO generic praise. NO sentences that could apply to any other candidate.
 
 SCORING ADJUSTMENTS:
-- If the candidate said "I don't know" or denied a topic → cap that category at 3.
-- If they answered vaguely and couldn't give specifics when probed → cap at 5.
-- If they answered confidently AND held up to 1+ follow-up probes → bump up by 1.
+- If the candidate said "I don't know" or denied a topic â†’ cap that category at 3.
+- If they answered vaguely and couldn't give specifics when probed â†’ cap at 5.
+- If they answered confidently AND held up to 1+ follow-up probes â†’ bump up by 1.
 
 OUTPUT ONLY valid JSON matching the schema exactly. No markdown."""
 
@@ -758,10 +759,10 @@ FOR EACH CATEGORY:
   NO generic statements like "showed good understanding" without quoting what they said.
 
 SCORING RULES:
-- If they said "I don't know" → score 1-2 for that category.
-- If they stayed at definitions without HOW or WHY → score 4-5.
-- If they gave mechanics + 1 real example → score 6-7.
-- If they gave mechanics + real example + held a probe → score 8-9.
+- If they said "I don't know" â†’ score 1-2 for that category.
+- If they stayed at definitions without HOW or WHY â†’ score 4-5.
+- If they gave mechanics + 1 real example â†’ score 6-7.
+- If they gave mechanics + real example + held a probe â†’ score 8-9.
 
 OUTPUT ONLY valid JSON matching the schema exactly. No markdown."""
 
@@ -832,7 +833,7 @@ DECISION RULES:
 - "Hold": score 50-69 OR strong in some areas but missing a key requirement.
 - "Reject": score < 50 OR demonstrated inability in core role requirements.
 
-JUSTIFICATION — Write 3 sharp bullet points starting with "-":
+JUSTIFICATION â€” Write 3 sharp bullet points starting with "-":
 - Bullet 1: The single strongest positive signal from the entire interview. Name the exact topic, what they said or did, and why it matters for this role.
 - Bullet 2: The single biggest gap, risk, or concern. Name the specific moment where they failed or fell short. Be blunt.
 - Bullet 3: The final verdict sentence. State the decision clearly, name the key reason, and what should happen next (move forward, hold for X reason, reject because Y).
@@ -878,15 +879,15 @@ def _parse_eval_compact(raw: str) -> LLMEvalResponse:
     )
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 8 — LangGraph Nodes
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# SECTION 8 â€” LangGraph Nodes
 #
 # Node execution order:
-#   signals  →  llm_calls (eval + skills + behavioral in parallel)  →  assemble
+#   signals  â†’  llm_calls (eval + skills + behavioral in parallel)  â†’  assemble
 #
-# All three parallel tasks inside llm_calls run under asyncio.gather — no
+# All three parallel tasks inside llm_calls run under asyncio.gather â€” no
 # sequential blocking. DB write happens only in assemble.
-# ═══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 async def _node_signals(state: ReportState) -> dict:
     """Node 1: deterministic integrity + signal context.
@@ -917,7 +918,7 @@ async def _node_signals(state: ReportState) -> dict:
                     json.loads(raw) if isinstance(raw, str) else []
                 )
                 browser_events = [e for e in (parsed or []) if isinstance(e, dict)]
-                # Normalize eventType → signal_name
+                # Normalize eventType â†’ signal_name
                 for ev in browser_events:
                     if "eventType" in ev and "signal_name" not in ev:
                         ev["signal_name"] = ev["eventType"]
@@ -930,7 +931,7 @@ async def _node_signals(state: ReportState) -> dict:
 
     integrity_result = IntegrityEngine.score(browser_events)
 
-    # Build signal_context string for LLM eval user prompt — O(n) Counter
+    # Build signal_context string for LLM eval user prompt â€” O(n) Counter
     all_events = agent_events + browser_events
     sig_counts: Counter[str] = Counter(
         str(ev.get("signal_name") or ev.get("signal") or ev.get("event") or "").strip()
@@ -972,7 +973,7 @@ async def _node_signals(state: ReportState) -> dict:
             f"JOB DESCRIPTION{exp_hint}:\n{jd_str}"
         )
     else:
-        jd_context = "No JD provided — assess based on role title only."
+        jd_context = "No JD provided â€” assess based on role title only."
 
     # Extract behavioral signals from per-turn scores for downstream nodes
     interview_scores = state.get("interview_scores", [])
@@ -1006,12 +1007,12 @@ async def _node_signals(state: ReportState) -> dict:
 
 
 async def _node_llm_calls(state: ReportState) -> dict:
-    """Node 2: eval + skills + behavioral analysis — all three in parallel.
+    """Node 2: eval + skills + behavioral analysis â€” all three in parallel.
 
     asyncio.gather runs all three LLM calls concurrently, cutting wall-clock
     time from ~15s sequential to ~7s parallel.
     """
-    llm_model        = state.get("llm_model", LLM_MODEL)
+    _LLM_DEFAULT        = state.get("_LLM_DEFAULT", _LLM_DEFAULT)
     job_title        = state.get("job_title", "")
     org_id           = state.get("org_id") or ""
     app_id           = state.get("app_id", "")
@@ -1022,7 +1023,7 @@ async def _node_llm_calls(state: ReportState) -> dict:
     transcript_lines = state.get("transcript_lines", [])
     interview_scores = state.get("interview_scores", [])
 
-    # Build eval user prompt (dynamic vars → user msg, system is static)
+    # Build eval user prompt (dynamic vars â†’ user msg, system is static)
     lines_to_use  = transcript_lines[4:] if len(transcript_lines) > 4 else transcript_lines
     transcript_text = truncate_to_tokens("\n".join(lines_to_use), 3500)
     eval_user = (
@@ -1033,13 +1034,13 @@ async def _node_llm_calls(state: ReportState) -> dict:
         f"Full Interview Transcript:\n{transcript_text}"
     )
 
-    # Build skills user prompt — prefer rich topic_records over raw QA fallback
+    # Build skills user prompt â€” prefer rich topic_records over raw QA fallback
     if topic_records:
         records_lines: list[str] = []
         for i, rec in enumerate(topic_records, 1):
             sc = rec.get("scores", {})
             answers_text = " | ".join(rec.get("candidate_answers", [])[:4]) or "No answers recorded."
-            tech = ", ".join(rec.get("tech_skills", [])) or "—"
+            tech = ", ".join(rec.get("tech_skills", [])) or "â€”"
             records_lines.append(
                 f"[TOPIC {i}]\n"
                 f"topic: {rec.get('topic', '')}\ntopic_type: {rec.get('topic_type', 'project')}\n"
@@ -1084,7 +1085,7 @@ async def _node_llm_calls(state: ReportState) -> dict:
     )
 
 
-    # ── Run all 3 LLM calls in parallel ────────────────────────────────────
+    # â”€â”€ Run all 3 LLM calls in parallel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     (eval_raw, eval_usage), (skills_raw, skills_usage), (behavioral_result, beh_usages) = (
         await asyncio.gather(
             _llm.call(LLMCallSpec(
@@ -1096,7 +1097,7 @@ async def _node_llm_calls(state: ReportState) -> dict:
                 call_type="report_eval",
                 org_id=org_id,
                 app_id=app_id,
-                llm_model=llm_model,
+                _LLM_DEFAULT=_LLM_DEFAULT,
             )),
             _llm.call(LLMCallSpec(
                 system=skills_system,
@@ -1107,14 +1108,14 @@ async def _node_llm_calls(state: ReportState) -> dict:
                 call_type="report_skills",
                 org_id=org_id,
                 app_id=app_id,
-                llm_model=llm_model,
+                _LLM_DEFAULT=_LLM_DEFAULT,
             )),
             _behavioral_analyzer.analyze(
                 transcript_lines=transcript_lines,
                 answer_scores=interview_scores,
                 duration_sec=session_duration,
                 behavioral_signals=behavioral_signals,
-                llm_model=llm_model,
+                _LLM_DEFAULT=_LLM_DEFAULT,
                 org_id=org_id,
                 app_id=app_id,
             ),
@@ -1125,10 +1126,10 @@ async def _node_llm_calls(state: ReportState) -> dict:
     if org_id:
         billing_tasks = [
             _persist_billing(
-                org_id, "interviewReport", _llm.usage_dict(eval_usage, llm_model)
+                org_id, "interviewReport", _llm.usage_dict(eval_usage, _LLM_DEFAULT)
             ),
             _persist_billing(
-                org_id, "interviewReport", _llm.usage_dict(skills_usage, llm_model)
+                org_id, "interviewReport", _llm.usage_dict(skills_usage, _LLM_DEFAULT)
             ),
             *[
                 _persist_billing(org_id, "interviewReport", bu)
@@ -1169,7 +1170,7 @@ async def _node_assemble(state: ReportState) -> dict:
     """Node 3: assemble final scorecard blob and write to DB.
 
     Weighted overall score formula:
-      comm×0.15 + tech×0.30 + cred×0.20 + ps×0.25 + cot×0.10
+      commÃ—0.15 + techÃ—0.30 + credÃ—0.20 + psÃ—0.25 + cotÃ—0.10
     """
     app_id           = state["app_id"]
     org_id           = state.get("org_id")
@@ -1181,7 +1182,7 @@ async def _node_assemble(state: ReportState) -> dict:
     behavioral_analysis = state.get("behavioral_analysis") or {"points": []}
     behavioral_signals  = state.get("behavioral_signals", [])
 
-    # Dimension scores — new 5-dimension framework
+    # Dimension scores â€” new 5-dimension framework
     jk  = eval_result.jd_knowledge.score
     ps  = eval_result.problem_solving.score
     ec  = eval_result.experience_credibility.score
@@ -1280,15 +1281,15 @@ async def _node_assemble(state: ReportState) -> dict:
     return {"scores_context": scores_context}
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 9 — LangGraph Pipeline (compiled once at module load)
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# SECTION 9 â€” LangGraph Pipeline (compiled once at module load)
 #
 # Graph topology:
-#   signals ──► llm_calls ──► assemble ──► END
+#   signals â”€â”€â–º llm_calls â”€â”€â–º assemble â”€â”€â–º END
 #
-# Compiled at module load — no rebuild per request. LangGraph's compiled graph
+# Compiled at module load â€” no rebuild per request. LangGraph's compiled graph
 # is coroutine-safe and can be ainvoked concurrently from multiple sessions.
-# ═══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 def _build_report_graph() -> Any:
     builder = StateGraph(ReportState)
@@ -1305,9 +1306,9 @@ def _build_report_graph() -> Any:
 _REPORT_GRAPH = _build_report_graph()
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 10 — Public API
-# ═══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# SECTION 10 â€” Public API
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 async def generate_interview_report(
     app_id:          str,
@@ -1316,7 +1317,7 @@ async def generate_interview_report(
     job_title:       str,
     proctoring_data: Optional[dict] = None,
     org_id:          Optional[str]  = None,
-    llm_model:       str            = LLM_MODEL,
+    _LLM_DEFAULT:       str            = _LLM_DEFAULT,
     jd_json:         Optional[dict] = None,
     topic_records:   Optional[list] = None,
 ) -> Optional[dict]:
@@ -1341,7 +1342,7 @@ async def generate_interview_report(
         "job_title":        job_title,
         "proctoring_data":  proctoring_data or {},
         "org_id":           org_id,
-        "llm_model":        llm_model,
+        "_LLM_DEFAULT":        _LLM_DEFAULT,
         "jd_json":          jd_json,
         "topic_records":    topic_records or [],
     }
@@ -1361,13 +1362,13 @@ async def generate_interview_summary(
     transcript_lines: list,
     job_title:       str,
     org_id:          Optional[str]  = None,
-    llm_model:       str            = LLM_MODEL,
+    _LLM_DEFAULT:       str            = _LLM_DEFAULT,
     scores_context:  Optional[dict] = None,
 ) -> None:
     """Generate summary bullets + verdict and write to Interview.interviewSummary.
 
     Runs summary and verdict LLM calls in parallel. Does NOT use the full
-    transcript — only the structured scores_context, for faster, cheaper calls.
+    transcript â€” only the structured scores_context, for faster, cheaper calls.
     """
     if not transcript_lines or not DATABASE_URL:
         logger.warning("[SUMMARY] Skipping: missing transcript or DATABASE_URL")
@@ -1384,7 +1385,7 @@ async def generate_interview_summary(
     dimensions = ctx.get("dimensions", [])
     dimension_block = (
         "\n".join(
-            f"  {d['name']}: {d['score']}/100 — {d.get('evidence', '').strip()}"
+            f"  {d['name']}: {d['score']}/100 â€” {d.get('evidence', '').strip()}"
             for d in dimensions
         )
         if dimensions else "  Not available"
@@ -1426,7 +1427,7 @@ async def generate_interview_summary(
                 call_type="report_summary",
                 org_id=org_id or "",
                 app_id=app_id,
-                llm_model=llm_model,
+                _LLM_DEFAULT=_LLM_DEFAULT,
             )),
             _llm.call(LLMCallSpec(
                 system=_VERDICT_SYSTEM,
@@ -1438,22 +1439,22 @@ async def generate_interview_summary(
                 call_type="report_verdict",
                 org_id=org_id or "",
                 app_id=app_id,
-                llm_model=llm_model,
+                _LLM_DEFAULT=_LLM_DEFAULT,
             )),
         )
 
         if org_id:
             await asyncio.gather(
                 _persist_billing(
-                    org_id, "interviewReport", _llm.usage_dict(summary_usage, llm_model)
+                    org_id, "interviewReport", _llm.usage_dict(summary_usage, _LLM_DEFAULT)
                 ),
                 _persist_billing(
-                    org_id, "interviewReport", _llm.usage_dict(verdict_usage, llm_model)
+                    org_id, "interviewReport", _llm.usage_dict(verdict_usage, _LLM_DEFAULT)
                 ),
             )
 
         if not summary_text and not verdict_text:
-            logger.warning("[SUMMARY] Both outputs empty for %s — skipping save", app_id)
+            logger.warning("[SUMMARY] Both outputs empty for %s â€” skipping save", app_id)
             return
 
         try:

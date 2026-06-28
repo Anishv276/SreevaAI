@@ -33,7 +33,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
                     name: true,
                     voiceId: true,
                     allowedVoices: true,
-                    deepgramModel: true,
+                    sttModel: true,
                     interviewQuotaTotal: true,
                     interviewQuotaUsed: true,
                     maxActiveDrives: true,
@@ -76,7 +76,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
                     plan: orgData.plan,
                     voiceId: orgData.voiceId,
                     allowedVoices: orgData.allowedVoices,
-                    deepgramModel: orgData.deepgramModel,
+                    sttModel: orgData.sttModel,
                     interviewQuotaTotal: orgData.interviewQuotaTotal != null ? Number(orgData.interviewQuotaTotal) : undefined,
                     interviewQuotaUsed: orgData.interviewQuotaUsed != null ? Number(orgData.interviewQuotaUsed) : undefined,
                     interviewQuotaRemaining: orgData.interviewQuotaTotal != null

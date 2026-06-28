@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 from openai import AsyncOpenAI
 
 from interview.agent_scoring import evaluate_answer
-from interview.agent_runtime_support import EVAL_LLM_MODEL
+_EVAL_DEFAULT = "gpt-4.1-nano"  # ponytail: fallback — callers pass org's llmInterviewEval
 
 logger = logging.getLogger("interview-agent")
 
@@ -215,7 +215,7 @@ class EvaluationPayload(BaseModel):
     response_latency_sec: Optional[float] = None
     signal_toggles: Dict[str, Any] = Field(default_factory=dict)
     org_id: str = ""
-    llm_model: str = EVAL_LLM_MODEL
+    llm_model: str = _EVAL_DEFAULT
     active_topic: Optional[str] = None
     active_topic_state: Optional[Dict[str, Any]] = None
     anchor_item: Optional[str] = None

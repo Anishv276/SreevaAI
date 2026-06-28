@@ -1,60 +1,33 @@
-import { DEFAULT_VOICE_ID, getVoiceById } from "@/lib/constants/voices";
-export const DEFAULT_DEEPGRAM_MODEL = "flux-general-en";
-export function normalizeDeepgramModel(model?: string | null): string {
-  const raw = String(model || "").trim().toLowerCase();
-  if (!raw) return DEFAULT_DEEPGRAM_MODEL;
-  return raw;
+import { DEFAULT_ORG_AI_CONFIG } from "@/lib/ai-models-config";
+
+// Drive-level config only carries voiceId (inherits everything else from org).
+export function normalizeDriveAiConfig(args: { current?: Record<string, unknown> | null; next?: Record<string, unknown> | null } | Record<string, unknown>): Record<string, unknown> {
+    const fields = ("next" in args || "current" in args)
+        ? ({ ...(args as any).current, ...(args as any).next } as Record<string, unknown>)
+        : args as Record<string, unknown>;
+    const voiceId = String(fields.voiceId || DEFAULT_ORG_AI_CONFIG.voiceId).trim() || DEFAULT_ORG_AI_CONFIG.voiceId;
+    return { voiceId };
 }
-export function resolveVoiceConfig(voiceId: string | null | undefined): {
-  voiceId: string;
-  provider: "CARTESIA" | "SARVAM" | "ELEVENLABS";
-  model: string;
-} {
-  const id = String(voiceId || DEFAULT_VOICE_ID).trim() || DEFAULT_VOICE_ID;
-  const voice = getVoiceById(id);
-  if (!voice) {
-    const fallback = getVoiceById(DEFAULT_VOICE_ID)!;
-    // Keep custom/unlisted voice IDs stable while preserving a safe fallback provider/model.
-    return { voiceId: id, provider: fallback.provider, model: fallback.model };
-  }
-  return { voiceId: voice.id, provider: voice.provider, model: voice.model };
-}
-type DriveAiInput = {
-  voiceId?: string | null;
-};
-type OrgAiInput = {
-  voiceId?: string | null;
-  allowedVoices?: string[] | null;
-  deepgramModel?: string | null;
-};
-export function normalizeDriveAiConfig({
-  current = {},
-  next = {},
-}: {
-  current?: Partial<DriveAiInput> | null;
-  next?: Partial<DriveAiInput> | null;
-}): Record<string, string | null> {
-  const id = next?.voiceId ?? current?.voiceId ?? DEFAULT_VOICE_ID;
-  const { voiceId } = resolveVoiceConfig(id);
-  return { voiceId };
-}
-export function normalizeOrgAiConfig({
-  current = {},
-  next = {},
-}: {
-  current?: Partial<OrgAiInput> | null;
-  next?: Partial<OrgAiInput> | null;
-}): Record<string, string | string[] | null> {
-  const driveFields = normalizeDriveAiConfig({ current, next });
-  const allowedVoices: string[] = (() => {
-    const raw = next?.allowedVoices ?? current?.allowedVoices;
-    if (!Array.isArray(raw)) return [];
-    return Array.from(new Set(raw.map((id) => String(id || "").trim()).filter(Boolean)));
-  })();
-  const deepgramModel = normalizeDeepgramModel(next?.deepgramModel ?? current?.deepgramModel ?? DEFAULT_DEEPGRAM_MODEL);
-  return {
-    ...driveFields,
-    deepgramModel,
-    allowedVoices,
-  };
+
+export function normalizeOrgAiConfig(fields: Record<string, unknown>): Record<string, unknown> {
+    const voiceId = String(fields.voiceId || DEFAULT_ORG_AI_CONFIG.voiceId).trim() || DEFAULT_ORG_AI_CONFIG.voiceId;
+    const allowedVoices: string[] = (() => {
+        const raw = fields.allowedVoices;
+        if (!Array.isArray(raw)) return [];
+        return Array.from(new Set(raw.map((id) => String(id || "").trim()).filter(Boolean)));
+    })();
+    return {
+        voiceId,
+        allowedVoices,
+        sttModel:           String(fields.sttModel           || DEFAULT_ORG_AI_CONFIG.sttModel).trim(),
+        ttsProvider:        String(fields.ttsProvider        || DEFAULT_ORG_AI_CONFIG.ttsProvider).trim().toUpperCase(),
+        ttsModel:           String(fields.ttsModel           || DEFAULT_ORG_AI_CONFIG.ttsModel).trim(),
+        llmResumeExtraction:String(fields.llmResumeExtraction|| DEFAULT_ORG_AI_CONFIG.llmResumeExtraction).trim(),
+        llmJdExtraction:    String(fields.llmJdExtraction    || DEFAULT_ORG_AI_CONFIG.llmJdExtraction).trim(),
+        llmResumeReport:    String(fields.llmResumeReport    || DEFAULT_ORG_AI_CONFIG.llmResumeReport).trim(),
+        llmInterviewLive:   String(fields.llmInterviewLive   || DEFAULT_ORG_AI_CONFIG.llmInterviewLive).trim(),
+        llmInterviewEval:   String(fields.llmInterviewEval   || DEFAULT_ORG_AI_CONFIG.llmInterviewEval).trim(),
+        llmInterviewBrief:  String(fields.llmInterviewBrief  || DEFAULT_ORG_AI_CONFIG.llmInterviewBrief).trim(),
+        llmInterviewReport: String(fields.llmInterviewReport || DEFAULT_ORG_AI_CONFIG.llmInterviewReport).trim(),
+    };
 }

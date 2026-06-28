@@ -8,7 +8,7 @@ export type OrgData = {
     plan?: string;
     voiceId?: string | null;
     allowedVoices?: string[];
-    deepgramModel?: string | null;
+    sttModel?: string | null;
     maxActiveDrives?: string | null;
     activeDriveCount?: number;
     proctoringSignals?: string | null;

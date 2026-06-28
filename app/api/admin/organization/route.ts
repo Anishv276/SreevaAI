@@ -35,7 +35,7 @@ export async function GET(request: Request) {
             statusControl: string | null;
             voiceId: string | null;
             allowedVoices: string[] | null;
-            deepgramModel: string | null;
+            sttModel: string | null;
             maxActiveDrives: string | null;
             proctoringSignals: unknown;
             interviewQuotaTotal: number | null;
@@ -51,7 +51,7 @@ export async function GET(request: Request) {
                     o."statusControl",
                     o."voiceId",
                     o."allowedVoices",
-                    o."deepgramModel",
+                    o."sttModel",
                     o."maxActiveDrives",
                     o."proctoringSignals",
                     o."interviewQuotaTotal",

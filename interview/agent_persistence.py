@@ -23,7 +23,6 @@ from interview.agent_utils import _coerce_jsonish
 from interview.agent_runtime_support import (
     DATABASE_URL,
     FIXED_INTERVIEW_DURATION_MINUTES,
-    LLM_MODEL,
     _DB_POOL,
     _DB_POOL_INIT_TASK,
     logger,
@@ -153,13 +152,13 @@ async def get_interview_context(app_id: str) -> dict:
            d."interviewLanguage", d."interviewQuestions",
            COALESCE(d."voiceId", o."voiceId") AS "voiceId",
            COALESCE(d."aiName", 'Ishitha') AS "aiName", o.name AS "orgName",
-           o."deepgramModel", o."proctoringSignals",
-           ev.provider AS "voiceProvider", ev.model AS "voiceModel",
+           o."proctoringSignals",
+           o."sttModel", o."ttsProvider", o."ttsModel",
+           o."llmInterviewLive", o."llmInterviewEval", o."llmInterviewBrief", o."llmInterviewReport",
            i.status AS "interviewStatus"
     FROM "Application" a
     JOIN "Drive" d ON a."driveId" = d.id
     LEFT JOIN "Organization" o ON d."orgId" = o.id
-    LEFT JOIN "EngineVoice" ev ON ev.id = COALESCE(d."voiceId", o."voiceId")
     LEFT JOIN "Interview" i ON i."applicationId" = a.id
     WHERE a.id = $1
     LIMIT 1
@@ -185,14 +184,19 @@ async def get_interview_context(app_id: str) -> dict:
                 "orgName":            row["orgName"],
                 "language":           row["interviewLanguage"],
                 "timeLimit":          FIXED_INTERVIEW_DURATION_MINUTES,
-                "voiceId":            row["voiceId"],
-                "voiceProvider":      row["voiceProvider"],
-                "voiceModel":         row["voiceModel"],
-                "aiName":             row["aiName"],
-                "deepgramModel":      row["deepgramModel"],
-                "proctoringSignals":  row["proctoringSignals"],
-                "interviewQuestions": row["interviewQuestions"],
-                "interviewStatus":    row["interviewStatus"],
+                "voiceId":              row["voiceId"],
+                "aiName":               row["aiName"],
+                "proctoringSignals":    row["proctoringSignals"],
+                "interviewQuestions":   row["interviewQuestions"],
+                "interviewStatus":      row["interviewStatus"],
+                # AI model config — all from org DB, no hardcoded defaults
+                "sttModel":             row["sttModel"],
+                "ttsProvider":          row["ttsProvider"],
+                "ttsModel":             row["ttsModel"],
+                "llmInterviewLive":     row["llmInterviewLive"],
+                "llmInterviewEval":     row["llmInterviewEval"],
+                "llmInterviewBrief":    row["llmInterviewBrief"],
+                "llmInterviewReport":   row["llmInterviewReport"],
             }
         except Exception as e:
             last_error = e

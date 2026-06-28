@@ -291,7 +291,114 @@ export async function sendOtpEmail({ to, name, otp }: { to: string; name: string
     `);
     await sendEmail({ to, subject, html, type: "password-reset" });
 }
-// ─── 6. OTP — Password Change ─────────────────────────────────────────────────
+// ─── 6. Schedule Invite (candidate picks a slot) ─────────────────────────────
+export async function sendScheduleInviteEmail({
+    email, fullName, jobTitle, orgName, scheduleLink,
+}: {
+    email: string;
+    fullName: string;
+    jobTitle: string;
+    orgName: string;
+    scheduleLink: string;
+}): Promise<MailResult> {
+    const subject = `Schedule your AI interview — ${jobTitle} at ${orgName}`;
+    const html = wrapper(`
+        ${header("Interview Invitation", `Hi ${fullName}, you've been shortlisted!`)}
+        <tr><td style="padding:32px 36px 0;">
+          <p style="margin:0;font-size:15px;color:#404040;line-height:1.75;">
+            Congratulations! Your profile stood out for the <strong style="color:#111;">${jobTitle}</strong> role at <strong style="color:#111;">${orgName}</strong>.
+            You've been invited to a <strong style="color:#111;">20-minute AI video interview</strong>. Please pick a time slot that works best for you.
+          </p>
+          ${infoCard([
+              { label: "Role", value: jobTitle },
+              { label: "Company", value: orgName },
+              { label: "Format", value: "AI Video Interview · 20 minutes" },
+              { label: "Duration", value: "Slots are 30 min · Interview is 20 min" },
+          ])}
+          ${tipBox(`
+            <strong style="display:block;margin-bottom:6px;">Before you begin</strong>
+            <ul style="margin:0;padding-left:18px;">
+              <li>Use a <strong>laptop or desktop</strong> — not a phone</li>
+              <li>Ensure your <strong>camera &amp; microphone</strong> are working</li>
+              <li>Find a <strong>quiet space</strong> with stable internet</li>
+              <li>Be ready <strong>5 minutes before</strong> your scheduled time</li>
+              <li>The interview starts <strong>exactly at your slot time</strong> and cannot be paused</li>
+            </ul>
+          `)}
+        </td></tr>
+        <tr><td style="padding:24px 36px 8px;text-align:center;">
+          ${ctaButton(scheduleLink, "Pick Your Time Slot")}
+          <p style="margin:14px 0 0;font-size:12px;color:#b0b0b0;">Button not working? Copy this link:<br/>
+            <span style="color:#737373;word-break:break-all;">${scheduleLink}</span>
+          </p>
+        </td></tr>
+        ${footerRow(`Sent by ${orgName} via Sreeva AI · ${email}`)}
+    `);
+    try {
+        await sendEmail({ to: email, subject, html, type: "interview" });
+        return { success: true };
+    } catch (error) {
+        return { success: false, error: (error as Error)?.message || "Failed to send email" };
+    }
+}
+// ─── 7. Interview Link (after slot is booked) ────────────────────────────────
+export async function sendInterviewScheduledEmail({
+    email, fullName, jobTitle, orgName, interviewLink, scheduledAt, timezone,
+}: {
+    email: string;
+    fullName: string;
+    jobTitle: string;
+    orgName: string;
+    interviewLink: string;
+    scheduledAt: Date;
+    timezone: string;
+}): Promise<MailResult> {
+    const timeStr = scheduledAt.toLocaleString("en-IN", {
+        timeZone: timezone,
+        weekday: "long", month: "long", day: "numeric", year: "numeric",
+        hour: "2-digit", minute: "2-digit", hour12: true,
+    });
+    const subject = `Your interview is confirmed — ${jobTitle} at ${orgName} · ${timeStr}`;
+    const html = wrapper(`
+        ${header("Interview Confirmed", `You're all set, ${fullName}!`)}
+        <tr><td style="padding:32px 36px 0;">
+          <p style="margin:0;font-size:15px;color:#404040;line-height:1.75;">
+            Your AI interview for <strong style="color:#111;">${jobTitle}</strong> at <strong style="color:#111;">${orgName}</strong> is confirmed.
+            Use the link below to join — it will unlock <strong>2 minutes before</strong> your scheduled time.
+          </p>
+          ${infoCard([
+              { label: "Role", value: jobTitle },
+              { label: "Company", value: orgName },
+              { label: "Scheduled", value: timeStr },
+              { label: "Duration", value: "20 minutes" },
+              { label: "Timezone", value: timezone },
+          ])}
+          ${tipBox(`
+            <strong style="display:block;margin-bottom:6px;">Timeline</strong>
+            <ul style="margin:0;padding-left:18px;">
+              <li><strong>5 min before:</strong> Open the link and complete hardware check</li>
+              <li><strong>2 min before:</strong> "Begin Interview" button unlocks with a live countdown</li>
+              <li><strong>At slot time:</strong> Interview starts automatically</li>
+              <li><strong>5 min after slot:</strong> Link expires — do not be late</li>
+            </ul>
+          `)}
+        </td></tr>
+        <tr><td style="padding:24px 36px 8px;text-align:center;">
+          ${ctaButton(interviewLink, "Join Interview")}
+          <p style="margin:14px 0 0;font-size:12px;color:#b0b0b0;">Button not working? Copy this link:<br/>
+            <span style="color:#737373;word-break:break-all;">${interviewLink}</span>
+          </p>
+        </td></tr>
+        ${footerRow(`Sent by ${orgName} via Sreeva AI · ${email} · Results reviewed within 24–48 hours.`)}
+    `);
+    try {
+        await sendEmail({ to: email, subject, html, type: "interview" });
+        return { success: true };
+    } catch (error) {
+        return { success: false, error: (error as Error)?.message || "Failed to send email" };
+    }
+}
+// ─── 8. OTP — Password Change ─────────────────────────────────────────────────
 export async function sendPasswordChangeOtpEmail({ to, otp }: { to: string; otp: string }): Promise<void> {
     const subject = `${otp} — Confirm your Sreeva AI password change`;
     const digitBoxes = otp.split("").map(d =>

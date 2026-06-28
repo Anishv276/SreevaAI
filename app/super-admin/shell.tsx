@@ -14,13 +14,15 @@ import {
     LifeBuoy,
     CreditCard,
     AudioLines,
-    MessageSquare
+    MessageSquare,
+    Bot,
 } from "lucide-react";
 import { Toaster } from "@/components/ui/toast-custom";
 
 const NAV_ITEMS = [
     { href: "/super-admin", label: "Overview", icon: LayoutDashboard },
     { href: "/super-admin/orgs", label: "Organizations", icon: Users },
+    { href: "/super-admin/models", label: "AI Models", icon: Bot },
     { href: "/super-admin/voices", label: "Voice Engine", icon: AudioLines },
     { href: "/super-admin/billing", label: "Billing", icon: CreditCard },
     { href: "/super-admin/support", label: "Support Tickets", icon: LifeBuoy },

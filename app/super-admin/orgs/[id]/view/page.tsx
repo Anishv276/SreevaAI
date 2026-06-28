@@ -469,8 +469,8 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                 isLoading={isDeleting}
             />
             {showMetrics && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-                    <div className="w-full max-w-4xl overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-2xl">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6 overflow-y-auto">
+                    <div className="w-full max-w-4xl rounded-3xl border border-gray-100 bg-white shadow-2xl my-auto">
                         <div className="flex items-center justify-between border-b border-gray-100 px-6 py-5">
                             <div>
                                 <div className="text-[11px] font-[800] uppercase tracking-[0.15em] text-gray-500">Active Jobs</div>
@@ -511,6 +511,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                                 </button>
                             </div>
                         </div>
+                        <div className="overflow-y-auto max-h-[calc(100vh-200px)]">
                         {/* SECTION 1: LLM Models Table */}
                         <div className="p-6 space-y-6">
                             <div>
@@ -685,6 +686,7 @@ export default function UnifiedOrgViewPage({ params }: { params: Promise<{ id: s
                                     Current org balance.
                                 </div>
                             </div>
+                        </div>
                         </div>
                     </div>
                 </div>

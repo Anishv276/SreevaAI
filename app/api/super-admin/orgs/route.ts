@@ -8,7 +8,6 @@ import { validatePasswordStrength } from "@/lib/validation";
 import { sendOrgWelcomeEmail as sendWelcomeViaResend } from "@/lib/mail";
 import { DEFAULT_ORG_PLAN, isOrgPlan, normalizeOrgPlan } from "@/lib/org-plans";
 import { normalizeProctoringSignals } from "@/lib/proctoring-signals";
-import { normalizeOrgAiConfig } from "@/lib/ai-provider-config";
 import { normalizeOrgLimitInput } from "@/lib/org-limits";
 import { normalizeOrgStatusControl, ORG_STATUS_CONTROL_MANUAL } from "@/lib/credits";
 import { normalizeEmail } from "@/lib/email";
@@ -285,9 +284,7 @@ export async function POST(request: Request) {
             interviewQuotaTotal,
             recordingEnabled,
             recordingRetentionDays,
-            proctoringSignals,
-            voiceId, allowedVoices,
-            deepgramModel
+            proctoringSignals
         } = body;
         if (!orgName || !slug || !adminEmail || !adminPassword) {
             return NextResponse.json({ error: "orgName, slug, adminEmail, and adminPassword are required" }, { status: 400 });
@@ -356,7 +353,7 @@ export async function POST(request: Request) {
                 { status: 400 }
             );
         }
-        console.log("[SuperAdmin] Provisioning Org with AI Config:", { voiceId, deepgramModel });
+        console.log("[SuperAdmin] Provisioning Org — AI models configured via AI Models page");
         // Create org + admin in a transaction
         const result = await prisma.$transaction(async (tx) => {
             // Build org data explicitly to ensure exclusivity
@@ -381,12 +378,7 @@ export async function POST(request: Request) {
             if (resolvedSignals !== undefined) {
                 orgData.proctoringSignals = resolvedSignals;
             }
-            Object.assign(
-                orgData,
-                normalizeOrgAiConfig({
-                    next: { voiceId, allowedVoices, deepgramModel },
-                })
-            );
+            // AI models set to schema defaults — configured later via Super Admin → AI Models page
             const userId = generateId("usr", normalizedAdminEmail.split("@")[0]);
             const org = await tx.organization.create({
                 data: orgData,

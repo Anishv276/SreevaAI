@@ -1,10 +1,9 @@
 "use client";
-import { useEffect, useState, use, useRef, type FormEvent } from "react";
+import { useEffect, useState, use, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Building2, Mail, ShieldCheck, Globe, RefreshCw, Play, Pause, ChevronRight, Coins, ChevronDown, Loader2, Shield, Layers, AudioLines, Search, Lock, Clock, Eye, EyeOff } from "lucide-react";
+import { ArrowLeft, Building2, Mail, ShieldCheck, Globe, RefreshCw, ChevronRight, Coins, ChevronDown, Loader2, Shield, Layers, Lock, Clock, Eye, EyeOff } from "lucide-react";
 import { toast } from "@/components/ui/toast-custom";
 import { ProctoringSignalsSection } from "@/components/super-admin/proctoring-signals-section";
-import { ALL_VOICES, type Voice } from "@/lib/constants/voices";
 import { DEFAULT_ORG_PLAN, ORG_PLAN_OPTIONS, normalizeOrgPlan } from "@/lib/org-plans";
 import { getProctoringSignalsForPlan, normalizeProctoringSignals } from "@/lib/proctoring-signals";
 import { cn } from "@/lib/utils";
@@ -78,17 +77,8 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState("");
-    const [previewLoading, setPreviewLoading] = useState(false);
-    const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
-    const [activeAudio, setActiveAudio] = useState<HTMLAudioElement | null>(null);
-    const [showVoiceDropdown, setShowVoiceDropdown] = useState(false);
-    const [voiceSearch, setVoiceSearch] = useState("");
-    const [voices, setVoices] = useState<Voice[]>(ALL_VOICES);
     const [interviewQuotaTotalInput, setInterviewQuotaTotalInput] = useState("0");
     const [interviewTopUpInput, setInterviewTopUpInput] = useState("0");
-    const audioContextRef = useRef<AudioContext | null>(null);
-    const gainNodeRef = useRef<GainNode | null>(null);
-    const previewUrlRef = useRef<string | null>(null);
     const [billingSnapshot, setBillingSnapshot] = useState({
         interviewQuotaTotal: 0,
         interviewQuotaUsed: 0,
@@ -99,83 +89,10 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
         maxActiveDrives: "Unlimited",
         proctoringSignals: getProctoringSignalsForPlan(DEFAULT_ORG_PLAN),
         adminEmail: "", adminPassword: "",
-        voiceId: "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
-        allowedVoices: [] as string[],
         recordingEnabled: false,
         recordingRetentionDays: "",
     });
-    const stopCurrentPreview = () => {
-        if (activeAudio) {
-            activeAudio.pause();
-            activeAudio.src = "";
-            setActiveAudio(null);
-        }
-        if (previewUrlRef.current) {
-            URL.revokeObjectURL(previewUrlRef.current);
-            previewUrlRef.current = null;
-        }
-        gainNodeRef.current?.disconnect();
-        gainNodeRef.current = null;
-        audioContextRef.current?.close().catch(() => { });
-        audioContextRef.current = null;
-        setPlayingVoiceId(null);
-    };
-    const playSample = async (voiceId: string) => {
-        if (playingVoiceId === voiceId) { stopCurrentPreview(); return; }
-        setPreviewLoading(true);
-        try {
-            stopCurrentPreview();
-            const transcript = "Hello buddy, how are you doing? I'm ready to interview candidates.";
-            const res = await fetch("/api/admin/voice/preview", {
-                method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ voiceId, transcript, orgId: id }),
-            });
-            if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || "Preview failed");
-            const blob = await res.blob();
-            const audioUrl = URL.createObjectURL(blob);
-            previewUrlRef.current = audioUrl;
-            const audio = new Audio(audioUrl);
-            const AudioContextClass = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-            if (AudioContextClass) {
-                const ctx = new AudioContextClass();
-                audioContextRef.current = ctx;
-                const source = ctx.createMediaElementSource(audio);
-                const gainNode = ctx.createGain();
-                gainNode.gain.value = 2.5;
-                gainNodeRef.current = gainNode;
-                source.connect(gainNode);
-                gainNode.connect(ctx.destination);
-                audio.onended = () => {
-                    stopCurrentPreview();
-                    URL.revokeObjectURL(audioUrl);
-                };
-                await ctx.resume().catch(() => { });
-            } else {
-                audio.onended = () => {
-                    stopCurrentPreview();
-                    URL.revokeObjectURL(audioUrl);
-                };
-            }
-            await audio.play();
-            setActiveAudio(audio);
-            setPlayingVoiceId(voiceId);
-        } catch (err) { toast.error("Preview failed."); }
-        finally { setPreviewLoading(false); }
-    };
     useEffect(() => {
-        const loadVoices = async () => {
-            try {
-                const res = await fetch("/api/voices", { cache: "no-store" });
-                if (!res.ok) return;
-                const data = await res.json();
-                if (Array.isArray(data?.voices) && data.voices.length > 0) {
-                    setVoices(data.voices);
-                }
-            } catch {
-                // Keep static fallback
-            }
-        };
-        void loadVoices();
         const fetchOrg = async () => {
             try {
                 const res = await fetch(`/api/super-admin/orgs/${id}`);
@@ -188,8 +105,6 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                     proctoringSignals: normalizeProctoringSignals(data.proctoringSignals),
                     adminEmail: data.users && data.users.length > 0 ? data.users[0].email : "",
                     adminPassword: "",
-                    voiceId: data.voiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
-                    allowedVoices: Array.isArray(data.allowedVoices) ? data.allowedVoices : [],
                     recordingEnabled: data.recordingEnabled === true && data.recordingRetentionDays != null,
                     recordingRetentionDays: data.recordingRetentionDays == null ? "" : String(data.recordingRetentionDays),
                 });
@@ -232,7 +147,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
     };
     if (loading) { return <div className="p-20 text-center min-h-screen flex items-center justify-center"><RefreshCw className="h-8 w-8 text-[#7C3AED] animate-spin opacity-20" /></div>; }
     return (
-        <div className="max-w-3xl space-y-6 pb-10 animate-in fade-in duration-500">
+        <div className="max-w-5xl mx-auto space-y-6 pb-10 animate-in fade-in duration-500">
             <div className="flex items-center gap-3">
                 <button onClick={() => router.back()} className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-sm font-medium text-gray-500 hover:text-violet-600 hover:bg-violet-50 transition-all" style={{ border: "1px solid #E9E7FF" }}>
                     <ArrowLeft className="h-4 w-4" />
@@ -284,63 +199,22 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                         </div>
                     </div>
                 )}
-                {true && (
-                    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
-                        <SectionHeader title="AI Engine" />
-                        <div className="grid md:grid-cols-2 gap-10">
-                            {/* Allowed voices whitelist */}
-                            <div className="space-y-4">
-                                <div className="space-y-2">
-                                    <label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest">
-                                        <AudioLines className="h-3 w-3 text-[#7C3AED]" />Allowed Voices
-                                    </label>
-                                    <p className="text-[10px] text-gray-400 font-medium">Drives under this org will only see checked voices.</p>
-                                    <div className="relative mb-2">
-                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3 w-3 text-gray-400" />
-                                        <input type="text" value={voiceSearch} onChange={e => setVoiceSearch(e.target.value)} placeholder="Search voices..." className="h-8 w-full pl-8 pr-3 rounded-lg border border-gray-100 text-[11px] focus:outline-none" />
-                                    </div>
-                                    <div className="border border-gray-100 rounded-xl overflow-hidden max-h-72 overflow-y-auto">
-                                        {voices.filter(v => v.name.toLowerCase().includes(voiceSearch.toLowerCase())).map(v => {
-                                            const allowed = form.allowedVoices.includes(v.id);
-                                            return (
-                                                <div key={v.id} className={cn("flex items-center justify-between px-3 py-2.5 border-b border-gray-50 last:border-0 transition-colors", allowed ? "bg-violet-50/40" : "bg-white hover:bg-gray-50")}>
-                                                    <div className="flex items-center gap-3 flex-1 min-w-0">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={allowed}
-                                                            onChange={() => setForm(p => ({
-                                                                ...p,
-                                                                allowedVoices: allowed
-                                                                    ? p.allowedVoices.filter(id => id !== v.id)
-                                                                    : [...p.allowedVoices, v.id],
-                                                            }))}
-                                                            className="accent-[#7C3AED] h-3.5 w-3.5 flex-shrink-0"
-                                                        />
-                                                        <div className="min-w-0">
-                                                            <p className={cn("text-xs font-bold truncate", allowed ? "text-violet-600" : "text-gray-800")}>{v.name}</p>
-                                                            <p className="text-[9px] text-gray-400 truncate">{v.provider} · {v.description}</p>
-                                                        </div>
-                                                    </div>
-                                                    <div onClick={(e) => { e.stopPropagation(); playSample(v.id); }} className={cn("h-7 w-7 rounded-lg flex items-center justify-center flex-shrink-0 ml-2 cursor-pointer transition-all", playingVoiceId === v.id ? "bg-violet-600 text-white" : "bg-gray-100 text-gray-500 hover:bg-violet-100 hover:text-violet-600")}>
-                                                        {previewLoading && playingVoiceId === v.id ? <RefreshCw className="h-3 w-3 animate-spin" /> : playingVoiceId === v.id ? <Pause className="h-3 w-3 fill-current" /> : <Play className="h-3 w-3 fill-current ml-0.5" />}
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                    <p className="text-[10px] text-gray-400">{form.allowedVoices.length} voice{form.allowedVoices.length !== 1 ? "s" : ""} selected</p>
-                                </div>
-                            </div>
-                            {/* STT */}
-                            <div className="space-y-6">
-                                <div className="p-4 rounded-xl bg-gray-50 border border-gray-100 text-[11px] text-gray-500 space-y-1">
-                                    <p className="font-bold text-gray-700 uppercase tracking-widest text-[10px]">STT</p>
-                                    <p>Deepgram Flux - hardcoded for all orgs</p>
-                                </div>
-                            </div>
-                        </div>
+                {/* AI Engine — managed via AI Models page */}
+                <div className="rounded-2xl p-5 flex items-start gap-4" style={{ background: "linear-gradient(135deg, rgba(139,92,246,0.07), rgba(59,130,246,0.04))", border: "1px solid rgba(139,92,246,0.18)" }}>
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5" style={{ background: "linear-gradient(135deg, rgba(139,92,246,0.15), rgba(59,130,246,0.1))" }}>
+                        <span className="text-violet-600 text-sm">🤖</span>
                     </div>
-                )}
+                    <div>
+                        <p className="text-sm font-bold text-violet-800 mb-1">AI Models are configured separately</p>
+                        <p className="text-sm text-violet-700">
+                            To set LLM pipelines, STT model, TTS provider, and allowed voices for this org — use the{" "}
+                            <a href="/super-admin/models" className="font-bold underline underline-offset-2 hover:text-violet-900 transition-colors">
+                                AI Models page
+                            </a>
+                            . Select this org from the left panel and configure everything there.
+                        </p>
+                    </div>
+                </div>
                 {true && (
                     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
                         <SectionHeader title="Billing & Quotas" />

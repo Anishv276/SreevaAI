@@ -17,7 +17,8 @@ import re
 from typing import Any, Optional
 
 logger = logging.getLogger("interview-agent")
-from interview.agent_runtime_support import EVAL_LLM_MODEL, EVAL_TEMPERATURE
+from interview.agent_runtime_support import EVAL_TEMPERATURE
+_EVAL_DEFAULT = "gpt-4.1-nano"  # ponytail: fallback — callers pass org's llmInterviewEval
 
 
 # ---------------------------------------------------------------------------
@@ -113,7 +114,7 @@ async def evaluate_answer(
     transcript_lines: list,
     client,
     org_id: Optional[str] = None,
-    llm_model: str = EVAL_LLM_MODEL,
+    llm_model: str = _EVAL_DEFAULT,
     is_warmup: bool = False,
     candidate_band: str = "mid",
     active_topic: str = "",
