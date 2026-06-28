@@ -274,7 +274,8 @@ export default function SuperAdminBillingPage() {
         <section className="min-w-0">
           {selectedOrg ? (
             <>
-              <BillingContent
+              {/* BillingContent disabled for super-admin context - use TestBillingSection instead */}
+              {/* <BillingContent
                 creditsEndpoint={creditsUrl}
                 historyEndpoint={historyUrl}
                 orgName={selectedOrg.name}
@@ -282,7 +283,7 @@ export default function SuperAdminBillingPage() {
                 showRechargeHelp={false}
                 showCreditInternals={true}
                 showCreditsUsedInHistory={true}
-              />
+              /> */}
               <TestBillingSection orgId={selectedOrg.id} />
             </>
           ) : (
