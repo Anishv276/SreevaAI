@@ -121,6 +121,14 @@ export function BillingContent(props?: any) {
     const { plan, usage } = billingData;
     const historyRows = historyData?.history || [];
 
+    if (!plan) {
+        return (
+            <div className="flex justify-center py-20">
+                <div className="text-red-600 font-semibold">Error loading billing data. Please refresh.</div>
+            </div>
+        );
+    }
+
     const resolvedPlan = getLandingPackageForOrgPlan(plan.name) || getLandingPackageByName(formatOrgPlan(plan.name)) || getLandingPackageByName("Starter");
 
     const formatDuration = (sec: number) => {
