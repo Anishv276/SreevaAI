@@ -64,18 +64,10 @@ interface Org {
     adminCount: number;
     driveCount: number;
     candidateCount: number;
+    // AI Config (Setup)
     voiceId?: string;
     allowedVoices?: string[];
-    sttModel?: string;
-    ttsProvider?: string;
-    ttsModel?: string;
-    llmInterviewLive?: string;
-    llmInterviewEval?: string;
-    llmInterviewBrief?: string;
-    llmInterviewReport?: string;
-    llmResumeExtraction?: string;
-    llmJdExtraction?: string;
-    llmResumeReport?: string;
+    deepgramModel?: string;
     creditsUsed?: number;
     interviewsCompleted?: number;
     interviewQuotaTotal?: number;
@@ -237,12 +229,12 @@ export default function OrgsPage() {
         { key: "resumeReport", label: "LLM - Resume Report" },
         { key: "interviewReport", label: "LLM - Interview Report" },
     ];
-    const ORG_MODEL_FIELD_MAP: Record<BillingFeatureKey, keyof Org> = {
-        interview:        "llmInterviewLive",
-        resumeExtraction: "llmResumeExtraction",
-        jdExtraction:     "llmJdExtraction",
-        resumeReport:     "llmResumeReport",
-        interviewReport:  "llmInterviewReport",
+    const FEATURE_MODEL_DISPLAY_MAP: Record<BillingFeatureKey, string> = {
+        resumeExtraction: "gpt-5.4-mini",
+        jdExtraction: "gpt-5.4-mini",
+        interview: "gpt-4.1-mini",
+        resumeReport: "gpt-5.4-mini",
+        interviewReport: "gpt-5.4-mini",
     };
     const getBillingFeature = (org: Org, key: BillingFeatureKey): BillingFeatureMetrics => {
         const usage = (org.usageMetrics ?? {}) as Record<string, any>;
@@ -270,12 +262,7 @@ export default function OrgsPage() {
         return !normalized || normalized === "unknown" || normalized === "no recorded model";
     };
     const displayLlmModel = (feature: BillingFeatureMetrics, key: BillingFeatureKey) => {
-        // Read from org's DB config first, then fall back to billing-recorded model
-        const orgField = ORG_MODEL_FIELD_MAP[key];
-        const orgModel = metricsOrg ? (metricsOrg[orgField] as string | undefined) : undefined;
-        if (orgModel) return [orgModel];
-        const recorded = getRecordedModels(feature.byModel);
-        return recorded.length ? recorded : [];
+        return [FEATURE_MODEL_DISPLAY_MAP[key]];
     };
     const unique = (values: string[]) => Array.from(new Set(values.filter(Boolean)));
     const getRecordedModels = (models?: Record<string, any>) => {
@@ -748,131 +735,350 @@ export default function OrgsPage() {
                         </div>
                         <div className="flex-1 overflow-y-auto p-6 custom-scrollbar space-y-6" style={{ background: "#FAFAFC" }}>
                             {(() => {
+                                const ivFeature = getBillingFeature(metricsOrg, 'interview');
+                                // Interview donut: ONLY the interview feature's own LLM+TTS+STT cost
+                                const ivLlmCost = Number(ivFeature.costUsd || 0);
+                                const ivTtsCost = Number(ivFeature.ttsCostUsd || 0);
+                                const ivSttCost = Number(ivFeature.sttCostUsd || 0);
+                                const ivTotalCost = ivLlmCost + ivTtsCost + ivSttCost;
+                                // Full pipeline total: sum of ALL features LLM+TTS+STT
+                                const allLlmCost = metricSections.reduce((s, sec) => s + Number(getBillingFeature(metricsOrg, sec.key).costUsd || 0), 0);
+                                const allTtsCost = metricSections.reduce((s, sec) => s + Number(getBillingFeature(metricsOrg, sec.key).ttsCostUsd || 0), 0);
+                                const allSttCost = metricSections.reduce((s, sec) => s + Number(getBillingFeature(metricsOrg, sec.key).sttCostUsd || 0), 0);
+                                const grandTotal = allLlmCost + allTtsCost + allSttCost;
+                                const feature = ivFeature; // alias for interview feature
+                                const totalCost = ivTotalCost;
+                                const logicCost = ivLlmCost;
+                                const synthCost = ivTtsCost;
+                                const sttCost = ivSttCost;
+                                const ringR = 88;
+                                const ringC = 2 * Math.PI * ringR;
+                                const getDash = (val: number) => totalCost > 0 ? ringC * (val / totalCost) : 0;
+                                const logicDash = getDash(logicCost);
+                                const synthDash = getDash(synthCost);
+                                const sttDash = getDash(sttCost);
+                                const totalTokens = Number(feature.inputTokens || 0) + Number(feature.outputTokens || 0);
                                 return (
-                                    <div className="flex flex-col gap-6">
-                                        {/* SECTION 1: LLM Models Table */}
-                                        <div>
-                                            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">LLM Models & Pricing</h4>
-                                            <div className="bg-white rounded-2xl overflow-hidden border border-gray-200" style={{ boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
-                                                <table className="w-full text-sm">
-                                                    <thead>
-                                                        <tr className="bg-gray-50/80 border-b border-gray-100">
-                                                            <th className="px-6 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-gray-500">Model</th>
-                                                            <th className="px-6 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-gray-500">Provider</th>
-                                                            <th className="px-6 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-gray-500">Runs</th>
-                                                            <th className="px-6 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-gray-500">Tokens</th>
-                                                            <th className="px-6 py-3 text-right text-[10px] font-bold uppercase tracking-wider text-gray-500">Cost</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody className="divide-y divide-gray-100">
-                                                        {[
-                                                            { label: "Resume Extraction", key: "resumeExtraction" },
-                                                            { label: "JD Extraction", key: "jdExtraction" },
-                                                            { label: "Interview Report", key: "interviewReport" },
-                                                            { label: "Resume Report", key: "resumeReport" },
-                                                            { label: "Interview Evaluation", key: "interview" },
-                                                            { label: "Interview LLM Generation", key: "interview" },
-                                                            { label: "Interview Brief", key: "interview" },
-                                                        ].map((row) => {
-                                                            const feature = getBillingFeature(metricsOrg, row.key as BillingFeatureKey);
-                                                            const totalTokens = Number(feature.inputTokens || 0) + Number(feature.outputTokens || 0);
-                                                            const recordedModels = displayLlmModel(feature, row.key as BillingFeatureKey);
-                                                            return (
-                                                                <tr key={row.label} className="hover:bg-gray-50/50">
-                                                                    <td className="px-6 py-4 text-sm font-bold text-gray-900">{row.label}</td>
-                                                                    <td className="px-6 py-4 text-sm text-gray-600">{recordedModels[0] || "-"}</td>
-                                                                    <td className="px-6 py-4 text-sm text-gray-600">{Number(feature.runs || 0).toLocaleString()}</td>
-                                                                    <td className="px-6 py-4 text-sm text-gray-600">{totalTokens > 999 ? `${(totalTokens/1000).toFixed(1)}K` : totalTokens}</td>
-                                                                    <td className="px-6 py-4 text-sm font-bold text-right text-gray-900">{fmt(Number(feature.costUsd || 0))}</td>
-                                                                </tr>
-                                                            );
-                                                        })}
-                                                    </tbody>
-                                                </table>
+                                    <div className="flex flex-col gap-12">
+                                        {/* LLM Section */}
+                                        <div className="space-y-4">
+                                            <div className="flex items-center gap-4">
+                                                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">Processing Units</h4>
+                                                <div className="h-px flex-1" style={{ background: "#E9E7FF" }} />
                                             </div>
-                                        </div>
-
-                                        {/* SECTION 2: Overall Interview Cost */}
-                                        <div>
-                                            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Interview Overall Cost</h4>
-                                            <div className="bg-gradient-to-br from-violet-50/30 to-blue-50/30 rounded-2xl border border-gray-200 p-6">
-                                                <div className="text-center">
-                                                    <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Brief + Evaluation + LLM Generation</div>
-                                                    <div className="mt-3 text-4xl font-bold text-violet-600">
-                                                        {fmt(Number(getBillingFeature(metricsOrg, 'interview').costUsd || 0))}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {/* SECTION 3: TTS Hub */}
-                                        <div>
-                                            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">TTS Hub - Characters & Pricing</h4>
-                                            <div className="grid gap-3 grid-cols-3">
-                                                {[
-                                                    { label: "ElevenLabs", provider: "ELEVENLABS" },
-                                                    { label: "Cartesia", provider: "CARTESIA" },
-                                                    { label: "Sarvam", provider: "SARVAM" },
-                                                ].map((tts) => {
-                                                    const interviewBilling = getBillingFeature(metricsOrg, 'interview');
-                                                    const ttsChars = Number(interviewBilling.ttsCharacters || 0);
-                                                    const ttsCost = Number(interviewBilling.ttsCostUsd || 0);
+                                            <div className="grid gap-3 grid-cols-2 sm:grid-cols-4">
+                                                {metricSections.map((section) => {
+                                                    const feature = getBillingFeature(metricsOrg, section.key);
+                                                    const totalTokens = Number(feature.inputTokens || 0) + Number(feature.outputTokens || 0);
+                                                    const recordedModels = displayLlmModel(feature, section.key);
                                                     return (
-                                                        <div key={tts.provider} className="bg-white rounded-2xl border border-gray-200 p-4" style={{ boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
-                                                            <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-4">{tts.label}</div>
-                                                            <div className="space-y-3">
-                                                                <div>
-                                                                    <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">Characters</div>
-                                                                    <div className="mt-1 text-xl font-bold text-gray-900">{ttsChars.toLocaleString()}</div>
+                                                        <div key={section.key} className="bg-white rounded-2xl p-4 flex flex-col justify-between min-h-[160px]" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
+                                                            {/* Top */}
+                                                            <div>
+                                                                <div className="flex items-center justify-between mb-2">
+                                                                    <span className="text-[10px] font-semibold text-violet-600 uppercase tracking-wider">{section.label.replace('LLM - ', '')}</span>
+                                                                    <div className="h-2 w-2 rounded-full bg-emerald-400 flex-shrink-0" />
                                                                 </div>
-                                                                <div className="border-t border-gray-100 pt-3">
-                                                                    <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">Price</div>
-                                                                    <div className="mt-1 text-xl font-bold text-gray-900">{fmt(ttsCost)}</div>
+                                                                <div className="flex flex-wrap gap-1 min-h-[20px]">
+                                                                    {recordedModels.slice(0, 1).map((model) => (
+                                                                        <span key={model} className="text-[9px] font-semibold text-violet-700 bg-violet-50 px-1.5 py-0.5 rounded-md border border-violet-100 uppercase tracking-wide truncate max-w-full">
+                                                                            {model}
+                                                                        </span>
+                                                                    ))}
                                                                 </div>
+                                                            </div>
+                                                            {/* Cost */}
+                                                            <div className="my-3">
+                                                                <div className="text-2xl font-semibold text-gray-900 tracking-tight tabular-nums">{fmt(Number(feature.costUsd || 0))}</div>
+                                                            </div>
+                                                            {/* Stats */}
+                                                            <div className="space-y-1.5 pt-3 text-[11px] font-medium text-gray-500" style={{ borderTop: "1px solid #F0EEF8" }}>
+                                                                {section.key === 'interview' ? (
+                                                                    <>
+                                                                        <div className="flex justify-between items-center">
+                                                                            <span>Done</span>
+                                                                            <span className="text-gray-900 font-semibold tabular-nums">{Number(metricsOrg.interviewQuotaUsed || 0).toLocaleString()}</span>
+                                                                        </div>
+                                                                        <div className="flex justify-between items-center">
+                                                                            <span>Remaining</span>
+                                                                            <span className="text-emerald-600 font-semibold tabular-nums">{Math.max(0, (metricsOrg.interviewQuotaTotal || 0) - (metricsOrg.interviewQuotaUsed || 0)).toLocaleString()}</span>
+                                                                        </div>
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        <div className="flex justify-between items-center">
+                                                                            <span>Runs</span>
+                                                                            <span className="text-gray-900 font-semibold tabular-nums">{Number(feature.runs || 0).toLocaleString()}</span>
+                                                                        </div>
+                                                                        <div className="flex justify-between items-center">
+                                                                            <span>Tokens</span>
+                                                                            <span className="text-gray-900 font-semibold tabular-nums">{totalTokens > 999 ? `${(totalTokens/1000).toFixed(1)}K` : totalTokens}</span>
+                                                                        </div>
+                                                                    </>
+                                                                )}
                                                             </div>
                                                         </div>
                                                     );
                                                 })}
                                             </div>
                                         </div>
-
-                                        {/* SECTION 4: STT Hub (Deepgram) */}
-                                        <div>
-                                            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">STT Hub - Deepgram</h4>
-                                            <div className="grid gap-3 grid-cols-2">
-                                                {(() => {
-                                                    const interviewBilling = getBillingFeature(metricsOrg, 'interview');
-                                                    const sttMinutes = (Number(interviewBilling.sttAudioSeconds || 0) / 60).toFixed(1);
-                                                    const sttCost = Number(interviewBilling.sttCostUsd || 0);
-                                                    return (
-                                                        <>
-                                                            <div className="bg-white rounded-2xl border border-gray-200 p-4" style={{ boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
-                                                                <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-4">Audio Duration</div>
-                                                                <div className="text-2xl font-bold text-gray-900">{sttMinutes} <span className="text-sm text-gray-500 font-medium">min</span></div>
+                                        {/* Voice & STT Section */}
+                                        <div className="grid gap-4 sm:grid-cols-2">
+                                            <div>
+                                                <div className="flex items-center gap-3 mb-3">
+                                                    <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">TTS Hub</h4>
+                                                    <div className="h-px flex-1" style={{ background: "#E9E7FF" }} />
+                                                </div>
+                                                <div className="bg-white rounded-2xl p-4 flex flex-col justify-between min-h-[160px]" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
+                                                    <div className="flex items-start justify-between mb-3">
+                                                        <div>
+                                                            <div className="text-[10px] font-semibold text-blue-600 uppercase tracking-wider mb-1">Text-to-Speech</div>
+                                                            <div className="text-2xl font-semibold text-gray-900 tracking-tight tabular-nums">
+                                                                {fmt(metricSections.reduce((sum, s) => sum + Number(getBillingFeature(metricsOrg, s.key).ttsCostUsd || 0), 0))}
                                                             </div>
-                                                            <div className="bg-white rounded-2xl border border-gray-200 p-4" style={{ boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
-                                                                <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-4">Cost</div>
-                                                                <div className="text-2xl font-bold text-gray-900">{fmt(sttCost)}</div>
+                                                        </div>
+                                                        <div className="text-right">
+                                                            <div className="text-lg font-semibold text-gray-900 tabular-nums">{metricSections.reduce((sum, s) => sum + Number(getBillingFeature(metricsOrg, s.key).ttsCharacters || 0), 0).toLocaleString()}</div>
+                                                            <div className="text-[10px] font-medium text-gray-400 uppercase tracking-wider">Characters</div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex flex-wrap gap-1.5 pt-3" style={{ borderTop: "1px solid #F0EEF8" }}>
+                                                        {(() => {
+                                                            const recordedModels = unique(metricSections.flatMap((section) => getRecordedModels(getBillingFeature(metricsOrg, section.key).ttsByModel)));
+                                                            const recordedProviders = unique(metricSections.flatMap((section) => getRecordedProviders(getBillingFeature(metricsOrg, section.key).ttsByModel)));
+                                                            const configuredTtsVoices = getConfiguredTtsVoices(metricsOrg);
+                                                            const displayModels = recordedModels.length ? recordedModels : configuredTtsVoices.map((v) => cleanName(v.model));
+                                                            const displayProviders = recordedProviders.length ? recordedProviders : configuredTtsVoices.map((v) => v.provider);
+                                                            if (!displayModels.length && !displayProviders.length) return <span className="text-[10px] font-bold text-gray-500 italic bg-gray-50 px-3 py-1.5 rounded-md border border-gray-200 border-dashed">NO TTS CONFIGURED</span>;
+                                                            return (
+                                                                <>
+                                                                    {displayProviders.map(p => (
+                                                                        <span key={p} className="px-3 py-1.5 bg-gray-50 text-gray-500 text-[10px] font-semibold rounded-md border border-gray-200 uppercase tracking-wide">{p}</span>
+                                                                    ))}
+                                                                    {displayModels.map(m => (
+                                                                        <span key={m} className="px-3 py-1.5 bg-blue-50 text-blue-700 text-[10px] font-semibold rounded-md border border-blue-100 uppercase tracking-wide">{cleanName(m)}</span>
+                                                                    ))}
+                                                                </>
+                                                            );
+                                                        })()}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <div className="flex items-center gap-3 mb-3">
+                                                    <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">STT Hub</h4>
+                                                    <div className="h-px flex-1" style={{ background: "#E9E7FF" }} />
+                                                </div>
+                                                <div className="bg-white rounded-2xl p-4 flex flex-col justify-between min-h-[160px]" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
+                                                    <div className="flex items-start justify-between mb-3">
+                                                        <div>
+                                                            <div className="text-[10px] font-semibold text-violet-600 uppercase tracking-wider mb-1">Speech-to-Text</div>
+                                                            <div className="text-2xl font-semibold text-gray-900 tracking-tight tabular-nums">
+                                                                {fmt(metricSections.reduce((sum, s) => sum + Number(getBillingFeature(metricsOrg, s.key).sttCostUsd || 0), 0))}
                                                             </div>
-                                                        </>
-                                                    );
-                                                })()}
+                                                        </div>
+                                                        <div className="text-right">
+                                                            <div className="text-lg font-semibold text-gray-900 tabular-nums">{(metricSections.reduce((sum, s) => sum + Number(getBillingFeature(metricsOrg, s.key).sttAudioSeconds || 0), 0) / 60).toFixed(1)}<span className="text-xs font-medium text-gray-400 ml-1">min</span></div>
+                                                            <div className="text-[10px] font-medium text-gray-400 uppercase tracking-wider">Transcribed</div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex flex-wrap gap-1.5 pt-3" style={{ borderTop: "1px solid #F0EEF8" }}>
+                                                        {(() => {
+                                                            const models = unique(metricSections.flatMap((section) => getRecordedModels(getBillingFeature(metricsOrg, section.key).sttByModel)));
+                                                            const providers = unique(metricSections.flatMap((section) => getRecordedProviders(getBillingFeature(metricsOrg, section.key).sttByModel)));
+                                                            return models.length || providers.length ? (
+                                                                <>
+                                                                    {models.map((model) => (
+                                                                        <span key={model} className="px-3 py-1.5 bg-violet-50 text-violet-700 text-[10px] font-semibold rounded-md border border-violet-100 uppercase tracking-wide">
+                                                                            {model}
+                                                                        </span>
+                                                                    ))}
+                                                                    {providers.map((provider) => (
+                                                                        <span key={provider} className="px-3 py-1.5 bg-gray-50 text-gray-500 text-[10px] font-semibold rounded-md border border-gray-200 uppercase tracking-wide">
+                                                                            {provider}
+                                                                        </span>
+                                                                    ))}
+                                                                </>
+                                                            ) : (
+                                                                <span className="text-[10px] font-bold text-gray-500 italic bg-gray-50 px-3 py-1.5 rounded-md border border-gray-200 border-dashed">NO RECORDED STT</span>
+                                                            );
+                                                        })()}
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
-
-                                        {/* SECTION 5: Overall Interview Price */}
-                                        <div>
-                                            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Total Pipeline Cost</h4>
-                                            <div className="bg-white rounded-2xl border border-gray-200 p-4 flex items-center justify-between">
-                                                <span className="text-sm font-bold text-gray-700 uppercase">Total Organization Cost</span>
-                                                <span className="text-2xl font-bold text-gray-900">
-                                                    {fmt(metricSections.reduce((sum, s) => sum + Number(getBillingFeature(metricsOrg, s.key).costUsd || 0) + Number(getBillingFeature(metricsOrg, s.key).ttsCostUsd || 0) + Number(getBillingFeature(metricsOrg, s.key).sttCostUsd || 0), 0))}
-                                                </span>
+                                        {/* Pipeline Summary */}
+                                        <div className="space-y-4">
+                                            <div className="flex items-center gap-3">
+                                                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">Total Interview Cost</h4>
+                                                <div className="h-px flex-1" style={{ background: "#E9E7FF" }} />
+                                            </div>
+                                            <div className="bg-white rounded-2xl overflow-hidden p-6" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
+                                                <div className="grid grid-cols-1 lg:grid-cols-[1.35fr_1fr] gap-10">
+                                                    {/* Donut and Cost breakdown */}
+                                                    <div>
+                                                        <div className="flex items-center gap-3 mb-6">
+                                                            <div className="h-2 w-2 rounded-full bg-[#7C3AED]" />
+                                                            <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">Cost of interviews</span>
+                                                        </div>
+                                                        <div className="flex flex-col sm:flex-row items-center gap-8 mb-8">
+                                                            <div className="relative w-[220px] h-[220px] shrink-0">
+                                                                <svg width={220} height={220} style={{ transform: "rotate(-90deg)" }}>
+                                                                    <circle cx={110} cy={110} r={ringR} stroke="#E5E7EB" strokeWidth={14} fill="none" />
+                                                                    {totalCost > 0 && (
+                                                                        <>
+                                                                            <circle cx={110} cy={110} r={ringR} stroke="#10B981" strokeWidth={14} fill="none" strokeDasharray={`${logicDash} ${ringC}`} strokeLinecap="round" />
+                                                                            <circle cx={110} cy={110} r={ringR} stroke="#3B82F6" strokeWidth={14} fill="none" strokeDasharray={`${synthDash} ${ringC}`} strokeDashoffset={-logicDash} strokeLinecap="round" />
+                                                                            <circle cx={110} cy={110} r={ringR} stroke="#7C3AED" strokeWidth={14} fill="none" strokeDasharray={`${sttDash} ${ringC}`} strokeDashoffset={-(logicDash + synthDash)} strokeLinecap="round" />
+                                                                        </>
+                                                                    )}
+                                                                </svg>
+                                                                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                                                                    <div className="text-[11px] text-gray-500 font-medium tracking-[0.1em] uppercase">Interview Cost</div>
+                                                                    <div className="text-[44px] font-bold text-gray-900 tracking-tight mt-1.5">
+                                                                        {fmt(ivTotalCost)}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex-1 grid gap-4 w-full">
+                                                                <div className="flex items-start justify-between">
+                                                                    <div>
+                                                                        <div className="flex items-center gap-2">
+                                                                            <span className="w-2.5 h-2.5 rounded-full bg-[#10B981]" />
+                                                                            <span className="text-[14.5px] font-semibold text-gray-900">LLM</span>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="text-[16px] font-bold text-gray-900">{fmt(logicCost)}</div>
+                                                                </div>
+                                                                <div className="h-px bg-[#F3F4F6]" />
+                                                                <div className="flex items-start justify-between">
+                                                                    <div>
+                                                                        <div className="flex items-center gap-2">
+                                                                            <span className="w-2.5 h-2.5 rounded-full bg-[#3B82F6]" />
+                                                                            <span className="text-[14.5px] font-semibold text-gray-900">TTS</span>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="text-[16px] font-bold text-gray-900">{fmt(synthCost)}</div>
+                                                                </div>
+                                                                <div className="h-px bg-[#F3F4F6]" />
+                                                                <div className="flex items-start justify-between">
+                                                                    <div>
+                                                                        <div className="flex items-center gap-2">
+                                                                            <span className="w-2.5 h-2.5 rounded-full bg-[#7C3AED]" />
+                                                                            <span className="text-[14.5px] font-semibold text-gray-900">STT</span>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="text-[16px] font-bold text-gray-900">{fmt(sttCost)}</div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    {/* Right Side Stats */}
+                                                    <div className="grid grid-cols-2 sm:grid-cols-2 gap-8 text-right">
+                                                        <div className="space-y-1.5">
+                                                            <div className="text-xs font-medium text-gray-400 uppercase tracking-wider">Active Jobs</div>
+                                                            <div className="text-[28px] font-bold text-gray-900 tabular-nums">{(metricsOrg as any).driveCount || 0}</div>
+                                                        </div>
+                                                        <div className="space-y-1.5">
+                                                            <div className="text-xs font-medium text-gray-400 uppercase tracking-wider">Total Sessions</div>
+                                                            <div className="text-[28px] font-bold text-gray-900 tabular-nums">{Number(feature.runs || 0).toLocaleString()}</div>
+                                                        </div>
+                                                        <div className="space-y-1.5">
+                                                            <div className="text-xs font-medium text-gray-400 uppercase tracking-wider">Consumed Tokens</div>
+                                                            <div className="text-[28px] font-bold text-gray-900 tabular-nums">{totalTokens.toLocaleString()}</div>
+                                                        </div>
+                                                        <div className="space-y-1.5">
+                                                            <div className="text-xs font-medium text-gray-400 uppercase tracking-wider">Audio Mins</div>
+                                                            <div className="text-[28px] font-bold text-gray-900 tabular-nums">
+                                                                {Number(feature.sessionDuration || 0) > 0
+                                                                    ? (Number(feature.sessionDuration || 0) / 60).toFixed(1)
+                                                                    : (Number(feature.sttAudioSeconds || 0) / 60).toFixed(1)}<span className="text-[13px] font-medium ml-1 opacity-40">min</span>
+                                                            </div>
+                                                        </div>
+                                                        <div className="space-y-1.5 col-span-2">
+                                                            <div className="text-xs font-medium text-gray-400 uppercase tracking-wider">Health</div>
+                                                            <div className="text-2xl font-bold text-emerald-600 uppercase tracking-tight">Healthy</div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                {/* Models Row */}
+                                                <div className="border-t border-gray-100 mt-8 pt-8 grid grid-cols-1 md:grid-cols-3 gap-8">
+                                                    <div>
+                                                        <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-3 hover:text-[#10B981] transition-colors">LLM</div>
+                                                        <div className="flex flex-wrap gap-2">
+                                                            {displayLlmModel(feature, "interview").map((model) => (
+                                                                <span key={model} className="px-3 py-1 bg-[#10B981]/10 text-[#10B981] text-[10px] font-semibold rounded-md border border-[#10B981]/20 uppercase tracking-wide">
+                                                                    {model}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-3 hover:text-[#3B82F6] transition-colors">TTS</div>
+                                                        <div className="flex flex-wrap gap-2">
+                                                            {(() => {
+                                                                const recordedModels = getRecordedModels(feature.ttsByModel);
+                                                                const recordedProviders = getRecordedProviders(feature.ttsByModel);
+                                                                const configuredTtsVoices = getConfiguredTtsVoices(metricsOrg);
+                                                                const models = recordedModels.length ? recordedModels : configuredTtsVoices.map((v) => cleanName(v.model));
+                                                                const providers = recordedProviders.length ? recordedProviders : configuredTtsVoices.map((v) => v.provider);
+                                                                if (!models.length && !providers.length) return <span className="text-[10px] font-semibold text-gray-500 italic">NO TTS CONFIGURED</span>;
+                                                                return (
+                                                                    <>
+                                                                        {models.map(m => (
+                                                                            <span key={m} className="px-3 py-1 bg-[#3B82F6]/10 text-[#3B82F6] text-[10px] font-semibold rounded-md border border-[#3B82F6]/20 uppercase tracking-wide">{m}</span>
+                                                                        ))}
+                                                                        {providers.map(p => (
+                                                                            <span key={p} className="px-3 py-1 bg-gray-50 text-gray-500 text-[10px] font-semibold rounded-md border border-gray-200 uppercase tracking-wide">{p}</span>
+                                                                        ))}
+                                                                    </>
+                                                                );
+                                                            })()}
+                                                        </div>
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-3 hover:text-[#7C3AED] transition-colors">STT</div>
+                                                        <div className="flex flex-wrap gap-2">
+                                                            {(() => {
+                                                                const models = getRecordedModels(feature.sttByModel);
+                                                                const providers = getRecordedProviders(feature.sttByModel);
+                                                                return models.length || providers.length ? (
+                                                                    <>
+                                                                        {models.map((model) => (
+                                                                            <span key={model} className="px-3 py-1 bg-[#7C3AED]/10 text-[#7C3AED] text-[10px] font-semibold rounded-md border border-[#7C3AED]/20 uppercase tracking-wide">
+                                                                                {model}
+                                                                            </span>
+                                                                        ))}
+                                                                        {providers.map((provider) => (
+                                                                            <span key={provider} className="px-3 py-1 bg-gray-50 text-gray-500 text-[10px] font-semibold rounded-md border border-gray-200 uppercase tracking-wide">
+                                                                                {provider}
+                                                                            </span>
+                                                                        ))}
+                                                                    </>
+                                                                ) : (
+                                                                    <span className="text-[10px] font-semibold text-gray-500 italic">NO RECORDED STT</span>
+                                                                );
+                                                            })()}
+                                                        </div>
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
                                 );
                             })()}
+                            <div className="border-t border-gray-200 px-8 py-6 bg-gray-50 flex items-center justify-between font-sans">
+                                <div className="text-[12px] font-bold uppercase tracking-widest text-gray-500">Total org cost</div>
+                                <div className="text-[28px] font-bold text-gray-900 tracking-tight">
+                                    {(() => {
+                                        const allLlmCost = metricSections.reduce((s, sec) => s + Number(getBillingFeature(metricsOrg, sec.key).costUsd || 0), 0);
+                                        const allTtsCost = metricSections.reduce((s, sec) => s + Number(getBillingFeature(metricsOrg, sec.key).ttsCostUsd || 0), 0);
+                                        const allSttCost = metricSections.reduce((s, sec) => s + Number(getBillingFeature(metricsOrg, sec.key).sttCostUsd || 0), 0);
+                                        const grandTotal = allLlmCost + allTtsCost + allSttCost;
+                                        return fmt(grandTotal);
+                                    })()}
+                                </div>
+                            </div>
                             <div className="border-t border-gray-200 px-8 py-6 bg-gray-50">
                                 <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
                                     <div className="flex items-center justify-between gap-4 px-6 py-4 border-b border-gray-100 bg-gray-50/60">
