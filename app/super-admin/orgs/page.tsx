@@ -747,17 +747,12 @@ export default function OrgsPage() {
                         </div>
                         <div className="flex-1 overflow-y-auto p-6 custom-scrollbar space-y-6" style={{ background: "#FAFAFC" }}>
                             {(() => {
-                                const ivFeature = getBillingFeature(metricsOrg, 'interview');
+                                const ivFeature = billingAggregates?.interview || {};
                                 // Interview donut: ONLY the interview feature's own LLM+TTS+STT cost
                                 const ivLlmCost = Number(ivFeature.costUsd || 0);
                                 const ivTtsCost = Number(ivFeature.ttsCostUsd || 0);
                                 const ivSttCost = Number(ivFeature.sttCostUsd || 0);
                                 const ivTotalCost = ivLlmCost + ivTtsCost + ivSttCost;
-                                // Full pipeline total: sum of ALL features LLM+TTS+STT
-                                const allLlmCost = metricSections.reduce((s, sec) => s + Number(getBillingFeature(metricsOrg, sec.key).costUsd || 0), 0);
-                                const allTtsCost = metricSections.reduce((s, sec) => s + Number(getBillingFeature(metricsOrg, sec.key).ttsCostUsd || 0), 0);
-                                const allSttCost = metricSections.reduce((s, sec) => s + Number(getBillingFeature(metricsOrg, sec.key).sttCostUsd || 0), 0);
-                                const grandTotal = allLlmCost + allTtsCost + allSttCost;
                                 const feature = ivFeature; // alias for interview feature
                                 const totalCost = ivTotalCost;
                                 const logicCost = ivLlmCost;
@@ -796,16 +791,18 @@ export default function OrgsPage() {
                                                             { label: "Interview LLM Generation", key: "interview" },
                                                             { label: "Interview Brief", key: "interview" },
                                                         ].map((row) => {
-                                                            const feature = getBillingFeature(metricsOrg, row.key as BillingFeatureKey);
+                                                            const feature = billingAggregates?.[row.key as string] || {};
                                                             const totalTokens = Number(feature.inputTokens || 0) + Number(feature.outputTokens || 0);
-                                                            const recordedModels = displayLlmModel(feature, row.key as BillingFeatureKey);
+                                                            const model = feature.model || "-";
+                                                            const runs = Number(feature.runs || 0);
+                                                            const cost = Number(feature.costUsd || 0);
                                                             return (
                                                                 <tr key={row.label} className="hover:bg-gray-50/50">
                                                                     <td className="px-6 py-4 text-sm font-bold text-gray-900">{row.label}</td>
-                                                                    <td className="px-6 py-4 text-sm text-gray-600">{recordedModels[0] || "-"}</td>
-                                                                    <td className="px-6 py-4 text-sm text-gray-600">{Number(feature.runs || 0).toLocaleString()}</td>
+                                                                    <td className="px-6 py-4 text-sm text-gray-600">{model}</td>
+                                                                    <td className="px-6 py-4 text-sm text-gray-600">{runs.toLocaleString()}</td>
                                                                     <td className="px-6 py-4 text-sm text-gray-600">{totalTokens > 999 ? `${(totalTokens/1000).toFixed(1)}K` : totalTokens}</td>
-                                                                    <td className="px-6 py-4 text-sm font-bold text-right text-gray-900">{fmt(Number(feature.costUsd || 0))}</td>
+                                                                    <td className="px-6 py-4 text-sm font-bold text-right text-gray-900">{fmt(cost)}</td>
                                                                 </tr>
                                                             );
                                                         })}
@@ -821,7 +818,7 @@ export default function OrgsPage() {
                                                 <div className="text-center">
                                                     <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Brief + Evaluation + LLM Generation</div>
                                                     <div className="mt-3 text-4xl font-bold text-violet-600">
-                                                        {fmt(Number(getBillingFeature(metricsOrg, 'interview').costUsd || 0))}
+                                                        {fmt(Number(billingAggregates?.interview?.costUsd || 0))}
                                                     </div>
                                                 </div>
                                             </div>
@@ -982,33 +979,23 @@ export default function OrgsPage() {
                                                     <div>
                                                         <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-3 hover:text-[#10B981] transition-colors">LLM</div>
                                                         <div className="flex flex-wrap gap-2">
-                                                            {displayLlmModel(feature, "interview").map((model) => (
-                                                                <span key={model} className="px-3 py-1 bg-[#10B981]/10 text-[#10B981] text-[10px] font-semibold rounded-md border border-[#10B981]/20 uppercase tracking-wide">
-                                                                    {model}
+                                                            {feature.model && (
+                                                                <span className="px-3 py-1 bg-[#10B981]/10 text-[#10B981] text-[10px] font-semibold rounded-md border border-[#10B981]/20 uppercase tracking-wide">
+                                                                    {feature.model}
                                                                 </span>
-                                                            ))}
+                                                            )}
+                                                            <span className="px-3 py-1 bg-gray-50 text-gray-500 text-[10px] font-semibold rounded-md border border-gray-200 uppercase tracking-wide">openai</span>
                                                         </div>
                                                     </div>
                                                     <div>
                                                         <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-3 hover:text-[#3B82F6] transition-colors">TTS</div>
                                                         <div className="flex flex-wrap gap-2">
                                                             {(() => {
-                                                                const recordedModels = getRecordedModels(feature.ttsByModel);
-                                                                const recordedProviders = getRecordedProviders(feature.ttsByModel);
-                                                                const configuredTtsVoices = getConfiguredTtsVoices(metricsOrg);
-                                                                const models = recordedModels.length ? recordedModels : configuredTtsVoices.map((v) => cleanName(v.model));
-                                                                const providers = recordedProviders.length ? recordedProviders : configuredTtsVoices.map((v) => v.provider);
-                                                                if (!models.length && !providers.length) return <span className="text-[10px] font-semibold text-gray-500 italic">NO TTS CONFIGURED</span>;
-                                                                return (
-                                                                    <>
-                                                                        {models.map(m => (
-                                                                            <span key={m} className="px-3 py-1 bg-[#3B82F6]/10 text-[#3B82F6] text-[10px] font-semibold rounded-md border border-[#3B82F6]/20 uppercase tracking-wide">{m}</span>
-                                                                        ))}
-                                                                        {providers.map(p => (
-                                                                            <span key={p} className="px-3 py-1 bg-gray-50 text-gray-500 text-[10px] font-semibold rounded-md border border-gray-200 uppercase tracking-wide">{p}</span>
-                                                                        ))}
-                                                                    </>
-                                                                );
+                                                                const ttsProviders = Object.keys(feature.ttsProviders || {});
+                                                                if (!ttsProviders.length) return <span className="text-[10px] font-semibold text-gray-500 italic">NO TTS CONFIGURED</span>;
+                                                                return ttsProviders.map(p => (
+                                                                    <span key={p} className="px-3 py-1 bg-gray-50 text-gray-500 text-[10px] font-semibold rounded-md border border-gray-200 uppercase tracking-wide">{p}</span>
+                                                                ));
                                                             })()}
                                                         </div>
                                                     </div>
@@ -1016,13 +1003,12 @@ export default function OrgsPage() {
                                                         <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-3 hover:text-[#7C3AED] transition-colors">STT</div>
                                                         <div className="flex flex-wrap gap-2">
                                                             {(() => {
-                                                                const models = getRecordedModels(feature.sttByModel);
-                                                                const providers = getRecordedProviders(feature.sttByModel);
-                                                                return models.length || providers.length ? (
+                                                                const sttProviders = Object.keys(feature.sttProviders || {});
+                                                                return sttProviders.length ? (
                                                                     <>
-                                                                        {models.map((model) => (
-                                                                            <span key={model} className="px-3 py-1 bg-[#7C3AED]/10 text-[#7C3AED] text-[10px] font-semibold rounded-md border border-[#7C3AED]/20 uppercase tracking-wide">
-                                                                                {model}
+                                                                        {sttProviders.map((provider) => (
+                                                                            <span key={provider} className="px-3 py-1 bg-gray-50 text-gray-500 text-[10px] font-semibold rounded-md border border-gray-200 uppercase tracking-wide">
+                                                                                {provider}
                                                                             </span>
                                                                         ))}
                                                                         {providers.map((provider) => (
@@ -1047,9 +1033,9 @@ export default function OrgsPage() {
                                 <div className="text-[12px] font-bold uppercase tracking-widest text-gray-500">Total org cost</div>
                                 <div className="text-[28px] font-bold text-gray-900 tracking-tight">
                                     {(() => {
-                                        const allLlmCost = metricSections.reduce((s, sec) => s + Number(getBillingFeature(metricsOrg, sec.key).costUsd || 0), 0);
-                                        const allTtsCost = metricSections.reduce((s, sec) => s + Number(getBillingFeature(metricsOrg, sec.key).ttsCostUsd || 0), 0);
-                                        const allSttCost = metricSections.reduce((s, sec) => s + Number(getBillingFeature(metricsOrg, sec.key).sttCostUsd || 0), 0);
+                                        const allLlmCost = (billingAggregates?.resumeExtraction?.costUsd || 0) + (billingAggregates?.jdExtraction?.costUsd || 0) + (billingAggregates?.interviewReport?.costUsd || 0) + (billingAggregates?.resumeReport?.costUsd || 0) + (billingAggregates?.interview?.costUsd || 0);
+                                        const allTtsCost = billingAggregates?.interview?.ttsCostUsd || 0;
+                                        const allSttCost = billingAggregates?.interview?.sttCostUsd || 0;
                                         const grandTotal = allLlmCost + allTtsCost + allSttCost;
                                         return fmt(grandTotal);
                                     })()}
