@@ -101,59 +101,27 @@ export async function POST(request: Request) {
         let sent = 0;
         let queued = 0;
         const failures: Array<{ id: string; reason: string }> = [];
-        if (action === "shortlist") {
-            // Queue via BullMQ — worker creates/refreshes the interview token and sends invite
+        if (action === "shortlist" || action === "reject") {
+            // Queue via BullMQ — respects the Resend rate limiter of 5/sec
             for (const app of eligible) {
                 try {
                     await invitationDeliveryQueue.add(
-                        "send-shortlist-email",
-                        { applicationId: app.id, action: "shortlist", emailType: "screening" },
+                        `send-${action}-email`,
+                        { applicationId: app.id, action },
                         {}
                     );
                     queued += 1;
                     await appendCandidateActivity(app.id, {
                         type: "email_sent",
-                        label: "Interview invite queued",
+                        label: action === "shortlist" ? "Interview invite queued" : "Rejection email queued",
                         details: `Queued at ${new Date().toISOString()}`,
                         timestamp: new Date().toISOString(),
                         source: "worker",
                     });
                 } catch (error) {
                     const reason = error instanceof Error ? error.message : String(error);
-                    console.error("[bulk-email] queue failed:", { applicationId: app.id, reason });
+                    console.error(`[bulk-email] queue failed for ${action}:`, { applicationId: app.id, reason });
                     failures.push({ id: app.id, reason });
-                }
-            }
-        } else {
-            // action === "reject" — send directly, no queue needed
-            const results = await Promise.allSettled(
-                eligible.map(async (app) => {
-                    const mailResult = await sendRejectionEmail({
-                        email: app.email,
-                        fullName: app.fullName || "Candidate",
-                        jobTitle: app.drive?.title || "Unknown Role",
-                        orgName: app.drive?.organization?.name || "Sreeva AI",
-                    });
-                    if (!mailResult.success) {
-                        throw new Error(mailResult.error || "Unknown email delivery error");
-                    }
-                    await appendCandidateActivity(app.id, {
-                        type: "email_sent",
-                        label: "Rejection email sent",
-                        details: `Sent at ${new Date().toISOString()}`,
-                        timestamp: new Date().toISOString(),
-                        source: "system",
-                    });
-                    return app.id;
-                })
-            );
-            for (const result of results) {
-                if (result.status === "fulfilled") {
-                    sent += 1;
-                } else {
-                    const reason = result.reason instanceof Error ? result.reason.message : String(result.reason);
-                    console.error("[bulk-email] send failed:", reason);
-                    failures.push({ id: "unknown", reason });
                 }
             }
         }
@@ -167,8 +135,7 @@ export async function POST(request: Request) {
             }, { status: 500 });
         }
         const messageParts: string[] = [];
-        if (queued > 0) messageParts.push(`Queued ${queued} interview invite${queued !== 1 ? "s" : ""}`);
-        if (sent > 0) messageParts.push(`Sent ${sent} rejection email${sent !== 1 ? "s" : ""}`);
+        if (queued > 0) messageParts.push(`Queued ${queued} ${action === "shortlist" ? "interview invite" : "rejection email"}${queued !== 1 ? "s" : ""}`);
         return NextResponse.json({
             message: messageParts.join(" and ") + ".",
             sent,

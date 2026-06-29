@@ -83,6 +83,7 @@ export async function PATCH(
             usageMetrics,
             interviewQuotaTotal,
             interviewQuotaTopUp,
+            maxConcurrentSlots,
         } = body;
         const parsedInterviewQuotaTopUp =
             interviewQuotaTopUp !== undefined ? Math.max(0, Math.round(Number(interviewQuotaTopUp) || 0)) : undefined;
@@ -177,6 +178,9 @@ export async function PATCH(
         if (plan !== undefined) updateData.plan = normalizedPlan || plan;
         if (maxActiveDrives !== undefined && String(maxActiveDrives).trim() !== "") {
             updateData.maxActiveDrives = normalizeOrgLimitInput(maxActiveDrives);
+        }
+        if (maxConcurrentSlots !== undefined && maxConcurrentSlots !== null) {
+            updateData.maxConcurrentSlots = Math.max(1, parseInt(maxConcurrentSlots));
         }
         if (proctoringSignals !== undefined) {
             updateData.proctoringSignals = normalizeProctoringSignals(proctoringSignals);

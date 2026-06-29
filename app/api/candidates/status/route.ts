@@ -51,11 +51,8 @@ export async function GET(request: Request) {
             orderBy: { createdAt: "desc" }
         });
         const formattedApplications = applications.map((app: any) => {
-            const nowMs = Date.now();
-            const expiresAtMs = app.interview?.expiresAt ? new Date(app.interview.expiresAt).getTime() : null;
-            const isDeadlineExpired = expiresAtMs !== null && nowMs > expiresAtMs;
             const effectiveLinkStatus = app.interview
-                ? (isDeadlineExpired ? "EXPIRED" : (app.interview.linkStatus || "ACTIVE"))
+                ? (app.interview.linkStatus || "ACTIVE")
                 : null;
             const interviewStage = app.interview
                 ? {
@@ -68,9 +65,9 @@ export async function GET(request: Request) {
                     canStart: (() => {
                         if (app.interview.status !== "PENDING") return false;
                         const startedAtMs = app.interview.startedAt ? new Date(app.interview.startedAt).getTime() : null;
-                        const deadlineOpen = !isDeadlineExpired;
+                        const nowMs = Date.now();
                         const withinRejoinWindow = startedAtMs === null || nowMs <= startedAtMs + 5 * 60 * 1000;
-                        return deadlineOpen && withinRejoinWindow;
+                        return withinRejoinWindow;
                     })(),
                     interviewLink: buildInterviewLink(appUrl, app.id, {
                         token: isInterviewTokenRequired() ? app.interview.accessToken : null,

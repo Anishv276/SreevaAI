@@ -214,7 +214,7 @@ export function InterviewOnlyCandidatesTable({ driveId, refreshKey }: { driveId:
                                     isActionBlocked ? "border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed" : "border-violet-200 bg-white text-[#7C3AED] hover:bg-violet-50")}
                             >
                                 {isActionBlocked ? <Lock className="h-3.5 w-3.5" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                                Resend Invite ({selectedCount})
+                                Resend Schedule Link ({selectedCount})
                             </button>
                             <button
                                 onClick={() => setDeleteConfirm({ mode: "bulk" })}
@@ -377,7 +377,7 @@ export function InterviewOnlyCandidatesTable({ driveId, refreshKey }: { driveId:
                                                         ? <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                                                         : <RefreshCw className="h-4 w-4 mr-2" />
                                                     }
-                                                    {sendingId === candidate.id ? "Sending…" : "Resend Interview Link"}
+                                                    {sendingId === candidate.id ? "Sending…" : "Resend Schedule Link"}
                                                 </DropdownMenuItem>
                                                 <DropdownMenuItem
                                                     onClick={() => setDeleteConfirm({ mode: "single", candidateId: candidate.id, candidateName: displayName })}

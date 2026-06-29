@@ -81,7 +81,7 @@ function EmailConfirmModal({
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden">
                 <div className="px-6 pt-6 pb-4">
-                    <h2 className="text-lg font-black text-gray-900 tracking-tight">Confirm Send Email</h2>
+                    <h2 className="text-lg font-black text-gray-900 tracking-tight">Confirm Send Schedule Link</h2>
                     {isBulk ? (
                         <div className="mt-2 space-y-1 text-sm text-gray-600">
                             {shortlistedCount > 0 && <p>• <span className="font-bold text-emerald-700">{shortlistedCount} shortlisted</span> → interview link will be sent</p>}
@@ -510,7 +510,7 @@ export default function CandidatesPage() {
                     title={isSuspended ? interviewActionBlockedMessage : undefined}
                     className={cn("h-8 px-3.5 rounded-lg border font-semibold text-xs flex items-center gap-1.5 shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
                         selectedCount === 0 ? "bg-gray-100 text-gray-400 border-gray-200" : isSuspended ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed" : "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100")}>
-                    {isSuspended ? <Lock className="h-3.5 w-3.5" /> : <Mail className="h-3.5 w-3.5" />} Send Email
+                    {isSuspended ? <Lock className="h-3.5 w-3.5" /> : <Mail className="h-3.5 w-3.5" />} Send Schedule Link
                 </button>
                 
                 <div className="w-px h-5 bg-gray-200 mx-1 hidden sm:block" />
@@ -521,7 +521,7 @@ export default function CandidatesPage() {
                     title={isInterviewActionBlocked ? interviewActionBlockedMessage : undefined}
                     className={cn("h-8 px-3.5 rounded-lg border font-semibold text-xs flex items-center gap-1.5 shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
                         selectedCount === 0 ? "bg-gray-100 text-gray-400 border-gray-200" : isInterviewActionBlocked ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed" : "bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100")}>
-                    {isInterviewActionBlocked ? <Lock className="h-3.5 w-3.5" /> : <RefreshCw className="h-3.5 w-3.5" />} Resend Link
+                    {isInterviewActionBlocked ? <Lock className="h-3.5 w-3.5" /> : <RefreshCw className="h-3.5 w-3.5" />} Resend Schedule Link
                 </button>
 
                 <div className="flex-1 min-w-[20px]" />
@@ -716,7 +716,7 @@ export default function CandidatesPage() {
                                                             isSuspended ? "text-gray-400 focus:bg-transparent" : "text-blue-600 focus:text-blue-700 focus:bg-blue-50")}
                                                         title={isSuspended ? interviewActionBlockedMessage : undefined}>
                                                         {isSuspended ? <Lock className="h-4 w-4 mr-3 shrink-0" /> : <Mail className="h-4 w-4 mr-3 shrink-0" />}
-                                                        Send Email
+                                                        Send Schedule Link
                                                     </DropdownMenuItem>
                                                     
                                                     {/* Manage */}
@@ -736,7 +736,7 @@ export default function CandidatesPage() {
                                                         {isInterviewActionBlocked
                                                             ? <Lock className="h-4 w-4 mr-3 shrink-0" />
                                                             : <RefreshCw className={cn("h-4 w-4 mr-3 shrink-0", sendingInterviewLinkId === candidate.id && "animate-spin")} />}
-                                                        {sendingInterviewLinkId === candidate.id ? "Sending..." : "Resend Interview Link"}
+                                                        {sendingInterviewLinkId === candidate.id ? "Sending..." : "Resend Schedule Link"}
                                                     </DropdownMenuItem>
                                                     <DropdownMenuItem
                                                         onClick={() => setDeleteConfirm({ mode: "single", candidateId: candidate.id, candidateName: displayName })}

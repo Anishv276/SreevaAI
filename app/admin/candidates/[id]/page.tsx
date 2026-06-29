@@ -595,6 +595,7 @@ const interviewReportVerdict = typeof interviewSummaryData?.decision_note === "o
                     skillsEvaluated,
                     skillRatingsList,
                     avgResponseTimeSec,
+                    reportNotGenerated: Boolean(candidate?.interview?.isTest && isFallbackReport),
                 })}
             />
         </>

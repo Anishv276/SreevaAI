@@ -166,7 +166,7 @@ async function processInterviewStartJob(job: any) {
     update: {
       status: "IN_PROGRESS",
       startedAt: startedAtCandidate,
-      linkStatus: "ACTIVE",
+      linkStatus: "EXPIRED",
     },
     create: {
       id: generateId("int", applicationId),
@@ -174,7 +174,7 @@ async function processInterviewStartJob(job: any) {
       accessToken: interviewAccessToken,
       status: "IN_PROGRESS",
       startedAt: startedAtCandidate,
-      linkStatus: "ACTIVE",
+      linkStatus: "EXPIRED",
     },
   });
   await prisma.application.update({
@@ -188,7 +188,7 @@ async function processInterviewStartJob(job: any) {
     success: true,
     applicationId,
     startedAt: startedAtCandidate.toISOString(),
-    linkStatus: existingInterview?.linkStatus || "ACTIVE",
+    linkStatus: "EXPIRED",
     interviewStatus: "IN_PROGRESS",
   };
 }
@@ -923,7 +923,7 @@ if (isQueueEnabled("invitation-delivery-queue")) {
       }
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://sreevaai.com';
       const now = new Date();
-      let interviewLink: string | undefined;
+      let scheduleLink: string | undefined;
       if (action === "shortlist") {
         const driveDeadline = application.drive?.deadline ? new Date(application.drive.deadline) : null;
         const interviewRecord = await prisma.interview.upsert({
@@ -946,22 +946,18 @@ if (isQueueEnabled("invitation-delivery-queue")) {
             linkStatus: "ACTIVE",
           },
         });
-        interviewLink = buildInterviewLink(appUrl, applicationId, {
-          token: isInterviewTokenRequired() ? interviewRecord.accessToken : null,
-          orgName: application.drive?.organization?.name || "Sreeva AI",
-        });
+        scheduleLink = `${appUrl}/schedule/${interviewRecord.accessToken}`;
       }
-      const { sendInterviewInviteEmail, sendRejectionEmail } = await import('./lib/mail');
+      const { sendScheduleInviteEmail, sendRejectionEmail } = await import('./lib/mail');
       let mailResult: { success: boolean; error?: string };
       if (action === "shortlist") {
-        if (!interviewLink) throw new Error(`interviewLink required for action=shortlist`);
-        mailResult = await sendInterviewInviteEmail({
+        if (!scheduleLink) throw new Error(`scheduleLink required for action=shortlist`);
+        mailResult = await sendScheduleInviteEmail({
           email: application.email,
           fullName: application.fullName || "Candidate",
           jobTitle: application.drive?.title || "Unknown Role",
           orgName: application.drive?.organization?.name || "Sreeva AI",
-          interviewLink,
-          schedulingDeadline: application.drive?.deadline ?? null,
+          scheduleLink,
         });
       } else if (action === "reject") {
         mailResult = await sendRejectionEmail({
@@ -1007,8 +1003,8 @@ if (isQueueEnabled("invitation-delivery-queue")) {
       prefix: BULL_PREFIX,
       concurrency: 10,
       limiter: {
-        max: 10,
-        duration: 60000,
+        max: 5,
+        duration: 1000,
       },
       lockDuration: 5 * 60 * 1000,
       stalledInterval: 5 * 60 * 1000,
@@ -1259,7 +1255,7 @@ if (isQueueEnabled("interview-finalization")) {
             const notifyOrgId = appForNotify?.drive?.orgId;
             if (notifyOrgId) {
               const admins = await prisma.user.findMany({
-                where: { orgId: notifyOrgId, role: "ADMIN" },
+                where: { orgId: notifyOrgId },
                 select: { email: true, name: true },
               });
               const { sendInterviewCompletedEmail } = await import('./lib/mail');

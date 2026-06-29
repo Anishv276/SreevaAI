@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { sendInterviewInviteEmail } from "@/lib/mail";
+import { sendScheduleInviteEmail } from "@/lib/mail";
 import { buildInterviewLink } from "@/lib/interview-links";
 import { getSession, isAdminRole, isSuperAdminRole } from "@/lib/auth";
 import { getOrgBillingStatus } from "@/lib/credits";
@@ -88,18 +88,31 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
             },
         });
         const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-        const interviewLink = buildInterviewLink(baseUrl, applicationId, {
-            token: isInterviewTokenRequired() ? interviewRecord.accessToken : null,
-            orgName: application.drive?.organization?.name || "Sreeva AI",
-        });
-        const mailResult = await sendInterviewInviteEmail({
-            email: application.email,
-            fullName: application.fullName,
-            jobTitle: application.drive?.title || "Unknown Role",
-            orgName: application.drive?.organization?.name || "Sreeva AI",
-            interviewLink,
-            schedulingDeadline: application.drive?.deadline ?? null,
-        });
+        
+        let mailResult;
+        if (interviewRecord.scheduledAt) {
+            const { sendInterviewScheduledEmail } = await import("@/lib/mail");
+            const interviewLink = `${baseUrl}/interview/${applicationId}?token=${interviewRecord.accessToken}`;
+            mailResult = await sendInterviewScheduledEmail({
+                email: application.email,
+                fullName: application.fullName || "Candidate",
+                jobTitle: application.drive?.title || "Unknown Role",
+                orgName: application.drive?.organization?.name || "Sreeva AI",
+                interviewLink,
+                scheduledAt: interviewRecord.scheduledAt,
+                timezone: interviewRecord.timezone || "Asia/Kolkata",
+            });
+        } else {
+            const scheduleLink = `${baseUrl}/schedule/${interviewRecord.accessToken}`;
+            mailResult = await sendScheduleInviteEmail({
+                email: application.email,
+                fullName: application.fullName || "Candidate",
+                jobTitle: application.drive?.title || "Unknown Role",
+                orgName: application.drive?.organization?.name || "Sreeva AI",
+                scheduleLink,
+            });
+        }
+
         if (!mailResult.success) {
             return NextResponse.json({
                 error: `Interview link email could not be sent: ${mailResult.error}`,

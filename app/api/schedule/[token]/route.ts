@@ -5,11 +5,11 @@ import { sendInterviewScheduledEmail } from "@/lib/mail";
 const SLOT_DURATION_MS = 30 * 60 * 1000; // 30-min slots
 const TIMEZONE = "Asia/Kolkata";
 
-// Generate 30-min slots for a given day (9 AM – 6 PM IST), returning UTC Date objects
+// Generate 30-min slots for a given day (12 AM – 11:59 PM IST), returning UTC Date objects
 function generateSlots(dateIST: string): Date[] {
     const slots: Date[] = [];
     // dateIST is YYYY-MM-DD in IST
-    for (let hour = 9; hour < 18; hour++) {
+    for (let hour = 0; hour < 24; hour++) {
         for (const minute of [0, 30]) {
             // Build ISO string as IST then convert
             const localStr = `${dateIST}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00`;
@@ -81,7 +81,8 @@ export async function GET(
             return NextResponse.json(result);
         }
 
-        const allSlots = generateSlots(dateIST).filter(s => s.getTime() > Date.now());
+        // Only show slots that are at least 30 minutes from now
+        const allSlots = generateSlots(dateIST).filter(s => s.getTime() > Date.now() + 30 * 60 * 1000);
 
         // Count booked interviews per slot window for this org's drive
         const driveId = interview.application.drive?.id;

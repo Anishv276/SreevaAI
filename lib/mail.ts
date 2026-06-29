@@ -3,9 +3,9 @@ export type MailResult =
     | { success: true }
     | { success: false; error: string };
 const FONT = `-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif`;
-const ORANGE = "#F97316";
-const ORANGE_LIGHT = "#fff7ed";   // orange-50
-const ORANGE_BORDER = "#fed7aa";  // orange-200
+const VIOLET = "#7C3AED";
+const VIOLET_LIGHT = "#F5F3FF";   // violet-50
+const VIOLET_BORDER = "#DDD6FE";  // violet-200
 function wrapper(content: string) {
     return `<!DOCTYPE html>
 <html lang="en">
@@ -33,9 +33,9 @@ function header(eyebrow: string, title: string) {
   <td style="background:#ffffff;border-bottom:1px solid #f0f0f0;padding:0;">
     <table width="100%" cellpadding="0" cellspacing="0" border="0">
       <tr>
-        <td style="width:4px;background:${ORANGE};padding:0;"></td>
+        <td style="width:4px;background:${VIOLET};padding:0;"></td>
         <td style="padding:28px 36px;">
-          <p style="margin:0 0 6px;font-size:11px;font-weight:700;color:${ORANGE};letter-spacing:0.12em;text-transform:uppercase;">${eyebrow}</p>
+          <p style="margin:0 0 6px;font-size:11px;font-weight:700;color:${VIOLET};letter-spacing:0.12em;text-transform:uppercase;">${eyebrow}</p>
           <p style="margin:0;font-size:24px;font-weight:800;color:#111111;letter-spacing:-0.02em;line-height:1.25;">${title}</p>
         </td>
         <td style="padding:28px 36px 28px 0;text-align:right;vertical-align:middle;">
@@ -48,13 +48,13 @@ function header(eyebrow: string, title: string) {
 }
 function infoCard(items: { label: string; value: string }[]) {
     return `
-<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${ORANGE_LIGHT};border:1px solid ${ORANGE_BORDER};border-left:4px solid ${ORANGE};border-radius:10px;margin:20px 0;">
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${VIOLET_LIGHT};border:1px solid ${VIOLET_BORDER};border-left:4px solid ${VIOLET};border-radius:10px;margin:20px 0;">
   <tr><td style="padding:18px 22px;">
     <table width="100%" cellpadding="0" cellspacing="0" border="0">
       ${items.map(({ label, value }, i) => `
       <tr>
         <td style="padding:${i === 0 ? "0" : "8px"} 0 0;vertical-align:top;width:130px;">
-          <span style="font-size:11px;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:0.07em;">${label}</span>
+          <span style="font-size:11px;font-weight:700;color:#5b21b6;text-transform:uppercase;letter-spacing:0.07em;">${label}</span>
         </td>
         <td style="padding:${i === 0 ? "0" : "8px"} 0 0;vertical-align:top;">
           <span style="font-size:14px;font-weight:600;color:#1a1a1a;">${value}</span>
@@ -65,12 +65,12 @@ function infoCard(items: { label: string; value: string }[]) {
 </table>`;
 }
 function ctaButton(href: string, label: string) {
-    return `<a href="${href}" style="display:inline-block;background:${ORANGE};color:#ffffff;text-decoration:none;font-size:15px;font-weight:700;padding:14px 36px;border-radius:10px;letter-spacing:0.01em;box-shadow:0 2px 12px rgba(249,115,22,0.30);">${label} &rarr;</a>`;
+    return `<a href="${href}" style="display:inline-block;background:${VIOLET};color:#ffffff;text-decoration:none;font-size:15px;font-weight:700;padding:14px 36px;border-radius:10px;letter-spacing:0.01em;box-shadow:0 2px 12px rgba(124,58,237,0.30);">${label} &rarr;</a>`;
 }
 function tipBox(html: string) {
     return `
-<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${ORANGE_LIGHT};border:1px solid ${ORANGE_BORDER};border-radius:10px;margin:16px 0;">
-  <tr><td style="padding:16px 20px;font-size:13px;color:#92400e;line-height:1.75;">${html}</td></tr>
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${VIOLET_LIGHT};border:1px solid ${VIOLET_BORDER};border-radius:10px;margin:16px 0;">
+  <tr><td style="padding:16px 20px;font-size:13px;color:#5b21b6;line-height:1.75;">${html}</td></tr>
 </table>`;
 }
 function noteBox(html: string) {
@@ -247,7 +247,7 @@ export async function sendOrgWelcomeEmail({
               ].map(([n, text]) => `
               <tr>
                 <td style="vertical-align:top;padding:3px 10px 3px 0;">
-                  <span style="display:inline-block;width:20px;height:20px;background:${ORANGE};border-radius:50%;text-align:center;line-height:20px;font-size:11px;font-weight:700;color:#fff;">${n}</span>
+                  <span style="display:inline-block;width:20px;height:20px;background:${VIOLET};border-radius:50%;text-align:center;line-height:20px;font-size:11px;font-weight:700;color:#fff;">${n}</span>
                 </td>
                 <td style="font-size:13px;color:#92400e;line-height:1.7;padding:3px 0;">${text}</td>
               </tr>`).join("")}
@@ -270,7 +270,7 @@ export async function sendOrgWelcomeEmail({
 export async function sendOtpEmail({ to, name, otp }: { to: string; name: string; otp: string }): Promise<void> {
     const subject = `${otp} is your Sreeva AI recovery code`;
     const digitBoxes = otp.split("").map(d =>
-        `<td style="padding:0 4px;"><div style="width:48px;height:60px;background:#ffffff;border:2px solid ${ORANGE_BORDER};border-radius:10px;text-align:center;line-height:60px;font-size:28px;font-weight:800;color:#111111;font-variant-numeric:tabular-nums;">${d}</div></td>`
+        `<td style="padding:0 4px;"><div style="width:48px;height:60px;background:#ffffff;border:2px solid ${VIOLET_BORDER};border-radius:10px;text-align:center;line-height:60px;font-size:28px;font-weight:800;color:#111111;font-variant-numeric:tabular-nums;">${d}</div></td>`
     ).join("");
     const html = wrapper(`
         ${header("Security Code", "Account recovery")}
@@ -278,11 +278,11 @@ export async function sendOtpEmail({ to, name, otp }: { to: string; name: string
           <p style="margin:0 0 20px;font-size:15px;color:#404040;line-height:1.75;">
             Hi ${name}, here is your one-time recovery code. Enter it on the reset page to continue. This code expires in <strong>10 minutes</strong>.
           </p>
-          <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${ORANGE_LIGHT};border:1px solid ${ORANGE_BORDER};border-radius:12px;">
-            <tr><td style="padding:28px 24px;text-align:center;">
-              <p style="margin:0 0 16px;font-size:11px;font-weight:700;color:${ORANGE};letter-spacing:0.1em;text-transform:uppercase;">Your one-time code</p>
+          <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${VIOLET_LIGHT};border:1px solid ${VIOLET_BORDER};border-radius:12px;">
+            <tr><td style="padding:32px;text-align:center;">
+              <p style="margin:0 0 16px;font-size:11px;font-weight:700;color:${VIOLET};letter-spacing:0.1em;text-transform:uppercase;">Your one-time code</p>
               <table cellpadding="0" cellspacing="0" border="0" style="margin:0 auto;"><tr>${digitBoxes}</tr></table>
-              <p style="margin:14px 0 0;font-size:12px;color:#92400e;">Expires in <strong>10 minutes</strong></p>
+              <p style="margin:14px 0 0;font-size:12px;color:${VIOLET};">Expires in <strong>10 minutes</strong></p>
             </td></tr>
           </table>
           ${noteBox(`⚠️ <strong>Never share this code.</strong> Sreeva AI will never ask for your OTP via phone, chat, or email. If you didn't request this, please ignore — your account is safe.`)}
@@ -326,11 +326,8 @@ export async function sendScheduleInviteEmail({
             </ul>
           `)}
         </td></tr>
-        <tr><td style="padding:24px 36px 8px;text-align:center;">
+        <tr><td style="padding:24px 36px 32px;text-align:center;">
           ${ctaButton(scheduleLink, "Pick Your Time Slot")}
-          <p style="margin:14px 0 0;font-size:12px;color:#b0b0b0;">Button not working? Copy this link:<br/>
-            <span style="color:#737373;word-break:break-all;">${scheduleLink}</span>
-          </p>
         </td></tr>
         ${footerRow(`Sent by ${orgName} via Sreeva AI · ${email}`)}
     `);
@@ -402,7 +399,7 @@ export async function sendInterviewScheduledEmail({
 export async function sendPasswordChangeOtpEmail({ to, otp }: { to: string; otp: string }): Promise<void> {
     const subject = `${otp} — Confirm your Sreeva AI password change`;
     const digitBoxes = otp.split("").map(d =>
-        `<td style="padding:0 4px;"><div style="width:48px;height:60px;background:#ffffff;border:2px solid ${ORANGE_BORDER};border-radius:10px;text-align:center;line-height:60px;font-size:28px;font-weight:800;color:#111111;font-variant-numeric:tabular-nums;">${d}</div></td>`
+        `<td style="padding:0 4px;"><div style="width:48px;height:60px;background:#ffffff;border:2px solid ${VIOLET_BORDER};border-radius:10px;text-align:center;line-height:60px;font-size:28px;font-weight:800;color:#111111;font-variant-numeric:tabular-nums;">${d}</div></td>`
     ).join("");
     const html = wrapper(`
         ${header("Security Verification", "Confirm password change")}
@@ -410,11 +407,11 @@ export async function sendPasswordChangeOtpEmail({ to, otp }: { to: string; otp:
           <p style="margin:0 0 20px;font-size:15px;color:#404040;line-height:1.75;">
             A password change was requested for <strong style="color:#111;">${to}</strong>. Enter this code to authorize the change. It expires in <strong>10 minutes</strong>.
           </p>
-          <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${ORANGE_LIGHT};border:1px solid ${ORANGE_BORDER};border-radius:12px;">
-            <tr><td style="padding:28px 24px;text-align:center;">
-              <p style="margin:0 0 16px;font-size:11px;font-weight:700;color:${ORANGE};letter-spacing:0.1em;text-transform:uppercase;">Authorization code</p>
+          <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${VIOLET_LIGHT};border:1px solid ${VIOLET_BORDER};border-radius:12px;">
+            <tr><td style="padding:32px;text-align:center;">
+              <p style="margin:0 0 16px;font-size:11px;font-weight:700;color:${VIOLET};letter-spacing:0.1em;text-transform:uppercase;">Authorization code</p>
               <table cellpadding="0" cellspacing="0" border="0" style="margin:0 auto;"><tr>${digitBoxes}</tr></table>
-              <p style="margin:14px 0 0;font-size:12px;color:#92400e;">Expires in <strong>10 minutes</strong></p>
+              <p style="margin:14px 0 0;font-size:12px;color:${VIOLET};">Expires in <strong>10 minutes</strong></p>
             </td></tr>
           </table>
           ${noteBox(`⚠️ <strong>Didn't request this?</strong> Someone may be trying to access your account. Secure it immediately by resetting your password.`)}

@@ -155,7 +155,7 @@ export default function SchedulePage({ params }: PageProps) {
     if (phase === "loading") {
         return (
             <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-                <div className="w-8 h-8 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+                <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
             </div>
         );
     }
@@ -208,23 +208,23 @@ export default function SchedulePage({ params }: PageProps) {
     // Calendar phase
     return (
         <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 w-full max-w-3xl overflow-hidden">
-                <div className="flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x divide-gray-100">
+            <div className={cn("bg-white rounded-2xl shadow-sm border border-gray-100 w-full overflow-hidden transition-all duration-300", selectedDate ? "max-w-5xl" : "max-w-3xl")}>
+                <div className="flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x divide-gray-100 min-h-[500px]">
 
                     {/* Left: Details */}
                     <div className="p-8 md:w-72 flex-shrink-0">
-                        <div className="w-10 h-10 rounded-xl bg-orange-500 flex items-center justify-center mb-6">
-                            <span className="text-white font-bold text-sm">AI</span>
+                        <div className="mb-6">
+                            <img src="/sreevaailogo2.png" alt="Sreeva AI" className="h-8 object-contain" />
                         </div>
                         <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1">{info?.orgName}</p>
                         <h1 className="text-xl font-bold text-gray-900 mb-6 leading-snug">{info?.jobTitle}</h1>
                         <div className="space-y-3">
                             <div className="flex items-center gap-2 text-sm text-gray-500">
-                                <Clock className="w-4 h-4 text-orange-400 flex-shrink-0" />
+                                <Clock className="w-4 h-4 text-violet-500 flex-shrink-0" />
                                 <span>20 min interview · 30 min slot</span>
                             </div>
                             <div className="flex items-center gap-2 text-sm text-gray-500">
-                                <MapPin className="w-4 h-4 text-orange-400 flex-shrink-0" />
+                                <MapPin className="w-4 h-4 text-violet-500 flex-shrink-0" />
                                 <span>India Standard Time (IST)</span>
                             </div>
                         </div>
@@ -234,7 +234,7 @@ export default function SchedulePage({ params }: PageProps) {
                                     <strong>Booking Deadline:</strong> {new Date(deadline).toLocaleDateString("en-IN", { weekday: "long", month: "long", day: "numeric", year: "numeric", timeZone: TIMEZONE })}
                                 </div>
                             )}
-                            <div className="p-4 bg-orange-50 border border-orange-100 rounded-xl text-xs text-orange-700 leading-relaxed">
+                            <div className="p-4 bg-violet-50 border border-violet-100 rounded-xl text-xs text-violet-700 leading-relaxed">
                                 <strong className="block mb-1">How it works</strong>
                                 Pick a slot → Get interview link via email → Join 5 min early for hardware check → Interview starts exactly at slot time.
                             </div>
@@ -294,9 +294,9 @@ export default function SchedulePage({ params }: PageProps) {
                                         className={cn(
                                             "aspect-square w-full flex items-center justify-center text-sm rounded-full transition-colors font-medium",
                                             isDisabled && "text-gray-200 cursor-not-allowed",
-                                            !isDisabled && !isSelected && "text-gray-700 hover:bg-orange-50 hover:text-orange-600",
-                                            isToday && !isSelected && !isDisabled && "border border-orange-300",
-                                            isSelected && "bg-orange-500 text-white",
+                                            !isDisabled && !isSelected && "text-gray-700 hover:bg-violet-50 hover:text-violet-600",
+                                            isToday && !isSelected && !isDisabled && "border border-violet-300",
+                                            isSelected && "bg-violet-600 text-white",
                                         )}
                                     >
                                         {parseInt(date.split("-")[2])}
@@ -304,21 +304,23 @@ export default function SchedulePage({ params }: PageProps) {
                                 );
                             })}
                         </div>
+                    </div>
 
-                        {/* Slots */}
-                        {selectedDate && (
+                    {/* Right: Slots */}
+                    {selectedDate && (
+                        <div className="p-8 md:w-80 flex-shrink-0 bg-gray-50/30">
                             <div>
                                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">
                                     {new Date(selectedDate + "T12:00:00").toLocaleDateString("en-IN", { weekday: "long", month: "long", day: "numeric" })}
                                 </p>
                                 {loadingSlots ? (
                                     <div className="flex justify-center py-6">
-                                        <div className="w-5 h-5 border-2 border-orange-400 border-t-transparent rounded-full animate-spin" />
+                                        <div className="w-5 h-5 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
                                     </div>
                                 ) : slots.length === 0 ? (
                                     <p className="text-sm text-gray-400 text-center py-4">No slots available on this day</p>
                                 ) : (
-                                    <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                                    <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
                                         {slots.map(slot => {
                                             const isChosen = selectedSlot === slot;
                                             return (
@@ -326,22 +328,22 @@ export default function SchedulePage({ params }: PageProps) {
                                                     {!isChosen ? (
                                                         <button
                                                             onClick={() => setSelectedSlot(slot)}
-                                                            className="w-full flex items-center justify-between px-4 py-3 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:border-orange-400 hover:bg-orange-50 transition-colors"
+                                                            className="w-full flex items-center justify-between px-4 py-3 border border-gray-200 bg-white rounded-xl text-sm font-medium text-gray-700 hover:border-violet-500 hover:bg-violet-50 hover:text-violet-700 transition-colors"
                                                         >
                                                             <span>{formatSlotIST(slot)}</span>
                                                             <span className="text-xs text-gray-400">Select</span>
                                                         </button>
                                                     ) : (
-                                                        <div className="border-2 border-orange-400 rounded-xl overflow-hidden">
-                                                            <div className="flex items-center justify-between px-4 py-3 bg-orange-50">
-                                                                <span className="text-sm font-semibold text-gray-900">{formatSlotIST(slot)}</span>
-                                                                <button onClick={() => setSelectedSlot(null)} className="text-xs text-gray-400 hover:text-gray-600">✕</button>
+                                                        <div className="border-2 border-violet-500 bg-white rounded-xl overflow-hidden shadow-sm">
+                                                            <div className="flex items-center justify-between px-4 py-3 bg-violet-50">
+                                                                <span className="text-sm font-semibold text-violet-900">{formatSlotIST(slot)}</span>
+                                                                <button onClick={() => setSelectedSlot(null)} className="text-xs text-violet-600 hover:text-violet-800 font-bold p-1">✕</button>
                                                             </div>
                                                             <div className="px-4 pb-3 pt-2 bg-white">
                                                                 <button
                                                                     onClick={handleConfirm}
                                                                     disabled={confirming}
-                                                                    className="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold py-2.5 rounded-lg text-sm transition-colors disabled:opacity-60"
+                                                                    className="w-full bg-violet-600 hover:bg-violet-700 text-white font-semibold py-2.5 rounded-lg text-sm transition-colors disabled:opacity-60 shadow-sm"
                                                                 >
                                                                     {confirming ? "Confirming..." : `Confirm ${formatSlotIST(slot)}`}
                                                                 </button>
@@ -354,8 +356,8 @@ export default function SchedulePage({ params }: PageProps) {
                                     </div>
                                 )}
                             </div>
-                        )}
-                    </div>
+                        </div>
+                    )}
                 </div>
             </div>
         </div>

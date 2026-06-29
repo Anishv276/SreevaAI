@@ -58,7 +58,7 @@ function checkSchedulingGate(interview: { scheduledAt: Date | null; status: stri
         return {
             ok: false,
             code: "SLOT_EXPIRED",
-            error: "You missed your scheduled interview. Please contact your recruiter to reschedule.",
+            error: "Your slot has been expired, contact recruiter.",
             status: 403,
         };
     }
@@ -88,6 +88,12 @@ export async function POST(
 
         const gate = checkSchedulingGate(interview);
         if (!gate.ok) {
+            if (gate.code === "SLOT_EXPIRED" && interview.linkStatus !== "EXPIRED") {
+                await prisma.interview.update({
+                    where: { applicationId },
+                    data: { linkStatus: "EXPIRED" }
+                }).catch(() => {});
+            }
             return NextResponse.json(
                 { error: gate.error, code: gate.code, scheduledAt: interview.scheduledAt?.toISOString() },
                 { status: gate.status }
@@ -104,7 +110,7 @@ export async function POST(
         if (interview.status === "PENDING") {
             await prisma.interview.update({
                 where: { applicationId },
-                data: { status: "IN_PROGRESS", startedAt: new Date() },
+                data: { status: "IN_PROGRESS", startedAt: new Date(), linkStatus: "EXPIRED" },
             }).catch(() => {});
         }
 
@@ -191,6 +197,12 @@ export async function GET(
 
         const gate = checkSchedulingGate(interview);
         if (!gate.ok) {
+            if (gate.code === "SLOT_EXPIRED" && interview.linkStatus !== "EXPIRED") {
+                await prisma.interview.update({
+                    where: { applicationId },
+                    data: { linkStatus: "EXPIRED" }
+                }).catch(() => {});
+            }
             return NextResponse.json(
                 { error: gate.error, code: gate.code, scheduledAt: interview.scheduledAt?.toISOString() },
                 { status: gate.status }

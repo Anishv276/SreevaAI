@@ -463,7 +463,7 @@ export default function OrgCandidatesPage({ params }: { params: Promise<{ id: st
                                                             onClick={() => setConfirmTarget({ id: c.id, name: displayName })}
                                                             className="rounded-xl px-2.5 py-2 text-sm font-semibold cursor-pointer text-blue-600 focus:text-blue-700 focus:bg-blue-50">
                                                             <RefreshCw className="h-4 w-4 mr-2 shrink-0" />
-                                                            Resend Interview Link
+                                                            Resend Schedule Link
                                                         </DropdownMenuItem>
                                                     </DropdownMenuContent>
                                                 </DropdownMenu>
@@ -524,9 +524,9 @@ export default function OrgCandidatesPage({ params }: { params: Promise<{ id: st
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
                     <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden">
                         <div className="px-6 pt-6 pb-4">
-                            <h2 className="text-lg font-black text-gray-900 tracking-tight">Resend Interview Link?</h2>
+                            <h2 className="text-lg font-black text-gray-900 tracking-tight">Resend Schedule Link?</h2>
                             <p className="mt-2 text-sm text-gray-600">
-                                Send a new interview link to{" "}
+                                Send a new schedule link to{" "}
                                 <span className="font-bold text-gray-900">{confirmTarget.name}</span>?
                                 Any previously sent link will be replaced.
                             </p>

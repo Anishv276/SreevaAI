@@ -87,6 +87,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
     const [form, setForm] = useState({
         name: "", slug: "", plan: DEFAULT_ORG_PLAN,
         maxActiveDrives: "Unlimited",
+        maxConcurrentSlots: "5",
         proctoringSignals: getProctoringSignalsForPlan(DEFAULT_ORG_PLAN),
         adminEmail: "", adminPassword: "",
         recordingEnabled: false,
@@ -102,6 +103,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                     name: data.name || "", slug: data.slug || "",
                     plan: normalizeOrgPlan(data.plan) || DEFAULT_ORG_PLAN,
                     maxActiveDrives: formatOrgLimitValue(data.maxActiveDrives),
+                    maxConcurrentSlots: data.maxConcurrentSlots != null ? String(data.maxConcurrentSlots) : "5",
                     proctoringSignals: normalizeProctoringSignals(data.proctoringSignals),
                     adminEmail: data.users && data.users.length > 0 ? data.users[0].email : "",
                     adminPassword: "",
@@ -136,6 +138,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                     ...form,
                     recordingEnabled: form.recordingEnabled ? true : null,
                     recordingRetentionDays: form.recordingEnabled ? Number(form.recordingRetentionDays) : null,
+                    maxConcurrentSlots: Number(form.maxConcurrentSlots || 5),
                     interviewQuotaTotal: Math.max(0, Number(interviewQuotaTotalInput) || 0),
                     interviewQuotaTopUp: Math.max(0, Number(interviewTopUpInput) || 0),
                 }),
@@ -218,8 +221,18 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                 {true && (
                     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
                         <SectionHeader title="Billing & Quotas" />
-                        <div className="grid md:grid-cols-1 gap-6 bg-gray-50/50 p-6 rounded-2xl border border-gray-100 shadow-inner">
+                        <div className="grid md:grid-cols-2 gap-6 bg-gray-50/50 p-6 rounded-2xl border border-gray-100 shadow-inner">
                             <LimitControl label="Job Limit" value={form.maxActiveDrives} onChange={val => setForm(p => ({ ...p, maxActiveDrives: val }))} />
+                            <PremiumInput
+                                label="Max Concurrent Slots"
+                                icon={Clock}
+                                type="number"
+                                min="1"
+                                required={true}
+                                value={form.maxConcurrentSlots}
+                                onChange={(e: any) => setForm(p => ({ ...p, maxConcurrentSlots: e.target.value }))}
+                                placeholder="5"
+                            />
                         </div>
                         <div className="rounded-2xl border border-violet-100 bg-violet-50/40 p-6 space-y-5">
                             <div className="flex items-center justify-between gap-4 flex-wrap">

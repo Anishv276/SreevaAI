@@ -43,8 +43,6 @@ export async function POST(
       return NextResponse.json({ error: "Invalid interview token" }, { status: 401 });
     }
     const startNow = Date.now();
-    const startExpiresAtMs = interview.expiresAt ? interview.expiresAt.getTime() : null;
-    const startIsExpiredByTime = startExpiresAtMs !== null && startNow > startExpiresAtMs;
     const interviewRecordStatus = String(interview.status || "").toUpperCase();
     if (interviewRecordStatus === "COMPLETED" || interviewRecordStatus === "NO_SHOW") {
       return NextResponse.json({
@@ -53,18 +51,10 @@ export async function POST(
       }, { status: 409 });
     }
     if (interview.startedAt) {
-      if (interview.linkStatus === "EXPIRED" || startIsExpiredByTime) {
-        if (startIsExpiredByTime && interview.linkStatus !== "EXPIRED") {
-          await prisma.interview.update({
-            where: { applicationId },
-            data: { linkStatus: "EXPIRED" },
-          }).catch(() => {});
-        }
+      if (interview.linkStatus === "EXPIRED") {
         return NextResponse.json({
-          error: startIsExpiredByTime
-            ? "This job posting has closed. Applications are no longer being accepted."
-            : "Access Denied: Interview link has expired. Please contact support.",
-          code: startIsExpiredByTime ? "DRIVE_CLOSED" : "LINK_EXPIRED",
+          error: "Access Denied: Interview link has expired. Please contact support.",
+          code: "LINK_EXPIRED",
         }, { status: 403 });
       }
       return NextResponse.json({
@@ -73,36 +63,11 @@ export async function POST(
         startedAt: interview.startedAt,
       });
     }
-    const now = Date.now();
-    const expiresAtMs = interview.expiresAt ? interview.expiresAt.getTime() : null;
-    const isExpiredByTime = expiresAtMs !== null && now > expiresAtMs;
-    // Reset EXPIRED status if the deadline hasn't passed — handles re-attempts after
-    // a previous session completed or timed out with startedAt set.
-    if (interview.linkStatus === "EXPIRED" && !isExpiredByTime) {
-      await prisma.interview.update({
-        where: { applicationId },
-        data: { linkStatus: "ACTIVE", startedAt: null },
-      }).catch(() => {});
-      // Allow access — fall through
-    } else {
-      if (isExpiredByTime && interview.linkStatus !== "EXPIRED") {
-        await prisma.interview.update({
-          where: { applicationId },
-          data: { linkStatus: "EXPIRED" },
-        }).catch(() => {});
-      }
-      if (interview.linkStatus === "EXPIRED" || isExpiredByTime) {
-        if (isExpiredByTime) {
-          return NextResponse.json({
-            error: "This job posting has closed. Applications are no longer being accepted.",
-            code: "DRIVE_CLOSED",
-          }, { status: 403 });
-        }
-        return NextResponse.json({
-          error: "Access Denied: Interview link has expired. Please contact support.",
-          code: "LINK_EXPIRED",
-        }, { status: 403 });
-      }
+    if (interview.linkStatus === "EXPIRED") {
+      return NextResponse.json({
+        error: "Access Denied: Interview link has expired. Please contact support.",
+        code: "LINK_EXPIRED",
+      }, { status: 403 });
     }
     await interviewStartQueue.add(
       "mark-interview-started",

@@ -27,6 +27,7 @@ type OrgFormState = {
   slug: string;
   plan: OrgPlanId;
   maxActiveDrives: string;
+  maxConcurrentSlots: string;
   interviewQuotaTotal: string;
   recordingEnabled: boolean;
   recordingRetentionDays: string;
@@ -214,6 +215,7 @@ export default function NewOrgPage() {
     slug: "",
     plan: DEFAULT_ORG_PLAN,
     maxActiveDrives: "Unlimited",
+    maxConcurrentSlots: "5",
     interviewQuotaTotal: "100",
     recordingEnabled: false,
     recordingRetentionDays: "",
@@ -281,6 +283,7 @@ export default function NewOrgPage() {
           adminEmail: form.adminEmail.trim(),
           adminPassword: form.adminPassword,
           maxActiveDrives: form.maxActiveDrives,
+          maxConcurrentSlots: Number(form.maxConcurrentSlots || 5),
           interviewQuotaTotal: Number(form.interviewQuotaTotal || 0),
           recordingEnabled: form.recordingEnabled ? true : null,
           recordingRetentionDays: form.recordingEnabled ? Number(form.recordingRetentionDays) : null,
@@ -409,6 +412,14 @@ export default function NewOrgPage() {
               label="Job Limit"
               value={form.maxActiveDrives}
               onChange={(value) => updateForm({ maxActiveDrives: value })}
+            />
+            <TextInput
+              label="Max Concurrent Slots"
+              icon={Clock}
+              value={form.maxConcurrentSlots}
+              onChange={(value) => updateForm({ maxConcurrentSlots: value })}
+              placeholder="5"
+              type="number"
             />
             <TextInput
               label="Total Interviews Allocated"

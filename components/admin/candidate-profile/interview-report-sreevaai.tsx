@@ -95,6 +95,7 @@ export type SreevaAIInterviewViewModel = {
   proctoringEventsFull: { time: string; eventType: string; reason: string; severity: string; elapsedSeconds: number }[];
   answerScores: { question: string; answer: string; depth: number; clarity: number; specificity: number; grounding: number; overall: number; signals: string[] }[];
   avgResponseTimeSec: number | null;
+  reportNotGenerated?: boolean;
 };
 
 function inferVideoMimeType(url: string, mimeType?: string | null): string {
@@ -310,6 +311,7 @@ export function buildSreevaAIInterviewViewModel(i: {
   skillsEvaluated?: string[];
   skillRatingsList?: { skill: string; score: number; status: string; evidence?: string; gaps?: string }[];
   avgResponseTimeSec?: number | null;
+  reportNotGenerated?: boolean;
 }): SreevaAIInterviewViewModel {
   const c = i.candidate;
   const com = i.interviewReportCommunication || {};
@@ -647,6 +649,7 @@ export function buildSreevaAIInterviewViewModel(i: {
     proctoringEventsFull: i.proctoringEventsFull || [],
     answerScores: i.answerScoresParsed || [],
     avgResponseTimeSec: i.avgResponseTimeSec ?? null,
+    reportNotGenerated: i.reportNotGenerated || false,
   };
 }
 /* a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-
@@ -1306,7 +1309,7 @@ export function InterviewReportSreevaAI({
                   <span className="text-[11px] font-bold uppercase tracking-widest text-rose-700">Hiring Note</span>
                 </div>
                 <p className={cn("text-[12px] leading-snug text-rose-900 font-medium", !expandedVerdict && "line-clamp-3")}>
-                  {model.verdictSummary || model.verdictRecommendationReason || "No specific hiring note provided."}
+                  {model.reportNotGenerated ? "This report hasn't been generated." : (model.verdictSummary || model.verdictRecommendationReason || "No specific hiring note provided.")}
                 </p>
               </div>
 
@@ -1332,7 +1335,9 @@ export function InterviewReportSreevaAI({
                 </div>
                 <div className="flex-1 overflow-y-auto pr-2" style={{ scrollbarWidth: "thin" }}>
                   <ul className="space-y-2.5">
-                    {model.isFallback ? (
+                    {model.reportNotGenerated ? (
+                      <p className="text-[13px] text-[#6B7280]">This report hasn't been generated.</p>
+                    ) : model.isFallback ? (
                       <p className="text-[13px] text-[#6B7280]">AI analysis pending.</p>
                     ) : (
                       model.aiBullets.slice(0, 3).map((b, i) => (
@@ -1383,14 +1388,20 @@ export function InterviewReportSreevaAI({
               <div className="rounded-2xl bg-white  p-6 flex flex-col h-full min-h-0" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
                 <h3 className="text-[14px] font-bold text-[#111827] mb-6 shrink-0">Evaluation Radar</h3>
                 <div className="flex-1 flex items-center justify-center -mt-4 min-h-0">
-                  <EvaluationScoresCard scores={model.technical.scores} overall={model.technical.percent} />
+                  {model.reportNotGenerated ? (
+                    <p className="text-[13px] text-[#6B7280]">This report hasn't been generated.</p>
+                  ) : (
+                    <EvaluationScoresCard scores={model.technical.scores} overall={model.technical.percent} />
+                  )}
                 </div>
               </div>
               
               <div className="rounded-2xl bg-white  p-6 flex flex-col h-full min-h-0" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
                 <h3 className="text-[14px] font-bold text-[#111827] mb-5 shrink-0">Skill Ratings</h3>
                 <div className="flex-1 overflow-y-auto pr-2" style={{ scrollbarWidth: "thin" }}>
-                  {model.skills.length > 0 ? (
+                  {model.reportNotGenerated ? (
+                    <p className="text-[13px] text-[#6B7280]">This report hasn't been generated.</p>
+                  ) : model.skills.length > 0 ? (
                     <SkillRatingsList skills={model.skills} />
                   ) : (
                     <p className="text-[13px] text-[#9CA3AF]">No skills evaluated.</p>
@@ -1406,7 +1417,11 @@ export function InterviewReportSreevaAI({
                   </h3>
                 </div>
                 <div className="flex-1 overflow-y-auto pr-2" style={{ scrollbarWidth: "thin" }}>
-                  <SignalAnalysisPanelCompact analysis={model.signalAnalysis} />
+                  {model.reportNotGenerated ? (
+                    <p className="text-[13px] text-[#6B7280]">This report hasn't been generated.</p>
+                  ) : (
+                    <SignalAnalysisPanelCompact analysis={model.signalAnalysis} />
+                  )}
                 </div>
               </div>
             </div>
@@ -1425,7 +1440,9 @@ export function InterviewReportSreevaAI({
                   <h3 className="text-[14px] font-bold text-[#111827]">Strengths</h3>
                 </div>
                 <div className="flex-1 overflow-y-auto pr-2" style={{ scrollbarWidth: "thin" }}>
-                  {model.topStrengths.length > 0 ? (
+                  {model.reportNotGenerated ? (
+                    <p className="text-[13px] text-[#6B7280]">This report hasn't been generated.</p>
+                  ) : model.topStrengths.length > 0 ? (
                     <ul className="space-y-3">
                       {model.topStrengths.map((item, idx) => (
                         <li key={idx} className="flex items-start gap-2.5">
@@ -1448,7 +1465,9 @@ export function InterviewReportSreevaAI({
                   <h3 className="text-[14px] font-bold text-[#111827]">Risks</h3>
                 </div>
                 <div className="flex-1 overflow-y-auto pr-2" style={{ scrollbarWidth: "thin" }}>
-                  {model.topRisks.length > 0 ? (
+                  {model.reportNotGenerated ? (
+                    <p className="text-[13px] text-[#6B7280]">This report hasn't been generated.</p>
+                  ) : model.topRisks.length > 0 ? (
                     <ul className="space-y-3">
                       {model.topRisks.map((item, idx) => (
                         <li key={idx} className="flex items-start gap-2.5">

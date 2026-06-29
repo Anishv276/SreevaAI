@@ -284,7 +284,8 @@ export async function POST(request: Request) {
             interviewQuotaTotal,
             recordingEnabled,
             recordingRetentionDays,
-            proctoringSignals
+            proctoringSignals,
+            maxConcurrentSlots
         } = body;
         if (!orgName || !slug || !adminEmail || !adminPassword) {
             return NextResponse.json({ error: "orgName, slug, adminEmail, and adminPassword are required" }, { status: 400 });
@@ -369,6 +370,7 @@ export async function POST(request: Request) {
                     maxActiveDrives !== undefined && maxActiveDrives !== null && String(maxActiveDrives).trim() !== ""
                         ? normalizeOrgLimitInput(maxActiveDrives)
                         : "Unlimited",
+                maxConcurrentSlots: maxConcurrentSlots !== undefined && maxConcurrentSlots !== null ? Math.max(1, parseInt(maxConcurrentSlots)) : 5,
                 interviewQuotaTotal: Math.max(0, Math.round(Number(interviewQuotaTotal ?? 0) || 0)),
                 creditsUsed: 0,
                 recordingEnabled: resolvedRecordingEnabled ? true : null,
