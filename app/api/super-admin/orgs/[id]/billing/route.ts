@@ -15,7 +15,10 @@ export async function GET(
         }
         const { id } = await params;
 
-        const org = await prisma.organization.findUnique({ where: { id }, select: { id: true } });
+        const org = await prisma.organization.findUnique({
+            where: { id },
+            select: { id: true, usageMetrics: true }
+        });
         if (!org) {
             return NextResponse.json({ error: "Organization not found" }, { status: 404 });
         }
@@ -35,6 +38,11 @@ export async function GET(
                 AND d."isDeleted" = false
             `
         );
+
+        // Get org-level usage metrics for extraction phases
+        const orgUsage = (org.usageMetrics && typeof org.usageMetrics === 'object')
+            ? (org.usageMetrics as Record<string, any>)
+            : {};
 
         // Aggregate by feature and provider
         const aggregates: Record<string, any> = {
@@ -94,6 +102,37 @@ export async function GET(
                     aggregates.interview.sttProviders[sttProvider].costUsd += sttCost;
                     aggregates.interview.sttAudioSeconds += sttSeconds;
                     aggregates.interview.sttCostUsd += sttCost;
+                }
+            }
+        }
+
+        // Merge org-level extraction phase data
+        const extractionPhases = ['resumeExtraction', 'jdExtraction', 'interviewReport', 'resumeReport'];
+        for (const phase of extractionPhases) {
+            const phaseData = orgUsage[phase];
+            if (phaseData && typeof phaseData === 'object') {
+                // Sum all billing entries for this phase (they're stored as an array of objects)
+                if (Array.isArray(phaseData)) {
+                    let totalCost = 0, totalInputTokens = 0, totalOutputTokens = 0, runs = 0;
+                    for (const entry of phaseData) {
+                        if (entry && typeof entry === 'object') {
+                            const model = entry.model || '';
+                            const inputTokens = Number(entry.inputTokens || 0);
+                            const outputTokens = Number(entry.outputTokens || 0);
+                            // Cost estimate: (input * 2.5 + output * 10) / 1M for GPT-4o
+                            const cost = (inputTokens * 2.5 + outputTokens * 10) / 1_000_000;
+                            totalCost += cost;
+                            totalInputTokens += inputTokens;
+                            totalOutputTokens += outputTokens;
+                            runs = Math.max(runs, 1); // At least 1 run if data exists
+                        }
+                    }
+                    if (totalCost > 0 || totalInputTokens > 0) {
+                        aggregates[phase].runs = runs;
+                        aggregates[phase].inputTokens = totalInputTokens;
+                        aggregates[phase].outputTokens = totalOutputTokens;
+                        aggregates[phase].costUsd = totalCost;
+                    }
                 }
             }
         }
