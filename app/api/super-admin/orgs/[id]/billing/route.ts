@@ -70,10 +70,16 @@ export async function GET(
 
             // Only count interviews where skipReport is false or not set
             if (!metrics.skipReport) {
-                // Aggregate interview phase (only once per interview)
-                aggregates.interview.runs += 1;
-                aggregates.interview.inputTokens += metrics.llmInputTokens || 0;
-                aggregates.interview.outputTokens += metrics.llmOutputTokens || 0;
+                const inputTokens = metrics.llmInputTokens || 0;
+                const outputTokens = metrics.llmOutputTokens || 0;
+                // Estimate runs: each evaluation call averages ~1500 tokens total
+                // so runs = totalTokens / 1500, minimum 1 if any tokens present
+                const totalTokens = inputTokens + outputTokens;
+                const estimatedRuns = totalTokens > 0 ? Math.max(1, Math.round(totalTokens / 1500)) : 0;
+
+                aggregates.interview.runs += estimatedRuns;
+                aggregates.interview.inputTokens += inputTokens;
+                aggregates.interview.outputTokens += outputTokens;
                 aggregates.interview.costUsd += metrics.llmCost || 0;
 
                 // Aggregate TTS by provider
