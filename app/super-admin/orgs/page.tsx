@@ -767,9 +767,9 @@ export default function OrgsPage() {
                                 const totalTokens = Number(feature.inputTokens || 0) + Number(feature.outputTokens || 0);
                                 return (
                                     <div className="flex flex-col gap-6">
-                                        {/* SECTION 1: LLM Models Table */}
+                                        {/* SECTION 1: Interview LLM Usage */}
                                         <div>
-                                            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">LLM Models & Pricing</h4>
+                                            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Interview LLM Usage</h4>
                                             <div className="bg-white rounded-2xl overflow-hidden border border-gray-200" style={{ boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
                                                 <table className="w-full text-sm">
                                                     <thead>
@@ -782,30 +782,22 @@ export default function OrgsPage() {
                                                         </tr>
                                                     </thead>
                                                     <tbody className="divide-y divide-gray-100">
-                                                        {[
-                                                            { label: "Resume Extraction", key: "resumeExtraction" },
-                                                            { label: "JD Extraction", key: "jdExtraction" },
-                                                            { label: "Interview Report", key: "interviewReport" },
-                                                            { label: "Resume Report", key: "resumeReport" },
-                                                            { label: "Interview Evaluation", key: "interview" },
-                                                            { label: "Interview LLM Generation", key: "interview" },
-                                                            { label: "Interview Brief", key: "interview" },
-                                                        ].map((row) => {
-                                                            const feature = billingAggregates?.[row.key as string] || {};
+                                                        {(() => {
+                                                            const feature = billingAggregates?.interview || {};
                                                             const totalTokens = Number(feature.inputTokens || 0) + Number(feature.outputTokens || 0);
-                                                            const model = feature.model || "-";
+                                                            const model = feature.model || "gpt-4.1-mini";
                                                             const runs = Number(feature.runs || 0);
                                                             const cost = Number(feature.costUsd || 0);
                                                             return (
-                                                                <tr key={row.label} className="hover:bg-gray-50/50">
-                                                                    <td className="px-6 py-4 text-sm font-bold text-gray-900">{row.label}</td>
+                                                                <tr className="hover:bg-gray-50/50">
+                                                                    <td className="px-6 py-4 text-sm font-bold text-gray-900">Interview</td>
                                                                     <td className="px-6 py-4 text-sm text-gray-600">{model}</td>
                                                                     <td className="px-6 py-4 text-sm text-gray-600">{runs.toLocaleString()}</td>
                                                                     <td className="px-6 py-4 text-sm text-gray-600">{totalTokens > 999 ? `${(totalTokens/1000).toFixed(1)}K` : totalTokens}</td>
                                                                     <td className="px-6 py-4 text-sm font-bold text-right text-gray-900">{fmt(cost)}</td>
                                                                 </tr>
                                                             );
-                                                        })}
+                                                        })()}
                                                     </tbody>
                                                 </table>
                                             </div>

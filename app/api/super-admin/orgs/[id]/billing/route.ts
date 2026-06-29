@@ -59,12 +59,14 @@ export async function GET(
 
         for (const interview of interviews) {
             const metrics = interview.testBillingMetrics as Record<string, any> || {};
+
+            // Only count interviews where skipReport is false or not set
             if (!metrics.skipReport) {
-                // Aggregate LLM costs (for interview phase)
-                aggregates.interview.runs = (aggregates.interview.runs || 0) + 1;
-                aggregates.interview.inputTokens = (aggregates.interview.inputTokens || 0) + (metrics.llmInputTokens || 0);
-                aggregates.interview.outputTokens = (aggregates.interview.outputTokens || 0) + (metrics.llmOutputTokens || 0);
-                aggregates.interview.costUsd = (aggregates.interview.costUsd || 0) + (metrics.llmCost || 0);
+                // Aggregate interview phase (only once per interview)
+                aggregates.interview.runs += 1;
+                aggregates.interview.inputTokens += metrics.llmInputTokens || 0;
+                aggregates.interview.outputTokens += metrics.llmOutputTokens || 0;
+                aggregates.interview.costUsd += metrics.llmCost || 0;
 
                 // Aggregate TTS by provider
                 const ttsChars = metrics.ttsChars || 0;
