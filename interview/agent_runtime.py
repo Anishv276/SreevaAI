@@ -1451,6 +1451,8 @@ async def entrypoint(ctx: JobContext):
     if not lang_codes:
         raise RuntimeError(f"Unsupported interview language in DB: {interview_lang}")
     _eval_llm_usages_accumulated: list[dict] = []
+    _brief_llm_usages: list[dict] = []
+    _llmgen_llm_usages: list[dict] = []
     logger.info(
         "[BRIEF] Generating interview brief | candidate=%s role=%s",
         candidate_first_name or candidate_name, job_title,
@@ -1473,7 +1475,7 @@ async def entrypoint(ctx: JobContext):
         custom_questions=_interview_questions or [],
         openai_client=_brief_openai_client,
         llm_model=str(ctx_data.llmInterviewBrief).strip(),
-        usage_sink=_eval_llm_usages_accumulated.append,
+        usage_sink=_brief_llm_usages.append,
     )
     # Use the LLM's band assessment — more accurate than mechanical inference
     candidate_band = _interview_brief.candidate_band
@@ -2896,7 +2898,7 @@ async def entrypoint(ctx: JobContext):
                                 cross_ref_rule=_pre_cross_ref,
                                 client=_eval_openai_client,
                                 llm_model=analysis_model,
-                                usage_sink=_eval_llm_usages_accumulated.append,
+                                usage_sink=_llmgen_llm_usages.append,
                                 topic_item=_pre_next_item,
                                 prev_answer=(payload.get("answer") or ""),
                             )
@@ -3994,10 +3996,14 @@ async def entrypoint(ctx: JobContext):
                 except Exception as e:
                     logger.error(f"[SUMMARY] Failed for {app_id}: {e}")
             await _run_report_then_summary()
-    # Queue accumulated eval/brief/directive LLM usage before writing the exact
+    # Queue accumulated eval/brief/llmgen LLM usage before writing the exact
     # interview snapshot so recent-interview rows match the org-level totals.
     for _eval_usage in _eval_llm_usages_accumulated:
         await persist_org_manual_billing_usage(org_id, "interview", _eval_usage)
+    for _brief_usage in _brief_llm_usages:
+        await persist_org_manual_billing_usage(org_id, "interviewBrief", _brief_usage)
+    for _gen_usage in _llmgen_llm_usages:
+        await persist_org_manual_billing_usage(org_id, "interviewLLMGeneration", _gen_usage)
     try:
         await persist_interview_billing_snapshot(
             app_id,
@@ -4045,6 +4051,15 @@ async def entrypoint(ctx: JobContext):
                         "ttsProvider": org_tts_provider,
                         "sttProvider": "deepgram",
                         "llmProvider": "openai",
+                        "evaluationRuns": len(_eval_llm_usages_accumulated),
+                        "briefGenerations": len(_brief_llm_usages),
+                        "llmGenerations": len(_llmgen_llm_usages),
+                        "evalInputTokens": sum(u.get("inputTokens", 0) for u in _eval_llm_usages_accumulated),
+                        "evalOutputTokens": sum(u.get("outputTokens", 0) for u in _eval_llm_usages_accumulated),
+                        "briefInputTokens": sum(u.get("inputTokens", 0) for u in _brief_llm_usages),
+                        "briefOutputTokens": sum(u.get("outputTokens", 0) for u in _brief_llm_usages),
+                        "llmgenInputTokens": sum(u.get("inputTokens", 0) for u in _llmgen_llm_usages),
+                        "llmgenOutputTokens": sum(u.get("outputTokens", 0) for u in _llmgen_llm_usages),
                     }),
                     app_id,
                 )

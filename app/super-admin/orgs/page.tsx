@@ -787,9 +787,9 @@ export default function OrgsPage() {
                                                             { label: "JD Extraction", key: "jdExtraction" },
                                                             { label: "Interview Report", key: "interviewReport" },
                                                             { label: "Resume Report", key: "resumeReport" },
-                                                            { label: "Interview Evaluation", key: "interview" },
-                                                            { label: "Interview LLM Generation", key: "interview" },
-                                                            { label: "Interview Brief", key: "interview" },
+                                                            { label: "Interview Evaluation", key: "interviewEvaluation" },
+                                                            { label: "Interview LLM Generation", key: "interviewLLMGeneration" },
+                                                            { label: "Interview Brief", key: "interviewBrief" },
                                                         ].map((row) => {
                                                             const feature = billingAggregates?.[row.key as string] || {};
                                                             const totalTokens = Number(feature.inputTokens || 0) + Number(feature.outputTokens || 0);
