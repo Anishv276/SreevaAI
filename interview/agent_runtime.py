@@ -3968,7 +3968,7 @@ async def entrypoint(ctx: JobContext):
                             job_title,
                             proctoring_data=_proctoring_snap,
                             org_id=org_id,
-                            llm_model=str(ctx_data.llmInterviewReport).strip(),
+                            _LLM_DEFAULT=str(ctx_data.llmInterviewReport).strip(),
                             jd_json=_coerce_jsonish(extracted_details) if extracted_details else None,
                             topic_records=list(_topic_records),
                         )
@@ -3986,7 +3986,7 @@ async def entrypoint(ctx: JobContext):
                             _transcript_snap,
                             job_title,
                             org_id=org_id,
-                            llm_model=analysis_model,
+                            _LLM_DEFAULT=analysis_model,
                             scores_context=scores_context,
                         )
                 except asyncio.TimeoutError:

@@ -7,6 +7,8 @@ import { getSupportComposeUrl } from "@/lib/interview-quota";
 import { DateFilter, type DateRange } from "@/components/admin/date-filter";
 
 export function BillingContent(props?: any) {
+    const creditsEndpoint = props?.creditsEndpoint || "/api/billing?";
+    const historyEndpoint = props?.historyEndpoint || "/api/billing/history?";
     const [billingData, setBillingData] = useState<any>(null);
     const [historyData, setHistoryData] = useState<any>(null);
     const [loading, setLoading] = useState(true);
@@ -22,6 +24,7 @@ export function BillingContent(props?: any) {
 
     useEffect(() => {
         let isMounted = true;
+        setLoading(true);
         const query = new URLSearchParams();
         query.set("trendRange", trendTimeline.type);
         if (trendTimeline.type === 'custom') {
@@ -38,50 +41,35 @@ export function BillingContent(props?: any) {
         if (historySearch) {
             historyQuery.set("search", historySearch);
         }
-        
+
+        const creditsUrl = `${creditsEndpoint}${query.toString()}`;
+        const historyUrl = `${historyEndpoint}${historyQuery.toString()}`;
+
         Promise.all([
-            fetch(`/api/billing?${query.toString()}`).then(res => res.json()),
-            fetch(`/api/billing/history?${historyQuery.toString()}`).then(res => res.json())
+            fetch(creditsUrl).then(res => {
+                if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+                return res.json();
+            }),
+            fetch(historyUrl).then(res => {
+                if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+                return res.json();
+            })
         ]).then(([billing, history]) => {
             if (isMounted) {
                 setBillingData(billing);
                 setHistoryData(history);
                 setLoading(false);
+                setTrendLoading(false);
             }
         }).catch(err => {
-            console.error(err);
-            if (isMounted) setLoading(false);
+            console.error("Billing fetch error:", creditsEndpoint, historyEndpoint, err);
+            if (isMounted) {
+                setLoading(false);
+                setTrendLoading(false);
+            }
         });
         return () => { isMounted = false; };
-    }, []);
-
-    useEffect(() => {
-        if (loading) return; // Skip initial mount
-        
-        let isMounted = true;
-        setTrendLoading(true);
-        const query = new URLSearchParams();
-        query.set("trendRange", trendTimeline.type);
-        if (trendTimeline.type === 'custom') {
-            query.set("customFrom", trendTimeline.from);
-            query.set("customTo", trendTimeline.to);
-        }
-        
-        fetch(`/api/billing?${query.toString()}`)
-            .then(res => res.json())
-            .then(billing => {
-                if (isMounted) {
-                    setBillingData((prev: any) => ({
-                        ...prev,
-                        usage: { ...prev.usage, trend: billing.usage.trend }
-                    }));
-                    setTrendLoading(false);
-                }
-            }).catch(() => {
-                if (isMounted) setTrendLoading(false);
-            });
-        return () => { isMounted = false; };
-    }, [trendTimeline, historyTimeline, historySearch]);
+    }, [trendTimeline, historyTimeline, historySearch, creditsEndpoint, historyEndpoint]);
 
     const handleExportCSV = () => {
         if (!historyData?.history || historyData.history.length === 0) return;
@@ -156,19 +144,19 @@ export function BillingContent(props?: any) {
                 <button className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-xl bg-white text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 cursor-default">
                     <Calendar className="h-4 w-4 text-gray-500" />
                     {thisMonthLabel}
-                    <svg className="w-3.5 h-3.5 ml-1 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7"/></svg>
+                    <svg className="w-3.5 h-3.5 ml-1 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                 </button>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Main Left Content */}
                 <div className="lg:col-span-2 space-y-6">
-                    
+
                     {/* Usage Overview Section */}
                     <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
                         <div className="flex items-center gap-2 mb-4">
                             <h2 className="text-[15px] font-bold text-gray-900">Usage Overview</h2>
-                            <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                            <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                         </div>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                             {/* Card 1 */}
@@ -182,9 +170,9 @@ export function BillingContent(props?: any) {
                                     <span className="text-xs font-bold text-gray-400">/ {plan.interviewsTotal}</span>
                                 </div>
                                 <div className="h-1.5 w-full bg-violet-200/50 rounded-full mb-2 overflow-hidden">
-                                    <div className="h-full bg-violet-500 rounded-full" style={{ width: `${Math.min(100, (usage.interviewsCompleted/plan.interviewsTotal)*100)}%` }} />
+                                    <div className="h-full bg-violet-500 rounded-full" style={{ width: `${Math.min(100, (usage.interviewsCompleted / plan.interviewsTotal) * 100)}%` }} />
                                 </div>
-                                <p className="text-[10px] font-bold text-violet-700">{(usage.interviewsCompleted/plan.interviewsTotal*100).toFixed(1)}% used</p>
+                                <p className="text-[10px] font-bold text-violet-700">{(usage.interviewsCompleted / plan.interviewsTotal * 100).toFixed(1)}% used</p>
                             </div>
 
                             {/* Card 2 */}
@@ -198,9 +186,9 @@ export function BillingContent(props?: any) {
                                     <span className="text-xs font-bold text-gray-400">/ {plan.maxActiveDrives}</span>
                                 </div>
                                 <div className="h-1.5 w-full bg-emerald-200/50 rounded-full mb-2 overflow-hidden">
-                                    <div className="h-full bg-emerald-500 rounded-full" style={{ width: plan.maxActiveDrives === 'Unlimited' ? '100%' : `${Math.min(100, (usage.activeDrives/plan.maxActiveDrives)*100)}%` }} />
+                                    <div className="h-full bg-emerald-500 rounded-full" style={{ width: plan.maxActiveDrives === 'Unlimited' ? '100%' : `${Math.min(100, (usage.activeDrives / plan.maxActiveDrives) * 100)}%` }} />
                                 </div>
-                                <p className="text-[10px] font-bold text-emerald-700">{plan.maxActiveDrives === 'Unlimited' ? 'Active' : `${(usage.activeDrives/plan.maxActiveDrives*100).toFixed(0)}% used`}</p>
+                                <p className="text-[10px] font-bold text-emerald-700">{plan.maxActiveDrives === 'Unlimited' ? 'Active' : `${(usage.activeDrives / plan.maxActiveDrives * 100).toFixed(0)}% used`}</p>
                             </div>
 
                             {/* Card 3 */}
@@ -262,35 +250,35 @@ export function BillingContent(props?: any) {
                                         <stop offset="100%" stopColor="#A78BFA" /> {/* violet-400 */}
                                     </linearGradient>
                                 </defs>
-                                
+
                                 {/* Grid lines */}
                                 <line x1="0" y1="20" x2="100" y2="20" stroke="#F3F4F6" strokeWidth="0.5" strokeDasharray="2 2" />
                                 <line x1="0" y1="50" x2="100" y2="50" stroke="#F3F4F6" strokeWidth="0.5" strokeDasharray="2 2" />
                                 <line x1="0" y1="80" x2="100" y2="80" stroke="#F3F4F6" strokeWidth="0.5" strokeDasharray="2 2" />
-                                
+
                                 {/* Bar Chart */}
                                 {usage.trend && usage.trend.map((t: any, i: number, arr: any[]) => {
                                     const numBars = arr.length || 1;
                                     const barWidth = Math.min(60 / numBars, 8); // dynamic width, max 8
                                     const spacing = 100 / numBars;
                                     const x = (i * spacing) + (spacing / 2) - (barWidth / 2);
-                                    
+
                                     const heightPercentage = t.count > 0 ? (t.count / maxCount) * 80 : 2; // min height 2 for visibility
                                     const y = 100 - heightPercentage;
-                                    
+
                                     return (
                                         <g key={t.date} className="group cursor-pointer">
                                             {/* Hover backdrop track */}
                                             <rect x={x - 1} y="0" width={barWidth + 2} height="100" fill="#F3F4F6" opacity="0" className="group-hover:opacity-50 transition-opacity duration-300" rx="1" />
                                             {/* Actual Bar */}
-                                            <rect 
-                                                x={x} 
-                                                y={y} 
-                                                width={barWidth} 
-                                                height={heightPercentage} 
-                                                fill="url(#barGradient)" 
-                                                className="group-hover:fill-[url(#barGradientHover)] transition-all duration-300 origin-bottom" 
-                                                rx={barWidth / 2} 
+                                            <rect
+                                                x={x}
+                                                y={y}
+                                                width={barWidth}
+                                                height={heightPercentage}
+                                                fill="url(#barGradient)"
+                                                className="group-hover:fill-[url(#barGradientHover)] transition-all duration-300 origin-bottom"
+                                                rx={barWidth / 2}
                                             />
                                         </g>
                                     );
@@ -323,9 +311,9 @@ export function BillingContent(props?: any) {
                         <div className="flex items-center gap-3 mb-6">
                             <div className="relative flex-1 max-w-[280px]">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                                <input 
-                                    type="text" 
-                                    placeholder="Search by candidate name, role or email..." 
+                                <input
+                                    type="text"
+                                    placeholder="Search by candidate name, role or email..."
                                     value={historySearch}
                                     onChange={(e) => setHistorySearch(e.target.value)}
                                     className="w-full h-9 pl-9 pr-4 rounded-xl border border-gray-200 text-[13px] placeholder-gray-400 focus:border-violet-500 focus:ring-1 focus:ring-violet-500"
@@ -333,7 +321,7 @@ export function BillingContent(props?: any) {
                             </div>
                             <DateFilter value={historyTimeline} onChange={setHistoryTimeline} />
                         </div>
-                        
+
                         <div className="overflow-x-auto">
                             <table className="w-full text-left">
                                 <thead>
@@ -409,7 +397,7 @@ export function BillingContent(props?: any) {
                         </div>
                         <div className="flex gap-4 items-start mb-6">
                             <div className="w-12 h-12 rounded-2xl bg-violet-600 flex items-center justify-center shrink-0">
-                                <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/></svg>
+                                <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /></svg>
                             </div>
                             <div>
                                 <h3 className="text-xl font-black text-gray-900 leading-none mb-1">{resolvedPlan?.name || plan.name}</h3>
@@ -430,7 +418,7 @@ export function BillingContent(props?: any) {
                             ]).map((feat: string, i: number) => (
                                 <div key={i} className="flex items-center gap-3">
                                     <div className="w-4 h-4 rounded-full bg-violet-600 flex items-center justify-center shrink-0">
-                                        <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7"/></svg>
+                                        <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
                                     </div>
                                     <span className="text-[13px] font-bold text-gray-700">{feat}</span>
                                 </div>
@@ -460,7 +448,7 @@ export function BillingContent(props?: any) {
                             <div className="p-4 rounded-xl border border-gray-100 bg-gray-50/50 flex gap-3">
                                 <div className="mt-0.5"><BarChart3 className="h-4 w-4 text-violet-600" /></div>
                                 <div>
-                                    <p className="text-[13px] font-bold text-gray-900 leading-tight">You've used {(usage.interviewsCompleted/plan.interviewsTotal*100).toFixed(0)}% of your monthly interviews.</p>
+                                    <p className="text-[13px] font-bold text-gray-900 leading-tight">You've used {(usage.interviewsCompleted / plan.interviewsTotal * 100).toFixed(0)}% of your monthly interviews.</p>
                                     <p className="text-[12px] text-gray-500 mt-0.5">Plenty of room to grow!</p>
                                 </div>
                             </div>
@@ -478,12 +466,12 @@ export function BillingContent(props?: any) {
                     <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
                         <h3 className="text-[15px] font-bold text-gray-900 mb-2">Need more interviews?</h3>
                         <p className="text-[13px] text-gray-500 mb-5">Upgrade your plan or contact support to increase your quota.</p>
-                        <a 
+                        <a
                             href={getSupportComposeUrl({ subject: "Increase org quota request", body: "Hi support team,\n\nWe need more interviews. Please help us recharge.\n" })}
                             target="_blank" rel="noreferrer"
                             className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 transition-colors text-white text-[13px] font-bold"
                         >
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
                             Contact Support
                         </a>
                     </div>

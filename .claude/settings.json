@@ -335,7 +335,8 @@
       "Bash(pkill -f \"node.*next\")",
       "Bash(curl -s \"http://localhost:3000/super-admin/orgs\")",
       "Bash(curl -s http://localhost:3000/super-admin/orgs/test)",
-      "Bash(git show *)"
+      "Bash(git show *)",
+      "Bash(xargs grep -l \"usageMetrics\\\\|billing.*orgs\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\vamsi\\OneDrive\\Desktop\\HR-updates\\scratch",

@@ -1,0 +1,122 @@
+import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
+import { getSession } from "@/lib/auth";
+
+// GET /api/super-admin/orgs/[id]/billing - compute per-provider aggregates
+export async function GET(
+    _request: Request,
+    { params }: { params: Promise<{ id: string }> }
+) {
+    try {
+        const session = await getSession();
+        if (!session || session.role !== "SUPER_ADMIN") {
+            return NextResponse.json({ error: "Unauthorized access" }, { status: 403 });
+        }
+        const { id } = await params;
+
+        const org = await prisma.organization.findUnique({ where: { id }, select: { id: true } });
+        if (!org) {
+            return NextResponse.json({ error: "Organization not found" }, { status: 404 });
+        }
+
+        // Fetch all interviews for this org with their billing metrics
+        const interviews = await prisma.$queryRaw<Array<{
+            testBillingMetrics: Record<string, any> | null;
+        }>>(
+            Prisma.sql`
+                SELECT i."testBillingMetrics"
+                FROM "Interview" i
+                JOIN "Application" a ON a.id = i."applicationId"
+                JOIN "Drive" d ON d.id = a."driveId"
+                WHERE d."orgId" = ${id}
+                AND i."isDeleted" = false
+                AND a."isDeleted" = false
+                AND d."isDeleted" = false
+            `
+        );
+
+        // Aggregate by feature and provider
+        const aggregates: Record<string, any> = {
+            resumeExtraction: { runs: 0, inputTokens: 0, outputTokens: 0, costUsd: 0, model: "gpt-5.4-mini" },
+            jdExtraction: { runs: 0, inputTokens: 0, outputTokens: 0, costUsd: 0, model: "gpt-5.4-mini" },
+            interviewReport: { runs: 0, inputTokens: 0, outputTokens: 0, costUsd: 0, model: "gpt-5.4-mini" },
+            resumeReport: { runs: 0, inputTokens: 0, outputTokens: 0, costUsd: 0, model: "gpt-5.4-mini" },
+            interview: {
+                runs: 0,
+                inputTokens: 0,
+                outputTokens: 0,
+                costUsd: 0,
+                ttsCharacters: 0,
+                ttsCostUsd: 0,
+                sttAudioSeconds: 0,
+                sttCostUsd: 0,
+                model: "gpt-4.1-mini",
+                ttsProviders: {} as Record<string, { characters: number; costUsd: number }>,
+                sttProviders: {} as Record<string, { seconds: number; costUsd: number }>,
+            },
+        };
+
+        for (const interview of interviews) {
+            const metrics = interview.testBillingMetrics as Record<string, any> || {};
+            if (!metrics.skipReport) {
+                // Aggregate LLM costs (for interview phase)
+                aggregates.interview.runs = (aggregates.interview.runs || 0) + 1;
+                aggregates.interview.inputTokens = (aggregates.interview.inputTokens || 0) + (metrics.llmInputTokens || 0);
+                aggregates.interview.outputTokens = (aggregates.interview.outputTokens || 0) + (metrics.llmOutputTokens || 0);
+                aggregates.interview.costUsd = (aggregates.interview.costUsd || 0) + (metrics.llmCost || 0);
+
+                // Aggregate TTS by provider
+                const ttsChars = metrics.ttsChars || 0;
+                const ttsCost = metrics.ttsCost || 0;
+                const ttsProvider = (metrics.ttsProvider || "UNKNOWN").toUpperCase();
+                if (ttsChars > 0 || ttsCost > 0) {
+                    if (!aggregates.interview.ttsProviders[ttsProvider]) {
+                        aggregates.interview.ttsProviders[ttsProvider] = { characters: 0, costUsd: 0 };
+                    }
+                    aggregates.interview.ttsProviders[ttsProvider].characters += ttsChars;
+                    aggregates.interview.ttsProviders[ttsProvider].costUsd += ttsCost;
+                    aggregates.interview.ttsCharacters += ttsChars;
+                    aggregates.interview.ttsCostUsd += ttsCost;
+                }
+
+                // Aggregate STT by provider
+                const sttSeconds = metrics.sttSeconds || 0;
+                const sttCost = metrics.sttCost || 0;
+                const sttProvider = (metrics.sttProvider || "deepgram").toLowerCase();
+                if (sttSeconds > 0 || sttCost > 0) {
+                    if (!aggregates.interview.sttProviders[sttProvider]) {
+                        aggregates.interview.sttProviders[sttProvider] = { seconds: 0, costUsd: 0 };
+                    }
+                    aggregates.interview.sttProviders[sttProvider].seconds += sttSeconds;
+                    aggregates.interview.sttProviders[sttProvider].costUsd += sttCost;
+                    aggregates.interview.sttAudioSeconds += sttSeconds;
+                    aggregates.interview.sttCostUsd += sttCost;
+                }
+            }
+        }
+
+        // Round costs to 2 decimals
+        Object.keys(aggregates).forEach(key => {
+            const feature = aggregates[key];
+            if (feature.costUsd) feature.costUsd = Math.round(feature.costUsd * 100) / 100;
+            if (feature.ttsCostUsd) feature.ttsCostUsd = Math.round(feature.ttsCostUsd * 100) / 100;
+            if (feature.sttCostUsd) feature.sttCostUsd = Math.round(feature.sttCostUsd * 100) / 100;
+            if (feature.ttsProviders) {
+                Object.keys(feature.ttsProviders).forEach(provider => {
+                    feature.ttsProviders[provider].costUsd = Math.round(feature.ttsProviders[provider].costUsd * 100) / 100;
+                });
+            }
+            if (feature.sttProviders) {
+                Object.keys(feature.sttProviders).forEach(provider => {
+                    feature.sttProviders[provider].costUsd = Math.round(feature.sttProviders[provider].costUsd * 100) / 100;
+                });
+            }
+        });
+
+        return NextResponse.json(aggregates);
+    } catch (error) {
+        console.error("Error fetching org billing:", error);
+        return NextResponse.json({ error: "Failed to fetch billing data" }, { status: 500 });
+    }
+}

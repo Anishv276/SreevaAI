@@ -127,6 +127,7 @@ export default function OrgsPage() {
     const [isDeleting, setIsDeleting] = useState(false);
     const [syncingOrgs, setSyncingOrgs] = useState<Set<string>>(new Set());
     const [metricsOrg, setMetricsOrg] = useState<Org | null>(null);
+    const [billingAggregates, setBillingAggregates] = useState<Record<string, any> | null>(null);
     const [statusModalOrg, setStatusModalOrg] = useState<{ id: string; name: string; currentStatus: string; pendingStatus: string } | null>(null);
     const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
     // Currency toggle state
@@ -170,9 +171,20 @@ export default function OrgsPage() {
         }
     }, [currency]);
     // Called when Consumption Hub opens
-    const openMetricsOrg = (org: Org) => {
+    const openMetricsOrg = async (org: Org) => {
         setMetricsOrg(org);
+        setBillingAggregates(null);
         fetchExchangeRate();
+        // Fetch per-provider aggregates from backend
+        try {
+            const res = await fetch(`/api/super-admin/orgs/${org.id}/billing`);
+            if (res.ok) {
+                const data = await res.json();
+                setBillingAggregates(data);
+            }
+        } catch (err) {
+            console.error("Failed to fetch billing aggregates:", err);
+        }
     };
     useEffect(() => {
         if (!metricsOrg) {
@@ -725,7 +737,7 @@ export default function OrgsPage() {
                                     </span>
                                 )}
                                 <button
-                                    onClick={() => setMetricsOrg(null)}
+                                    onClick={() => { setMetricsOrg(null); setBillingAggregates(null); }}
                                     className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-xl text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition-all"
                                     style={{ border: "1px solid #E9E7FF" }}
                                 >
@@ -824,9 +836,10 @@ export default function OrgsPage() {
                                                     { label: "Cartesia", provider: "CARTESIA" },
                                                     { label: "Sarvam", provider: "SARVAM" },
                                                 ].map((tts) => {
-                                                    const interviewBilling = getBillingFeature(metricsOrg, 'interview');
-                                                    const ttsChars = Number(interviewBilling.ttsCharacters || 0);
-                                                    const ttsCost = Number(interviewBilling.ttsCostUsd || 0);
+                                                    const ttsProviders = billingAggregates?.interview?.ttsProviders || {};
+                                                    const providerData = ttsProviders[tts.provider] || { characters: 0, costUsd: 0 };
+                                                    const ttsChars = Number(providerData.characters || 0);
+                                                    const ttsCost = Number(providerData.costUsd || 0);
                                                     return (
                                                         <div key={tts.provider} className="bg-white rounded-2xl border border-gray-200 p-4" style={{ boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
                                                             <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-4">{tts.label}</div>
@@ -851,9 +864,10 @@ export default function OrgsPage() {
                                             <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">STT Hub - Deepgram</h4>
                                             <div className="grid gap-3 grid-cols-2">
                                                 {(() => {
-                                                    const interviewBilling = getBillingFeature(metricsOrg, 'interview');
-                                                    const sttMinutes = (Number(interviewBilling.sttAudioSeconds || 0) / 60).toFixed(1);
-                                                    const sttCost = Number(interviewBilling.sttCostUsd || 0);
+                                                    const sttProviders = billingAggregates?.interview?.sttProviders || {};
+                                                    const deepgramData = sttProviders.deepgram || { seconds: 0, costUsd: 0 };
+                                                    const sttMinutes = (Number(deepgramData.seconds || 0) / 60).toFixed(1);
+                                                    const sttCost = Number(deepgramData.costUsd || 0);
                                                     return (
                                                         <>
                                                             <div className="bg-white rounded-2xl border border-gray-200 p-4" style={{ boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
