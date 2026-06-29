@@ -931,6 +931,7 @@ if (isQueueEnabled("invitation-delivery-queue")) {
           update: {
             inviteSentAt: now,
             status: "PENDING",
+            scheduledAt: null,
             startedAt: null,
             completedAt: null,
             expiresAt: driveDeadline,

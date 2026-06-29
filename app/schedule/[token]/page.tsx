@@ -2,6 +2,7 @@
 import { useState, useEffect, use, useCallback } from "react";
 import { ChevronLeft, ChevronRight, Clock, MapPin, CheckCircle, Calendar, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "@/components/ui/toast-custom";
 
 interface PageProps { params: Promise<{ token: string }> }
 
@@ -101,6 +102,7 @@ export default function SchedulePage({ params }: PageProps) {
             });
             const data = await r.json();
             if (data.slotFull) {
+                toast.error("Please apply in a different slot, it got filled up.");
                 await loadSlots(selectedDate!);
                 setSelectedSlot(null);
                 return;
