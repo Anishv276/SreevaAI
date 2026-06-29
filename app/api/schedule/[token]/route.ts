@@ -37,7 +37,7 @@ export async function GET(
             application: {
                 include: {
                     drive: {
-                        include: { organization: { select: { name: true, maxConcurrentSlots: true } } },
+                        include: { organization: { select: { id: true, name: true, maxConcurrentSlots: true } } },
                     },
                 },
             },
@@ -84,13 +84,14 @@ export async function GET(
         // Only show slots that are at least 30 minutes from now
         const allSlots = generateSlots(dateIST).filter(s => s.getTime() > Date.now() + 30 * 60 * 1000);
 
-        // Count booked interviews per slot window for this org's drive
-        const driveId = interview.application.drive?.id;
+        // Count booked interviews per slot window for this org
+        const orgId = org?.id;
         const bookedCounts = await prisma.interview.groupBy({
             by: ["scheduledAt"],
             where: {
                 scheduledAt: { not: null },
-                application: { driveId },
+                isDeleted: false,
+                application: { drive: { orgId } },
             },
             _count: { scheduledAt: true },
         });
@@ -139,11 +140,15 @@ export async function POST(
 
     const org = interview.application.drive?.organization;
     const maxSlots = org?.maxConcurrentSlots ?? 5;
-    const driveId = interview.application.drive?.id;
+    const orgId = org?.id;
 
-    // Atomic concurrency check: count how many interviews share this exact slot for the drive
+    // Atomic concurrency check: count how many interviews share this exact slot for the org
     const count = await prisma.interview.count({
-        where: { scheduledAt: slotDate, application: { driveId } },
+        where: { 
+            scheduledAt: slotDate, 
+            isDeleted: false,
+            application: { drive: { orgId } } 
+        },
     });
     if (count >= maxSlots) {
         return NextResponse.json({ error: "Slot full, please pick another", slotFull: true }, { status: 409 });
