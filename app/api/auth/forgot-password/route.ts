@@ -33,9 +33,9 @@ export async function POST(request: Request) {
                     mode: "insensitive",
                 },
             },
-            select: { id: true, name: true, role: true, orgId: true }
+            select: { id: true, name: true, orgId: true }
         });
-        if (!superAdminRecord && (!userRecord || userRecord.role !== "ADMIN")) {
+        if (!superAdminRecord && !userRecord) {
             return NextResponse.json({ error: "Access denied. Only authorized accounts can reset passwords." }, { status: 403 });
         }
         // CSPRNG — Math.random() is not cryptographically secure and made the
