@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from openai import AsyncOpenAI
 
 from interview.agent_scoring import evaluate_answer
+from interview.slack_error_logger import log_llm_error
 _EVAL_DEFAULT = "gpt-4.1-nano"  # ponytail: fallback — callers pass org's llmInterviewEval
 
 logger = logging.getLogger("interview-agent")
@@ -315,6 +316,18 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     except (asyncio.TimeoutError, Exception) as ex:
         logger.error("[EVAL] turn=%d | scoring %s — recovery decision",
                      p.turn, "timed out" if isinstance(ex, asyncio.TimeoutError) else f"failed: {ex}")
+        try:
+            await log_llm_error(
+                app_id=p.app_id,
+                org_name=p.org_id,
+                candidate_name=None,
+                provider="openai",
+                error=str(ex),
+                reason="Turn scoring LLM call failed/timed out — recovery fallback applied",
+                context={"turn": p.turn},
+            )
+        except Exception:
+            pass
         raw = {
             "clarity": 2.0, "depth": 1.0, "specificity": 1.0, "grounding": 1.0, "overall": 1.3,
             "action": "PROBE", "signal": "depth_insufficient",

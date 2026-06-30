@@ -26,13 +26,19 @@ import {
   scheduleRecordingRetentionDeletion,
 } from "./lib/recording-retention";
 import { mergeRecordingState, normalizeRecordingState, parseJsonRecord } from "./lib/recording-state";
+import { logRedisError, logResumeUploadError, logDriveError, logWorkerError, logLiveKitError } from "./lib/slack-error-logger";
 
 if (!process.env.REDIS_URL) {
   console.error('FATAL: REDIS_URL is missing from environment variables!');
   process.exit(1);
 }
 
-void redisConnection.connect().catch(() => { }); // force-connect before BullMQ workers start
+void redisConnection.connect().catch((e) => {
+  logRedisError({
+    error: e instanceof Error ? e.message : String(e),
+    reason: "Redis connection failed on worker startup",
+  });
+}); // force-connect before BullMQ workers start
 const pythonCmd = getPythonExecutable();
 // BullMQ key prefix — MUST match lib/queue.ts so this worker consumes the same
 // queues the API enqueues to. Set BULLMQ_PREFIX to isolate dev/prod on shared Redis.
@@ -402,6 +408,11 @@ function trackWorker(name: string, worker: Worker) {
   managedWorkers.push(worker);
   worker.on("error", (error) => {
     console.error(`[${name}] Redis/BullMQ error:`, error);
+    logRedisError({
+      error: error instanceof Error ? error.message : String(error),
+      reason: `BullMQ worker connection error on queue "${name}"`,
+      context: { queueName: name },
+    });
   });
   // Log when jobs are cleared (60s after completion/failure as per queue config)
   worker.on("completed", (_job) => { /* removed immediately, no log needed */ });
@@ -791,6 +802,34 @@ if (isQueueEnabled("resume-processing")) {
   resumeWorker.on("failed", (job, err) => {
     console.error(`[resume-processing] ✗ Failed: name="${job?.name}" id="${job?.id}" — ${err.message}`);
     console.error(err.stack);
+    const applicationId = job?.data?.applicationId as string | undefined;
+    if (applicationId) {
+      prisma.application.findUnique({
+        where: { id: applicationId },
+        select: { fullName: true, drive: { select: { title: true, organization: { select: { name: true } } } } },
+      }).then((app) => {
+        logResumeUploadError({
+          orgName: app?.drive?.organization?.name || "unknown",
+          driveName: app?.drive?.title || "unknown",
+          candidateName: app?.fullName || undefined,
+          error: err.message,
+          reason: `Resume screening worker job failed (name="${job?.name}")`,
+        });
+      }).catch(() => {
+        logResumeUploadError({
+          orgName: "unknown",
+          driveName: "unknown",
+          error: err.message,
+          reason: `Resume screening worker job failed — applicationId=${applicationId} (org/drive lookup failed)`,
+        });
+      });
+    } else {
+      logWorkerError({
+        error: err.message,
+        reason: "Resume screening worker job failed with no applicationId in job data",
+        context: { jobId: job?.id, jobName: job?.name },
+      });
+    }
   });
   resumeWorker.on("stalled", (jobId) => {
     console.warn(`[resume-processing] ⚠ Stalled: id="${jobId}"`);
@@ -1016,6 +1055,11 @@ if (isQueueEnabled("invitation-delivery-queue")) {
   ));
   invitationDeliveryWorker.on("failed", (job, err) => {
     console.log(`[FATAL] Invitation Delivery Job ${job?.id} failed permanently: ${err.message}`);
+    logWorkerError({
+      error: err.message,
+      reason: `Invitation delivery job failed permanently (action="${job?.data?.action}")`,
+      context: { jobId: job?.id, applicationId: job?.data?.applicationId },
+    });
   });
 }
 if (isQueueEnabled("recording-retention-cleanup")) {
@@ -1046,6 +1090,11 @@ if (isQueueEnabled("recording-retention-cleanup")) {
     console.error(
       `[FATAL] Recording Retention Job ${job?.id} failed permanently for ${job?.data?.applicationId || job?.name}: ${err.message}`
     );
+    logWorkerError({
+      error: err.message,
+      reason: "Recording retention cleanup job failed permanently",
+      context: { jobId: job?.id, applicationId: job?.data?.applicationId },
+    });
   });
 }
 /**
@@ -1078,6 +1127,11 @@ if (isQueueEnabled("interview-start")) {
   ));
   interviewStartWorker.on("failed", (job, err) => {
     console.log(`[FATAL] Interview Start Job ${job?.id} failed permanently: ${err.message}`);
+    logWorkerError({
+      error: err.message,
+      reason: "Interview start job failed permanently",
+      context: { jobId: job?.id, applicationId: job?.data?.applicationId },
+    });
   });
 }
 
@@ -1300,6 +1354,11 @@ if (isQueueEnabled("interview-finalization")) {
   ));
   interviewFinalizationWorker.on("failed", (job, err) => {
     console.log(`[FATAL] Interview Finalization Job ${job?.id} failed permanently: ${err.message}`);
+    logWorkerError({
+      error: err.message,
+      reason: "Interview finalization job failed permanently",
+      context: { jobId: job?.id, applicationId: job?.data?.applicationId },
+    });
   });
 }
 /**
@@ -1511,6 +1570,12 @@ if (isQueueEnabled("interview-recording")) {
     console.error(
       `[FATAL] Egress Finalize Job ${job?.id} failed permanently for ${job?.data?.applicationId}: ${err.message}`
     );
+    logLiveKitError({
+      applicationId: job?.data?.applicationId,
+      error: err.message,
+      reason: "Egress/recording finalization job failed permanently",
+      phase: "recording_finalize",
+    });
   });
 }
 /**
@@ -1595,6 +1660,11 @@ if (isQueueEnabled("interview-snapshots")) {
   ));
   interviewSnapshotWorker.on("failed", (job, err) => {
     console.log(`[FATAL] Snapshot Job ${job?.id} failed: ${err.message}`);
+    logWorkerError({
+      error: err.message,
+      reason: "Interview snapshot job failed",
+      context: { jobId: job?.id, applicationId: job?.data?.applicationId },
+    });
   });
 }
 /**
@@ -1605,7 +1675,7 @@ if (isQueueEnabled("jd-upload")) {
   const jdUploadWorker = trackWorker("jd-upload", new Worker(
     "jd-upload",
     async (job) => {
-      const { bucket, key, buffer, contentType } = job.data;
+      const { bucket, key, buffer, contentType, orgId } = job.data;
       if (!bucket || !key || !buffer) {
         throw new Error("Missing required data for JD upload job");
       }
@@ -1633,6 +1703,34 @@ if (isQueueEnabled("jd-upload")) {
   ));
   jdUploadWorker.on("failed", (job, err) => {
     console.log(`[FATAL] JD Upload Job ${job?.id} failed: ${err.message}`);
+    const orgId = job?.data?.orgId as string | undefined;
+    if (orgId) {
+      prisma.organization.findUnique({ where: { id: orgId }, select: { name: true } })
+        .then((org) => {
+          logDriveError({
+            orgName: org?.name || orgId,
+            driveName: "JD Upload",
+            operation: "upload_jd",
+            error: err.message,
+            reason: "JD upload worker job failed",
+          });
+        })
+        .catch(() => {
+          logDriveError({
+            orgName: orgId,
+            driveName: "JD Upload",
+            operation: "upload_jd",
+            error: err.message,
+            reason: "JD upload worker job failed (org lookup failed)",
+          });
+        });
+    } else {
+      logWorkerError({
+        error: err.message,
+        reason: "JD upload worker job failed with no orgId in job data",
+        context: { jobId: job?.id },
+      });
+    }
   });
 }
 
@@ -1728,6 +1826,34 @@ if (isQueueEnabled("jd-extraction")) {
   ));
   jdExtractionWorker.on("failed", (job, err) => {
     console.error(`[JD-EXTRACTION WORKER] Job ${job?.id} failed: ${err.message}`);
+    const orgId = job?.data?.orgId as string | undefined;
+    if (orgId) {
+      prisma.organization.findUnique({ where: { id: orgId }, select: { name: true } })
+        .then((org) => {
+          logDriveError({
+            orgName: org?.name || orgId,
+            driveName: "JD Extraction",
+            operation: "upload_jd",
+            error: err.message,
+            reason: "JD extraction worker job failed",
+          });
+        })
+        .catch(() => {
+          logDriveError({
+            orgName: orgId,
+            driveName: "JD Extraction",
+            operation: "upload_jd",
+            error: err.message,
+            reason: "JD extraction worker job failed (org lookup failed)",
+          });
+        });
+    } else {
+      logWorkerError({
+        error: err.message,
+        reason: "JD extraction worker job failed with no orgId in job data",
+        context: { jobId: job?.id },
+      });
+    }
   });
 }
 

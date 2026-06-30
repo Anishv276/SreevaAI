@@ -58,6 +58,7 @@ _LLM_DEFAULT = "gpt-4.1-mini"  # ponytail: fallback only â€” callers should
 # ---------------------------------------------------------------------------
 from interview.agent_persistence import DatabasePool
 from billing.billing import record_external_billing_usage as _persist_billing
+from interview.slack_error_logger import log_llm_error
 
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # SECTION 1 â€” Domain Models (Pydantic)
@@ -260,6 +261,7 @@ class LLMCallSpec:
     temperature:     float       = 0.0
     org_id:          str        = ""
     app_id:          str        = ""
+    candidate_name:  str        = ""
     prediction:      dict | None = None
     _LLM_DEFAULT:       str        = _LLM_DEFAULT
 
@@ -346,6 +348,17 @@ class ReportLLMClient:
                 )
                 await asyncio.sleep(delay)
 
+        try:
+            await log_llm_error(
+                app_id=spec.app_id,
+                org_name=spec.org_id,
+                candidate_name=spec.candidate_name,
+                provider="openai",
+                error=str(last_exc),
+                reason=f"LLM call failed after retries — call_type={spec.call_type}",
+            )
+        except Exception:
+            pass
         raise last_exc  # type: ignore[misc]
 
     @staticmethod
@@ -1320,6 +1333,7 @@ async def generate_interview_report(
     _LLM_DEFAULT:       str            = _LLM_DEFAULT,
     jd_json:         Optional[dict] = None,
     topic_records:   Optional[list] = None,
+    candidate_name:  str = "",
 ) -> Optional[dict]:
     """Run the full report pipeline.
 
@@ -1354,6 +1368,17 @@ async def generate_interview_report(
         return None
     except Exception as e:
         logger.error("[REPORT] Pipeline failed for %s: %s", app_id, e, exc_info=True)
+        try:
+            await log_llm_error(
+                app_id=app_id,
+                org_name=org_id,
+                candidate_name=candidate_name,
+                provider="openai",
+                error=str(e),
+                reason="Report/summary generation failed",
+            )
+        except Exception:
+            pass
         return None
 
 
@@ -1364,6 +1389,7 @@ async def generate_interview_summary(
     org_id:          Optional[str]  = None,
     _LLM_DEFAULT:       str            = _LLM_DEFAULT,
     scores_context:  Optional[dict] = None,
+    candidate_name:  str = "",
 ) -> None:
     """Generate summary bullets + verdict and write to Interview.interviewSummary.
 
@@ -1478,4 +1504,15 @@ async def generate_interview_summary(
         logger.warning("[SUMMARY] Timed out for %s", app_id)
     except Exception as e:
         logger.error("[SUMMARY] Failed for %s: %s", app_id, e, exc_info=True)
+        try:
+            await log_llm_error(
+                app_id=app_id,
+                org_name=org_id,
+                candidate_name=candidate_name,
+                provider="openai",
+                error=str(e),
+                reason="Report/summary generation failed",
+            )
+        except Exception:
+            pass
 

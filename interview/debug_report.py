@@ -22,6 +22,10 @@ from reportlab.platypus import (
 
 logger = logging.getLogger("interview-agent")
 
+# Load from .env.local via python-dotenv
+from dotenv import load_dotenv
+load_dotenv()
+
 SLACK_BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN", "")
 SLACK_DEBUG_CHANNEL = os.environ.get("SLACK_DEBUG_CHANNEL", "")
 

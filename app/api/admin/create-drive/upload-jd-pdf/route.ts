@@ -1,12 +1,16 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { jdUploadQueue } from "@/lib/queue";
+import { prisma } from "@/lib/prisma";
+import { logDriveError } from "@/lib/slack-error-logger";
 export async function POST(req: Request) {
     try {
         const session = await getSession();
         if (!session?.orgId) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
+        const org = await prisma.organization.findUnique({ where: { id: session.orgId }, select: { name: true } });
+        const orgName = org?.name || session.orgId;
         const contentLength = req.headers.get("content-length");
         console.log(`[API] Processing upload request. Header Content-Length: ${contentLength} bytes`);
         let formData: FormData;
@@ -14,9 +18,16 @@ export async function POST(req: Request) {
             formData = await req.formData();
         } catch (parseError: any) {
             console.error("[UPLOAD_JD_PDF_PARSE_ERROR]", parseError);
-            return NextResponse.json({ 
+            await logDriveError({
+                orgName,
+                driveName: "JD Upload (pre-creation)",
+                operation: "upload_jd",
+                error: parseError.message || String(parseError),
+                reason: "JD PDF form data parse failed — file too large or request interrupted",
+            });
+            return NextResponse.json({
                 error: "Failed to parse upload data. The file might be too large or the request was interrupted.",
-                details: parseError.message 
+                details: parseError.message
             }, { status: 400 });
         }
         const file = formData.get("file") as File;
@@ -33,7 +44,8 @@ export async function POST(req: Request) {
             bucket: 'jds', // Using 'jds' bucket as per .env
             key,
             buffer,
-            contentType: "application/pdf"
+            contentType: "application/pdf",
+            orgId: session.orgId,
         }, {
             attempts: 3,
             backoff: {
@@ -50,9 +62,17 @@ export async function POST(req: Request) {
         return NextResponse.json({ url: publicUrl, fileName });
     } catch (error: any) {
         console.error("[UPLOAD_JD_PDF_QUEUE_ERROR]", error);
-        return NextResponse.json({ 
+        const session = await getSession().catch(() => null);
+        await logDriveError({
+            orgName: session?.orgId || "unknown",
+            driveName: "JD Upload (pre-creation)",
+            operation: "upload_jd",
+            error: error.message || String(error),
+            reason: "JD upload enqueue to Redis queue failed",
+        });
+        return NextResponse.json({
             error: "Failed to enqueue JD upload task",
-            details: error.message 
+            details: error.message
         }, { status: 500 });
     }
 }

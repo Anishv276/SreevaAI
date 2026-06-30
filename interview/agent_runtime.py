@@ -39,6 +39,12 @@ from interview.agent_persistence import (
     persist_transcript,
     update_interview_status,
 )
+from interview.slack_error_logger import (
+    log_livekit_error,
+    log_llm_error,
+    log_stt_error,
+    log_tts_error,
+)
 from billing.billing import (
     flush_billing as flush_pending_manual_billing,
     record_manual_usage as persist_org_manual_billing_usage,
@@ -554,6 +560,8 @@ async def _generate_move_on_directive(
     usage_sink: Optional[Any] = None,
     topic_item: Optional[Any] = None,
     prev_answer: str = "",  # candidate's last answer — used to derive the right opening filler
+    app_id: str = "",
+    candidate_name: str = "",
 ) -> str:
     """
     Ask GPT-4.1-mini to generate a full MOVE_ON directive including the opening
@@ -850,6 +858,16 @@ async def _generate_move_on_directive(
         return directive
     except Exception as exc:
         _log.warning("[MOVE_ON_LLM] LLM generation failed (%s) -- falling back to rule-based directive", exc)
+        try:
+            await log_llm_error(
+                app_id=app_id or None,
+                candidate_name=candidate_name or None,
+                provider="openai",
+                error=str(exc),
+                reason="Move-on directive LLM generation failed — using fallback",
+            )
+        except Exception:
+            pass
         return ""
 class InterviewAgent(Agent):
     def __init__(self, *args, **kwargs):
@@ -1647,7 +1665,21 @@ async def entrypoint(ctx: JobContext):
     # Silero ONNX model is no longer needed — saves ~200ms prewarm startup time.
     flux_session_keyterms = _build_flux_session_keyterms()
     logger.info("[STT_FLUX] static session keyterms prepared: %d extra terms", len(flux_session_keyterms))
-    stt_plugin = build_stt(language_code=lang_codes["stt"], keyterms=flux_session_keyterms, model_override=ctx_data.sttModel)
+    try:
+        stt_plugin = build_stt(language_code=lang_codes["stt"], keyterms=flux_session_keyterms, model_override=ctx_data.sttModel)
+    except Exception as _stt_build_err:
+        try:
+            await log_stt_error(
+                candidate_name=candidate_name,
+                org_name=_compact_optional(ctx_data.orgName),
+                provider="deepgram",
+                error=str(_stt_build_err),
+                reason="STT plugin initialization failed",
+                context={"app_id": app_id},
+            )
+        except Exception:
+            pass
+        raise
     _tts_builder = {
         "SARVAM":     build_sarvam_tts,
         "ELEVENLABS": build_elevenlabs_tts,
@@ -1696,13 +1728,27 @@ async def entrypoint(ctx: JobContext):
             _SHARED_OPENAI_CLIENT,
             model=analysis_model,
         )
-    tts_plugin = _tts_builder(
-        language=lang_codes["tts"],
-        model=org_tts_model,
-        voice_id=voice_id,
-        **({"dict_id": _sarvam_dict_id} if _sarvam_dict_id else {}),
-        **({"pronunciation_dict_locators": _elevenlabs_pronunciation_locators} if _elevenlabs_pronunciation_locators else {}),
-    )
+    try:
+        tts_plugin = _tts_builder(
+            language=lang_codes["tts"],
+            model=org_tts_model,
+            voice_id=voice_id,
+            **({"dict_id": _sarvam_dict_id} if _sarvam_dict_id else {}),
+            **({"pronunciation_dict_locators": _elevenlabs_pronunciation_locators} if _elevenlabs_pronunciation_locators else {}),
+        )
+    except Exception as _tts_build_err:
+        try:
+            await log_tts_error(
+                candidate_name=candidate_name,
+                org_name=_compact_optional(ctx_data.orgName),
+                provider=org_tts_provider,
+                error=str(_tts_build_err),
+                reason="TTS plugin initialization failed",
+                context={"app_id": app_id},
+            )
+        except Exception:
+            pass
+        raise
     plugin_tts_characters = 0
     plugin_tts_audio_seconds = 0.0
     plugin_stt_audio_seconds = 0.0
@@ -2398,6 +2444,16 @@ async def entrypoint(ctx: JobContext):
         )
     except Exception as _session_start_err:
         logger.error(f"[INTERVIEW_FAIL] session.start() failed for {app_id}: {_session_start_err}")
+        try:
+            await log_livekit_error(
+                app_id=app_id,
+                candidate_name=candidate_name,
+                org_name=_compact_optional(ctx_data.orgName),
+                error=str(_session_start_err),
+                phase="session_start",
+            )
+        except Exception:
+            pass
         await _fail_interview("session_start_failed")
         raise
     # --- Real-time Transcript Streaming is handled by LiveKit automatically ---
@@ -2914,6 +2970,8 @@ async def entrypoint(ctx: JobContext):
                                 usage_sink=_llmgen_llm_usages.append,
                                 topic_item=_pre_next_item,
                                 prev_answer=(payload.get("answer") or ""),
+                                app_id=app_id,
+                                candidate_name=candidate_name,
                             )
                         )
                     # When all topics are covered, go straight to WRAP_UP.
@@ -3025,6 +3083,8 @@ async def entrypoint(ctx: JobContext):
                             usage_sink=_eval_llm_usages_accumulated.append,
                             topic_item=_new_topic_item,
                             prev_answer=_prev_a,
+                            app_id=app_id,
+                            candidate_name=candidate_name,
                         )
                     # If LLM directive generation failed, use a minimal instruction
                     # that lets the LLM generate a natural question from the TOPIC_LOCK context.
@@ -3731,6 +3791,17 @@ async def entrypoint(ctx: JobContext):
                     logger.error("[GREETING] All TTS retry attempts failed for greeting")
         except Exception as e:
             logger.error(f"[GREETING] Failed to deliver greeting: {e}")
+            try:
+                await log_tts_error(
+                    candidate_name=candidate_name,
+                    org_name=_compact_optional(ctx_data.orgName),
+                    provider=org_tts_provider,
+                    error=str(e),
+                    reason="Greeting delivery failed after retries",
+                    context={"app_id": app_id},
+                )
+            except Exception:
+                pass
         finally:
             if greeting_delivered_at is None and not disconnect_event.is_set():
                 # Fail open so the interview never deadlocks waiting on greeting state.
@@ -3988,6 +4059,7 @@ async def entrypoint(ctx: JobContext):
                             _LLM_DEFAULT=str(ctx_data.llmInterviewReport).strip(),
                             jd_json=_coerce_jsonish(extracted_details) if extracted_details else None,
                             topic_records=list(_topic_records),
+                            candidate_name=candidate_name,
                         )
                     logger.info("[REPORT] Completed. scores_context keys=%s",
                                 list(scores_context.keys()) if scores_context else None)
@@ -4005,6 +4077,7 @@ async def entrypoint(ctx: JobContext):
                             org_id=org_id,
                             _LLM_DEFAULT=analysis_model,
                             scores_context=scores_context,
+                            candidate_name=candidate_name,
                         )
                 except asyncio.TimeoutError:
                     logger.warning(f"[SUMMARY] Timed out for {app_id} after 60s")
@@ -4129,6 +4202,16 @@ async def _entrypoint_guarded(ctx: JobContext) -> None:
         await entrypoint(ctx)
     except Exception as _crash:
         logger.error(f"[INTERVIEW_FAIL] Uncaught crash in entrypoint app_id={app_id}: {_crash}", exc_info=True)
+        try:
+            await log_livekit_error(
+                app_id=app_id,
+                candidate_name=None,
+                org_name=None,
+                error=str(_crash),
+                phase="entrypoint_guard",
+            )
+        except Exception:
+            pass
         if app_id:
             try:
                 await mark_interview_failed(app_id, reason="uncaught_crash")
