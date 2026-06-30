@@ -1,33 +1,35 @@
-/* Editorial theme — scoped to admin + login pages only */
+/* Violet design system — scoped to admin + login pages */
 .editorial-theme {
-  --bg: #fbf8f4;
-  --ink: #1c1b1b;
-  --muted: #6f6862;
-  --muted-2: #9a938d;
-  --line: #ececea;
-  --primary: #ff6a00;
-  --primary-deep: #e75c00;
+  --bg:           #FAFAFC;
+  --ink:          #111827;
+  --muted:        #6B7280;
+  --muted-2:      #9CA3AF;
+  --line:         #E9E7FF;
+  --primary:      #7C3AED;
+  --primary-deep: #6D28D9;
+  --primary-light:#8B5CF6;
+  --accent:       #3B82F6;
 }
 
 .editorial-theme,
 .editorial-theme body {
-  background-color: #fbf8f4;
-  color: #1c1b1b;
-  font-family: "DM Sans", system-ui, -apple-system, sans-serif;
+  background: linear-gradient(180deg, #FFFFFF 0%, #FAFAFC 45%, #F5F3FF 100%);
+  color: #111827;
+  font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
 }
 
 .editorial-theme input,
 .editorial-theme textarea,
 .editorial-theme select {
-  background-color: #ffffff;
-  border-color: #ececea;
-  color: #1c1b1b;
-  font-family: "DM Sans", system-ui, -apple-system, sans-serif;
+  background-color: #FFFFFF;
+  border-color: #E9E7FF;
+  color: #111827;
+  font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
 }
 
 .editorial-theme input::placeholder,
 .editorial-theme textarea::placeholder {
-  color: #9a938d;
+  color: #9CA3AF;
 }
 
 .editorial-theme label,
@@ -35,5 +37,5 @@
 .editorial-theme button,
 .editorial-theme .btn,
 .editorial-theme [class*="btn"] {
-  font-family: "DM Sans", system-ui, -apple-system, sans-serif;
+  font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
 }

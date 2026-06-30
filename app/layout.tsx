@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { GeistSans } from "geist/font/sans";
 import Script from "next/script";
 import "./globals.css";
 import { JobsProvider } from "@/context/jobs-context";
@@ -8,12 +8,7 @@ import { AuthProvider } from "@/context/auth-context";
 import { CandidatesProvider } from "@/context/candidates-context";
 import { Toaster } from "@/components/ui/toast-custom";
 import ClarityAnalytics from "@/components/clarity-analytics";
-const inter = Inter({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700", "800", "900"],
-  variable: "--font-inter",
-  display: "swap",
-});
+import { ViewTransitions } from "next-view-transitions";
 export const metadata: Metadata = {
   title: {
     default: "Sreeva AI - AI-Powered Recruitment Platform",
@@ -24,9 +19,9 @@ export const metadata: Metadata = {
   authors: [{ name: "Sreeva AI Team" }],
   metadataBase: new URL("https://www.sreevaai.com"),
   icons: {
-    icon: "/sreevalogo.png",
-    shortcut: "/sreevalogo.png",
-    apple: "/sreevalogo.png",
+    icon: "/sreevaailogo2.png",
+    shortcut: "/sreevaailogo2.png",
+    apple: "/sreevaailogo2.png",
   },
   // No root canonical — each page declares its own via page-level metadata
   openGraph: {
@@ -69,11 +64,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" suppressHydrationWarning className={inter.variable}>
-      <head>
-        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Instrument+Serif:ital@0;1&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap" />
-      </head>
-      <body className="font-sans antialiased" suppressHydrationWarning>
+    <ViewTransitions>
+      <html lang="en" suppressHydrationWarning className={GeistSans.variable}>
+        <head>
+          <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap" />
+        </head>
+        <body className="font-sans antialiased" suppressHydrationWarning>
         <Script
           src="https://www.googletagmanager.com/gtag/js?id=G-LRB7QT4RJR"
           strategy="afterInteractive"
@@ -88,16 +84,16 @@ export default function RootLayout({
         </Script>
         <ClarityAnalytics />
         <AuthProvider>
-          <Suspense fallback={
-            <div className="min-h-screen flex flex-col items-center justify-center bg-white" aria-label="Loading Sreeva AI">
-              <img src="/sreevalogo.png" alt="Sreeva AI" className="h-16 w-16 mb-4 animate-pulse" />
-              <p className="text-2xl font-bold text-slate-900" aria-hidden="true">Sreeva AI</p>
-              <p className="text-slate-500 mt-2 animate-pulse">Setting up your AI-powered interview environment...</p>
-            </div>
-          }>
-            <JobsProvider>
-              <CandidatesProvider>
-                {children}
+            <Suspense fallback={
+              <div className="min-h-screen flex flex-col items-center justify-center bg-white" aria-label="Loading Sreeva AI">
+                <img src="/sreevaailogo2.png" alt="Sreeva AI" className="h-16 w-16 mb-4 animate-pulse" />
+                <p className="text-2xl font-bold text-slate-900" aria-hidden="true">Sreeva AI</p>
+                <p className="text-slate-500 mt-2 animate-pulse">Setting up your AI-powered interview environment...</p>
+              </div>
+            }>
+              <JobsProvider>
+                <CandidatesProvider>
+                  {children}
                 <Toaster />
               </CandidatesProvider>
             </JobsProvider>
@@ -105,5 +101,6 @@ export default function RootLayout({
         </AuthProvider>
       </body>
     </html>
+    </ViewTransitions>
   );
 }

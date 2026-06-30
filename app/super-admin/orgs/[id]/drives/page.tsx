@@ -31,12 +31,12 @@ export default function OrgDrivesPage({ params }: { params: Promise<{ id: string
     if (loading) {
         return (
             <div className="p-20 text-center flex items-center justify-center">
-                <Loader2 className="h-8 w-8 text-[#F97316] animate-spin opacity-20" />
+                <Loader2 className="h-8 w-8 text-[#7C3AED] animate-spin opacity-20" />
             </div>
         );
     }
     return (
-        <div className="p-8 lg:p-12 space-y-12 animate-fade-slide">
+        <div className="space-y-6 pb-10 animate-in fade-in duration-500">
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-8">
                 <div className="space-y-4">
                     <button
@@ -47,10 +47,10 @@ export default function OrgDrivesPage({ params }: { params: Promise<{ id: string
                         Back to Organizations
                     </button>
                     <div className="flex items-center gap-4">
-                        <div className="h-14 w-1 flex bg-[#F97316] rounded-full shadow-[0_0_15px_rgba(249,115,22,0.3)]" />
+                        <div className="h-14 w-1 flex bg-[#7C3AED] rounded-full shadow-[0_0_15px_rgba(124,58,237,0.3)]" />
                         <div>
-                            <h1 className="text-4xl font-black text-gray-900 tracking-tighter leading-none">Active Jobs</h1>
-                            <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px] mt-2">Active roles for <span className="text-[#F97316]">{org?.name}</span></p>
+                            <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Active Jobs</h1>
+                            <p className="text-gray-400 font-bold uppercase tracking-widest text-[10px] mt-2">Active roles for <span className="text-[#7C3AED]">{org?.name}</span></p>
                         </div>
                     </div>
                 </div>

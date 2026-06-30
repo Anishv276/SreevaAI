@@ -197,19 +197,22 @@ const interviewReportBehavioralAnalysis = {
     strengths_observed: interviewSummaryData?.strengths || [],
     concerns_noted:     interviewSummaryData?.concerns  || [],
 };
-const interviewReportVerdict = interviewReportData?.verdict || {};
+const interviewReportVerdict = typeof interviewSummaryData?.decision_note === "object" 
+    ? interviewSummaryData.decision_note 
+    : interviewReportData?.verdict || {};
     // -- interviewReportSkills: from skill_ratings (skill key, 1-10 score) ------
     const interviewReportSkills: any[] = skillRatingsList
         .filter((r: any) => r?.skill && typeof r.skill === "string")
         .map((r: any) => ({
-            skill:            String(r.skill).trim(),
-            name:             String(r.skill).trim(),
-            score:            String(r.score) + "/10",
-            status:           String(r.status || "NOT TESTED"),
-            what_they_showed: String(r.evidence || "").trim(),
-            what_was_missing: String(r.gaps || "").trim(),
+            skill:    String(r.skill).trim(),
+            name:     String(r.skill).trim(),
+            score:    typeof r.score === "number" ? r.score : parseFloat(String(r.score)) || 5,
+            status:   String(r.status || "NOT TESTED"),
+            evidence: String(r.evidence || "").trim(),
         }));
-    const interviewReportSummary = interviewSummaryData?.decision_note || interviewSummaryData?.summary || "";
+    const interviewReportSummary = typeof interviewSummaryData?.decision_note === "string" 
+        ? interviewSummaryData.decision_note 
+        : interviewSummaryData?.summary || "";
     const interviewStatusNormalized = String(candidate?.interview?.status || candidate?.interviewStatus || "").trim().toUpperCase();
     const interviewIsFinished =
         interviewStatusNormalized === "COMPLETED" ||
@@ -287,7 +290,7 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
         // Show only org-enabled proctoring signals — exclude behavioral/evaluation signals
         .filter((e) => enabledProctoringSignals.size === 0 || enabledProctoringSignals.has(e.signal_name));
     // ── Parse answerScores — stored as JSON string in DB ──
-    const answerScoresParsed: { question: string; answer: string; depth: number; clarity: number; specificity: number; grounding: number; overall: number; signals: string[] }[] = (() => {
+    const answerScoresParsed: { question: string; answer: string; depth: number; clarity: number; specificity: number; grounding: number; overall: number; signals: string[]; response_latency_sec: number }[] = (() => {
         const raw = candidate?.interview?.questionByQuestionAnalysis;
         const parsed = (() => {
             if (!raw) return null;
@@ -308,19 +311,28 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
             .map((score: any) => {
                 const sb = score?.score_breakdown || {};
                 return {
-                    turn:        Number(score?.turn ?? 0),
-                    question:    String(score?.ai_question    || score?.question || "").trim(),
-                    answer:      String(score?.candidate_answer || score?.answer || "").trim(),
-                    topic:       String(score?.topic || "").trim(),
-                    depth:       Number(sb.depth       ?? score?.depth       ?? 0),
-                    clarity:     Number(sb.clarity     ?? score?.clarity     ?? 0),
-                    specificity: Number(sb.fluency     ?? score?.specificity ?? 0),
-                    grounding:   Number(sb.confidence  ?? score?.grounding   ?? 0),
-                    overall:     Number(score?.overall ?? 0),
-                    signals:     Array.isArray(score?.signals) ? score.signals.filter(Boolean) : [],
-                    score_breakdown: sb,
+                    turn:                 Number(score?.turn ?? 0),
+                    question:             String(score?.ai_question    || score?.question || "").trim(),
+                    answer:               String(score?.candidate_answer || score?.answer || "").trim(),
+                    topic:                String(score?.topic || "").trim(),
+                    depth:                Number(sb.depth       ?? score?.depth       ?? 0),
+                    clarity:              Number(sb.clarity     ?? score?.clarity     ?? 0),
+                    specificity:          Number(sb.fluency     ?? score?.specificity ?? 0),
+                    grounding:            Number(sb.confidence  ?? score?.grounding   ?? 0),
+                    overall:              Number(score?.overall ?? 0),
+                    signals:              Array.isArray(score?.signals) ? score.signals.filter(Boolean) : [],
+                    score_breakdown:      sb,
+                    response_latency_sec: Number(score?.response_latency_sec ?? 0),
                 };
             });
+    })();
+    // ── Compute avg response time from real per-question data ──
+    const avgResponseTimeSec = (() => {
+        const latencies = answerScoresParsed
+            .map((s: any) => Number(s.response_latency_sec ?? 0))
+            .filter((n: number) => Number.isFinite(n) && n > 0);
+        if (latencies.length === 0) return null;
+        return Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length);
     })();
     const interviewSessionRows = answerScoresParsed.map((score: any, i: number) => ({
         q: Number(score?.turn || i + 1),
@@ -415,17 +427,6 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
         }
         return {};
     })();
-    const structuredJdData: any = (() => {
-        const raw = candidate?.drive?.extractedDetails;
-        const parsed = safeJsonParse(raw, {});
-        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-            if (parsed.data && typeof parsed.data === "object" && !Array.isArray(parsed.data)) {
-                return parsed.data;
-            }
-            return parsed;
-        }
-        return {};
-    })();
     const resumeReportModel = useMemo(() => {
         const report = resumeReportPayload || {};
         const resumeStruct = structuredResumeData || {};
@@ -437,55 +438,23 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
                 : Array.isArray(resumeStruct.work_history)
                     ? resumeStruct.work_history
                 : [];
-        const skillDepth = toTextList(report.skill_depth);
-        const coreClaims = toTextList(report.core_claims);
         const breakdown = report.breakdown || null;
         const score = Number(candidate?.aiScore ?? report.score ?? 0) || 0;
-        // Experience years: prefer scored result, fall back to AI assessment
         const experienceYears: number | null = (() => {
             const v = report.candidate_years ?? report.experience_assessment?.years ?? resumeStruct?.experience?.total_years ?? null;
             const n = Number(v);
             return Number.isFinite(n) && n >= 0 ? n : null;
         })();
-        // Matched skills count: prefer scoring engine's matched list length
-        const matchedSkillsCount = (() => {
-            const sm = report.skill_matching;
-            if (sm) {
-                return (sm.matched_must?.length || 0) + (sm.matched_good?.length || 0);
-            }
-            return skillDepth.length + coreClaims.length + workHistory.length;
-        })();
-        const summary =
-            firstText(report.recruiter_snapshot) ||
-            firstText(report.decision_reason) ||
-            firstText(report.summary) ||
-            firstText(report.reasoning) ||
-            "AI screening analysis ready.";
-        const primaryGapText =
-            firstText(report.decision_reason) ||
-            firstText(report.recruiter_snapshot) ||
-            "No top gap listed yet.";
-        // AI-direct fields from gpt-4o report
-        const aiRadar = report.fit_radar || null;
-        const aiRadarNotes = report.fit_radar_notes || null;
-        const aiSkillRows = Array.isArray(report.skill_match_rows) ? report.skill_match_rows : null;
         const missingMustSkills: string[] = (() => {
             const fromMatching = report?.skill_matching?.missing_must;
             if (Array.isArray(fromMatching) && fromMatching.length > 0) {
                 return fromMatching.map((s: any) => String(s || "").trim()).filter(Boolean);
             }
-            // Fallback: pull missing_skills off concerns array
             const fromConcerns = Array.isArray(report?.concerns)
                 ? report.concerns.flatMap((c: any) => Array.isArray(c?.missing_skills) ? c.missing_skills : [])
                 : [];
             return fromConcerns.map((s: any) => String(s || "").trim()).filter(Boolean);
         })();
-        const candidatePotential = report.candidate_potential?.for_this_role || null;
-        const decisionReason = typeof report.decision_reason === "string" ? report.decision_reason : null;
-        const aiSummaryCards = Array.isArray(report.ai_summary) && report.ai_summary.length >= 1 ? report.ai_summary : null;
-        const aiStrengths = Array.isArray(report.strengths) && report.strengths.length > 0 ? report.strengths : null;
-        const aiWeaknesses = Array.isArray(report.weaknesses) && report.weaknesses.length > 0 ? report.weaknesses : null;
-        const humanLayer = report.human_layer || null;
         return buildSreevaAIResumeViewModel({
             candidate: {
                 fullName,
@@ -501,33 +470,21 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
             hasAiReport: Boolean(candidate?.fullScanReport),
             hasResumeText: Boolean(candidate?.resumeText),
             matchScore: score,
-            summary,
-            primaryGapText,
             normalizedStatus: String(candidate?.resumeStatus || "pending"),
-            interviewStageLabel: String(report.status || candidate?.resumeStatus || "Screened"),
             breakdown,
             combinedWorkHistory: workHistory,
-            totalExtractedSkills: matchedSkillsCount,
-            techSkillSample: skillDepth.slice(0, 14),
             structuredResumeData,
-            structuredJdData,
-            experienceReadout: report.experience_assessment?.vs_required || null,
-            aiRadar,
-            aiRadarNotes,
-            aiSkillRows,
+            aiRadar: report.fit_radar || null,
+            aiRadarNotes: report.fit_radar_notes || null,
+            aiSkillRows: Array.isArray(report.skill_match_rows) ? report.skill_match_rows : null,
             missingMustSkills,
-            candidatePotential,
-            decisionReason,
-            aiSummaryCards,
-            aiStrengths,
-            aiWeaknesses,
-            humanLayer,
+            decisionReason: typeof report.decision_reason === "string" ? report.decision_reason : null,
+            aiSummaryCards: Array.isArray(report.ai_summary) && report.ai_summary.length >= 1 ? report.ai_summary : null,
+            aiStrengths: Array.isArray(report.strengths) && report.strengths.length > 0 ? report.strengths : null,
+            aiWeaknesses: Array.isArray(report.weaknesses) && report.weaknesses.length > 0 ? report.weaknesses : null,
             skillMatching: report.skill_matching || null,
-            resumeParseConfidence: typeof structuredResumeData?.parse_confidence === "string"
-                ? structuredResumeData.parse_confidence
-                : null,
         });
-    }, [backHref, candidate, candidatePhotoSrc, mounted, resumeReportPayload, structuredResumeData, structuredJdData]);
+    }, [backHref, candidate, candidatePhotoSrc, mounted, resumeReportPayload, structuredResumeData]);
     const formatDuration = (totalSeconds: number) => {
         const m = Math.floor(totalSeconds * 0.0166666);
         const s = Math.floor(totalSeconds % 60);
@@ -535,10 +492,10 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
     };
     if (loading) {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-slate-50">
+            <div className="min-h-screen flex items-center justify-center">
                 <div className="flex flex-col items-center gap-4">
-                    <div className="h-12 w-12 rounded-2xl bg-orange-50 flex items-center justify-center animate-pulse">
-                        <Sparkles className="h-6 w-6 text-[#F97316]" />
+                    <div className="h-12 w-12 rounded-2xl bg-violet-50 flex items-center justify-center animate-pulse">
+                        <Sparkles className="h-6 w-6 text-[#7C3AED]" />
                     </div>
                     <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">Loading profile...</p>
                 </div>
@@ -547,7 +504,7 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
     }
     if (!candidate) {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-slate-50">
+            <div className="min-h-screen flex items-center justify-center">
                 <div className="flex flex-col items-center gap-4">
                     <div className="h-16 w-16 rounded-2xl bg-red-50 flex items-center justify-center">
                         <XCircle className="h-8 w-8 text-red-400" />
@@ -559,21 +516,21 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
     }
     if (reportMode === "resume") {
         return (
-            <div className="min-h-screen bg-slate-50">
+            <div className="min-h-screen">
                 <ResumeReportSreevaAI model={resumeReportModel} onBack={() => router.push(backHref)} />
             </div>
         );
     }
     if (reportMode === "interview" && interviewReportLocked) {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
-                <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+            <div className="min-h-screen flex items-center justify-center px-4">
+                <div className="w-full max-w-lg rounded-2xl bg-white p-8 text-center">
                     <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-50 text-amber-600">
                         <FileText className="h-6 w-6" />
                     </div>
                     <p className="text-sm font-black uppercase tracking-[0.18em] text-amber-700">Interview report locked</p>
-                    <h1 className="mt-3 text-2xl font-black text-slate-900">Available after the interview is finished</h1>
-                    <p className="mt-3 text-sm leading-6 text-slate-600">
+                    <h1 className="mt-3 text-2xl font-black text-gray-900">Available after the interview is finished</h1>
+                    <p className="mt-3 text-sm leading-6 text-gray-600">
                         This report opens only when the interview status is marked completed and the session has a completed timestamp.
                     </p>
                     <div className="mt-6 flex items-center justify-center gap-3">
@@ -637,6 +594,8 @@ const interviewReportVerdict = interviewReportData?.verdict || {};
                     integrityBand,
                     skillsEvaluated,
                     skillRatingsList,
+                    avgResponseTimeSec,
+                    reportNotGenerated: Boolean(candidate?.interview?.isTest && isFallbackReport),
                 })}
             />
         </>

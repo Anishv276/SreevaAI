@@ -201,6 +201,12 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         } catch { }
     }, []);
     const [isInitiallyLocked, setIsInitiallyLocked] = useState(false);
+    // scheduledAt from API — used for the slot countdown gate
+    const [scheduledAt, setScheduledAt] = useState<Date | null>(null);
+    // Seconds until button unlocks (2 min before slot)
+    const [slotCountdownSecs, setSlotCountdownSecs] = useState<number | null>(null);
+    // Button unlocks 2 min before slot; waiting room opens 5 min before (handled by server)
+    const BUTTON_UNLOCK_BEFORE_MS = 2 * 60 * 1000;
     useEffect(() => {
         let active = true;
         (async () => {
@@ -211,11 +217,26 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 const data = await res.json();
                 if (!active) return;
                 if (!res.ok && data.error) {
-                    setBlockedAccessTitle(data.code === "DRIVE_CLOSED" ? "Job Closed" : "Access Restricted");
-                    setBlockedAccessMessage(data.error);
-                    setIsInitiallyLocked(true);
-                    // Keep phase as loading so HardwareCheck doesn't mount
+                    if (data.code === "TOO_EARLY" && data.scheduledAt) {
+                        // Waiting room opened — show hardware check but gate the Begin button
+                        const slot = new Date(data.scheduledAt);
+                        setScheduledAt(slot);
+                        setSlotCountdownSecs(Math.ceil((slot.getTime() - BUTTON_UNLOCK_BEFORE_MS - Date.now()) / 1000));
+                        setPhase("check");
+                    } else {
+                        const titleMap: Record<string, string> = {
+                            DRIVE_CLOSED: "Job Closed",
+                            SLOT_EXPIRED: "Slot Expired",
+                            NOT_SCHEDULED: "Not Scheduled",
+                            INTERVIEW_COMPLETED: "Interview Completed",
+                            IN_PROGRESS: "Interview In Progress",
+                        };
+                        setBlockedAccessTitle(titleMap[data.code] || "Access Restricted");
+                        setBlockedAccessMessage(data.error);
+                        setIsInitiallyLocked(true);
+                    }
                 } else {
+                    if (data.scheduledAt) setScheduledAt(new Date(data.scheduledAt));
                     setPhase("check");
                 }
             } catch (err) {
@@ -224,6 +245,18 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         })();
         return () => { active = false; };
     }, [id, interviewToken]);
+
+    // Countdown tick — counts down to (slot - 2 min); when <= 0, button unlocks
+    useEffect(() => {
+        if (!scheduledAt || slotCountdownSecs === null) return;
+        if (slotCountdownSecs <= 0) return; // already unlocked
+        const interval = setInterval(() => {
+            const secsLeft = Math.ceil((scheduledAt.getTime() - BUTTON_UNLOCK_BEFORE_MS - Date.now()) / 1000);
+            setSlotCountdownSecs(secsLeft);
+            if (secsLeft <= 0) clearInterval(interval);
+        }, 1000);
+        return () => clearInterval(interval);
+    }, [scheduledAt, slotCountdownSecs]);
     //  Face violation handler 
     const handleFaceViolation = useCallback((
         eventType: string,
@@ -397,12 +430,12 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             window.removeEventListener("pagehide", handleExit);
         };
     }, [id, phase]);
+    // Single condition: agent ready — slot time is checked by token API
+    // (Server won't issue token if outside ±5 min window, so we know slot time is OK here)
     useEffect(() => {
         if (phase !== "launching") return;
         if (!isAgentReady || agentReadyCommittedRef.current) return;
         agentReadyCommittedRef.current = true;
-        // Start the countdown timer exactly NOW — greeting audio is playing in the browser.
-        // The timer was not started during launching so it counts from this moment.
         setPhase("interview");
     }, [phase, isAgentReady]);
     useEffect(() => {
@@ -455,11 +488,13 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 }
                 const apiError = String(data?.error || "Invalid token payload");
                 const errorCode = String(data?.code || "").toUpperCase();
-                const isInProgress = errorCode === "IN_PROGRESS" || /in progress/i.test(apiError);
+                const isInProgress = errorCode === "IN_PROGRESS" || errorCode === "INTERVIEW_IN_PROGRESS" || /in progress/i.test(apiError);
                 const isCompleted = errorCode === "INTERVIEW_COMPLETED" || /interview has been completed|already completed|completed interview/i.test(apiError);
                 const isDriveClosed = errorCode === "DRIVE_CLOSED";
-                const isLinkExpired = errorCode === "LINK_EXPIRED";
-                const isFinalized = !isDriveClosed && !isLinkExpired && /already finalized|session has expired|invalid token|invalid token payload|token expiry|token expired/i.test(apiError);
+                const isSlotExpired = errorCode === "SLOT_EXPIRED";
+                const isTooEarly = errorCode === "TOO_EARLY";
+                const isLinkExpired = errorCode === "LINK_EXPIRED" || isSlotExpired;
+                const isFinalized = !isDriveClosed && !isLinkExpired && !isTooEarly && /already finalized|session has expired|invalid token|invalid token payload|token expiry|token expired/i.test(apiError);
                 if (isInProgress) {
                     return {
                         ok: false,
@@ -479,6 +514,13 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         ok: false,
                         title: "Job closed",
                         message: "This job posting is no longer accepting applications. The recruitment drive has ended.",
+                    };
+                }
+                if (isSlotExpired) {
+                    return {
+                        ok: false,
+                        title: "Slot expired",
+                        message: "You missed your scheduled interview slot. Please contact your recruiter to reschedule.",
                     };
                 }
                 if (isLinkExpired || isFinalized) {
@@ -679,7 +721,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     // Hard timeout: if agent never becomes ready within 1.5 minutes (90s), show a popup and return to check.
     useEffect(() => {
         if (phase !== "launching") return;
-        if (launchTimeoutCheck >= 90 && !agentReadyCommittedRef.current) {
+        if (launchTimeoutCheck >= 300 && !agentReadyCommittedRef.current) {
             setJoinError("AI interviewer didn't respond in time. Please reload the website and try again.");
             connectionAttemptRef.current += 1;
             void resetToHardwareCheck("AI interviewer didn't respond in time. Please reload the website and try again.");
@@ -921,7 +963,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                             exit={{ opacity: 0, y: 20, scale: 0.98 }}
                             className="w-full max-w-md rounded-[28px] bg-white shadow-2xl border border-black/5 p-8 text-center"
                         >
-                            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-orange-50 text-orange-500">
+                            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-violet-50 text-violet-500">
                                 <ShieldAlert className="h-8 w-8" />
                             </div>
                             <h2 className="text-2xl font-black tracking-tight text-gray-900">
@@ -932,7 +974,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                             </p>
                             <p className="mt-3 text-sm font-semibold text-gray-700">
                                 Please contact the support team:{" "}
-                                <a href="mailto:support@sreevaai.com" className="text-orange-600 underline decoration-orange-300 underline-offset-2">
+                                <a href="mailto:support@sreevaai.com" className="text-violet-600 underline decoration-orange-300 underline-offset-2">
                                     support@sreevaai.com
                                 </a>
                             </p>
@@ -940,7 +982,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                                 {!isInitiallyLocked && (
                                     <Button
                                         onClick={() => setBlockedAccessMessage(null)}
-                                        className="rounded-full bg-orange-500 px-6 py-2.5 text-white font-bold hover:bg-orange-600"
+                                        className="rounded-full bg-violet-500 px-6 py-2.5 text-white font-bold hover:bg-violet-600"
                                     >
                                         Got it
                                     </Button>
@@ -959,7 +1001,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         exit={{ opacity: 0 }}
                         className="flex-1 flex items-center justify-center bg-white absolute inset-0 z-50"
                     >
-                        <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
+                        <Loader2 className="w-8 h-8 animate-spin text-violet-500" />
                     </motion.div>
                 )}
                 {phase === "check" && (
@@ -982,7 +1024,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                                             "Support Available"
                                         ].map((text, i) => (
                                             <div key={text} className="flex items-center gap-2">
-                                                <div className="w-1.5 h-1.5 rounded-full bg-orange-500" />
+                                                <div className="w-1.5 h-1.5 rounded-full bg-violet-500" />
                                                 <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">{text}</span>
                                             </div>
                                         ))}
@@ -1002,6 +1044,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                             applicationId={id}
                             interviewToken={interviewToken}
                             title={`${organizationName ? `${organizationName} - ` : ""}${interviewRoleLabel} Interview Check`}
+                            slotCountdownSecs={slotCountdownSecs}
                         />
                     </motion.div>
                 )}
@@ -1015,10 +1058,10 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                     >
                         <div className="flex flex-col items-center gap-8 text-center px-6">
                             <div className="relative h-32 w-32" style={{ transform: 'translateZ(0)' }}>
-                                <div className="absolute inset-0 rounded-full border-2 border-orange-500/10" />
-                                <div className="absolute inset-2 rounded-full border-2 border-orange-500/20" />
-                                <div className="relative h-full w-full rounded-full border-2 border-orange-500/40 bg-zinc-900/90 flex items-center justify-center shadow-[0_0_60px_rgba(249,115,22,0.1)]">
-                                    <Sparkles className="h-10 w-10 text-orange-500" />
+                                <div className="absolute inset-0 rounded-full border-2 border-violet-500/10" />
+                                <div className="absolute inset-2 rounded-full border-2 border-violet-500/20" />
+                                <div className="relative h-full w-full rounded-full border-2 border-violet-500/40 bg-zinc-900/90 flex items-center justify-center shadow-[0_0_60px_rgba(124,58,237,0.1)]">
+                                    <Sparkles className="h-10 w-10 text-violet-500" />
                                 </div>
                             </div>
                             <div className="space-y-3">
@@ -1028,25 +1071,26 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                                 <p className="text-[11px] font-bold text-zinc-500 uppercase tracking-[0.25em] max-w-[300px]">
                                     {isAgentReady
                                         ? `Agent ready in ${agentReadyLatencyMs ?? 0}ms. Starting interview...`
-                                        : "Please wait - connecting your AI interviewer."}
+                                        : "Please wait — connecting your AI interviewer."}
                                 </p>
                             </div>
                             <div className="flex items-center gap-2">
-                                {(["Mic & Camera", "Room Link", "AI Agent"] as const).map((step, i) => {
-                                    const done = i === 0 ? true : i === 1 ? !!token : isAgentReady;
-                                    return (
-                                        <div key={step} className="flex items-center gap-2">
-                                            <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest border transition-all ${done
-                                                ? "bg-green-500/10 border-green-500/30 text-green-400"
-                                                : "bg-zinc-800 border-zinc-700 text-zinc-500"
-                                                }`}>
-                                                {done ? <CheckCircle2 className="w-3 h-3" /> : <Loader2 className="w-3 h-3 animate-spin" />}
-                                                {step}
-                                            </div>
-                                            {i < 2 && <div className="w-4 h-px bg-zinc-700" />}
+                                {([
+                                    { label: "Mic & Camera", done: true },
+                                    { label: "Room Link", done: !!token },
+                                    { label: "AI Agent", done: isAgentReady },
+                                ]).map((step, i, arr) => (
+                                    <div key={step.label} className="flex items-center gap-2">
+                                        <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest border transition-all ${step.done
+                                            ? "bg-green-500/10 border-green-500/30 text-green-400"
+                                            : "bg-zinc-800 border-zinc-700 text-zinc-500"
+                                            }`}>
+                                            {step.done ? <CheckCircle2 className="w-3 h-3" /> : <Loader2 className="w-3 h-3 animate-spin" />}
+                                            {step.label}
                                         </div>
-                                    );
-                                })}
+                                        {i < arr.length - 1 && <div className="w-4 h-px bg-zinc-700" />}
+                                    </div>
+                                ))}
                             </div>
                             {launchRecoveryMessage && (
                                 <motion.div
@@ -1055,7 +1099,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                                     className="fixed inset-0 z-[200] flex items-center justify-center bg-black/55 backdrop-blur-sm"
                                 >
                                     <div className="w-[min(92vw,520px)] rounded-[2rem] bg-white p-8 shadow-2xl border border-black/5 text-center">
-                                        <p className="text-[10px] font-black uppercase tracking-[0.4em] text-orange-500 mb-3">Hold on</p>
+                                        <p className="text-[10px] font-black uppercase tracking-[0.4em] text-violet-500 mb-3">Hold on</p>
                                         <h3 className="text-2xl font-black text-gray-900 tracking-tight">
                                             {launchRecoveryMessage}
                                         </h3>
@@ -1078,8 +1122,8 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                     >
                         <div className="flex flex-col items-center gap-6">
                             <div className="relative">
-                                <Loader2 className="h-16 w-16 text-orange-500 animate-spin" />
-                                <ShieldCheck className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-6 w-6 text-orange-600" />
+                                <Loader2 className="h-16 w-16 text-violet-500 animate-spin" />
+                                <ShieldCheck className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-6 w-6 text-violet-600" />
                             </div>
                             <div className="text-center space-y-2">
                                 <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight">Interview Complete</h3>
@@ -1198,8 +1242,8 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         className="fixed inset-0 z-[200] bg-zinc-950/90 backdrop-blur-sm flex items-center justify-center p-6"
                     >
                         <div className="max-w-md w-full bg-zinc-900 border border-zinc-800 rounded-3xl p-8 shadow-2xl text-center space-y-6">
-                            <div className={`mx-auto w-20 h-20 rounded-2xl flex items-center justify-center ${tabSwitchCount >= 3 ? "bg-red-500/10" : "bg-orange-500/10"}`}>
-                                <ShieldAlert className={`w-10 h-10 ${tabSwitchCount >= 3 ? "text-red-500" : "text-orange-500"}`} />
+                            <div className={`mx-auto w-20 h-20 rounded-2xl flex items-center justify-center ${tabSwitchCount >= 3 ? "bg-red-500/10" : "bg-violet-500/10"}`}>
+                                <ShieldAlert className={`w-10 h-10 ${tabSwitchCount >= 3 ? "text-red-500" : "text-violet-500"}`} />
                             </div>
                             <div className="space-y-2">
                                 <h2 className="text-2xl font-black text-white uppercase tracking-tight">
@@ -1218,7 +1262,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                                     onClick={() => setIsTabViolation(false)}
                                     className={`w-full text-white font-black uppercase tracking-widest py-6 rounded-2xl transition-all active:scale-95 ${tabSwitchCount >= 3
                                         ? "bg-red-500 hover:bg-red-600 shadow-[0_10px_20px_-10px_rgba(239,68,68,0.5)]"
-                                        : "bg-orange-500 hover:bg-orange-600 shadow-[0_10px_20px_-10px_rgba(249,115,22,0.5)]"}`}
+                                        : "bg-violet-500 hover:bg-violet-600 shadow-[0_10px_20px_-10px_rgba(124,58,237,0.5)]"}`}
                                 >
                                     I Understand & Continue
                                 </Button>
@@ -1244,18 +1288,18 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         exit={{ opacity: 0, y: -40 }}
                         className="fixed top-32 left-1/2 -translate-x-1/2 z-[220] pointer-events-none"
                     >
-                        <div className="flex items-center gap-3 bg-zinc-900/90 backdrop-blur-md border border-orange-500/30 rounded-2xl px-5 py-3 shadow-2xl max-w-sm">
-                            <div className="w-8 h-8 rounded-xl bg-orange-500/10 flex items-center justify-center shrink-0">
+                        <div className="flex items-center gap-3 bg-zinc-900/90 backdrop-blur-md border border-violet-500/30 rounded-2xl px-5 py-3 shadow-2xl max-w-sm">
+                            <div className="w-8 h-8 rounded-xl bg-violet-500/10 flex items-center justify-center shrink-0">
                                 {faceViolationAlert.type === "multiple_faces" ? (
-                                    <Users className="w-4 h-4 text-orange-500" />
+                                    <Users className="w-4 h-4 text-violet-500" />
                                 ) : faceViolationAlert.type === "face_absence" ? (
-                                    <EyeOff className="w-4 h-4 text-orange-500" />
+                                    <EyeOff className="w-4 h-4 text-violet-500" />
                                 ) : (
-                                    <Eye className="w-4 h-4 text-orange-500" />
+                                    <Eye className="w-4 h-4 text-violet-500" />
                                 )}
                             </div>
                             <div>
-                                <p className="text-[10px] font-black uppercase tracking-widest text-orange-500">
+                                <p className="text-[10px] font-black uppercase tracking-widest text-violet-500">
                                     {faceViolationAlert.type === "multiple_faces" ? "Multiple People Detected"
                                         : faceViolationAlert.type === "face_absence" ? "Face Not Visible"
                                             : faceViolationAlert.type === "identity_mismatch" ? "Identity Check"
@@ -1327,7 +1371,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 <DialogContent className="sm:max-w-xl">
                     <DialogHeader>
                         <div className="flex items-center gap-3 mb-2">
-                            <div className="h-8 w-8 rounded-lg bg-orange-500 text-white flex items-center justify-center">
+                            <div className="h-8 w-8 rounded-lg bg-violet-500 text-white flex items-center justify-center">
                                 <ShieldAlert className="h-4 w-4" />
                             </div>
                             <DialogTitle className="text-xl font-black tracking-tight uppercase tracking-widest">Interview Guidelines</DialogTitle>
@@ -1343,8 +1387,8 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                                 { title: "Quiet Environment", text: "Sit in a quiet environment with no interruptions." },
                                 { title: "Reporting Issues", text: "If you face any issue, use the Contact button right away." }
                             ].map((item, i) => (
-                                <div key={i} className="flex gap-4 p-5 rounded-3xl bg-gray-50 border border-gray-100 transition-all hover:bg-orange-50/30 hover:border-orange-100 group">
-                                    <div className="w-10 h-10 rounded-2xl bg-white border border-gray-100 flex items-center justify-center text-orange-500 font-black text-sm shadow-sm group-hover:border-orange-200">
+                                <div key={i} className="flex gap-4 p-5 rounded-3xl bg-gray-50 border border-gray-100 transition-all hover:bg-violet-50/30 hover:border-violet-100 group">
+                                    <div className="w-10 h-10 rounded-2xl bg-white border border-gray-100 flex items-center justify-center text-violet-500 font-black text-sm shadow-sm group-hover:border-violet-200">
                                         {i + 1}
                                     </div>
                                     <div className="space-y-1">
@@ -1408,7 +1452,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                                         onChange={(e) => setSupportForm((prev) => ({ ...prev, issueAbout: e.target.value }))}
                                         placeholder="Describe the issue you are facing..."
                                         rows={4}
-                                        className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm outline-none transition-all focus:border-orange-400 focus:ring-4 focus:ring-orange-50"
+                                        className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm outline-none transition-all focus:border-violet-400 focus:ring-4 focus:ring-violet-100"
                                     />
                                 </div>
                                 {supportError && (
@@ -1434,7 +1478,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                                 type="button"
                                 onClick={submitSupportRequest}
                                 disabled={supportSubmitting}
-                                className="rounded-xl bg-[#F97316] text-white hover:bg-orange-600"
+                                className="rounded-xl bg-[#7C3AED] text-white hover:bg-violet-600"
                             >
                                 {supportSubmitting ? "Sending..." : "Send Request"}
                             </Button>
@@ -1913,12 +1957,12 @@ function InterviewRoomContent({
     return (
         <div className="flex-1 flex flex-col h-full w-full relative bg-[#121214] text-white overflow-hidden">
             {/* Ambient Background Glow */}
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,_rgba(249,115,22,0.04)_0%,_transparent_50%)] pointer-events-none" />
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,_rgba(124,58,237,0.04)_0%,_transparent_50%)] pointer-events-none" />
             {/* Role Context - TOP LEFT */}
             <div className="absolute top-10 left-10 z-[60]">
                 <div className="flex items-center gap-4 bg-zinc-900/90 px-6 py-4 rounded-[2rem] border border-white/5 shadow-2xl">
-                    <div className="w-10 h-10 rounded-full bg-orange-500/10 flex items-center justify-center border border-orange-500/30">
-                        <Sparkles className="w-5 h-5 text-orange-500" />
+                    <div className="w-10 h-10 rounded-full bg-violet-500/10 flex items-center justify-center border border-violet-500/30">
+                        <Sparkles className="w-5 h-5 text-violet-500" />
                     </div>
                     <div>
                         <p className="text-[9px] font-black uppercase tracking-[0.3em] text-zinc-500">Live Interview</p>
@@ -1929,7 +1973,7 @@ function InterviewRoomContent({
             {/* Premium Timer - TOP MIDDLE */}
             <div className="absolute top-10 left-1/2 -translate-x-1/2 z-[60]">
                 <div className="bg-zinc-900/95 px-10 py-4 rounded-[2rem] border border-white/5 shadow-[0_20px_60px_rgba(0,0,0,0.5)] flex flex-col items-center min-w-[200px]">
-                    <p className="text-[10px] font-black uppercase tracking-[0.4em] text-orange-500/80 mb-1">Session Protocol</p>
+                    <p className="text-[10px] font-black uppercase tracking-[0.4em] text-violet-500/80 mb-1">Session Protocol</p>
                     <p className="text-4xl font-black text-white tabular-nums tracking-tight italic">
                         {timeLabel}
                     </p>
@@ -2013,7 +2057,7 @@ function InterviewRoomContent({
                     <div className="absolute -bottom-16 flex flex-col items-center gap-2">
                         <p className={cn(
                             "text-[10px] font-black uppercase tracking-[0.5em] transition-all duration-500 text-center",
-                            isAiSpeaking ? "text-orange-500 translate-y-1" : (isAiThinking ? "text-orange-300" : "text-zinc-500")
+                            isAiSpeaking ? "text-violet-500 translate-y-1" : (isAiThinking ? "text-orange-300" : "text-zinc-500")
                         )}>
                             {isAiSpeaking
                                 ? "Interviewer Speaking"
@@ -2110,7 +2154,7 @@ function InterviewRoomContent({
                                                     <div className="flex items-baseline gap-2">
                                                         <span className={cn(
                                                             "text-[10px] font-black uppercase tracking-[0.2em]",
-                                                            group.isCandidate ? "text-orange-500" : "text-indigo-400"
+                                                            group.isCandidate ? "text-violet-500" : "text-indigo-400"
                                                         )}>
                                                             {group.isCandidate ? (candidateName || "Candidate") : "Ishitha"}
                                                         </span>
@@ -2139,8 +2183,8 @@ function InterviewRoomContent({
                 {/* Left: Status */}
                 <div className="flex items-center gap-6">
                     <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 rounded-2xl bg-orange-500/10 flex items-center justify-center border border-orange-500/20">
-                            <ShieldCheck className="w-6 h-6 text-orange-500" />
+                        <div className="w-12 h-12 rounded-2xl bg-violet-500/10 flex items-center justify-center border border-violet-500/20">
+                            <ShieldCheck className="w-6 h-6 text-violet-500" />
                         </div>
                         <div>
                             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Security</p>
@@ -2160,10 +2204,10 @@ function InterviewRoomContent({
                     >
                         <div className={cn(
                             "w-8 h-8 rounded-xl flex items-center justify-center transition-colors",
-                            isMicEnabled ? "bg-orange-500/10" : "bg-red-500/20"
+                            isMicEnabled ? "bg-violet-500/10" : "bg-red-500/20"
                         )}>
                             {isMicEnabled
-                                ? <Mic className="w-4 h-4 text-orange-500" />
+                                ? <Mic className="w-4 h-4 text-violet-500" />
                                 : <MicOff className="w-4 h-4 text-red-500" />
                             }
                         </div>
@@ -2208,8 +2252,8 @@ function InterviewPage({ params }: InterviewPageProps) {
             <div className="min-h-screen flex items-center justify-center bg-white text-gray-400">
                 <div className="flex flex-col items-center gap-6">
                     <div className="relative">
-                        <div className="w-20 h-20 border-4 border-orange-500/10 rounded-full animate-spin border-t-orange-500" />
-                        <Sparkles className="absolute inset-0 m-auto w-6 h-6 text-orange-500 animate-pulse" />
+                        <div className="w-20 h-20 border-4 border-violet-500/10 rounded-full animate-spin border-t-orange-500" />
+                        <Sparkles className="absolute inset-0 m-auto w-6 h-6 text-violet-500 animate-pulse" />
                     </div>
                     <p className="text-[10px] font-black uppercase tracking-[0.3em] animate-pulse">Initializing Neural Link...</p>
                 </div>
@@ -2261,7 +2305,7 @@ function VideoTrack({ trackRef }: { trackRef: TrackReference }) {
 function TimeoutThankYouView({ candidateName }: { candidateName: string }) {
     return (
         <div className="w-full max-w-xl mx-auto px-6 text-center">
-            <div className="w-24 h-24 bg-gradient-to-br from-orange-500 to-orange-600 rounded-[2.5rem] flex items-center justify-center mx-auto mb-10 shadow-[0_20px_40px_rgba(249,115,22,0.3)] rotate-3">
+            <div className="w-24 h-24 bg-gradient-to-br from-violet-500 to-violet-700 rounded-[2.5rem] flex items-center justify-center mx-auto mb-10 shadow-[0_20px_40px_rgba(124,58,237,0.3)] rotate-3">
                 <CheckCircle2 className="w-12 h-12 text-white" />
             </div>
             <h2 className="text-5xl font-black text-gray-900 uppercase italic tracking-tighter mb-6">Thank You</h2>

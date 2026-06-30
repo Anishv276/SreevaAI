@@ -127,6 +127,7 @@ export default function OrgsPage() {
     const [isDeleting, setIsDeleting] = useState(false);
     const [syncingOrgs, setSyncingOrgs] = useState<Set<string>>(new Set());
     const [metricsOrg, setMetricsOrg] = useState<Org | null>(null);
+    const [billingAggregates, setBillingAggregates] = useState<Record<string, any> | null>(null);
     const [statusModalOrg, setStatusModalOrg] = useState<{ id: string; name: string; currentStatus: string; pendingStatus: string } | null>(null);
     const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
     // Currency toggle state
@@ -170,9 +171,20 @@ export default function OrgsPage() {
         }
     }, [currency]);
     // Called when Consumption Hub opens
-    const openMetricsOrg = (org: Org) => {
+    const openMetricsOrg = async (org: Org) => {
         setMetricsOrg(org);
+        setBillingAggregates(null);
         fetchExchangeRate();
+        // Fetch per-provider aggregates from backend
+        try {
+            const res = await fetch(`/api/super-admin/orgs/${org.id}/billing`);
+            if (res.ok) {
+                const data = await res.json();
+                setBillingAggregates(data);
+            }
+        } catch (err) {
+            console.error("Failed to fetch billing aggregates:", err);
+        }
     };
     useEffect(() => {
         if (!metricsOrg) {
@@ -403,46 +415,37 @@ export default function OrgsPage() {
         }
     };
     return (
-        <div className="space-y-10 pb-12 animate-in fade-in duration-700 font-inter text-premium">
+        <div className="space-y-6 pb-10 animate-in fade-in duration-500">
             {/* Header Area */}
-            <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between mb-2">
-                <div className="flex items-center gap-5 group">
-                    <div className="h-14 w-1.5 bg-gradient-to-b from-[#F97316] to-orange-500 rounded-full shadow-[0_0_15px_rgba(249,115,22,0.4)] transition-all duration-500 group-hover:h-16" />
-                    <div className="space-y-1">
-                        <h1 className="text-4xl sm:text-5xl font-black text-gray-900 leading-none tracking-tighter">
-                            Organizations
-                        </h1>
-                        <div className="flex items-center gap-3">
-                            <span className="h-1.5 w-1.5 rounded-full bg-[#F97316] animate-pulse" />
-                            <p className="text-gray-400 font-bold text-[13px] uppercase tracking-[0.2em]">
-                                {total} Total Clients
-                            </p>
-                        </div>
-                    </div>
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                    <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Organizations</h1>
+                    <p className="text-sm text-gray-400 mt-0.5">{total} total clients</p>
                 </div>
-                <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
+                <div className="flex items-center gap-2.5">
                     <Link href="/super-admin/orgs/new">
-                        <Button
-                            className="h-9 px-5 rounded-xl bg-gray-900 hover:bg-black text-white font-bold text-[11px] uppercase tracking-widest transition-all shadow-sm active:scale-95 flex items-center gap-2"
-                        >
+                        <button className="btn-shimmer inline-flex items-center gap-1.5 h-9 px-4 rounded-xl text-sm font-medium text-white transition-all" style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)", boxShadow: "0 4px 12px rgba(124,58,237,0.25)" }}>
                             <Plus className="h-4 w-4" />
-                            ADD CLIENT
-                        </Button>
+                            Add Client
+                        </button>
                     </Link>
                 </div>
             </div>
-            <div className="bg-white rounded-[2rem] border border-gray-100 shadow-xl overflow-hidden mt-8">
-                <div className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100">
-                    <h2 className="text-sm font-black text-gray-900 uppercase tracking-widest hidden sm:block">All Organizations</h2>
-                    <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
-                        <div className="relative w-full sm:w-auto">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <div className="bg-white rounded-2xl overflow-hidden" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
+                <div className="px-5 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3" style={{ borderBottom: "1px solid #F0EEF8" }}>
+                    <h2 className="text-sm font-semibold text-gray-900 hidden sm:block">All Organizations</h2>
+                    <div className="flex items-center gap-2.5">
+                        <div className="relative">
+                            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
                             <input
                                 type="text"
                                 placeholder="Search organizations..."
                                 value={searchInput}
                                 onChange={(e) => setSearchInput(e.target.value)}
-                                className="pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-[11px] font-bold text-gray-900 w-full sm:w-64 focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all placeholder:text-gray-400"
+                                className="pl-10 pr-4 h-9 bg-gray-50 rounded-xl text-sm text-gray-900 w-56 outline-none transition-all placeholder:text-gray-400"
+                                style={{ border: "1px solid #E9E7FF" }}
+                                onFocus={e => { e.target.style.borderColor = "#7C3AED"; e.target.style.boxShadow = "0 0 0 2px rgba(124,58,237,0.1)"; }}
+                                onBlur={e => { e.target.style.borderColor = "#E9E7FF"; e.target.style.boxShadow = "none"; }}
                             />
                         </div>
                         <DateFilter
@@ -455,30 +458,33 @@ export default function OrgsPage() {
                 <div className="relative w-full overflow-auto custom-scrollbar">
                     {loading ? (
                         <div className="p-12 text-center">
-                            <Loader2 className="h-10 w-10 animate-spin text-orange-500 mx-auto mb-4" />
+                            <Loader2 className="h-10 w-10 animate-spin text-violet-500 mx-auto mb-4" />
                             <p className="text-sm font-black text-gray-400 uppercase tracking-widest">Fetching organization data...</p>
                         </div>
                     ) : (
                         <table className="w-full border-collapse">
                             <thead>
-                                <tr className="border-b border-gray-100 bg-gray-50/30">
-                                    <th className="pl-5 py-3 text-left font-bold text-[10px] text-gray-400 uppercase tracking-wider">Organization</th>
-                                    <th className="px-4 py-3 text-center font-bold text-[10px] text-gray-400 uppercase tracking-wider">Admins</th>
-                                    <th className="px-4 py-3 text-center font-bold text-[10px] text-gray-400 uppercase tracking-wider">Jobs</th>
-                                    <th className="px-4 py-3 text-center font-bold text-[10px] text-gray-400 uppercase tracking-wider">Candidates</th>
-                                    <th className="px-4 py-3 text-center font-bold text-[10px] text-gray-400 uppercase tracking-wider">Credits Used</th>
-                                    <th className="px-4 py-3 text-center font-bold text-[10px] text-gray-400 uppercase tracking-wider">Remaining</th>
-                                    <th className="px-4 py-3 text-center font-bold text-[10px] text-gray-400 uppercase tracking-wider">Done</th>
-                                    <th className="px-4 py-3 text-center font-bold text-[10px] text-gray-400 uppercase tracking-wider">Status</th>
-                                    <th className="pr-5 py-3 text-right font-bold text-[10px] text-gray-400 uppercase tracking-wider">Actions</th>
+                                <tr style={{ background: "#F9F8FF", borderBottom: "1px solid #F0EEF8" }}>
+                                    <th className="pl-5 py-3 text-left font-semibold text-xs text-gray-400 uppercase tracking-wider">Organization</th>
+                                    <th className="px-4 py-3 text-center font-semibold text-xs text-gray-400 uppercase tracking-wider">Admins</th>
+                                    <th className="px-4 py-3 text-center font-semibold text-xs text-gray-400 uppercase tracking-wider">Jobs</th>
+                                    <th className="px-4 py-3 text-center font-semibold text-xs text-gray-400 uppercase tracking-wider">Candidates</th>
+                                    <th className="px-4 py-3 text-center font-semibold text-xs text-gray-400 uppercase tracking-wider">Credits Used</th>
+                                    <th className="px-4 py-3 text-center font-semibold text-xs text-gray-400 uppercase tracking-wider">Remaining</th>
+                                    <th className="px-4 py-3 text-center font-semibold text-xs text-gray-400 uppercase tracking-wider">Done</th>
+                                    <th className="px-4 py-3 text-center font-semibold text-xs text-gray-400 uppercase tracking-wider">Status</th>
+                                    <th className="pr-5 py-3 text-right font-semibold text-xs text-gray-400 uppercase tracking-wider">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-50">
                                 {orgs.map((org) => (
-                                    <tr key={org.id} className="hover:bg-gray-50/80 transition-colors">
-                                        <td className="pl-5 py-4">
+                                    <tr key={org.id} className="transition-colors" style={{ borderBottom: "1px solid #F9F8FF" }}
+                                        onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "#FAFAFC"}
+                                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}>
+                                        <td className="pl-5 py-3.5">
                                             <div className="flex items-center gap-3">
-                                                <div className="h-8 w-8 rounded-lg bg-gray-100 text-gray-600 flex flex-shrink-0 items-center justify-center font-bold text-[10px] shadow-sm">
+                                                <div className="h-8 w-8 rounded-xl flex flex-shrink-0 items-center justify-center font-bold text-sm text-white"
+                                                    style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)" }}>
                                                     {org.name[0].toUpperCase()}
                                                 </div>
                                                 <div className="flex flex-col min-w-0">
@@ -497,7 +503,7 @@ export default function OrgsPage() {
                                         <td className="px-4 py-4 text-center font-bold text-gray-700 text-[11px] tabular-nums">
                                             {org.driveCount ?? org._count?.drives ?? 0}
                                         </td>
-                                        <td className="px-4 py-4 text-center font-bold text-orange-500 text-[11px] tabular-nums">
+                                        <td className="px-4 py-4 text-center font-bold text-violet-500 text-[11px] tabular-nums">
                                             {org.candidateCount || 0}
                                         </td>
                                         <td className="px-4 py-4 text-center font-bold text-gray-500 text-[11px] tabular-nums">
@@ -523,7 +529,7 @@ export default function OrgsPage() {
                                                         <ChevronDown className="h-3 w-3 opacity-50" />
                                                     </button>
                                                 </DropdownMenuTrigger>
-                                                <DropdownMenuContent align="center" className="w-40 p-1.5 rounded-xl border-gray-100 shadow-xl bg-white/95 backdrop-blur-xl">
+                                                <DropdownMenuContent align="center" className="w-40 p-1.5 rounded-xl shadow-xl bg-white" style={{ border: "1px solid #E9E7FF" }}>
                                                     <div className="px-2.5 py-2 border-b border-gray-50 mb-1">
                                                         <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Control Status</p>
                                                     </div>
@@ -572,40 +578,35 @@ export default function OrgsPage() {
                                         <td className="pr-5 py-4 text-right">
                                             <DropdownMenu>
                                                 <DropdownMenuTrigger asChild>
-                                                    <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg hover:bg-gray-100 text-gray-400 group-hover:text-gray-900 transition-colors">
-                                                        <MoreVertical className="h-3 w-3" />
-                                                    </Button>
+                                                    <button className="h-8 w-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-50 transition-colors" style={{ border: "1px solid #E9E7FF" }}>
+                                                        <MoreVertical className="h-3.5 w-3.5" />
+                                                    </button>
                                                 </DropdownMenuTrigger>
-                                                <DropdownMenuContent align="end" className="w-48 p-1.5 rounded-xl border-gray-100 shadow-xl bg-white/95 backdrop-blur-xl">
-                                                    <div className="px-2.5 py-2 border-b border-gray-50 mb-1">
-                                                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Client Controls</p>
-                                                    </div>
-                                                    <DropdownMenuItem className="cursor-pointer rounded-lg px-2.5 py-2 text-gray-600 hover:bg-gray-50 font-bold text-[10px] transition-all flex items-center gap-2.5 group" onClick={() => openMetricsOrg(org)}>
-                                                        <Layers className="h-3.5 w-3.5 text-gray-400 group-hover:text-orange-500 transition-colors" />
-                                                        VIEW USAGE
+                                                <DropdownMenuContent align="end" className="w-44 p-1.5 rounded-xl shadow-xl bg-white" style={{ border: "1px solid #E9E7FF" }}>
+                                                    <p className="px-2.5 py-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Actions</p>
+                                                    <DropdownMenuItem className="cursor-pointer rounded-lg px-2.5 py-2 text-sm text-gray-700 hover:bg-violet-50 hover:text-violet-700 font-medium transition-all flex items-center gap-2" onClick={() => openMetricsOrg(org)}>
+                                                        <Layers className="h-3.5 w-3.5 text-gray-400" />
+                                                        View Usage
                                                     </DropdownMenuItem>
-                                                        <Link href={`/super-admin/orgs/${org.id}/candidates`} className="block w-full">
-                                                            <DropdownMenuItem className="cursor-pointer rounded-lg px-2.5 py-2 text-gray-600 hover:bg-gray-50 font-bold text-[10px] transition-all flex items-center gap-2.5 group">
-                                                                <Users className="h-3.5 w-3.5 text-gray-400 group-hover:text-orange-500 transition-colors" />
-                                                                VIEW CANDIDATES
-                                                            </DropdownMenuItem>
-                                                        </Link>
-                                                        <Link href={`/super-admin/orgs/${org.id}`} className="block w-full">
-                                                            <DropdownMenuItem className="cursor-pointer rounded-lg px-2.5 py-2 text-gray-600 hover:bg-gray-50 font-bold text-[10px] transition-all flex items-center gap-2.5 group">
-                                                                <Edit2 className="h-3.5 w-3.5 text-gray-400 group-hover:text-orange-500 transition-colors" />
-                                                                EDIT SETTINGS
-                                                            </DropdownMenuItem>
-                                                        </Link>
-                                                        <div className="h-px bg-gray-100/60 my-1 mx-1" />
+                                                    <Link href={`/super-admin/orgs/${org.id}/candidates`} className="block w-full">
+                                                        <DropdownMenuItem className="cursor-pointer rounded-lg px-2.5 py-2 text-sm text-gray-700 hover:bg-violet-50 hover:text-violet-700 font-medium transition-all flex items-center gap-2">
+                                                            <Users className="h-3.5 w-3.5 text-gray-400" />
+                                                            View Candidates
+                                                        </DropdownMenuItem>
+                                                    </Link>
+                                                    <Link href={`/super-admin/orgs/${org.id}`} className="block w-full">
+                                                        <DropdownMenuItem className="cursor-pointer rounded-lg px-2.5 py-2 text-sm text-gray-700 hover:bg-violet-50 hover:text-violet-700 font-medium transition-all flex items-center gap-2">
+                                                            <Edit2 className="h-3.5 w-3.5 text-gray-400" />
+                                                            Edit Settings
+                                                        </DropdownMenuItem>
+                                                    </Link>
+                                                    <div className="h-px my-1 mx-1" style={{ background: "#F0EEF8" }} />
                                                     <DropdownMenuItem
-                                                        onClick={() => {
-                                                            setOrgToDelete(org);
-                                                            setIsDeleteModalOpen(true);
-                                                        }}
-                                                        className="cursor-pointer rounded-lg px-2.5 py-2 text-red-600 hover:bg-red-50 font-bold text-[10px] transition-all flex items-center gap-2.5 group"
+                                                        onClick={() => { setOrgToDelete(org); setIsDeleteModalOpen(true); }}
+                                                        className="cursor-pointer rounded-lg px-2.5 py-2 text-sm text-red-600 hover:bg-red-50 font-medium transition-all flex items-center gap-2"
                                                     >
-                                                        <Trash2 className="h-3.5 w-3.5 text-red-400 group-hover:text-red-600 transition-colors" />
-                                                        DELETE PORTAL
+                                                        <Trash2 className="h-3.5 w-3.5" />
+                                                        Delete Portal
                                                     </DropdownMenuItem>
                                                 </DropdownMenuContent>
                                             </DropdownMenu>
@@ -617,25 +618,23 @@ export default function OrgsPage() {
                     )}
                 </div>
                 {/* Pagination Footer */}
-                <div className="px-5 py-3.5 border-t border-gray-100 bg-gray-50/20 flex items-center justify-between">
-                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-                        Page <span className="text-gray-900">{page}</span> of <span className="text-gray-900">{totalPages || 1}</span>
+                <div className="px-5 py-3.5 flex items-center justify-between" style={{ borderTop: "1px solid #F0EEF8" }}>
+                    <p className="text-xs font-medium text-gray-400">
+                        Page <span className="text-gray-700 font-semibold">{page}</span> of <span className="text-gray-700 font-semibold">{totalPages || 1}</span>
                     </p>
                     <div className="flex items-center gap-1.5">
                         <button
                             disabled={page <= 1}
                             onClick={() => setPage((p) => Math.max(1, p - 1))}
-                            className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-[11px] font-bold text-gray-600 hover:bg-gray-50 disabled:opacity-40 transition-all"
-                        >
-                            Previous
-                        </button>
+                            className="px-3 py-1.5 rounded-lg text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-30 transition-all"
+                            style={{ border: "1px solid #E9E7FF" }}
+                        >Previous</button>
                         <button
                             disabled={page >= totalPages}
                             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                            className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-[11px] font-bold text-gray-600 hover:bg-gray-50 disabled:opacity-40 transition-all"
-                        >
-                            Next
-                        </button>
+                            className="px-3 py-1.5 rounded-lg text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-30 transition-all"
+                            style={{ border: "1px solid #E9E7FF" }}
+                        >Next</button>
                     </div>
                 </div>
             </div>
@@ -651,7 +650,7 @@ export default function OrgsPage() {
             />
             {statusModalOrg && (
                 <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                    <div className="bg-white/95 backdrop-blur-xl rounded-[2.5rem] shadow-2xl p-10 w-full max-w-sm mx-4 space-y-8 border border-white/40 animate-in zoom-in-95 duration-300">
+                    <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm mx-4 space-y-6 animate-in zoom-in-95 duration-200" style={{ border: "1px solid #E9E7FF" }}>
                         <div className="flex flex-col items-center gap-4 text-center">
                             <div className={cn("h-16 w-16 rounded-[1.5rem] flex items-center justify-center shadow-lg",
                                 statusModalOrg.pendingStatus === "ACTIVE" ? "bg-emerald-50 text-emerald-500" :
@@ -691,41 +690,40 @@ export default function OrgsPage() {
                 </div>
             )}
             {metricsOrg && (
-                <div className="fixed inset-0 z-[400] flex items-center justify-center bg-gray-900/40 backdrop-blur-sm px-4 py-6 font-sans">
-                    <div className="w-full max-w-6xl h-full max-h-[90vh] flex flex-col overflow-hidden rounded-[18px] border border-gray-200 bg-[#FAFAFA] shadow-2xl animate-in zoom-in-95 duration-500">
+                <div className="fixed inset-0 z-[400] flex items-center justify-center bg-gray-900/30 backdrop-blur-sm p-4">
+                    <div className="w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden rounded-2xl bg-white animate-in zoom-in-95 duration-300" style={{ border: "1px solid #E9E7FF", boxShadow: "0 25px 60px rgba(124,58,237,0.12)" }}>
                         {/* Header */}
-                        <div className="flex items-start justify-between px-8 py-6 border-b border-gray-200 bg-white">
+                        <div className="flex items-center justify-between px-6 py-5" style={{ borderBottom: "1px solid #F0EEF8" }}>
                             <div>
-                                <div className="flex items-center gap-2.5 mb-2.5">
-                                    <span className="w-1 h-4.5 bg-[#F97316] rounded-sm" />
-                                    <span className="text-[11px] font-bold uppercase tracking-[0.15em] text-gray-500">Live Intelligence Hub</span>
+                                <div className="flex items-center gap-2 mb-1">
+                                    <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">Usage · {metricsOrg.name}</span>
                                 </div>
-                                <h2 className="text-[34px] font-[800] text-gray-900 m-0 tracking-[-0.03em] leading-[1.05]">
-                                    {metricsOrg.name} <span className="text-gray-400 font-[500]">- Consumption Hub</span>
+                                <h2 className="text-xl font-semibold text-gray-900 tracking-tight">
+                                    Consumption Hub
                                 </h2>
-                                <div className="flex items-center gap-6 mt-4">
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Credits Used:</span>
-                                        <span className="text-[14px] font-black text-gray-900 tabular-nums">{fmt(Number(metricsOrg.creditsUsed || 0))}</span>
+                                <div className="flex items-center gap-5 mt-2">
+                                    <div className="flex items-center gap-1.5">
+                                        <span className="text-xs font-medium text-gray-400">Credits Used:</span>
+                                        <span className="text-sm font-semibold text-gray-900 tabular-nums">{fmt(Number(metricsOrg.creditsUsed || 0))}</span>
                                     </div>
-                                    <div className="w-[1px] h-3 bg-gray-200" />
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Interview Balance:</span>
-                                        <span className="text-[14px] font-black text-emerald-600 tabular-nums">{Math.max(0, (metricsOrg.interviewQuotaTotal || 0) - (metricsOrg.interviewQuotaUsed || 0))}</span>
-                                        <span className="text-[11px] font-bold text-gray-300 uppercase">/ {metricsOrg.interviewQuotaTotal || 0}</span>
+                                    <div className="w-px h-3" style={{ background: "#E9E7FF" }} />
+                                    <div className="flex items-center gap-1.5">
+                                        <span className="text-xs font-medium text-gray-400">Interview Balance:</span>
+                                        <span className="text-sm font-semibold text-emerald-600 tabular-nums">{Math.max(0, (metricsOrg.interviewQuotaTotal || 0) - (metricsOrg.interviewQuotaUsed || 0))}</span>
+                                        <span className="text-xs text-gray-300">/ {metricsOrg.interviewQuotaTotal || 0}</span>
                                     </div>
                                 </div>
                             </div>
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-2.5">
                                 {/* USD / INR Toggle */}
-                                <div className="flex items-center bg-gray-100 rounded-[10px] p-1 gap-1">
+                                <div className="flex items-center rounded-xl p-1 gap-0.5" style={{ background: "#F5F3FF" }}>
                                     {(['USD', 'INR'] as const).map(c => (
                                         <button
                                             key={c}
                                             onClick={() => { setCurrency(c); if (c === 'INR' && !rateLoading) fetchExchangeRate(); }}
-                                            className={`px-3 py-1.5 rounded-[8px] text-[11px] font-[700] uppercase tracking-wide transition-all ${
+                                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                                                 currency === c
-                                                    ? 'bg-white text-gray-900 shadow-sm'
+                                                    ? 'bg-white text-violet-700 shadow-sm'
                                                     : 'text-gray-500 hover:text-gray-700'
                                             }`}
                                         >
@@ -734,32 +732,27 @@ export default function OrgsPage() {
                                     ))}
                                 </div>
                                 {currency === 'INR' && (
-                                    <span className="text-[10px] font-bold text-gray-400 tabular-nums">
+                                    <span className="text-xs text-gray-400 tabular-nums">
                                         {rateLoading ? 'Fetching…' : `1 USD = ₹${usdToInr.toFixed(2)}`}
-                                        {rateUpdatedAt && !rateLoading && <span className="ml-1 opacity-60">({rateUpdatedAt})</span>}
                                     </span>
                                 )}
                                 <button
-                                    onClick={() => setMetricsOrg(null)}
-                                    className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-[10px] border border-gray-200 bg-white text-gray-900 text-[13px] font-[600] cursor-pointer hover:bg-gray-50 transition-colors shadow-sm"
+                                    onClick={() => { setMetricsOrg(null); setBillingAggregates(null); }}
+                                    className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-xl text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition-all"
+                                    style={{ border: "1px solid #E9E7FF" }}
                                 >
-                                    <X size={15} /> Dismiss
+                                    <X size={14} /> Dismiss
                                 </button>
                             </div>
                         </div>
-                        <div className="flex-1 overflow-y-auto p-8 custom-scrollbar space-y-12">
+                        <div className="flex-1 overflow-y-auto p-6 custom-scrollbar space-y-6" style={{ background: "#FAFAFC" }}>
                             {(() => {
-                                const ivFeature = getBillingFeature(metricsOrg, 'interview');
+                                const ivFeature = billingAggregates?.interview || {};
                                 // Interview donut: ONLY the interview feature's own LLM+TTS+STT cost
                                 const ivLlmCost = Number(ivFeature.costUsd || 0);
                                 const ivTtsCost = Number(ivFeature.ttsCostUsd || 0);
                                 const ivSttCost = Number(ivFeature.sttCostUsd || 0);
                                 const ivTotalCost = ivLlmCost + ivTtsCost + ivSttCost;
-                                // Full pipeline total: sum of ALL features LLM+TTS+STT
-                                const allLlmCost = metricSections.reduce((s, sec) => s + Number(getBillingFeature(metricsOrg, sec.key).costUsd || 0), 0);
-                                const allTtsCost = metricSections.reduce((s, sec) => s + Number(getBillingFeature(metricsOrg, sec.key).ttsCostUsd || 0), 0);
-                                const allSttCost = metricSections.reduce((s, sec) => s + Number(getBillingFeature(metricsOrg, sec.key).sttCostUsd || 0), 0);
-                                const grandTotal = allLlmCost + allTtsCost + allSttCost;
                                 const feature = ivFeature; // alias for interview feature
                                 const totalCost = ivTotalCost;
                                 const logicCost = ivLlmCost;
@@ -773,164 +766,133 @@ export default function OrgsPage() {
                                 const sttDash = getDash(sttCost);
                                 const totalTokens = Number(feature.inputTokens || 0) + Number(feature.outputTokens || 0);
                                 return (
-                                    <div className="flex flex-col gap-12">
-                                        {/* LLM Section */}
-                                        <div className="space-y-6">
-                                            <div className="flex items-center gap-6">
-                                                <h4 className="text-[11px] font-[800] uppercase tracking-[0.2em] text-gray-500 whitespace-nowrap">Core Processing Units</h4>
-                                                <div className="h-[1px] flex-1 bg-gray-200" />
+                                    <div className="flex flex-col gap-6">
+                                        {/* SECTION 1: LLM Models Table */}
+                                        <div>
+                                            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">LLM Models & Pricing</h4>
+                                            <div className="bg-white rounded-2xl overflow-hidden border border-gray-200" style={{ boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
+                                                <table className="w-full text-sm">
+                                                    <thead>
+                                                        <tr className="bg-gray-50/80 border-b border-gray-100">
+                                                            <th className="px-6 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-gray-500">Model</th>
+                                                            <th className="px-6 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-gray-500">Provider</th>
+                                                            <th className="px-6 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-gray-500">Runs</th>
+                                                            <th className="px-6 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-gray-500">Tokens</th>
+                                                            <th className="px-6 py-3 text-right text-[10px] font-bold uppercase tracking-wider text-gray-500">Cost</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-gray-100">
+                                                        {[
+                                                            { label: "Resume Extraction", key: "resumeExtraction" },
+                                                            { label: "JD Extraction", key: "jdExtraction" },
+                                                            { label: "Interview Report", key: "interviewReport" },
+                                                            { label: "Resume Report", key: "resumeReport" },
+                                                            { label: "Interview Evaluation", key: "interviewEvaluation" },
+                                                            { label: "Interview LLM Generation", key: "interviewLLMGeneration" },
+                                                            { label: "Interview Brief", key: "interviewBrief" },
+                                                        ].map((row) => {
+                                                            const feature = billingAggregates?.[row.key as string] || {};
+                                                            const totalTokens = Number(feature.inputTokens || 0) + Number(feature.outputTokens || 0);
+                                                            const model = feature.model || "-";
+                                                            const runs = Number(feature.runs || 0);
+                                                            const cost = Number(feature.costUsd || 0);
+                                                            return (
+                                                                <tr key={row.label} className="hover:bg-gray-50/50">
+                                                                    <td className="px-6 py-4 text-sm font-bold text-gray-900">{row.label}</td>
+                                                                    <td className="px-6 py-4 text-sm text-gray-600">{model}</td>
+                                                                    <td className="px-6 py-4 text-sm text-gray-600">{runs.toLocaleString()}</td>
+                                                                    <td className="px-6 py-4 text-sm text-gray-600">{totalTokens > 999 ? `${(totalTokens/1000).toFixed(1)}K` : totalTokens}</td>
+                                                                    <td className="px-6 py-4 text-sm font-bold text-right text-gray-900">{fmt(cost)}</td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </tbody>
+                                                </table>
                                             </div>
-                                            <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
-                                                {metricSections.map((section) => {
-                                                    const feature = getBillingFeature(metricsOrg, section.key);
-                                                    const totalTokens = Number(feature.inputTokens || 0) + Number(feature.outputTokens || 0);
-                                                    const recordedModels = displayLlmModel(feature, section.key);
+                                        </div>
+
+                                        {/* SECTION 2: Overall Interview Cost */}
+                                        <div>
+                                            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Interview Overall Cost</h4>
+                                            <div className="bg-gradient-to-br from-violet-50/30 to-blue-50/30 rounded-2xl border border-gray-200 p-6">
+                                                <div className="text-center">
+                                                    <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Brief + Evaluation + LLM Generation</div>
+                                                    <div className="mt-3 text-4xl font-bold text-violet-600">
+                                                        {fmt(Number(billingAggregates?.interview?.costUsd || 0))}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* SECTION 3: TTS Hub */}
+                                        <div>
+                                            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">TTS Hub - Characters & Pricing</h4>
+                                            <div className="grid gap-3 grid-cols-3">
+                                                {[
+                                                    { label: "ElevenLabs", provider: "ELEVENLABS" },
+                                                    { label: "Cartesia", provider: "CARTESIA" },
+                                                    { label: "Sarvam", provider: "SARVAM" },
+                                                ].map((tts) => {
+                                                    const ttsProviders = billingAggregates?.interview?.ttsProviders || {};
+                                                    const providerData = ttsProviders[tts.provider] || { characters: 0, costUsd: 0 };
+                                                    const ttsChars = Number(providerData.characters || 0);
+                                                    const ttsCost = Number(providerData.costUsd || 0);
                                                     return (
-                                                        <div key={section.key} className="bg-white border border-gray-200 rounded-[18px] p-6 hover:border-orange-200 hover:shadow-lg transition-all duration-300">
-                                                        <div className="flex flex-col gap-4">
-                                                                <div className="flex items-center justify-between">
-                                                                    <div className="text-[10px] font-[800] uppercase tracking-[0.15em] text-[#F97316]">{section.label.replace('LLM - ', '')}</div>
-                                                                    <div className="h-2 w-2 rounded-full bg-emerald-500" />
+                                                        <div key={tts.provider} className="bg-white rounded-2xl border border-gray-200 p-4" style={{ boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
+                                                            <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-4">{tts.label}</div>
+                                                            <div className="space-y-3">
+                                                                <div>
+                                                                    <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">Characters</div>
+                                                                    <div className="mt-1 text-xl font-bold text-gray-900">{ttsChars.toLocaleString()}</div>
                                                                 </div>
-                                                                <div className="flex flex-wrap gap-2 min-h-[28px]">
-                                                                    {recordedModels.map((model) => (
-                                                                        <div key={model} className="text-[10px] font-[700] text-emerald-700 bg-emerald-50 px-2 py-1 rounded-md border border-emerald-100 uppercase tracking-wide">
-                                                                            {model}
-                                                                        </div>
-                                                                    ))}
+                                                                <div className="border-t border-gray-100 pt-3">
+                                                                    <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">Price</div>
+                                                                    <div className="mt-1 text-xl font-bold text-gray-900">{fmt(ttsCost)}</div>
                                                                 </div>
-                                                            </div>
-                                                                <div className="mt-6 mb-5">
-                                                                <div className="text-[32px] font-[800] text-gray-900 tracking-[-0.03em]">{fmt(Number(feature.costUsd || 0))}</div>
-                                                            </div>
-                                                            <div className="space-y-2.5 pt-5 border-t border-gray-100 text-[11.5px] font-[600] text-gray-500 uppercase tracking-[0.1em]">
-                                                                {section.key === 'interview' ? (
-                                                                    <>
-                                                                        <div className="flex justify-between items-center">
-                                                                            <span>Done</span>
-                                                                            <span className="text-gray-900 font-[700]">{Number(metricsOrg.interviewQuotaUsed || 0).toLocaleString()}</span>
-                                                                        </div>
-                                                                        <div className="flex justify-between items-center">
-                                                                            <span>Remaining</span>
-                                                                            <span className="text-emerald-600 font-[700]">{Math.max(0, (metricsOrg.interviewQuotaTotal || 0) - (metricsOrg.interviewQuotaUsed || 0)).toLocaleString()}</span>
-                                                                        </div>
-                                                                    </>
-                                                                ) : (
-                                                                    <>
-                                                                        <div className="flex justify-between items-center">
-                                                                            <span>Executions</span>
-                                                                            <span className="text-gray-900 font-[700]">{Number(feature.runs || 0).toLocaleString()}</span>
-                                                                        </div>
-                                                                        <div className="flex justify-between items-center">
-                                                                            <span>Token Vol</span>
-                                                                            <span className="text-gray-900 font-[700]">{totalTokens.toLocaleString()} <span className="text-[9px] opacity-50">TKN</span></span>
-                                                                        </div>
-                                                                    </>
-                                                                )}
                                                             </div>
                                                         </div>
                                                     );
                                                 })}
                                             </div>
                                         </div>
-                                        {/* Voice & STT Section */}
-                                        <div className="grid gap-8 md:grid-cols-2">
-                                            <div className="space-y-6">
-                                                <div className="flex items-center gap-6">
-                                                    <h4 className="text-[11px] font-[800] uppercase tracking-[0.2em] text-gray-500 whitespace-nowrap">TTS Hub</h4>
-                                                    <div className="h-[1px] flex-1 bg-gray-200" />
-                                                </div>
-                                                <div className="bg-white border border-gray-200 rounded-[18px] p-8 hover:border-blue-200 hover:shadow-lg transition-all duration-300">
-                                                    <div className="flex items-center justify-between mb-8">
-                                                        <div className="space-y-2">
-                                                            <div className="text-[40px] font-[800] text-gray-900 tracking-[-0.03em]">
-                                                                {fmt(metricSections.reduce((sum, s) => sum + Number(getBillingFeature(metricsOrg, s.key).ttsCostUsd || 0), 0))}
+
+                                        {/* SECTION 4: STT Hub (Deepgram) */}
+                                        <div>
+                                            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">STT Hub - Deepgram</h4>
+                                            <div className="grid gap-3 grid-cols-2">
+                                                {(() => {
+                                                    const sttProviders = billingAggregates?.interview?.sttProviders || {};
+                                                    const deepgramData = sttProviders.deepgram || { seconds: 0, costUsd: 0 };
+                                                    const sttMinutes = (Number(deepgramData.seconds || 0) / 60).toFixed(1);
+                                                    const sttCost = Number(deepgramData.costUsd || 0);
+                                                    return (
+                                                        <>
+                                                            <div className="bg-white rounded-2xl border border-gray-200 p-4" style={{ boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
+                                                                <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-4">Audio Duration</div>
+                                                                <div className="text-2xl font-bold text-gray-900">{sttMinutes} <span className="text-sm text-gray-500 font-medium">min</span></div>
                                                             </div>
-                                                            <div className="text-[11px] font-[800] uppercase tracking-[0.2em] text-blue-600">TTS</div>
-                                                        </div>
-                                                        <div className="text-right">
-                                                            <div className="text-[24px] font-[800] text-gray-900 tracking-[-0.03em]">{metricSections.reduce((sum, s) => sum + Number(getBillingFeature(metricsOrg, s.key).ttsCharacters || 0), 0).toLocaleString()}</div>
-                                                            <div className="text-[10px] font-[800] uppercase tracking-[0.15em] text-gray-500">Characters</div>
-                                                        </div>
-                                                    </div>
-                                                    <div className="flex flex-wrap gap-2 pt-6 border-t border-gray-100">
-                                                        {(() => {
-                                                            const recordedModels = unique(metricSections.flatMap((section) => getRecordedModels(getBillingFeature(metricsOrg, section.key).ttsByModel)));
-                                                            const recordedProviders = unique(metricSections.flatMap((section) => getRecordedProviders(getBillingFeature(metricsOrg, section.key).ttsByModel)));
-                                                            const configuredTtsVoices = getConfiguredTtsVoices(metricsOrg);
-                                                            const displayModels = recordedModels.length ? recordedModels : configuredTtsVoices.map((v) => cleanName(v.model));
-                                                            const displayProviders = recordedProviders.length ? recordedProviders : configuredTtsVoices.map((v) => v.provider);
-                                                            if (!displayModels.length && !displayProviders.length) return <span className="text-[10px] font-bold text-gray-500 italic bg-gray-50 px-3 py-1.5 rounded-md border border-gray-200 border-dashed">NO TTS CONFIGURED</span>;
-                                                            return (
-                                                                <>
-                                                                    {displayProviders.map(p => (
-                                                                        <span key={p} className="px-3 py-1.5 bg-gray-50 text-gray-500 text-[10px] font-[700] rounded-md border border-gray-200 uppercase tracking-wide">{p}</span>
-                                                                    ))}
-                                                                    {displayModels.map(m => (
-                                                                        <span key={m} className="px-3 py-1.5 bg-blue-50 text-blue-700 text-[10px] font-[700] rounded-md border border-blue-100 uppercase tracking-wide">{cleanName(m)}</span>
-                                                                    ))}
-                                                                </>
-                                                            );
-                                                        })()}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div className="space-y-6">
-                                                <div className="flex items-center gap-6">
-                                                    <h4 className="text-[11px] font-[800] uppercase tracking-[0.2em] text-gray-500 whitespace-nowrap">STT Hub</h4>
-                                                    <div className="h-[1px] flex-1 bg-gray-200" />
-                                                </div>
-                                                <div className="bg-white border border-gray-200 rounded-[18px] p-8 hover:border-orange-200 hover:shadow-lg transition-all duration-300">
-                                                    <div className="flex items-center justify-between mb-8">
-                                                        <div className="space-y-2">
-                                                            <div className="text-[40px] font-[800] text-gray-900 tracking-[-0.03em]">
-                                                                {fmt(metricSections.reduce((sum, s) => sum + Number(getBillingFeature(metricsOrg, s.key).sttCostUsd || 0), 0))}
+                                                            <div className="bg-white rounded-2xl border border-gray-200 p-4" style={{ boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
+                                                                <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-4">Cost</div>
+                                                                <div className="text-2xl font-bold text-gray-900">{fmt(sttCost)}</div>
                                                             </div>
-                                                            <div className="text-[11px] font-[800] uppercase tracking-[0.2em] text-orange-600">STT</div>
-                                                        </div>
-                                                        <div className="text-right">
-                                                            <div className="text-[24px] font-[800] text-gray-900 tracking-[-0.03em]">{(metricSections.reduce((sum, s) => sum + Number(getBillingFeature(metricsOrg, s.key).sttAudioSeconds || 0), 0) / 60).toFixed(1)} <span className="text-[14px] font-[700] opacity-50">min</span></div>
-                                                            <div className="text-[10px] font-[800] uppercase tracking-[0.15em] text-gray-500">Minutes Transcribed</div>
-                                                        </div>
-                                                    </div>
-                                                    <div className="flex flex-wrap gap-2 pt-6 border-t border-gray-100">
-                                                        {(() => {
-                                                            const models = unique(metricSections.flatMap((section) => getRecordedModels(getBillingFeature(metricsOrg, section.key).sttByModel)));
-                                                            const providers = unique(metricSections.flatMap((section) => getRecordedProviders(getBillingFeature(metricsOrg, section.key).sttByModel)));
-                                                            return models.length || providers.length ? (
-                                                                <>
-                                                                    {models.map((model) => (
-                                                                        <span key={model} className="px-3 py-1.5 bg-orange-50 text-orange-700 text-[10px] font-[700] rounded-md border border-orange-100 uppercase tracking-wide">
-                                                                            {model}
-                                                                        </span>
-                                                                    ))}
-                                                                    {providers.map((provider) => (
-                                                                        <span key={provider} className="px-3 py-1.5 bg-gray-50 text-gray-500 text-[10px] font-[700] rounded-md border border-gray-200 uppercase tracking-wide">
-                                                                            {provider}
-                                                                        </span>
-                                                                    ))}
-                                                                </>
-                                                            ) : (
-                                                                <span className="text-[10px] font-bold text-gray-500 italic bg-gray-50 px-3 py-1.5 rounded-md border border-gray-200 border-dashed">NO RECORDED STT</span>
-                                                            );
-                                                        })()}
-                                                    </div>
-                                                </div>
+                                                        </>
+                                                    );
+                                                })()}
                                             </div>
                                         </div>
                                         {/* Pipeline Summary */}
-                                        <div className="space-y-6 pt-4">
-                                            <div className="flex items-center gap-6">
-                                                <h4 className="text-[11px] font-[800] uppercase tracking-[0.2em] text-gray-500 whitespace-nowrap">Total interview cost</h4>
-                                                <div className="h-[1px] flex-1 bg-gray-200" />
+                                        <div className="space-y-4">
+                                            <div className="flex items-center gap-3">
+                                                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">Total Interview Cost</h4>
+                                                <div className="h-px flex-1" style={{ background: "#E9E7FF" }} />
                                             </div>
-                                            <div className="bg-white border border-gray-200 rounded-[18px] overflow-hidden p-8">
+                                            <div className="bg-white rounded-2xl overflow-hidden p-6" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
                                                 <div className="grid grid-cols-1 lg:grid-cols-[1.35fr_1fr] gap-10">
                                                     {/* Donut and Cost breakdown */}
                                                     <div>
                                                         <div className="flex items-center gap-3 mb-6">
-                                                            <div className="h-2 w-2 rounded-full bg-[#F97316]" />
-                                                            <span className="text-[11px] font-[800] uppercase tracking-[0.2em] text-gray-500">Cost of interviews</span>
+                                                            <div className="h-2 w-2 rounded-full bg-[#7C3AED]" />
+                                                            <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">Cost of interviews</span>
                                                         </div>
                                                         <div className="flex flex-col sm:flex-row items-center gap-8 mb-8">
                                                             <div className="relative w-[220px] h-[220px] shrink-0">
@@ -940,13 +902,13 @@ export default function OrgsPage() {
                                                                         <>
                                                                             <circle cx={110} cy={110} r={ringR} stroke="#10B981" strokeWidth={14} fill="none" strokeDasharray={`${logicDash} ${ringC}`} strokeLinecap="round" />
                                                                             <circle cx={110} cy={110} r={ringR} stroke="#3B82F6" strokeWidth={14} fill="none" strokeDasharray={`${synthDash} ${ringC}`} strokeDashoffset={-logicDash} strokeLinecap="round" />
-                                                                            <circle cx={110} cy={110} r={ringR} stroke="#F97316" strokeWidth={14} fill="none" strokeDasharray={`${sttDash} ${ringC}`} strokeDashoffset={-(logicDash + synthDash)} strokeLinecap="round" />
+                                                                            <circle cx={110} cy={110} r={ringR} stroke="#7C3AED" strokeWidth={14} fill="none" strokeDasharray={`${sttDash} ${ringC}`} strokeDashoffset={-(logicDash + synthDash)} strokeLinecap="round" />
                                                                         </>
                                                                     )}
                                                                 </svg>
                                                                 <div className="absolute inset-0 flex flex-col items-center justify-center">
-                                                                    <div className="text-[11px] text-gray-500 font-[600] tracking-[0.1em] uppercase">Interview Cost</div>
-                                                                    <div className="text-[44px] font-[800] text-gray-900 tracking-[-0.03em] mt-1.5">
+                                                                    <div className="text-[11px] text-gray-500 font-medium tracking-[0.1em] uppercase">Interview Cost</div>
+                                                                    <div className="text-[44px] font-bold text-gray-900 tracking-tight mt-1.5">
                                                                         {fmt(ivTotalCost)}
                                                                     </div>
                                                                 </div>
@@ -956,30 +918,30 @@ export default function OrgsPage() {
                                                                     <div>
                                                                         <div className="flex items-center gap-2">
                                                                             <span className="w-2.5 h-2.5 rounded-full bg-[#10B981]" />
-                                                                            <span className="text-[14.5px] font-[700] text-gray-900">LLM</span>
+                                                                            <span className="text-[14.5px] font-semibold text-gray-900">LLM</span>
                                                                         </div>
                                                                     </div>
-                                                                    <div className="text-[16px] font-[800] text-gray-900">{fmt(logicCost)}</div>
+                                                                    <div className="text-[16px] font-bold text-gray-900">{fmt(logicCost)}</div>
                                                                 </div>
                                                                 <div className="h-px bg-[#F3F4F6]" />
                                                                 <div className="flex items-start justify-between">
                                                                     <div>
                                                                         <div className="flex items-center gap-2">
                                                                             <span className="w-2.5 h-2.5 rounded-full bg-[#3B82F6]" />
-                                                                            <span className="text-[14.5px] font-[700] text-gray-900">TTS</span>
+                                                                            <span className="text-[14.5px] font-semibold text-gray-900">TTS</span>
                                                                         </div>
                                                                     </div>
-                                                                    <div className="text-[16px] font-[800] text-gray-900">{fmt(synthCost)}</div>
+                                                                    <div className="text-[16px] font-bold text-gray-900">{fmt(synthCost)}</div>
                                                                 </div>
                                                                 <div className="h-px bg-[#F3F4F6]" />
                                                                 <div className="flex items-start justify-between">
                                                                     <div>
                                                                         <div className="flex items-center gap-2">
-                                                                            <span className="w-2.5 h-2.5 rounded-full bg-[#F97316]" />
-                                                                            <span className="text-[14.5px] font-[700] text-gray-900">STT</span>
+                                                                            <span className="w-2.5 h-2.5 rounded-full bg-[#7C3AED]" />
+                                                                            <span className="text-[14.5px] font-semibold text-gray-900">STT</span>
                                                                         </div>
                                                                     </div>
-                                                                    <div className="text-[16px] font-[800] text-gray-900">{fmt(sttCost)}</div>
+                                                                    <div className="text-[16px] font-bold text-gray-900">{fmt(sttCost)}</div>
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -987,87 +949,76 @@ export default function OrgsPage() {
                                                     {/* Right Side Stats */}
                                                     <div className="grid grid-cols-2 sm:grid-cols-2 gap-8 text-right">
                                                         <div className="space-y-1.5">
-                                                            <div className="text-[11px] font-[800] uppercase tracking-[0.15em] text-gray-500">Active Jobs</div>
-                                                            <div className="text-[28px] font-[800] text-gray-900 tabular-nums">{(metricsOrg as any).driveCount || 0}</div>
+                                                            <div className="text-xs font-medium text-gray-400 uppercase tracking-wider">Active Jobs</div>
+                                                            <div className="text-[28px] font-bold text-gray-900 tabular-nums">{(metricsOrg as any).driveCount || 0}</div>
                                                         </div>
                                                         <div className="space-y-1.5">
-                                                            <div className="text-[11px] font-[800] uppercase tracking-[0.15em] text-gray-500">Total Sessions</div>
-                                                            <div className="text-[28px] font-[800] text-gray-900 tabular-nums">{Number(feature.runs || 0).toLocaleString()}</div>
+                                                            <div className="text-xs font-medium text-gray-400 uppercase tracking-wider">Total Sessions</div>
+                                                            <div className="text-[28px] font-bold text-gray-900 tabular-nums">{Number(feature.runs || 0).toLocaleString()}</div>
                                                         </div>
                                                         <div className="space-y-1.5">
-                                                            <div className="text-[11px] font-[800] uppercase tracking-[0.15em] text-gray-500">Consumed Tokens</div>
-                                                            <div className="text-[28px] font-[800] text-gray-900 tabular-nums">{totalTokens.toLocaleString()}</div>
+                                                            <div className="text-xs font-medium text-gray-400 uppercase tracking-wider">Consumed Tokens</div>
+                                                            <div className="text-[28px] font-bold text-gray-900 tabular-nums">{totalTokens.toLocaleString()}</div>
                                                         </div>
                                                         <div className="space-y-1.5">
-                                                            <div className="text-[11px] font-[800] uppercase tracking-[0.15em] text-gray-500">Audio Mins</div>
-                                                            <div className="text-[28px] font-[800] text-gray-900 tabular-nums">
+                                                            <div className="text-xs font-medium text-gray-400 uppercase tracking-wider">Audio Mins</div>
+                                                            <div className="text-[28px] font-bold text-gray-900 tabular-nums">
                                                                 {Number(feature.sessionDuration || 0) > 0
                                                                     ? (Number(feature.sessionDuration || 0) / 60).toFixed(1)
-                                                                    : (Number(feature.sttAudioSeconds || 0) / 60).toFixed(1)}<span className="text-[13px] font-[600] ml-1 opacity-40">min</span>
+                                                                    : (Number(feature.sttAudioSeconds || 0) / 60).toFixed(1)}<span className="text-[13px] font-medium ml-1 opacity-40">min</span>
                                                             </div>
                                                         </div>
                                                         <div className="space-y-1.5 col-span-2">
-                                                            <div className="text-[11px] font-[800] uppercase tracking-[0.15em] text-gray-500">Health</div>
-                                                            <div className="text-[24px] font-[800] text-emerald-600 uppercase tracking-tight">Healthy</div>
+                                                            <div className="text-xs font-medium text-gray-400 uppercase tracking-wider">Health</div>
+                                                            <div className="text-2xl font-bold text-emerald-600 uppercase tracking-tight">Healthy</div>
                                                         </div>
                                                     </div>
                                                 </div>
                                                 {/* Models Row */}
                                                 <div className="border-t border-gray-100 mt-8 pt-8 grid grid-cols-1 md:grid-cols-3 gap-8">
                                                     <div>
-                                                        <div className="text-[10px] font-[800] uppercase tracking-[0.2em] text-gray-500 mb-3 hover:text-[#10B981] transition-colors">LLM</div>
+                                                        <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-3 hover:text-[#10B981] transition-colors">LLM</div>
                                                         <div className="flex flex-wrap gap-2">
-                                                            {displayLlmModel(feature, "interview").map((model) => (
-                                                                <span key={model} className="px-3 py-1 bg-[#10B981]/10 text-[#10B981] text-[10px] font-[700] rounded-md border border-[#10B981]/20 uppercase tracking-wide">
-                                                                    {model}
+                                                            {feature.model && (
+                                                                <span className="px-3 py-1 bg-[#10B981]/10 text-[#10B981] text-[10px] font-semibold rounded-md border border-[#10B981]/20 uppercase tracking-wide">
+                                                                    {feature.model}
                                                                 </span>
-                                                            ))}
+                                                            )}
+                                                            <span className="px-3 py-1 bg-gray-50 text-gray-500 text-[10px] font-semibold rounded-md border border-gray-200 uppercase tracking-wide">openai</span>
                                                         </div>
                                                     </div>
                                                     <div>
-                                                        <div className="text-[10px] font-[800] uppercase tracking-[0.2em] text-gray-500 mb-3 hover:text-[#3B82F6] transition-colors">TTS</div>
+                                                        <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-3 hover:text-[#3B82F6] transition-colors">TTS</div>
                                                         <div className="flex flex-wrap gap-2">
                                                             {(() => {
-                                                                const recordedModels = getRecordedModels(feature.ttsByModel);
-                                                                const recordedProviders = getRecordedProviders(feature.ttsByModel);
-                                                                const configuredTtsVoices = getConfiguredTtsVoices(metricsOrg);
-                                                                const models = recordedModels.length ? recordedModels : configuredTtsVoices.map((v) => cleanName(v.model));
-                                                                const providers = recordedProviders.length ? recordedProviders : configuredTtsVoices.map((v) => v.provider);
-                                                                if (!models.length && !providers.length) return <span className="text-[10px] font-[700] text-gray-500 italic">NO TTS CONFIGURED</span>;
-                                                                return (
-                                                                    <>
-                                                                        {models.map(m => (
-                                                                            <span key={m} className="px-3 py-1 bg-[#3B82F6]/10 text-[#3B82F6] text-[10px] font-[700] rounded-md border border-[#3B82F6]/20 uppercase tracking-wide">{m}</span>
-                                                                        ))}
-                                                                        {providers.map(p => (
-                                                                            <span key={p} className="px-3 py-1 bg-gray-50 text-gray-500 text-[10px] font-[700] rounded-md border border-gray-200 uppercase tracking-wide">{p}</span>
-                                                                        ))}
-                                                                    </>
-                                                                );
+                                                                const ttsProviders = Object.keys(feature.ttsProviders || {});
+                                                                if (!ttsProviders.length) return <span className="text-[10px] font-semibold text-gray-500 italic">NO TTS CONFIGURED</span>;
+                                                                return ttsProviders.map(p => (
+                                                                    <span key={p} className="px-3 py-1 bg-gray-50 text-gray-500 text-[10px] font-semibold rounded-md border border-gray-200 uppercase tracking-wide">{p}</span>
+                                                                ));
                                                             })()}
                                                         </div>
                                                     </div>
                                                     <div>
-                                                        <div className="text-[10px] font-[800] uppercase tracking-[0.2em] text-gray-500 mb-3 hover:text-[#F97316] transition-colors">STT</div>
+                                                        <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-3 hover:text-[#7C3AED] transition-colors">STT</div>
                                                         <div className="flex flex-wrap gap-2">
                                                             {(() => {
-                                                                const models = getRecordedModels(feature.sttByModel);
-                                                                const providers = getRecordedProviders(feature.sttByModel);
-                                                                return models.length || providers.length ? (
+                                                                const sttProviders = Object.keys(feature.sttProviders || {});
+                                                                return sttProviders.length ? (
                                                                     <>
-                                                                        {models.map((model) => (
-                                                                            <span key={model} className="px-3 py-1 bg-[#F97316]/10 text-[#F97316] text-[10px] font-[700] rounded-md border border-[#F97316]/20 uppercase tracking-wide">
-                                                                                {model}
+                                                                        {sttProviders.map((provider) => (
+                                                                            <span key={provider} className="px-3 py-1 bg-gray-50 text-gray-500 text-[10px] font-semibold rounded-md border border-gray-200 uppercase tracking-wide">
+                                                                                {provider}
                                                                             </span>
                                                                         ))}
                                                                         {providers.map((provider) => (
-                                                                            <span key={provider} className="px-3 py-1 bg-gray-50 text-gray-500 text-[10px] font-[700] rounded-md border border-gray-200 uppercase tracking-wide">
+                                                                            <span key={provider} className="px-3 py-1 bg-gray-50 text-gray-500 text-[10px] font-semibold rounded-md border border-gray-200 uppercase tracking-wide">
                                                                                 {provider}
                                                                             </span>
                                                                         ))}
                                                                     </>
                                                                 ) : (
-                                                                    <span className="text-[10px] font-[700] text-gray-500 italic">NO RECORDED STT</span>
+                                                                    <span className="text-[10px] font-semibold text-gray-500 italic">NO RECORDED STT</span>
                                                                 );
                                                             })()}
                                                         </div>
@@ -1079,26 +1030,26 @@ export default function OrgsPage() {
                                 );
                             })()}
                             <div className="border-t border-gray-200 px-8 py-6 bg-gray-50 flex items-center justify-between font-sans">
-                                <div className="text-[12px] font-bold uppercase tracking-[0.15em] text-gray-500">Total org cost</div>
-                                <div className="text-[28px] font-[800] text-gray-900 tracking-[-0.03em]">
+                                <div className="text-[12px] font-bold uppercase tracking-widest text-gray-500">Total org cost</div>
+                                <div className="text-[28px] font-bold text-gray-900 tracking-tight">
                                     {(() => {
-                                        const allLlmCost = metricSections.reduce((s, sec) => s + Number(getBillingFeature(metricsOrg, sec.key).costUsd || 0), 0);
-                                        const allTtsCost = metricSections.reduce((s, sec) => s + Number(getBillingFeature(metricsOrg, sec.key).ttsCostUsd || 0), 0);
-                                        const allSttCost = metricSections.reduce((s, sec) => s + Number(getBillingFeature(metricsOrg, sec.key).sttCostUsd || 0), 0);
+                                        const allLlmCost = (billingAggregates?.resumeExtraction?.costUsd || 0) + (billingAggregates?.jdExtraction?.costUsd || 0) + (billingAggregates?.interviewReport?.costUsd || 0) + (billingAggregates?.resumeReport?.costUsd || 0) + (billingAggregates?.interview?.costUsd || 0);
+                                        const allTtsCost = billingAggregates?.interview?.ttsCostUsd || 0;
+                                        const allSttCost = billingAggregates?.interview?.sttCostUsd || 0;
                                         const grandTotal = allLlmCost + allTtsCost + allSttCost;
                                         return fmt(grandTotal);
                                     })()}
                                 </div>
                             </div>
                             <div className="border-t border-gray-200 px-8 py-6 bg-gray-50">
-                                <div className="bg-white border border-gray-200 rounded-[18px] shadow-sm overflow-hidden">
+                                <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
                                     <div className="flex items-center justify-between gap-4 px-6 py-4 border-b border-gray-100 bg-gray-50/60">
                                         <div>
-                                            <div className="text-[10px] font-[800] uppercase tracking-[0.2em] text-gray-400">Interview history</div>
+                                            <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Interview history</div>
                                             <h4 className="text-lg font-black text-gray-900">Recent interview usage</h4>
                                         </div>
                                         {historyLoading && (
-                                            <div className="rounded-full border border-gray-100 bg-white px-3 py-1 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400">
+                                            <div className="rounded-full border border-gray-100 bg-white px-3 py-1 text-[10px] font-black uppercase tracking-widest text-gray-400">
                                                 Loading
                                             </div>
                                         )}

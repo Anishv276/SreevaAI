@@ -65,6 +65,9 @@ class RawWorkEntry(BaseModel):
     company: str = ""
     role: str = ""
     duration: str = ""
+    duration_months: int | None = None   # DB schema sends this instead of duration string
+    start_date: str = ""
+    end_date: str = ""
     technologies_used: list[str] = Field(default_factory=list)
     responsibilities: list[str] = Field(default_factory=list)
     impact_signals: list[str] = Field(default_factory=list)
@@ -76,6 +79,15 @@ class RawWorkEntry(BaseModel):
         if isinstance(v, str):
             return {"description": v, "role": v.split(" - ")[0][:60]}
         return v
+
+    @model_validator(mode="after")
+    def _resolve_duration(self) -> "RawWorkEntry":
+        if not self.duration:
+            if self.duration_months is not None:
+                self.duration = f"{self.duration_months} months"
+            elif self.start_date and self.end_date:
+                self.duration = f"{self.start_date} – {self.end_date}"
+        return self
 
     @property
     def title(self) -> str:
@@ -101,6 +113,7 @@ class RawProjectEntry(BaseModel):
     technologies: list[str] = Field(default_factory=list)
     tech_stack: list[str] = Field(default_factory=list)
     highlights: list[str] = Field(default_factory=list)
+    impact_signals: list[str] = Field(default_factory=list)  # DB schema field
     duration: str = ""
     impact: str = ""
 
@@ -138,6 +151,7 @@ class RawProjectEntry(BaseModel):
         if self.description:
             parts.append(self.description)
         parts.extend(self.highlights[:3])
+        parts.extend(self.impact_signals[:2])
         if self.impact:
             parts.append(self.impact)
         return " ".join(parts) or self.resolved_title
@@ -157,14 +171,37 @@ class RawResumeJSON(BaseModel):
     def _normalise_keys(cls, v: Any) -> Any:
         if not isinstance(v, dict):
             return v
+        # Unwrap single-key wrapper like {"resumeData": {...}}
+        if len(v) == 1 and "resumeData" in v and isinstance(v["resumeData"], dict):
+            v = v["resumeData"]
+        # Unwrap {"source": ..., "parsed": {...}} — DB stores resume as {source, parsed}
+        _RESUME_FIELDS = {"work_history", "workHistory", "projects", "skills", "experience", "full_name"}
+        if "parsed" in v and isinstance(v["parsed"], dict) and not _RESUME_FIELDS.intersection(v.keys()):
+            v = v["parsed"]
         for src, dst in [
+            ("full_name", "name"),
+            ("fullName", "name"),
             ("workHistory", "work_history"),
             ("work_experience", "work_history"),
+            ("workExperience", "work_history"),
+            ("jobHistory", "work_history"),
+            ("employment", "work_history"),
+            ("experience_history", "work_history"),
             ("Projects", "projects"),
+            ("project_list", "projects"),
             ("Skills", "skills"),
+            ("skill_set", "skills"),
+            ("skillSet", "skills"),
         ]:
             if src in v and dst not in v:
                 v[dst] = v[src]
+        # If work_history is still missing, check inside experience dict
+        if "work_history" not in v and isinstance(v.get("experience"), dict):
+            exp = v["experience"]
+            for src in ("work_history", "workHistory", "roles", "positions", "history"):
+                if src in exp and isinstance(exp[src], list):
+                    v["work_history"] = exp[src]
+                    break
         return v
 
     def get_technical_skills(self) -> list[RawSkillEntry]:
@@ -180,9 +217,13 @@ class RawResumeJSON(BaseModel):
                     pass
             return entries
         if isinstance(s, dict):
-            for key in ("technical", "tools", "languages", "frameworks", "domain_skills", "soft"):
-                for item in s.get(key, []):
+            for key in ("technical", "tools", "languages", "frameworks", "domain_skills", "soft", "all"):
+                raw_list = s.get(key, [])
+                if not isinstance(raw_list, list):
+                    continue
+                for item in raw_list:
                     try:
+                        # domain_skills are plain strings — RawSkillEntry._normalise handles them
                         e = RawSkillEntry.model_validate(item)
                         if e.name:
                             entries.append(e)
@@ -209,6 +250,18 @@ class RawResumeJSON(BaseModel):
         return out
 
 
+    @model_validator(mode="after")
+    def _warn_if_empty(self) -> "RawResumeJSON":
+        if not self.work_history and not self.projects and not self.skills:
+            logger.warning(
+                "[EXTRACT] RawResumeJSON validated but ALL sections empty — "
+                "check DB field keys. name=%r experience_keys=%s",
+                self.name,
+                list(self.experience.keys()) if isinstance(self.experience, dict) else self.experience,
+            )
+        return self
+
+
 class RawJDCriterion(BaseModel):
     """One criterion from jd_data.criteria[]."""
     id: str = ""
@@ -222,6 +275,14 @@ class RawJDCriterion(BaseModel):
     def _normalise(cls, v: Any) -> Any:
         if isinstance(v, str):
             return {"name": v, "priority": "high"}
+        if isinstance(v, dict):
+            # DB schema uses source_text instead of description
+            if not v.get("description") and v.get("source_text"):
+                v = {**v, "description": v["source_text"]}
+            # DB schema uses weight field — map to priority if priority missing
+            if not v.get("priority") and v.get("weight") is not None:
+                weight = float(v["weight"])
+                v = {**v, "priority": "high" if weight >= 15 else "medium"}
         return v
 
     @property
@@ -409,12 +470,24 @@ class BriefExtractionState(TypedDict):
 # ---------------------------------------------------------------------------
 
 def _node_extract_resume(state: BriefExtractionState) -> dict:
-    raw = RawResumeJSON.model_validate(state["resume_json"])
+    resume_json = state["resume_json"]
+    top_keys = list(resume_json.keys()) if isinstance(resume_json, dict) else type(resume_json).__name__
+    logger.info("[EXTRACT] resume_json top-level keys: %s", top_keys)
+    raw = RawResumeJSON.model_validate(resume_json)
+    logger.info(
+        "[EXTRACT] resume parsed → work_history_raw=%d projects_raw=%d",
+        len(raw.work_history), len(raw.projects),
+    )
     projects, work, skills = ResumeExtractor().extract(raw)
     logger.info(
         "[EXTRACT] resume → projects=%d work=%d skills=%d",
         len(projects), len(work), len(skills),
     )
+    if not projects and not work and not skills:
+        logger.warning(
+            "[EXTRACT] resume extracted NOTHING — skills type=%s, work_history=%r, projects=%r",
+            type(raw.skills).__name__, raw.work_history[:1], raw.projects[:1],
+        )
     return {"projects": projects, "work_history": work, "resume_skills": skills}
 
 
@@ -435,11 +508,20 @@ def _node_build_llm_input(state: BriefExtractionState) -> dict:
     The LLM receives the raw truth and decides what to do with it.
     """
     lines: list[str] = []
+    has_resume = bool(state["projects"] or state["work_history"] or state["resume_skills"])
     lines.append(
         f"CANDIDATE: {state['candidate_name']}  |  "
         f"ROLE: {state['job_title']}  |  "
-        f"BAND: {state['band'].upper()}"
+        f"BAND: {state['band'].upper()}  |  "
+        f"RESUME: {'AVAILABLE' if has_resume else 'NOT AVAILABLE'}"
     )
+    if not has_resume:
+        lines.append(
+            "⚠ RESUME DATA MISSING: Do NOT invent or assume any projects, work history, or skills "
+            "for this candidate. topic_pool must contain ONLY JD_TOPICs (from JD must-haves) and "
+            "ROLE_TOPICs (from your expert domain knowledge). No RESUME_TOPICs allowed. "
+            "anchor_topic must be a JD_TOPIC or ROLE_TOPIC."
+        )
     lines.append("")
 
     # --- Resume projects ---

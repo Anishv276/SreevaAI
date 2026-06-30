@@ -54,26 +54,29 @@ export async function POST(req: Request) {
     // -- AUTHENTICATION & LIFECYCLE --------------------
     const authCheck = await prisma.interview.findUnique({
       where: { applicationId },
-      select: { accessToken: true, expiresAt: true, startedAt: true, linkStatus: true }
+      select: { accessToken: true, expiresAt: true, startedAt: true, linkStatus: true, isTest: true }
     });
     if (requireInterviewToken && (!authCheck || authCheck.accessToken !== interviewToken)) {
       return NextResponse.json({ error: "Unauthorized: Invalid security token" }, { status: 401 });
     }
     if (authCheck) {
       const now = Date.now();
-      const expiresAtMs = authCheck.expiresAt ? authCheck.expiresAt.getTime() : null;
       const startedAtMs = authCheck.startedAt ? authCheck.startedAt.getTime() : null;
-      const deadlineExpired = expiresAtMs !== null && now > expiresAtMs;
       // joinWindow only blocks active sessions — not already-completed/no-show ones
       const joinWindowExpired = startedAtMs !== null && (now - startedAtMs) >= JOIN_WINDOW_MS;
-      const isExpiredByTime = deadlineExpired || joinWindowExpired;
+      
+      // Bypass expiration logic entirely if it's a test interview
+      const isTest = authCheck.isTest === true;
+      const isExpiredByTime = !isTest && joinWindowExpired;
+
       if (isExpiredByTime && authCheck.linkStatus !== "EXPIRED") {
         await prisma.interview.update({
           where: { applicationId },
           data: { linkStatus: "EXPIRED" },
         }).catch(() => { });
       }
-      if (authCheck.linkStatus === "EXPIRED" || isExpiredByTime) {
+
+      if (!isTest && (authCheck.linkStatus === "EXPIRED" || isExpiredByTime)) {
         return NextResponse.json({ error: "Access Denied: Interview link has expired. Please contact support." }, { status: 403 });
       }
     }

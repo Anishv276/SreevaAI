@@ -59,6 +59,7 @@ async function persistInterviewUpdateRaw(params: {
       "snapshots" = COALESCE($7, "Interview"."snapshots"),
       "recording" = CASE WHEN $5::text IS NOT NULL THEN $8::jsonb ELSE "Interview"."recording" END,
       "completedAt" = CASE WHEN COALESCE($4::text, "Interview".status) = 'COMPLETED' THEN NOW() ELSE "Interview"."completedAt" END,
+      "linkStatus" = CASE WHEN COALESCE($4::text, "Interview".status) = 'COMPLETED' THEN 'EXPIRED' ELSE "Interview"."linkStatus" END,
       "updatedAt" = NOW()
     `,
     interviewId,

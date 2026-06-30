@@ -27,21 +27,21 @@ export function LowCreditsBanner({ orgStatus }: { orgStatus?: string }) {
             className={`sticky top-0 z-50 w-full border-b ${
                 isEmpty
                     ? "border-red-200 bg-white text-red-700"
-                    : "border-orange-200 bg-white text-orange-700"
+                    : "border-violet-200 bg-white text-violet-700"
             }`}
         >
             <div className="mx-auto flex max-w-7xl items-center gap-4 px-4 py-3 sm:px-6 lg:px-8">
                 <div className="flex min-w-0 flex-1 items-center gap-3">
-                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${isEmpty ? "bg-red-50 text-red-600" : "bg-orange-50 text-orange-600"}`}>
+                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${isEmpty ? "bg-red-50 text-red-600" : "bg-violet-50 text-violet-600"}`}>
                         <AlertTriangle className="h-4 w-4 flex-shrink-0" />
                     </div>
                     <div className="min-w-0">
-                        <p className={`truncate text-sm font-semibold ${isEmpty ? "text-red-700" : "text-orange-700"}`}>
+                        <p className={`truncate text-sm font-semibold ${isEmpty ? "text-red-700" : "text-violet-700"}`}>
                             {isEmpty
                                 ? "Your account got suspended because no interviews are left."
                                 : `You have only ${remaining.toFixed(0)} interviews left.`}
                         </p>
-                        <p className={`truncate text-xs ${isEmpty ? "text-red-600/90" : "text-orange-600/90"}`}>
+                        <p className={`truncate text-xs ${isEmpty ? "text-red-600/90" : "text-violet-600/90"}`}>
                             {isEmpty
                                 ? `Please recharge immediately to stop interruptions to your interviews or services, and contact ${INTERVIEW_SUPPORT_EMAIL}.`
                                 : "Please recharge soon to stop interruptions to your interviews or services."}
@@ -60,7 +60,7 @@ export function LowCreditsBanner({ orgStatus }: { orgStatus?: string }) {
                         rel="noreferrer"
                         className="inline-flex items-center gap-2 rounded-xl px-8 py-3 text-[15px] font-bold text-white transition-all duration-200 active:scale-95 hover:shadow-lg"
                         style={{
-                            background: "linear-gradient(135deg, #F97316, #ea6608)",
+                            background: "linear-gradient(135deg, #7C3AED, #ea6608)",
                         }}
                     >
                         Contact Support

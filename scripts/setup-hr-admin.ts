@@ -37,7 +37,6 @@ async function main() {
             data: {
                 email,
                 password: hashedPassword,
-                role: "ADMIN",
                 orgId: orgId,
                 name,
             },
@@ -47,14 +46,12 @@ async function main() {
                 id: generateId("usr", name),
                 email,
                 password: hashedPassword,
-                role: "ADMIN",
                 orgId: orgId,
                 name,
             },
         });
     console.log(`\n✅ SUCCESS: Admin Account is Ready!`);
     console.log(`📧 Email: ${user.email}`);
-    console.log(`🔐 Role: ${user.role}`);
     console.log(`🏢 Org ID: ${user.orgId}`);
     console.log(`\n👉 You can now log in at https://sreevaai.com/login\n`);
 }

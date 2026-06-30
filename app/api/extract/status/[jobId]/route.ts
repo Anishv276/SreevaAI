@@ -71,14 +71,9 @@ export async function GET(
                     }
                     const alreadyBilled = Boolean((job.data as Record<string, unknown> | undefined)?.usageBilled);
                     if (orgId && result?.usage && !alreadyBilled) {
-                        await recordOrgBillingUsage({
-                            orgId,
-                            feature: "jdExtraction",
-                            usage: {
-                                ...result.usage,
-                                eventId: `jd-extraction:${jobId}`,
-                            },
-                        });
+                        // Mark billed FIRST so concurrent polls can't race into billing again.
+                        // If the billing write below fails we remove the flag so the next
+                        // poll retries — this gives exactly-once semantics under normal ops.
                         try {
                             await job.updateData({
                                 ...(job.data as Record<string, unknown> | undefined),
@@ -86,7 +81,27 @@ export async function GET(
                                 usageBilledAt: new Date().toISOString(),
                             });
                         } catch {
-                            // Best effort only: billing is already recorded above.
+                            // Redis unavailable — skip billing this poll, retry next time.
+                        }
+                        try {
+                            await recordOrgBillingUsage({
+                                orgId,
+                                feature: "jdExtraction",
+                                usage: {
+                                    ...result.usage,
+                                    eventId: `jd-extraction:${jobId}`,
+                                },
+                            });
+                        } catch (billingErr) {
+                            // Billing failed after we already set the flag — clear the flag
+                            // so the next poll retries rather than silently dropping the charge.
+                            console.error("[BILLING] jdExtraction billing failed, clearing usageBilled flag:", billingErr);
+                            try {
+                                await job.updateData({
+                                    ...(job.data as Record<string, unknown> | undefined),
+                                    usageBilled: false,
+                                });
+                            } catch { /* best effort */ }
                         }
                     }
                     return {

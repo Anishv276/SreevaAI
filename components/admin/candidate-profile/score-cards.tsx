@@ -43,7 +43,7 @@ export const VerdictScoreCard = memo(function VerdictScoreCard({ label, value, c
 export const VerdictScoreBox = memo(function VerdictScoreBox({ label, value, color = "rose" }: { label: string; value: string; color?: "rose" | "orange" | "amber" }) {
     const colors = {
         rose: "text-rose-600 bg-rose-50/30 border-rose-100",
-        orange: "text-orange-600 bg-orange-50/30 border-orange-100",
+        orange: "text-violet-600 bg-violet-50/30 border-violet-100",
         amber: "text-amber-600 bg-amber-50/30 border-amber-100"
     };
     return (

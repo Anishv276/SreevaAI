@@ -134,12 +134,12 @@ export function PremiumDatePicker({
                                 className={cn(
                                     "h-8 w-8 mx-auto flex items-center justify-center rounded-lg text-[13px] font-bold transition-all duration-100",
                                     isSelected
-                                        ? "bg-[#F97316] text-white shadow-[0_2px_8px_rgba(249,115,22,0.4)] scale-110"
+                                        ? "bg-[#7C3AED] text-white shadow-[0_2px_8px_rgba(124,58,237,0.4)] scale-110"
                                         : isToday
-                                            ? "border-2 border-[#F97316] text-[#F97316]"
+                                            ? "border-2 border-[#7C3AED] text-[#7C3AED]"
                                             : isPast
                                                 ? "text-gray-300 cursor-not-allowed"
-                                                : "text-gray-700 hover:bg-orange-50 hover:text-[#F97316]"
+                                                : "text-gray-700 hover:bg-violet-50 hover:text-[#7C3AED]"
                                 )}
                             >
                                 {day}
@@ -157,14 +157,14 @@ export function PremiumDatePicker({
                 type="button"
                 onClick={handleOpen}
                 className={cn(
-                    "relative flex h-10 w-full items-center justify-between gap-2 rounded-xl border border-gray-200 bg-white px-3 text-[14px] shadow-sm hover:border-orange-300 hover:shadow-md transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[#F97316]/30 focus:border-[#F97316]",
-                    open && "border-[#F97316] ring-2 ring-[#F97316]/30 shadow-md"
+                    "relative flex h-10 w-full items-center justify-between gap-2 rounded-xl border border-gray-200 bg-white px-3 text-[14px] shadow-sm hover:border-violet-300 hover:shadow-md transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[#7C3AED]/30 focus:border-[#7C3AED]",
+                    open && "border-[#7C3AED] ring-2 ring-[#7C3AED]/30 shadow-md"
                 )}
             >
                 <span className={displayValue ? "text-gray-900 font-medium" : "text-gray-400"}>
                     {displayValue || placeholder}
                 </span>
-                <Calendar className={cn("h-4 w-4 transition-colors", open ? "text-[#F97316]" : "text-gray-400")} />
+                <Calendar className={cn("h-4 w-4 transition-colors", open ? "text-[#7C3AED]" : "text-gray-400")} />
             </button>
             {typeof window !== "undefined" && createPortal(calendar, document.body)}
         </div>

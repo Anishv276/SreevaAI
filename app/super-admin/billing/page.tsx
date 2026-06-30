@@ -65,42 +65,32 @@ export default function SuperAdminBillingPage() {
     () => orgs.find((org) => org.id === selectedOrgId) || null,
     [orgs, selectedOrgId]
   );
-  const creditsUrl = selectedOrgId ? `/api/admin/credits?orgId=${encodeURIComponent(selectedOrgId)}` : "/api/admin/credits";
+  const creditsUrl = selectedOrgId ? `/api/super-admin/billing?orgId=${encodeURIComponent(selectedOrgId)}&` : "/api/super-admin/billing?";
   const historyUrl = selectedOrgId
-    ? `/api/admin/billing/history?orgId=${encodeURIComponent(selectedOrgId)}`
-    : "/api/admin/billing/history";
+    ? `/api/super-admin/billing/history?orgId=${encodeURIComponent(selectedOrgId)}&`
+    : "/api/super-admin/billing/history?";
   const interviewRemaining = selectedOrg ? Math.max(0, selectedOrg.interviewQuotaTotal - selectedOrg.interviewQuotaUsed) : 0;
   return (
-    <div
-      className="space-y-8 pb-12 font-sans animate-in fade-in duration-500"
-      style={{ zoom: 0.9, width: "calc(100% + 80px)", marginLeft: "-40px", transformOrigin: "top left" }}
-    >
-      <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-        <div className="flex items-center gap-4">
-          <div className="h-12 w-1.5 rounded-full bg-[#F97316]" />
-          <div className="space-y-1">
-            <h1 className="text-3xl font-extrabold tracking-tight text-gray-900 sm:text-4xl">
-              Billing
-            </h1>
-            <p className="text-sm font-medium text-gray-500">
-              Select an organization and view its credits and usage.
-            </p>
-          </div>
+    <div className="space-y-6 pb-10 animate-in fade-in duration-500">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Billing</h1>
+          <p className="text-sm text-gray-400 mt-0.5">Select an organization and view its credits and usage</p>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
-            <div className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Selected org</div>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="rounded-xl bg-white px-4 py-2.5" style={{ border: "1px solid #E9E7FF" }}>
+            <div className="text-[10px] font-medium uppercase tracking-wider text-gray-400">Selected org</div>
             <div className="text-sm font-semibold text-gray-900">{selectedOrg?.name || "None selected"}</div>
           </div>
-          <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
-            <div className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Remaining interviews</div>
+          <div className="rounded-xl bg-white px-4 py-2.5" style={{ border: "1px solid #E9E7FF" }}>
+            <div className="text-[10px] font-medium uppercase tracking-wider text-gray-400">Remaining interviews</div>
             <div className="text-sm font-semibold text-gray-900">{interviewRemaining.toFixed(0)}</div>
           </div>
         </div>
       </div>
-      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[214px_minmax(0,1fr)] items-start">
-        <aside className="sticky top-5 overflow-hidden rounded-2xl border border-gray-200 bg-white">
-          <div className="border-b border-gray-100 p-3">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[220px_minmax(0,1fr)] items-start">
+        <aside className="sticky top-5 overflow-hidden rounded-2xl bg-white" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
+          <div className="p-3" style={{ borderBottom: "1px solid #F0EEF8" }}>
             <div className="mb-2 flex items-center gap-2">
               <div className="flex h-6.5 w-6.5 items-center justify-center rounded-lg bg-gray-50 text-gray-500">
                 <Building2 className="h-3 w-3" />
@@ -116,14 +106,14 @@ export default function SuperAdminBillingPage() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search orgs"
-                className="h-8.5 w-full rounded-xl border border-gray-200 bg-white pl-8 pr-3 text-[12px] outline-none focus:border-[#F97316] focus:ring-2 focus:ring-orange-50"
+                className="h-8.5 w-full rounded-xl border border-gray-200 bg-white pl-8 pr-3 text-[12px] outline-none focus:border-[#7C3AED] focus:ring-2 focus:ring-violet-100"
               />
             </div>
           </div>
           <div className="max-h-[calc(100vh-240px)] overflow-y-auto p-1.25 custom-scrollbar">
             {loading ? (
               <div className="p-5 text-center">
-                <RefreshCw className="h-5 w-5 animate-spin text-orange-500 mx-auto mb-2" />
+                <RefreshCw className="h-5 w-5 animate-spin text-violet-500 mx-auto mb-2" />
                 <p className="text-[8px] font-bold uppercase tracking-[0.14em] text-gray-400">Loading</p>
               </div>
             ) : error ? (
@@ -143,8 +133,8 @@ export default function SuperAdminBillingPage() {
                       className={cn(
                         "w-full rounded-xl border px-2 py-2 text-left transition-all duration-200 group",
                         isActive
-                          ? "border-[#F97316] bg-orange-50"
-                          : "border-gray-100 bg-white hover:border-orange-200 hover:bg-orange-50/40"
+                          ? "border-[#7C3AED] bg-violet-50"
+                          : "border-gray-100 bg-white hover:border-violet-200 hover:bg-violet-50/40"
                       )}
                     >
                       <div className="flex items-center gap-2">
@@ -153,8 +143,8 @@ export default function SuperAdminBillingPage() {
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center justify-between gap-2">
-                            <h3 className="truncate text-[12px] font-semibold text-gray-900 group-hover:text-[#F97316]">{org.name}</h3>
-                            <ChevronRight className={cn("h-2.5 w-2.5 shrink-0 transition-transform text-gray-300", isActive && "translate-x-0.5 text-[#F97316]")} />
+                            <h3 className="truncate text-[12px] font-semibold text-gray-900 group-hover:text-[#7C3AED]">{org.name}</h3>
+                            <ChevronRight className={cn("h-2.5 w-2.5 shrink-0 transition-transform text-gray-300", isActive && "translate-x-0.5 text-[#7C3AED]")} />
                           </div>
                           <div className="mt-0.5 flex flex-wrap items-center gap-1">
                             <span className="text-[7px] font-bold uppercase tracking-[0.14em] text-gray-400">{org.slug}</span>
@@ -185,15 +175,15 @@ export default function SuperAdminBillingPage() {
         </aside>
         <section className="min-w-0">
           {selectedOrg ? (
-              <BillingContent
-                creditsEndpoint={creditsUrl}
-                historyEndpoint={historyUrl}
-                orgName={selectedOrg.name}
-                orgPlanLabel={formatLandingPackageForOrgPlan(selectedOrg.plan) || "Starter"}
-                showRechargeHelp={false}
-                showCreditInternals={true}
-                showCreditsUsedInHistory={true}
-              />
+            <BillingContent
+              creditsEndpoint={creditsUrl}
+              historyEndpoint={historyUrl}
+              orgName={selectedOrg.name}
+              orgPlanLabel={formatLandingPackageForOrgPlan(selectedOrg.plan) || "Starter"}
+              showRechargeHelp={false}
+              showCreditInternals={true}
+              showCreditsUsedInHistory={true}
+            />
           ) : (
             <div className="rounded-2xl border border-gray-200 bg-white p-12 text-center text-gray-500">
               Select an organization to view billing.

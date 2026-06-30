@@ -17,7 +17,7 @@ import os
 import logging
 import re
 from typing import Any, Optional, Dict
-from dataclasses import dataclass, field
+
 from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger("interview-agent")
@@ -55,8 +55,7 @@ class AgentConfig:
     _instance: Optional[AgentConfig] = None
 
     def __init__(self) -> None:
-        # STT Configuration
-        self._stt_model = os.environ.get("STT_MODEL", "flux-general-en").strip()
+        # STT Configuration — stt_model comes from org DB, not env
         self._flux_eot_threshold = float(os.environ.get("FLUX_EOT_THRESHOLD", "0.70"))
         self._flux_eager_eot_threshold_str = os.environ.get("FLUX_EAGER_EOT_THRESHOLD", "").strip()
         self._flux_eager_eot_threshold = (
@@ -66,15 +65,10 @@ class AgentConfig:
         )
         self._flux_eot_timeout_ms = int(os.environ.get("FLUX_EOT_TIMEOUT_MS", "3500"))
 
-        # LLM Configuration
-        self._llm_model = os.environ.get("INTERVIEW_LLM_MODEL", "gpt-4.1-mini").strip()
-        self._eval_llm_model = os.environ.get("EVAL_LLM_MODEL", "gpt-4.1-nano").strip()
+        # LLM models are now per-org from DB (set via Super Admin → AI Models).
+        # Only temperature is still env-configurable (not model-specific, applies globally).
         self._interview_temperature = float(os.environ.get("INTERVIEW_TEMPERATURE", "0.75"))
         self._eval_temperature = float(os.environ.get("EVAL_TEMPERATURE", "0.0"))
-
-        # Voice Configuration
-        self._default_voice_id = os.environ.get("DEFAULT_VOICE_ID", "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc").strip()
-        self._voice_registry = self._build_voice_registry()
 
         # Interview Configuration
         self._fixed_interview_duration_minutes = int(os.environ.get("FIXED_INTERVIEW_DURATION_MINUTES", "20"))
@@ -102,10 +96,6 @@ class AgentConfig:
 
     # ── STT Properties ──
     @property
-    def stt_model(self) -> str:
-        return self._stt_model
-
-    @property
     def flux_eot_threshold(self) -> float:
         return self._flux_eot_threshold
 
@@ -119,33 +109,12 @@ class AgentConfig:
 
     # ── LLM Properties ──
     @property
-    def llm_model(self) -> str:
-        return self._llm_model
-
-    @property
-    def eval_llm_model(self) -> str:
-        return self._eval_llm_model
-
-    @property
     def interview_temperature(self) -> float:
         return self._interview_temperature
 
     @property
     def eval_temperature(self) -> float:
         return self._eval_temperature
-
-    # ── Voice Properties ──
-    @property
-    def default_voice_id(self) -> str:
-        return self._default_voice_id
-
-    @property
-    def voice_registry(self) -> Dict[str, Dict[str, str]]:
-        return self._voice_registry.copy()
-
-    def get_voice_provider(self, voice_id: str) -> Optional[Dict[str, str]]:
-        """Get provider info for a voice ID. Returns None if not found."""
-        return self._voice_registry.get(voice_id)
 
     # ── Interview Properties ──
     @property
@@ -165,44 +134,6 @@ class AgentConfig:
     def app_base_url(self) -> str:
         return self._app_base_url
 
-    @staticmethod
-    def _build_voice_registry() -> Dict[str, Dict[str, str]]:
-        """Build voice registry from hardcoded values.
-
-        In future, could be loaded from env var or external config.
-        Returns a dict mapping voice_id -> {provider, model}
-        """
-        return {
-            # Cartesia voices
-            "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc": {"provider": "CARTESIA", "model": "cartesia/sonic-3"},
-            "95d51f79-c397-46f9-b49a-23763d3eaa2d": {"provider": "CARTESIA", "model": "cartesia/sonic-3"},
-            "f786b574-daa5-4673-aa0c-cbe3e8534c02": {"provider": "CARTESIA", "model": "cartesia/sonic-3"},
-            "e07c00bc-4134-4eae-9ea4-1a55fb45746b": {"provider": "CARTESIA", "model": "cartesia/sonic-3"},
-            "5ee9feff-1265-424a-9d7f-8e4d431a12c7": {"provider": "CARTESIA", "model": "cartesia/sonic-3"},
-            "694f9389-aac1-45b6-b726-9d9369183238": {"provider": "CARTESIA", "model": "cartesia/sonic-3"},
-            "638385f3-3333-4f5d-85a2-3f820c64b732": {"provider": "CARTESIA", "model": "cartesia/sonic-3"},
-            "248be1fc-3d27-4452-9457-3705bf68bf8f": {"provider": "CARTESIA", "model": "cartesia/sonic-3"},
-            # Sarvam voices
-            "shubh":   {"provider": "SARVAM", "model": "bulbul:v3"},
-            "manan":   {"provider": "SARVAM", "model": "bulbul:v3"},
-            "ishita":  {"provider": "SARVAM", "model": "bulbul:v3"},
-            "shreya":  {"provider": "SARVAM", "model": "bulbul:v3"},
-            "priya":   {"provider": "SARVAM", "model": "bulbul:v3"},
-            "aditya":  {"provider": "SARVAM", "model": "bulbul:v3"},
-            "ritu":    {"provider": "SARVAM", "model": "bulbul:v3"},
-            "rahul":   {"provider": "SARVAM", "model": "bulbul:v3"},
-            "neha":    {"provider": "SARVAM", "model": "bulbul:v3"},
-            "pooja":   {"provider": "SARVAM", "model": "bulbul:v3"},
-            "rohan":   {"provider": "SARVAM", "model": "bulbul:v3"},
-            "simran":  {"provider": "SARVAM", "model": "bulbul:v3"},
-            "kavya":   {"provider": "SARVAM", "model": "bulbul:v3"},
-            "amit":    {"provider": "SARVAM", "model": "bulbul:v3"},
-            "dev":     {"provider": "SARVAM", "model": "bulbul:v3"},
-            "varun":   {"provider": "SARVAM", "model": "bulbul:v3"},
-            "kabir":   {"provider": "SARVAM", "model": "bulbul:v3"},
-            "tanya":   {"provider": "SARVAM", "model": "bulbul:v3"},
-            "sunny":   {"provider": "SARVAM", "model": "bulbul:v3"},
-        }
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -312,6 +243,7 @@ class TextSanitizer:
     )
 
     # TTS phonetic fixes (preserve speech flow for voice synthesis)
+    # Fixes for Sarvam/Cartesia: collapse em-dashes and ellipses they can't handle
     _TTS_PHONETIC_FIXES: tuple[tuple[re.Pattern, str], ...] = (
         (re.compile(r"\s*[–—]\s*"), ", "),
         (re.compile(r"\s*-{2,}\s*"), ", "),
@@ -321,9 +253,81 @@ class TextSanitizer:
         (re.compile(r"\b(Hmm|Mm|Ah|Oh|Right|Yeah|So|Well|Okay)\b(?!\s*[,.\?!])"), r"\1,"),
         (re.compile(r" {2,}"), " "),
     )
+    # ElevenLabs-specific fixes: preserve em-dashes and ellipses (ElevenLabs uses them
+    # for natural pauses), only strip markdown and normalize filler punctuation.
+    _TTS_PHONETIC_FIXES_ELEVENLABS: tuple[tuple[re.Pattern, str], ...] = (
+        (re.compile(r"\s*-{2,}\s*"), "— "),          # double-hyphen → em-dash (ElevenLabs pause)
+        (re.compile(r"(?<=[a-zA-Z])-(?=[a-zA-Z])"), " "),  # hyphenated-words → spaced
+        (re.compile(r"[`*_~]"), ""),                   # strip markdown
+        (re.compile(r"\b(Hmm|Mm|Ah|Oh|Right|Yeah|So|Well|Okay)\b(?!\s*[,.\?!])"), r"\1,"),
+        (re.compile(r" {2,}"), " "),
+    )
 
     # Trailing fillers at end of turn
     _TRAILING_FILLER_RE = re.compile(r"(?:[,.\s]+)(?:um+|uh+)\s*[.!?]*\s*$", re.I)
+
+    # ALL-CAPS acronym pattern: 2–6 uppercase letters (whole word), optionally followed
+    # by a lowercase 's' for plurals (e.g. APIs, LLMs). Single-letter words (I, A) and
+    # Roman numerals are excluded via the negative lookbehind/lookahead on length.
+    # We space out the letters so Sarvam says "A P I" not "API" or "api".
+    # Words in _ACRONYM_PASS_THROUGH are already handled correctly by Sarvam's engine
+    # and must not be letter-spaced (they sound like real words even in caps).
+    _ACRONYM_PASS_THROUGH: frozenset[str] = frozenset({
+        # Real words that happen to be all-caps sometimes
+        "OK", "NO", "GO", "DO", "IS", "IT", "IN", "ON", "UP", "US",
+        # Sarvam handles these correctly via enable_preprocessing
+        "AI", "ML", "CV",
+    })
+    # Matches ALL-CAPS words of 2–6 letters, optionally plural (APIs, LLMs)
+    _CAPS_ACRONYM_RE: re.Pattern = re.compile(r"\b([A-Z]{2,6})(s?)\b")
+
+    # CamelCase splitter: insert a space before each uppercase letter that follows a
+    # lowercase letter (e.g. "FineTuning" → "Fine Tuning", "GitHub" → "Git Hub").
+    # This is only applied to CamelCase words (not ALL-CAPS, which are handled above).
+    _CAMEL_RE: re.Pattern = re.compile(r"([a-z])([A-Z])")
+
+    # Known words that look like acronyms but Sarvam reads correctly — leave them alone.
+    _SARVAM_READS_OK: frozenset[str] = frozenset({
+        "SQL", "AWS", "GCP", "GIT", "SSH", "PDF", "URL", "HTTP", "HTML", "CSS",
+        "JSON", "YAML", "REST", "CRUD", "CORS", "UUID", "GPU", "CPU", "RAM",
+    })
+
+    @staticmethod
+    def normalize_for_sarvam(text: str) -> str:
+        """Auto-fix pronunciation for any technical term the LLM writes.
+
+        Two rules applied universally — no static word list needed:
+
+        1. ALL-CAPS acronyms (RAG, LLM, NLP, API, CICD, etc.) get letter-spaced
+           so Sarvam says "R A G" clearly instead of "ragg" or "R-A-G".
+           Words Sarvam already handles correctly are skipped.
+
+        2. CamelCase words (FineTuning, DevOps, LangChain written in-sentence)
+           get a space inserted at each case boundary so Sarvam reads them as
+           two natural words instead of mashing them together.
+
+        This fires for every candidate's keywords automatically — no dict
+        updates needed when new tech terms appear in future resumes/JDs.
+        """
+        def _fix_caps(m: re.Match) -> str:
+            word = m.group(1)
+            plural = m.group(2)  # 's' or ''
+            if word in TextSanitizer._ACRONYM_PASS_THROUGH:
+                return m.group(0)
+            if word in TextSanitizer._SARVAM_READS_OK:
+                return m.group(0)
+            # 2-letter words: Sarvam usually reads fine, only space if truly acronym-like
+            if len(word) == 2:
+                return m.group(0)
+            # Space out: "RAG" → "R A G", "LLMs" → "L L M s"
+            spaced = " ".join(word)
+            return (spaced + " " + plural) if plural else spaced
+
+        # Pass 1: fix ALL-CAPS acronyms
+        result = TextSanitizer._CAPS_ACRONYM_RE.sub(_fix_caps, text)
+        # Pass 2: split CamelCase (only interior boundaries, not ALL-CAPS runs)
+        result = TextSanitizer._CAMEL_RE.sub(r"\1 \2", result)
+        return result
 
     @staticmethod
     def sanitize_candidate_facing_text(text: str) -> str:
@@ -391,16 +395,18 @@ class TextSanitizer:
         return result
 
     @staticmethod
-    def apply_tts_phonetic_fixes(text: str) -> str:
+    def apply_tts_phonetic_fixes(text: str, provider: str = "") -> str:
         """Apply phonetic fixes for TTS speech synthesis.
 
-        Args:
-            text: Text to apply fixes to
-
-        Returns:
-            Text with TTS-friendly phonetic transformations
+        ElevenLabs preserves em-dashes and ellipses as natural pause cues.
+        Sarvam/Cartesia collapse them to commas to avoid mispronunciation.
         """
-        for pattern, replacement in TextSanitizer._TTS_PHONETIC_FIXES:
+        fixes = (
+            TextSanitizer._TTS_PHONETIC_FIXES_ELEVENLABS
+            if provider.upper() == "ELEVENLABS"
+            else TextSanitizer._TTS_PHONETIC_FIXES
+        )
+        for pattern, replacement in fixes:
             text = pattern.sub(replacement, text)
         return text
 

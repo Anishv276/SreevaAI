@@ -95,28 +95,20 @@ export default function SuperAdminDashboard() {
         return () => controller.abort();
     }, []);
     return (
-        <div className="space-y-7 pb-10 animate-in fade-in duration-700" style={{ zoom: 0.78, transformOrigin: "top center" }}>
-            <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between mb-8">
-                <div className="flex items-center gap-5">
-                    <div className="h-12 w-1.5 bg-orange-600 rounded-full shadow-[0_0_15px_rgba(234,88,12,0.3)]" />
-                    <div className="space-y-1">
-                        <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 tracking-tight">Dashboard</h1>
-                        <div className="flex items-center gap-3">
-                            <span className="h-1.5 w-1.5 rounded-full bg-orange-500 animate-pulse" />
-                            <p className="text-gray-400 font-bold text-[11px] uppercase tracking-widest">
-                                Platform Pulse Â· {new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "short" })}
-                            </p>
-                        </div>
-                    </div>
+        <div className="space-y-6 pb-10 animate-in fade-in duration-500">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                    <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Dashboard</h1>
+                    <p className="text-sm text-gray-400 mt-0.5">Platform overview · {new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })}</p>
                 </div>
                 <div className="flex items-center gap-3 flex-wrap">
                     <Link href="/super-admin/voices">
-                        <button className="flex items-center gap-2 border border-gray-200 bg-white text-gray-700 text-sm font-bold px-4 py-2.5 rounded-2xl hover:border-orange-200 hover:text-orange-600 transition-all">
+                        <button className="flex items-center gap-2 border text-gray-600 text-sm font-semibold px-4 h-10 rounded-xl hover:text-violet-600 hover:bg-violet-50 hover:border-violet-200 transition-all bg-white" style={{ borderColor: "#E9E7FF" }}>
                             Voice Engine
                         </button>
                     </Link>
                     <Link href="/super-admin/orgs/new">
-                        <button className="flex items-center gap-2 bg-orange-600 hover:bg-orange-700 text-white text-sm font-bold px-4 py-2.5 rounded-2xl transition-colors shadow-sm">
+                        <button className="btn-shimmer flex items-center gap-2 text-white text-sm font-semibold px-4 h-10 rounded-xl transition-all" style={{ background: "linear-gradient(135deg, #8B5CF6, #3B82F6)", boxShadow: "0 4px 12px rgba(124,58,237,0.28)" }}>
                             <Plus className="h-4 w-4" />
                             Add Client
                         </button>
@@ -130,26 +122,26 @@ export default function SuperAdminDashboard() {
                 onRetry={() => { void loadDashboardStats(); }}
             />
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-                <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
+                <div className="bg-white rounded-2xl p-6" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
                     <div className="flex items-center justify-between mb-5">
                         <div>
-                            <h2 className="text-base font-bold text-gray-900 tracking-tight">Active Organizations</h2>
-                            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">Recently added clients</p>
+                            <h2 className="text-base font-semibold text-gray-900 tracking-tight">Active Organizations</h2>
+                            <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mt-0.5">Recently added clients</p>
                         </div>
-                        <Link href="/super-admin/orgs" className="h-9 w-9 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center text-gray-400 hover:text-orange-600 hover:bg-orange-50 hover:border-orange-100 transition-all">
+                        <Link href="/super-admin/orgs" className="h-9 w-9 rounded-xl flex items-center justify-center text-gray-400 hover:text-violet-600 hover:bg-violet-50 transition-all" style={{ border: "1px solid #E9E7FF" }}>
                             <ArrowRight className="h-4 w-4" />
                         </Link>
                     </div>
                     {orgsLoading ? (
                         <div className="flex justify-center py-10">
-                            <Loader2 className="h-6 w-6 animate-spin text-orange-500" />
+                            <Loader2 className="h-5 w-5 animate-spin text-violet-500" />
                         </div>
                     ) : orgs.length === 0 ? (
                         <div className="flex flex-col items-center py-10 gap-3">
-                            <div className="h-12 w-12 bg-gray-50 rounded-2xl flex items-center justify-center text-gray-300 border border-gray-100">
+                            <div className="h-12 w-12 rounded-2xl flex items-center justify-center text-gray-300" style={{ background: "#F5F3FF", border: "1px solid #E9E7FF" }}>
                                 <Building2 className="h-6 w-6" />
                             </div>
-                            <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">No clients yet</p>
+                            <p className="text-sm font-medium text-gray-400 uppercase tracking-widest">No clients yet</p>
                         </div>
                     ) : (
                         <div className="space-y-2">
@@ -157,22 +149,25 @@ export default function SuperAdminDashboard() {
                                 const badge = getStatusBadge(org);
                                 return (
                                     <Link key={org.id} href={`/super-admin/orgs/${org.id}`}>
-                                        <div className="group flex items-center justify-between p-3.5 rounded-xl border border-gray-100 bg-gray-50/30 hover:border-orange-100 hover:bg-white hover:shadow-sm transition-all duration-200">
+                                        <div className="group flex items-center justify-between p-3.5 rounded-xl transition-all duration-150" style={{ border: "1px solid #F0EEF8", background: "#FAFAFC" }}
+                                            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = "#C4B5FD"; (e.currentTarget as HTMLElement).style.background = "#FFFFFF"; (e.currentTarget as HTMLElement).style.boxShadow = "0 2px 8px rgba(124,58,237,0.06)"; }}
+                                            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = "#F0EEF8"; (e.currentTarget as HTMLElement).style.background = "#FAFAFC"; (e.currentTarget as HTMLElement).style.boxShadow = "none"; }}
+                                        >
                                             <div className="flex items-center gap-3">
-                                                <div className="h-9 w-9 rounded-xl bg-gray-900 text-white flex items-center justify-center font-bold text-sm shrink-0">
+                                                <div className="h-9 w-9 rounded-xl text-white flex items-center justify-center font-bold text-sm shrink-0" style={{ background: "linear-gradient(135deg, #7C3AED, #3B82F6)" }}>
                                                     {org.name[0]}
                                                 </div>
                                                 <div>
-                                                    <p className="text-sm font-bold text-gray-900 group-hover:text-orange-600 transition-colors leading-tight">{org.name}</p>
-                                                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{org.plan || "Scale"}</p>
+                                                    <p className="text-sm font-semibold text-gray-900 group-hover:text-violet-600 transition-colors leading-tight">{org.name}</p>
+                                                    <p className="text-[10px] font-medium text-gray-400 uppercase tracking-widest">{org.plan || "Scale"}</p>
                                                 </div>
                                             </div>
                                             <div className="flex items-center gap-2">
-                                                <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-bold tracking-widest uppercase flex items-center gap-1 border", badge.cls)}>
+                                                <span className={cn("px-2 py-0.5 rounded-full text-[9px] font-semibold tracking-widest uppercase flex items-center gap-1 border", badge.cls)}>
                                                     <span className={cn("h-1 w-1 rounded-full", badge.dot)} />
                                                     {badge.label}
                                                 </span>
-                                                <ArrowRight className="h-3.5 w-3.5 text-gray-300 group-hover:text-orange-400 transition-colors" />
+                                                <ArrowRight className="h-3.5 w-3.5 text-gray-300 group-hover:text-violet-400 transition-colors" />
                                             </div>
                                         </div>
                                     </Link>

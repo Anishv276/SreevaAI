@@ -10,6 +10,7 @@ import { InterviewOnlyCandidatesTable } from "@/components/admin/InterviewOnlyCa
 import { toast } from "@/components/ui/toast-custom";
 import { getInterviewQuotaSupportMessage, isInterviewQuotaLocked } from "@/lib/interview-quota";
 import { useAdminOrg } from "@/context/admin-org-context";
+import { useCandidates } from "@/context/candidates-context";
 import { motion } from "framer-motion";
 
 interface DriveDetails {
@@ -44,6 +45,7 @@ export default function DriveCandidatesPage() {
 
     const adminOrg = useAdminOrg();
     const quotaLocked = isInterviewQuotaLocked(adminOrg ?? {});
+    const { stats, pagination } = useCandidates();
 
     useEffect(() => {
         if (!driveId) return;
@@ -94,22 +96,26 @@ export default function DriveCandidatesPage() {
         return (
             <div className="min-h-screen flex items-center justify-center">
                 <div className="flex flex-col items-center gap-3">
-                    <Loader2 className="h-9 w-9 animate-spin text-[#F97316]" />
+                    <Loader2 className="h-9 w-9 animate-spin text-[#7C3AED]" />
                     <p className="text-sm font-semibold text-gray-400">Loading...</p>
                 </div>
             </div>
         );
     }
 
-    const applicantCount = drive?.applicants ?? 0;
-    // Mode is determined by what was set at job creation — never toggled here
+    const applicantCount = pagination.total || drive?.applicants || 0;
     const isInterviewOnly = drive?.interviewMode === "interview-only";
 
-    return (
-        <div className="min-h-screen bg-gray-50/60 animate-in fade-in duration-500">
+    const getPct = (val: number) => {
+        if (!applicantCount) return 0;
+        return Math.round((val / applicantCount) * 100);
+    };
 
-            {/* ── STICKY TOP BAR: Back left | mode badge center | count right ── */}
-            <div className="flex items-center justify-between px-6 py-3 bg-white border-b border-gray-200 sticky top-0 z-30">
+    return (
+        <div className="flex flex-col space-y-3 animate-in fade-in duration-500 flex-1 -mb-10 overflow-hidden">
+
+            {/* ── STICKY TOP BAR: Back left | mode badge center | Upload, Add, ... right ── */}
+            <div className="flex items-center justify-between px-4 py-3 bg-white sticky top-0 z-30 rounded-xl" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
                 {/* Left: Back */}
                 <Link
                     href="/admin/drives"
@@ -119,58 +125,24 @@ export default function DriveCandidatesPage() {
                     Back to Jobs
                 </Link>
 
-                {/* Center: mode badge (read-only, set at creation) */}
-                <div className={`flex items-center gap-2 h-8 px-4 rounded-lg text-[13px] font-bold ${
-                    isInterviewOnly
-                        ? "bg-orange-50 text-[#F97316] border border-orange-200"
-                        : "bg-gray-100 text-gray-600 border border-gray-200"
-                }`}>
-                    {isInterviewOnly ? (
-                        <><svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg> Interview Only</>
-                    ) : (
-                        <><svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 6h18M3 12h18M3 18h18"/></svg> Scoring + Interview</>
-                    )}
-                </div>
-
-                {/* Right: Edit Job + candidate count */}
+                {/* Center: mode badge + tip */}
                 <div className="flex items-center gap-3">
-                    <button
-                        onClick={() => setEditWarningOpen(true)}
-                        className="inline-flex h-8 items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 text-[13px] font-semibold text-gray-600 hover:bg-gray-50 hover:border-gray-300 transition-colors"
-                    >
-                        <Edit3 className="h-3.5 w-3.5" />
-                        Edit Job
-                    </button>
-                    <span className="text-[13px] font-semibold text-gray-400">
-                        {applicantCount} {applicantCount === 1 ? "candidate" : "candidates"}
+                    <div className="flex items-center gap-2 h-8 px-4 rounded-xl text-[12px] font-bold bg-violet-50 text-[#7C3AED] shadow-sm">
+                        {isInterviewOnly ? (
+                            <><svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg> Interview Only</>
+                        ) : (
+                            <><svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 6h18M3 12h18M3 18h18"/></svg> Scoring + Interview</>
+                        )}
+                    </div>
+                    <span className="text-[12px] font-medium text-gray-500 hidden md:block">
+                        {isInterviewOnly
+                            ? "Interview links are sent automatically when you add a candidate."
+                            : "Upload resumes, AI scores them, shortlist, then send interview links."}
                     </span>
                 </div>
-            </div>
 
-            {/* ── MAIN CARD — flush, no outer padding ── */}
-            <div className="bg-white shadow-sm">
-
-                {/* Title + subtitle */}
-                <div className="px-6 pt-5 pb-4 border-b border-gray-100">
-                    <h1 className="text-[22px] font-bold text-gray-900 tracking-tight">
-                        {drive?.title || "Candidates"}
-                    </h1>
-                    <p className="text-[13px] text-gray-400 mt-0.5">
-                        {drive?.role ? `${drive.role} · candidates in one place.` : "All candidates in one place."}
-                    </p>
-                </div>
-
-                {/* Action bar: search | Bulk Upload | + Add Candidate */}
-                <div className="px-6 py-3 flex items-center gap-3 border-b border-gray-100 flex-wrap">
-                    <div className="flex-1 min-w-[220px] relative">
-                        <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-                        <input
-                            type="text"
-                            placeholder="Search across all candidates..."
-                            className="w-full h-9 pl-10 pr-4 rounded-full border border-gray-200 bg-gray-50 text-[13px] text-gray-600 placeholder-gray-400 focus:outline-none focus:border-orange-400 focus:bg-white transition-colors"
-                        />
-                    </div>
-
+                {/* Right: Upload Resume, Add Candidate, Actions */}
+                <div className="flex items-center gap-2.5">
                     <button
                         onClick={() => {
                             if (!isInterviewOnly && quotaLocked) {
@@ -180,35 +152,119 @@ export default function DriveCandidatesPage() {
                             setUploadOpen(true);
                         }}
                         disabled={!isInterviewOnly && quotaLocked}
-                        className="inline-flex h-9 items-center gap-2 rounded-full border border-gray-200 bg-white px-4 text-[13px] font-semibold text-gray-600 hover:border-orange-300 hover:text-[#F97316] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3.5 text-[12px] font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                        {!isInterviewOnly && quotaLocked ? <Lock className="h-4 w-4" /> : <Upload className="h-4 w-4" />}
-                        Bulk Upload
+                        {!isInterviewOnly && quotaLocked ? <Lock className="h-3.5 w-3.5 text-gray-400" /> : <Upload className="h-3.5 w-3.5 text-gray-400" />}
+                        Upload Resume
                     </button>
-
                     <button
                         onClick={() => setDrawerOpen(true)}
-                        className="inline-flex h-9 items-center gap-2 rounded-full bg-[#F97316] hover:bg-orange-600 px-5 text-[13px] font-bold text-white transition-colors shadow-sm"
+                        className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#6D28D9] px-3.5 text-[12px] font-bold text-white transition-colors hover:bg-violet-700 shadow-sm"
                     >
-                        <Plus className="h-4 w-4" />
+                        <Plus className="h-3.5 w-3.5" />
                         Add Candidate
                     </button>
+                    <button
+                        onClick={() => setEditWarningOpen(true)}
+                        className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3.5 text-[12px] font-bold text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition-colors shadow-sm"
+                    >
+                        <Edit3 className="h-3.5 w-3.5" />
+                        Edit Drive
+                    </button>
                 </div>
+            </div>
 
-                {/* Tip banner */}
-                {!tipDismissed && (
-                    <div className="mx-6 mt-3 mb-1 flex items-center justify-between gap-3 rounded-xl border border-orange-100 bg-orange-50/50 px-4 py-2.5">
-                        <div className="flex items-center gap-2.5 text-[13px] text-orange-600 font-medium">
-                            <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/></svg>
-                            {isInterviewOnly
-                                ? "Interview Only mode — interview links are sent automatically when you add a candidate."
-                                : "Scoring + Interview — upload resumes, AI scores them, shortlist, then send interview links."}
+
+
+            {/* ── TITLE CARD WITH METRICS ── */}
+            <div className="bg-white rounded-2xl overflow-hidden p-6" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
+                <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6">
+                    {/* Left: Job Info */}
+                    <div className="flex items-center gap-4">
+                        <div className="h-14 w-14 rounded-2xl bg-violet-100 flex items-center justify-center shrink-0">
+                            <svg className="h-7 w-7 text-violet-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                            </svg>
                         </div>
-                        <button onClick={() => setTipDismissed(true)} className="text-orange-400 hover:text-orange-600 transition-colors shrink-0">
-                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
-                        </button>
+                        <div>
+                            <div className="flex items-center gap-2.5 mb-1">
+                                <h1 className="text-xl font-bold text-gray-900 tracking-tight">
+                                    {drive?.title || "GTM Engineer"}
+                                </h1>
+                                <span className="inline-flex h-5 items-center px-2 rounded-md bg-emerald-50 text-[10px] font-bold uppercase tracking-wider text-emerald-600 border border-emerald-100">
+                                    Active
+                                </span>
+                            </div>
+                            <p className="text-[13px] text-gray-500 font-medium">
+                                {drive?.title || "GTM Engineer"} • Created on 27 Jun 2026
+                            </p>
+                        </div>
                     </div>
-                )}
+
+                    {/* Right: Metrics */}
+                    <div className="flex items-stretch gap-2 w-full xl:w-auto">
+                        {/* Total Candidates */}
+                        <div className="flex items-start gap-2 p-3 rounded-xl bg-violet-50/50 border border-violet-100 flex-1 min-w-[110px]">
+                            <div className="mt-0.5"><svg className="h-4 w-4 text-violet-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg></div>
+                            <div>
+                                <p className="text-xl font-black text-gray-900 leading-none mb-1">{applicantCount}</p>
+                                <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Total</p>
+                            </div>
+                        </div>
+
+                        {/* Shortlisted */}
+                        <div className="flex flex-col justify-between p-3 rounded-xl bg-emerald-50/30 border border-emerald-100 flex-1 min-w-[110px] relative">
+                            <div className="flex items-start gap-2">
+                                <div className="mt-0.5"><svg className="h-4 w-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg></div>
+                                <div className="pr-6">
+                                    <p className="text-xl font-black text-gray-900 leading-none mb-1">{stats.shortlisted}</p>
+                                    <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Shortlisted</p>
+                                </div>
+                            </div>
+                            <div className="absolute top-3 right-3 text-[10px] font-bold text-gray-400">{getPct(stats.shortlisted)}%</div>
+                        </div>
+
+                        {/* Interviewed */}
+                        <div className="flex flex-col justify-between p-3 rounded-xl bg-blue-50/30 border border-blue-100 flex-1 min-w-[110px] relative">
+                            <div className="flex items-start gap-2">
+                                <div className="mt-0.5"><svg className="h-4 w-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg></div>
+                                <div className="pr-6">
+                                    <p className="text-xl font-black text-gray-900 leading-none mb-1">{stats.interviewCompleted}</p>
+                                    <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Interviewed</p>
+                                </div>
+                            </div>
+                            <div className="absolute top-3 right-3 text-[10px] font-bold text-gray-400">{getPct(stats.interviewCompleted)}%</div>
+                        </div>
+
+                        {/* Ready for Hire */}
+                        <div className="flex flex-col justify-between p-3 rounded-xl bg-amber-50/30 border border-amber-100 flex-1 min-w-[110px] relative">
+                            <div className="flex items-start gap-2">
+                                <div className="mt-0.5"><svg className="h-4 w-4 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>
+                                <div className="pr-6">
+                                    <p className="text-xl font-black text-gray-900 leading-none mb-1">{stats.readyForHire}</p>
+                                    <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Ready</p>
+                                </div>
+                            </div>
+                            <div className="absolute top-3 right-3 text-[10px] font-bold text-gray-400">{getPct(stats.readyForHire)}%</div>
+                        </div>
+
+                        {/* Rejected */}
+                        <div className="flex flex-col justify-between p-3 rounded-xl bg-red-50/30 border border-red-100 flex-1 min-w-[110px] relative">
+                            <div className="flex items-start gap-2">
+                                <div className="mt-0.5"><svg className="h-4 w-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg></div>
+                                <div className="pr-6">
+                                    <p className="text-xl font-black text-gray-900 leading-none mb-1">{stats.rejected}</p>
+                                    <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Rejected</p>
+                                </div>
+                            </div>
+                            <div className="absolute top-3 right-3 text-[10px] font-bold text-gray-400">{getPct(stats.rejected)}%</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* ── MAIN CARD WITH TABLE (remove its outer borders to make it flow from filters) ── */}
+            <div className="bg-white rounded-2xl overflow-hidden flex flex-col flex-1 min-h-0" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
 
                 {/* Table — determined by interviewMode set at job creation */}
                 <motion.div
@@ -216,6 +272,7 @@ export default function DriveCandidatesPage() {
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ duration: 0.15 }}
+                    className="flex flex-col flex-1 min-h-0"
                 >
                     {isInterviewOnly ? (
                         <InterviewOnlyCandidatesTable driveId={driveId} refreshKey={refreshKey} />
@@ -248,8 +305,8 @@ export default function DriveCandidatesPage() {
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
                         <div className="px-6 pt-6 pb-4">
                             <div className="flex items-start gap-4">
-                                <div className="h-10 w-10 rounded-xl bg-orange-50 border border-orange-200 flex items-center justify-center shrink-0">
-                                    <Edit3 className="h-5 w-5 text-[#F97316]" />
+                                <div className="h-10 w-10 rounded-xl bg-violet-50 border border-violet-200 flex items-center justify-center shrink-0">
+                                    <Edit3 className="h-5 w-5 text-[#7C3AED]" />
                                 </div>
                                 <div>
                                     <h2 className="text-[16px] font-bold text-gray-900">Edit Job Details</h2>
@@ -269,7 +326,7 @@ export default function DriveCandidatesPage() {
                             <Link
                                 href={`/admin/create-drive?id=${driveId}&mode=edit`}
                                 onClick={() => setEditWarningOpen(false)}
-                                className="h-9 px-5 rounded-xl bg-[#F97316] hover:bg-orange-600 text-[13px] font-bold text-white transition-colors flex items-center gap-2"
+                                className="h-9 px-5 rounded-xl bg-[#7C3AED] hover:bg-violet-600 text-[13px] font-bold text-white transition-colors flex items-center gap-2"
                             >
                                 <Edit3 className="h-3.5 w-3.5" />
                                 Continue to Edit

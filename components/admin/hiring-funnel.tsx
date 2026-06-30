@@ -11,9 +11,11 @@ interface FunnelData {
     interviewed: number;
     shortlisted: number;
     shortlistPassRate: number;
+    offered?: number;
 }
 interface HiringFunnelProps {
     dateRange: DateRange;
+    initialData?: FunnelData | null;
 }
 function buildUrl(range: DateRange) {
     const base = "/api/admin/stats";
@@ -27,17 +29,24 @@ function rangeLabel(range: DateRange) {
     return "from" in range ? `${(range as any).from} – ${(range as any).to}` : "Custom";
 }
 const STAGES = [
-    { key: "uploaded",     label: "Uploaded",     color: "#3B82F6", darkColor: "#2563EB" },
-    { key: "shortlisted",  label: "Shortlisted",   color: "#15803D", darkColor: "#166534" },
-    { key: "invited",      label: "Invited",       color: "#1D4ED8", darkColor: "#1E40AF" },
-    { key: "interviewed",  label: "Interviewed",   color: "#16A34A", darkColor: "#15803D" },
+    { key: "uploaded",     label: "Uploaded",     color: "#8B5CF6", darkColor: "#7C3AED" },
+    { key: "invited",      label: "Invited",      color: "#3B82F6", darkColor: "#2563EB" },
+    { key: "interviewed",  label: "Interviewed",  color: "#06B6D4", darkColor: "#0891B2" },
+    { key: "shortlisted",  label: "Shortlisted",  color: "#10B981", darkColor: "#059669" },
+    { key: "offered",      label: "Offered",      color: "#F59E0B", darkColor: "#D97706" },
 ] as const;
-export function HiringFunnel({ dateRange }: HiringFunnelProps) {
+export function HiringFunnel({ dateRange, initialData }: HiringFunnelProps) {
     const [data, setData] = useState<FunnelData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [retryKey, setRetryKey] = useState(0);
     useEffect(() => {
+        if (initialData) {
+            setData(initialData);
+            setLoading(false);
+            setError(null);
+            return;
+        }
         const controller = new AbortController();
         const signal = controller.signal;
         const fetchData = async () => {
@@ -70,9 +79,10 @@ export function HiringFunnel({ dateRange }: HiringFunnelProps) {
     };
     const stages = data ? [
         { key: "uploaded",    label: "Uploaded",    value: data.totalCandidates },
-        { key: "shortlisted", label: "Shortlisted",  value: data.shortlisted },
-        { key: "invited",     label: "Invited",      value: data.invited },
-        { key: "interviewed", label: "Interviewed",  value: data.interviewed },
+        { key: "invited",     label: "Invited",     value: data.invited },
+        { key: "interviewed", label: "Interviewed", value: data.interviewed },
+        { key: "shortlisted", label: "Shortlisted", value: data.shortlisted },
+        { key: "offered",     label: "Offered",     value: data.offered || 0 },
     ] : [];
     const maxVal = stages.length ? Math.max(...stages.map(s => s.value), 1) : 1;
     const passRate = data
@@ -81,7 +91,7 @@ export function HiringFunnel({ dateRange }: HiringFunnelProps) {
             : "0.0"
         : null;
     return (
-        <div className="bg-white/40 backdrop-blur-xl rounded-[2.5rem] border border-white/40 shadow-[0_8px_32px_rgba(0,0,0,0.03)] p-8 flex flex-col h-full group hover:shadow-[0_20px_60px_rgba(0,0,0,0.08)] transition-all duration-700">
+        <div className="premium-card p-6 flex flex-col h-full">
             {/* Header */}
             <div className="flex items-start justify-between mb-8">
                 <div>
@@ -96,7 +106,7 @@ export function HiringFunnel({ dateRange }: HiringFunnelProps) {
                     <div className="text-right">
                         <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-1">Total Pass</p>
                         <div className="flex items-baseline justify-end gap-1">
-                            <span className="text-2xl font-black text-slate-900 tracking-tighter">{passRate}%</span>
+                            <span className="text-2xl font-black text-gray-900 tracking-tighter">{passRate}%</span>
                         </div>
                     </div>
                 )}
@@ -152,7 +162,7 @@ export function HiringFunnel({ dateRange }: HiringFunnelProps) {
                                 {/* Conversion rate */}
                                 <div className="w-12 shrink-0 flex justify-end">
                                     {convRate != null ? (
-                                        <span className="text-[11px] font-black text-gray-400 group-hover/item:text-slate-700 transition-colors">
+                                        <span className="text-[11px] font-black text-gray-400 group-hover/item:text-gray-700 transition-colors">
                                             {convRate}%
                                         </span>
                                     ) : (

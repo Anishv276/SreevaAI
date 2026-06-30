@@ -64,78 +64,64 @@ function ScoreRangeFilter({
     onChange: (min: number, max: number) => void;
 }) {
     const isFiltered = min > 0 || max < 100;
-
     return (
         <div className={cn(
-            "flex items-center gap-2 h-9 px-3 rounded-full border transition-all duration-200 bg-white",
-            isFiltered ? "border-[#F97316] shadow-sm" : "border-gray-200 hover:border-gray-300"
+            "flex items-center gap-1 h-9 px-3 rounded-xl border transition-all duration-200 bg-white",
+            isFiltered ? "border-[#7C3AED] shadow-sm" : "border-gray-200 hover:border-gray-300"
         )}>
-            {/* Min label */}
-            <span className="text-[11px] font-bold tabular-nums w-5 text-right flex-shrink-0"
-                style={{ color: isFiltered ? "#F97316" : "#9ca3af" }}>
-                {min}
-            </span>
-
-            <RadixSlider.Root
-                className="relative flex items-center flex-shrink-0"
-                style={{ width: 140, height: 28 }}
-                min={0}
-                max={100}
-                step={1}
-                value={[min, max]}
-                onValueChange={([lo, hi]) => onChange(lo, hi)}
-                minStepsBetweenThumbs={1}
-            >
+            <span className="text-[12px] font-bold tabular-nums w-5 text-right flex-shrink-0" style={{ color: isFiltered ? "#7C3AED" : "#9ca3af" }}>{min}</span>
+            <RadixSlider.Root className="relative flex items-center flex-shrink-0" style={{ width: 100, height: 28 }} min={0} max={100} step={1} value={[min, max]} onValueChange={([lo, hi]) => onChange(lo, hi)} minStepsBetweenThumbs={1}>
                 <RadixSlider.Track className="relative h-[3px] flex-1 rounded-full bg-gray-200">
-                    <RadixSlider.Range
-                        className="absolute h-full rounded-full"
-                        style={{
-                            background: "#F97316",
-                            transition: "left 80ms ease, right 80ms ease",
-                        }}
-                    />
+                    <RadixSlider.Range className="absolute h-full rounded-full" style={{ background: "#7C3AED" }} />
                 </RadixSlider.Track>
-
-                {/* MIN ball */}
-                <RadixSlider.Thumb
-                    className="flex items-center justify-center rounded-full font-black cursor-grab active:cursor-grabbing focus:outline-none select-none"
-                    style={{
-                        width: 28, height: 28, fontSize: 9,
-                        background: isFiltered && min > 0 ? "#F97316" : "#ffffff",
-                        border: `2px solid ${isFiltered && min > 0 ? "#F97316" : "#d1d5db"}`,
-                        color: isFiltered && min > 0 ? "#ffffff" : "#374151",
-                        boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
-                        transition: "background 150ms, border-color 150ms, color 150ms",
-                    }}
-                    aria-label="Minimum score"
-                >
-                    {min}
-                </RadixSlider.Thumb>
-
-                {/* MAX ball */}
-                <RadixSlider.Thumb
-                    className="flex items-center justify-center rounded-full font-black cursor-grab active:cursor-grabbing focus:outline-none select-none"
-                    style={{
-                        width: 28, height: 28, fontSize: 9,
-                        background: isFiltered && max < 100 ? "#F97316" : "#ffffff",
-                        border: `2px solid ${isFiltered && max < 100 ? "#F97316" : "#d1d5db"}`,
-                        color: isFiltered && max < 100 ? "#ffffff" : "#374151",
-                        boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
-                        transition: "background 150ms, border-color 150ms, color 150ms",
-                    }}
-                    aria-label="Maximum score"
-                >
-                    {max}
-                </RadixSlider.Thumb>
+                <RadixSlider.Thumb className="block w-4 h-4 rounded-full bg-white border-2 border-[#7C3AED] shadow-sm cursor-grab focus:outline-none" aria-label="Min" />
+                <RadixSlider.Thumb className="block w-4 h-4 rounded-full bg-white border-2 border-[#7C3AED] shadow-sm cursor-grab focus:outline-none" aria-label="Max" />
             </RadixSlider.Root>
+            <span className="text-[12px] font-bold tabular-nums w-5 flex-shrink-0" style={{ color: isFiltered ? "#7C3AED" : "#9ca3af" }}>{max}</span>
+        </div>
+    );
+}
 
-            {/* Max label */}
-            <span className="text-[11px] font-bold tabular-nums w-5 flex-shrink-0"
-                style={{ color: isFiltered ? "#F97316" : "#9ca3af" }}>
-                {max}
-            </span>
+function AtsScoreGauge({ score }: { score: number }) {
+    const radius = 18;
+    const circumference = 2 * Math.PI * radius;
+    const strokeDashoffset = circumference - (score / 100) * circumference;
+    
+    let color = "#10B981"; // Emerald for 80+
+    let text = "Good Match";
+    let subtext = "Top 40%"; // Placeholder for ranking
+    
+    if (score < 50) {
+        color = "#EF4444"; // Red for < 50
+        text = "Low Match";
+    } else if (score < 80) {
+        color = "#F59E0B"; // Amber for 50-79
+        text = "Fair Match";
+    }
+    
+    if (score === 0) {
+        color = "#E5E7EB";
+        text = "No Score";
+        subtext = "-";
+    }
 
-
+    return (
+        <div className="flex items-center gap-1.5">
+            <div className="relative h-11 w-11 flex items-center justify-center shrink-0">
+                {/* Background circle */}
+                <svg className="absolute inset-0 h-full w-full -rotate-90 transform" viewBox="0 0 44 44">
+                    <circle cx="22" cy="22" r={radius} stroke="currentColor" strokeWidth="4" fill="transparent" className="text-gray-100" />
+                    {/* Foreground circle */}
+                    {score > 0 && (
+                        <circle cx="22" cy="22" r={radius} stroke={color} strokeWidth="4" fill="transparent" strokeDasharray={circumference} strokeDashoffset={strokeDashoffset} strokeLinecap="round" className="transition-all duration-1000 ease-out" />
+                    )}
+                </svg>
+                <span className="text-[12px] font-bold text-gray-900 absolute">{score > 0 ? score : "-"}</span>
+            </div>
+            <div className="flex flex-col">
+                <span className="text-[13px] font-bold text-gray-900 leading-tight whitespace-nowrap">{text}</span>
+                <span className="text-[11px] text-gray-400 font-semibold">{subtext}</span>
+            </div>
         </div>
     );
 }
@@ -454,8 +440,8 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
     if (!isDriveViewReady) {
         return (
             <div className="flex min-h-[40vh] items-center justify-center rounded-2xl border border-white/40 bg-white/60 backdrop-blur-xl shadow-[0_8px_24px_rgba(15,23,42,0.03)]">
-                <div className="flex flex-col items-center gap-3">
-                    <Loader2 className="h-10 w-10 animate-spin text-orange-500" />
+                <div className="flex flex-col items-center gap-1.5">
+                    <Loader2 className="h-10 w-10 animate-spin text-violet-500" />
                     <p className="text-xs font-black uppercase tracking-[0.24em] text-gray-400">
                         Loading job candidates...
                     </p>
@@ -464,117 +450,141 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
         );
     }
     return (
-        <div>
+        <div className="flex flex-col flex-1 min-h-0 w-full h-full">
             {/* ── Filter rows ── */}
-            {/* Row 1: Shortlisted filter (ATS status) + Interview filter + Date + Search + Bulk actions */}
-            <div className="flex items-center justify-between gap-3 px-6 py-3 border-b border-gray-100 flex-wrap">
-                {/* Left: dropdown filters */}
-                <div className="flex items-center gap-2 flex-wrap">
-
-                    {/* Shortlisted status dropdown */}
+            {/* Row 1: Flat screenshot style filters */}
+            <div className="flex items-center justify-between gap-1.5 px-6 py-4 border-b border-gray-100 bg-white">
+                <div className="flex items-center gap-1.5 flex-1 min-w-0 overflow-x-auto no-scrollbar pb-1 -mb-1">
+                    {/* Search Input */}
+                    <div className="relative w-[180px] lg:w-[240px] shrink-0">
+                        <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z"/></svg>
+                        <input
+                            type="text"
+                            placeholder="Search candidates by name, email or skills..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="w-full h-9 pl-10 pr-4 rounded-xl border border-gray-200 bg-white text-[13px] text-gray-600 placeholder-gray-400 focus:outline-none focus:border-violet-400 transition-colors shadow-sm"
+                        />
+                    </div>
+                    
+                    {/* Status filter */}
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                            <button className={cn(
-                                "flex items-center gap-1.5 h-8 px-3.5 rounded-full text-[12px] font-bold transition-all border focus:outline-none",
-                                resumeFilter !== "all"
-                                    ? "bg-[#F97316] text-white border-[#F97316] shadow-sm"
-                                    : "text-gray-600 border-gray-200 hover:border-gray-300 hover:text-gray-800 bg-white"
-                            )}>
-                                {resumeFilter === "all" ? "Shortlisted" :
-                                    resumeFilter === "shortlisted" ? "Shortlisted" :
-                                    resumeFilter === "rejected" ? "Rejected" :
-                                    resumeFilter === "pending" ? "Pending" : "Shortlisted"}
-                                {resumeFilter !== "all" && (
-                                    <span className="bg-white/25 text-white text-[10px] font-black px-1.5 py-0.5 rounded-full">
-                                        {pagination.total}
-                                    </span>
-                                )}
-                                <ChevronDown className="h-3 w-3 ml-0.5" />
+                            <button className="flex items-center gap-1 h-9 px-3.5 rounded-xl text-[13px] font-semibold text-gray-600 bg-white border border-gray-200 hover:border-gray-300 shadow-sm transition-colors">
+                                ATS {resumeFilter !== "all" && <span className="bg-violet-100 text-violet-700 text-[10px] px-1.5 py-0.5 rounded-md ml-1">{resumeFilter}</span>}
+                                <ChevronDown className="h-3.5 w-3.5 text-gray-400" />
                             </button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="start" className="w-44 p-1.5 rounded-xl shadow-lg border-gray-100 bg-white">
-                            <DropdownMenuLabel className="px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400">ATS Status</DropdownMenuLabel>
+                            <DropdownMenuLabel className="px-3 py-0.5.5 text-[9px] font-black uppercase tracking-widest text-gray-400">ATS Status</DropdownMenuLabel>
                             {[
-                                { value: "all", label: "All Candidates" },
+                                { value: "all", label: "All" },
                                 { value: "shortlisted", label: "Shortlisted" },
                                 { value: "rejected", label: "Rejected" },
                                 { value: "pending", label: "Pending" },
                             ].map(opt => (
-                                <DropdownMenuItem key={opt.value} onClick={() => setResumeFilter(opt.value)}
-                                    className={cn("rounded-lg px-3 py-2 text-[12px] font-semibold cursor-pointer flex items-center justify-between",
-                                        resumeFilter === opt.value ? "text-[#F97316] bg-orange-50" : "text-gray-700"
-                                    )}>
-                                    {opt.label}
-                                    {resumeFilter === opt.value && <span className="h-1.5 w-1.5 rounded-full bg-[#F97316]" />}
-                                </DropdownMenuItem>
+                                <DropdownMenuItem key={opt.value} onClick={() => setResumeFilter(opt.value)} className="rounded-lg px-3 py-2 text-[12px] font-semibold cursor-pointer">{opt.label}</DropdownMenuItem>
                             ))}
                         </DropdownMenuContent>
                     </DropdownMenu>
 
-                    {/* Interview status dropdown */}
+                    {/* Interview filter */}
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                            <button className={cn(
-                                "flex items-center gap-1.5 h-8 px-3.5 rounded-full text-[12px] font-bold transition-all border focus:outline-none",
-                                interviewFilter !== "all"
-                                    ? "bg-gray-800 text-white border-gray-800 shadow-sm"
-                                    : "text-gray-600 border-gray-200 hover:border-gray-300 hover:text-gray-800 bg-white"
-                            )}>
-                                {interviewFilter === "all" ? "Interview" :
-                                    interviewFilter === "pending" ? "Pending" :
-                                    interviewFilter === "inprogress" ? "In Progress" :
-                                    interviewFilter === "completed" ? "Completed" : "Interview"}
-                                <ChevronDown className="h-3 w-3 ml-0.5" />
+                            <button className="flex items-center gap-1 h-9 px-3.5 rounded-xl text-[13px] font-semibold text-gray-600 bg-white border border-gray-200 hover:border-gray-300 shadow-sm transition-colors">
+                                Interview {interviewFilter !== "all" && <span className="bg-violet-100 text-violet-700 text-[10px] px-1.5 py-0.5 rounded-md ml-1">{interviewFilter}</span>}
+                                <ChevronDown className="h-3.5 w-3.5 text-gray-400" />
                             </button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="start" className="w-44 p-1.5 rounded-xl shadow-lg border-gray-100 bg-white">
-                            <DropdownMenuLabel className="px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400">Interview Status</DropdownMenuLabel>
+                            <DropdownMenuLabel className="px-3 py-0.5.5 text-[9px] font-black uppercase tracking-widest text-gray-400">Interview Status</DropdownMenuLabel>
                             {[
                                 { value: "all", label: "All" },
                                 { value: "pending", label: "Pending" },
                                 { value: "inprogress", label: "In Progress" },
                                 { value: "completed", label: "Completed" },
                             ].map(opt => (
-                                <DropdownMenuItem key={opt.value} onClick={() => setInterviewFilter(opt.value)}
-                                    className={cn("rounded-lg px-3 py-2 text-[12px] font-semibold cursor-pointer flex items-center justify-between",
-                                        interviewFilter === opt.value ? "text-gray-900 bg-gray-100" : "text-gray-700"
-                                    )}>
-                                    {opt.label}
-                                    {interviewFilter === opt.value && <span className="h-1.5 w-1.5 rounded-full bg-gray-800" />}
-                                </DropdownMenuItem>
+                                <DropdownMenuItem key={opt.value} onClick={() => setInterviewFilter(opt.value)} className="rounded-lg px-3 py-2 text-[12px] font-semibold cursor-pointer">{opt.label}</DropdownMenuItem>
                             ))}
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+
+                    {/* ATS Score filter */}
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <button className="flex items-center gap-1 h-9 px-3.5 rounded-xl text-[13px] font-semibold text-gray-600 bg-white border border-gray-200 hover:border-gray-300 shadow-sm transition-colors">
+                                Score {(scoreMin > 0 || scoreMax < 100) && <span className="bg-violet-100 text-violet-700 text-[10px] px-1.5 py-0.5 rounded-md ml-1">{scoreMin}-{scoreMax}</span>}
+                                <ChevronDown className="h-3.5 w-3.5 text-gray-400" />
+                            </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start" className="w-64 p-3 rounded-xl shadow-lg border-gray-100 bg-white">
+                            <ScoreRangeFilter min={scoreMin} max={scoreMax} onChange={(lo, hi) => { setScoreMin(lo); setScoreMax(hi); }} />
                         </DropdownMenuContent>
                     </DropdownMenu>
 
                     {/* Date filter */}
                     <DateFilter value={timeline} onChange={setTimeline} />
+
+                    {/* Clear Button */}
+                    {(searchTerm || resumeFilter !== "all" || interviewFilter !== "all" || timeline.type !== "all" || scoreMin > 0 || scoreMax < 100) && (
+                        <button 
+                            onClick={() => {
+                                setSearchTerm(""); setResumeFilter("all"); setInterviewFilter("all"); setTimeline({ type: "all" }); setScoreMin(0); setScoreMax(100);
+                            }}
+                            className="text-[13px] font-semibold text-gray-500 hover:text-gray-800 transition-colors px-2"
+                        >
+                            Clear
+                        </button>
+                    )}
                 </div>
 
-                {/* Right: bulk actions + search */}
-                <div className="flex items-center gap-2 flex-wrap">
-                    {selectedCount > 0 && (<>
-                        <button onClick={() => handleBulkStatus("shortlist")} disabled={isBulkLoading} className="h-8 px-3 rounded-full border border-emerald-200 bg-white text-[12px] font-semibold text-emerald-700 hover:bg-emerald-50 flex items-center gap-1.5 disabled:opacity-50 transition-colors"><Target className="h-3.5 w-3.5" /> Shortlist</button>
-                        <button onClick={() => handleBulkStatus("reject")} disabled={isBulkLoading} className="h-8 px-3 rounded-full border border-rose-200 bg-white text-[12px] font-semibold text-rose-600 hover:bg-rose-50 flex items-center gap-1.5 disabled:opacity-50 transition-colors"><UserX className="h-3.5 w-3.5" /> Reject</button>
-                        <button onClick={isSuspended ? undefined : openBulkSendEmailConfirm} disabled={isBulkLoading} className={cn("h-8 px-3 rounded-full border text-[12px] font-semibold flex items-center gap-1.5 disabled:opacity-50 transition-colors", isSuspended ? "border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed" : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50")}>{isSuspended ? <Lock className="h-3.5 w-3.5" /> : <Mail className="h-3.5 w-3.5" />} Email</button>
-                        <button onClick={isInterviewActionBlocked ? undefined : handleBulkSendInterviewLink} disabled={isBulkLoading} className={cn("h-8 px-3 rounded-full border text-[12px] font-semibold flex items-center gap-1.5 disabled:opacity-50 transition-colors", isInterviewActionBlocked ? "border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed" : "border-orange-200 bg-white text-[#F97316] hover:bg-orange-50")}>{isInterviewActionBlocked ? <Lock className="h-3.5 w-3.5" /> : <RefreshCw className="h-3.5 w-3.5" />} Resend</button>
-                        <button onClick={() => setDeleteConfirm({ mode: "bulk" })} disabled={isBulkLoading} className="h-8 px-3 rounded-full border border-red-200 bg-white text-[12px] font-semibold text-red-600 hover:bg-red-50 flex items-center gap-1.5 disabled:opacity-50 transition-colors"><Trash2 className="h-3.5 w-3.5" /> Delete ({selectedCount})</button>
-                    </>)}
-                    <ScoreRangeFilter
-                        min={scoreMin}
-                        max={scoreMax}
-                        onChange={(lo, hi) => { setScoreMin(lo); setScoreMax(hi); }}
-                    />
+                {/* Bulk actions inline */}
+                <div className="flex items-center gap-1 shrink-0 border-l border-gray-200 pl-4">
+                    <span className={cn("text-[12px] font-semibold mr-1 transition-colors hidden xl:block", selectedCount > 0 ? "text-blue-700" : "text-gray-400")}>
+                        {selectedCount > 0 ? `${selectedCount} selected` : "Select for bulk:"}
+                    </span>
+                    <button onClick={() => handleBulkStatus("shortlist")} disabled={selectedCount === 0 || isBulkLoading}
+                        className={cn("h-8 px-2.5 rounded-lg border font-semibold text-xs flex items-center gap-1.5 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed",
+                            selectedCount > 0 ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100" : "bg-gray-100 text-gray-400 border-gray-200")}>
+                        <Target className="h-3.5 w-3.5" /> <span className="hidden xl:inline">Shortlist</span>
+                    </button>
+                    <button onClick={() => handleBulkStatus("reject")} disabled={selectedCount === 0 || isBulkLoading}
+                        className={cn("h-8 px-2.5 rounded-lg border font-semibold text-xs flex items-center gap-1.5 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed",
+                            selectedCount > 0 ? "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100" : "bg-gray-100 text-gray-400 border-gray-200")}>
+                        <UserX className="h-3.5 w-3.5" /> <span className="hidden xl:inline">Reject</span>
+                    </button>
+                    <button onClick={isSuspended ? undefined : openBulkSendEmailConfirm}
+                        disabled={selectedCount === 0 || isBulkLoading}
+                        title={isSuspended ? interviewActionBlockedMessage : undefined}
+                        className={cn("h-8 px-2.5 rounded-lg border font-semibold text-xs flex items-center gap-1.5 shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
+                            selectedCount === 0 ? "bg-gray-100 text-gray-400 border-gray-200" : isSuspended ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed" : "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100")}>
+                        {isSuspended ? <Lock className="h-3.5 w-3.5" /> : <Mail className="h-3.5 w-3.5" />} <span className="hidden xl:inline">Schedule Link</span>
+                    </button>
+                    <button
+                        onClick={isInterviewActionBlocked ? undefined : handleBulkSendInterviewLink}
+                        disabled={selectedCount === 0 || isBulkLoading}
+                        title={isInterviewActionBlocked ? interviewActionBlockedMessage : undefined}
+                        className={cn("h-8 px-2.5 rounded-lg border font-semibold text-xs flex items-center gap-1.5 shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
+                            selectedCount === 0 ? "bg-gray-100 text-gray-400 border-gray-200" : isInterviewActionBlocked ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed" : "bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100")}>
+                        {isInterviewActionBlocked ? <Lock className="h-3.5 w-3.5" /> : <RefreshCw className="h-3.5 w-3.5" />} <span className="hidden xl:inline">Resend Schedule Link</span>
+                    </button>
+                    <button onClick={() => setDeleteConfirm({ mode: "bulk" })} disabled={selectedCount === 0 || isBulkLoading}
+                        className={cn("h-8 px-2.5 rounded-lg border font-semibold text-xs flex items-center gap-1.5 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed",
+                            selectedCount > 0 ? "bg-red-50 text-red-700 border-red-200 hover:bg-red-100" : "bg-gray-100 text-gray-400 border-gray-200")}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                    </button>
                 </div>
             </div>
+            
             {error && (
-                <div className="mx-4 mt-3 flex items-center justify-between rounded-xl border border-red-100 bg-red-50 px-4 py-3">
-                    <div className="flex items-center gap-2"><AlertCircle className="h-4 w-4 text-red-500" /><span className="text-[12px] font-semibold text-red-700">Sync Error: {error}</span></div>
+                <div className="mx-6 my-3 flex items-center justify-between rounded-xl border border-red-100 bg-red-50 px-4 py-3">
+                    <div className="flex items-center gap-1"><AlertCircle className="h-4 w-4 text-red-500" /><span className="text-[12px] font-semibold text-red-700">Sync Error: {error}</span></div>
                     <button onClick={clearError}><XCircle className="h-4 w-4 text-red-400 hover:text-red-600" /></button>
                 </div>
             )}
             {/* ── Table — flat screenshot style ── */}
-            <div className="overflow-x-auto">
-                <div className="relative w-full overflow-auto max-h-[80vh]">
+            <div className="overflow-x-auto flex-1 flex flex-col min-h-0">
+                <div className="relative w-full overflow-auto flex-1">
                     <Table>
                         <TableHeader className="bg-gray-50/80 sticky top-0 z-10">
                             <TableRow className="border-b border-gray-100 hover:bg-transparent">
@@ -585,39 +595,28 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                         </button>
                                     </TableHead>
                                 )}
-                                <TableHead className="px-4 py-3 text-[11px] font-black uppercase tracking-wider text-gray-400">Candidate</TableHead>
-                                <TableHead className="px-4 py-3 text-[11px] font-black uppercase tracking-wider text-gray-400">
-                                    <div className="flex items-center gap-1">Score
-                                        <DropdownMenu>
-                                            <DropdownMenuTrigger asChild>
-                                                <button type="button" className="inline-flex h-4 w-4 items-center justify-center rounded text-gray-400 hover:text-gray-600"><ChevronDown className="h-3 w-3" /></button>
-                                            </DropdownMenuTrigger>
-                                            <DropdownMenuContent align="center" className="w-40 p-1.5 rounded-xl shadow-lg border-gray-100 bg-white">
-                                                <DropdownMenuLabel className="px-2 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400">Sort</DropdownMenuLabel>
-                                                <DropdownMenuItem onClick={() => setScoreSort("default")} className="rounded-lg px-2 py-1.5 text-[12px] font-semibold cursor-pointer">Normal</DropdownMenuItem>
-                                                <DropdownMenuItem onClick={() => setScoreSort("score_desc")} className="rounded-lg px-2 py-1.5 text-[12px] font-semibold cursor-pointer">Top scorers</DropdownMenuItem>
-                                                <DropdownMenuItem onClick={() => setScoreSort("score_asc")} className="rounded-lg px-2 py-1.5 text-[12px] font-semibold cursor-pointer">Lowest scorers</DropdownMenuItem>
-                                            </DropdownMenuContent>
-                                        </DropdownMenu>
+                                <TableHead className="px-6 py-4 text-[12px] font-black uppercase tracking-widest text-gray-400">CANDIDATE</TableHead>
+                                <TableHead className="px-4 py-4 text-[12px] font-black uppercase tracking-widest text-gray-400">
+                                    <div className="flex items-center gap-1 cursor-pointer hover:text-gray-600 transition-colors">
+                                        ATS SCORE <ChevronDown className="h-3.5 w-3.5" />
                                     </div>
                                 </TableHead>
-                                <TableHead className="px-4 py-3 text-[11px] font-black uppercase tracking-wider text-gray-400">ATS Status</TableHead>
-                                <TableHead className="px-4 py-3 text-[11px] font-black uppercase tracking-wider text-gray-400">Interview</TableHead>
-                                <TableHead className="px-4 py-3 text-[11px] font-black uppercase tracking-wider text-gray-400 text-center">ATS Report</TableHead>
-                                <TableHead className="px-4 py-3 text-[11px] font-black uppercase tracking-wider text-gray-400 text-center">Interview Report</TableHead>
-                                <TableHead className="px-4 py-3 text-[11px] font-black uppercase tracking-wider text-gray-400 text-right">Actions</TableHead>
+                                <TableHead className="px-4 py-4 text-[12px] font-black uppercase tracking-widest text-gray-400">ATS</TableHead>
+                                <TableHead className="px-4 py-4 text-[12px] font-black uppercase tracking-widest text-gray-400">INTERVIEW</TableHead>
+                                <TableHead className="px-4 py-4 text-[12px] font-black uppercase tracking-widest text-gray-400 text-center">REPORTS</TableHead>
+                                <TableHead className="px-4 py-4 text-[12px] font-black uppercase tracking-widest text-gray-400 text-right">ACTIONS</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody className="[&_tr:last-child]:border-0">
                             {isLoading ? (
                                 <TableRow>
-                                    <TableCell colSpan={isSelectionMode ? 10 : 9} className="py-12 text-center text-sm font-bold text-gray-400">
+                                    <TableCell colSpan={isSelectionMode ? 10 : 9} className="py-0.52 text-center text-xs font-bold text-gray-400">
                                         Loading candidates...
                                     </TableCell>
                                 </TableRow>
                             ) : filteredCandidates.length === 0 ? (
                                 <TableRow>
-                                    <TableCell colSpan={isSelectionMode ? 10 : 9} className="py-12 text-center text-sm font-bold text-gray-400">
+                                    <TableCell colSpan={isSelectionMode ? 10 : 9} className="py-0.52 text-center text-xs font-bold text-gray-400">
                                         No candidates found for this job
                                     </TableCell>
                                 </TableRow>
@@ -658,7 +657,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                             )}
                                         >
                                             {isSelectionMode && (
-                                                <TableCell className="px-4 py-4" onClick={(e) => e.stopPropagation()}>
+                                                <TableCell className="px-4 py-0.5 align-middle" onClick={(e) => e.stopPropagation()}>
                                                     <Checkbox
                                                         onClick={(e) => e.stopPropagation()}
                                                         checked={selectedIds.has(candidate.id)}
@@ -667,103 +666,148 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                                     />
                                                 </TableCell>
                                             )}
-                                            {/* no row number — matches screenshot */}
-                                            <TableCell className="px-4 py-3.5">
-                                                <div className="flex items-center gap-3">
-                                                    {/* Square letter avatar — exact screenshot style */}
-                                                    <div className="h-8 w-8 rounded-lg bg-gray-100 border border-gray-200 flex items-center justify-center text-[12px] font-bold text-gray-600 shrink-0 uppercase">
+                                            {/* Candidate Column */}
+                                            <TableCell className="px-6 py-0.5">
+                                                <div className="flex items-center gap-4">
+                                                    <div className="h-5 w-5 rounded-lg bg-gray-100 border border-gray-200 flex items-center justify-center text-[12px] font-black text-gray-500 shrink-0 uppercase">
                                                         {displayName.charAt(0)}
                                                     </div>
                                                     <div>
-                                                        <p className="text-[13px] font-semibold text-gray-900 leading-tight">{displayName}</p>
-                                                        <p className="text-[11px] text-gray-400 mt-0.5 truncate max-w-[180px]">{displayEmail}</p>
-                                                    </div>
-                                                </div>
-                                            </TableCell>
-                                            {/* Score */}
-                                            <TableCell className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}>
-                                                {isExtracting ? (
-                                                    <div className="flex flex-col gap-1.5">
-                                                        <div className="flex items-center gap-2">
-                                                            <Loader2 className="h-3.5 w-3.5 animate-spin text-orange-500" />
-                                                            <span className="text-[12px] text-orange-600 font-semibold">
-                                                                {statusKey === "extracting" && "25%"}
-                                                                {statusKey === "scoring" && "50%"}
-                                                                {statusKey === "starting" || statusKey === "waiting" || statusKey === "processing" ? "25%" : "—"}
-                                                            </span>
+                                                        <div className="flex items-center gap-1">
+                                                            <p className="text-[14px] font-bold text-gray-900 leading-tight">{displayName}</p>
+                                                            {score >= 80 && <span className="inline-flex items-center px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-violet-100 text-violet-700">Top Match</span>}
                                                         </div>
-                                                        {score > 0 && (
-                                                            <span className={cn("text-[11px] font-semibold",
-                                                                score >= 80 ? "text-emerald-600" : score >= 50 ? "text-amber-600" : "text-orange-500"
-                                                            )}>Score: {score}%</span>
-                                                        )}
+                                                        <p className="text-[12px] text-gray-500 mt-0.5 truncate max-w-[200px]">{displayEmail}</p>
                                                     </div>
-                                                ) : isFailed ? (
-                                                    <span className="text-[12px] font-semibold text-rose-500">Failed</span>
-                                                ) : (
-                                                    <span className={cn("text-[13px] font-bold",
-                                                        score >= 80 ? "text-emerald-600" : score >= 50 ? "text-amber-600" : score > 0 ? "text-rose-500" : "text-gray-300"
-                                                    )}>{score ? `${score}%` : "—"}</span>
-                                                )}
-                                            </TableCell>
-                                            {/* Resume status */}
-                                            <TableCell className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}>
-                                                <span className={cn(
-                                                    "inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold border",
-                                                    isExtracting ? "bg-orange-50 text-orange-600 border-orange-200" :
-                                                    isFailed ? "bg-rose-50 text-rose-600 border-rose-200" :
-                                                    statusKey === "rejected" ? "bg-rose-50 text-rose-600 border-rose-200" :
-                                                    statusKey === "shortlisted" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
-                                                    "bg-gray-50 text-gray-500 border-gray-200"
-                                                )}>
-                                                    {statusKey === "extracting" ? "Extracting" :
-                                                     statusKey === "scoring" ? "Scoring" :
-                                                     isProcessing ? (stageLabel || "Processing") :
-                                                     statusKey === "rejected" ? "Rejected" :
-                                                     statusKey === "shortlisted" ? "Shortlisted" :
-                                                     statusLabel}
-                                                </span>
-                                            </TableCell>
-                                            {/* Interview status */}
-                                            <TableCell className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}>
-                                                <div className="flex items-center gap-2">
-                                                    <div className={cn("h-2 w-2 rounded-full shrink-0",
-                                                        interviewStatusKey === "completed" || interviewStatusKey === "finished" ? "bg-emerald-500" :
-                                                        interviewStatusKey === "in progress" || interviewStatusKey === "inprogress" ? "bg-blue-500" : "bg-gray-300"
-                                                    )} />
-                                                    <span className={cn("text-[12px] font-medium",
-                                                        interviewStatusKey === "completed" || interviewStatusKey === "finished" ? "text-emerald-700" :
-                                                        interviewStatusKey === "in progress" || interviewStatusKey === "inprogress" ? "text-blue-700" : "text-gray-400"
-                                                    )}>{interviewStatusLabel}</span>
                                                 </div>
                                             </TableCell>
-                                            {/* Resume report */}
-                                            <TableCell className="px-4 py-3.5 text-center" onClick={(e) => e.stopPropagation()}>
-                                                {isWaiting || isProcessing ? (
-                                                    <Loader2 className="h-3.5 w-3.5 animate-spin text-orange-400 mx-auto" />
+                                            
+                                            {/* ATS Score Column */}
+                                            <TableCell className="px-4 py-0.5" onClick={(e) => e.stopPropagation()}>
+                                                {isExtracting ? (
+                                                    <div className="flex items-center gap-1.5">
+                                                        <Loader2 className="h-8 w-8 animate-spin text-violet-500" />
+                                                        <div>
+                                                            <p className="text-[13px] font-bold text-gray-900 leading-tight">Extracting...</p>
+                                                            <p className="text-[11px] text-gray-400 font-semibold">Parsing Resume</p>
+                                                        </div>
+                                                    </div>
                                                 ) : isFailed ? (
-                                                    <XCircle className="h-3.5 w-3.5 text-rose-400 mx-auto" />
+                                                    <div className="flex items-center gap-1.5">
+                                                        <XCircle className="h-8 w-8 text-rose-500" />
+                                                        <div>
+                                                            <p className="text-[13px] font-bold text-rose-600 leading-tight">Failed</p>
+                                                            <p className="text-[11px] text-rose-400 font-semibold">Error processing</p>
+                                                        </div>
+                                                    </div>
                                                 ) : (
-                                                    <Link href={`/admin/candidates/${candidate.id}?report=resume&back=${encodeURIComponent(`/admin/candidates/drive/${driveId}`)}`} className="text-[12px] font-semibold text-orange-500 hover:text-orange-700 transition-colors">View</Link>
+                                                    <AtsScoreGauge score={score} />
                                                 )}
                                             </TableCell>
-                                            {/* Interview report */}
-                                            <TableCell className="px-4 py-3.5 text-center" onClick={(e) => e.stopPropagation()}>
-                                                {interviewReportUnlocked ? (
-                                                    <Link href={`/admin/candidates/${candidate.id}?back=${encodeURIComponent(`/admin/candidates/drive/${driveId}`)}`} className="text-[12px] font-semibold text-emerald-600 hover:text-emerald-800 transition-colors">View</Link>
-                                                ) : (
-                                                    <span className="inline-flex items-center justify-center text-gray-300"
-                                                        title="Interview report is locked until the interview is finished"
-                                                        aria-label="Interview report locked"
-                                                    >
-                                                        <Lock className="h-4 w-4" />
+                                            
+                                            {/* Status Column */}
+                                            <TableCell className="px-4 py-0.5" onClick={(e) => e.stopPropagation()}>
+                                                <div className="flex items-center gap-1">
+                                                    <span className={cn(
+                                                        "inline-flex items-center px-3 py-0.5 rounded-full text-[12px] font-bold",
+                                                        isExtracting ? "bg-violet-100 text-violet-700" :
+                                                        isFailed ? "bg-rose-100 text-rose-700" :
+                                                        statusKey === "rejected" ? "bg-rose-100 text-rose-700" :
+                                                        statusKey === "shortlisted" ? "bg-emerald-100 text-emerald-700" :
+                                                        "bg-amber-100 text-amber-700"
+                                                    )}>
+                                                        {statusKey === "extracting" ? "Extracting" :
+                                                         statusKey === "scoring" ? "Scoring" :
+                                                         isProcessing ? (stageLabel || "Processing") :
+                                                         statusKey === "rejected" ? "Rejected" :
+                                                         statusKey === "shortlisted" ? "Shortlisted" :
+                                                         "Under Review"}
                                                     </span>
-                                                )}
+                                                    {statusKey === "shortlisted" && (
+                                                        <button onClick={() => handleUpdateStatus(candidate.id, { resumeStatus: "rejected" }, `${displayName} rejected`)} className="h-6 w-6 rounded-full flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-rose-600 transition-colors" title="Reject">
+                                                            <UserX className="h-3.5 w-3.5" />
+                                                        </button>
+                                                    )}
+                                                    {statusKey !== "shortlisted" && statusKey !== "rejected" && !isProcessing && (
+                                                        <button onClick={() => handleUpdateStatus(candidate.id, { resumeStatus: "shortlisted" }, `${displayName} shortlisted`)} className="h-6 w-6 rounded-full flex items-center justify-center text-gray-400 hover:bg-gray-100 hover:text-emerald-600 transition-colors" title="Shortlist">
+                                                            <Target className="h-3.5 w-3.5" />
+                                                        </button>
+                                                    )}
+                                                </div>
                                             </TableCell>
-                                            <TableCell className="px-4 py-3.5 text-right" onClick={(e) => e.stopPropagation()}>
+                                            
+                                            {/* Interview Column */}
+                                            <TableCell className="px-4 py-0.5" onClick={(e) => e.stopPropagation()}>
+                                                <div className="flex flex-col gap-0.5">
+                                                    <div className="flex items-center gap-1">
+                                                        <div className={cn("h-2 w-2 rounded-full shrink-0",
+                                                            interviewStatusKey === "completed" || interviewStatusKey === "finished" ? "bg-emerald-500" :
+                                                            interviewStatusKey === "in progress" || interviewStatusKey === "inprogress" ? "bg-blue-500" :
+                                                            interviewStatusKey === "pending" && candidate.inviteSentAt ? "bg-amber-500" : "bg-gray-300"
+                                                        )} />
+                                                        <span className={cn("text-[13px] font-bold",
+                                                            interviewStatusKey === "completed" || interviewStatusKey === "finished" ? "text-emerald-700" :
+                                                            interviewStatusKey === "in progress" || interviewStatusKey === "inprogress" ? "text-blue-700" :
+                                                            interviewStatusKey === "pending" && candidate.inviteSentAt ? "text-amber-700" : "text-gray-500"
+                                                        )}>
+                                                            {interviewStatusKey === "completed" || interviewStatusKey === "finished" ? "Completed" :
+                                                             interviewStatusKey === "in progress" || interviewStatusKey === "inprogress" ? "In Progress" :
+                                                             interviewStatusKey === "pending" && candidate.inviteSentAt ? "Scheduled" : "Not Scheduled"}
+                                                        </span>
+                                                    </div>
+                                                    {(interviewStatusKey === "completed" || interviewStatusKey === "finished") && (
+                                                        <span className="text-[11px] font-semibold text-gray-400 ml-[16px]">
+                                                            {candidate.interview?.completedAt
+                                                                ? new Date(candidate.interview.completedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" })
+                                                                : "Today"}
+                                                        </span>
+                                                    )}
+                                                    {candidate.interview?.isTest && (
+                                                        <span className="ml-[16px] text-[9px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full" style={{ background: "#FEF3C7", color: "#B45309" }}>
+                                                            TEST
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </TableCell>
+                                            
+                                            {/* Reports Column */}
+                                            <TableCell className="px-4 py-0.5 text-center" onClick={(e) => e.stopPropagation()}>
+                                                <div className="flex items-center justify-center gap-1">
+                                                    {isWaiting || isProcessing ? (
+                                                        <div className="flex items-center gap-1 px-3 py-0.5.5 rounded-xl border border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed">
+                                                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                                            <span className="text-[12px] font-bold">ATS Report</span>
+                                                        </div>
+                                                    ) : isFailed ? (
+                                                        <div className="flex items-center gap-1 px-3 py-0.5.5 rounded-xl border border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed">
+                                                            <XCircle className="h-3.5 w-3.5" />
+                                                            <span className="text-[12px] font-bold">ATS Report</span>
+                                                        </div>
+                                                    ) : (
+                                                        <Link href={`/admin/candidates/${candidate.id}?report=resume&back=${encodeURIComponent(`/admin/candidates/drive/${driveId}`)}`} className="flex items-center gap-1 px-3 py-0.5.5 rounded-xl border border-[#7C3AED]/30 bg-violet-50 text-[#7C3AED] hover:bg-[#7C3AED] hover:text-white transition-colors cursor-pointer group/btn">
+                                                            <svg className="h-3.5 w-3.5 opacity-70 group-hover/btn:opacity-100" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                                                            <span className="text-[12px] font-bold">ATS Report</span>
+                                                        </Link>
+                                                    )}
+
+                                                    {interviewReportUnlocked ? (
+                                                        <Link href={`/admin/candidates/${candidate.id}?back=${encodeURIComponent(`/admin/candidates/drive/${driveId}`)}`} className="flex items-center gap-1 px-3 py-0.5.5 rounded-xl border border-emerald-500/30 bg-emerald-50 text-emerald-600 hover:bg-emerald-500 hover:text-white transition-colors cursor-pointer group/btn">
+                                                            <svg className="h-3.5 w-3.5 opacity-70 group-hover/btn:opacity-100" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                                            <span className="text-[12px] font-bold">Interview Report</span>
+                                                        </Link>
+                                                    ) : (
+                                                        <div className="flex items-center gap-1 px-3 py-0.5.5 rounded-xl border border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed">
+                                                            <Lock className="h-3.5 w-3.5 opacity-70" />
+                                                            <span className="text-[12px] font-bold">Interview Report</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </TableCell>
+
+                                            <TableCell className="px-4 py-0.5 text-right" onClick={(e) => e.stopPropagation()}>
                                                 <DropdownMenu modal={false}>
                                                     <DropdownMenuTrigger asChild>
-                                                        <button className="h-7 w-7 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors">
+                                                        <button className="h-5 w-5 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors">
                                                             <MoreHorizontal className="h-4 w-4" />
                                                         </button>
                                                     </DropdownMenuTrigger>
@@ -774,7 +818,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                                         collisionPadding={12}
                                                         className="w-56 p-1.5 rounded-xl shadow-lg border-gray-100 bg-white"
                                                     >
-                                                        <DropdownMenuLabel className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400">Shortlist</DropdownMenuLabel>
+                                                        <DropdownMenuLabel className="px-2.5 py-0.5.5 text-[9px] font-black uppercase tracking-widest text-gray-400">Shortlist</DropdownMenuLabel>
                                                         <DropdownMenuItem onClick={() => handleUpdateStatus(candidate.id, { resumeStatus: "shortlisted" }, `${displayName} shortlisted`)} className="rounded-xl px-2.5 py-2 text-sm font-semibold text-emerald-600 cursor-pointer transition-colors hover:bg-emerald-50 hover:text-emerald-700 focus:text-emerald-700 focus:bg-emerald-50 data-[highlighted]:bg-emerald-50 data-[highlighted]:text-emerald-700">
                                                             <Target className="h-4 w-4 mr-2 shrink-0" />
                                                             Shortlist
@@ -792,11 +836,11 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                                             title={isSuspended ? interviewActionBlockedMessage : undefined}
                                                         >
                                                             {isSuspended ? <Lock className="h-4 w-4 mr-2 shrink-0" /> : <Mail className="h-4 w-4 mr-2 shrink-0" />}
-                                                            Send Email
+                                                            Send Schedule Link
                                                         </DropdownMenuItem>
 
                                                         <>
-                                                            <DropdownMenuLabel className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400">Manage</DropdownMenuLabel>
+                                                            <DropdownMenuLabel className="px-2.5 py-0.5.5 text-[9px] font-black uppercase tracking-widest text-gray-400">Manage</DropdownMenuLabel>
                                                             <DropdownMenuItem
                                                                 onClick={() => {
                                                                     if (isInterviewActionBlocked) {
@@ -818,7 +862,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                                                 )}
                                                             >
                                                                 {isInterviewActionBlocked ? <Lock className="h-4 w-4 mr-2 shrink-0" /> : <RefreshCw className={cn("h-4 w-4 mr-2 shrink-0", sendingInterviewLinkId === candidate.id && "animate-spin")} />}
-                                                                {sendingInterviewLinkId === candidate.id ? "Sending..." : "Resend Interview Link"}
+                                                                {sendingInterviewLinkId === candidate.id ? "Sending..." : "Resend Schedule Link"}
                                                             </DropdownMenuItem>
                                                         </>
                                                         <DropdownMenuItem
@@ -840,19 +884,19 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                 </div>
             </div>
             {/* ── Pagination — flat style ── */}
-            <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 flex-wrap gap-3">
-                <div className="flex items-center gap-3">
-                    <p className="text-[12px] text-gray-500">
-                        Showing <span className="font-bold text-gray-800">{pagination.total > 0 ? (pagination.page - 1) * pageSize + 1 : 0}</span>–<span className="font-bold text-gray-800">{Math.min(pagination.page * pageSize, pagination.total)}</span> of <span className="font-bold text-gray-800">{pagination.total}</span>
-                    </p>
+            <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 flex-wrap gap-1.5 bg-white">
+                <p className="text-[13px] font-semibold text-gray-500">
+                    Showing <span className="text-gray-900 font-bold">{pagination.total > 0 ? (pagination.page - 1) * pageSize + 1 : 0}</span>–<span className="text-gray-900 font-bold">{Math.min(pagination.page * pageSize, pagination.total)}</span> of <span className="text-gray-900 font-bold">{pagination.total}</span>
+                </p>
+                <div className="flex items-center gap-1.5">
                     <Select value={String(pageSize)} onValueChange={(v) => { const n = Number(v); setPageSize(n); clearSelection(); fetchCandidates(1, n, driveId, resumeFilter, interviewFilter, undefined, undefined, undefined, scoreSort); }}>
-                        <SelectTrigger className="h-7 w-28 rounded-lg border-gray-200 bg-white text-[12px] font-semibold text-gray-600 shadow-none"><SelectValue /></SelectTrigger>
-                        <SelectContent className="rounded-xl border-gray-100">{[20, 50, 100, 250, 500, 1000].map(o => <SelectItem key={o} value={String(o)} className="rounded-lg font-semibold text-[12px]">{o} / page</SelectItem>)}</SelectContent>
+                        <SelectTrigger className="h-8 w-28 rounded-xl border border-gray-200 bg-white text-[13px] font-bold text-gray-600 shadow-sm hover:border-gray-300 transition-colors"><SelectValue /></SelectTrigger>
+                        <SelectContent className="rounded-xl border-gray-100 shadow-lg">{[20, 50, 100, 250, 500, 1000].map(o => <SelectItem key={o} value={String(o)} className="rounded-lg font-semibold text-[13px]">{o} / page</SelectItem>)}</SelectContent>
                     </Select>
-                </div>
-                <div className="flex gap-2">
-                    <button disabled={pagination.page <= 1 || isLoading} onClick={() => handlePageChange(pagination.page - 1)} className="h-7 px-3 rounded-lg border border-gray-200 text-[12px] font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-40">Previous</button>
-                    <button disabled={pagination.page >= pagination.totalPages || isLoading} onClick={() => handlePageChange(pagination.page + 1)} className="h-7 px-3 rounded-lg border border-gray-200 text-[12px] font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-40">Next</button>
+                    <div className="flex gap-1.5">
+                        <button disabled={pagination.page <= 1 || isLoading} onClick={() => handlePageChange(pagination.page - 1)} className="h-8 px-3 rounded-xl border border-gray-200 bg-white text-[13px] font-bold text-gray-600 shadow-sm hover:bg-gray-50 hover:border-gray-300 disabled:opacity-40 transition-colors">Previous</button>
+                        <button disabled={pagination.page >= pagination.totalPages || isLoading} onClick={() => handlePageChange(pagination.page + 1)} className="h-8 px-3 rounded-xl border border-gray-200 bg-white text-[13px] font-bold text-gray-600 shadow-sm hover:bg-gray-50 hover:border-gray-300 disabled:opacity-40 transition-colors">Next</button>
+                    </div>
                 </div>
             </div>
             {emailConfirm && (() => {
@@ -865,7 +909,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
                         <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden">
                             <div className="px-6 pt-6 pb-4">
-                                <h2 className="text-lg font-black text-gray-900 tracking-tight">Confirm Send Email</h2>
+                                <h2 className="text-lg font-black text-gray-900 tracking-tight">Confirm Send Schedule Link</h2>
                                 {isBulk ? (
                                     <div className="mt-2 space-y-1 text-sm text-gray-600">
                                         {shortlistedCount > 0 && <p>• <span className="font-bold text-emerald-700">{shortlistedCount} shortlisted</span> → schedule link will be sent</p>}
@@ -879,7 +923,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                     </p>
                                 )}
                             </div>
-                            <div className="flex items-center justify-end gap-3 px-6 py-4 bg-gray-50/50 border-t border-gray-100">
+                            <div className="flex items-center justify-end gap-1.5 px-6 py-4 bg-gray-50/50 border-t border-gray-100">
                                 <button onClick={() => setEmailConfirm(null)} className="h-10 px-5 rounded-2xl font-bold text-gray-500 hover:bg-gray-100 transition-colors">
                                     Cancel
                                 </button>
@@ -909,7 +953,7 @@ export function DriveCandidatesTable({ driveId, refreshKey }: { driveId: string,
                                         : <>Delete <span className="font-bold text-rose-700">{deleteConfirm.candidateName}</span>? This cannot be undone.</>}
                                 </p>
                             </div>
-                            <div className="flex items-center justify-end gap-3 px-6 py-4 bg-gray-50/50 border-t border-gray-100">
+                            <div className="flex items-center justify-end gap-1.5 px-6 py-4 bg-gray-50/50 border-t border-gray-100">
                                 <button onClick={() => setDeleteConfirm(null)} className="h-10 px-5 rounded-2xl font-bold text-gray-500 hover:bg-gray-100 transition-colors">
                                     Cancel
                                 </button>

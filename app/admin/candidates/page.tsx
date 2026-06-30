@@ -9,10 +9,11 @@ import {
     Search, MoreHorizontal, Download, ChevronLeft, ChevronRight,
     Trash2, X, Briefcase, AlertCircle, UserX, Radio, Target,
     ShieldCheck, Award, Clock, Mail, Loader2, Lock, FileText,
-    Eye, Send, RefreshCw, BadgeCheck, XCircle, CheckSquare, Square,
+    Eye, Send, RefreshCw, BadgeCheck, XCircle, CheckSquare, Square, Video
 } from "lucide-react";
-import Link from "next/link";
-import { useSearchParams, useRouter } from "next/navigation";
+import { Link } from 'next-view-transitions';
+import { useSearchParams } from "next/navigation";
+import { useTransitionRouter as useRouter } from "next-view-transitions";
 import { toast } from "@/components/ui/toast-custom";
 import {
     DropdownMenu, DropdownMenuContent, DropdownMenuItem,
@@ -80,7 +81,7 @@ function EmailConfirmModal({
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden">
                 <div className="px-6 pt-6 pb-4">
-                    <h2 className="text-lg font-black text-gray-900 tracking-tight">Confirm Send Email</h2>
+                    <h2 className="text-lg font-black text-gray-900 tracking-tight">Confirm Send Schedule Link</h2>
                     {isBulk ? (
                         <div className="mt-2 space-y-1 text-sm text-gray-600">
                             {shortlistedCount > 0 && <p>• <span className="font-bold text-emerald-700">{shortlistedCount} shortlisted</span> → interview link will be sent</p>}
@@ -94,7 +95,7 @@ function EmailConfirmModal({
                         </p>
                     )}
                 </div>
-                <div className="flex items-center justify-end gap-3 px-6 py-4 bg-gray-50/50 border-t border-gray-100">
+                <div className="flex items-center justify-end gap-1.5 px-6 py-4 bg-gray-50/50 border-t border-gray-100">
                     <button onClick={onClose} className="h-10 px-5 rounded-2xl font-bold text-gray-500 hover:bg-gray-100 transition-colors">Cancel</button>
                     <button onClick={onConfirm} disabled={isBulkLoading}
                         className="h-10 px-6 rounded-2xl bg-blue-600 text-white font-bold hover:bg-blue-700 transition-colors disabled:opacity-60">
@@ -110,45 +111,78 @@ function EmailConfirmModal({
 // ---------------------------------------------------------------------------
 function CandidateStatsRow() {
     const { stats, isLoading, error } = useCandidates();
-    const kpis = [
-        { label: "Shortlisted", value: stats.shortlisted, icon: Target, color: "text-emerald-600", bg: "bg-emerald-50" },
-        { label: "Rejected", value: stats.rejected, icon: UserX, color: "text-rose-600", bg: "bg-rose-50" },
-        { label: "Live", value: stats.interviewRunning, icon: Radio, color: "text-blue-600", bg: "bg-blue-50", pulse: stats.interviewRunning > 0 },
-        { label: "Pending", value: stats.interviewPending, icon: Clock, color: "text-slate-500", bg: "bg-slate-50" },
-        { label: "Completed", value: stats.interviewCompleted, icon: ShieldCheck, color: "text-emerald-600", bg: "bg-emerald-50" },
-    ];
-    if (error) return (
-        <div className="w-full h-24 rounded-2xl bg-red-50/50 border border-red-100/50 flex flex-col items-center justify-center gap-1.5">
-            <div className="flex items-center gap-2 text-red-600"><AlertCircle className="h-4 w-4" /><span className="text-sm font-bold">Failed to load statistics</span></div>
-        </div>
-    );
+    
+    if (error) return null;
     if (isLoading && stats.shortlisted === 0) return (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            {[...Array(6)].map((_, i) => <div key={i} className="h-20 rounded-2xl bg-white/40 animate-pulse border border-white/20" />)}
+        <div className="flex gap-1 animate-pulse">
+            {[...Array(5)].map((_, i) => <div key={i} className="h-[68px] flex-1 rounded-xl bg-gray-100" />)}
         </div>
     );
+
+    const statsTotal = (stats as any).total || (stats.shortlisted + stats.rejected + stats.interviewRunning + stats.interviewPending + stats.interviewCompleted);
+    const total = statsTotal || 1;
+    const getPct = (val: number) => Math.round((val / total) * 100);
+
     return (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            {kpis.map((kpi, idx) => (
-                <motion.div key={kpi.label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.05 }}
-                    className="group relative flex items-center gap-3 p-4 bg-white/40 backdrop-blur-xl rounded-2xl border border-white/40 shadow-sm hover:shadow-md transition-all duration-300">
-                    <div className={cn("h-10 w-10 rounded-xl flex items-center justify-center shrink-0 transition-transform group-hover:scale-110", kpi.bg, kpi.color)}>
-                        <kpi.icon className={cn("h-5 w-5", (kpi as any).pulse && "animate-pulse")} />
+        <div className="flex flex-wrap items-center gap-1">
+            {/* Total */}
+            <div className="flex flex-col justify-between p-3 rounded-xl bg-violet-50/50 border border-violet-100 flex-1 min-w-[110px]">
+                <div className="flex items-start gap-1">
+                    <div className="mt-0.5"><svg className="h-4 w-4 text-violet-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg></div>
+                    <div className="pr-2">
+                        <p className="text-xl font-black text-gray-900 leading-none mb-1">{statsTotal}</p>
+                        <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Total</p>
                     </div>
-                    <div className="flex flex-col min-w-0">
-                        <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 truncate">{kpi.label}</span>
-                        <div className="flex items-center gap-2">
-                            <span className="text-xl font-black text-gray-900 tabular-nums">{kpi.value}</span>
-                            {(kpi as any).pulse && (
-                                <span className="flex h-2 w-2 relative">
-                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-gray-400 opacity-75" />
-                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-gray-500" />
-                                </span>
-                            )}
-                        </div>
+                </div>
+            </div>
+
+            {/* Shortlisted */}
+            <div className="flex flex-col justify-between p-3 rounded-xl bg-emerald-50/30 border border-emerald-100 flex-1 min-w-[110px] relative">
+                <div className="flex items-start gap-1">
+                    <div className="mt-0.5"><svg className="h-4 w-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg></div>
+                    <div className="pr-6">
+                        <p className="text-xl font-black text-gray-900 leading-none mb-1">{stats.shortlisted}</p>
+                        <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Shortlisted</p>
                     </div>
-                </motion.div>
-            ))}
+                </div>
+                <div className="absolute top-3 right-3 text-[10px] font-bold text-gray-400">{getPct(stats.shortlisted)}%</div>
+            </div>
+
+            {/* Interviewed */}
+            <div className="flex flex-col justify-between p-3 rounded-xl bg-blue-50/30 border border-blue-100 flex-1 min-w-[110px] relative">
+                <div className="flex items-start gap-1">
+                    <div className="mt-0.5"><svg className="h-4 w-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg></div>
+                    <div className="pr-6">
+                        <p className="text-xl font-black text-gray-900 leading-none mb-1">{stats.interviewRunning + stats.interviewCompleted}</p>
+                        <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Interviewed</p>
+                    </div>
+                </div>
+                <div className="absolute top-3 right-3 text-[10px] font-bold text-gray-400">{getPct(stats.interviewRunning + stats.interviewCompleted)}%</div>
+            </div>
+
+            {/* Ready */}
+            <div className="flex flex-col justify-between p-3 rounded-xl bg-amber-50/30 border border-amber-100 flex-1 min-w-[110px] relative">
+                <div className="flex items-start gap-1">
+                    <div className="mt-0.5"><svg className="h-4 w-4 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>
+                    <div className="pr-6">
+                        <p className="text-xl font-black text-gray-900 leading-none mb-1">{stats.interviewPending}</p>
+                        <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Ready</p>
+                    </div>
+                </div>
+                <div className="absolute top-3 right-3 text-[10px] font-bold text-gray-400">{getPct(stats.interviewPending)}%</div>
+            </div>
+
+            {/* Rejected */}
+            <div className="flex flex-col justify-between p-3 rounded-xl bg-red-50/30 border border-red-100 flex-1 min-w-[110px] relative">
+                <div className="flex items-start gap-1">
+                    <div className="mt-0.5"><svg className="h-4 w-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg></div>
+                    <div className="pr-6">
+                        <p className="text-xl font-black text-gray-900 leading-none mb-1">{stats.rejected}</p>
+                        <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Rejected</p>
+                    </div>
+                </div>
+                <div className="absolute top-3 right-3 text-[10px] font-bold text-gray-400">{getPct(stats.rejected)}%</div>
+            </div>
         </div>
     );
 }
@@ -406,77 +440,101 @@ export default function CandidatesPage() {
         } catch { toast.error("Failed to send email"); }
         finally { setIsBulkLoading(false); setEmailConfirm(null); }
     };
+    const handleExportCSV = () => {
+        if (!filteredCandidates || filteredCandidates.length === 0) return;
+        const headers = ["CANDIDATE", "EMAIL", "ROLE", "STATUS", "INTERVIEW", "ADDED ON"];
+        const csvContent = [
+            headers.join(","),
+            ...filteredCandidates.map((c: any) => [
+                `"${c.fullName || c.name || ''}"`,
+                `"${c.email || ''}"`,
+                `"${c.role || ''}"`,
+                `"${formatCandidateStatusLabel(c.status || c.resumeStatus)}"`,
+                `"${formatCandidateStatusLabel(c.interviewStatus)}"`,
+                `"${new Date(c.createdAt || Date.now()).toLocaleDateString()}"`
+            ].join(","))
+        ].join("\n");
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement("a");
+        const url = URL.createObjectURL(blob);
+        link.setAttribute("href", url);
+        link.setAttribute("download", `candidates_${new Date().toISOString().split('T')[0]}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
     return (
-        <div className="flex flex-col min-h-[135vh] space-y-8 pb-10 animate-in fade-in duration-700 font-sans" style={{ zoom: 0.7, transformOrigin: "top center" }}>
+        <div className="flex flex-col space-y-3 animate-in fade-in duration-500 flex-1 -mb-10 overflow-hidden">
             {/* Header */}
-            <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between mb-12">
-                <div className="flex items-center gap-5 group">
-                    <div className="h-14 w-1.5 bg-gradient-to-b from-[#F97316] to-orange-500 rounded-full shadow-[0_0_15px_rgba(249,115,22,0.4)] transition-all duration-500 group-hover:h-16" />
-                    <div className="space-y-1">
-                        <h1 className="text-4xl sm:text-5xl font-black text-gray-900 leading-none tracking-tighter">Candidates</h1>
-                        <div className="flex items-center gap-3">
-                            <span className="h-1.5 w-1.5 rounded-full bg-[#F97316] animate-pulse" />
-                            <p className="text-gray-400 font-bold text-[13px] uppercase tracking-[0.2em]">{pagination.total ?? 0} Total Candidates</p>
-                        </div>
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                    <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Candidates</h1>
+                    <p className="text-sm text-gray-500 mt-1">Manage and track all candidates across your recruitment pipeline.</p>
+                </div>
+                <div className="flex items-center gap-1.5">
+                    <button onClick={handleExportCSV} className="flex items-center gap-1 h-10 px-4 rounded-xl border border-gray-200 bg-white text-[13px] font-bold text-gray-700 shadow-sm hover:bg-gray-50 transition-colors cursor-pointer">
+                        <Download className="w-4 h-4" /> Export CSV
+                    </button>
+                    <div className="flex">
+                        <button className="flex items-center gap-1 h-10 px-4 rounded-l-xl bg-violet-600 text-[13px] font-bold text-white shadow-sm hover:bg-violet-700 transition-colors cursor-pointer">
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                            Add Candidate
+                        </button>
+                        <button className="flex items-center justify-center w-7 h-7 rounded-r-xl bg-violet-600 border-l border-violet-500 text-white shadow-sm hover:bg-violet-700 transition-colors cursor-pointer">
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                        </button>
                     </div>
                 </div>
             </div>
             <CandidateStatsRow />
-            {/* Bulk action groups — identical to drive-candidates-table */}
-            {selectedCount > 0 && (
-                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                    {/* Group 1: Shortlist */}
-                    <div className="rounded-2xl border border-emerald-100 bg-emerald-50/40 px-3 py-2.5">
-                        <p className="text-[9px] font-black uppercase tracking-[0.22em] text-emerald-600 mb-2">Shortlist</p>
-                        <div className="flex flex-wrap items-center gap-2">
-                            <Button size="sm" onClick={() => handleBulkStatus("shortlist")} disabled={isBulkLoading}
-                                className="h-8 px-3 rounded-xl border border-gray-200 bg-white text-gray-900 font-bold text-xs flex items-center gap-1.5 shadow-sm hover:bg-gray-50">
-                                <Target className="h-3.5 w-3.5" /> Shortlist
-                            </Button>
-                            <Button size="sm" onClick={() => handleBulkStatus("reject")} disabled={isBulkLoading}
-                                className="h-8 px-3 rounded-xl border border-gray-200 bg-white text-gray-900 font-bold text-xs flex items-center gap-1.5 shadow-sm hover:bg-gray-50">
-                                <UserX className="h-3.5 w-3.5" /> Reject
-                            </Button>
-                            {/* Email: locked when suspended, not hidden */}
-                            <Button size="sm" onClick={isSuspended ? undefined : openBulkSendEmailConfirm}
-                                disabled={isBulkLoading}
-                                title={isSuspended ? interviewActionBlockedMessage : undefined}
-                                className={cn("h-8 px-3 rounded-xl border border-gray-200 font-bold text-xs flex items-center gap-1.5 shadow-sm",
-                                    isSuspended ? "bg-gray-50 text-gray-400 cursor-not-allowed" : "bg-white text-gray-900 hover:bg-gray-50")}>
-                                {isSuspended ? <Lock className="h-3.5 w-3.5" /> : <Mail className="h-3.5 w-3.5" />} Send Email
-                            </Button>
-                        </div>
-                    </div>
+            {/* Bulk actions toolbar */}
+            <div className="flex flex-wrap items-center gap-1.5 py-3 border-t border-gray-100 mt-2">
+                <span className={cn("text-sm font-semibold mr-2 transition-colors", selectedCount > 0 ? "text-gray-900" : "text-gray-400")}>
+                    {selectedCount > 0 ? `${selectedCount} candidate${selectedCount !== 1 ? 's' : ''} selected` : "Select candidates for bulk actions:"}
+                </span>
+                
+                <button onClick={() => handleBulkStatus("shortlist")} disabled={selectedCount === 0 || isBulkLoading}
+                    className={cn("h-8 px-3.5 rounded-lg border font-semibold text-xs flex items-center gap-1.5 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed",
+                        selectedCount > 0 ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100" : "bg-gray-100 text-gray-400 border-gray-200")}>
+                    <Target className="h-3.5 w-3.5" /> Shortlist
+                </button>
+                <button onClick={() => handleBulkStatus("reject")} disabled={selectedCount === 0 || isBulkLoading}
+                    className={cn("h-8 px-3.5 rounded-lg border font-semibold text-xs flex items-center gap-1.5 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed",
+                        selectedCount > 0 ? "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100" : "bg-gray-100 text-gray-400 border-gray-200")}>
+                    <UserX className="h-3.5 w-3.5" /> Reject
+                </button>
+                <button onClick={isSuspended ? undefined : openBulkSendEmailConfirm}
+                    disabled={selectedCount === 0 || isBulkLoading}
+                    title={isSuspended ? interviewActionBlockedMessage : undefined}
+                    className={cn("h-8 px-3.5 rounded-lg border font-semibold text-xs flex items-center gap-1.5 shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
+                        selectedCount === 0 ? "bg-gray-100 text-gray-400 border-gray-200" : isSuspended ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed" : "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100")}>
+                    {isSuspended ? <Lock className="h-3.5 w-3.5" /> : <Mail className="h-3.5 w-3.5" />} Send Schedule Link
+                </button>
+                
+                <div className="w-px h-5 bg-gray-200 mx-1 hidden sm:block" />
+                
+                <button
+                    onClick={isInterviewActionBlocked ? undefined : handleBulkSendInterviewLink}
+                    disabled={selectedCount === 0 || isBulkLoading}
+                    title={isInterviewActionBlocked ? interviewActionBlockedMessage : undefined}
+                    className={cn("h-8 px-3.5 rounded-lg border font-semibold text-xs flex items-center gap-1.5 shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
+                        selectedCount === 0 ? "bg-gray-100 text-gray-400 border-gray-200" : isInterviewActionBlocked ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed" : "bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100")}>
+                    {isInterviewActionBlocked ? <Lock className="h-3.5 w-3.5" /> : <RefreshCw className="h-3.5 w-3.5" />} Resend Schedule Link
+                </button>
 
-                    {/* Group 3: Interview Link — locked (not hidden) when suspended/quota */}
-                    <div className="rounded-2xl border border-orange-100 bg-orange-50/40 px-3 py-2.5">
-                        <p className="text-[9px] font-black uppercase tracking-[0.22em] text-orange-600 mb-2">Interview Link</p>
-                        <div className="flex flex-wrap items-center gap-2">
-                            <Button size="sm"
-                                onClick={isInterviewActionBlocked ? undefined : handleBulkSendInterviewLink}
-                                disabled={isBulkLoading}
-                                title={isInterviewActionBlocked ? interviewActionBlockedMessage : undefined}
-                                className={cn("h-8 px-3 rounded-xl border border-gray-200 font-bold text-xs flex items-center gap-1.5 shadow-sm",
-                                    isInterviewActionBlocked ? "bg-gray-50 text-gray-400 cursor-not-allowed" : "bg-white text-gray-900 hover:bg-gray-50")}>
-                                {isInterviewActionBlocked ? <Lock className="h-3.5 w-3.5" /> : <RefreshCw className="h-3.5 w-3.5" />} Resend Link
-                            </Button>
-                        </div>
-                    </div>
-                    {/* Group 4: Delete */}
-                    <div className="rounded-2xl border border-red-100 bg-red-50/40 px-3 py-2.5">
-                        <p className="text-[9px] font-black uppercase tracking-[0.22em] text-red-500 mb-2">Remove</p>
-                        <div className="flex flex-wrap items-center gap-2">
-                            <Button size="sm" variant="outline" onClick={() => setDeleteConfirm({ mode: "bulk" })} disabled={isBulkLoading}
-                                className="h-8 px-3 rounded-xl border-red-200 text-red-600 font-bold text-xs flex items-center gap-1.5 hover:bg-red-50">
-                                <Trash2 className="h-3.5 w-3.5" /> Delete
-                            </Button>
-                        </div>
-                    </div>
-                </div>
-            )}
+                <div className="flex-1 min-w-[20px]" />
+
+                <button onClick={() => setDeleteConfirm({ mode: "bulk" })} disabled={selectedCount === 0 || isBulkLoading}
+                    className={cn("h-8 px-3.5 rounded-lg border font-semibold text-xs flex items-center gap-1.5 transition-colors shadow-sm ml-auto disabled:opacity-50 disabled:cursor-not-allowed",
+                        selectedCount > 0 ? "bg-red-50 text-red-700 border-red-200 hover:bg-red-100" : "bg-gray-100 text-gray-400 border-gray-200")}>
+                    <Trash2 className="h-3.5 w-3.5" /> Delete
+                </button>
+            </div>
             {error && (
                 <div className="bg-red-50 border border-red-100 rounded-2xl p-4 flex items-center justify-between animate-in slide-in-from-top-4">
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-1.5">
                         <AlertCircle className="h-4 w-4 text-red-600" />
                         <span className="text-xs font-bold text-red-900 uppercase tracking-tighter">Sync Error: {error}</span>
                     </div>
@@ -484,65 +542,42 @@ export default function CandidatesPage() {
                 </div>
             )}
             {/* Table */}
-            <div className="group relative bg-white/40 backdrop-blur-xl rounded-[2.5rem] border border-white/40 shadow-[0_8px_32px_rgba(0,0,0,0.03)] overflow-hidden transition-all duration-700 hover:shadow-[0_20px_60px_rgba(0,0,0,0.08)]">
-                <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-orange-400/0 via-[#F97316]/40 to-orange-400/0" />
-                <div className="p-3 border-b border-white/40 bg-white/20">
-                    <div className="flex flex-col md:flex-row gap-4 items-center justify-between w-full">
-                        <div className="relative flex-1 max-w-2xl w-full group/search">
-                            <Search className="absolute left-4 top-3.5 h-4 w-4 text-gray-400 group-focus-within/search:text-black transition-colors" />
-                            <Input placeholder="Search by name, role, or email..."
-                                className="pl-11 h-12 border-transparent bg-white/60 rounded-2xl focus:bg-white focus:border-gray-200 focus:ring-8 focus:ring-gray-50/50 transition-all font-bold text-sm shadow-inner"
-                                value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
-                        </div>
-                        <div className="flex items-center gap-2.5 w-full md:w-auto overflow-x-auto pb-1 md:pb-0 no-scrollbar">
-                            <DateFilter value={timeline} onChange={setTimeline} />
-                            <PremiumFilter value={resumeFilter} onChange={setResumeFilter} icon={Target} placeholder="Resume"
-                                options={[
-                                    { value: "all", label: "All Status" },
-                                    { value: "shortlisted", label: "Shortlisted", colorClass: "text-emerald-600" },
-                                    { value: "rejected", label: "Rejected", colorClass: "text-rose-600" },
-                                    { value: "pending", label: "Pending", colorClass: "text-slate-600" },
-                                ]} />
-                            <PremiumFilter value={interviewFilter} onChange={setInterviewFilter} icon={Radio} placeholder="Interview"
-                                options={[
-                                    { value: "all", label: "All Interview" },
-                                    { value: "pending", label: "Pending", colorClass: "text-amber-600" },
-                                    { value: "inprogress", label: "In Progress", colorClass: "text-blue-600" },
-                                    { value: "finished", label: "Completed", colorClass: "text-emerald-600" },
-                                ]} />
-                            <PremiumFilter value={roleFilter} onChange={setRoleFilter} icon={Briefcase} placeholder="All Job Roles"
-                                options={[
-                                    { value: "all", label: "All Job Roles" },
-                                    ...jobs.map(job => ({ value: job.id.toString(), label: job.role || job.title || "Unknown Job" }))
-                                ]} />
-                        </div>
+            <div className="bg-white rounded-2xl overflow-hidden flex flex-col flex-1 min-h-0" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
+                {/* Search + Filters toolbar */}
+                <div className="px-4 py-3 flex flex-col md:flex-row gap-1.5 items-center shrink-0" style={{ borderBottom: "1px solid #F0EEF8" }}>
+                    <div className="relative flex-1 w-full">
+                        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+                        <Input placeholder="Search by name, email, role, or skills..."
+                            className="pl-10 h-9 rounded-xl text-sm bg-white w-full max-w-sm"
+                            style={{ border: "1px solid #E9E7FF" }}
+                            value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
                     </div>
                 </div>
-                <div className="relative w-full overflow-auto max-h-[86vh]">
+                <div className="overflow-auto flex-1">
                     <Table>
-                        <TableHeader className="bg-gray-50/50 sticky top-0 z-10 backdrop-blur-md">
-                            <TableRow className="border-b border-gray-100 hover:bg-transparent">
+                        <TableHeader className="sticky top-0 z-10" style={{ background: "#F9F8FF" }}>
+                            <TableRow className="hover:bg-transparent" style={{ borderBottom: "1px solid #F0EEF8" }}>
                                 <TableHead className="w-[56px] pl-6 font-bold uppercase tracking-wider text-[11px] text-gray-500">
                                     <button type="button" onClick={toggleSelectAll}
-                                        className="flex h-5 w-5 items-center justify-center rounded-md text-gray-400 hover:text-[#F97316] transition-colors">
+                                        className="flex h-5 w-5 items-center justify-center rounded-md text-gray-400 hover:text-violet-600 transition-colors">
                                         {isAllSelected ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
                                     </button>
                                 </TableHead>
-                                <TableHead className="w-[52px] pl-2 font-bold uppercase tracking-wider text-[11px] text-gray-500">#</TableHead>
-                                <TableHead className="w-[240px] h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500">Candidate</TableHead>
-                                <TableHead className="w-[180px] h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500">Job Role</TableHead>
-                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Resume</TableHead>
-                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Interview</TableHead>
-                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Resume Report</TableHead>
-                                <TableHead className="h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500 text-center">Interview Report</TableHead>
-                                <TableHead className="text-right pr-8 h-14 font-bold uppercase tracking-wider text-[11px] text-gray-500">Actions</TableHead>
+                                <TableHead className="w-[240px] h-7 font-bold text-[10px] uppercase tracking-wider text-[11px] text-gray-500">Candidate</TableHead>
+                                <TableHead className="w-[180px] h-7 font-bold text-[10px] uppercase tracking-wider text-[11px] text-gray-500">Job Role</TableHead>
+                                <TableHead className="h-7 font-bold text-[10px] uppercase tracking-wider text-[11px] text-gray-500">Score</TableHead>
+                                <TableHead className="h-7 font-bold text-[10px] uppercase tracking-wider text-[11px] text-gray-500">ATS</TableHead>
+                                <TableHead className="h-7 font-bold text-[10px] uppercase tracking-wider text-[11px] text-gray-500">Interview</TableHead>
+                                <TableHead className="h-7 font-bold text-[10px] uppercase tracking-wider text-[11px] text-gray-500">Reports</TableHead>
+                                <TableHead className="h-7 font-bold text-[10px] uppercase tracking-wider text-[11px] text-gray-500">Added On</TableHead>
+                                <TableHead className="text-right pr-8 h-7 font-bold text-[10px] uppercase tracking-wider text-[11px] text-gray-500">Actions</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody className="[&_tr:last-child]:border-0">
                             {tableIsLoading ? (
-                                <TableRow><TableCell colSpan={10} className="py-12 text-center text-sm font-bold text-gray-400">Loading candidates...</TableCell></TableRow>
+                                <TableRow><TableCell colSpan={10} className="py-0.52 text-center text-xs font-bold text-gray-400">Loading candidates...</TableCell></TableRow>
                             ) : filteredCandidates.length === 0 ? (
-                                <TableRow><TableCell colSpan={10} className="py-12 text-center text-sm font-bold text-gray-400">No candidates found for selected filters</TableCell></TableRow>
+                                <TableRow><TableCell colSpan={10} className="py-0.52 text-center text-xs font-bold text-gray-400">No candidates found for selected filters</TableCell></TableRow>
                             ) : filteredCandidates.map((candidate: any, index: number) => {
                                 const displayName = candidate.fullName || candidate.name || "Unknown";
                                 const displayEmail = candidate.email || "";
@@ -558,95 +593,92 @@ export default function CandidatesPage() {
                                     <TableRow key={candidate.id}
                                         onClick={() => toggleSelection(candidate.id)}
                                         className={cn(
-                                            "group border-b border-white/20 hover:bg-white/40 transition-all duration-500 cursor-pointer",
-                                            selectedIds.has(candidate.id) && "bg-orange-50/30"
+                                            "group border-b hover:bg-violet-50/30 transition-all duration-150 cursor-pointer",
+                                            selectedIds.has(candidate.id) && "bg-violet-50/30"
                                         )}>
-                                        <TableCell className="pl-6 py-5" onClick={e => e.stopPropagation()}>
+                                        <TableCell className="pl-6 py-0.5" onClick={e => e.stopPropagation()}>
                                             <Checkbox checked={selectedIds.has(candidate.id)} onCheckedChange={() => toggleSelection(candidate.id)} onClick={e => e.stopPropagation()} />
                                         </TableCell>
-                                        <TableCell className="pl-2 py-5 text-[12px] font-bold text-gray-400 tabular-nums">
-                                            {index + 1 + (pagination.page - 1) * pageSize}
-                                        </TableCell>
-                                        <TableCell className="py-5">
-                                            <div className="flex items-center gap-3">
-                                                <Avatar className="h-11 w-11 border-2 border-white shadow-sm ring-1 ring-gray-100">
+                                        <TableCell className="py-0.5">
+                                            <div className="flex items-center gap-1.5">
+                                                <Avatar className="h-5 w-5 border-2 border-white shadow-sm ring-1 ring-gray-100">
                                                     <AvatarImage src={`https://api.dicebear.com/7.x/initials/svg?seed=${displayName}`} />
                                                     <AvatarFallback>{displayName.substring(0, 2).toUpperCase()}</AvatarFallback>
                                                 </Avatar>
                                                 <div className="flex flex-col">
-                                                    <span className="text-gray-900 font-extrabold text-[15px] leading-tight">{displayName}</span>
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className="text-gray-900 font-extrabold text-[15px] leading-tight">{displayName}</span>
+                                                        <svg className="w-3.5 h-3.5 text-violet-600 fill-violet-600" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                                                    </div>
                                                     <span className="text-[11px] text-gray-400 font-bold mt-0.5">{displayEmail}</span>
                                                 </div>
                                             </div>
                                         </TableCell>
-                                        <TableCell className="py-5">
-                                            <div className="flex flex-col max-w-[180px]">
-                                                <span className="text-sm font-bold text-gray-700 truncate">{candidate.role}</span>
-                                                {candidate.location && candidate.location !== "-" && (
-                                                    <span className="text-[11px] font-bold text-gray-400 uppercase tracking-tighter mt-0.5 truncate">{candidate.location}</span>
-                                                )}
+                                        <TableCell className="py-0.5">
+                                            <span className="text-xs font-bold text-gray-700">{candidate.role || "GTM Engineer"}</span>
+                                        </TableCell>
+                                        <TableCell className="py-0.5" onClick={e => e.stopPropagation()}>
+                                            <div className="flex items-center gap-1">
+                                                <div className="relative flex items-center justify-center h-10 w-10 shrink-0">
+                                                    <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+                                                        <path className="text-gray-100" strokeWidth="3" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                                                        <path className={cn("transition-all duration-500", resumeScore >= 80 ? "text-emerald-500" : resumeScore >= 60 ? "text-amber-500" : "text-rose-500")} strokeDasharray={`${resumeScore}, 100`} strokeWidth="3" strokeLinecap="round" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                                                    </svg>
+                                                    <span className="absolute text-[9px] font-black">{resumeScore}%</span>
+                                                </div>
+                                                <span className="text-xs font-bold text-gray-700 whitespace-nowrap">{resumeScore >= 80 ? "Strong Match" : resumeScore >= 60 ? "Good Match" : resumeScore >= 50 ? "Average Match" : "Low Match"}</span>
                                             </div>
                                         </TableCell>
-                                        <TableCell className="py-5 text-center" onClick={e => e.stopPropagation()}>
-                                            <div className="flex flex-col items-center gap-1">
-                                                {resumeScore > 0 && (
-                                                    <span className={cn("text-[11px] font-black tracking-tight",
-                                                        resumeScore >= 80 ? "text-emerald-600" : resumeScore >= 50 ? "text-amber-500" : "text-rose-500")}>
-                                                        {resumeScore}%
-                                                    </span>
-                                                )}
-                                                <Badge variant="secondary" className={cn(
-                                                    "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest border-0 shadow-sm pointer-events-none",
-                                                    mainStatus === "shortlisted" ? "bg-emerald-50 text-emerald-700" :
-                                                        mainStatus === "rejected" ? "bg-rose-50 text-rose-700" : "bg-slate-50 text-slate-500"
-                                                )}>{mainStatusLabel}</Badge>
-                                            </div>
+                                        <TableCell className="py-0.5" onClick={e => e.stopPropagation()}>
+                                            <Badge variant="secondary" className={cn(
+                                                "rounded-full px-3 py-0.5 text-[9px] font-black uppercase tracking-widest border border-current/10 shadow-sm pointer-events-none",
+                                                mainStatus === "shortlisted" ? "bg-emerald-50 text-emerald-600" :
+                                                    mainStatus === "rejected" ? "bg-rose-50 text-rose-600" : 
+                                                    mainStatus === "under review" ? "bg-amber-50 text-amber-600" : "bg-blue-50 text-blue-600"
+                                            )}>{mainStatusLabel}</Badge>
                                         </TableCell>
-                                        <TableCell className="py-5 text-center" onClick={e => e.stopPropagation()}>
-                                            <div className="flex flex-col items-center gap-1">
-                                                {interviewScore != null && interviewScore >= 0 && (
-                                                    <span className={cn(
-                                                        "text-[11px] font-black tracking-tight",
-                                                        interviewScore >= 80 ? "text-emerald-600" : interviewScore >= 50 ? "text-amber-500" : "text-rose-500"
-                                                    )}>
-                                                        {interviewScore}%
-                                                    </span>
-                                                )}
-                                                <Badge variant="secondary" className={cn(
-                                                    "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest border-0 shadow-sm pointer-events-none",
-                                                    interviewStage === "completed" || interviewStage === "finished" ? "bg-emerald-50 text-emerald-700" :
-                                                        interviewStage === "in progress" ? "bg-blue-50 text-blue-700" :
-                                                            interviewStage === "pending" ? "bg-slate-50 text-slate-500" : "bg-amber-50 text-amber-700"
-                                                )}>{interviewStageLabel}</Badge>
-                                            </div>
+                                        <TableCell className="py-0.5" onClick={e => e.stopPropagation()}>
+                                            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-gray-700">
+                                                <div className={cn("h-1 w-1 rounded-full",
+                                                    interviewStage === "completed" || interviewStage === "finished" ? "bg-emerald-500" :
+                                                    interviewStage === "in progress" || interviewStage === "scheduled" ? "bg-blue-500" : "bg-gray-400"
+                                                )} />
+                                                {interviewStage === "completed" || interviewStage === "finished" ? "Completed" : interviewStage === "scheduled" ? "Scheduled" : "Not Scheduled"}
+                                            </span>
                                         </TableCell>
-                                        <TableCell className="py-5 text-center" onClick={e => e.stopPropagation()}>
-                                            <Link
-                                                href={orgIdParam
-                                                    ? `/admin/candidates/${candidate.id}?report=resume&orgId=${encodeURIComponent(orgIdParam)}`
-                                                    : `/admin/candidates/${candidate.id}?report=resume`}
-                                                className="inline-flex h-8 w-8 items-center justify-center rounded-full text-[#F97316] transition-colors hover:bg-orange-50"
-                                                title="Open resume report">
-                                                <Eye className="h-4 w-4" />
-                                            </Link>
-                                        </TableCell>
-                                        <TableCell className="py-5 text-center" onClick={e => e.stopPropagation()}>
-                                            {interviewReportUnlocked ? (
+                                        <TableCell className="py-0.5" onClick={e => e.stopPropagation()}>
+                                            <div className="flex flex-wrap items-center gap-1">
                                                 <Link
-                                                    href={orgIdParam
-                                                        ? `/admin/candidates/${candidate.id}?orgId=${encodeURIComponent(orgIdParam)}`
-                                                        : `/admin/candidates/${candidate.id}`}
-                                                    className="inline-flex h-8 w-8 items-center justify-center rounded-full text-[#0D4D2E] transition-colors hover:bg-emerald-50"
-                                                    title="Open interview report">
-                                                    <FileText className="h-4 w-4" />
+                                                    href={orgIdParam ? `/admin/candidates/${candidate.id}?report=resume&orgId=${encodeURIComponent(orgIdParam)}` : `/admin/candidates/${candidate.id}?report=resume`}
+                                                    className="inline-flex h-7 px-2 items-center justify-center gap-1.5 rounded-md bg-violet-50 text-violet-700 hover:bg-violet-100 transition-colors border border-violet-100"
+                                                    title="ATS Report">
+                                                    <FileText className="h-3 w-3" />
+                                                    <span className="text-[10px] font-bold uppercase tracking-wider">ATS</span>
                                                 </Link>
-                                            ) : (
-                                                <span className="inline-flex h-8 w-8 items-center justify-center rounded-full text-gray-300" title="Interview not yet completed">
-                                                    <Lock className="h-4 w-4" />
-                                                </span>
-                                            )}
+                                                {interviewReportUnlocked ? (
+                                                    <Link
+                                                        href={orgIdParam ? `/admin/candidates/${candidate.id}?orgId=${encodeURIComponent(orgIdParam)}` : `/admin/candidates/${candidate.id}`}
+                                                        className="inline-flex h-7 px-2 items-center justify-center gap-1.5 rounded-md bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors border border-emerald-100"
+                                                        title="Interview Report">
+                                                        <Video className="h-3 w-3" />
+                                                        <span className="text-[10px] font-bold uppercase tracking-wider">Interview</span>
+                                                    </Link>
+                                                ) : (
+                                                    <span className="inline-flex h-7 px-2 items-center justify-center gap-1.5 rounded-md bg-gray-50 text-gray-400 border border-gray-200" title="Interview not yet completed">
+                                                        <Lock className="h-3 w-3" />
+                                                        <span className="text-[10px] font-bold uppercase tracking-wider">Interview</span>
+                                                    </span>
+                                                )}
+                                            </div>
                                         </TableCell>
-                                        <TableCell className="py-5 pr-8 text-right" onClick={e => e.stopPropagation()}>
+                                        <TableCell className="py-0.5" onClick={e => e.stopPropagation()}>
+                                            <span className="text-xs font-bold text-gray-600">
+                                                {candidate.createdAt 
+                                                    ? new Date(candidate.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) 
+                                                    : (candidate.date || "-")}
+                                            </span>
+                                        </TableCell>
+                                        <TableCell className="py-0.5 pr-8 text-right" onClick={e => e.stopPropagation()}>
                                             <DropdownMenu modal={false}>
                                                 <DropdownMenuTrigger asChild>
                                                     <Button variant="ghost" size="icon" className="h-9 w-9 rounded-lg hover:bg-gray-50 transition-colors">
@@ -654,60 +686,62 @@ export default function CandidatesPage() {
                                                     </Button>
                                                 </DropdownMenuTrigger>
                                                 <DropdownMenuContent align="end" side="bottom" sideOffset={8} collisionPadding={12}
-                                                    className="w-64 max-h-[70vh] overflow-y-auto origin-top-right p-2 rounded-2xl shadow-xl border-gray-100 bg-white">
-                                                    {/* Go to Job Drive — extra on candidates page */}
-                                                    <DropdownMenuLabel className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400">
-                                                        Job <span className="ml-1 text-gray-300">({candidate.role || "Open Role"})</span>
+                                                    className="w-[260px] max-h-[70vh] overflow-y-auto origin-top-right p-2.5 rounded-2xl shadow-xl border-gray-100 bg-white">
+                                                    {/* Go to Job Drive */}
+                                                    <DropdownMenuLabel className="px-2 py-0.5.5 text-[11px] font-black uppercase tracking-[0.1em] text-gray-400 mb-1">
+                                                        Job <span className="text-gray-300 font-bold">({candidate.role || "Open Role"})</span>
                                                     </DropdownMenuLabel>
                                                     <DropdownMenuItem
                                                         onClick={() => handleMoveToDrive(candidate.driveId)}
                                                         disabled={!candidate.driveId}
-                                                        className={cn("rounded-xl px-2.5 py-2 text-sm font-semibold cursor-pointer transition-colors",
-                                                            candidate.driveId ? "text-gray-700 focus:text-gray-900 focus:bg-gray-50" : "text-gray-400 opacity-70")}>
-                                                        <Briefcase className="h-4 w-4 mr-2 shrink-0" /> Go to Job Drive
+                                                        className={cn("rounded-xl px-3 py-2.5 mb-3 text-[14px] font-bold cursor-pointer transition-colors",
+                                                            candidate.driveId ? "bg-gray-50/80 text-gray-900 hover:bg-gray-100 focus:bg-gray-100" : "bg-gray-50/40 text-gray-400 opacity-70")}>
+                                                        <Briefcase className="h-4 w-4 mr-3 shrink-0 text-gray-700" /> Go to Job Drive
                                                     </DropdownMenuItem>
+                                                    
                                                     {/* Shortlist */}
-                                                    <DropdownMenuLabel className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400 mt-1">Shortlist</DropdownMenuLabel>
+                                                    <DropdownMenuLabel className="px-2 py-0.5.5 text-[11px] font-black uppercase tracking-[0.1em] text-gray-400">Shortlist</DropdownMenuLabel>
                                                     <DropdownMenuItem onClick={() => handleUpdateStatus(candidate.id, { resumeStatus: "shortlisted" }, `${displayName} shortlisted`)}
-                                                        className="rounded-xl px-2.5 py-2 text-sm font-semibold text-emerald-600 cursor-pointer hover:bg-emerald-50 focus:bg-emerald-50 focus:text-emerald-700">
-                                                        <Target className="h-4 w-4 mr-2 shrink-0" /> Shortlist
+                                                        className="rounded-xl px-3 py-2.5 text-[14px] font-bold text-emerald-600 cursor-pointer hover:bg-emerald-50 focus:bg-emerald-50 focus:text-emerald-700 mb-1">
+                                                        <Target className="h-4 w-4 mr-3 shrink-0" /> Shortlist
                                                     </DropdownMenuItem>
                                                     <DropdownMenuItem onClick={() => handleUpdateStatus(candidate.id, { resumeStatus: "rejected" }, `${displayName} rejected`)}
-                                                        className="rounded-xl px-2.5 py-2 text-sm font-semibold text-rose-600 cursor-pointer hover:bg-rose-50 focus:bg-rose-50 focus:text-rose-700">
-                                                        <UserX className="h-4 w-4 mr-2 shrink-0" /> Reject
+                                                        className="rounded-xl px-3 py-2.5 text-[14px] font-bold text-rose-600 cursor-pointer hover:bg-rose-50 focus:bg-rose-50 focus:text-rose-700 mb-1">
+                                                        <UserX className="h-4 w-4 mr-3 shrink-0" /> Reject
                                                     </DropdownMenuItem>
-                                                    {/* Send Email — locked when suspended */}
+                                                    {/* Send Email */}
                                                     <DropdownMenuItem
                                                         onClick={() => !isSuspended && openSendEmailConfirm({ id: candidate.id, name: displayName, resumeStatus: candidate.status || candidate.resumeStatus })}
-                                                        className={cn("rounded-xl px-2.5 py-2 text-sm font-semibold cursor-pointer transition-colors",
+                                                        className={cn("rounded-xl px-3 py-2.5 text-[14px] font-bold cursor-pointer transition-colors mb-3",
                                                             isSuspended ? "text-gray-400 focus:bg-transparent" : "text-blue-600 focus:text-blue-700 focus:bg-blue-50")}
                                                         title={isSuspended ? interviewActionBlockedMessage : undefined}>
-                                                        {isSuspended ? <Lock className="h-4 w-4 mr-2 shrink-0" /> : <Mail className="h-4 w-4 mr-2 shrink-0" />}
-                                                        Send Email
+                                                        {isSuspended ? <Lock className="h-4 w-4 mr-3 shrink-0" /> : <Mail className="h-4 w-4 mr-3 shrink-0" />}
+                                                        Send Schedule Link
                                                     </DropdownMenuItem>
+                                                    
                                                     {/* Manage */}
-                                                    <DropdownMenuLabel className="px-2.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400 mt-1">Manage</DropdownMenuLabel>
-                                                    {/* Resend Interview Link — locked (not hidden) when suspended/quota */}
+                                                    <DropdownMenuLabel className="px-2 py-0.5.5 text-[11px] font-black uppercase tracking-[0.1em] text-gray-400">Manage</DropdownMenuLabel>
+                                                    {/* Resend Interview Link */}
                                                     <DropdownMenuItem
                                                         onClick={() => {
                                                             if (isInterviewActionBlocked) { toast.error(interviewActionBlockedMessage); return; }
                                                             handleSendInterviewLink({ id: candidate.id, name: displayName });
                                                         }}
                                                         disabled={sendingInterviewLinkId === candidate.id || !canResendInterview}
-                                                        className={cn("rounded-xl px-2.5 py-2 text-sm font-semibold cursor-pointer transition-colors",
+                                                        className={cn("rounded-xl px-3 py-2.5 text-[14px] font-bold cursor-pointer transition-colors mb-1",
                                                             sendingInterviewLinkId === candidate.id ? "text-gray-400 opacity-70" :
                                                                 isInterviewActionBlocked ? "text-gray-400" :
                                                                     canResendInterview ? "text-blue-600 focus:text-blue-700 focus:bg-blue-50" : "text-gray-400 opacity-70")}
                                                         title={isInterviewActionBlocked ? interviewActionBlockedMessage : undefined}>
                                                         {isInterviewActionBlocked
-                                                            ? <Lock className="h-4 w-4 mr-2 shrink-0" />
-                                                            : <RefreshCw className={cn("h-4 w-4 mr-2 shrink-0", sendingInterviewLinkId === candidate.id && "animate-spin")} />}
-                                                        {sendingInterviewLinkId === candidate.id ? "Sending..." : "Resend Interview Link"}
+                                                            ? <Lock className="h-4 w-4 mr-3 shrink-0" />
+                                                            : <RefreshCw className={cn("h-4 w-4 mr-3 shrink-0", sendingInterviewLinkId === candidate.id && "animate-spin")} />}
+                                                        {sendingInterviewLinkId === candidate.id ? "Sending..." : "Resend Schedule Link"}
                                                     </DropdownMenuItem>
                                                     <DropdownMenuItem
                                                         onClick={() => setDeleteConfirm({ mode: "single", candidateId: candidate.id, candidateName: displayName })}
-                                                        className="rounded-xl px-2.5 py-2 text-sm font-semibold cursor-pointer text-gray-600 focus:text-gray-900 focus:bg-gray-50">
-                                                        <Trash2 className="h-4 w-4 mr-2 shrink-0" /> Delete
+                                                        className="rounded-xl px-3 py-2.5 text-[14px] font-bold cursor-pointer text-gray-600 focus:text-gray-900 focus:bg-gray-50">
+                                                        <Trash2 className="h-4 w-4 mr-3 shrink-0" /> Delete
                                                     </DropdownMenuItem>
                                                 </DropdownMenuContent>
                                             </DropdownMenu>
@@ -718,39 +752,39 @@ export default function CandidatesPage() {
                         </TableBody>
                     </Table>
                 </div>
-            </div>
-            {/* Pagination */}
-            <div className="mt-auto flex flex-col gap-4 border-t border-white/20 bg-white/20 px-4 py-5 backdrop-blur-xl rounded-2xl lg:flex-row lg:items-center lg:justify-between">
-                <div className="flex flex-wrap items-center gap-3">
-                    <p className="text-[13px] font-medium text-gray-500">
-                        Showing <span className="text-gray-900 font-bold">{pagination.total > 0 ? (pagination.page - 1) * pageSize + 1 : 0}</span> to{" "}
-                        <span className="text-gray-900 font-bold">{Math.min(pagination.page * pageSize, pagination.total)}</span> of{" "}
-                        <span className="text-gray-900 font-bold">{pagination.total}</span> candidates
-                    </p>
-                    <div className="h-4 w-px bg-gray-200 hidden sm:block" />
-                    <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-black uppercase tracking-[0.22em] text-gray-400">Rows</span>
-                        <Select value={String(pageSize)} onValueChange={(v) => { setPageSize(Number(v)); clearSelection(); }}>
-                            <SelectTrigger className="h-9 w-[120px] rounded-xl border-gray-200 bg-white text-sm font-bold text-gray-700 shadow-none focus:ring-2 focus:ring-orange-100">
-                                <SelectValue placeholder="Rows" />
-                            </SelectTrigger>
-                            <SelectContent className="rounded-xl border-gray-100">
-                                {[20, 50, 100, 250, 500].map(o => (
-                                    <SelectItem key={o} value={String(o)} className="rounded-lg font-semibold">{o} / page</SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
+                {/* Pagination */}
+                <div className="flex flex-col gap-4 bg-white px-4 py-4 lg:flex-row lg:items-center lg:justify-between border-t border-gray-100 mt-auto shrink-0">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                        <p className="text-[13px] font-medium text-gray-500">
+                            Showing <span className="text-gray-900 font-bold">{pagination.total > 0 ? (pagination.page - 1) * pageSize + 1 : 0}</span> to{" "}
+                            <span className="text-gray-900 font-bold">{Math.min(pagination.page * pageSize, pagination.total)}</span> of{" "}
+                            <span className="text-gray-900 font-bold">{pagination.total}</span> candidates
+                        </p>
+                        <div className="h-4 w-px bg-gray-200 hidden sm:block" />
+                        <div className="flex items-center gap-1">
+                            <span className="text-[9px] font-black uppercase tracking-[0.22em] text-gray-400">Rows</span>
+                            <Select value={String(pageSize)} onValueChange={(v) => { setPageSize(Number(v)); clearSelection(); }}>
+                                <SelectTrigger className="h-9 w-[120px] rounded-xl border-gray-200 bg-white text-xs font-bold text-gray-700 shadow-none focus:ring-2 focus:ring-violet-100">
+                                    <SelectValue placeholder="Rows" />
+                                </SelectTrigger>
+                                <SelectContent className="rounded-xl border-gray-100">
+                                    {[20, 50, 100, 250, 500].map(o => (
+                                        <SelectItem key={o} value={String(o)} className="rounded-lg font-semibold">{o} / page</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
                     </div>
-                </div>
-                <div className="flex gap-3">
-                    <Button variant="outline" size="sm" disabled={pagination.page <= 1 || isLoading} onClick={() => handlePageChange(pagination.page - 1)}
-                        className="h-10 px-6 rounded-xl border-gray-200 bg-white text-gray-500 font-bold hover:bg-gray-50 hover:text-[#F97316] disabled:opacity-30 transition-all shadow-none">
-                        <ChevronLeft className="h-4 w-4 mr-1" /> Previous
-                    </Button>
-                    <Button variant="outline" size="sm" disabled={pagination.page >= pagination.totalPages || isLoading} onClick={() => handlePageChange(pagination.page + 1)}
-                        className="h-10 px-6 rounded-xl border-gray-200 bg-white text-gray-500 font-bold hover:bg-gray-50 hover:text-[#F97316] disabled:opacity-30 transition-all shadow-none">
-                        Next <ChevronRight className="h-4 w-4 ml-1" />
-                    </Button>
+                    <div className="flex gap-1.5">
+                        <Button variant="outline" size="sm" disabled={pagination.page <= 1 || isLoading} onClick={() => handlePageChange(pagination.page - 1)}
+                            className="h-10 px-6 rounded-xl border-gray-200 bg-white text-gray-500 font-bold hover:bg-gray-50 hover:text-violet-600 disabled:opacity-30 transition-all shadow-none">
+                            <ChevronLeft className="h-4 w-4 mr-1" /> Previous
+                        </Button>
+                        <Button variant="outline" size="sm" disabled={pagination.page >= pagination.totalPages || isLoading} onClick={() => handlePageChange(pagination.page + 1)}
+                            className="h-10 px-6 rounded-xl border-gray-200 bg-white text-gray-500 font-bold hover:bg-gray-50 hover:text-violet-600 disabled:opacity-30 transition-all shadow-none">
+                            Next <ChevronRight className="h-4 w-4 ml-1" />
+                        </Button>
+                    </div>
                 </div>
             </div>
             {/* Modals */}
@@ -772,10 +806,10 @@ export default function CandidatesPage() {
                                         : <>Delete <span className="font-bold text-rose-700">{deleteConfirm.candidateName}</span>? This cannot be undone.</>}
                                 </p>
                             </div>
-                            <div className="flex items-center justify-end gap-3 px-6 py-4 bg-gray-50/50 border-t border-gray-100">
-                                <button onClick={() => setDeleteConfirm(null)} className="h-10 px-5 rounded-2xl font-bold text-gray-500 hover:bg-gray-100 transition-colors">Cancel</button>
+                            <div className="flex items-center justify-end gap-1.5 px-6 py-4 bg-gray-50/50 border-t border-gray-100">
+                                <button onClick={() => setDeleteConfirm(null)} className="h-10 px-5 rounded-2xl font-bold text-gray-500 hover:bg-gray-100 transition-colors cursor-pointer">Cancel</button>
                                 <button onClick={handleDeleteConfirmed} disabled={isBulkLoading}
-                                    className="h-10 px-6 rounded-2xl bg-rose-600 text-white font-bold hover:bg-rose-700 transition-colors disabled:opacity-60">
+                                    className="h-10 px-6 rounded-2xl bg-rose-600 text-white font-bold hover:bg-rose-700 transition-colors disabled:opacity-60 cursor-pointer">
                                     {isBulkLoading ? "Deleting..." : "Delete"}
                                 </button>
                             </div>

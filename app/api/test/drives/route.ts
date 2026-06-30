@@ -1,0 +1,28 @@
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { getSession, isSuperAdminRole } from "@/lib/auth";
+
+const TEST_KEY = process.env.TEST_PAGE_KEY || "1285";
+
+export async function GET(request: Request) {
+    try {
+        const { searchParams } = new URL(request.url);
+        if (searchParams.get("key") !== TEST_KEY) {
+            return NextResponse.json({ error: "Invalid test key" }, { status: 403 });
+        }
+
+        const orgId = searchParams.get("orgId");
+        if (!orgId) return NextResponse.json({ error: "orgId required" }, { status: 400 });
+
+        const drives = await prisma.drive.findMany({
+            where: { orgId, isDeleted: false },
+            select: { id: true, title: true, role: true, _count: { select: { applications: true } } },
+            orderBy: { createdAt: "desc" },
+        });
+
+        return NextResponse.json({ drives });
+    } catch (e) {
+        console.error("[TEST_DRIVES]", e);
+        return NextResponse.json({ error: "Failed" }, { status: 500 });
+    }
+}

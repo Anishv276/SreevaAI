@@ -47,32 +47,32 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
     if (loading || !drive) {
         return (
             <div className="flex items-center justify-center min-h-screen">
-                <Loader2 className="h-10 w-10 text-orange-500 animate-spin" />
+                <Loader2 className="h-10 w-10 text-violet-500 animate-spin" />
             </div>
         );
     }
     return (
-        <div className="min-h-screen bg-slate-50">
+        <div className="space-y-6 pb-10 animate-in fade-in duration-500">
             {/* Header */}
-            <div className="sticky top-0 z-50 border-b border-slate-200/70 bg-white/90 backdrop-blur-xl">
+            <div className="sticky top-0 z-50 border-b border-gray-200/70 bg-white/90 backdrop-blur-xl">
                 <div className="max-w-7xl mx-auto px-6 py-5">
                     <div className="flex flex-col gap-4">
                         <div className="flex items-start gap-4">
                             <button
                                 onClick={() => router.back()}
-                                className="mt-1 inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
+                                className="mt-1 inline-flex h-10 w-10 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-500 transition-colors hover:border-slate-300 hover:bg-violet-50 hover:text-gray-900"
                             >
                                 <ArrowLeft className="h-5 w-5" />
                             </button>
                             <div className="min-w-0">
-                                <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.24em] text-slate-400">
-                                    <Briefcase className="h-3.5 w-3.5 text-[#F97316]" />
+                                <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.24em] text-gray-400">
+                                    <Briefcase className="h-3.5 w-3.5 text-[#7C3AED]" />
                                     Drive Candidates
                                 </div>
                                 <h1 className="mt-2 text-[clamp(2rem,4vw,3.75rem)] font-black leading-[0.95] tracking-tight text-slate-950">
                                     {drive.title}
                                 </h1>
-                                <p className="mt-3 max-w-2xl text-sm font-medium text-slate-500">
+                                <p className="mt-3 max-w-2xl text-sm font-medium text-gray-500">
                                     {drive.role || "Job Description"}
                                 </p>
                             </div>
@@ -80,7 +80,7 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
                         <div className="flex flex-wrap items-center gap-3 pt-1">
                             <button
                                 onClick={() => router.back()}
-                                className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
+                                className="inline-flex h-10 items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-600 transition-colors hover:border-slate-300 hover:bg-violet-50 hover:text-gray-900"
                             >
                                 <ArrowLeft className="h-4 w-4" />
                                 Back
@@ -99,7 +99,7 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
                             </button>
                             <button
                                 onClick={() => router.push(`/admin/create-drive?id=${driveId}&mode=edit`)}
-                                className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
+                                className="inline-flex h-10 items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-600 transition-colors hover:border-slate-300 hover:bg-violet-50 hover:text-gray-900"
                             >
                                 <Pencil className="h-4 w-4" />
                                 Edit Drive
@@ -111,7 +111,7 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
             {/* Main Content */}
             <div className="max-w-7xl mx-auto px-6 py-8">
                 {/* Tab Content */}
-                <div className="rounded-3xl border border-slate-200 bg-white shadow-sm">
+                <div className="rounded-3xl border border-gray-200 bg-white shadow-sm">
                     <div className="space-y-4 p-6">
                             {quotaLocked ? (
                                 <div className="rounded-3xl border border-amber-200 bg-amber-50 px-6 py-5 text-amber-950 shadow-sm">

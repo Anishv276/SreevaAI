@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, type ReactNode } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import {
@@ -11,24 +11,36 @@ import {
   CheckCircle,
   XCircle,
   ChevronDown,
+  User,
 } from "lucide-react";
 import {
   SREEVAAI_REPORT_CARD,
   fitLabelFromPct,
 } from "./interview-report-sreevaai";
+
 const card = SREEVAAI_REPORT_CARD;
 const bgPage = "bg-white relative overflow-hidden";
-type RadarKey = "must_haves" | "exp_depth" | "domain_fit" | "skill_breadth" | "evidence_quality";
+
+type RadarKey = "role_fit" | "tech_depth" | "proven_impact" | "hire_risk" | "growth_velocity";
 type RadarNotes = Record<RadarKey, string>;
+
+// Research-backed 5-axis model — internal keys are technical; labels shown to HR are plain English:
+// role_fit       → "Job Match"    (does the resume cover what the JD requires?)
+// tech_depth     → "Skill Depth"  (mastery vs. surface-level exposure)
+// proven_impact  → "Track Record" (achievement density — results vs. responsibilities)
+// hire_risk      → "Stability"    (inverted risk: high = low red flags)
+// growth_velocity→ "Career Growth" (trajectory speed — accelerating or stalling?)
 const RESUME_RADAR_LABELS: { key: RadarKey; label: string }[] = [
-  { key: "must_haves", label: "Must-Haves" },
-  { key: "exp_depth", label: "Exp Depth" },
-  { key: "domain_fit", label: "Domain Fit" },
-  { key: "skill_breadth", label: "Skill Breadth" },
-  { key: "evidence_quality", label: "Evidence" },
+  { key: "role_fit",        label: "Job Match" },
+  { key: "tech_depth",      label: "Skill Depth" },
+  { key: "proven_impact",   label: "Track Record" },
+  { key: "hire_risk",       label: "Stability" },
+  { key: "growth_velocity", label: "Career Growth" },
 ];
+
 function ResumeRadarPlot({
   values,
+  notes,
   onHoverChange,
 }: {
   values: Record<RadarKey, number>;
@@ -36,147 +48,160 @@ function ResumeRadarPlot({
   onHoverChange?: (key: RadarKey | null) => void;
 }) {
   const [hoveredKey, setHoveredKey] = useState<RadarKey | null>(null);
+  const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  
   const setHover = (key: RadarKey | null) => {
     setHoveredKey(key);
     onHoverChange?.(key);
   };
+
+  const handleEnter = (key: RadarKey, e: React.MouseEvent) => {
+    setHover(key);
+    setMousePos({ x: e.clientX, y: e.clientY });
+  };
+  const handleMove = (e: React.MouseEvent) => {
+    if (!hoveredKey) return;
+    setMousePos({ x: e.clientX, y: e.clientY });
+  };
+  const handleLeave = () => { setHover(null); setMousePos(null); };
+
   const n = RESUME_RADAR_LABELS.length;
-  const cx = 50;
-  const cy = 50;
-  const r = 32;
-  const rOuter = 42;
+  const PAD = 68; 
+  const R = 70;
+  const SIZE = R * 2 + PAD * 2;
+  const cx = SIZE / 2;
+  const cy = SIZE / 2;
   const angle = (i: number) => (-90 + (360 / n) * i) * (Math.PI / 180);
-  const clamp = (v: number) => Math.max(10, Math.min(100, v));
-  const pts = RESUME_RADAR_LABELS.map((def, i) => {
-    const t = (clamp(values[def.key]) / 100) * r;
+  const clamp = (v: number) => Math.max(0, Math.min(100, v));
+  
+  const shapePoints = RESUME_RADAR_LABELS.map((def, i) => {
+    const t = (clamp(values[def.key]) / 100) * R;
     return `${cx + t * Math.cos(angle(i))},${cy + t * Math.sin(angle(i))}`;
-  });
+  }).join(" ");
+  
+  const RING_LEVELS = [0.33, 0.66, 1.0];
+
+  const hoveredDef = hoveredKey ? RESUME_RADAR_LABELS.find(d => d.key === hoveredKey) : null;
+  const hoveredVal = hoveredKey ? Math.round(values[hoveredKey]) : null;
+  const hoveredNote = hoveredKey ? notes[hoveredKey] : null;
+
+  const tooltipStyle: React.CSSProperties = (() => {
+    if (!mousePos || typeof window === "undefined") return {};
+    const tipW = 240;
+    let left = mousePos.x + 16;
+    if (left + tipW > window.innerWidth) left = mousePos.x - tipW - 16;
+    
+    if (mousePos.y > window.innerHeight / 2) {
+      return { bottom: window.innerHeight - mousePos.y + 16, left };
+    }
+    return { top: mousePos.y + 16, left };
+  })();
+
   return (
-    <div className="relative w-full min-h-[250px] sm:min-h-[270px]">
-      <svg
-        viewBox="0 0 100 100"
-        className="h-full w-full overflow-visible"
-        preserveAspectRatio="xMidYMid meet"
-      >
-        <defs>
-          <linearGradient id="fitRadarGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#1E9D55" stopOpacity="0.15" />
-            <stop offset="100%" stopColor="#F0A12A" stopOpacity="0.15" />
-          </linearGradient>
-          <linearGradient id="fitRadarStrokeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#1E9D55" />
-            <stop offset="100%" stopColor="#F0A12A" />
-          </linearGradient>
-        </defs>
-        {/* Radar Rings */}
-        {[0.25, 0.5, 0.75, 1].map((f) => (
-          <circle
-            key={f}
-            cx={cx}
-            cy={cy}
-            r={f * r}
-            fill="none"
-            stroke="#E5E7EB"
-            strokeWidth="0.5"
-          />
+    <div ref={containerRef} className="relative w-full flex flex-col items-center" onMouseMove={handleMove}>
+      {/* ── Radar SVG — clean, matches screenshot ── */}
+      <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} className="shrink-0 overflow-visible">
+        {/* Grid rings */}
+        {RING_LEVELS.map((frac, ri) => {
+          const r = frac * R;
+          const pts = Array.from({ length: n }, (_, i) => `${cx + r * Math.cos(angle(i))},${cy + r * Math.sin(angle(i))}`).join(" ");
+          return <polygon key={ri} points={pts} fill="none" stroke="#D1D5DB" strokeWidth="1" />;
+        })}
+        {/* Spokes */}
+        {RESUME_RADAR_LABELS.map((_, i) => (
+          <line key={i} x1={cx} y1={cy} x2={cx + R * Math.cos(angle(i))} y2={cy + R * Math.sin(angle(i))} stroke="#D1D5DB" strokeWidth="1" />
         ))}
-        {/* Radar Axes */}
-        {RESUME_RADAR_LABELS.map((def, i) => (
-          <line
-            key={def.key}
-            x1={cx}
-            y1={cy}
-            x2={cx + r * Math.cos(angle(i))}
-            y2={cy + r * Math.sin(angle(i))}
-            stroke={hoveredKey === def.key ? "url(#fitRadarStrokeGrad)" : "#E5E7EB"}
-            strokeWidth={hoveredKey === def.key ? "0.8" : "0.4"}
-          />
-        ))}
-        {/* Data Shape */}
-        <polygon
-          points={pts.join(" ")}
-          fill="url(#fitRadarGradient)"
-          stroke="url(#fitRadarStrokeGrad)"
-          strokeWidth="1.2"
-          strokeLinejoin="round"
-        />
-        {/* Interaction Points & Labels */}
+        {/* Data shape */}
+        <polygon points={shapePoints} fill="rgba(56,189,248,0.18)" stroke="#38BDF8" strokeWidth="2.5" strokeLinejoin="round" />
+        
+        {/* Data points (invisible hover targets) */}
         {RESUME_RADAR_LABELS.map((def, i) => {
-          const ax = angle(i);
-          const t = (clamp(values[def.key]) / 100) * r;
-          const nodeX = cx + t * Math.cos(ax);
-          const nodeY = cy + t * Math.sin(ax);
-          const ox = cx + rOuter * Math.cos(ax);
-          const oy = cy + rOuter * Math.sin(ax);
-          const pct = Math.round(values[def.key]);
+          const t = (clamp(values[def.key]) / 100) * R;
+          return (
+            <circle
+              key={`dot-${def.key}`}
+              cx={cx + t * Math.cos(angle(i))} cy={cy + t * Math.sin(angle(i))} r="16"
+              fill="transparent"
+              className="cursor-pointer"
+              onMouseEnter={(e) => handleEnter(def.key, e)}
+              onMouseLeave={handleLeave}
+            />
+          );
+        })}
+        
+        {/* Axis labels */}
+        {RESUME_RADAR_LABELS.map((def, i) => {
+          const isRight = Math.cos(angle(i)) > 0.1;
+          const isLeft = Math.cos(angle(i)) < -0.1;
+          const anchor = isRight ? "start" : isLeft ? "end" : "middle";
+          const lpX = cx + (R + (anchor === "middle" ? 24 : 16)) * Math.cos(angle(i));
+          const lpY = cy + (R + (anchor === "middle" ? 24 : 16)) * Math.sin(angle(i));
+          const isHov = hoveredKey === def.key;
+          
+          let line1 = def.label;
+          let line2 = "";
+          let multiLine = false;
+          if (anchor === "middle" && def.label.includes(" ")) {
+            const words = def.label.split(" ");
+            const mid = Math.ceil(words.length / 2);
+            line1 = words.slice(0, mid).join(" ");
+            line2 = words.slice(mid).join(" ");
+            multiLine = true;
+          }
+          
           return (
             <g
               key={def.key}
-              onMouseEnter={() => setHover(def.key)}
-              onMouseLeave={() => setHover(null)}
-              style={{ cursor: "pointer" }}
+              className="cursor-pointer"
+              onMouseEnter={(e) => handleEnter(def.key, e)}
+              onMouseLeave={handleLeave}
             >
-              {/* Hit Area */}
-              <circle cx={ox} cy={oy} r="10" fill="none" pointerEvents="all" />
+              <circle cx={lpX} cy={lpY} r="22" fill="transparent" />
               <text
-                x={ox}
-                y={oy - 1.5}
-                textAnchor="middle"
+                x={lpX}
+                y={multiLine ? lpY - 5 : lpY}
+                textAnchor={anchor}
                 dominantBaseline="middle"
-                fontSize={hoveredKey === def.key ? "2.8" : "2.4"}
-                fontWeight={hoveredKey === def.key ? "900" : "700"}
-                fill={hoveredKey === def.key ? "#111827" : "#4B5563"}
+                fontSize="11"
+                fontWeight={isHov ? "700" : "500"}
+                style={{ fill: isHov ? "#0EA5E9" : "#6B7280", fontFamily: "var(--font-geist-sans, system-ui, sans-serif)" }}
               >
-                {def.label.toUpperCase()}
+                {multiLine ? (
+                  <>
+                    <tspan x={lpX} dy="0">{line1}</tspan>
+                    <tspan x={lpX} dy="12">{line2}</tspan>
+                  </>
+                ) : (
+                  def.label
+                )}
               </text>
-              <text
-                x={ox}
-                y={oy + 2.5}
-                textAnchor="middle"
-                dominantBaseline="middle"
-                fontSize={hoveredKey === def.key ? "3.8" : "3.2"}
-                fontWeight="900"
-                fill={hoveredKey === def.key ? "url(#fitRadarStrokeGrad)" : "#111827"}
-              >
-                {pct}%
-              </text>
-              {hoveredKey === def.key && (
-                <circle
-                  cx={nodeX}
-                  cy={nodeY}
-                  r="2"
-                  fill="white"
-                  stroke="url(#fitRadarStrokeGrad)"
-                  strokeWidth="0.8"
-                />
-              )}
             </g>
           );
         })}
-        {/* Central Display */}
-        {hoveredKey && (
-          <g style={{ pointerEvents: "none" }}>
-            <circle cx={cx} cy={cy} r="6" fill="white" />
-            <text
-              x={cx}
-              y={cy}
-              textAnchor="middle"
-              dominantBaseline="middle"
-              fontSize="4"
-              fontWeight="900"
-              fill="url(#fitRadarStrokeGrad)"
-            >
-              {Math.round(values[hoveredKey])}%
-            </text>
-          </g>
-        )}
       </svg>
+
+      {/* ── Hover tooltip ── */}
+      {hoveredDef && hoveredVal !== null && mousePos && (
+        <div 
+          className="pointer-events-none fixed z-[99999] w-56 rounded-xl border border-[#E2E8F0] bg-white px-3.5 py-2.5 shadow-xl"
+          style={tooltipStyle}
+        >
+          <div className="flex items-center justify-between mb-1 border-b border-[#F1F5F9] pb-1.5">
+            <span className="text-[12px] font-semibold text-[#1A1D22]">{hoveredDef.label}</span>
+            <span className="text-[12px] font-bold text-[#0EA5E9] tabular-nums">{hoveredVal}<span className="text-[9px] font-normal text-[#94A3B8]">/100</span></span>
+          </div>
+          <p className="text-[11px] leading-relaxed text-[#6B7280] pt-1">
+            {hoveredNote || "No details available."}
+          </p>
+        </div>
+      )}
     </div>
   );
 }
 export type SkillRow = {
   name: string;
-  bucket: "matched" | "not_matched" | "listed";
+  bucket: "matched" | "not_matched";
   evidenceNote?: string;
 };
 export type SreevaAIResumeViewModel = {
@@ -189,7 +214,7 @@ export type SreevaAIResumeViewModel = {
   experienceLine: string;
   fitPercent: number;
   fitLabel: string;
-  fitRadar: { must_haves: number; exp_depth: number; domain_fit: number; skill_breadth: number; evidence_quality: number };
+  fitRadar: { role_fit: number; tech_depth: number; proven_impact: number; hire_risk: number; growth_velocity: number };
   fitRadarNotes: RadarNotes;
   aiSummaryPoints: { label: string; body: string; tone: "emerald" | "amber" | "rose" }[];
   strengths: { label: string; body: string }[];
@@ -203,6 +228,8 @@ export type SreevaAIResumeViewModel = {
 function readableSummaryText(text: string, maxLen = 180) {
   const clean = String(text || "")
     .replace(/^flag:\s*/i, "")
+    .replace(/\[EV-[^\]]+\]/g, "")                          // strip [EV-xxx] citation tags
+    .replace(/^(emerald|amber|rose|green|red|yellow):\s*/i, "") // strip tone-colour prefixes the LLM sometimes emits
     .replace(/\s+/g, " ")
     .trim();
   if (!clean) return "";
@@ -277,10 +304,7 @@ export function buildSreevaAIResumeViewModel(i: {
   hasAiReport: boolean;
   hasResumeText: boolean;
   matchScore: number;
-  summary: string;
-  primaryGapText: string;
   normalizedStatus: string;
-  interviewStageLabel: string;
   breakdown: {
     skills_score?: number;
     skills_max?: number;
@@ -292,32 +316,16 @@ export function buildSreevaAIResumeViewModel(i: {
     domain_max?: number;
   } | null;
   combinedWorkHistory: unknown[];
-  totalExtractedSkills: number;
-  techSkillSample: string[];
   structuredResumeData?: unknown;
-  structuredJdData?: unknown;
-  experienceReadout?: string | null;
-  // AI-direct fields from gpt-4o report
-  aiRadar?: { must_haves?: number; essentials?: number; exp_depth?: number; experience?: number; domain_fit?: number; domain?: number; skill_breadth?: number; skills?: number; evidence_quality?: number; evidence?: number; confidence?: number } | null;
-  aiRadarNotes?: { must_haves?: string; exp_depth?: string; domain_fit?: string; skill_breadth?: string; evidence_quality?: string } | null;
+  aiRadar?: { role_fit?: number; must_haves?: number; essentials?: number; exp_depth?: number; experience?: number; domain_fit?: number; domain?: number; skill_breadth?: number; skills?: number; evidence_quality?: number; evidence?: number; confidence?: number; tech_depth?: number; proven_impact?: number; hire_risk?: number; growth_velocity?: number } | null;
+  aiRadarNotes?: { role_fit?: string; tech_depth?: string; proven_impact?: string; hire_risk?: string; growth_velocity?: string; must_haves?: string; exp_depth?: string; domain_fit?: string; skill_breadth?: string; evidence_quality?: string } | null;
   aiSummaryCards?: { label: string; body: string; tone: string }[] | null;
   aiStrengths?: { label: string; body: string }[] | null;
   aiWeaknesses?: { label: string; body: string }[] | null;
   aiSkillRows?: { name: string; stars: number; evidence_note?: string }[] | null;
   missingMustSkills?: string[] | null;
   skillMatching?: unknown;
-  candidatePotential?: string | null;
   decisionReason?: string | null;
-  resumeParseConfidence?: string | null;
-  humanLayer?: {
-    summary?: string;
-    judgment?: string;
-    human_score?: number;
-    human_adjustment?: number;
-    confidence?: number;
-    reasons?: { delta?: number; reason?: string; evidence?: string }[];
-    risk_flags?: string[];
-  } | null;
 }): SreevaAIResumeViewModel {
   const c = i.candidate;
   const b = i.breakdown;
@@ -419,54 +427,100 @@ export function buildSreevaAIResumeViewModel(i: {
     }
     return Math.min(100, Math.round(total / workHistoryRows.length));
   })();
+  // ── Growth Velocity: career trajectory speed ─────────────────────────────
+  // Scores how fast the career is moving: title progression, scope expansion,
+  // tenure stability, and whether the most recent roles show upward momentum.
+  const growthVelocityScore = (() => {
+    if (workHistoryRows.length === 0) return 50; // neutral when no data
+    let score = 50;
+    // Tenure stability: penalise multiple very-short stints (<8 months)
+    const shortStints = workHistoryRows.filter((r: any) => {
+      const months = Number(r?.duration_months ?? 0);
+      return months > 0 && months < 8;
+    }).length;
+    score -= shortStints * 10;
+    // Ownership escalation: more owner-level roles over time = growth
+    const ownerCount = workHistoryRows.filter((r: any) => String(r?.ownership_level || "").toLowerCase() === "owner").length;
+    score += Math.min(30, ownerCount * 12);
+    // Impact density growth: check if recent roles have higher impact than early ones
+    const recent = workHistoryRows.slice(0, 2) as any[];
+    const early  = workHistoryRows.slice(-2) as any[];
+    const impactScore = (rows: any[]) => rows.reduce((s: number, r: any) => s + (r?.impact_strength === "high" ? 3 : r?.impact_strength === "medium" ? 1 : 0), 0);
+    const recentImpact = impactScore(recent);
+    const earlyImpact  = impactScore(early);
+    if (recentImpact > earlyImpact) score += 15;
+    else if (recentImpact < earlyImpact) score -= 10; // declining trajectory
+    // Promotion or scope expansion signals in role descriptions
+    const scopeKeywords = /promot|senior|lead|principal|staff|architect|head|director|founded|launched/i;
+    const scopeCount = workHistoryRows.filter((r: any) =>
+      scopeKeywords.test(String(r?.role || "")) ||
+      scopeKeywords.test(String(r?.recruiter_summary || ""))
+    ).length;
+    score += Math.min(20, scopeCount * 8);
+    return Math.min(100, Math.max(0, Math.round(score)));
+  })();
+
   const fitRadarNotes: RadarNotes = {
-    must_haves:
+    role_fit:
       structuredSkillNames.length > 0
-        ? `Scored from ${evidenceBackedSkillNames.length} of ${structuredSkillNames.length} extracted JD must-haves confirmed with work-history or project evidence — not just listed in skills section.`
-        : "JD must-haves could not be verified from extracted skill rows — falling back to JD skill bucket.",
-    exp_depth:
+        ? `Covers ${evidenceBackedSkillNames.length} of ${structuredSkillNames.length} JD requirements confirmed via work-history or project context — not just listed in a skills section.`
+        : "JD requirement coverage could not be confirmed from structured data — using JD skill bucket as fallback.",
+    tech_depth:
       workHistoryRows.length > 0
-        ? `Scored from ${workHistoryRows.length} role(s): checks years vs JD minimum, ownership level (owner/contributor/unclear), and whether work was building or assisting — not just counting years.`
+        ? `Scored from ${workHistoryRows.length} role(s): checks ownership level (owner / contributor / unclear) and whether work involved building systems vs. assisting — measures mastery, not just years.`
         : "No structured work history found — falling back to raw experience score.",
-    domain_fit:
-      domainSignals.length > 0
-        ? `Scored from ${domainSignals.length} domain signals: industry background, company-type context, and JD keyword overlap — measures ramp-time risk if hired.`
-        : "Resume did not expose enough domain signals — falling back to JD domain keyword bucket.",
-    skill_breadth:
-      structuredSkillNames.length > 0
-        ? `Scored from ${structuredSkillNames.length} technical/tool signals across work history + projects — ${evidenceBackedSkillNames.length} confirmed used (not just listed), measuring width not depth.`
-        : "Resume did not expose enough structured skill data — falling back to JD skill bucket.",
-    evidence_quality:
+    proven_impact:
       structuredEvidenceItems.length > 0
-        ? `Scored from ${structuredEvidenceItems.length} evidence items — ${evidenceSignalCount} carry measurable outcomes, ownership, or repeated use across roles. Measures how much of the resume can be trusted vs. taken at face value.`
-        : "No structured evidence items found — falling back to work-history impact signals.",
+        ? `${evidenceSignalCount} of ${structuredEvidenceItems.length} evidence items carry measurable outcomes, ownership, or repeated cross-role use — measures how much of the experience is verifiable vs. self-described.`
+        : workHistoryRows.length > 0
+          ? `Derived from ${workHistoryRows.length} role(s): ${strongWorkHistoryRows.length} carry high impact or owner-level signals. Measures achievement-to-duty ratio.`
+          : "No evidence items found — score reflects raw work-history impact signals.",
+    hire_risk:
+      workHistoryRows.length > 0
+        ? `Risk factors checked: tenure instability, progression stagnation, domain misalignment, and recency of core skills. Lower score = more red flags. ${workHistoryRows.length} role(s) analysed.`
+        : "Insufficient work history to compute hire risk — score is neutral.",
+    growth_velocity:
+      workHistoryRows.length > 0
+        ? `Trajectory scored from ${workHistoryRows.length} role(s): title/scope escalation, ownership level across time, impact trend (recent vs. early roles), and tenure stability. Measures career momentum, not just experience.`
+        : "No work history available — growth velocity score is neutral.",
   };
   const clamp = (v: unknown, fb: number) => {
     const n = Number(v);
     return Number.isFinite(n) ? Math.min(100, Math.max(0, Math.round(n))) : fb;
   };
+  // ── Map old/new radar keys → 5 research-backed axes ───────────────────────
+  // role_fit      ← essentials (JD requirement coverage)
+  // tech_depth    ← impactFallback repurposed (ownership + depth signals)
+  // proven_impact ← evidenceFallback (measurable outcome density)
+  // hire_risk     ← inverted domain: starts high, penalised by risk signals
+  // growth_velocity ← new computed signal above
+  const hireRiskBase = Math.min(100, Math.max(0, Math.round(
+    100 - (workHistoryRows.filter((r: any) => Number(r?.duration_months ?? 12) < 8).length * 10)
+        - (domainFallback < 30 ? 15 : 0)
+  )));
   const fitRadar = {
-    must_haves: essentialsFallback,
-    exp_depth: impactFallback,
-    domain_fit: domainFallback,
-    skill_breadth: skillsExtractedFallback,
-    evidence_quality: evidenceFallback,
+    role_fit:        essentialsFallback,
+    tech_depth:      impactFallback,
+    proven_impact:   evidenceFallback,
+    hire_risk:       hireRiskBase,
+    growth_velocity: growthVelocityScore,
   };
   if (ar) {
-    if (fitRadar.must_haves === 0) fitRadar.must_haves = clamp(ar?.must_haves ?? ar?.essentials, fitRadar.must_haves);
-    if (fitRadar.exp_depth === 0) fitRadar.exp_depth = clamp(ar?.exp_depth ?? ar?.experience, fitRadar.exp_depth);
-    if (fitRadar.domain_fit === 0) fitRadar.domain_fit = clamp(ar?.domain_fit ?? ar?.domain, fitRadar.domain_fit);
-    if (fitRadar.skill_breadth === 0) fitRadar.skill_breadth = clamp(ar?.skill_breadth ?? ar?.skills, fitRadar.skill_breadth);
-    if (fitRadar.evidence_quality === 0) fitRadar.evidence_quality = clamp(ar?.evidence_quality ?? ar?.evidence ?? ar?.confidence, fitRadar.evidence_quality);
+    // Accept new-key overrides from LLM output, fall back to legacy key aliases
+    if (fitRadar.role_fit === 0)        fitRadar.role_fit        = clamp(ar?.role_fit   ?? ar?.must_haves ?? ar?.essentials, fitRadar.role_fit);
+    if (fitRadar.tech_depth === 0)      fitRadar.tech_depth      = clamp(ar?.tech_depth ?? ar?.exp_depth  ?? ar?.experience, fitRadar.tech_depth);
+    if (fitRadar.proven_impact === 0)   fitRadar.proven_impact   = clamp(ar?.proven_impact ?? ar?.evidence_quality ?? ar?.evidence ?? ar?.confidence, fitRadar.proven_impact);
+    if (fitRadar.hire_risk === 0)       fitRadar.hire_risk       = clamp(ar?.hire_risk   ?? ar?.domain_fit ?? ar?.domain, fitRadar.hire_risk);
+    if (fitRadar.growth_velocity === 0) fitRadar.growth_velocity = clamp(ar?.growth_velocity ?? ar?.skill_breadth ?? ar?.skills, fitRadar.growth_velocity);
   }
-  // Override fallback notes with LLM-generated sharp notes if present
+  // Override with sharp LLM-generated notes when available
   const an = i.aiRadarNotes;
   if (an) {
-    if (an.must_haves) fitRadarNotes.must_haves = an.must_haves;
-    if (an.exp_depth) fitRadarNotes.exp_depth = an.exp_depth;
-    if (an.domain_fit) fitRadarNotes.domain_fit = an.domain_fit;
-    if (an.skill_breadth) fitRadarNotes.skill_breadth = an.skill_breadth;
-    if (an.evidence_quality) fitRadarNotes.evidence_quality = an.evidence_quality;
+    if (an.role_fit        || an.must_haves)       fitRadarNotes.role_fit        = an.role_fit        ?? an.must_haves        ?? fitRadarNotes.role_fit;
+    if (an.tech_depth      || an.exp_depth)        fitRadarNotes.tech_depth      = an.tech_depth      ?? an.exp_depth        ?? fitRadarNotes.tech_depth;
+    if (an.proven_impact   || an.evidence_quality) fitRadarNotes.proven_impact   = an.proven_impact   ?? an.evidence_quality ?? fitRadarNotes.proven_impact;
+    if (an.hire_risk       || an.domain_fit)       fitRadarNotes.hire_risk       = an.hire_risk       ?? an.domain_fit       ?? fitRadarNotes.hire_risk;
+    if (an.growth_velocity || an.skill_breadth)    fitRadarNotes.growth_velocity = an.growth_velocity ?? an.skill_breadth    ?? fitRadarNotes.growth_velocity;
   }
   const validTones = new Set(["emerald", "amber", "rose"]);
   const aiSummaryPoints: SreevaAIResumeViewModel["aiSummaryPoints"] =
@@ -519,26 +573,6 @@ export function buildSreevaAIResumeViewModel(i: {
       seen.add(key);
       rows.push({ name: clean, bucket: "not_matched" });
     }
-    // ── LISTED IN RESUME (all resume skills not already in matched/not_matched) ──
-    // Collect every skill from the structured resume parse
-    const resumeSkillNames: string[] = uniqueNonEmpty([
-      ...(Array.isArray(structuredSkills.technical) ? structuredSkills.technical : [])
-        .map((s: any) => extractSkillName(s)),
-      ...(Array.isArray(structuredSkills.tools) ? structuredSkills.tools : [])
-        .map((s: any) => extractSkillName(s)),
-      ...(Array.isArray(structuredSkills.domain_skills) ? structuredSkills.domain_skills : [])
-        .map((s: any) => (typeof s === "string" ? s : extractSkillName(s))),
-      ...structuredWorkHistory.flatMap((job: any) => extractStringList(job?.technologies_used)),
-      ...structuredProjects.flatMap((proj: any) => extractStringList(proj?.technologies)),
-    ]);
-    for (const name of resumeSkillNames) {
-      const clean = String(name || "").trim();
-      if (!clean) continue;
-      const key = normalizeKey(clean);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      rows.push({ name: clean, bucket: "listed" });
-    }
     return rows;
   })();
   const history = (i.combinedWorkHistory || []) as Array<{
@@ -575,9 +609,12 @@ export function buildSreevaAIResumeViewModel(i: {
     const label = `${r.role || "Role"} @ ${r.company || " "}`;
     // Primary body: LLM-written recruiter_summary from work_history_annotated
     // Fallback: responsibilities or impact signals from raw parse
-    const primaryBody = r.recruiter_summary
+    const stripEv = (s: string) => s.replace(/\[EV-[^\]]+\]/g, "").replace(/\s+/g, " ").trim();
+    const primaryBody = stripEv(
+      r.recruiter_summary
       || (Array.isArray(r.responsibilities) && r.responsibilities.length > 0 ? r.responsibilities.slice(0, 2).join(" ") : "")
-      || (Array.isArray(r.impact_signals) && r.impact_signals.length > 0 ? r.impact_signals.slice(0, 2).join(" ") : "");
+      || (Array.isArray(r.impact_signals) && r.impact_signals.length > 0 ? r.impact_signals.slice(0, 2).join(" ") : "")
+    );
     // Compact metadata strip appended only when we have something meaningful to add
     const metaParts = [
       r.ownership_level && r.ownership_level !== "unclear" ? `${r.ownership_level} ownership` : "",
@@ -603,10 +640,11 @@ export function buildSreevaAIResumeViewModel(i: {
       label: String(item.label || "").trim(),
       body: readableSummaryText(String(item.body || ""), 260),
     })).filter((item) => item.label && item.body);
+  // Exactly 3 strengths and 3 weaknesses — research-mandated cap for recruiter clarity
   const strengths: SreevaAIResumeViewModel["strengths"] =
-    i.aiStrengths && i.aiStrengths.length > 0 ? sanitizeItems(i.aiStrengths).slice(0, 4) : [];
+    i.aiStrengths && i.aiStrengths.length > 0 ? sanitizeItems(i.aiStrengths).slice(0, 3) : [];
   const weaknesses: SreevaAIResumeViewModel["weaknesses"] =
-    i.aiWeaknesses && i.aiWeaknesses.length > 0 ? sanitizeItems(i.aiWeaknesses).slice(0, 4) : [];
+    i.aiWeaknesses && i.aiWeaknesses.length > 0 ? sanitizeItems(i.aiWeaknesses).slice(0, 3) : [];
   return {
     backHref: i.backHref || "/admin/candidates",
     processing: !i.hasResumeText && !i.hasAiReport,
@@ -627,21 +665,53 @@ export function buildSreevaAIResumeViewModel(i: {
     careerLines,
     resumeUrl: c.resumeUrl || null,
     reviewStrip: (() => {
-      // Human review always wins
-      const human = i.humanLayer;
-      const humanReason = human?.summary && human.summary.trim().length > 10 ? human.summary.trim() : "";
-      if (humanReason) {
-        const verdictWord = decisionStamp === "SHORTLISTED" ? "Shortlisted" : decisionStamp === "REJECTED" ? "Rejected" : "Borderline";
-        return `${verdictWord} by human reviewer: ${humanReason}`.replace(/\s+/g, " ").trim();
-      }
-      // AI decision_reason is the primary signal
-      if (i.decisionReason && i.decisionReason.trim().length > 10) {
-        return i.decisionReason.trim();
-      }
-      return "";
+      // Use LLM-generated decision_reason as the primary note — it's a recruiter narrative
+      // covering skills, experience, strengths, and gaps from the full report.
+      // Human layer summary is an internal technical scorecard string, not for display.
+      const aiReason = i.decisionReason
+        ? String(i.decisionReason)
+            .replace(/\[EV-[^\]]+\]/g, "")   // strip citation tags
+            .replace(/\s+/g, " ")
+            .trim()
+        : "";
+      if (aiReason.length > 10) return aiReason;
+      // Fallback: generate a minimal note from score data
+      const verdictWord = decisionStamp === "SHORTLISTED" ? "Shortlisted" : decisionStamp === "REJECTED" ? "Rejected" : "Borderline";
+      const skillM = i.skillMatching as any;
+      const matched = Array.isArray(skillM?.matched_must) ? skillM.matched_must : [];
+      const missing = Array.isArray(skillM?.missing_must) ? skillM.missing_must : [];
+      const matchStr = matched.length ? `Matched: ${matched.slice(0, 3).join(", ")}.` : "";
+      const missStr = missing.length ? ` Missing: ${missing.slice(0, 2).join(", ")}.` : "";
+      return `${verdictWord}.${matchStr ? " " + matchStr : ""}${missStr}`.trim();
     })(),
   };
 }
+
+function MatchedSkillRow({ index, skill }: { index: number; skill: SkillRow }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="border-b border-[#F3F4F6] last:border-0">
+      <div className="flex items-center justify-between py-2.5 gap-2 cursor-pointer select-none" onClick={() => setOpen((p) => !p)}>
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="shrink-0 text-[11px] font-bold text-[#9CA3AF] w-4 text-right">{index}</span>
+          <p className="text-[13px] font-semibold text-[#374151] truncate">{skill.name}</p>
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">Matched</span>
+          <ChevronDown className={cn("h-3.5 w-3.5 text-emerald-400 transition-transform", open && "rotate-180")} />
+        </div>
+      </div>
+      {open && (
+        <div className="pb-2.5 pl-6 pr-2">
+          <p className="text-[11.5px] leading-relaxed text-[#6B7280] bg-emerald-50/60 rounded-lg px-3 py-2 border border-emerald-100">
+            {skill.evidenceNote || "Matched based on resume content."}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 type ResumeReportSreevaAIProps = {
   model: SreevaAIResumeViewModel;
   onBack?: () => void;
@@ -660,9 +730,7 @@ export function ResumeReportSreevaAI({
   const [expandedVerdict, setExpandedVerdict] = useState(false);
   const [openMatchedSkills, setOpenMatchedSkills] = useState(true);
   const [openMissingSkills, setOpenMissingSkills] = useState(true);
-  const [openListedSkills, setOpenListedSkills] = useState(false);
   const [openCareer, setOpenCareer] = useState(true);
-  const [openAiSummary, setOpenAiSummary] = useState(true);
   useEffect(() => {
     document.body.classList.add("reports-mode");
     return () => {
@@ -704,10 +772,9 @@ export function ResumeReportSreevaAI({
   }
   const matchedSkills = model.skillRows.filter((r) => r.bucket === "matched");
   const notMatchedSkills = model.skillRows.filter((r) => r.bucket === "not_matched");
-  const listedSkills = model.skillRows.filter((r) => r.bucket === "listed");
   return (
     <div className="w-full h-screen flex flex-col overflow-hidden bg-[#F3F4F6]">
-      {/* ── Header (shrink-0, same pattern as interview report) ── */}
+      {/* ── TOP HEADER (Back & Actions) ── */}
       {showHeader && (
         <div className="shrink-0 flex flex-wrap items-center justify-between gap-3 border-b border-[#DDE1E5] px-4 py-2 bg-white z-10 shadow-sm">
           <div className="flex items-center gap-3">
@@ -730,220 +797,211 @@ export function ResumeReportSreevaAI({
           </div>
         </div>
       )}
-      {/* ── 3-column content area (flex-1, no page scroll) ── */}
-      <div className="flex-1 overflow-hidden p-3 lg:p-4">
-        <div className="mx-auto max-w-[1600px] h-full grid grid-cols-1 lg:grid-cols-3 gap-3 lg:gap-4 items-stretch">
-          {/* ── COL 1: Profile · Verdict · Radar ── */}
-          <div className="col-span-1 flex flex-col min-h-0 overflow-y-auto" style={{ scrollbarWidth: "thin", scrollbarColor: "#E4E7EB transparent" }}>
-            <div className="rounded-2xl bg-white border border-[#E4E7EB] shadow-sm overflow-visible">
-              {/* Candidate Profile */}
-              <div className="px-5 py-4">
-                <div className="flex items-center gap-4">
-                  <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-black/5 shadow-sm bg-slate-100">
-                    {model.displayAvatar ? <img src={model.displayAvatar} alt="" className="h-full w-full object-cover" /> : null}
+
+      {/* ── CANDIDATE PROFILE & SHORTLISTING HEADER ── */}
+      <div className="shrink-0 bg-white border-b border-[#E4E7EB] shadow-sm px-4 lg:px-6 py-4 z-0 relative">
+        <div className="mx-auto max-w-[1600px] flex flex-col md:flex-row items-start md:items-stretch justify-between gap-6">
+          
+          {/* Profile Left */}
+          <div className="flex items-center gap-5 shrink-0">
+            <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-black/5 shadow-sm bg-gray-100">
+              {model.displayAvatar ? <img src={model.displayAvatar} alt="" className="h-full w-full object-cover" /> : null}
+            </div>
+            <div className="space-y-1">
+              <h2 className="text-xl font-bold tracking-tight text-[#111827] leading-tight truncate">{model.fullName}</h2>
+              <p className="text-[13px] font-medium text-[#6B7280] truncate">{model.roleLabel}</p>
+              {(model.locationLine || model.experienceLine) && (
+                <p className="text-[12px] font-medium text-[#9CA3AF]">
+                  {[model.locationLine, model.experienceLine].filter(Boolean).join(" · ")}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Verdict Note & Score Right */}
+          {(() => {
+            const isHire = model.decisionStamp === "SHORTLISTED";
+            const isNo = model.decisionStamp === "REJECTED";
+            
+            const badgeBg = isHire ? "bg-[#F0FDF4] border-[#86EFAC] text-[#166534]" : isNo ? "bg-rose-50 border-rose-200 text-rose-800" : "bg-amber-50 border-amber-200 text-amber-800";
+            const noteBg = isHire ? "bg-emerald-50/50 border-emerald-100" : isNo ? "bg-rose-50/50 border-rose-100" : "bg-amber-50/50 border-amber-100";
+            const noteTitleText = isHire ? "text-emerald-700" : isNo ? "text-rose-700" : "text-amber-700";
+            const noteIcon = isHire ? "text-emerald-500" : isNo ? "text-rose-500" : "text-amber-500";
+            const noteBody = isHire ? "text-emerald-900" : isNo ? "text-rose-900" : "text-amber-900";
+            const chevronCol = isHire ? "text-emerald-400 hover:text-emerald-600" : isNo ? "text-rose-400 hover:text-rose-600" : "text-amber-400 hover:text-amber-600";
+
+            return (
+              <>
+                {/* Center Note (Like Hiring Note) */}
+                <div className={"flex-1 rounded-xl border p-4 mx-2 flex flex-col justify-center relative " + noteBg}>
+                  <button
+                    type="button"
+                    onClick={() => setExpandedVerdict(!expandedVerdict)}
+                    className={"absolute right-3 top-3 transition-colors cursor-pointer outline-none " + chevronCol}
+                  >
+                    <ChevronDown className={cn("h-4 w-4 transition-transform", expandedVerdict && "rotate-180")} />
+                  </button>
+                  <div className="flex items-center gap-2 mb-1.5 shrink-0 pr-6">
+                    <User className={"h-3.5 w-3.5 " + noteIcon} />
+                    <span className={"text-[11px] font-bold uppercase tracking-widest " + noteTitleText}>Shortlisting Note</span>
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-start justify-between gap-2 mb-1">
-                      <h2 className="text-[16px] font-bold tracking-tight text-[#111827] leading-tight truncate">{model.fullName}</h2>
-                      {(model.decisionStamp === "SHORTLISTED" || model.decisionStamp === "REJECTED") && (
-                        <span className={cn(
-                          "shrink-0 rounded-full px-2.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wider border",
-                          model.decisionStamp === "SHORTLISTED" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-rose-50 text-rose-700 border-rose-200"
-                        )}>
-                          {model.decisionStamp}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-[12.5px] text-[#6B7280] truncate mb-1">{model.roleLabel}</p>
-                    {(model.locationLine || model.experienceLine) && (
-                      <p className="text-[11px] text-[#9CA3AF]">
-                        {[model.locationLine, model.experienceLine].filter(Boolean).join(" · ")}
-                      </p>
-                    )}
+                  <p className={cn("text-[12px] leading-snug font-medium " + noteBody, !expandedVerdict && "line-clamp-3")}>
+                    {model.reviewStrip || "No specific shortlisting note provided."}
+                  </p>
+                </div>
+
+                {/* Score & Verdict Badge (Right) */}
+                <div className="flex flex-col items-end justify-center gap-2 shrink-0 min-w-[120px]">
+                  <span className={"inline-flex items-center gap-1.5 rounded-full border px-4 py-1.5 text-[11px] font-bold uppercase tracking-widest " + badgeBg}>
+                    {isHire ? <CheckCircle className="h-4 w-4" /> : isNo ? <XCircle className="h-4 w-4" /> : <Activity className="h-4 w-4" />}
+                    {model.decisionStamp || "PENDING"}
+                  </span>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-[28px] font-black text-[#111827] tracking-tight">{model.fitPercent}</span>
+                    <span className="text-[14px] font-bold text-[#9CA3AF]">/ 100</span>
+                  </div>
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-[#9CA3AF] bg-[#F3F4F6] px-2 py-0.5 rounded">Match Score</span>
+                </div>
+              </>
+            );
+          })()}
+        </div>
+      </div>
+
+      {/* ── SCROLLABLE CONTENT AREA (ROWS) ── */}
+      <div className="flex-1 overflow-y-auto p-4 lg:p-6" style={{ scrollbarWidth: "thin" }}>
+        <div className="mx-auto max-w-[1600px] flex flex-col gap-6 pb-12">
+          
+          {/* ── ROW 1: Fit Radar (Left) + AI Summary (Right) ── */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 items-stretch">
+            
+            {/* Fit Radar */}
+            <div className="rounded-2xl bg-white border border-[#E4E7EB] shadow-sm overflow-visible flex flex-col h-full">
+              <div className="px-6 py-5 flex-1">
+                <div className="flex items-center justify-between mb-6">
+                  <p className="text-[14px] font-bold text-[#111827]">Fit Radar</p>
+                  <span className="rounded-md bg-[#F1F2F4] px-2.5 py-0.5 text-[9px] font-extrabold uppercase text-[#1A1D22] shadow-sm">{model.fitLabel}</span>
+                </div>
+                <div className="flex flex-col items-center justify-center h-[calc(100%-40px)]">
+                  <div className="w-full max-w-[320px] mx-auto">
+                    <ResumeRadarPlot values={model.fitRadar} notes={model.fitRadarNotes} onHoverChange={setRadarHovered} />
                   </div>
                 </div>
               </div>
-              <div className="border-t border-[#F0F1F3]" />
-              {/* Shortlisting Verdict */}
-              {(() => {
-                const isHire = model.decisionStamp === "SHORTLISTED";
-                const isNo = model.decisionStamp === "REJECTED";
-                const bgCls = isHire ? "bg-[#F0FDF4] border-[#86EFAC]" : isNo ? "bg-rose-50 border-rose-200" : "bg-amber-50 border-amber-200";
-                const textCls = isHire ? "text-[#166534]" : isNo ? "text-rose-800" : "text-amber-800";
-                const iconCls = isHire ? "text-[#22C55E]" : isNo ? "text-rose-500" : "text-amber-500";
-                return (
-                  <div className="px-5 py-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <p className="text-[13px] font-bold text-[#111827]">Shortlisting Note</p>
-                      <span className="rounded-full bg-[#F3F4F6] px-2.5 py-0.5 text-[9.5px] font-bold text-[#4B5563]">Verdict</span>
-                    </div>
-                    <div className={cn("rounded-xl border px-4 py-3.5", bgCls)}>
-                      <div className="flex items-center gap-2 mb-2">
-                        {isHire ? <CheckCircle className={cn("h-[18px] w-[18px]", iconCls)} /> : isNo ? <XCircle className={cn("h-[18px] w-[18px]", iconCls)} /> : <Activity className={cn("h-[18px] w-[18px]", iconCls)} />}
-                        <span className={cn("text-[14px] font-black uppercase tracking-wide", textCls)}>
-                          {isHire ? "SHORTLISTED" : isNo ? "REJECTED" : "BORDERLINE"}
-                        </span>
-                      </div>
-                      {model.reviewStrip && (
-                        <div className="pt-1 relative">
-                          <p className={cn("text-[12px] leading-relaxed whitespace-pre-line pr-7", textCls, !expandedVerdict && "line-clamp-2")}>
-                            {model.reviewStrip}
-                          </p>
-                          <button type="button" onClick={() => setExpandedVerdict(!expandedVerdict)}
-                            className={cn("absolute right-0 top-0.5 p-1 hover:bg-black/5 rounded transition-colors", textCls)}>
-                            <ChevronDown className={cn("h-4 w-4 transition-transform", expandedVerdict ? "rotate-180" : "")} />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })()}
-              <div className="border-t border-[#F0F1F3]" />
-              {/* AI Summary */}
-              <div className="px-5 py-4">
-                <button type="button" onClick={() => setOpenAiSummary(!openAiSummary)}
-                  className="flex w-full items-center justify-between mb-3">
+            </div>
+
+            {/* AI Summary */}
+            <div className="rounded-2xl bg-[#F8FAFC] flex flex-col h-full" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
+              <div className="px-6 py-5 flex-1">
+                <div className="flex w-full items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
-                    <Sparkles className="h-3.5 w-3.5 text-[#6366F1]" />
-                    <p className="text-[13px] font-bold text-[#111827]">AI Summary</p>
+                    <Sparkles className="h-4 w-4 text-[#7C3AED]" />
+                    <p className="text-[14px] font-bold text-[#111827]">AI Summary</p>
                   </div>
-                  <ChevronDown className={cn("h-4 w-4 text-[#9CA3AF] transition-transform", openAiSummary ? "rotate-180" : "")} />
-                </button>
-                {openAiSummary && (
-                  <div className="space-y-3">
+                </div>
+                <div className="space-y-4">
+                  <ul className="space-y-3">
                     {model.aiSummaryPoints.map((item, j) => (
-                      <div key={j} className={cn(
-                        "rounded-xl border p-3.5 shadow-sm",
-                        item.label === "Red flags" ? "bg-rose-50 border-rose-100"
-                        : item.tone === "emerald" ? "bg-[#F0FDF4] border-[#DCFCE7]"
-                        : item.tone === "amber" ? "bg-amber-50 border-amber-100"
-                        : "bg-slate-50 border-slate-100"
-                      )}>
-                        <div className="mb-2 flex items-center gap-2">
-                          <span className={cn(
-                            "rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.2em]",
-                            item.label === "Red flags" ? "bg-rose-200 text-rose-800"
-                              : item.tone === "emerald" ? "bg-[#0D4D2E] text-white"
-                              : item.tone === "amber" ? "bg-[#B86A00] text-white"
-                              : "bg-slate-200 text-slate-800"
-                          )}>{item.label}</span>
-                        </div>
-                        <p className={cn("text-[12px] leading-relaxed", item.label === "Red flags" ? "text-rose-900" : "text-[#374151]")}>{item.body}</p>
-                      </div>
+                      <li key={j} className="flex items-start gap-2.5">
+                        <span className={"mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full " + (
+                          item.tone === "emerald" ? "bg-emerald-500" :
+                          item.tone === "amber" ? "bg-amber-500" :
+                          item.tone === "rose" ? "bg-rose-500" : "bg-[#94A3B8]"
+                        )} />
+                        <p className="text-[13px] font-medium leading-relaxed text-[#374151]">
+                          <span className="font-bold text-[#1A1D22] mr-1">{item.label}:</span>
+                          {item.body}
+                        </p>
+                      </li>
                     ))}
-                  </div>
-                )}
+                  </ul>
+                </div>
               </div>
             </div>
+
           </div>
-          {/* ── COL 2: Evidence Highlights · Fit Radar ── */}
-          <div className="col-span-1 flex flex-col min-h-0 overflow-y-auto" style={{ scrollbarWidth: "thin", scrollbarColor: "#E4E7EB transparent" }}>
-            <div className="rounded-2xl bg-white border border-[#E4E7EB] shadow-sm overflow-visible">
-              {/* Evidence Highlights */}
-              <div className="px-5 py-4">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-[#6B7280] mb-3">Evidence Highlights</p>
+
+          {/* ── ROW 2: Evidence Highlights | Career Timeline | Skill Signals ── */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6 items-start">
+            
+            {/* Strengths & Weaknesses */}
+            <div className="rounded-2xl bg-white border border-[#E4E7EB] shadow-sm overflow-visible h-full">
+              <div className="px-5 py-5">
+                <p className="text-[11px] font-bold uppercase tracking-widest text-[#6B7280] mb-4">Evidence Highlights</p>
                 <div className="flex flex-col gap-1">
                   {/* Strengths */}
                   <div>
                     <button type="button" onClick={() => setOpenStrengths(!openStrengths)}
-                      className="flex items-center justify-between w-full text-left py-1.5 hover:bg-emerald-50/60 rounded-lg -mx-1.5 px-1.5 transition-colors">
+                      className="flex items-center justify-between w-full text-left py-2 hover:bg-emerald-50/60 rounded-lg -mx-2 px-2 transition-colors">
                       <div className="flex items-center gap-2">
-                        <span className="text-[12px] font-bold text-emerald-800">Strengths</span>
-                        <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700">{model.strengths.length}</span>
+                        <span className="text-[13px] font-bold text-emerald-800">Strengths</span>
+                        <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">{model.strengths.length}</span>
                       </div>
-                      <ChevronDown className={cn("h-3.5 w-3.5 text-emerald-600 transition-transform", openStrengths ? "rotate-180" : "")} />
+                      <ChevronDown className={"h-4 w-4 text-emerald-600 transition-transform " + (openStrengths ? "rotate-180" : "")} />
                     </button>
                     {openStrengths && (
-                      <div className="mt-1 mb-2 pl-2">
+                      <div className="mt-2 mb-3 pl-2">
                         {model.strengths.length > 0 ? (
-                          <ul className="space-y-2">
+                          <ul className="space-y-3">
                             {model.strengths.map((item, idx) => (
-                              <li key={idx} className="flex items-start gap-2.5">
+                              <li key={idx} className="flex items-start gap-3">
                                 <span className="mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" />
                                 <div>
-                                  <p className="text-[11.5px] font-bold text-[#1A1D22] mb-0.5">{item.label}</p>
-                                  <p className="text-[11.5px] leading-relaxed text-[#374151]">{item.body}</p>
+                                  <p className="text-[12px] leading-relaxed text-[#374151]">{item.body}</p>
                                 </div>
                               </li>
                             ))}
                           </ul>
                         ) : (
-                          <p className="text-[11.5px] text-[#9CA3AF]">No specific strengths identified.</p>
+                          <p className="text-[12px] text-[#9CA3AF]">No specific strengths identified.</p>
                         )}
                       </div>
                     )}
                   </div>
-                  <div className="h-px bg-[#F3F4F6] my-1" />
+                  <div className="h-px bg-[#F3F4F6] my-2" />
                   {/* Weaknesses */}
                   <div>
                     <button type="button" onClick={() => setOpenWeaknesses(!openWeaknesses)}
-                      className="flex items-center justify-between w-full text-left py-1.5 hover:bg-red-50/60 rounded-lg -mx-1.5 px-1.5 transition-colors">
+                      className="flex items-center justify-between w-full text-left py-2 hover:bg-red-50/60 rounded-lg -mx-2 px-2 transition-colors">
                       <div className="flex items-center gap-2">
-                        <span className="text-[12px] font-bold text-red-800">Weaknesses</span>
-                        <span className="rounded-full bg-rose-100 px-1.5 py-0.5 text-[9px] font-bold text-rose-700">{model.weaknesses.length}</span>
+                        <span className="text-[13px] font-bold text-red-800">Weaknesses</span>
+                        <span className="rounded-full bg-rose-100 px-1.5 py-0.5 text-[10px] font-bold text-rose-700">{model.weaknesses.length}</span>
                       </div>
-                      <ChevronDown className={cn("h-3.5 w-3.5 text-red-600 transition-transform", openWeaknesses ? "rotate-180" : "")} />
+                      <ChevronDown className={"h-4 w-4 text-red-600 transition-transform " + (openWeaknesses ? "rotate-180" : "")} />
                     </button>
                     {openWeaknesses && (
-                      <div className="mt-1 mb-1 pl-2">
+                      <div className="mt-2 mb-2 pl-2">
                         {model.weaknesses.length > 0 ? (
-                          <ul className="space-y-2">
+                          <ul className="space-y-3">
                             {model.weaknesses.map((item, idx) => (
-                              <li key={idx} className="flex items-start gap-2.5">
+                              <li key={idx} className="flex items-start gap-3">
                                 <span className="mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
                                 <div>
-                                  <p className="text-[11.5px] font-bold text-[#1A1D22] mb-0.5">{item.label}</p>
-                                  <p className="text-[11.5px] leading-relaxed text-[#374151]">{item.body}</p>
+                                  <p className="text-[12px] leading-relaxed text-[#374151]">{item.body}</p>
                                 </div>
                               </li>
                             ))}
                           </ul>
                         ) : (
-                          <p className="text-[11.5px] text-[#9CA3AF]">No clear weaknesses surfaced.</p>
+                          <p className="text-[12px] text-[#9CA3AF]">No clear weaknesses surfaced.</p>
                         )}
                       </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-              <div className="border-t border-[#F0F1F3]" />
-              {/* Fit Radar */}
-              <div className="px-5 py-4">
-                <div className="flex items-center justify-between mb-3">
-                  <p className="text-[13px] font-bold text-[#111827]">Fit Radar</p>
-                  <span className="rounded-md bg-[#F1F2F4] px-2.5 py-0.5 text-[9px] font-extrabold uppercase text-[#1A1D22] shadow-sm">{model.fitLabel}</span>
-                </div>
-                <div className="flex flex-col items-center gap-3">
-                  <div className="w-full max-w-[260px] mx-auto">
-                    <ResumeRadarPlot values={model.fitRadar} notes={model.fitRadarNotes} onHoverChange={setRadarHovered} />
-                  </div>
-                  <div className="w-full rounded-2xl border border-[#E8EAED]/70 bg-[#FAFBFC] px-3 py-2">
-                    <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#1A1D22]">
-                      {radarHovered
-                        ? `${RESUME_RADAR_LABELS.find((x) => x.key === radarHovered)?.label} · ${Math.round(model.fitRadar[radarHovered])}%`
-                        : "Hover to see the analysis"}
-                    </p>
-                    {radarHovered && (
-                      <p className="mt-1 text-[10.5px] leading-relaxed text-[#5C6370]">{model.fitRadarNotes[radarHovered]}</p>
                     )}
                   </div>
                 </div>
               </div>
             </div>
-          </div>
-          {/* ── COL 3: Career Timeline · Skill Signals ── */}
-          <div className="col-span-1 flex flex-col min-h-0 overflow-y-auto" style={{ scrollbarWidth: "thin", scrollbarColor: "#E4E7EB transparent" }}>
-            <div className="rounded-2xl bg-white border border-[#E4E7EB] shadow-sm overflow-visible">
-              {/* Career Timeline */}
-              <div className="px-5 py-4">
+
+            {/* Career Timeline */}
+            <div className="rounded-2xl bg-white border border-[#E4E7EB] shadow-sm overflow-visible h-full">
+              <div className="px-5 py-5">
                 <button type="button" onClick={() => setOpenCareer(!openCareer)}
-                  className="flex w-full items-center justify-between mb-3">
+                  className="flex w-full items-center justify-between mb-5">
                   <p className="text-[13px] font-bold text-[#111827]">Career Timeline</p>
-                  <ChevronDown className={cn("h-4 w-4 text-[#9CA3AF] transition-transform", openCareer ? "rotate-180" : "")} />
+                  <ChevronDown className={"h-4 w-4 text-[#9CA3AF] transition-transform " + (openCareer ? "rotate-180" : "")} />
                 </button>
                 {openCareer && (
-                  <div className="relative pl-3 border-l border-[#E5E7EB] space-y-5">
+                  <div className="relative pl-3 border-l border-[#E5E7EB] space-y-6">
                     {model.careerLines.map((line, k) => (
                       <div key={k} className="relative">
                         <div className="absolute -left-[17px] top-1 h-2 w-2 rounded-full bg-slate-300 ring-4 ring-white" />
@@ -957,93 +1015,68 @@ export function ResumeReportSreevaAI({
                   </div>
                 )}
               </div>
-              <div className="border-t border-[#F0F1F3]" />
-              {/* Skill Signals */}
-              <div className="px-5 py-4">
-                <p className="text-[13px] font-bold text-[#111827] mb-3">Skill Signals</p>
+            </div>
+
+            {/* Skill Signals */}
+            <div className="rounded-2xl bg-white border border-[#E4E7EB] shadow-sm overflow-visible h-full">
+              <div className="px-5 py-5">
+                <p className="text-[13px] font-bold text-[#111827] mb-4">Skill Signals</p>
                 <div className="flex flex-col gap-1">
-                  {/* Matched — in JD and found in resume */}
+
+                  {/* ── Matched ── */}
                   <div>
                     <button type="button" onClick={() => setOpenMatchedSkills(!openMatchedSkills)}
-                      className="flex items-center justify-between w-full text-left py-1.5 hover:bg-emerald-50/60 rounded-lg -mx-1.5 px-1.5 transition-colors">
+                      className="flex items-center justify-between w-full text-left py-2 hover:bg-emerald-50/60 rounded-lg -mx-2 px-2 transition-colors">
                       <div className="flex items-center gap-2">
-                        <span className="text-[12px] font-bold text-emerald-800">Matched</span>
-                        <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700">{matchedSkills.length}</span>
+                        <span className="text-[13px] font-bold text-emerald-800">Matched</span>
+                        <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">{matchedSkills.length}</span>
                       </div>
-                      <ChevronDown className={cn("h-3.5 w-3.5 text-emerald-600 transition-transform", openMatchedSkills ? "rotate-180" : "")} />
+                      <ChevronDown className={"h-4 w-4 text-emerald-600 transition-transform " + (openMatchedSkills ? "rotate-180" : "")} />
                     </button>
                     {openMatchedSkills && (
-                      <div className="mt-1 mb-2 flex flex-col divide-y divide-[#F3F4F6]">
-                        {matchedSkills.length === 0 && <p className="py-2 text-[11.5px] text-[#9CA3AF]">No JD skills matched in resume.</p>}
+                      <div className="mt-1 mb-3 flex flex-col">
+                        {matchedSkills.length === 0 && <p className="py-2 text-[12px] text-[#9CA3AF]">No JD skills matched in resume.</p>}
                         {matchedSkills.map((s, j) => (
-                          <div key={j} className="flex items-center justify-between py-2 gap-2">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <span className="shrink-0 text-[10px] font-bold text-[#9CA3AF] w-4 text-right">{j + 1}</span>
-                              <p className="text-[12px] font-semibold text-[#374151] truncate">{s.name}</p>
-                            </div>
-                            <span className="shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[9.5px] font-bold text-emerald-700">JD Match</span>
-                          </div>
+                          <MatchedSkillRow key={j} index={j + 1} skill={s} />
                         ))}
                       </div>
                     )}
                   </div>
-                  {notMatchedSkills.length > 0 && <div className="h-px bg-[#F3F4F6] my-1" />}
-                  {/* Not Matched — JD required but missing from resume */}
-                  {notMatchedSkills.length > 0 && (
-                    <div>
-                      <button type="button" onClick={() => setOpenMissingSkills(!openMissingSkills)}
-                        className="flex items-center justify-between w-full text-left py-1.5 hover:bg-red-50/60 rounded-lg -mx-1.5 px-1.5 transition-colors">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[12px] font-bold text-red-800">Not Matched</span>
-                          <span className="rounded-full bg-rose-100 px-1.5 py-0.5 text-[9px] font-bold text-rose-700">{notMatchedSkills.length}</span>
-                        </div>
-                        <ChevronDown className={cn("h-3.5 w-3.5 text-red-600 transition-transform", openMissingSkills ? "rotate-180" : "")} />
-                      </button>
-                      {openMissingSkills && (
-                        <div className="mt-1 mb-2 flex flex-col divide-y divide-[#F3F4F6]">
-                          {notMatchedSkills.map((s, j) => (
-                            <div key={j} className="flex items-center justify-between py-2 gap-2">
+
+                  <div className="h-px bg-[#F3F4F6] my-2" />
+
+                  {/* ── Not Matched — always shown ── */}
+                  <div>
+                    <button type="button" onClick={() => setOpenMissingSkills(!openMissingSkills)}
+                      className="flex items-center justify-between w-full text-left py-2 hover:bg-red-50/60 rounded-lg -mx-2 px-2 transition-colors">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[13px] font-bold text-red-800">Not Matched</span>
+                        <span className="rounded-full bg-rose-100 px-1.5 py-0.5 text-[10px] font-bold text-rose-700">{notMatchedSkills.length}</span>
+                      </div>
+                      <ChevronDown className={"h-4 w-4 text-red-600 transition-transform " + (openMissingSkills ? "rotate-180" : "")} />
+                    </button>
+                    {openMissingSkills && (
+                      <div className="mt-1 mb-2 flex flex-col divide-y divide-[#F9FAFB]">
+                        {notMatchedSkills.length === 0
+                          ? <p className="py-2 text-[12px] text-[#9CA3AF]">No missing JD skills — all requirements matched.</p>
+                          : notMatchedSkills.map((s, j) => (
+                            <div key={j} className="flex items-center justify-between py-2.5 gap-2">
                               <div className="flex items-center gap-2 min-w-0">
-                                <span className="shrink-0 text-[10px] font-bold text-[#9CA3AF] w-4 text-right">{j + 1}</span>
-                                <p className="text-[12px] font-semibold text-rose-700 truncate">{s.name}</p>
+                                <span className="shrink-0 text-[11px] font-bold text-[#D1D5DB] w-4 text-right">{j + 1}</span>
+                                <p className="text-[13px] font-semibold text-rose-700 truncate">{s.name}</p>
                               </div>
-                              <span className="shrink-0 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[9.5px] font-bold text-rose-700">Missing</span>
+                              <span className="shrink-0 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-bold text-rose-600">Missing</span>
                             </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  {listedSkills.length > 0 && <div className="h-px bg-[#F3F4F6] my-1" />}
-                  {/* Listed in resume — candidate's full stack outside JD scope */}
-                  {listedSkills.length > 0 && (
-                    <div>
-                      <button type="button" onClick={() => setOpenListedSkills(!openListedSkills)}
-                        className="flex items-center justify-between w-full text-left py-1.5 hover:bg-slate-50/60 rounded-lg -mx-1.5 px-1.5 transition-colors">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[12px] font-bold text-slate-700">Listed in Resume</span>
-                          <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold text-slate-600">{listedSkills.length}</span>
-                        </div>
-                        <ChevronDown className={cn("h-3.5 w-3.5 text-slate-400 transition-transform", openListedSkills ? "rotate-180" : "")} />
-                      </button>
-                      {openListedSkills && (
-                        <div className="mt-1 mb-1 flex flex-col divide-y divide-[#F3F4F6]">
-                          {listedSkills.map((s, j) => (
-                            <div key={j} className="flex items-center justify-between py-2 gap-2">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <span className="shrink-0 text-[10px] font-bold text-[#9CA3AF] w-4 text-right">{j + 1}</span>
-                                <p className="text-[12px] font-semibold text-[#6B7280] truncate">{s.name}</p>
-                              </div>
-                              <span className="shrink-0 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[9.5px] font-bold text-slate-500">Listed</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
+                          ))
+                        }
+                      </div>
+                    )}
+                  </div>
+
                 </div>
               </div>
             </div>
+
           </div>
         </div>
       </div>

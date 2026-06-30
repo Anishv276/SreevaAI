@@ -141,25 +141,22 @@ export default function SettingsPage() {
     if (isLoading) {
         return (
             <div className="flex h-[450px] items-center justify-center">
-                <Loader2 className="h-8 w-8 text-[#F97316] animate-spin" />
+                <Loader2 className="h-8 w-8 text-violet-600 animate-spin" />
             </div>
         );
     }
     return (
-        <div style={{ zoom: 0.72, transformOrigin: "top center" }}>
-            <div className="space-y-8 pb-16">
+        <div className="space-y-6 pb-10 animate-in fade-in duration-500">
+            <div className="space-y-6">
                 {/* Header */}
-                <div className="flex items-center gap-4 group">
-                    <div className="h-12 w-1.5 bg-gradient-to-b from-[#F97316] to-orange-400 rounded-full shadow-[0_0_12px_rgba(249,115,22,0.4)] transition-all duration-300 group-hover:h-14" />
-                    <div>
-                        <h1 className="text-3xl sm:text-4xl font-extrabold text-gray-900 tracking-tight">Settings</h1>
-                        <p className="text-gray-500 font-medium mt-1 text-base">Manage your account & preferences</p>
-                    </div>
+                <div>
+                    <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Settings</h1>
+                    <p className="text-sm text-gray-400 mt-0.5">Manage your account and preferences</p>
                 </div>
                 <div className="flex gap-8 items-start">
                     {/* Left Nav */}
                     <aside className="w-56 flex-shrink-0 sticky top-8">
-                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-2 space-y-0.5">
+                        <div className="bg-white rounded-xl p-2 space-y-0.5" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
                             {sections.map((s) => (
                                 <button
                                     key={s.id}
@@ -167,11 +164,11 @@ export default function SettingsPage() {
                                     className={cn(
                                         "flex items-center gap-3 w-full px-4 py-2.5 rounded-lg text-[13px] font-bold transition-all duration-200",
                                         activeSection === s.id
-                                            ? "text-[#F97316] bg-orange-50"
+                                            ? "text-violet-600 bg-violet-50"
                                             : "text-gray-500 hover:text-gray-900 hover:bg-gray-50"
                                     )}
                                 >
-                                    <s.icon className={cn("h-4 w-4 transition-colors", activeSection === s.id ? "text-[#F97316]" : "text-gray-400")} />
+                                    <s.icon className={cn("h-4 w-4 transition-colors", activeSection === s.id ? "text-violet-600" : "text-gray-400")} />
                                     {s.label}
                                 </button>
                             ))}
@@ -189,7 +186,7 @@ export default function SettingsPage() {
                                             <div className="relative">
                                                 <User className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                                                 <Input
-                                                    className="pl-10 h-10 rounded-lg border-gray-200 bg-white font-medium focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all"
+                                                    className="pl-10 h-10 rounded-lg border-gray-200 bg-white font-medium focus:border-violet-500 focus:ring-2 focus:ring-violet-100 transition-all"
                                                     value={profile.name}
                                                     onChange={e => setProfile(p => ({ ...p, name: e.target.value }))}
                                                 />
@@ -215,7 +212,7 @@ export default function SettingsPage() {
                                             <div className="relative">
                                                 <Building2 className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                                                 <Input
-                                                    className="pl-10 h-10 rounded-lg border-gray-200 bg-white font-medium focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all"
+                                                    className="pl-10 h-10 rounded-lg border-gray-200 bg-white font-medium focus:border-violet-500 focus:ring-2 focus:ring-violet-100 transition-all"
                                                     value={company.name}
                                                     onChange={e => setCompany(c => ({ ...c, name: e.target.value }))}
                                                 />
@@ -225,7 +222,7 @@ export default function SettingsPage() {
                                 </SettingsCard>
                                 {/* Save */}
                                 <div className="flex justify-end pt-2">
-                                    <Button onClick={handleSave} disabled={isSaving} className={cn("h-11 px-12 rounded-lg font-bold shadow-md transition-all", saved ? "bg-emerald-500 text-white" : "bg-[#F97316] text-white")}>
+                                    <Button onClick={handleSave} disabled={isSaving} className={cn("h-10 px-8 rounded-xl font-medium text-sm transition-all", saved ? "bg-emerald-500 text-white" : "text-white")} style={!saved ? { background: "linear-gradient(135deg, #8B5CF6, #3B82F6)", boxShadow: "0 4px 12px rgba(124,58,237,0.25)" } : undefined}>
                                         {isSaving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
                                         {saved ? "Changes Saved" : "Save Changes"}
                                     </Button>
@@ -272,7 +269,7 @@ export default function SettingsPage() {
                                         <div className="pt-2">
                                             <button
                                                 onClick={() => { window.location.href = "/login/forgot-password?from=settings"; }}
-                                                className="text-xs font-bold text-[#F97316] hover:underline flex items-center gap-1.5"
+                                                className="text-xs font-bold text-violet-600 hover:underline flex items-center gap-1.5"
                                             >
                                                 <Zap className="h-3 w-3" />
                                                 Forgot current password? Recover account
@@ -281,7 +278,7 @@ export default function SettingsPage() {
                                     </div>
                                 </SettingsCard>
                                 <div className="flex justify-end pt-4">
-                                    <Button onClick={handlePasswordSave} disabled={sendingOtp} className={cn("h-10 px-8 rounded-lg font-bold shadow-sm", pwSaved ? "bg-emerald-500 text-white" : "bg-[#F97316] text-white")}>
+                                    <Button onClick={handlePasswordSave} disabled={sendingOtp} className={cn("h-10 px-8 rounded-xl font-medium text-sm transition-all", pwSaved ? "bg-emerald-500 text-white" : "text-white")} style={!pwSaved ? { background: "linear-gradient(135deg, #8B5CF6, #3B82F6)", boxShadow: "0 4px 12px rgba(124,58,237,0.25)" } : undefined}>
                                         {sendingOtp && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
                                         {pwSaved ? "Password Updated" : "Update Password"}
                                     </Button>
@@ -299,7 +296,7 @@ export default function SettingsPage() {
                                     <button onClick={() => setShowOtpModal(false)} className="absolute -top-4 -right-4 p-2 rounded-full hover:bg-gray-50 text-gray-300 hover:text-gray-950">
                                         <X className="h-6 w-6" />
                                     </button>
-                                    <div className="h-20 w-20 rounded-[2rem] bg-orange-50 flex items-center justify-center text-[#F97316]">
+                                    <div className="h-20 w-20 rounded-[2rem] bg-violet-50 flex items-center justify-center text-violet-600">
                                         <ShieldAlert className="h-8 w-8" />
                                     </div>
                                 </div>
@@ -314,7 +311,7 @@ export default function SettingsPage() {
                                         value={otp}
                                         onChange={e => setOtp(e.target.value.replace(/\D/g, ""))}
                                         placeholder="000000"
-                                        className="w-full h-20 text-center text-4xl font-black tracking-[0.5em] bg-gray-50 rounded-2xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-orange-200"
+                                        className="w-full h-20 text-center text-4xl font-black tracking-[0.5em] bg-gray-50 rounded-2xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-200"
                                     />
                                     {otpError && (
                                         <div className="flex items-center justify-center gap-2 text-red-600 text-[10px] font-black uppercase tracking-widest">
@@ -322,7 +319,7 @@ export default function SettingsPage() {
                                             {otpError}
                                         </div>
                                     )}
-                                    <Button onClick={handleVerifyAndSavePassword} disabled={isSaving || otp.length < 6} className="w-full h-14 bg-gray-950 text-white hover:bg-[#F97316] rounded-2xl font-bold text-lg">
+                                    <Button onClick={handleVerifyAndSavePassword} disabled={isSaving || otp.length < 6} className="w-full h-14 bg-gray-950 text-white hover:bg-violet-600 rounded-2xl font-bold text-lg">
                                         {isSaving ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : null}
                                         Verify and Save
                                     </Button>

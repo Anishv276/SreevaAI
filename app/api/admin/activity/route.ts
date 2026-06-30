@@ -61,7 +61,7 @@ export async function GET(req: Request) {
             const recentRejections = await prisma.application.findMany({
                 where: {
                     ...(dateCutoff ? { updatedAt: { gte: dateCutoff } } : {}),
-                    resumeStatus: "rejected", drive: { orgId },
+                    resumeStatus: { in: ["rejected", "REJECTED"] }, drive: { orgId },
                 },
                 select: { id: true, updatedAt: true, drive: { select: { title: true } } },
                 orderBy: { updatedAt: "desc" },

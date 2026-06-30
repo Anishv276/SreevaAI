@@ -1,10 +1,9 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useState, useEffect } from "react";
 import type { ComponentType, FormEvent, ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
-  AudioLines,
   Building2,
   CheckCircle2,
   Coins,
@@ -14,18 +13,12 @@ import {
   Loader2,
   Lock,
   Mail,
-  Mic,
-  Pause,
-  Play,
-  RefreshCw,
-  Search,
   Clock,
   Shield,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast-custom";
 import { ProctoringSignalsSection } from "@/components/super-admin/proctoring-signals-section";
-import { ALL_VOICES, DEFAULT_VOICE_ID, getVoiceById, type Voice } from "@/lib/constants/voices";
 import { DEFAULT_ORG_PLAN, ORG_PLAN_OPTIONS, type OrgPlanId } from "@/lib/org-plans";
 import { getProctoringSignalsForPlan, type ProctoringSignalToggles } from "@/lib/proctoring-signals";
 import { cn } from "@/lib/utils";
@@ -34,24 +27,22 @@ type OrgFormState = {
   slug: string;
   plan: OrgPlanId;
   maxActiveDrives: string;
+  maxConcurrentSlots: string;
   interviewQuotaTotal: string;
   recordingEnabled: boolean;
   recordingRetentionDays: string;
   proctoringSignals: ProctoringSignalToggles;
   adminEmail: string;
   adminPassword: string;
-  voiceId: string;
-  allowedVoices: string[];
-  deepgramModel: string;
 };
 function SectionHeader({ title, description }: { title: string; description?: string }) {
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-3">
-        <span className="h-6 w-1 rounded-full bg-[#F97316]" />
-        <p className="text-[13px] font-bold uppercase tracking-[0.18em] text-slate-900">{title}</p>
+        <span className="h-6 w-1 rounded-full bg-[#7C3AED]" />
+        <p className="text-[13px] font-bold uppercase tracking-[0.18em] text-gray-900">{title}</p>
       </div>
-      {description ? <p className="text-sm text-slate-500">{description}</p> : null}
+      {description ? <p className="text-sm text-gray-500">{description}</p> : null}
     </div>
   );
 }
@@ -66,8 +57,8 @@ function Field({
 }) {
   return (
     <div className="space-y-2">
-      <label className="flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-widest text-slate-500">
-        <Icon className="h-3.5 w-3.5 text-[#F97316]" />
+      <label className="flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-widest text-gray-500">
+        <Icon className="h-3.5 w-3.5 text-[#7C3AED]" />
         {label}
       </label>
       {children}
@@ -110,7 +101,7 @@ function TextInput({
           onWheel={type === "number" ? (e: React.WheelEvent<HTMLInputElement>) => e.currentTarget.blur() : undefined}
           placeholder={placeholder}
           className={cn(
-            "h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-medium text-slate-900 shadow-sm outline-none transition focus:border-[#F97316] focus:ring-4 focus:ring-orange-50",
+            "h-11 w-full rounded-xl border border-gray-200 bg-white px-3.5 text-sm font-medium text-gray-900 shadow-sm outline-none transition focus:border-[#7C3AED] focus:ring-4 focus:ring-violet-100",
             isPasswordField ? "pr-11" : ""
           )}
         />
@@ -119,7 +110,7 @@ function TextInput({
             type="button"
             onClick={() => setShowPassword((value) => !value)}
             aria-label={showPassword ? "Hide password" : "Show password"}
-            className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 transition hover:text-[#F97316]"
+            className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-gray-400 transition hover:text-[#7C3AED]"
           >
             {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
           </button>
@@ -147,7 +138,7 @@ function SelectInput({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-medium text-slate-900 shadow-sm outline-none transition focus:border-[#F97316] focus:ring-4 focus:ring-orange-50"
+        className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3.5 text-sm font-medium text-gray-900 shadow-sm outline-none transition focus:border-[#7C3AED] focus:ring-4 focus:ring-violet-100"
       >
         {options.map((option) => (
           <option key={option.value} value={option.value}>
@@ -173,13 +164,13 @@ function LimitControl({
   return (
     <Field label={label} icon={Coins}>
       <div className="flex items-center gap-2">
-        <div className="flex w-fit rounded-xl border border-slate-200 bg-slate-50 p-1">
+        <div className="flex w-fit rounded-xl border border-gray-200 bg-violet-50 p-1">
           <button
             type="button"
             onClick={() => onChange("Unlimited")}
             className={cn(
               "rounded-lg px-3 py-2 text-[10px] font-bold uppercase tracking-widest transition",
-              isUnlimited ? "bg-white text-[#F97316] shadow-sm" : "text-slate-400 hover:text-slate-700"
+              isUnlimited ? "bg-white text-[#7C3AED] shadow-sm" : "text-gray-400 hover:text-gray-700"
             )}
           >
             Unlimited
@@ -191,7 +182,7 @@ function LimitControl({
             }}
             className={cn(
               "rounded-lg px-3 py-2 text-[10px] font-bold uppercase tracking-widest transition",
-              !isUnlimited ? "bg-white text-[#F97316] shadow-sm" : "text-slate-400 hover:text-slate-700"
+              !isUnlimited ? "bg-white text-[#7C3AED] shadow-sm" : "text-gray-400 hover:text-gray-700"
             )}
           >
             Limited
@@ -206,7 +197,7 @@ function LimitControl({
             onChange={(e) => { const v = e.target.value.replace(/[^0-9]/g, ""); setLocalValue(v); if (v !== "") onChange(String(Math.max(1, Number(v)))); }}
             onBlur={() => { const n = Math.max(1, Number(localValue) || 1); setLocalValue(String(n)); onChange(String(n)); }}
             onWheel={(e) => e.currentTarget.blur()}
-            className="h-11 w-20 rounded-xl border border-slate-200 bg-white px-2 text-center text-sm font-bold text-slate-900 shadow-sm outline-none focus:border-[#F97316] focus:ring-4 focus:ring-orange-50"
+            className="h-11 w-20 rounded-xl border border-gray-200 bg-white px-2 text-center text-sm font-bold text-gray-900 shadow-sm outline-none focus:border-[#7C3AED] focus:ring-4 focus:ring-violet-100"
           />
         ) : null}
       </div>
@@ -217,154 +208,24 @@ export default function NewOrgPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState<{ orgName: string; adminEmail: string } | null>(null);
-  const [voices, setVoices] = useState<Voice[]>(ALL_VOICES);
   const [slugTouched, setSlugTouched] = useState(false);
   const [slugSuffix] = useState(() => Math.floor(1000 + Math.random() * 9000).toString());
-  const [voiceSearch, setVoiceSearch] = useState("");
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
-  const activeAudioRef = useRef<HTMLAudioElement | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const gainNodeRef = useRef<GainNode | null>(null);
-  const previewUrlRef = useRef<string | null>(null);
   const [form, setForm] = useState<OrgFormState>(() => ({
     orgName: "",
     slug: "",
     plan: DEFAULT_ORG_PLAN,
     maxActiveDrives: "Unlimited",
+    maxConcurrentSlots: "5",
     interviewQuotaTotal: "100",
     recordingEnabled: false,
     recordingRetentionDays: "",
     proctoringSignals: getProctoringSignalsForPlan(DEFAULT_ORG_PLAN),
     adminEmail: "",
     adminPassword: "",
-    voiceId: DEFAULT_VOICE_ID,
-    allowedVoices: [DEFAULT_VOICE_ID],
-    deepgramModel: "flux-general-en",
   }));
-  const primaryVoiceId = form.voiceId || form.allowedVoices[0] || DEFAULT_VOICE_ID;
-  const selectedVoice = useMemo(() => getVoiceById(primaryVoiceId) ?? getVoiceById(DEFAULT_VOICE_ID), [primaryVoiceId]);
-  useEffect(() => {
-    const loadVoices = async () => {
-      try {
-        const res = await fetch("/api/voices", { cache: "no-store" });
-        if (!res.ok) return;
-        const data = await res.json();
-        if (Array.isArray(data?.voices) && data.voices.length > 0) {
-          setVoices(data.voices);
-        }
-      } catch {
-        // keep static fallback
-      }
-    };
-    void loadVoices();
-  }, []);
-  const selectedVoiceFromCatalog = useMemo(
-    () => voices.find((voice) => voice.id === primaryVoiceId) || selectedVoice,
-    [voices, primaryVoiceId, selectedVoice]
-  );
-  const filteredVoices = useMemo(() => {
-    const term = voiceSearch.trim().toLowerCase();
-    if (!term) return voices;
-    return voices.filter((voice) =>
-      [voice.name, voice.provider, voice.model, voice.description, voice.id].join(" ").toLowerCase().includes(term)
-    );
-  }, [voices, voiceSearch]);
   const updateForm = (patch: Partial<OrgFormState>) => {
     setForm((prev) => ({ ...prev, ...patch }));
   };
-  const setAllowedVoices = (nextAllowedVoices: string[]) => {
-    const normalized = Array.from(
-      new Set(nextAllowedVoices.map((id) => String(id || "").trim()).filter(Boolean))
-    );
-    const allowedVoices = normalized.length > 0 ? normalized : [DEFAULT_VOICE_ID];
-    updateForm({
-      allowedVoices,
-      voiceId: allowedVoices[0] || DEFAULT_VOICE_ID,
-    });
-  };
-  const toggleVoice = (voiceId: string) => {
-    const current = form.allowedVoices;
-    const nextAllowed = current.includes(voiceId)
-      ? current.filter((id) => id !== voiceId)
-      : [...current, voiceId];
-    setAllowedVoices(nextAllowed);
-  };
-  const stopCurrentPreview = () => {
-    if (activeAudioRef.current) {
-      activeAudioRef.current.pause();
-      activeAudioRef.current.src = "";
-      activeAudioRef.current = null;
-    }
-    if (previewUrlRef.current) {
-      URL.revokeObjectURL(previewUrlRef.current);
-      previewUrlRef.current = null;
-    }
-    gainNodeRef.current?.disconnect();
-    gainNodeRef.current = null;
-    if (audioContextRef.current && audioContextRef.current.state !== "closed") {
-      audioContextRef.current.close().catch(() => { });
-      audioContextRef.current = null;
-    }
-    setPlayingVoiceId(null);
-  };
-  const playSample = async (voiceId: string) => {
-    if (playingVoiceId === voiceId) {
-      stopCurrentPreview();
-      return;
-    }
-    setPreviewLoading(true);
-    try {
-      stopCurrentPreview();
-      const transcript = "Hello buddy, how are you doing? I'm ready to interview candidates.";
-      const res = await fetch("/api/admin/voice/preview", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          voiceId,
-          transcript,
-        }),
-      });
-      if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || "Preview failed");
-      const blob = await res.blob();
-      const audioUrl = URL.createObjectURL(blob);
-      previewUrlRef.current = audioUrl;
-      const audio = new Audio(audioUrl);
-      const AudioContextClass = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-      if (AudioContextClass) {
-        const ctx = new AudioContextClass();
-        audioContextRef.current = ctx;
-        const source = ctx.createMediaElementSource(audio);
-        const gainNode = ctx.createGain();
-        gainNode.gain.value = 2.5;
-        gainNodeRef.current = gainNode;
-        source.connect(gainNode);
-        gainNode.connect(ctx.destination);
-        audio.onended = () => {
-          stopCurrentPreview();
-          URL.revokeObjectURL(audioUrl);
-        };
-        await ctx.resume().catch(() => { });
-      } else {
-        audio.onended = () => {
-          stopCurrentPreview();
-          URL.revokeObjectURL(audioUrl);
-        };
-      }
-      await audio.play();
-      activeAudioRef.current = audio;
-      setPlayingVoiceId(voiceId);
-    } catch {
-      toast.error("Preview failed.");
-    } finally {
-      setPreviewLoading(false);
-    }
-  };
-  useEffect(() => {
-    return () => {
-      stopCurrentPreview();
-    };
-  }, []);
   const makeSlug = (value: string) => {
     const base = value
       .toLowerCase()
@@ -422,13 +283,11 @@ export default function NewOrgPage() {
           adminEmail: form.adminEmail.trim(),
           adminPassword: form.adminPassword,
           maxActiveDrives: form.maxActiveDrives,
+          maxConcurrentSlots: Number(form.maxConcurrentSlots || 5),
           interviewQuotaTotal: Number(form.interviewQuotaTotal || 0),
           recordingEnabled: form.recordingEnabled ? true : null,
           recordingRetentionDays: form.recordingEnabled ? Number(form.recordingRetentionDays) : null,
           proctoringSignals: form.proctoringSignals,
-          voiceId: form.voiceId || DEFAULT_VOICE_ID,
-          allowedVoices: form.allowedVoices.length > 0 ? form.allowedVoices : [form.voiceId || DEFAULT_VOICE_ID],
-          deepgramModel: form.deepgramModel,
         }),
       });
       if (!res.ok) {
@@ -448,15 +307,15 @@ export default function NewOrgPage() {
   if (success) {
     return (
       <div className="min-h-[70vh] px-4 py-8">
-        <div className="mx-auto flex w-full max-w-lg flex-col items-center rounded-3xl border border-slate-200 bg-white p-10 text-center shadow-sm">
+        <div className="mx-auto flex w-full max-w-lg flex-col items-center rounded-3xl border border-gray-200 bg-white p-10 text-center shadow-sm">
           <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
             <CheckCircle2 className="h-8 w-8" />
           </div>
-          <h1 className="text-3xl font-black tracking-tight text-slate-900">{success.orgName} created</h1>
-          <p className="mt-3 text-sm font-medium text-slate-500">
+          <h1 className="text-3xl font-black tracking-tight text-gray-900">{success.orgName} created</h1>
+          <p className="mt-3 text-sm font-medium text-gray-500">
             {success.adminEmail} can now access the portal.
           </p>
-          <Button onClick={() => router.push("/super-admin/orgs")} className="mt-8 h-11 w-full rounded-xl bg-slate-900 text-white hover:bg-slate-800">
+          <Button onClick={() => router.push("/super-admin/orgs")} className="mt-8 h-11 w-full rounded-xl bg-gray-900 text-white hover:bg-gray-800">
             Go to Organizations
           </Button>
         </div>
@@ -464,28 +323,35 @@ export default function NewOrgPage() {
     );
   }
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 lg:px-0">
-      <button
-        type="button"
-        onClick={() => router.back()}
-        className="mb-6 inline-flex items-center gap-2 text-sm font-bold text-slate-500 transition hover:text-slate-700"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Back to Organizations
-      </button>
-      <div className="mb-8">
-        <div className="flex items-center gap-4">
-          <div className="h-12 w-1.5 rounded-full bg-gradient-to-b from-[#F97316] to-orange-400 shadow-[0_0_12px_rgba(249,115,22,0.35)]" />
+    <div className="max-w-5xl mx-auto space-y-6 pb-10 animate-in fade-in duration-500">
+      <div className="flex items-center gap-3">
+        <button type="button" onClick={() => router.back()} className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-sm font-medium text-gray-500 hover:text-violet-600 hover:bg-violet-50 transition-all" style={{ border: "1px solid #E9E7FF" }}>
+          <ArrowLeft className="h-4 w-4" />
+          Back
+        </button>
+      </div>
+      <div>
+        <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Add Client</h1>
+        <p className="text-sm text-gray-400 mt-0.5">Configure the organization, admin access, AI defaults, and safety controls.</p>
+      </div>
+      <form onSubmit={handleSubmit} className="space-y-5">
+        {/* AI Models note */}
+        <div className="rounded-2xl p-5 flex items-start gap-4" style={{ background: "linear-gradient(135deg, rgba(139,92,246,0.07), rgba(59,130,246,0.04))", border: "1px solid rgba(139,92,246,0.18)" }}>
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5" style={{ background: "linear-gradient(135deg, rgba(139,92,246,0.15), rgba(59,130,246,0.1))" }}>
+            <span className="text-violet-600 text-sm">🤖</span>
+          </div>
           <div>
-            <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">Add Client</h1>
-            <p className="mt-1 text-base font-medium text-slate-500 sm:text-lg">
-              Configure the organization, admin access, AI defaults, and safety controls.
+            <p className="text-sm font-bold text-violet-800 mb-1">AI Models are configured separately</p>
+            <p className="text-sm text-violet-700">
+              After creating the org, go to{" "}
+              <a href="/super-admin/models" className="font-bold underline underline-offset-2 hover:text-violet-900 transition-colors">
+                Super Admin → AI Models
+              </a>
+              {" "}to set LLM pipelines, STT, TTS provider, and allowed voices for this org.
             </p>
           </div>
         </div>
-      </div>
-      <form onSubmit={handleSubmit} className="space-y-8">
-        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+        <section className="rounded-2xl bg-white p-6" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
           <SectionHeader title="Organization Profile" description="Core client metadata and URL slug." />
           <div className="mt-6 grid gap-6 md:grid-cols-2">
             <TextInput
@@ -514,7 +380,7 @@ export default function NewOrgPage() {
             />
           </div>
         </section>
-        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+        <section className="rounded-2xl bg-white p-6" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
           <SectionHeader title="Administrative Access" description="Primary login credentials for the new organization." />
           <div className="mt-6 grid gap-6 md:grid-cols-2">
             <TextInput
@@ -539,112 +405,21 @@ export default function NewOrgPage() {
             />
           </div>
         </section>
-        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-          <SectionHeader title="AI Engine" description="The defaults that will be saved to the organization." />
-          <div className="mt-6 grid gap-6 lg:grid-cols-2">
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <label className="flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-widest text-slate-500">
-                  <AudioLines className="h-3.5 w-3.5 text-[#F97316]" />
-                  Allowed Voices
-                </label>
-                <p className="text-[10px] font-medium text-slate-400">
-                  Select one or more voices. The first selected voice becomes the primary voice for this client.
-                </p>
-                <div className="relative mb-2">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="text"
-                    value={voiceSearch}
-                    onChange={(e) => setVoiceSearch(e.target.value)}
-                    placeholder="Search voices..."
-                    className="h-10 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm font-medium text-slate-900 shadow-sm outline-none transition focus:border-[#F97316] focus:ring-4 focus:ring-orange-50"
-                  />
-                </div>
-                <div className="max-h-72 overflow-y-auto rounded-xl border border-slate-200 bg-white">
-                  {filteredVoices.map((voice) => {
-                    const allowed = form.allowedVoices.includes(voice.id);
-                    return (
-                      <div
-                        key={voice.id}
-                        className={cn(
-                          "flex items-center justify-between gap-3 border-b border-slate-100 px-3 py-2.5 last:border-b-0 transition-colors",
-                          allowed ? "bg-orange-50/40" : "bg-white hover:bg-slate-50"
-                        )}
-                      >
-                        <label className="flex min-w-0 flex-1 items-center gap-3">
-                          <input
-                            type="checkbox"
-                            checked={allowed}
-                            onChange={() => toggleVoice(voice.id)}
-                            className="h-3.5 w-3.5 shrink-0 accent-[#F97316]"
-                          />
-                          <div className="min-w-0">
-                            <p className={cn("truncate text-xs font-bold", allowed ? "text-orange-600" : "text-slate-800")}>
-                              {voice.name}
-                            </p>
-                            <p className="truncate text-[9px] text-slate-400">
-                              {voice.provider} · {voice.description}
-                            </p>
-                          </div>
-                        </label>
-                        <button
-                          type="button"
-                          onClick={() => void playSample(voice.id)}
-                          className={cn(
-                            "ml-2 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition-all",
-                            playingVoiceId === voice.id
-                              ? "bg-orange-600 text-white"
-                              : "bg-slate-100 text-slate-500 hover:bg-orange-100 hover:text-orange-600"
-                          )}
-                        >
-                          {previewLoading && playingVoiceId === voice.id ? (
-                            <RefreshCw className="h-3 w-3 animate-spin" />
-                          ) : playingVoiceId === voice.id ? (
-                            <Pause className="h-3 w-3 fill-current" />
-                          ) : (
-                            <Play className="h-3 w-3 fill-current ml-0.5" />
-                          )}
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-                <p className="text-[10px] text-slate-400">
-                  {form.allowedVoices.length} voice{form.allowedVoices.length !== 1 ? "s" : ""} selected
-                </p>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Primary voice</p>
-                <p className="mt-2 text-sm font-semibold text-slate-900">
-                  {selectedVoiceFromCatalog?.name || "Unknown voice"}
-                </p>
-                <p className="mt-1 text-sm text-slate-500">
-                  {selectedVoiceFromCatalog?.provider || "CARTESIA"} | {selectedVoiceFromCatalog?.model || "cartesia/sonic-3"}
-                </p>
-              </div>
-            </div>
-            <div className="space-y-6">
-              <SelectInput
-                label="Transcription (STT)"
-                icon={Mic}
-                value={form.deepgramModel}
-                onChange={(value) => updateForm({ deepgramModel: value })}
-                options={[
-                  { value: "flux-general-en", label: "Flux English" },
-                  { value: "flux-general-multi", label: "Flux Multilingual" },
-                ]}
-              />
-            </div>
-          </div>
-        </section>
-        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+        <section className="rounded-2xl bg-white p-6" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
           <SectionHeader title="Billing and Quotas" description="Usage guardrails for the organization." />
           <div className="mt-6 grid gap-6 md:grid-cols-2">
             <LimitControl
               label="Job Limit"
               value={form.maxActiveDrives}
               onChange={(value) => updateForm({ maxActiveDrives: value })}
+            />
+            <TextInput
+              label="Max Concurrent Slots"
+              icon={Clock}
+              value={form.maxConcurrentSlots}
+              onChange={(value) => updateForm({ maxConcurrentSlots: value })}
+              placeholder="5"
+              type="number"
             />
             <TextInput
               label="Total Interviews Allocated"
@@ -656,21 +431,21 @@ export default function NewOrgPage() {
             />
           </div>
         </section>
-        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+        <section className="rounded-2xl bg-white p-6" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
           <SectionHeader title="Recording Retention" description="Control whether interviews are recorded and how long Cloudflare recordings stay available." />
           <div className="mt-6 grid gap-6 md:grid-cols-2">
             <div className="space-y-2">
-              <label className="flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-widest text-slate-500">
-                <Shield className="h-3.5 w-3.5 text-[#F97316]" />
+              <label className="flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-widest text-gray-500">
+                <Shield className="h-3.5 w-3.5 text-[#7C3AED]" />
                 Recording Enabled
               </label>
-              <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-2">
+              <div className="flex items-center gap-2 rounded-2xl border border-gray-200 bg-violet-50 p-2">
                 <button
                   type="button"
                   onClick={() => updateForm({ recordingEnabled: true })}
                   className={cn(
                     "rounded-xl px-4 py-2 text-[11px] font-black uppercase tracking-widest transition",
-                    form.recordingEnabled ? "bg-white text-[#F97316] shadow-sm" : "text-slate-400 hover:text-slate-700"
+                    form.recordingEnabled ? "bg-white text-[#7C3AED] shadow-sm" : "text-gray-400 hover:text-gray-700"
                   )}
                 >
                   ON
@@ -680,19 +455,19 @@ export default function NewOrgPage() {
                   onClick={() => updateForm({ recordingEnabled: false, recordingRetentionDays: "" })}
                   className={cn(
                     "rounded-xl px-4 py-2 text-[11px] font-black uppercase tracking-widest transition",
-                    !form.recordingEnabled ? "bg-white text-rose-600 shadow-sm" : "text-slate-400 hover:text-slate-700"
+                    !form.recordingEnabled ? "bg-white text-rose-600 shadow-sm" : "text-gray-400 hover:text-gray-700"
                   )}
                 >
                   OFF
                 </button>
-                <p className="ml-2 text-[11px] font-medium leading-relaxed text-slate-500">
+                <p className="ml-2 text-[11px] font-medium leading-relaxed text-gray-500">
                   When off, interview egress is blocked and recordings are not persisted.
                 </p>
               </div>
             </div>
             <div className="space-y-2">
-              <label className="flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-widest text-slate-500">
-                <Clock className="h-3.5 w-3.5 text-[#F97316]" />
+              <label className="flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-widest text-gray-500">
+                <Clock className="h-3.5 w-3.5 text-[#7C3AED]" />
                 Recording Retention (Days)
               </label>
               {form.recordingEnabled ? (
@@ -704,22 +479,22 @@ export default function NewOrgPage() {
                   onChange={(e) => { const v = e.target.value.replace(/[^0-9]/g, ""); updateForm({ recordingRetentionDays: v }); }}
                   onBlur={() => { const n = Math.max(1, Number(form.recordingRetentionDays) || 1); updateForm({ recordingRetentionDays: String(n) }); }}
                   onWheel={(e) => e.currentTarget.blur()}
-                  className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-medium text-slate-900 shadow-sm outline-none transition focus:border-[#F97316] focus:ring-4 focus:ring-orange-50"
+                  className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3.5 text-sm font-medium text-gray-900 shadow-sm outline-none transition focus:border-[#7C3AED] focus:ring-4 focus:ring-violet-100"
                   placeholder="30"
                 />
               ) : (
-                <div className="flex h-11 items-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3.5 text-sm font-medium text-slate-400">
+                <div className="flex h-11 items-center rounded-xl border border-dashed border-gray-200 bg-violet-50 px-3.5 text-sm font-medium text-gray-400">
                   Enable recording to configure retention days.
                 </div>
               )}
             </div>
           </div>
         </section>
-        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+        <section className="rounded-2xl bg-white p-6" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
           <SectionHeader title="Plan and Safety" description="Choose a plan and enable proctoring signals." />
           <div className="mt-6 grid gap-6 lg:grid-cols-4">
             <div className="space-y-3 lg:col-span-1">
-              <p className="text-[12px] font-bold uppercase tracking-widest text-slate-500">Client plan</p>
+              <p className="text-[12px] font-bold uppercase tracking-widest text-gray-500">Client plan</p>
               {ORG_PLAN_OPTIONS.map((plan) => (
                 <button
                   key={plan.id}
@@ -733,12 +508,12 @@ export default function NewOrgPage() {
                   className={cn(
                     "w-full rounded-2xl border p-4 text-left transition",
                     form.plan === plan.id
-                      ? "border-[#F97316] bg-orange-50 shadow-sm"
-                      : "border-slate-200 bg-white hover:border-slate-300"
+                      ? "border-[#7C3AED] bg-violet-50 shadow-sm"
+                      : "border-gray-200 bg-white hover:border-slate-300"
                   )}
                 >
-                  <p className="text-sm font-semibold uppercase tracking-wide text-slate-900">{plan.label}</p>
-                  <p className="mt-1 text-xs text-slate-500">{plan.desc}</p>
+                  <p className="text-sm font-semibold uppercase tracking-wide text-gray-900">{plan.label}</p>
+                  <p className="mt-1 text-xs text-gray-500">{plan.desc}</p>
                 </button>
               ))}
             </div>
@@ -762,7 +537,7 @@ export default function NewOrgPage() {
           <Button
             type="button"
             variant="outline"
-            className="h-11 rounded-xl border-slate-200 bg-white px-5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            className="h-11 rounded-xl border-gray-200 bg-white px-5 text-sm font-semibold text-gray-700 hover:bg-violet-50"
             onClick={() => router.back()}
           >
             Cancel
@@ -770,7 +545,7 @@ export default function NewOrgPage() {
           <Button
             type="submit"
             disabled={loading}
-            className="h-11 rounded-xl bg-[#F97316] px-6 text-sm font-semibold text-white shadow-sm hover:bg-orange-600"
+            className="h-11 rounded-xl bg-[#7C3AED] px-6 text-sm font-semibold text-white shadow-sm hover:bg-violet-600"
           >
             {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Shield className="mr-2 h-4 w-4" />}
             {loading ? "Creating..." : "Create client"}

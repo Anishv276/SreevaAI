@@ -26,13 +26,19 @@ import {
   scheduleRecordingRetentionDeletion,
 } from "./lib/recording-retention";
 import { mergeRecordingState, normalizeRecordingState, parseJsonRecord } from "./lib/recording-state";
+import { logRedisError, logResumeUploadError, logDriveError, logWorkerError, logLiveKitError } from "./lib/slack-error-logger";
 
 if (!process.env.REDIS_URL) {
   console.error('FATAL: REDIS_URL is missing from environment variables!');
   process.exit(1);
 }
 
-void redisConnection.connect().catch(() => { }); // force-connect before BullMQ workers start
+void redisConnection.connect().catch((e) => {
+  logRedisError({
+    error: e instanceof Error ? e.message : String(e),
+    reason: "Redis connection failed on worker startup",
+  });
+}); // force-connect before BullMQ workers start
 const pythonCmd = getPythonExecutable();
 // BullMQ key prefix — MUST match lib/queue.ts so this worker consumes the same
 // queues the API enqueues to. Set BULLMQ_PREFIX to isolate dev/prod on shared Redis.
@@ -166,7 +172,7 @@ async function processInterviewStartJob(job: any) {
     update: {
       status: "IN_PROGRESS",
       startedAt: startedAtCandidate,
-      linkStatus: "ACTIVE",
+      linkStatus: "EXPIRED",
     },
     create: {
       id: generateId("int", applicationId),
@@ -174,7 +180,7 @@ async function processInterviewStartJob(job: any) {
       accessToken: interviewAccessToken,
       status: "IN_PROGRESS",
       startedAt: startedAtCandidate,
-      linkStatus: "ACTIVE",
+      linkStatus: "EXPIRED",
     },
   });
   await prisma.application.update({
@@ -188,7 +194,7 @@ async function processInterviewStartJob(job: any) {
     success: true,
     applicationId,
     startedAt: startedAtCandidate.toISOString(),
-    linkStatus: existingInterview?.linkStatus || "ACTIVE",
+    linkStatus: "EXPIRED",
     interviewStatus: "IN_PROGRESS",
   };
 }
@@ -402,6 +408,11 @@ function trackWorker(name: string, worker: Worker) {
   managedWorkers.push(worker);
   worker.on("error", (error) => {
     console.error(`[${name}] Redis/BullMQ error:`, error);
+    logRedisError({
+      error: error instanceof Error ? error.message : String(error),
+      reason: `BullMQ worker connection error on queue "${name}"`,
+      context: { queueName: name },
+    });
   });
   // Log when jobs are cleared (60s after completion/failure as per queue config)
   worker.on("completed", (_job) => { /* removed immediately, no log needed */ });
@@ -569,13 +580,13 @@ async function processResumeScreeningJob(job: any) {
         screening_criteria: screeningCriteria,
       });
       result = await runPythonJsonWithStdin(
-        ["scripts/extract_pdf.py", tempFilePath, "RESUME_AND_SCORE", "gpt-4.1-mini", "gpt-4.1-mini"],
+        ["scripts/extract_pdf.py", tempFilePath, "RESUME_AND_SCORE", "gpt-5.4-mini", "gpt-5.4-mini"],
         jdPayload,
         180_000,
       );
     } else {
       result = await runPythonJson(
-        ["scripts/extract_pdf.py", tempFilePath, "RESUME", "gpt-4.1-mini"],
+        ["scripts/extract_pdf.py", tempFilePath, "RESUME", "gpt-5.4-mini"],
         120_000,
       );
     }
@@ -696,7 +707,7 @@ async function processResumeFileExtractJob(job: any) {
     fileUrl = null,
     fileName = "resume.pdf",
     orgId = null,
-    orgOpenAIModel = "gpt-4.1-mini",
+    orgOpenAIModel = "gpt-5.4-mini",
   } = job.data || {};
   if (!key) {
     throw new Error("Invalid resume extraction job payload");
@@ -791,6 +802,34 @@ if (isQueueEnabled("resume-processing")) {
   resumeWorker.on("failed", (job, err) => {
     console.error(`[resume-processing] ✗ Failed: name="${job?.name}" id="${job?.id}" — ${err.message}`);
     console.error(err.stack);
+    const applicationId = job?.data?.applicationId as string | undefined;
+    if (applicationId) {
+      prisma.application.findUnique({
+        where: { id: applicationId },
+        select: { fullName: true, drive: { select: { title: true, organization: { select: { name: true } } } } },
+      }).then((app) => {
+        logResumeUploadError({
+          orgName: app?.drive?.organization?.name || "unknown",
+          driveName: app?.drive?.title || "unknown",
+          candidateName: app?.fullName || undefined,
+          error: err.message,
+          reason: `Resume screening worker job failed (name="${job?.name}")`,
+        });
+      }).catch(() => {
+        logResumeUploadError({
+          orgName: "unknown",
+          driveName: "unknown",
+          error: err.message,
+          reason: `Resume screening worker job failed — applicationId=${applicationId} (org/drive lookup failed)`,
+        });
+      });
+    } else {
+      logWorkerError({
+        error: err.message,
+        reason: "Resume screening worker job failed with no applicationId in job data",
+        context: { jobId: job?.id, jobName: job?.name },
+      });
+    }
   });
   resumeWorker.on("stalled", (jobId) => {
     console.warn(`[resume-processing] ⚠ Stalled: id="${jobId}"`);
@@ -923,7 +962,7 @@ if (isQueueEnabled("invitation-delivery-queue")) {
       }
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://sreevaai.com';
       const now = new Date();
-      let interviewLink: string | undefined;
+      let scheduleLink: string | undefined;
       if (action === "shortlist") {
         const driveDeadline = application.drive?.deadline ? new Date(application.drive.deadline) : null;
         const interviewRecord = await prisma.interview.upsert({
@@ -931,6 +970,7 @@ if (isQueueEnabled("invitation-delivery-queue")) {
           update: {
             inviteSentAt: now,
             status: "PENDING",
+            scheduledAt: null,
             startedAt: null,
             completedAt: null,
             expiresAt: driveDeadline,
@@ -946,22 +986,18 @@ if (isQueueEnabled("invitation-delivery-queue")) {
             linkStatus: "ACTIVE",
           },
         });
-        interviewLink = buildInterviewLink(appUrl, applicationId, {
-          token: isInterviewTokenRequired() ? interviewRecord.accessToken : null,
-          orgName: application.drive?.organization?.name || "Sreeva AI",
-        });
+        scheduleLink = `${appUrl}/schedule/${interviewRecord.accessToken}`;
       }
-      const { sendInterviewInviteEmail, sendRejectionEmail } = await import('./lib/mail');
+      const { sendScheduleInviteEmail, sendRejectionEmail } = await import('./lib/mail');
       let mailResult: { success: boolean; error?: string };
       if (action === "shortlist") {
-        if (!interviewLink) throw new Error(`interviewLink required for action=shortlist`);
-        mailResult = await sendInterviewInviteEmail({
+        if (!scheduleLink) throw new Error(`scheduleLink required for action=shortlist`);
+        mailResult = await sendScheduleInviteEmail({
           email: application.email,
           fullName: application.fullName || "Candidate",
           jobTitle: application.drive?.title || "Unknown Role",
           orgName: application.drive?.organization?.name || "Sreeva AI",
-          interviewLink,
-          schedulingDeadline: application.drive?.deadline ?? null,
+          scheduleLink,
         });
       } else if (action === "reject") {
         mailResult = await sendRejectionEmail({
@@ -1007,8 +1043,8 @@ if (isQueueEnabled("invitation-delivery-queue")) {
       prefix: BULL_PREFIX,
       concurrency: 10,
       limiter: {
-        max: 10,
-        duration: 60000,
+        max: 5,
+        duration: 1000,
       },
       lockDuration: 5 * 60 * 1000,
       stalledInterval: 5 * 60 * 1000,
@@ -1019,6 +1055,11 @@ if (isQueueEnabled("invitation-delivery-queue")) {
   ));
   invitationDeliveryWorker.on("failed", (job, err) => {
     console.log(`[FATAL] Invitation Delivery Job ${job?.id} failed permanently: ${err.message}`);
+    logWorkerError({
+      error: err.message,
+      reason: `Invitation delivery job failed permanently (action="${job?.data?.action}")`,
+      context: { jobId: job?.id, applicationId: job?.data?.applicationId },
+    });
   });
 }
 if (isQueueEnabled("recording-retention-cleanup")) {
@@ -1049,6 +1090,11 @@ if (isQueueEnabled("recording-retention-cleanup")) {
     console.error(
       `[FATAL] Recording Retention Job ${job?.id} failed permanently for ${job?.data?.applicationId || job?.name}: ${err.message}`
     );
+    logWorkerError({
+      error: err.message,
+      reason: "Recording retention cleanup job failed permanently",
+      context: { jobId: job?.id, applicationId: job?.data?.applicationId },
+    });
   });
 }
 /**
@@ -1081,6 +1127,11 @@ if (isQueueEnabled("interview-start")) {
   ));
   interviewStartWorker.on("failed", (job, err) => {
     console.log(`[FATAL] Interview Start Job ${job?.id} failed permanently: ${err.message}`);
+    logWorkerError({
+      error: err.message,
+      reason: "Interview start job failed permanently",
+      context: { jobId: job?.id, applicationId: job?.data?.applicationId },
+    });
   });
 }
 
@@ -1259,7 +1310,7 @@ if (isQueueEnabled("interview-finalization")) {
             const notifyOrgId = appForNotify?.drive?.orgId;
             if (notifyOrgId) {
               const admins = await prisma.user.findMany({
-                where: { orgId: notifyOrgId, role: "ADMIN" },
+                where: { orgId: notifyOrgId },
                 select: { email: true, name: true },
               });
               const { sendInterviewCompletedEmail } = await import('./lib/mail');
@@ -1303,6 +1354,11 @@ if (isQueueEnabled("interview-finalization")) {
   ));
   interviewFinalizationWorker.on("failed", (job, err) => {
     console.log(`[FATAL] Interview Finalization Job ${job?.id} failed permanently: ${err.message}`);
+    logWorkerError({
+      error: err.message,
+      reason: "Interview finalization job failed permanently",
+      context: { jobId: job?.id, applicationId: job?.data?.applicationId },
+    });
   });
 }
 /**
@@ -1514,6 +1570,12 @@ if (isQueueEnabled("interview-recording")) {
     console.error(
       `[FATAL] Egress Finalize Job ${job?.id} failed permanently for ${job?.data?.applicationId}: ${err.message}`
     );
+    logLiveKitError({
+      applicationId: job?.data?.applicationId,
+      error: err.message,
+      reason: "Egress/recording finalization job failed permanently",
+      phase: "recording_finalize",
+    });
   });
 }
 /**
@@ -1598,6 +1660,11 @@ if (isQueueEnabled("interview-snapshots")) {
   ));
   interviewSnapshotWorker.on("failed", (job, err) => {
     console.log(`[FATAL] Snapshot Job ${job?.id} failed: ${err.message}`);
+    logWorkerError({
+      error: err.message,
+      reason: "Interview snapshot job failed",
+      context: { jobId: job?.id, applicationId: job?.data?.applicationId },
+    });
   });
 }
 /**
@@ -1608,7 +1675,7 @@ if (isQueueEnabled("jd-upload")) {
   const jdUploadWorker = trackWorker("jd-upload", new Worker(
     "jd-upload",
     async (job) => {
-      const { bucket, key, buffer, contentType } = job.data;
+      const { bucket, key, buffer, contentType, orgId } = job.data;
       if (!bucket || !key || !buffer) {
         throw new Error("Missing required data for JD upload job");
       }
@@ -1636,6 +1703,34 @@ if (isQueueEnabled("jd-upload")) {
   ));
   jdUploadWorker.on("failed", (job, err) => {
     console.log(`[FATAL] JD Upload Job ${job?.id} failed: ${err.message}`);
+    const orgId = job?.data?.orgId as string | undefined;
+    if (orgId) {
+      prisma.organization.findUnique({ where: { id: orgId }, select: { name: true } })
+        .then((org) => {
+          logDriveError({
+            orgName: org?.name || orgId,
+            driveName: "JD Upload",
+            operation: "upload_jd",
+            error: err.message,
+            reason: "JD upload worker job failed",
+          });
+        })
+        .catch(() => {
+          logDriveError({
+            orgName: orgId,
+            driveName: "JD Upload",
+            operation: "upload_jd",
+            error: err.message,
+            reason: "JD upload worker job failed (org lookup failed)",
+          });
+        });
+    } else {
+      logWorkerError({
+        error: err.message,
+        reason: "JD upload worker job failed with no orgId in job data",
+        context: { jobId: job?.id },
+      });
+    }
   });
 }
 
@@ -1652,7 +1747,7 @@ if (isQueueEnabled("jd-extraction")) {
       console.log(`\n=================================================`);
       console.log(`▶ [JD-EXTRACTION WORKER] PID=${process.pid} Job id="${job.id}" kind="${job.data?.kind}"`);
       console.log(`=================================================\n`);
-      const { kind, orgOpenAIModel = "gpt-4.1-mini", orgId = null } = job.data || {};
+      const { kind, orgOpenAIModel = "gpt-5.4-mini", orgId = null } = job.data || {};
       if (!kind) throw new Error("Invalid JD extraction job: missing kind");
 
       let text: string;
@@ -1731,6 +1826,34 @@ if (isQueueEnabled("jd-extraction")) {
   ));
   jdExtractionWorker.on("failed", (job, err) => {
     console.error(`[JD-EXTRACTION WORKER] Job ${job?.id} failed: ${err.message}`);
+    const orgId = job?.data?.orgId as string | undefined;
+    if (orgId) {
+      prisma.organization.findUnique({ where: { id: orgId }, select: { name: true } })
+        .then((org) => {
+          logDriveError({
+            orgName: org?.name || orgId,
+            driveName: "JD Extraction",
+            operation: "upload_jd",
+            error: err.message,
+            reason: "JD extraction worker job failed",
+          });
+        })
+        .catch(() => {
+          logDriveError({
+            orgName: orgId,
+            driveName: "JD Extraction",
+            operation: "upload_jd",
+            error: err.message,
+            reason: "JD extraction worker job failed (org lookup failed)",
+          });
+        });
+    } else {
+      logWorkerError({
+        error: err.message,
+        reason: "JD extraction worker job failed with no orgId in job data",
+        context: { jobId: job?.id },
+      });
+    }
   });
 }
 

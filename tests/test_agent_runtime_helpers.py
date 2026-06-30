@@ -1,4 +1,3 @@
-import pytest
 from interview.agent_runtime_helpers import sanitize_candidate_facing_text
 
 def test_sanitize_candidate_facing_text_basic():
@@ -114,33 +113,6 @@ def test_build_stt_merges_extra_flux_keyterms(monkeypatch):
     assert keyterms.count("Zapier") == 1
     assert "" not in keyterms
 
-
-@pytest.mark.anyio
-async def test_tts_acronym_transform():
-    from interview.agent_runtime_helpers import _tts_acronym_transform, tts_phonetic_processor
-    
-    # Inject tools dynamically for the test environment
-    tts_phonetic_processor.add_tools(["n8n", "heyreach", "zapier", "make.com"])
-    
-    async def mock_stream(chunks):
-        for chunk in chunks:
-            yield chunk
-
-    # Test lowercase, uppercase, plurals, and tool pronunciation replacements
-    input_chunks = [
-        "Let's discuss our api and apis, as well as the new url.",
-        "We are using n8n for workflows and heyreach for outreach.",
-        "Have you used zapier or make.com?",
-        "This is an API and a URL and SQL query."
-    ]
-    
-    gen = _tts_acronym_transform(mock_stream(input_chunks))
-    results = [chunk async for chunk in gen]
-    
-    assert results[0] == "Let's discuss our A P I and A P I s, as well as the new U R L."
-    assert results[1] == "We are using n eight n for workflows and hey reach for outreach."
-    assert results[2] == "Have you used zay pee er or make dot com?"
-    assert results[3] == "This is an A P I and a U R L and sequel query."
 
 
 

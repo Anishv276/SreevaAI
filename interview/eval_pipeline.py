@@ -17,7 +17,8 @@ from pydantic import BaseModel, Field
 from openai import AsyncOpenAI
 
 from interview.agent_scoring import evaluate_answer
-from interview.agent_runtime_support import EVAL_LLM_MODEL
+from interview.slack_error_logger import log_llm_error
+_EVAL_DEFAULT = "gpt-4.1-nano"  # ponytail: fallback — callers pass org's llmInterviewEval
 
 logger = logging.getLogger("interview-agent")
 
@@ -215,7 +216,7 @@ class EvaluationPayload(BaseModel):
     response_latency_sec: Optional[float] = None
     signal_toggles: Dict[str, Any] = Field(default_factory=dict)
     org_id: str = ""
-    llm_model: str = EVAL_LLM_MODEL
+    llm_model: str = _EVAL_DEFAULT
     active_topic: Optional[str] = None
     active_topic_state: Optional[Dict[str, Any]] = None
     anchor_item: Optional[str] = None
@@ -315,6 +316,18 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     except (asyncio.TimeoutError, Exception) as ex:
         logger.error("[EVAL] turn=%d | scoring %s — recovery decision",
                      p.turn, "timed out" if isinstance(ex, asyncio.TimeoutError) else f"failed: {ex}")
+        try:
+            await log_llm_error(
+                app_id=p.app_id,
+                org_name=p.org_id,
+                candidate_name=None,
+                provider="openai",
+                error=str(ex),
+                reason="Turn scoring LLM call failed/timed out — recovery fallback applied",
+                context={"turn": p.turn},
+            )
+        except Exception:
+            pass
         raw = {
             "clarity": 2.0, "depth": 1.0, "specificity": 1.0, "grounding": 1.0, "overall": 1.3,
             "action": "PROBE", "signal": "depth_insufficient",
@@ -400,6 +413,14 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         "topic":                   p.active_topic or "general",
         "topic_saturation_score":  sat_score,
         "topic_saturation_threshold": sat_threshold,
+        "response_latency_sec":    p.response_latency_sec,  # time from AI question to candidate reply
+        # ponytail: debug-report fields — cheap to stash here, avoids reconstructing later
+        "action":                  action,
+        "band":                    p.band,
+        "is_saturated":            is_saturated,
+        "weak_exit":               _weak_exit,
+        "dry_topic":               _dry_topic,
+        "topic_follow_ups":        _follow_up_count,
     }
 
     logger.info("[RESULT] turn=%d action=%s quality=%.2f/%s signal=%s sat=%.1f/%.1f",

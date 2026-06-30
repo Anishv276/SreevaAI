@@ -1,4 +1,4 @@
-﻿"""
+"""
 agent_persistence.py -- Production-level interview data persistence layer.
 Architecture (4 layers):
   1. DatabasePool         -- singleton asyncpg pool with health-check
@@ -10,6 +10,8 @@ External contracts (agent_runtime.py imports) are preserved exactly.
 """
 from __future__ import annotations
 import asyncio
+import datetime
+import decimal
 import json
 import os
 import time
@@ -21,7 +23,6 @@ from interview.agent_utils import _coerce_jsonish
 from interview.agent_runtime_support import (
     DATABASE_URL,
     FIXED_INTERVIEW_DURATION_MINUTES,
-    LLM_MODEL,
     _DB_POOL,
     _DB_POOL_INIT_TASK,
     logger,
@@ -103,13 +104,22 @@ class DatabasePool:
             except Exception:
                 cls._init_task = None
                 raise
-# Public aliases (preserve agent_runtime.py imports)
-async def get_db_pool() -> asyncpg.Pool:
-    return await DatabasePool.get()
-async def _create_db_pool() -> asyncpg.Pool:
-    return await DatabasePool._create()
-def normalize_postgres_dsn(conn_str: str) -> str:
-    return DatabasePool.normalize_dsn(conn_str)
+class _SafeJSONEncoder(json.JSONEncoder):
+    """Handles Decimal and datetime types that asyncpg may return from DB reads.
+    Without this, json.dumps raises TypeError and the entire DB write is silently dropped (EC-10).
+    """
+    def default(self, obj: object) -> object:
+        if isinstance(obj, decimal.Decimal):
+            return float(obj)
+        if isinstance(obj, (datetime.datetime, datetime.date)):
+            return obj.isoformat()
+        return super().default(obj)
+def _safe_json_dumps(obj: object) -> str:
+    """Serialize to JSON with safe type handling. Validates round-trip before returning
+    so any remaining non-serializable type surfaces immediately, not silently in the DB write."""
+    payload = json.dumps(obj, cls=_SafeJSONEncoder)
+    json.loads(payload)  # round-trip check: raises ValueError if encoder produced invalid JSON
+    return payload
 def _build_jd_from_extracted(extracted_json: str | None) -> str:
     if not extracted_json:
         return ""
@@ -142,13 +152,13 @@ async def get_interview_context(app_id: str) -> dict:
            d."interviewLanguage", d."interviewQuestions",
            COALESCE(d."voiceId", o."voiceId") AS "voiceId",
            COALESCE(d."aiName", 'Ishitha') AS "aiName", o.name AS "orgName",
-           o."deepgramModel", o."proctoringSignals",
-           ev.provider AS "voiceProvider", ev.model AS "voiceModel",
+           o."proctoringSignals",
+           o."sttModel", o."ttsProvider", o."ttsModel",
+           o."llmInterviewLive", o."llmInterviewEval", o."llmInterviewBrief", o."llmInterviewReport",
            i.status AS "interviewStatus"
     FROM "Application" a
     JOIN "Drive" d ON a."driveId" = d.id
     LEFT JOIN "Organization" o ON d."orgId" = o.id
-    LEFT JOIN "EngineVoice" ev ON ev.id = COALESCE(d."voiceId", o."voiceId")
     LEFT JOIN "Interview" i ON i."applicationId" = a.id
     WHERE a.id = $1
     LIMIT 1
@@ -174,14 +184,19 @@ async def get_interview_context(app_id: str) -> dict:
                 "orgName":            row["orgName"],
                 "language":           row["interviewLanguage"],
                 "timeLimit":          FIXED_INTERVIEW_DURATION_MINUTES,
-                "voiceId":            row["voiceId"],
-                "voiceProvider":      row["voiceProvider"],
-                "voiceModel":         row["voiceModel"],
-                "aiName":             row["aiName"],
-                "deepgramModel":      row["deepgramModel"],
-                "proctoringSignals":  row["proctoringSignals"],
-                "interviewQuestions": row["interviewQuestions"],
-                "interviewStatus":    row["interviewStatus"],
+                "voiceId":              row["voiceId"],
+                "aiName":               row["aiName"],
+                "proctoringSignals":    row["proctoringSignals"],
+                "interviewQuestions":   row["interviewQuestions"],
+                "interviewStatus":      row["interviewStatus"],
+                # AI model config — all from org DB, no hardcoded defaults
+                "sttModel":             row["sttModel"],
+                "ttsProvider":          row["ttsProvider"],
+                "ttsModel":             row["ttsModel"],
+                "llmInterviewLive":     row["llmInterviewLive"],
+                "llmInterviewEval":     row["llmInterviewEval"],
+                "llmInterviewBrief":    row["llmInterviewBrief"],
+                "llmInterviewReport":   row["llmInterviewReport"],
             }
         except Exception as e:
             last_error = e
@@ -254,22 +269,60 @@ async def persist_transcript(
     except Exception as e:
         logger.error(f"[TRANSCRIPT] DB save failed: {e}")
 async def mark_interview_started(app_id: str) -> None:
+    """Mark interview as IN_PROGRESS.
+    Only updates rows whose current status is not already IN_PROGRESS or COMPLETED.
+    Returns normally on success; RAISES on DB failure so the caller can abort startup.
+    Raising here prevents a second agent from launching when the first one's write failed.
+    """
+    if not DATABASE_URL:
+        return
+    pool = await DatabasePool.get()
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            """UPDATE "Interview"
+               SET status = $1, "startedAt" = NOW(), "updatedAt" = NOW()
+               WHERE "applicationId" = $2
+                 AND status NOT IN ('IN_PROGRESS', 'COMPLETED')""",
+            "IN_PROGRESS", app_id,
+        )
+        # result is a status string like "UPDATE 1" or "UPDATE 0"
+        updated_rows = int(result.split()[-1]) if result else 0
+        if updated_rows == 0:
+            raise RuntimeError(
+                f"[INTERVIEW] Cannot start app {app_id}: already IN_PROGRESS or COMPLETED "
+                f"(another agent instance may be running). Aborting to prevent duplicate agents."
+            )
+        await conn.execute(
+            'UPDATE "Application" SET "interviewStatus" = $1, "updatedAt" = NOW() WHERE id = $2',
+            "IN_PROGRESS", app_id,
+        )
+    logger.info(f"[INTERVIEW] App {app_id} marked as IN_PROGRESS.")
+async def mark_interview_failed(app_id: str, reason: str = "technical_error") -> None:
+    """Mark interview and application as FAILED in DB.
+    Called whenever the agent crashes before a normal completion so the Drive
+    candidates page shows FAILED instead of hanging in IN_PROGRESS forever.
+    Silently no-ops if DATABASE_URL is missing (offline/test environment).
+    """
     if not DATABASE_URL:
         return
     try:
         pool = await DatabasePool.get()
         async with pool.acquire() as conn:
             await conn.execute(
-                'UPDATE "Interview" SET status = $1, "startedAt" = NOW() WHERE "applicationId" = $2',
-                "IN_PROGRESS", app_id,
+                """UPDATE "Interview"
+                   SET status = 'FAILED', "updatedAt" = NOW()
+                   WHERE "applicationId" = $1""",
+                app_id,
             )
             await conn.execute(
-                'UPDATE "Application" SET "interviewStatus" = $1, "updatedAt" = NOW() WHERE id = $2',
-                "IN_PROGRESS", app_id,
+                """UPDATE "Application"
+                   SET "interviewStatus" = 'FAILED', "updatedAt" = NOW()
+                   WHERE id = $1""",
+                app_id,
             )
-        logger.info(f"[INTERVIEW] App {app_id} marked as IN_PROGRESS.")
+        logger.info(f"[INTERVIEW] App {app_id} marked as FAILED (reason={reason})")
     except Exception as e:
-        logger.error(f"[INTERVIEW] Failed to update application status to started: {e}")
+        logger.error(f"[INTERVIEW] Failed to mark app {app_id} as FAILED: {e}")
 async def persist_question_by_question_analysis(app_id: str, answer_scores: list[dict]) -> None:
     """Save full turn-by-turn interview analysis to Interview.questionByQuestionAnalysis JSONB."""
     if not app_id or not DATABASE_URL or not answer_scores:
@@ -293,21 +346,49 @@ async def persist_question_by_question_analysis(app_id: str, answer_scores: list
             "topic_saturation_score":      float(s.get("topic_saturation_score",     0) or 0),
             "topic_saturation_threshold":  float(s.get("topic_saturation_threshold", 0) or 0),
             "is_warmup":                   bool(s.get("is_warmup", False)),
+            "response_latency_sec":        float(s.get("response_latency_sec") or 0.0),
         }
         for i, s in enumerate(answer_scores, 1)
     ]
+    # Serialize once outside the retry loop — if this raises (EC-10), fail immediately
+    # before any DB attempt. A serialization bug is not transient; retrying won't help.
     try:
-        pool = await DatabasePool.get()
-        async with pool.acquire() as conn:
-            await conn.execute(
-                """UPDATE "Interview"
-                   SET "questionByQuestionAnalysis" = $1::jsonb, "updatedAt" = NOW()
-                   WHERE "applicationId" = $2""",
-                json.dumps(normalized), app_id,
+        payload = _safe_json_dumps(normalized)
+    except (TypeError, ValueError) as enc_err:
+        logger.error(
+            f"[SCORE] JSON serialization failed for {app_id} — scores NOT saved. "
+            f"Non-serializable value in answer_scores: {enc_err}"
+        )
+        return
+    last_error: Exception | None = None
+    for attempt in range(1, 4):   # 3 attempts: immediate, +0.5s, +1.0s
+        try:
+            pool = await DatabasePool.get()
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    """UPDATE "Interview"
+                       SET "questionByQuestionAnalysis" = $1::jsonb, "updatedAt" = NOW()
+                       WHERE "applicationId" = $2""",
+                    payload, app_id,
+                )
+            logger.info(f"[SCORE] Saved {len(normalized)} question-by-question rows for {app_id}")
+            return  # success
+        except Exception as e:
+            last_error = e
+            logger.warning(
+                f"[SCORE] DB write attempt {attempt}/3 failed for {app_id}: {e}"
             )
-        logger.info(f"[SCORE] Saved {len(normalized)} question-by-question rows for {app_id}")
-    except Exception as e:
-        logger.error(f"[SCORE] Failed to persist question-by-question analysis for {app_id}: {e}")
+            if "executor shutdown" in str(e).lower():
+                # Pool is dead; force recreation before next attempt
+                DatabasePool._pool = None
+                DatabasePool._init_task = None
+            if attempt < 3:
+                await asyncio.sleep(0.5 * attempt)   # 0.5s then 1.0s
+    # All 3 attempts exhausted — raise so spawn_background_task logs the exception
+    # with full traceback and ops can see it. Score data is NOT silently lost.
+    raise RuntimeError(
+        f"[SCORE] All 3 DB write attempts failed for {app_id}: {last_error}"
+    )
 async def persist_answer_scores(app_id: str, answer_scores: list[dict]) -> None:
     """Backward-compatible wrapper."""
     await persist_question_by_question_analysis(app_id, answer_scores)

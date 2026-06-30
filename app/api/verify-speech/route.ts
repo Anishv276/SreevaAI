@@ -123,6 +123,7 @@ async function validateInterviewAccess(applicationId: string, interviewToken: st
                     accessToken: true,
                     expiresAt: true,
                     linkStatus: true,
+                    isTest: true,
                 },
             },
         },
@@ -135,11 +136,9 @@ async function validateInterviewAccess(applicationId: string, interviewToken: st
         console.error("[verify-speech] validateInterviewAccess failed: Invalid interview token", { required: isInterviewTokenRequired(), expected: app.interview?.accessToken, received: interviewToken });
         return null;
     }
-    if (app.interview.expiresAt && app.interview.expiresAt < new Date()) {
-        console.error("[verify-speech] validateInterviewAccess failed: Interview expired");
-        return null;
-    }
-    if (app.interview.linkStatus && app.interview.linkStatus !== "ACTIVE") {
+
+    const isTest = app.interview?.isTest === true;
+    if (!isTest && app.interview.linkStatus && app.interview.linkStatus !== "ACTIVE") {
         console.error("[verify-speech] validateInterviewAccess failed: Link not ACTIVE");
         return null;
     }

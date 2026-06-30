@@ -6,12 +6,17 @@ directive LLM exactly what happened and what to do — no families, no mapping.
 get_probe_context() returns the full context block injected into the directive.
 The directive LLM writes ANGLE + INTENT from it.
 The interview LLM generates the actual question from the conversation.
+
+Signal names here MUST exactly match SIGNAL_DEFINITIONS keys in agent_scoring.py:
+  ownership_ambiguous, example_evaded, answer_hollow,
+  functional_claim_unverified, claim_not_demonstrated
 """
 from __future__ import annotations
 
 
 # ---------------------------------------------------------------------------
 # Signal probes — one per signal, sharp and direct.
+# Signal names MUST match SIGNAL_DEFINITIONS in agent_scoring.py exactly.
 # Each entry:
 #   signal   — what fired (matches SIGNAL_DEFINITIONS key in agent_scoring.py)
 #   what     — what the candidate did that triggered this (1 line)
@@ -45,52 +50,28 @@ SIGNAL_PROBES: dict[str, dict] = {
         "skip":    "Do not ask 'can you give an example' — too easy to dodge again. Force specificity.",
     },
 
-    "depth_insufficient": {
-        "signal":  "depth_insufficient",
-        "what":    "Candidate said WHAT they did. Never said HOW or WHY.",
+    "answer_hollow": {
+        "signal":  "answer_hollow",
+        "what":    "Candidate said WHAT they did. No HOW, no WHY, no real operational detail.",
         "goal":    "Get the mechanics — one real decision, step, or reason behind what they did.",
         "ask": [
             "Ask HOW one specific thing they named actually worked.",
             "Push for the decision behind it — why that way and not another.",
-            "If they named a tool or output, ask what building it actually involved.",
+            "If they named a tool or output, ask what building or doing it actually involved.",
         ],
         "skip":    "Do not ask 'can you tell me more' — too open. Pick one thing and ask about its mechanics.",
     },
 
-    "surface_answer": {
-        "signal":  "surface_answer",
-        "what":    "Answer was correct but hollow — no names, no numbers, no real texture.",
-        "goal":    "Get one concrete detail that proves they were actually there doing this.",
-        "ask": [
-            "Ask for one specific name, number, or outcome from what they described.",
-            "Push for something measurable or named — not a description of a category.",
-            "Find the one thing in their answer that could have been more specific and press on it.",
-        ],
-        "skip":    "Do not accept another generic answer. Any real answer has at least one specific thing in it.",
-    },
-
-    "tech_claim_unverified": {
-        "signal":  "tech_claim_unverified",
-        "what":    "Named a specific tool or tech but described it vaguely or generically.",
+    "functional_claim_unverified": {
+        "signal":  "functional_claim_unverified",
+        "what":    "Named a specific tool, method, or skill but described it vaguely or generically.",
         "goal":    "Find out if they actually used it — a real user has at least one concrete memory.",
         "ask": [
-            "Ask what they specifically BUILT or CONFIGURED with it — not what the tool does.",
+            "Ask what they specifically BUILT, CONFIGURED, or DID with it — not what it is.",
             "Ask about something that requires hands-on knowledge to answer.",
-            "What did they actually set up, connect, or write with it?",
+            "What did they actually set up, connect, run, or write with it?",
         ],
         "skip":    "Do not ask what the tool is or why they chose it. Focus on what they DID with it.",
-    },
-
-    "new_tech_thread": {
-        "signal":  "new_tech_thread",
-        "what":    "Candidate mentioned a tool or approach not on their resume — unprompted reveal.",
-        "goal":    "Pull this thread — if they brought it up unprompted, there is something real here.",
-        "ask": [
-            "Ask how they picked it up or what they used it for.",
-            "Ask what surprised them about it or where it fit into their work.",
-            "This is a positive signal — ask with genuine curiosity, not pressure.",
-        ],
-        "skip":    "Do not make this feel like a gotcha. They volunteered this — follow it warmly.",
     },
 
     "claim_not_demonstrated": {
@@ -119,13 +100,57 @@ _DEFAULT_PROBE = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Band overlays — per-signal, per-band.
+# Each entry: SIGNAL -> BAND -> one sharp note line for the directive LLM.
+# Only populated where the band meaningfully changes what to probe for.
+# ---------------------------------------------------------------------------
+_BAND_OVERLAYS: dict[str, dict[str, str]] = {
+
+    "ownership_ambiguous": {
+        "fresher":     "Fresher: ask what their specific task was — a single concrete action. Keep it low-stakes.",
+        "mid":         "Mid-level: ask what decision or outcome was specifically theirs — not just the task.",
+        "experienced": "Experienced: ask which part of this they owned end-to-end and what that required of them.",
+        "senior":      "Senior: ask what decision was theirs to make — probe leadership ownership, not just task execution.",
+    },
+
+    "example_evaded": {
+        "fresher":     "Fresher: ask about a real moment from college, internship, or a side project — lower bar is fine.",
+        "mid":         "Mid-level: push for a real work moment — something from a project they owned.",
+        "experienced": "Experienced: the example must come from real work. Push for the moment, not the category.",
+        "senior":      "Senior: the example should show a decision with real stakes. Push for what was on the line.",
+    },
+
+    "answer_hollow": {
+        "fresher":     "Fresher: ask HOW they did it step by step — don't push for tradeoffs or strategic rationale.",
+        "mid":         "Mid-level: ask what decision they made and why — one real choice behind the work.",
+        "experienced": "Experienced: push for the constraint or tradeoff that shaped the approach.",
+        "senior":      "Senior: ask what tradeoffs they weighed and why they chose this approach over another.",
+    },
+
+    "functional_claim_unverified": {
+        "fresher":     "Fresher: ask what they actually did or tried with it — even in a small project or exercise.",
+        "mid":         "Mid-level: ask what they built or configured with it in a real work context.",
+        "experienced": "Experienced: push for a specific problem it solved and what hands-on work that involved.",
+        "senior":      "Senior: ask where it fit into a larger system or decision — proof of real depth, not surface use.",
+    },
+
+    "claim_not_demonstrated": {
+        "fresher":     "Fresher: ask for one real moment — could be from studies, internship, or a project. Keep stakes low.",
+        "mid":         "Mid-level: the example must be from real work. Push for a specific project or moment.",
+        "experienced": "Experienced: push for an example with real stakes and a measurable outcome.",
+        "senior":      "Senior: the claim should be backed by a decision with org-level impact. Ask for that specifically.",
+    },
+
+}
+
+
 def get_probe_context(
     *,
     signal: str | None,
     signal_reason: str | None,
     band: str,
     topic_follow_ups: int,
-    is_closing_tier: bool,
     topic_denied: bool,
     prev_answer: str,
 ) -> str:
@@ -156,20 +181,6 @@ def get_probe_context(
         ]
         return "\n".join(lines)
 
-    # Closing tier — wrap this topic
-    if is_closing_tier:
-        lines += [
-            "SIGNAL: topic_closing",
-            "WHAT: Main facts on this topic are covered. Time to close it.",
-            "GOAL: One honest reflective question to finish the topic well.",
-            "ASK:",
-            "  - What would they do differently if they built this again?",
-            "  - What surprised them most, or what are they most proud of?",
-            "  - Anchor to something SPECIFIC they actually said — not a generic reflection.",
-            "SKIP: Do not open a new sub-topic. Do not ask about mechanics.",
-        ]
-        return "\n".join(lines)
-
     # Signal-based probe
     probe = SIGNAL_PROBES.get(signal or "", None) if signal else None
     if probe is None:
@@ -185,15 +196,16 @@ def get_probe_context(
         lines.append(f"  - {point}")
     lines.append(f"SKIP: {probe['skip']}")
 
-    # Band / turn overlays — sharp, one line each
+    # Band overlay — signal-specific, band-specific
+    _band_note = _BAND_OVERLAYS.get(signal or "", {}).get(band)
+    if _band_note:
+        lines.append(f"BAND NOTE: {_band_note}")
+
+    # First-probe note
     if topic_follow_ups <= 1:
         lines += [
             "NOTE: First probe on this topic. Pull the most interesting thing from their answer.",
             "      Not generic — find the specific detail worth digging into.",
-        ]
-    elif band == "fresher":
-        lines += [
-            "NOTE: Fresher. Don't push for tradeoffs. Ask HOW they actually did it in practice.",
         ]
 
     return "\n".join(lines)

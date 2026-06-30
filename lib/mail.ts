@@ -3,9 +3,9 @@ export type MailResult =
     | { success: true }
     | { success: false; error: string };
 const FONT = `-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif`;
-const ORANGE = "#F97316";
-const ORANGE_LIGHT = "#fff7ed";   // orange-50
-const ORANGE_BORDER = "#fed7aa";  // orange-200
+const VIOLET = "#7C3AED";
+const VIOLET_LIGHT = "#F5F3FF";   // violet-50
+const VIOLET_BORDER = "#DDD6FE";  // violet-200
 function wrapper(content: string) {
     return `<!DOCTYPE html>
 <html lang="en">
@@ -33,9 +33,9 @@ function header(eyebrow: string, title: string) {
   <td style="background:#ffffff;border-bottom:1px solid #f0f0f0;padding:0;">
     <table width="100%" cellpadding="0" cellspacing="0" border="0">
       <tr>
-        <td style="width:4px;background:${ORANGE};padding:0;"></td>
+        <td style="width:4px;background:${VIOLET};padding:0;"></td>
         <td style="padding:28px 36px;">
-          <p style="margin:0 0 6px;font-size:11px;font-weight:700;color:${ORANGE};letter-spacing:0.12em;text-transform:uppercase;">${eyebrow}</p>
+          <p style="margin:0 0 6px;font-size:11px;font-weight:700;color:${VIOLET};letter-spacing:0.12em;text-transform:uppercase;">${eyebrow}</p>
           <p style="margin:0;font-size:24px;font-weight:800;color:#111111;letter-spacing:-0.02em;line-height:1.25;">${title}</p>
         </td>
         <td style="padding:28px 36px 28px 0;text-align:right;vertical-align:middle;">
@@ -48,13 +48,13 @@ function header(eyebrow: string, title: string) {
 }
 function infoCard(items: { label: string; value: string }[]) {
     return `
-<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${ORANGE_LIGHT};border:1px solid ${ORANGE_BORDER};border-left:4px solid ${ORANGE};border-radius:10px;margin:20px 0;">
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${VIOLET_LIGHT};border:1px solid ${VIOLET_BORDER};border-left:4px solid ${VIOLET};border-radius:10px;margin:20px 0;">
   <tr><td style="padding:18px 22px;">
     <table width="100%" cellpadding="0" cellspacing="0" border="0">
       ${items.map(({ label, value }, i) => `
       <tr>
         <td style="padding:${i === 0 ? "0" : "8px"} 0 0;vertical-align:top;width:130px;">
-          <span style="font-size:11px;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:0.07em;">${label}</span>
+          <span style="font-size:11px;font-weight:700;color:#5b21b6;text-transform:uppercase;letter-spacing:0.07em;">${label}</span>
         </td>
         <td style="padding:${i === 0 ? "0" : "8px"} 0 0;vertical-align:top;">
           <span style="font-size:14px;font-weight:600;color:#1a1a1a;">${value}</span>
@@ -65,12 +65,12 @@ function infoCard(items: { label: string; value: string }[]) {
 </table>`;
 }
 function ctaButton(href: string, label: string) {
-    return `<a href="${href}" style="display:inline-block;background:${ORANGE};color:#ffffff;text-decoration:none;font-size:15px;font-weight:700;padding:14px 36px;border-radius:10px;letter-spacing:0.01em;box-shadow:0 2px 12px rgba(249,115,22,0.30);">${label} &rarr;</a>`;
+    return `<a href="${href}" style="display:inline-block;background:${VIOLET};color:#ffffff;text-decoration:none;font-size:15px;font-weight:700;padding:14px 36px;border-radius:10px;letter-spacing:0.01em;box-shadow:0 2px 12px rgba(124,58,237,0.30);">${label} &rarr;</a>`;
 }
 function tipBox(html: string) {
     return `
-<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${ORANGE_LIGHT};border:1px solid ${ORANGE_BORDER};border-radius:10px;margin:16px 0;">
-  <tr><td style="padding:16px 20px;font-size:13px;color:#92400e;line-height:1.75;">${html}</td></tr>
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${VIOLET_LIGHT};border:1px solid ${VIOLET_BORDER};border-radius:10px;margin:16px 0;">
+  <tr><td style="padding:16px 20px;font-size:13px;color:#5b21b6;line-height:1.75;">${html}</td></tr>
 </table>`;
 }
 function noteBox(html: string) {
@@ -247,7 +247,7 @@ export async function sendOrgWelcomeEmail({
               ].map(([n, text]) => `
               <tr>
                 <td style="vertical-align:top;padding:3px 10px 3px 0;">
-                  <span style="display:inline-block;width:20px;height:20px;background:${ORANGE};border-radius:50%;text-align:center;line-height:20px;font-size:11px;font-weight:700;color:#fff;">${n}</span>
+                  <span style="display:inline-block;width:20px;height:20px;background:${VIOLET};border-radius:50%;text-align:center;line-height:20px;font-size:11px;font-weight:700;color:#fff;">${n}</span>
                 </td>
                 <td style="font-size:13px;color:#92400e;line-height:1.7;padding:3px 0;">${text}</td>
               </tr>`).join("")}
@@ -270,7 +270,7 @@ export async function sendOrgWelcomeEmail({
 export async function sendOtpEmail({ to, name, otp }: { to: string; name: string; otp: string }): Promise<void> {
     const subject = `${otp} is your Sreeva AI recovery code`;
     const digitBoxes = otp.split("").map(d =>
-        `<td style="padding:0 4px;"><div style="width:48px;height:60px;background:#ffffff;border:2px solid ${ORANGE_BORDER};border-radius:10px;text-align:center;line-height:60px;font-size:28px;font-weight:800;color:#111111;font-variant-numeric:tabular-nums;">${d}</div></td>`
+        `<td style="padding:0 4px;"><div style="width:48px;height:60px;background:#ffffff;border:2px solid ${VIOLET_BORDER};border-radius:10px;text-align:center;line-height:60px;font-size:28px;font-weight:800;color:#111111;font-variant-numeric:tabular-nums;">${d}</div></td>`
     ).join("");
     const html = wrapper(`
         ${header("Security Code", "Account recovery")}
@@ -278,11 +278,11 @@ export async function sendOtpEmail({ to, name, otp }: { to: string; name: string
           <p style="margin:0 0 20px;font-size:15px;color:#404040;line-height:1.75;">
             Hi ${name}, here is your one-time recovery code. Enter it on the reset page to continue. This code expires in <strong>10 minutes</strong>.
           </p>
-          <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${ORANGE_LIGHT};border:1px solid ${ORANGE_BORDER};border-radius:12px;">
-            <tr><td style="padding:28px 24px;text-align:center;">
-              <p style="margin:0 0 16px;font-size:11px;font-weight:700;color:${ORANGE};letter-spacing:0.1em;text-transform:uppercase;">Your one-time code</p>
+          <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${VIOLET_LIGHT};border:1px solid ${VIOLET_BORDER};border-radius:12px;">
+            <tr><td style="padding:32px;text-align:center;">
+              <p style="margin:0 0 16px;font-size:11px;font-weight:700;color:${VIOLET};letter-spacing:0.1em;text-transform:uppercase;">Your one-time code</p>
               <table cellpadding="0" cellspacing="0" border="0" style="margin:0 auto;"><tr>${digitBoxes}</tr></table>
-              <p style="margin:14px 0 0;font-size:12px;color:#92400e;">Expires in <strong>10 minutes</strong></p>
+              <p style="margin:14px 0 0;font-size:12px;color:${VIOLET};">Expires in <strong>10 minutes</strong></p>
             </td></tr>
           </table>
           ${noteBox(`⚠️ <strong>Never share this code.</strong> Sreeva AI will never ask for your OTP via phone, chat, or email. If you didn't request this, please ignore — your account is safe.`)}
@@ -291,11 +291,115 @@ export async function sendOtpEmail({ to, name, otp }: { to: string; name: string
     `);
     await sendEmail({ to, subject, html, type: "password-reset" });
 }
-// ─── 6. OTP — Password Change ─────────────────────────────────────────────────
+// ─── 6. Schedule Invite (candidate picks a slot) ─────────────────────────────
+export async function sendScheduleInviteEmail({
+    email, fullName, jobTitle, orgName, scheduleLink,
+}: {
+    email: string;
+    fullName: string;
+    jobTitle: string;
+    orgName: string;
+    scheduleLink: string;
+}): Promise<MailResult> {
+    const subject = `Schedule your AI interview — ${jobTitle} at ${orgName}`;
+    const html = wrapper(`
+        ${header("Interview Invitation", `Hi ${fullName}, you've been shortlisted!`)}
+        <tr><td style="padding:32px 36px 0;">
+          <p style="margin:0;font-size:15px;color:#404040;line-height:1.75;">
+            Congratulations! Your profile stood out for the <strong style="color:#111;">${jobTitle}</strong> role at <strong style="color:#111;">${orgName}</strong>.
+            You've been invited to a <strong style="color:#111;">20-minute AI video interview</strong>. Please pick a time slot that works best for you.
+          </p>
+          ${infoCard([
+              { label: "Role", value: jobTitle },
+              { label: "Company", value: orgName },
+              { label: "Format", value: "AI Video Interview · 20 minutes" },
+              { label: "Duration", value: "Slots are 30 min · Interview is 20 min" },
+          ])}
+          ${tipBox(`
+            <strong style="display:block;margin-bottom:6px;">Before you begin</strong>
+            <ul style="margin:0;padding-left:18px;">
+              <li>Use a <strong>laptop or desktop</strong> — not a phone</li>
+              <li>Ensure your <strong>camera &amp; microphone</strong> are working</li>
+              <li>Find a <strong>quiet space</strong> with stable internet</li>
+              <li>Be ready <strong>5 minutes before</strong> your scheduled time</li>
+              <li>The interview starts <strong>exactly at your slot time</strong> and cannot be paused</li>
+            </ul>
+          `)}
+        </td></tr>
+        <tr><td style="padding:24px 36px 32px;text-align:center;">
+          ${ctaButton(scheduleLink, "Pick Your Time Slot")}
+        </td></tr>
+        ${footerRow(`Sent by ${orgName} via Sreeva AI · ${email}`)}
+    `);
+    try {
+        await sendEmail({ to: email, subject, html, type: "interview" });
+        return { success: true };
+    } catch (error) {
+        return { success: false, error: (error as Error)?.message || "Failed to send email" };
+    }
+}
+// ─── 7. Interview Link (after slot is booked) ────────────────────────────────
+export async function sendInterviewScheduledEmail({
+    email, fullName, jobTitle, orgName, interviewLink, scheduledAt, timezone,
+}: {
+    email: string;
+    fullName: string;
+    jobTitle: string;
+    orgName: string;
+    interviewLink: string;
+    scheduledAt: Date;
+    timezone: string;
+}): Promise<MailResult> {
+    const timeStr = scheduledAt.toLocaleString("en-IN", {
+        timeZone: timezone,
+        weekday: "long", month: "long", day: "numeric", year: "numeric",
+        hour: "2-digit", minute: "2-digit", hour12: true,
+    });
+    const subject = `Your interview is confirmed — ${jobTitle} at ${orgName} · ${timeStr}`;
+    const html = wrapper(`
+        ${header("Interview Confirmed", `You're all set, ${fullName}!`)}
+        <tr><td style="padding:32px 36px 0;">
+          <p style="margin:0;font-size:15px;color:#404040;line-height:1.75;">
+            Your AI interview for <strong style="color:#111;">${jobTitle}</strong> at <strong style="color:#111;">${orgName}</strong> is confirmed.
+            Use the link below to join — it will unlock <strong>2 minutes before</strong> your scheduled time.
+          </p>
+          ${infoCard([
+              { label: "Role", value: jobTitle },
+              { label: "Company", value: orgName },
+              { label: "Scheduled", value: timeStr },
+              { label: "Duration", value: "20 minutes" },
+              { label: "Timezone", value: timezone },
+          ])}
+          ${tipBox(`
+            <strong style="display:block;margin-bottom:6px;">Timeline</strong>
+            <ul style="margin:0;padding-left:18px;">
+              <li><strong>5 min before:</strong> Open the link and complete hardware check</li>
+              <li><strong>2 min before:</strong> "Begin Interview" button unlocks with a live countdown</li>
+              <li><strong>At slot time:</strong> Interview starts automatically</li>
+              <li><strong>5 min after slot:</strong> Link expires — do not be late</li>
+            </ul>
+          `)}
+        </td></tr>
+        <tr><td style="padding:24px 36px 8px;text-align:center;">
+          ${ctaButton(interviewLink, "Join Interview")}
+          <p style="margin:14px 0 0;font-size:12px;color:#b0b0b0;">Button not working? Copy this link:<br/>
+            <span style="color:#737373;word-break:break-all;">${interviewLink}</span>
+          </p>
+        </td></tr>
+        ${footerRow(`Sent by ${orgName} via Sreeva AI · ${email} · Results reviewed within 24–48 hours.`)}
+    `);
+    try {
+        await sendEmail({ to: email, subject, html, type: "interview" });
+        return { success: true };
+    } catch (error) {
+        return { success: false, error: (error as Error)?.message || "Failed to send email" };
+    }
+}
+// ─── 8. OTP — Password Change ─────────────────────────────────────────────────
 export async function sendPasswordChangeOtpEmail({ to, otp }: { to: string; otp: string }): Promise<void> {
     const subject = `${otp} — Confirm your Sreeva AI password change`;
     const digitBoxes = otp.split("").map(d =>
-        `<td style="padding:0 4px;"><div style="width:48px;height:60px;background:#ffffff;border:2px solid ${ORANGE_BORDER};border-radius:10px;text-align:center;line-height:60px;font-size:28px;font-weight:800;color:#111111;font-variant-numeric:tabular-nums;">${d}</div></td>`
+        `<td style="padding:0 4px;"><div style="width:48px;height:60px;background:#ffffff;border:2px solid ${VIOLET_BORDER};border-radius:10px;text-align:center;line-height:60px;font-size:28px;font-weight:800;color:#111111;font-variant-numeric:tabular-nums;">${d}</div></td>`
     ).join("");
     const html = wrapper(`
         ${header("Security Verification", "Confirm password change")}
@@ -303,11 +407,11 @@ export async function sendPasswordChangeOtpEmail({ to, otp }: { to: string; otp:
           <p style="margin:0 0 20px;font-size:15px;color:#404040;line-height:1.75;">
             A password change was requested for <strong style="color:#111;">${to}</strong>. Enter this code to authorize the change. It expires in <strong>10 minutes</strong>.
           </p>
-          <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${ORANGE_LIGHT};border:1px solid ${ORANGE_BORDER};border-radius:12px;">
-            <tr><td style="padding:28px 24px;text-align:center;">
-              <p style="margin:0 0 16px;font-size:11px;font-weight:700;color:${ORANGE};letter-spacing:0.1em;text-transform:uppercase;">Authorization code</p>
+          <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${VIOLET_LIGHT};border:1px solid ${VIOLET_BORDER};border-radius:12px;">
+            <tr><td style="padding:32px;text-align:center;">
+              <p style="margin:0 0 16px;font-size:11px;font-weight:700;color:${VIOLET};letter-spacing:0.1em;text-transform:uppercase;">Authorization code</p>
               <table cellpadding="0" cellspacing="0" border="0" style="margin:0 auto;"><tr>${digitBoxes}</tr></table>
-              <p style="margin:14px 0 0;font-size:12px;color:#92400e;">Expires in <strong>10 minutes</strong></p>
+              <p style="margin:14px 0 0;font-size:12px;color:${VIOLET};">Expires in <strong>10 minutes</strong></p>
             </td></tr>
           </table>
           ${noteBox(`⚠️ <strong>Didn't request this?</strong> Someone may be trying to access your account. Secure it immediately by resetting your password.`)}

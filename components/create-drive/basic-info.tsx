@@ -84,10 +84,10 @@ function PremiumSelect({
                         key={opt}
                         type="button"
                         onClick={() => { onChange(opt); setOpen(false); }}
-                        className="flex items-center justify-between w-full rounded-lg px-4 py-2.5 text-[14px] text-gray-900 hover:bg-orange-50 hover:text-[#F97316] transition-colors duration-100 text-left"
+                        className="flex items-center justify-between w-full rounded-lg px-4 py-2.5 text-[14px] text-gray-900 hover:bg-violet-50 hover:text-[#7C3AED] transition-colors duration-100 text-left"
                     >
                         <span className="font-medium">{opt}</span>
-                        {value === opt && <Check className="h-4 w-4 text-[#F97316]" />}
+                        {value === opt && <Check className="h-4 w-4 text-[#7C3AED]" />}
                     </button>
                 ))}
             </div>
@@ -96,9 +96,9 @@ function PremiumSelect({
     return (
         <div className="space-y-2">
             <Label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest">
-                <Icon className="h-3 w-3 text-[#F97316]" />
+                <Icon className="h-3 w-3 text-[#7C3AED]" />
                 {label}
-                <span className="text-[#F97316] ml-0.5">*</span>
+                <span className="text-[#7C3AED] ml-0.5">*</span>
             </Label>
             <button
                 ref={triggerRef}
@@ -108,13 +108,13 @@ function PremiumSelect({
                     "relative flex h-10 w-full items-center justify-between gap-2 rounded-lg border bg-white px-3 text-[14px] shadow-sm transition-all duration-150 focus:outline-none focus:ring-2",
                     error 
                         ? "border-red-500 ring-red-500/10 focus:ring-red-500/30 focus:border-red-500" 
-                        : "border-gray-200 hover:border-orange-300 hover:shadow-md focus:ring-[#F97316]/30 focus:border-[#F97316]"
+                        : "border-gray-200 hover:border-violet-300 hover:shadow-md focus:ring-[#7C3AED]/30 focus:border-[#7C3AED]"
                 )}
             >
                 <span className={value ? "text-gray-900 font-medium" : "text-gray-400"}>
                     {value || placeholder}
                 </span>
-                <ChevronDown className={cn("h-4 w-4 transition-transform duration-200", open ? "rotate-180 text-[#F97316]" : "text-gray-400")} />
+                <ChevronDown className={cn("h-4 w-4 transition-transform duration-200", open ? "rotate-180 text-[#7C3AED]" : "text-gray-400")} />
             </button>
             {error && <p className="text-[10px] font-bold text-red-500 uppercase tracking-widest px-1">{error}</p>}
             {typeof window !== "undefined" && createPortal(dropdown, document.body)}
@@ -135,9 +135,9 @@ function PremiumInput({
     return (
         <div className="space-y-2">
             <Label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest">
-                <Icon className="h-3 w-3 text-[#F97316]" />
+                <Icon className="h-3 w-3 text-[#7C3AED]" />
                 {label}
-                <span className="text-[#F97316] ml-0.5">*</span>
+                <span className="text-[#7C3AED] ml-0.5">*</span>
             </Label>
             <Input
                 {...props}
@@ -145,7 +145,7 @@ function PremiumInput({
                     "h-10 rounded-lg bg-white px-3 text-[14px] font-medium shadow-sm transition-all duration-150 placeholder:text-gray-400 placeholder:font-normal",
                     error 
                         ? "border-red-500 focus-visible:ring-red-500/30 focus-visible:border-red-500" 
-                        : "border-gray-200 hover:border-orange-300 hover:shadow-md focus-visible:ring-[#F97316]/30 focus-visible:border-[#F97316]"
+                        : "border-gray-200 hover:border-violet-300 hover:shadow-md focus-visible:ring-[#7C3AED]/30 focus-visible:border-[#7C3AED]"
                 )}
             />
             {error && <p className="text-[10px] font-bold text-red-500 uppercase tracking-widest px-1">{error}</p>}
@@ -278,12 +278,12 @@ function PremiumDatePicker({ label, icon: Icon, id, value, onChange, error }: {
                                 className={[
                                     "h-8 w-8 mx-auto flex items-center justify-center rounded-lg text-[13px] font-bold transition-all duration-100",
                                     isSelected
-                                        ? "bg-[#F97316] text-white shadow-[0_2px_8px_rgba(249,115,22,0.4)] scale-110"
+                                        ? "bg-[#7C3AED] text-white shadow-[0_2px_8px_rgba(124,58,237,0.4)] scale-110"
                                         : isToday
-                                            ? "border-2 border-[#F97316] text-[#F97316]"
+                                            ? "border-2 border-[#7C3AED] text-[#7C3AED]"
                                             : isPast
                                                 ? "text-gray-300 cursor-not-allowed"
-                                                : "text-gray-700 hover:bg-orange-50 hover:text-[#F97316]",
+                                                : "text-gray-700 hover:bg-violet-50 hover:text-[#7C3AED]",
                                 ].join(" ")}
                             >
                                 {day}
@@ -297,9 +297,9 @@ function PremiumDatePicker({ label, icon: Icon, id, value, onChange, error }: {
     return (
         <div className="space-y-2">
             <Label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest">
-                <Icon className="h-3 w-3 text-[#F97316]" />
+                <Icon className="h-3 w-3 text-[#7C3AED]" />
                 {label}
-                <span className="text-[#F97316] ml-0.5">*</span>
+                <span className="text-[#7C3AED] ml-0.5">*</span>
             </Label>
             <button
                 ref={triggerRef}
@@ -310,13 +310,13 @@ function PremiumDatePicker({ label, icon: Icon, id, value, onChange, error }: {
                     "relative flex h-10 w-full items-center justify-between gap-2 rounded-lg border bg-white px-3 text-[14px] shadow-sm transition-all duration-150 focus:outline-none focus:ring-2",
                     error 
                         ? "border-red-500 ring-red-500/10 focus:ring-red-500/30 focus:border-red-500" 
-                        : "border-gray-200 hover:border-orange-300 hover:shadow-md focus:ring-[#F97316]/30 focus:border-[#F97316]"
+                        : "border-gray-200 hover:border-violet-300 hover:shadow-md focus:ring-[#7C3AED]/30 focus:border-[#7C3AED]"
                 )}
             >
                 <span className={displayValue ? "text-gray-900 font-medium" : "text-gray-400"}>
                     {displayValue || "Pick a date"}
                 </span>
-                <Building2 className={cn("h-4 w-4 transition-colors", open ? "text-[#F97316]" : "text-gray-400")} />
+                <Building2 className={cn("h-4 w-4 transition-colors", open ? "text-[#7C3AED]" : "text-gray-400")} />
             </button>
             {error && <p className="text-[10px] font-bold text-red-500 uppercase tracking-widest px-1">{error}</p>}
             {typeof window !== "undefined" && createPortal(calendar, document.body)}
@@ -347,14 +347,14 @@ export function BasicInfo({ formData, updateFormData, isAnalyzing }: BasicInfoPr
     return (
         <div className="space-y-6">
             {isAnalyzing && (
-                <div className="p-4 rounded-2xl bg-orange-50 border border-orange-100 flex items-center justify-between animate-in-fade">
+                <div className="p-4 rounded-2xl bg-violet-50 border border-violet-100 flex items-center justify-between animate-in-fade">
                     <div className="flex items-center gap-3">
-                        <div className="h-9 w-9 rounded-xl bg-orange-100 flex items-center justify-center">
-                            <Layers className="h-5 w-5 text-[#F97316] animate-pulse" />
+                        <div className="h-9 w-9 rounded-xl bg-violet-100 flex items-center justify-center">
+                            <Layers className="h-5 w-5 text-[#7C3AED] animate-pulse" />
                         </div>
                         <div>
                             <p className="text-[13px] font-bold text-gray-900">Scanning JD in Background...</p>
-                            <p className="text-[11px] text-orange-600 font-medium">Fields will auto-fill as AI extracts details</p>
+                            <p className="text-[11px] text-violet-600 font-medium">Fields will auto-fill as AI extracts details</p>
                         </div>
                     </div>
                 </div>
@@ -362,7 +362,7 @@ export function BasicInfo({ formData, updateFormData, isAnalyzing }: BasicInfoPr
             {/*  Role Details  */}
             <section>
                 <div className="flex items-center gap-3 mb-3">
-                    <span className="h-6 w-1 rounded-full bg-[#F97316]" />
+                    <span className="h-6 w-1 rounded-full bg-[#7C3AED]" />
                     <p className="text-[14px] font-bold text-gray-900 uppercase tracking-widest">Role Details</p>
                 </div>
                 <div className="grid gap-4 md:grid-cols-2">

@@ -94,7 +94,7 @@ export function ResumeScreening({ driveId, driveName }: { driveId: string; drive
                     ) : (
                         <Button
                             onClick={() => setModalOpen(true)}
-                            className="h-10 px-5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold flex items-center gap-2 shadow-sm"
+                            className="h-10 px-5 rounded-xl bg-violet-600 hover:bg-orange-700 text-white font-bold flex items-center gap-2 shadow-sm"
                         >
                             <Upload className="h-4 w-4" />
                             Upload Resumes
@@ -147,10 +147,10 @@ function EmptyState({ onUpload }: { onUpload: () => void }) {
     return (
         <div
             onClick={onUpload}
-            className="flex flex-col items-center justify-center gap-4 py-20 border-2 border-dashed border-gray-200 rounded-2xl cursor-pointer hover:border-orange-300 hover:bg-orange-50/20 transition-all"
+            className="flex flex-col items-center justify-center gap-4 py-20 border-2 border-dashed border-gray-200 rounded-2xl cursor-pointer hover:border-violet-300 hover:bg-violet-50/20 transition-all"
         >
-            <div className="w-14 h-14 rounded-2xl bg-orange-100 flex items-center justify-center">
-                <Upload className="h-7 w-7 text-orange-500" />
+            <div className="w-14 h-14 rounded-2xl bg-violet-100 flex items-center justify-center">
+                <Upload className="h-7 w-7 text-violet-500" />
             </div>
             <div className="text-center">
                 <p className="text-base font-bold text-gray-700">No resumes screened yet</p>
@@ -284,7 +284,7 @@ function UploadModal({
         <Dialog open={open} onOpenChange={handleClose}>
             <DialogContent className="flex max-h-[90vh] max-w-2xl flex-col overflow-hidden rounded-[2rem] border border-white/40 bg-white/95 backdrop-blur-2xl shadow-[0_30px_100px_rgba(0,0,0,0.18)]">
                 <DialogHeader className="shrink-0 space-y-3 border-b border-gray-100 pb-4">
-                    <div className="inline-flex w-fit items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-[10px] font-black uppercase tracking-[0.24em] text-orange-700">
+                    <div className="inline-flex w-fit items-center gap-2 rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-[10px] font-black uppercase tracking-[0.24em] text-violet-700">
                         Resume batch upload
                     </div>
                     <DialogTitle className="text-2xl font-black tracking-tight text-gray-900">
@@ -304,9 +304,9 @@ function UploadModal({
                             onClick={() => files.length === 0 && inputRef.current?.click()}
                             className={cn(
                                 "rounded-3xl border-2 border-dashed transition-all duration-200 cursor-pointer",
-                                isDragging ? "border-orange-400 bg-orange-50/60" :
-                                    files.length > 0 ? "border-orange-200 bg-orange-50/20" :
-                                        "border-gray-200 hover:border-orange-300",
+                                isDragging ? "border-violet-400 bg-violet-50/60" :
+                                    files.length > 0 ? "border-violet-200 bg-violet-50/20" :
+                                        "border-gray-200 hover:border-violet-300",
                                 files.length > 0 ? "p-5" : "p-12"
                             )}
                         >
@@ -320,7 +320,7 @@ function UploadModal({
                             />
                             {files.length === 0 ? (
                                 <div className="text-center">
-                                    <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-[1.5rem] bg-gradient-to-br from-orange-100 to-amber-100 text-orange-600 shadow-sm">
+                                    <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-[1.5rem] bg-gradient-to-br from-orange-100 to-amber-100 text-violet-600 shadow-sm">
                                         <Upload className="h-7 w-7" />
                                     </div>
                                     <p className="text-base font-bold text-gray-800">Drop PDF resumes here</p>
@@ -329,7 +329,7 @@ function UploadModal({
                                         type="button"
                                         variant="outline"
                                         onClick={(e) => { e.stopPropagation(); inputRef.current?.click(); }}
-                                        className="mt-5 h-11 rounded-2xl border-orange-200 bg-white px-5 text-sm font-bold text-orange-600 hover:border-orange-300 hover:bg-orange-50"
+                                        className="mt-5 h-11 rounded-2xl border-violet-200 bg-white px-5 text-sm font-bold text-violet-600 hover:border-violet-300 hover:bg-violet-50"
                                     >
                                         Browse files
                                     </Button>
@@ -345,16 +345,16 @@ function UploadModal({
                                             <button
                                                 type="button"
                                                 onClick={e => { e.stopPropagation(); inputRef.current?.click(); }}
-                                                className="inline-flex h-11 items-center gap-2 rounded-2xl border border-orange-200 bg-orange-50 px-4 text-xs font-bold text-orange-600 transition-colors hover:border-orange-300 hover:bg-orange-100"
+                                                className="inline-flex h-11 items-center gap-2 rounded-2xl border border-violet-200 bg-violet-50 px-4 text-xs font-bold text-violet-600 transition-colors hover:border-violet-300 hover:bg-violet-100"
                                             >
                                                 + Add More
                                             </button>
-                                            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-orange-100 text-orange-500 shadow-sm">
+                                            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-100 text-violet-500 shadow-sm">
                                                 <FileText className="h-5 w-5" />
                                             </div>
                                         </div>
                                     </div>
-                                    <div className="max-h-56 overflow-y-auto space-y-2 rounded-[1.5rem] border border-orange-100 bg-white/80 p-3 pr-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
+                                    <div className="max-h-56 overflow-y-auto space-y-2 rounded-[1.5rem] border border-violet-100 bg-white/80 p-3 pr-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
                                         {files.map((file) => (
                                             <div key={`${file.name}-${file.size}`} className="flex items-center justify-between gap-3 rounded-[1.25rem] border border-gray-100 bg-white px-4 py-3 shadow-[0_6px_20px_rgba(15,23,42,0.04)] transition-transform hover:-translate-y-[1px]">
                                                 <div className="min-w-0">
@@ -385,7 +385,7 @@ function UploadModal({
                             <Button
                                 onClick={startScreening}
                                 disabled={files.length === 0 || phase === "uploading"}
-                                className="rounded-2xl bg-orange-600 px-6 font-bold text-white shadow-[0_10px_24px_rgba(249,115,22,0.28)] hover:bg-orange-700 hover:shadow-[0_12px_28px_rgba(249,115,22,0.34)] flex items-center gap-2"
+                                className="rounded-2xl bg-violet-600 px-6 font-bold text-white shadow-[0_10px_24px_rgba(124,58,237,0.28)] hover:bg-orange-700 hover:shadow-[0_12px_28px_rgba(124,58,237,0.34)] flex items-center gap-2"
                             >
                                 <Zap className="h-4 w-4" />
                                 {phase === "uploading" ? "Uploading..." : `Start Screening (${files.length})`}
@@ -428,7 +428,7 @@ function UploadModal({
                                 {[
                                     { label: "Total", v: progress.total, c: "text-gray-800" },
                                     { label: "Done", v: progress.processed, c: "text-emerald-600" },
-                                    { label: "Left", v: progress.total - progress.processed, c: "text-orange-500" },
+                                    { label: "Left", v: progress.total - progress.processed, c: "text-violet-500" },
                                 ].map(x => (
                                     <div key={x.label} className="text-center p-3 bg-gray-50 rounded-lg border border-gray-100">
                                         <p className={cn("text-xl font-black tabular-nums", x.c)}>{x.v}</p>
@@ -461,13 +461,13 @@ function UploadModal({
                                 <p className="text-2xl font-black text-rose-700">{summary.rejected}</p>
                                 <p className="mt-1 text-[11px] font-bold uppercase tracking-widest text-rose-700">Rejected</p>
                             </div>
-                            <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 text-center">
-                                <p className="text-2xl font-black text-slate-900">{summary.total}</p>
-                                <p className="mt-1 text-[11px] font-bold uppercase tracking-widest text-slate-500">Total</p>
+                            <div className="rounded-2xl border border-gray-200 bg-violet-50/60 p-4 text-center">
+                                <p className="text-2xl font-black text-gray-900">{summary.total}</p>
+                                <p className="mt-1 text-[11px] font-bold uppercase tracking-widest text-gray-500">Total</p>
                             </div>
                         </div>
-                        <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 text-sm text-slate-600">
-                            <p className="font-semibold text-slate-900">Send follow-up emails now?</p>
+                        <div className="rounded-2xl border border-gray-200 bg-violet-50/70 p-4 text-sm text-gray-600">
+                            <p className="font-semibold text-gray-900">Send follow-up emails now?</p>
                             <p className="mt-1">
                                 Rejection emails will be sent immediately. Shortlisted emails will be queued and delivered through the invitation queue.
                             </p>
@@ -479,7 +479,7 @@ function UploadModal({
                             <Button
                                 onClick={handleSendFollowUpEmails}
                                 disabled={sendingFollowUp}
-                                className="h-11 rounded-2xl bg-orange-600 px-6 font-bold text-white shadow-[0_10px_24px_rgba(249,115,22,0.28)] hover:bg-orange-700 hover:shadow-[0_12px_28px_rgba(249,115,22,0.34)] flex items-center gap-2"
+                                className="h-11 rounded-2xl bg-violet-600 px-6 font-bold text-white shadow-[0_10px_24px_rgba(124,58,237,0.28)] hover:bg-orange-700 hover:shadow-[0_12px_28px_rgba(124,58,237,0.34)] flex items-center gap-2"
                             >
                                 <Mail className="h-4 w-4" />
                                 {sendingFollowUp ? "Sending..." : "Send Emails"}
@@ -497,7 +497,7 @@ function UploadModal({
                         <p className="text-sm text-gray-400">{error}</p>
                         <div className="flex items-center justify-center gap-3">
                             <Button variant="ghost" onClick={handleClose} className="h-11 rounded-2xl border border-gray-200 bg-white px-5 font-bold text-gray-600 hover:bg-gray-50">Close</Button>
-                            <Button onClick={reset} className="h-11 rounded-2xl bg-orange-600 px-5 font-bold text-white shadow-[0_10px_24px_rgba(249,115,22,0.28)] hover:bg-orange-700 hover:shadow-[0_12px_28px_rgba(249,115,22,0.34)]">Try Again</Button>
+                            <Button onClick={reset} className="h-11 rounded-2xl bg-violet-600 px-5 font-bold text-white shadow-[0_10px_24px_rgba(124,58,237,0.28)] hover:bg-orange-700 hover:shadow-[0_12px_28px_rgba(124,58,237,0.34)]">Try Again</Button>
                         </div>
                     </div>
                 )}

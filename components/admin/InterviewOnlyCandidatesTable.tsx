@@ -154,8 +154,8 @@ export function InterviewOnlyCandidatesTable({ driveId, refreshKey }: { driveId:
     if (!isDriveViewReady) {
         return (
             <div className="flex min-h-[40vh] items-center justify-center">
-                <div className="flex flex-col items-center gap-3">
-                    <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
+                <div className="flex flex-col items-center gap-1.5">
+                    <Loader2 className="h-8 w-8 animate-spin text-violet-500" />
                     <p className="text-xs font-bold uppercase tracking-widest text-gray-400">Loading candidates...</p>
                 </div>
             </div>
@@ -163,17 +163,17 @@ export function InterviewOnlyCandidatesTable({ driveId, refreshKey }: { driveId:
     }
 
     return (
-        <div>
+        <div className="flex flex-col flex-1 min-h-0 w-full h-full">
             {/* ── Filter row: pill tabs + dropdown + bulk actions ── */}
-            <div className="flex items-center justify-between gap-3 px-6 py-3 border-b border-gray-100 flex-wrap">
+            <div className="flex items-center justify-between gap-1.5 px-6 py-3 border-b border-gray-100 flex-wrap">
                 {/* Left: Interview status dropdown */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                             <button className={cn(
                                 "flex items-center gap-1.5 h-8 px-3.5 rounded-full text-[12px] font-bold transition-all border focus:outline-none",
                                 activeTab !== "all"
-                                    ? "bg-[#F97316] text-white border-[#F97316] shadow-sm"
+                                    ? "bg-[#7C3AED] text-white border-[#7C3AED] shadow-sm"
                                     : "text-gray-600 border-gray-200 hover:border-gray-300 hover:text-gray-800 bg-white"
                             )}>
                                 {activeTab === "all" ? "Interview" :
@@ -181,7 +181,7 @@ export function InterviewOnlyCandidatesTable({ driveId, refreshKey }: { driveId:
                                     activeTab === "inprogress" ? "In Progress" :
                                     "Completed"}
                                 {activeTab === "all" && pagination.total > 0 && (
-                                    <span className="bg-gray-100 text-gray-500 text-[10px] font-black px-1.5 py-0.5 rounded-full">
+                                    <span className="bg-gray-100 text-gray-500 text-[9px] font-black px-1.5 py-0.5 rounded-full">
                                         {pagination.total}
                                     </span>
                                 )}
@@ -189,14 +189,14 @@ export function InterviewOnlyCandidatesTable({ driveId, refreshKey }: { driveId:
                             </button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="start" className="w-44 p-1.5 rounded-xl shadow-lg border-gray-100 bg-white">
-                            <DropdownMenuLabel className="px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-gray-400">Interview Status</DropdownMenuLabel>
+                            <DropdownMenuLabel className="px-3 py-0.5.5 text-[9px] font-black uppercase tracking-widest text-gray-400">Interview Status</DropdownMenuLabel>
                             {STATUS_TABS.map(tab => (
                                 <DropdownMenuItem key={tab.key} onClick={() => setActiveTab(tab.key)}
                                     className={cn("rounded-lg px-3 py-2 text-[12px] font-semibold cursor-pointer flex items-center justify-between",
-                                        activeTab === tab.key ? "text-[#F97316] bg-orange-50" : "text-gray-700"
+                                        activeTab === tab.key ? "text-[#7C3AED] bg-violet-50" : "text-gray-700"
                                     )}>
                                     {tab.label}
-                                    {activeTab === tab.key && <span className="h-1.5 w-1.5 rounded-full bg-[#F97316]" />}
+                                    {activeTab === tab.key && <span className="h-1 w-1 rounded-full bg-[#7C3AED]" />}
                                 </DropdownMenuItem>
                             ))}
                         </DropdownMenuContent>
@@ -204,17 +204,17 @@ export function InterviewOnlyCandidatesTable({ driveId, refreshKey }: { driveId:
                 </div>
 
                 {/* Right: bulk actions + search */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
                     {selectedCount > 0 && (
                         <>
                             <button
                                 onClick={handleBulkSendInvite}
                                 disabled={isBulkLoading || isActionBlocked}
                                 className={cn("h-8 px-3 rounded-full border text-[12px] font-semibold flex items-center gap-1.5 disabled:opacity-50 transition-colors",
-                                    isActionBlocked ? "border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed" : "border-orange-200 bg-white text-[#F97316] hover:bg-orange-50")}
+                                    isActionBlocked ? "border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed" : "border-violet-200 bg-white text-[#7C3AED] hover:bg-violet-50")}
                             >
                                 {isActionBlocked ? <Lock className="h-3.5 w-3.5" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                                Resend Invite ({selectedCount})
+                                Resend Schedule Link ({selectedCount})
                             </button>
                             <button
                                 onClick={() => setDeleteConfirm({ mode: "bulk" })}
@@ -229,7 +229,7 @@ export function InterviewOnlyCandidatesTable({ driveId, refreshKey }: { driveId:
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
                         <Input
                             placeholder="Search candidates..."
-                            className="pl-8 h-8 w-48 border-gray-200 rounded-full text-[12px] font-medium focus:border-orange-400 focus:ring-1 focus:ring-orange-200 bg-gray-50"
+                            className="pl-8 h-8 w-48 border-gray-200 rounded-full text-[12px] font-medium focus:border-violet-400 focus:ring-1 focus:ring-violet-200 bg-gray-50"
                             value={searchTerm}
                             onChange={e => setSearchTerm(e.target.value)}
                         />
@@ -239,7 +239,7 @@ export function InterviewOnlyCandidatesTable({ driveId, refreshKey }: { driveId:
 
             {error && (
                 <div className="mx-4 mt-3 flex items-center justify-between rounded-xl border border-red-100 bg-red-50 px-4 py-3">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1">
                         <AlertCircle className="h-4 w-4 text-red-500" />
                         <span className="text-[12px] font-semibold text-red-700">{error}</span>
                     </div>
@@ -248,8 +248,9 @@ export function InterviewOnlyCandidatesTable({ driveId, refreshKey }: { driveId:
             )}
 
             {/* Table — screenshot flat style */}
-            <div className="overflow-x-auto">
-                <table className="w-full text-left">
+            <div className="overflow-x-auto flex-1 flex flex-col min-h-0">
+                <div className="relative w-full overflow-auto flex-1">
+                    <table className="w-full text-left">
                     <thead>
                         <tr className="border-b border-gray-100">
                             <th className="w-10 px-4 py-3">
@@ -266,10 +267,10 @@ export function InterviewOnlyCandidatesTable({ driveId, refreshKey }: { driveId:
                     </thead>
                     <tbody>
                         {isLoading ? (
-                            <tr><td colSpan={8} className="py-16 text-center text-[13px] font-semibold text-gray-400">Loading candidates...</td></tr>
+                            <tr><td colSpan={8} className="py-0.56 text-center text-[13px] font-semibold text-gray-400">Loading candidates...</td></tr>
                         ) : filteredCandidates.length === 0 ? (
                             <tr>
-                                <td colSpan={8} className="py-16 text-center">
+                                <td colSpan={8} className="py-0.56 text-center">
                                     <p className="text-[14px] font-bold text-gray-400">No candidates yet</p>
                                     <p className="text-[12px] text-gray-300 mt-1">Use Bulk Upload or + Add Candidate to get started</p>
                                 </td>
@@ -298,7 +299,7 @@ export function InterviewOnlyCandidatesTable({ driveId, refreshKey }: { driveId:
                                     </td>
                                     {/* Candidate */}
                                     <td className="px-4 py-3.5">
-                                        <div className="flex items-center gap-3">
+                                        <div className="flex items-center gap-1.5">
                                             <div className="h-8 w-8 rounded-lg bg-gray-100 border border-gray-200 flex items-center justify-center text-[11px] font-black text-gray-500 shrink-0">
                                                 {initials}
                                             </div>
@@ -329,7 +330,7 @@ export function InterviewOnlyCandidatesTable({ driveId, refreshKey }: { driveId:
                                     </td>
                                     {/* Status */}
                                     <td className="px-4 py-3.5" onClick={e => e.stopPropagation()}>
-                                        <div className="flex items-center gap-2">
+                                        <div className="flex items-center gap-1">
                                             <div className={cn(
                                                 "h-2 w-2 rounded-full shrink-0",
                                                 isDone ? "bg-emerald-500" : isInProgress ? "bg-blue-500" : "bg-gray-300"
@@ -359,7 +360,7 @@ export function InterviewOnlyCandidatesTable({ driveId, refreshKey }: { driveId:
                                     <td className="px-4 py-3.5 text-right" onClick={e => e.stopPropagation()}>
                                         <DropdownMenu modal={false}>
                                             <DropdownMenuTrigger asChild>
-                                                <button className="h-7 w-7 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors opacity-0 group-hover:opacity-100">
+                                                <button className="h-5 w-5 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors opacity-0 group-hover:opacity-100">
                                                     <MoreHorizontal className="h-4 w-4" />
                                                 </button>
                                             </DropdownMenuTrigger>
@@ -376,7 +377,7 @@ export function InterviewOnlyCandidatesTable({ driveId, refreshKey }: { driveId:
                                                         ? <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                                                         : <RefreshCw className="h-4 w-4 mr-2" />
                                                     }
-                                                    {sendingId === candidate.id ? "Sending…" : "Resend Interview Link"}
+                                                    {sendingId === candidate.id ? "Sending…" : "Resend Schedule Link"}
                                                 </DropdownMenuItem>
                                                 <DropdownMenuItem
                                                     onClick={() => setDeleteConfirm({ mode: "single", candidateId: candidate.id, candidateName: displayName })}
@@ -392,13 +393,14 @@ export function InterviewOnlyCandidatesTable({ driveId, refreshKey }: { driveId:
                         })}
                     </tbody>
                 </table>
+                </div>
             </div>
 
             {/* Pagination */}
             {!isLoading && pagination.totalPages > 1 && (
-                <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 text-[12px] text-gray-500">
+                <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 text-[12px] text-gray-500 mt-auto shrink-0">
                     <span>Showing {pagination.total > 0 ? (pagination.page - 1) * pageSize + 1 : 0}–{Math.min(pagination.page * pageSize, pagination.total)} of {pagination.total}</span>
-                    <div className="flex gap-2">
+                    <div className="flex gap-1">
                         <button onClick={() => handlePageChange(pagination.page - 1)} disabled={pagination.page <= 1} className="h-7 px-3 rounded-lg border border-gray-200 font-semibold hover:bg-gray-50 disabled:opacity-40">Previous</button>
                         <button onClick={() => handlePageChange(pagination.page + 1)} disabled={pagination.page >= pagination.totalPages} className="h-7 px-3 rounded-lg border border-gray-200 font-semibold hover:bg-gray-50 disabled:opacity-40">Next</button>
                     </div>

@@ -36,8 +36,6 @@ _SESSION_CONTEXT_KEYS = (
     "dispatch_room_name",
     "org_id",
     "org_name",
-    "org_location",
-    "drive_location",
     "candidate",
     "candidate_first_name",
     "job_title",
@@ -209,25 +207,21 @@ for logger_name in ("livekit.plugins.cartesia", "livekit"):
 
 _config = AgentConfig.get()
 
-STT_MODEL = _config.stt_model
 FLUX_EOT_THRESHOLD = _config.flux_eot_threshold
 FLUX_EAGER_EOT_THRESHOLD = _config.flux_eager_eot_threshold
 FLUX_EOT_TIMEOUT_MS = _config.flux_eot_timeout_ms
 
-LLM_MODEL = _config.llm_model
-INTERVIEW_LLM_MODEL = _config.llm_model
 INTERVIEW_TEMPERATURE = _config.interview_temperature
-EVAL_LLM_MODEL = _config.eval_llm_model
 EVAL_TEMPERATURE = _config.eval_temperature
-
-DEFAULT_VOICE_ID = _config.default_voice_id
-VOICE_REGISTRY = _config.voice_registry
 
 FIXED_INTERVIEW_DURATION_MINUTES = _config.fixed_interview_duration_minutes
 
 DATABASE_URL = _config.database_url
 AGENT_NAME = _config.agent_name
 APP_BASE_URL = _config.app_base_url
+
+# STT_MODEL / LLM_MODEL / EVAL_LLM_MODEL / DEFAULT_VOICE_ID / VOICE_REGISTRY — all deleted.
+# All AI model values come from the org DB row (set via Super Admin → AI Models).
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

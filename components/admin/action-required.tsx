@@ -7,7 +7,7 @@ const actions = [
         text: "Review 5 AI-scored candidates",
         sub: "Backend Engineer",
         buttonLabel: "Review",
-        buttonColor: "bg-[#F97316] hover:bg-orange-500 text-white",
+        buttonColor: "bg-[#7C3AED] hover:bg-violet-500 text-white",
         href: "/admin/candidates",
     },
     {
@@ -33,7 +33,7 @@ export function ActionRequired() {
             {/* Header */}
             <div className="flex items-center gap-2.5">
                 <h2 className="text-[15px] font-semibold text-[#111827]">Action Required</h2>
-                <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-[#F97316] text-white text-[10px] font-bold">
+                <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-[#7C3AED] text-white text-[10px] font-bold">
                     {actions.length}
                 </span>
             </div>
@@ -54,9 +54,9 @@ export function ActionRequired() {
                                 {/* Icon */}
                                 <div className="h-8 w-8 rounded-full bg-[#FFF4ED] flex items-center justify-center flex-shrink-0">
                                     {action.id === 2 ? (
-                                        <Calendar className="h-3.5 w-3.5 text-[#F97316]" />
+                                        <Calendar className="h-3.5 w-3.5 text-[#7C3AED]" />
                                     ) : (
-                                        <Clock className="h-3.5 w-3.5 text-[#F97316]" />
+                                        <Clock className="h-3.5 w-3.5 text-[#7C3AED]" />
                                     )}
                                 </div>
                                 {/* Text */}

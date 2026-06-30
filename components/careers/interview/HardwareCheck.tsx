@@ -33,6 +33,7 @@ interface HardwareCheckProps {
     onRetry?: () => void;
     isStarting?: boolean;
     errorMessage?: string | null;
+    slotCountdownSecs?: number | null;
     candidateName?: string;
     applicationId?: string;
     interviewToken?: string;
@@ -117,6 +118,7 @@ export function HardwareCheck({
     applicationId = "unknown",
     interviewToken = "",
     title = "Environment Check",
+    slotCountdownSecs = null,
 }: HardwareCheckProps) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
@@ -156,6 +158,8 @@ export function HardwareCheck({
     // Keep ref in sync with state so useCallback closures always read the current phrase
     useEffect(() => { verifiedPhraseRef.current = verifiedPhrase; }, [verifiedPhrase]);
     const [canBeginNow, setCanBeginNow] = useState(false);
+    // slotCountdownSecs > 0 means button is locked until countdown hits 0
+    const isSlotLocked = slotCountdownSecs !== null && slotCountdownSecs > 0;
     useEffect(() => {
         setCanBeginNow(true);
     }, []);
@@ -746,7 +750,7 @@ export function HardwareCheck({
             <div className="max-w-4xl w-full mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 animate-fadeIn text-left">
                 <div>
                     <h1 className="text-2xl font-bold text-gray-900 tracking-tight flex items-center gap-2">
-                        <span className="w-2.5 h-2.5 rounded-full bg-orange-500 animate-pulse" />
+                        <span className="w-2.5 h-2.5 rounded-full bg-violet-500 animate-pulse" />
                         Environment Check
                     </h1>
                     <p className="text-xs text-gray-500 mt-1">Hi {candidateName} - let&apos;s make sure everything is set up before we begin.</p>
@@ -779,7 +783,7 @@ export function HardwareCheck({
                             )}
                             {snapshotUploading && (
                                 <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-md text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                                    <Loader2 className="w-3 h-3 animate-spin text-orange-500" /> Uploading snapshot...
+                                    <Loader2 className="w-3 h-3 animate-spin text-violet-500" /> Uploading snapshot...
                                 </div>
                             )}
                         </div>
@@ -814,7 +818,7 @@ export function HardwareCheck({
                                 ? "bg-red-50 border-red-100 text-red-600 animate-pulse"
                                 : cameraFullyReady
                                     ? "bg-green-50 border-green-100 text-green-700 font-extrabold"
-                                    : "bg-orange-50 border-orange-100 text-orange-600"
+                                    : "bg-violet-50 border-violet-100 text-violet-600"
                     )}>
                         {cameraStatus !== "granted" ? (
                             <span>Camera Access Required</span>
@@ -834,7 +838,7 @@ export function HardwareCheck({
                         <span className={cn(
                             "transition-all duration-300 px-3.5 py-1.5 rounded-full text-[11px]",
                             activeStep === 0
-                                ? "bg-orange-500 text-white font-black"
+                                ? "bg-violet-500 text-white font-black"
                                 : "text-gray-400 font-semibold"
                         )}>
                             1. Microphone
@@ -843,7 +847,7 @@ export function HardwareCheck({
                         <span className={cn(
                             "transition-all duration-300 px-3.5 py-1.5 rounded-full text-[11px]",
                             activeStep === 1
-                                ? "bg-orange-500 text-white font-black"
+                                ? "bg-violet-500 text-white font-black"
                                 : "text-gray-400 font-semibold"
                         )}>
                             2. Speakers
@@ -852,7 +856,7 @@ export function HardwareCheck({
                         <span className={cn(
                             "transition-all duration-300 px-3.5 py-1.5 rounded-full text-[11px]",
                             activeStep === 2
-                                ? "bg-orange-500 text-white font-black"
+                                ? "bg-violet-500 text-white font-black"
                                 : "text-gray-400 font-semibold"
                         )}>
                             3. Consent
@@ -873,8 +877,8 @@ export function HardwareCheck({
                                     {/* Sentence prompt card - prominent, clear, readable */}
                                     <div className="text-center my-2 animate-fadeIn">
                                         <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Please read this sentence aloud:</p>
-                                        <div className="bg-orange-50 border border-orange-200 rounded-2xl px-5 py-4 my-2 w-full shadow-sm">
-                                            <span className="text-base font-bold text-orange-600 leading-snug block">
+                                        <div className="bg-violet-50 border border-violet-200 rounded-2xl px-5 py-4 my-2 w-full shadow-sm">
+                                            <span className="text-base font-bold text-violet-600 leading-snug block">
                                                 &ldquo;{verifiedPhrase || "I am ready for my interview today"}&rdquo;
                                             </span>
                                         </div>
@@ -902,7 +906,7 @@ export function HardwareCheck({
                                                 {micVerified ? (
                                                     <CheckCircle2 className="w-8 h-8 text-green-500" />
                                                 ) : (
-                                                    <Mic className="w-6 h-6 text-orange-500" />
+                                                    <Mic className="w-6 h-6 text-violet-500" />
                                                 )}
                                             </div>
                                         );
@@ -931,7 +935,7 @@ export function HardwareCheck({
                                             <div className="w-full flex justify-end items-center pt-3 border-t border-gray-50 mt-2">
                                                 <button
                                                     onClick={() => setActiveStep(1)}
-                                                    className="rounded-full px-7 py-2.5 text-xs font-black transition-all shadow-lg bg-orange-500 hover:bg-orange-600 text-white flex items-center gap-2"
+                                                    className="rounded-full px-7 py-2.5 text-xs font-black transition-all shadow-lg bg-violet-500 hover:bg-violet-600 text-white flex items-center gap-2"
                                                 >
                                                     Next Step &rarr;
                                                 </button>
@@ -948,7 +952,7 @@ export function HardwareCheck({
                                                         <motion.div
                                                             className={cn(
                                                                 "h-full rounded-full",
-                                                                micVolumeLevel > 0.4 ? "bg-green-500" : micVolumeLevel > 0.1 ? "bg-orange-400" : "bg-gray-300"
+                                                                micVolumeLevel > 0.4 ? "bg-green-500" : micVolumeLevel > 0.1 ? "bg-violet-400" : "bg-gray-300"
                                                             )}
                                                             animate={{ width: `${Math.max(2, micVolumeLevel * 100)}%` }}
                                                             transition={{ duration: 0.08 }}
@@ -966,13 +970,13 @@ export function HardwareCheck({
                                                         const spokenSet = new Set(liveTranscript.toLowerCase().replace(/[^a-z\s]/g, "").split(/\s+/).filter(Boolean));
                                                         const matchedCount = targetWords.filter(w => spokenSet.has(w)).length;
                                                         return (
-                                                            <span className="text-orange-500 font-bold">
+                                                            <span className="text-violet-500 font-bold">
                                                                 {matchedCount}/{targetWords.length} words matched
                                                             </span>
                                                         );
                                                     })()
                                                 ) : isRecording ? (
-                                                    <span className="text-orange-400 animate-pulse">Listening...</span>
+                                                    <span className="text-violet-400 animate-pulse">Listening...</span>
                                                 ) : (
                                                     <span className="text-gray-300">Press Record and speak</span>
                                                 )}
@@ -996,13 +1000,13 @@ export function HardwareCheck({
                                                     <button
                                                         onClick={startRecording}
                                                         disabled={isVerifying}
-                                                        className="flex items-center gap-2 rounded-full px-5 py-2 text-xs font-bold bg-orange-500 hover:bg-orange-600 text-white shadow-sm transition-all disabled:opacity-50"
+                                                        className="flex items-center gap-2 rounded-full px-5 py-2 text-xs font-bold bg-violet-500 hover:bg-violet-600 text-white shadow-sm transition-all disabled:opacity-50"
                                                     >
                                                         <Mic className="w-3.5 h-3.5" /> Record
                                                     </button>
                                                 ) : (
-                                                    <div className="text-xs font-bold text-orange-500 animate-pulse flex items-center gap-2">
-                                                        <span className="w-2 h-2 bg-orange-500 rounded-full animate-pulse" />
+                                                    <div className="text-xs font-bold text-violet-500 animate-pulse flex items-center gap-2">
+                                                        <span className="w-2 h-2 bg-violet-500 rounded-full animate-pulse" />
                                                         Recording...
                                                     </div>
                                                 )}
@@ -1029,7 +1033,7 @@ export function HardwareCheck({
                                                     <motion.button
                                                         key="play-btn"
                                                         onClick={playSpeakerTest}
-                                                        className="w-14 h-14 rounded-full bg-orange-500 hover:bg-orange-600 text-white flex items-center justify-center shadow-lg shadow-orange-500/15 transition-all"
+                                                        className="w-14 h-14 rounded-full bg-violet-500 hover:bg-violet-600 text-white flex items-center justify-center shadow-lg shadow-orange-500/15 transition-all"
                                                     >
                                                         <Play className="w-5 h-5 fill-current ml-0.5" />
                                                     </motion.button>
@@ -1040,16 +1044,16 @@ export function HardwareCheck({
                                                                 key={i}
                                                                 animate={{ scaleY: [1, 1.8, 1], opacity: [0.4, 1, 0.4] }}
                                                                 transition={{ repeat: Infinity, duration: 0.6, delay: i * 0.1 }}
-                                                                className="w-1 h-6 bg-orange-500 rounded-full"
+                                                                className="w-1 h-6 bg-violet-500 rounded-full"
                                                             />
                                                         ))}
                                                     </motion.div>
                                                 ) : speakerStatus === "awaiting" ? (
                                                     <motion.div key="awaiting-badge" className="flex flex-col items-center gap-1">
-                                                        <div className="w-14 h-14 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center shadow-lg shadow-orange-500/10 border border-orange-200">
+                                                        <div className="w-14 h-14 rounded-full bg-violet-100 text-violet-600 flex items-center justify-center shadow-lg shadow-orange-500/10 border border-violet-200">
                                                             <Volume2 className="w-6 h-6" />
                                                         </div>
-                                                        <span className="text-[10px] font-bold text-orange-600 mt-2 uppercase tracking-wider">Did you hear it?</span>
+                                                        <span className="text-[10px] font-bold text-violet-600 mt-2 uppercase tracking-wider">Did you hear it?</span>
                                                     </motion.div>
                                                 ) : speakerStatus === "passed" ? (
                                                     <motion.div key="passed-badge" className="flex flex-col items-center gap-1">
@@ -1119,7 +1123,7 @@ export function HardwareCheck({
                                                 {visualReady ? (
                                                     <span className="text-[#34c759] font-bold">✓ Calibrated</span>
                                                 ) : (
-                                                    <span className="text-orange-500 font-bold">⚠ Not Ready</span>
+                                                    <span className="text-violet-500 font-bold">⚠ Not Ready</span>
                                                 )}
                                             </div>
                                             <div className="flex items-center justify-between text-xs text-gray-600 font-semibold">
@@ -1127,7 +1131,7 @@ export function HardwareCheck({
                                                 {micVerified ? (
                                                     <span className="text-[#34c759] font-bold">✓ Verified</span>
                                                 ) : (
-                                                    <span className="text-orange-500 font-bold">⚠ Not Verified</span>
+                                                    <span className="text-violet-500 font-bold">⚠ Not Verified</span>
                                                 )}
                                             </div>
                                             <div className="flex items-center justify-between text-xs text-gray-600 font-semibold">
@@ -1135,9 +1139,9 @@ export function HardwareCheck({
                                                 {speakerStatus === "passed" ? (
                                                     <span className="text-[#34c759] font-bold">✓ Verified</span>
                                                 ) : speakerStatus === "failed" ? (
-                                                    <span className="text-orange-500 font-bold">⚠ Check Speakers</span>
+                                                    <span className="text-violet-500 font-bold">⚠ Check Speakers</span>
                                                 ) : (
-                                                    <span className="text-orange-500 font-bold">⚠ Not Tested</span>
+                                                    <span className="text-violet-500 font-bold">⚠ Not Tested</span>
                                                 )}
                                             </div>
                                         </div>
@@ -1157,7 +1161,7 @@ export function HardwareCheck({
                                                             className="absolute z-20 bottom-full mb-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden max-h-36 overflow-y-auto">
                                                             {devices.filter(d => d.kind === "audioinput").map(d => (
                                                                 <button key={d.deviceId} onClick={() => { setSelectedMicId(d.deviceId); setIsMicDropdownOpen(false); }}
-                                                                    className={cn("w-full text-left text-xs px-4 py-2 hover:bg-gray-50 transition-colors font-medium", d.deviceId === selectedMicId && "bg-orange-50 text-orange-600")}>
+                                                                    className={cn("w-full text-left text-xs px-4 py-2 hover:bg-gray-50 transition-colors font-medium", d.deviceId === selectedMicId && "bg-violet-50 text-violet-600")}>
                                                                     {d.label || `Mic ${d.deviceId.slice(0, 6)}`}
                                                                 </button>
                                                             ))}
@@ -1167,13 +1171,13 @@ export function HardwareCheck({
                                             </div>
                                         )}
                                         {/* Consent Box (Native accent-orange style prevents any orange overlay blending/messiness) */}
-                                        <div className="border border-orange-100 bg-orange-50/10 rounded-2xl p-4">
+                                        <div className="border border-violet-100 bg-violet-50/10 rounded-2xl p-4">
                                             <label className="group flex items-start gap-3 cursor-pointer select-none">
                                                 <input
                                                     type="checkbox"
                                                     checked={consentChecked}
                                                     onChange={(e) => setConsentChecked(e.target.checked)}
-                                                    className="h-4 w-4 mt-0.5 rounded border-gray-300 text-orange-600 focus:ring-orange-500 cursor-pointer flex-shrink-0 accent-orange-500"
+                                                    className="h-4 w-4 mt-0.5 rounded border-gray-300 text-violet-600 focus:ring-violet-1000 cursor-pointer flex-shrink-0 accent-orange-500"
                                                 />
                                                 <span className="text-[11px] font-semibold text-gray-600 leading-relaxed group-hover:text-gray-800 transition-colors">
                                                     I agree and consent to capture dynamic photos during this interview session to verify my profile and ensure integrity.
@@ -1189,22 +1193,31 @@ export function HardwareCheck({
                                         >
                                             Back
                                         </button>
-                                        <button
-                                            onClick={handleBeginInterview}
-                                            disabled={!allReady || isStarting || snapshotUploading || !canBeginNow}
-                                            className={cn(
-                                                "rounded-full px-8 py-3 text-xs font-bold transition-all shadow-md flex items-center gap-2",
-                                                allReady && !isStarting && !snapshotUploading && canBeginNow
-                                                    ? "bg-gradient-to-r from-orange-500 to-orange-400 hover:from-orange-600 hover:to-orange-500 text-white shadow-lg shadow-orange-500/10"
-                                                    : "bg-gray-100 text-gray-400 cursor-not-allowed border border-transparent"
+                                        <div className="flex flex-col items-end gap-1">
+                                            {isSlotLocked && slotCountdownSecs !== null && (
+                                                <span className="text-[10px] font-bold text-orange-500 tabular-nums">
+                                                    Timing Remaining: {String(Math.floor(slotCountdownSecs / 60)).padStart(2, "0")}:{String(slotCountdownSecs % 60).padStart(2, "0")}
+                                                </span>
                                             )}
-                                        >
-                                            {isStarting || snapshotUploading ? (
-                                                <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Securing...</>
-                                            ) : (
-                                                <><Zap className="w-3.5 h-3.5" /> Begin Interview</>
-                                            )}
-                                        </button>
+                                            <button
+                                                onClick={handleBeginInterview}
+                                                disabled={!allReady || isStarting || snapshotUploading || !canBeginNow || isSlotLocked}
+                                                className={cn(
+                                                    "rounded-full px-8 py-3 text-xs font-bold transition-all shadow-md flex items-center gap-2",
+                                                    allReady && !isStarting && !snapshotUploading && canBeginNow && !isSlotLocked
+                                                        ? "bg-gradient-to-r from-violet-500 to-blue-400 hover:from-orange-600 hover:to-blue-500 text-white shadow-lg shadow-orange-500/10"
+                                                        : "bg-gray-100 text-gray-400 cursor-not-allowed border border-transparent"
+                                                )}
+                                            >
+                                                {isStarting || snapshotUploading ? (
+                                                    <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Securing...</>
+                                                ) : isSlotLocked ? (
+                                                    <><Zap className="w-3.5 h-3.5" /> Begin Interview</>
+                                                ) : (
+                                                    <><Zap className="w-3.5 h-3.5" /> Begin Interview</>
+                                                )}
+                                            </button>
+                                        </div>
                                     </div>
                                 </motion.div>
                             )}
@@ -1215,11 +1228,11 @@ export function HardwareCheck({
             {/* Terms & Policy Footer — moved to bottom of cards */}
             <p className="text-[11px] text-gray-400 text-center leading-relaxed mt-6 max-w-3xl animate-fadeIn px-4">
                 By proceeding, you agree to our{" "}
-                <a href="/terms" target="_blank" rel="noopener noreferrer" className="text-orange-500 hover:underline font-semibold">
+                <a href="/terms" target="_blank" rel="noopener noreferrer" className="text-violet-500 hover:underline font-semibold">
                     Terms of Service
                 </a>{" "}
                 and{" "}
-                <a href="/privacy" target="_blank" rel="noopener noreferrer" className="text-orange-500 hover:underline font-semibold">
+                <a href="/privacy" target="_blank" rel="noopener noreferrer" className="text-violet-500 hover:underline font-semibold">
                     Privacy Policy
                 </a>
                 . This session will be recorded and monitored for quality and verification purposes.

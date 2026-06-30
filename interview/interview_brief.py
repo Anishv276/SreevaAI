@@ -38,7 +38,6 @@ class TopicItem(BaseModel):
     full_description: str
     tech_stack: list[str] = Field(default_factory=list)
     impact: str = ""
-    source: str = ""           # "resume" | "jd" | "inferred"
     is_jd_must_have: bool = False
     relevance_score: float = 0.5
     why_relevant: str = ""
@@ -72,7 +71,6 @@ class RoleContext(BaseModel):
     role_title: str
     role_summary: str = ""
     must_have_skills: list[str] = Field(default_factory=list)
-    nice_to_have_skills: list[str] = Field(default_factory=list)
 
 
 class InterviewBrief(BaseModel):
@@ -83,8 +81,6 @@ class InterviewBrief(BaseModel):
     topic_pool: list[TopicItem] = Field(default_factory=list)
     skill_coverage_map: dict[str, list[str]] = Field(default_factory=dict)
     interview_strategy: str = ""
-    candidate_fit_gaps: list[str] = Field(default_factory=list)
-    focus_areas: list[str] = Field(default_factory=list)
     red_flags: list[str] = Field(default_factory=list)
 
     @field_validator("candidate_band", mode="before")
@@ -107,7 +103,7 @@ No raw JSON. No parsing needed. Your jobs:
   2. Select the anchor topic (most strategically valuable for this role + band)
   3. Generate role_topic TopicItems from YOUR expert domain knowledge of the role — not from resume or JD
   4. Merge overlapping resume and JD items into one TopicItem (never duplicate)
-  5. Write interview_strategy, focus_areas, red_flags, candidate_summary — calibrated to role and band
+  5. Write interview_strategy, red_flags, candidate_summary — calibrated to role and band
   6. The interview_strategy must be SPECIFIC to this exact role, band, and candidate — not generic filler
 
 ━━━ TOPIC TAGS (required on every TopicItem) ━━━
@@ -119,11 +115,12 @@ If a resume skill appears in the JD must-haves → tag=RESUME_TOPIC, is_jd_must_
 If a JD requirement is not on the resume → tag=JD_TOPIC
 
 ━━━ TOPIC COUNT ━━━
-Target: 18–32 topics. Every project → TopicItem. Every work entry → TopicItem.
+Every project → TopicItem. Every work entry → TopicItem.
 Every resume skill → TopicItem (unless already in skill_coverage_map for a listed project).
 Every JD must-have → TopicItem (merge with resume item if same concept).
-ROLE_TOPIC count: enough to fill the interview with role-depth checks — minimum 5, no fixed cap.
-NEVER cap at 8–10. Return all real topics.
+ROLE_TOPIC count: EXACTLY 2. No more, no fewer. Pick the 2 most important role-depth
+checks for this role — the concepts that best separate a strong hire from a weak one.
+Return all resume and JD topics, but exactly 2 ROLE_TOPICs.
 
 ━━━ BAND CALIBRATION ━━━
 Each band changes: probing depth, question difficulty, what counts as a "good" answer,
@@ -170,12 +167,12 @@ every competent person in this role should know — regardless of what is on the
 The goal: test role depth, not just candidate experience.
 
 Rules:
-  - Minimum 5 role topics. No upper cap — generate as many as the role demands.
+  - EXACTLY 2 role topics. Choose the 2 highest-signal concepts for this role.
   - Do NOT copy resume or JD items. Completely independent.
   - Each role_topic must be specific enough that Ishita can ask one concrete, grounded question about it.
   - Role topics must change based on band: same concept, different depth.
 
-Examples by role (generate equivalent for the actual role):
+Examples by role (pick the 2 strongest for the actual role):
   DevOps/SRE:       Observability strategy, Incident management runbooks, Reliability engineering (SLO/SLI/error budgets),
                     Cost optimization approach, Deployment pipeline design, On-call culture, Chaos engineering
   Backend Engineer: Database indexing tradeoffs (B-tree vs hash, N+1), API design principles, Caching strategy and invalidation,
@@ -200,23 +197,21 @@ Never two TopicItems for the same concept.
   - Every resume skill → TopicItem (topic_type="skill", tag="RESUME_TOPIC") unless merged with JD
   - Every JD must-have not on resume → TopicItem (topic_type="skill", tag="JD_TOPIC")
   - Every JD requirement not covered above → TopicItem (topic_type="role_topic", tag="JD_TOPIC")
-  - Role-based topics from expert knowledge → TopicItems (topic_type="role_topic", tag="ROLE_TOPIC")
-  - Custom questions → TopicItems (topic_type="role_topic", tag="ROLE_TOPIC")
+  - EXACTLY 2 role-based topics from expert knowledge → TopicItems (topic_type="role_topic", tag="ROLE_TOPIC")
+  - Custom questions → TopicItems (topic_type="role_topic", tag="ROLE_TOPIC") — these are separate from the 2 ROLE_TOPICs above
   - anchor_topic must also be the FIRST item in topic_pool
-  - Total topic_pool: 18–32 minimum. Never fewer than 15.
+  - topic_pool = all resume topics + all JD topics + exactly 2 ROLE_TOPICs + any custom questions
   - Return ONLY valid JSON. No markdown. No explanation.
 
 Schema:
 {
-  "role_context": { "role_title": str, "role_summary": str, "must_have_skills": [str], "nice_to_have_skills": [str] },
+  "role_context": { "role_title": str, "role_summary": str, "must_have_skills": [str] },
   "candidate_band": "fresher"|"mid"|"experienced"|"senior",
   "candidate_summary": str,
   "anchor_topic": TopicItem,
   "topic_pool": [TopicItem],
   "skill_coverage_map": { "skill_key": ["topic_id"] },
   "interview_strategy": str,
-  "candidate_fit_gaps": [str],
-  "focus_areas": [str],
   "red_flags": [str]
 }
 
@@ -229,7 +224,6 @@ TopicItem schema:
   "full_description": str,
   "tech_stack": [str],
   "impact": str,
-  "source": "resume"|"jd"|"inferred",
   "is_jd_must_have": bool,
   "relevance_score": float,
   "why_relevant": str,
@@ -244,7 +238,7 @@ OUTPUT SIZE RULES:
   - probe_avoid: max 2 items, 3–5 words each.
   - interview_strategy: 3–5 sentences. Must be specific to this role, band, and candidate — not generic.
   - candidate_summary: 1–2 sentences.
-  - candidate_fit_gaps / focus_areas / red_flags: up to 5 items each, short phrases.
+  - red_flags: up to 5 items, short phrases.
 """
 
 

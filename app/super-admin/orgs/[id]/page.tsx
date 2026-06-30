@@ -1,10 +1,9 @@
 "use client";
-import { useEffect, useState, use, useRef, type FormEvent } from "react";
+import { useEffect, useState, use, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Building2, Mail, ShieldCheck, Globe, RefreshCw, Play, Pause, ChevronRight, Coins, ChevronDown, Loader2, Shield, Layers, AudioLines, Search, Lock, Clock, Eye, EyeOff } from "lucide-react";
+import { ArrowLeft, Building2, Mail, ShieldCheck, Globe, RefreshCw, ChevronRight, Coins, ChevronDown, Loader2, Shield, Layers, Lock, Clock, Eye, EyeOff } from "lucide-react";
 import { toast } from "@/components/ui/toast-custom";
 import { ProctoringSignalsSection } from "@/components/super-admin/proctoring-signals-section";
-import { ALL_VOICES, type Voice } from "@/lib/constants/voices";
 import { DEFAULT_ORG_PLAN, ORG_PLAN_OPTIONS, normalizeOrgPlan } from "@/lib/org-plans";
 import { getProctoringSignalsForPlan, normalizeProctoringSignals } from "@/lib/proctoring-signals";
 import { cn } from "@/lib/utils";
@@ -17,9 +16,9 @@ function PremiumInput({ label, icon: Icon, error, required = true, type = "text"
     return (
         <div className="space-y-2">
             <label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest">
-                <Icon className="h-3 w-3 text-[#F97316]" />
+                <Icon className="h-3 w-3 text-[#7C3AED]" />
                 {label}
-                {required && <span className="text-[#F97316] ml-0.5">*</span>}
+                {required && <span className="text-[#7C3AED] ml-0.5">*</span>}
             </label>
             <div className="relative">
                 <input
@@ -27,7 +26,7 @@ function PremiumInput({ label, icon: Icon, error, required = true, type = "text"
                     type={isPasswordField ? (showPassword ? "text" : "password") : type}
                     onWheel={type === "number" ? (e: React.WheelEvent<HTMLInputElement>) => e.currentTarget.blur() : props.onWheel}
                     className={cn(
-                        "h-10 w-full rounded-lg bg-white border border-gray-200 px-3 text-[14px] font-medium shadow-sm transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[#F97316]/30 focus:border-[#F97316] hover:border-orange-300 hover:shadow-md",
+                        "h-10 w-full rounded-lg bg-white border border-gray-200 px-3 text-[14px] font-medium shadow-sm transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[#7C3AED]/30 focus:border-[#7C3AED] hover:border-violet-300 hover:shadow-md",
                         isPasswordField ? "pr-10" : "",
                         error && "border-red-500"
                     )}
@@ -37,7 +36,7 @@ function PremiumInput({ label, icon: Icon, error, required = true, type = "text"
                         type="button"
                         onClick={() => setShowPassword((value) => !value)}
                         aria-label={showPassword ? "Hide password" : "Show password"}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-gray-400 hover:text-[#F97316] transition-colors"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-gray-400 hover:text-[#7C3AED] transition-colors"
                     >
                         {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
@@ -49,7 +48,7 @@ function PremiumInput({ label, icon: Icon, error, required = true, type = "text"
 function SectionHeader({ title }: { title: string }) {
     return (
         <div className="flex items-center gap-3 mb-6">
-            <span className="h-6 w-1 rounded-full bg-[#F97316]" />
+            <span className="h-6 w-1 rounded-full bg-[#7C3AED]" />
             <p className="text-[14px] font-bold text-gray-900 uppercase tracking-widest">{title}</p>
         </div>
     );
@@ -60,13 +59,13 @@ function LimitControl({ value, onChange, label }: { value: string, onChange: (va
     useEffect(() => { if (!isUnlimited) setLocalValue(String(value)); }, [value, isUnlimited]);
     return (
         <div className="space-y-2">
-            <label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest"><Layers className="h-3 w-3 text-[#F97316]" /> {label}</label>
+            <label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest"><Layers className="h-3 w-3 text-[#7C3AED]" /> {label}</label>
             <div className="flex items-center gap-1.5">
                 <div className="flex bg-gray-100/50 p-1 rounded-lg border border-gray-100 w-fit shrink-0">
-                    <button type="button" onClick={() => onChange("Unlimited")} className={cn("px-3 h-7 rounded-md text-[10px] font-bold uppercase transition-all", isUnlimited ? "bg-white text-[#F97316] shadow-sm" : "text-gray-400 hover:text-gray-600")}>Unlimited</button>
-                    <button type="button" onClick={() => { if (isUnlimited) onChange("1"); }} className={cn("px-3 h-7 rounded-md text-[10px] font-bold uppercase transition-all", !isUnlimited ? "bg-white text-[#F97316] shadow-sm" : "text-gray-400 hover:text-gray-600")}>Limited</button>
+                    <button type="button" onClick={() => onChange("Unlimited")} className={cn("px-3 h-7 rounded-md text-[10px] font-bold uppercase transition-all", isUnlimited ? "bg-white text-[#7C3AED] shadow-sm" : "text-gray-400 hover:text-gray-600")}>Unlimited</button>
+                    <button type="button" onClick={() => { if (isUnlimited) onChange("1"); }} className={cn("px-3 h-7 rounded-md text-[10px] font-bold uppercase transition-all", !isUnlimited ? "bg-white text-[#7C3AED] shadow-sm" : "text-gray-400 hover:text-gray-600")}>Limited</button>
                 </div>
-                {!isUnlimited && <input type="text" inputMode="numeric" pattern="[0-9]*" min="1" value={localValue} onChange={(e) => { const v = e.target.value.replace(/[^0-9]/g, ""); setLocalValue(v); if (v !== "") onChange(String(Math.max(1, Number(v)))); }} onBlur={() => { const n = Math.max(1, Number(localValue) || 1); setLocalValue(String(n)); onChange(String(n)); }} onWheel={(e) => e.currentTarget.blur()} className="h-9 w-16 rounded-lg border border-gray-200 bg-white px-2 text-sm font-bold text-gray-900 focus:border-[#F97316] outline-none text-center shadow-sm" />}
+                {!isUnlimited && <input type="text" inputMode="numeric" pattern="[0-9]*" min="1" value={localValue} onChange={(e) => { const v = e.target.value.replace(/[^0-9]/g, ""); setLocalValue(v); if (v !== "") onChange(String(Math.max(1, Number(v)))); }} onBlur={() => { const n = Math.max(1, Number(localValue) || 1); setLocalValue(String(n)); onChange(String(n)); }} onWheel={(e) => e.currentTarget.blur()} className="h-9 w-16 rounded-lg border border-gray-200 bg-white px-2 text-sm font-bold text-gray-900 focus:border-[#7C3AED] outline-none text-center shadow-sm" />}
             </div>
         </div>
     );
@@ -78,17 +77,8 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState("");
-    const [previewLoading, setPreviewLoading] = useState(false);
-    const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
-    const [activeAudio, setActiveAudio] = useState<HTMLAudioElement | null>(null);
-    const [showVoiceDropdown, setShowVoiceDropdown] = useState(false);
-    const [voiceSearch, setVoiceSearch] = useState("");
-    const [voices, setVoices] = useState<Voice[]>(ALL_VOICES);
     const [interviewQuotaTotalInput, setInterviewQuotaTotalInput] = useState("0");
     const [interviewTopUpInput, setInterviewTopUpInput] = useState("0");
-    const audioContextRef = useRef<AudioContext | null>(null);
-    const gainNodeRef = useRef<GainNode | null>(null);
-    const previewUrlRef = useRef<string | null>(null);
     const [billingSnapshot, setBillingSnapshot] = useState({
         interviewQuotaTotal: 0,
         interviewQuotaUsed: 0,
@@ -97,85 +87,13 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
     const [form, setForm] = useState({
         name: "", slug: "", plan: DEFAULT_ORG_PLAN,
         maxActiveDrives: "Unlimited",
+        maxConcurrentSlots: "5",
         proctoringSignals: getProctoringSignalsForPlan(DEFAULT_ORG_PLAN),
         adminEmail: "", adminPassword: "",
-        voiceId: "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
-        allowedVoices: [] as string[],
         recordingEnabled: false,
         recordingRetentionDays: "",
     });
-    const stopCurrentPreview = () => {
-        if (activeAudio) {
-            activeAudio.pause();
-            activeAudio.src = "";
-            setActiveAudio(null);
-        }
-        if (previewUrlRef.current) {
-            URL.revokeObjectURL(previewUrlRef.current);
-            previewUrlRef.current = null;
-        }
-        gainNodeRef.current?.disconnect();
-        gainNodeRef.current = null;
-        audioContextRef.current?.close().catch(() => { });
-        audioContextRef.current = null;
-        setPlayingVoiceId(null);
-    };
-    const playSample = async (voiceId: string) => {
-        if (playingVoiceId === voiceId) { stopCurrentPreview(); return; }
-        setPreviewLoading(true);
-        try {
-            stopCurrentPreview();
-            const transcript = "Hello buddy, how are you doing? I'm ready to interview candidates.";
-            const res = await fetch("/api/admin/voice/preview", {
-                method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ voiceId, transcript, orgId: id }),
-            });
-            if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || "Preview failed");
-            const blob = await res.blob();
-            const audioUrl = URL.createObjectURL(blob);
-            previewUrlRef.current = audioUrl;
-            const audio = new Audio(audioUrl);
-            const AudioContextClass = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-            if (AudioContextClass) {
-                const ctx = new AudioContextClass();
-                audioContextRef.current = ctx;
-                const source = ctx.createMediaElementSource(audio);
-                const gainNode = ctx.createGain();
-                gainNode.gain.value = 2.5;
-                gainNodeRef.current = gainNode;
-                source.connect(gainNode);
-                gainNode.connect(ctx.destination);
-                audio.onended = () => {
-                    stopCurrentPreview();
-                    URL.revokeObjectURL(audioUrl);
-                };
-                await ctx.resume().catch(() => { });
-            } else {
-                audio.onended = () => {
-                    stopCurrentPreview();
-                    URL.revokeObjectURL(audioUrl);
-                };
-            }
-            await audio.play();
-            setActiveAudio(audio);
-            setPlayingVoiceId(voiceId);
-        } catch (err) { toast.error("Preview failed."); }
-        finally { setPreviewLoading(false); }
-    };
     useEffect(() => {
-        const loadVoices = async () => {
-            try {
-                const res = await fetch("/api/voices", { cache: "no-store" });
-                if (!res.ok) return;
-                const data = await res.json();
-                if (Array.isArray(data?.voices) && data.voices.length > 0) {
-                    setVoices(data.voices);
-                }
-            } catch {
-                // Keep static fallback
-            }
-        };
-        void loadVoices();
         const fetchOrg = async () => {
             try {
                 const res = await fetch(`/api/super-admin/orgs/${id}`);
@@ -185,11 +103,10 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                     name: data.name || "", slug: data.slug || "",
                     plan: normalizeOrgPlan(data.plan) || DEFAULT_ORG_PLAN,
                     maxActiveDrives: formatOrgLimitValue(data.maxActiveDrives),
+                    maxConcurrentSlots: data.maxConcurrentSlots != null ? String(data.maxConcurrentSlots) : "5",
                     proctoringSignals: normalizeProctoringSignals(data.proctoringSignals),
                     adminEmail: data.users && data.users.length > 0 ? data.users[0].email : "",
                     adminPassword: "",
-                    voiceId: data.voiceId || "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
-                    allowedVoices: Array.isArray(data.allowedVoices) ? data.allowedVoices : [],
                     recordingEnabled: data.recordingEnabled === true && data.recordingRetentionDays != null,
                     recordingRetentionDays: data.recordingRetentionDays == null ? "" : String(data.recordingRetentionDays),
                 });
@@ -221,6 +138,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                     ...form,
                     recordingEnabled: form.recordingEnabled ? true : null,
                     recordingRetentionDays: form.recordingEnabled ? Number(form.recordingRetentionDays) : null,
+                    maxConcurrentSlots: Number(form.maxConcurrentSlots || 5),
                     interviewQuotaTotal: Math.max(0, Number(interviewQuotaTotalInput) || 0),
                     interviewQuotaTopUp: Math.max(0, Number(interviewTopUpInput) || 0),
                 }),
@@ -230,32 +148,25 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
         } catch (err: any) { toast.error(err.message); }
         finally { setSaving(false); }
     };
-    if (loading) { return <div className="p-20 text-center min-h-screen flex items-center justify-center"><RefreshCw className="h-8 w-8 text-[#F97316] animate-spin opacity-20" /></div>; }
+    if (loading) { return <div className="p-20 text-center min-h-screen flex items-center justify-center"><RefreshCw className="h-8 w-8 text-[#7C3AED] animate-spin opacity-20" /></div>; }
     return (
-        <div className="max-w-4xl mx-auto py-4 space-y-4 px-4 sm:px-6 lg:px-0">
-            <button onClick={() => router.back()} className="mb-6 flex items-center gap-2 text-sm font-bold text-gray-400 hover:text-gray-600 transition-colors">
-                <ArrowLeft className="h-4 w-4" />
-                Back to Organizations
-            </button>
-            <div className="mb-8 group">
-                <div className="flex items-center gap-4 mb-3">
-                    <div className="h-12 w-1.5 bg-gradient-to-b from-[#F97316] to-orange-400 rounded-full shadow-[0_0_12px_rgba(249,115,22,0.4)] transition-all duration-300 group-hover:h-14" />
-                    <div>
-                        <h1 className="text-3xl sm:text-4xl font-extrabold text-gray-900 tracking-tight">
-                            Modify Client
-                        </h1>
-                        <p className="text-gray-500 font-medium mt-1 text-base sm:text-lg">
-                            Updating <span className="text-gray-900 font-bold">{form.name}</span>
-                        </p>
-                    </div>
-                </div>
+        <div className="max-w-5xl mx-auto space-y-6 pb-10 animate-in fade-in duration-500">
+            <div className="flex items-center gap-3">
+                <button onClick={() => router.back()} className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-sm font-medium text-gray-500 hover:text-violet-600 hover:bg-violet-50 transition-all" style={{ border: "1px solid #E9E7FF" }}>
+                    <ArrowLeft className="h-4 w-4" />
+                    Back
+                </button>
             </div>
-            <form onSubmit={handleSubmit} className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div>
+                <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Modify Client</h1>
+                <p className="text-sm text-gray-400 mt-0.5">Updating <span className="font-medium text-gray-700">{form.name}</span></p>
+            </div>
+            <form onSubmit={handleSubmit} className="space-y-5 animate-in fade-in duration-500">
                 <div
-                    className="rounded-2xl bg-white transition-all duration-300 relative"
-                    style={{ border: "1px solid #E5E7EB", borderTop: "4px solid #F97316", boxShadow: "0 4px 24px rgba(0,0,0,0.06), 0 1px 4px rgba(0,0,0,0.04)" }}
+                    className="rounded-2xl bg-white"
+                    style={{ border: "1px solid #E9E7FF", borderTop: "3px solid #8B5CF6", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}
                 >
-                    <div className="p-8 space-y-10">
+                    <div className="p-6 space-y-8">
                 {true && (
                     <div className="space-y-8">
                         <SectionHeader title="Organization Profile" />
@@ -271,8 +182,8 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                         <div className="grid md:grid-cols-2 gap-6">
                             <PremiumInput label="Contact Email" icon={Mail} type="email" value={form.adminEmail} onChange={(e: any) => setForm(p => ({ ...p, adminEmail: e.target.value }))} placeholder="admin@reliance.com" required />
                         </div>
-                        <div className="bg-orange-50/50 p-6 rounded-2xl border border-orange-100 mt-6 flex items-start gap-4">
-                            <div className="p-2 rounded-lg bg-white border border-orange-100"><ShieldCheck className="h-5 w-5 text-orange-500" /></div>
+                        <div className="bg-violet-50/50 p-6 rounded-2xl border border-violet-100 mt-6 flex items-start gap-4">
+                            <div className="p-2 rounded-lg bg-white border border-violet-100"><ShieldCheck className="h-5 w-5 text-violet-500" /></div>
                             <div>
                                 <p className="text-xs font-semibold text-gray-900 uppercase tracking-widest">Authentication Security</p>
                                 <p className="text-[11px] text-gray-500 font-medium leading-relaxed mt-1">If you need to reset the administrator password, enter a new one below. Leave it blank to keep the current credentials.</p>
@@ -291,73 +202,42 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                         </div>
                     </div>
                 )}
-                {true && (
-                    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
-                        <SectionHeader title="AI Engine" />
-                        <div className="grid md:grid-cols-2 gap-10">
-                            {/* Allowed voices whitelist */}
-                            <div className="space-y-4">
-                                <div className="space-y-2">
-                                    <label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest">
-                                        <AudioLines className="h-3 w-3 text-[#F97316]" />Allowed Voices
-                                    </label>
-                                    <p className="text-[10px] text-gray-400 font-medium">Drives under this org will only see checked voices.</p>
-                                    <div className="relative mb-2">
-                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3 w-3 text-gray-400" />
-                                        <input type="text" value={voiceSearch} onChange={e => setVoiceSearch(e.target.value)} placeholder="Search voices..." className="h-8 w-full pl-8 pr-3 rounded-lg border border-gray-100 text-[11px] focus:outline-none" />
-                                    </div>
-                                    <div className="border border-gray-100 rounded-xl overflow-hidden max-h-72 overflow-y-auto">
-                                        {voices.filter(v => v.name.toLowerCase().includes(voiceSearch.toLowerCase())).map(v => {
-                                            const allowed = form.allowedVoices.includes(v.id);
-                                            return (
-                                                <div key={v.id} className={cn("flex items-center justify-between px-3 py-2.5 border-b border-gray-50 last:border-0 transition-colors", allowed ? "bg-orange-50/40" : "bg-white hover:bg-gray-50")}>
-                                                    <div className="flex items-center gap-3 flex-1 min-w-0">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={allowed}
-                                                            onChange={() => setForm(p => ({
-                                                                ...p,
-                                                                allowedVoices: allowed
-                                                                    ? p.allowedVoices.filter(id => id !== v.id)
-                                                                    : [...p.allowedVoices, v.id],
-                                                            }))}
-                                                            className="accent-[#F97316] h-3.5 w-3.5 flex-shrink-0"
-                                                        />
-                                                        <div className="min-w-0">
-                                                            <p className={cn("text-xs font-bold truncate", allowed ? "text-orange-600" : "text-gray-800")}>{v.name}</p>
-                                                            <p className="text-[9px] text-gray-400 truncate">{v.provider} · {v.description}</p>
-                                                        </div>
-                                                    </div>
-                                                    <div onClick={(e) => { e.stopPropagation(); playSample(v.id); }} className={cn("h-7 w-7 rounded-lg flex items-center justify-center flex-shrink-0 ml-2 cursor-pointer transition-all", playingVoiceId === v.id ? "bg-orange-600 text-white" : "bg-gray-100 text-gray-500 hover:bg-orange-100 hover:text-orange-600")}>
-                                                        {previewLoading && playingVoiceId === v.id ? <RefreshCw className="h-3 w-3 animate-spin" /> : playingVoiceId === v.id ? <Pause className="h-3 w-3 fill-current" /> : <Play className="h-3 w-3 fill-current ml-0.5" />}
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                    <p className="text-[10px] text-gray-400">{form.allowedVoices.length} voice{form.allowedVoices.length !== 1 ? "s" : ""} selected</p>
-                                </div>
-                            </div>
-                            {/* STT */}
-                            <div className="space-y-6">
-                                <div className="p-4 rounded-xl bg-gray-50 border border-gray-100 text-[11px] text-gray-500 space-y-1">
-                                    <p className="font-bold text-gray-700 uppercase tracking-widest text-[10px]">STT</p>
-                                    <p>Deepgram Flux - hardcoded for all orgs</p>
-                                </div>
-                            </div>
-                        </div>
+                {/* AI Engine — managed via AI Models page */}
+                <div className="rounded-2xl p-5 flex items-start gap-4" style={{ background: "linear-gradient(135deg, rgba(139,92,246,0.07), rgba(59,130,246,0.04))", border: "1px solid rgba(139,92,246,0.18)" }}>
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5" style={{ background: "linear-gradient(135deg, rgba(139,92,246,0.15), rgba(59,130,246,0.1))" }}>
+                        <span className="text-violet-600 text-sm">🤖</span>
                     </div>
-                )}
+                    <div>
+                        <p className="text-sm font-bold text-violet-800 mb-1">AI Models are configured separately</p>
+                        <p className="text-sm text-violet-700">
+                            To set LLM pipelines, STT model, TTS provider, and allowed voices for this org — use the{" "}
+                            <a href="/super-admin/models" className="font-bold underline underline-offset-2 hover:text-violet-900 transition-colors">
+                                AI Models page
+                            </a>
+                            . Select this org from the left panel and configure everything there.
+                        </p>
+                    </div>
+                </div>
                 {true && (
                     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
                         <SectionHeader title="Billing & Quotas" />
-                        <div className="grid md:grid-cols-1 gap-6 bg-gray-50/50 p-6 rounded-2xl border border-gray-100 shadow-inner">
+                        <div className="grid md:grid-cols-2 gap-6 bg-gray-50/50 p-6 rounded-2xl border border-gray-100 shadow-inner">
                             <LimitControl label="Job Limit" value={form.maxActiveDrives} onChange={val => setForm(p => ({ ...p, maxActiveDrives: val }))} />
+                            <PremiumInput
+                                label="Max Concurrent Slots"
+                                icon={Clock}
+                                type="number"
+                                min="1"
+                                required={true}
+                                value={form.maxConcurrentSlots}
+                                onChange={(e: any) => setForm(p => ({ ...p, maxConcurrentSlots: e.target.value }))}
+                                placeholder="5"
+                            />
                         </div>
-                        <div className="rounded-2xl border border-orange-100 bg-orange-50/40 p-6 space-y-5">
+                        <div className="rounded-2xl border border-violet-100 bg-violet-50/40 p-6 space-y-5">
                             <div className="flex items-center justify-between gap-4 flex-wrap">
                                 <div>
-                                    <p className="text-[10px] font-semibold uppercase tracking-widest text-orange-600">Interview Quotas</p>
+                                    <p className="text-[10px] font-semibold uppercase tracking-widest text-violet-600">Interview Quotas</p>
                                     <p className="text-sm font-medium text-gray-600 mt-1">
                                         Current total: <span className="font-semibold text-gray-900">{billingSnapshot.interviewQuotaTotal}</span>
                                         {" "} | 
@@ -406,7 +286,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                         <div className="grid gap-6 md:grid-cols-2">
                             <div className="space-y-2">
                                 <label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest">
-                                    <Shield className="h-3 w-3 text-[#F97316]" />
+                                    <Shield className="h-3 w-3 text-[#7C3AED]" />
                                     Recording Enabled
                                 </label>
                                 <div className="flex items-center gap-2 rounded-2xl border border-gray-100 bg-gray-50 p-2">
@@ -415,7 +295,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                                         onClick={() => setForm(p => ({ ...p, recordingEnabled: true }))}
                                         className={cn(
                                             "rounded-xl px-4 py-2 text-[11px] font-black uppercase tracking-widest transition",
-                                            form.recordingEnabled ? "bg-white text-[#F97316] shadow-sm" : "text-gray-400 hover:text-gray-700"
+                                            form.recordingEnabled ? "bg-white text-[#7C3AED] shadow-sm" : "text-gray-400 hover:text-gray-700"
                                         )}
                                     >
                                         ON
@@ -437,7 +317,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                             </div>
                             <div className="space-y-2">
                                 <label className="flex items-center gap-1.5 text-[12px] font-bold text-gray-500 uppercase tracking-widest">
-                                    <Clock className="h-3 w-3 text-[#F97316]" />
+                                    <Clock className="h-3 w-3 text-[#7C3AED]" />
                                     Recording Retention (Days)
                                 </label>
                                 {form.recordingEnabled ? (
@@ -450,7 +330,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                                         onChange={(e) => { const v = e.target.value.replace(/[^0-9]/g, ""); setForm(p => ({ ...p, recordingRetentionDays: v })); }}
                                         onBlur={() => { const n = Math.max(1, Number(form.recordingRetentionDays) || 1); setForm(p => ({ ...p, recordingRetentionDays: String(n) })); }}
                                         onWheel={(e) => e.currentTarget.blur()}
-                                        className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3.5 text-sm font-medium text-gray-900 shadow-sm outline-none transition focus:border-[#F97316] focus:ring-4 focus:ring-orange-50"
+                                        className="h-11 w-full rounded-xl border border-gray-200 bg-white px-3.5 text-sm font-medium text-gray-900 shadow-sm outline-none transition focus:border-[#7C3AED] focus:ring-4 focus:ring-violet-100"
                                         placeholder="30"
                                     />
                                 ) : (
@@ -477,7 +357,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                                             plan: p.id,
                                             proctoringSignals: getProctoringSignalsForPlan(p.id),
                                         }))}
-                                        className={cn("w-full p-4 rounded-lg border text-left transition-all", form.plan === p.id ? "border-[#F97316] bg-orange-50 shadow-sm" : "border-gray-100 hover:border-gray-200")}
+                                        className={cn("w-full p-4 rounded-lg border text-left transition-all", form.plan === p.id ? "border-[#7C3AED] bg-violet-50 shadow-sm" : "border-gray-100 hover:border-gray-200")}
                                     >
                                         <p className="text-xs font-semibold uppercase text-gray-900">{p.label}</p>
                                         <p className="text-[10px] text-gray-400 font-medium mt-0.5">{p.desc}</p>
@@ -493,7 +373,7 @@ export default function EditOrgPage({ params }: { params: Promise<{ id: string }
                             </div>
                         </div>
                         <div className="pt-12 border-t border-gray-100 flex items-center justify-end">
-                            <button type="submit" disabled={saving} className="h-14 px-16 rounded-lg bg-[#F97316] text-white font-black text-xs uppercase tracking-widest shadow-xl shadow-orange-200 hover:bg-orange-700 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-3">
+                            <button type="submit" disabled={saving} className="h-14 px-16 rounded-lg bg-[#7C3AED] text-white font-black text-xs uppercase tracking-widest shadow-xl shadow-orange-200 hover:bg-orange-700 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-3">
                                 {saving ? <Loader2 className="h-5 w-5 animate-spin" /> : <Shield className="h-5 w-5" />} {saving ? "Saving..." : "Update"}
                             </button>
                         </div>

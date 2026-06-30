@@ -83,6 +83,7 @@ export async function PATCH(
             usageMetrics,
             interviewQuotaTotal,
             interviewQuotaTopUp,
+            maxConcurrentSlots,
         } = body;
         const parsedInterviewQuotaTopUp =
             interviewQuotaTopUp !== undefined ? Math.max(0, Math.round(Number(interviewQuotaTopUp) || 0)) : undefined;
@@ -178,6 +179,9 @@ export async function PATCH(
         if (maxActiveDrives !== undefined && String(maxActiveDrives).trim() !== "") {
             updateData.maxActiveDrives = normalizeOrgLimitInput(maxActiveDrives);
         }
+        if (maxConcurrentSlots !== undefined && maxConcurrentSlots !== null) {
+            updateData.maxConcurrentSlots = Math.max(1, parseInt(maxConcurrentSlots));
+        }
         if (proctoringSignals !== undefined) {
             updateData.proctoringSignals = normalizeProctoringSignals(proctoringSignals);
         }
@@ -211,10 +215,7 @@ export async function PATCH(
         }
         Object.assign(
             updateData,
-            normalizeOrgAiConfig({
-                current: existingOrg,
-                next: { voiceId, allowedVoices },
-            })
+            normalizeOrgAiConfig({ voiceId, allowedVoices })
         );
         // Usage metrics — internal API cost tracking, untouched by billing
         if (usageMetrics !== undefined) {

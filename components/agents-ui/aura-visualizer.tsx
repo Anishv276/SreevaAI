@@ -45,7 +45,7 @@ export function AuraVisualizer({
   state = 'idle',
   audioTrack,
   size = 'lg',
-  color = [0.97, 0.45, 0.08], // #F97316 (Orange 500)
+  color = [0.97, 0.45, 0.08], // #7C3AED (Orange 500)
   className,
 }: AuraVisualizerProps) {
   const { intensity, speed } = useAgentVisualizer(state, audioTrack);

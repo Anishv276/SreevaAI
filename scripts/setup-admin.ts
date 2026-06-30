@@ -20,24 +20,21 @@ async function main() {
             name,
         },
     });
-    const user = await prisma.user.upsert({
+    await prisma.user.upsert({
         where: { email },
         update: {
             password: hashedPassword,
-            role: "SUPER_ADMIN",
             name,
         },
         create: {
             id: generateId("usr", name),
             email,
             password: hashedPassword,
-            role: "SUPER_ADMIN",
             name,
         },
     });
     console.log(`\n✅ SUCCESS: Super Admin Account is Ready!`);
     console.log(`📧 Email: ${superAdmin.email}`);
-    console.log(`🔐 Role: ${user.role}`);
     console.log(`\n👉 You can now log in at https://sreevaai.com/login\n`);
 }
 main()

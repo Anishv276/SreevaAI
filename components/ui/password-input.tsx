@@ -39,14 +39,14 @@ export function PasswordInput({
                 </label>
             )}
             <div className="relative group">
-                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 group-focus-within:text-[#F97316] transition-colors" />
+                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 group-focus-within:text-[#7C3AED] transition-colors" />
                 <Input
                     type={showPassword ? "text" : "password"}
                     value={value}
                     onChange={onChange}
                     className={cn(
-                        "pl-10 pr-10 h-11 rounded-xl border-gray-200 bg-white font-medium focus:border-[#F97316] focus:ring-4 focus:ring-orange-50 transition-all text-sm",
-                        showChecklist && password.length > 0 && !isValid && "border-orange-200 focus:border-orange-300",
+                        "pl-10 pr-10 h-11 rounded-xl border-gray-200 bg-white font-medium focus:border-[#7C3AED] focus:ring-4 focus:ring-violet-100 transition-all text-sm",
+                        showChecklist && password.length > 0 && !isValid && "border-violet-200 focus:border-violet-300",
                         showChecklist && isValid && "border-emerald-200 focus:border-emerald-300",
                         className
                     )}
@@ -55,7 +55,7 @@ export function PasswordInput({
                 <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#F97316] transition-colors p-1 rounded-md"
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#7C3AED] transition-colors p-1 rounded-md"
                 >
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>

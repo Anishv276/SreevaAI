@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession, isAdminRole } from "@/lib/auth";
 import { generateId } from "@/lib/ids";
-import { sendInterviewInviteEmail } from "@/lib/mail";
+import { sendScheduleInviteEmail } from "@/lib/mail";
 import { buildInterviewLink } from "@/lib/interview-links";
 import { isInterviewTokenRequired } from "@/lib/interview-access";
 import { resumeQueue } from "@/lib/queue";
@@ -103,18 +103,16 @@ export async function POST(request: Request) {
                     select: { accessToken: true },
                 });
 
-                const interviewLink = buildInterviewLink(baseUrl, appId, {
-                    token: tokenRequired ? interview?.accessToken : null,
-                    orgName: drive.organization?.name,
-                });
+                // Schedule link uses the interview accessToken so only this candidate can book
+                const scheduleLink = `${baseUrl}/schedule/${interview?.accessToken}`;
 
                 let sent = false;
                 try {
-                    await sendInterviewInviteEmail({
+                    await sendScheduleInviteEmail({
                         email,
                         fullName,
                         jobTitle: drive.title,
-                        interviewLink,
+                        scheduleLink,
                         orgName: drive.organization?.name || "The Company",
                     });
                     sent = true;

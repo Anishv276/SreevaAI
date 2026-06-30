@@ -15,10 +15,11 @@ export async function GET(req: Request) {
         const limit = Math.min(20, Math.max(1, parseInt(searchParams.get("limit") || "20")));
         const start = getRangeStart(range, from);
         const drives = await prisma.drive.findMany({
-            where: { orgId },
+            where: { orgId, isDeleted: false },
             select: {
                 id: true,
                 title: true,
+                role: true,
                 screeningThreshold: true,
                 applications: {
                     where: { createdAt: { gte: start } },
@@ -48,6 +49,7 @@ export async function GET(req: Request) {
             return {
                 id: drive.id,
                 title: drive.title,
+                role: drive.role,
                 screeningThreshold: Number(drive.screeningThreshold ?? 60),
                 screeningPct,
                 applied,

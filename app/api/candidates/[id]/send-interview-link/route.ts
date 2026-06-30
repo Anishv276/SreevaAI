@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { sendInterviewInviteEmail } from "@/lib/mail";
+import { sendScheduleInviteEmail } from "@/lib/mail";
 import { buildInterviewLink } from "@/lib/interview-links";
 import { getSession, isAdminRole, isSuperAdminRole } from "@/lib/auth";
 import { getOrgBillingStatus } from "@/lib/credits";
@@ -11,10 +11,10 @@ import { isInterviewTokenRequired } from "@/lib/interview-access";
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
     try {
         const session = await getSession();
-        const isSuperAdmin = isSuperAdminRole(session?.role);
-        if (!session || (!isAdminRole(session?.role) && !isSuperAdmin)) {
+        if (!session || (!isAdminRole(session.role) && !isSuperAdminRole(session.role))) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
+        const isSuperAdmin = isSuperAdminRole(session.role);
         const { id: applicationId } = await context.params;
         if (!applicationId) {
             console.error("[INTERVIEW] Missing applicationId in params");
@@ -73,6 +73,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
             update: {
                 inviteSentAt: new Date(),
                 status: "PENDING",
+                scheduledAt: null,
                 startedAt: null,
                 completedAt: null,
                 expiresAt: driveDeadline,
@@ -88,21 +89,19 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
             },
         });
         const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-        const interviewLink = buildInterviewLink(baseUrl, applicationId, {
-            token: isInterviewTokenRequired() ? interviewRecord.accessToken : null,
-            orgName: application.drive?.organization?.name || "Sreeva AI",
-        });
-        const mailResult = await sendInterviewInviteEmail({
+        
+        const scheduleLink = `${baseUrl}/schedule/${interviewRecord.accessToken}`;
+        let mailResult = await sendScheduleInviteEmail({
             email: application.email,
-            fullName: application.fullName,
+            fullName: application.fullName || "Candidate",
             jobTitle: application.drive?.title || "Unknown Role",
             orgName: application.drive?.organization?.name || "Sreeva AI",
-            interviewLink,
-            schedulingDeadline: application.drive?.deadline ?? null,
+            scheduleLink,
         });
+
         if (!mailResult.success) {
             return NextResponse.json({
-                error: `Interview link email could not be sent: ${mailResult.error}`,
+                error: `Schedule link email could not be sent: ${mailResult.error}`,
             }, { status: 500 });
         }
         await prisma.application.update({
@@ -111,14 +110,14 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         });
         await appendCandidateActivity(applicationId, {
             type: "interview_invite_sent",
-            label: "Interview link sent",
+            label: "Schedule link sent",
             details: `Sent at ${new Date().toISOString()}`,
             timestamp: new Date().toISOString(),
             source: "system",
         });
         return NextResponse.json({
             success: true,
-            message: "Interview link sent successfully"
+            message: "Schedule link sent successfully"
         });
     } catch (error) {
         console.error("[INTERVIEW LINK ERROR]:", error);

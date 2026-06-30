@@ -6,20 +6,23 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import "plyr-react/plyr.css";
 import {
-  AlertCircle,
   AlertTriangle,
   ArrowLeft,
   Bot,
   Calendar,
-  Check,
   CheckCircle,
   ChevronDown,
-  Flag,
   Play,
-  Shield,
-  Sparkles,
   User,
   XCircle,
+  Clock,
+  Globe,
+  Sparkles,
+  ShieldCheck,
+  Star,
+  BarChart2,
+  Folder,
+  Tag,
 } from "lucide-react";
 const Plyr = dynamic(
   () => import("plyr-react").then((m) => {
@@ -52,18 +55,16 @@ export type SreevaAIInterviewViewModel = {
   displayAvatar: string;
   roleLabel: string;
   interviewedOn: string;
-  totalTime: string;
-  questionsAsked: number;
-  skillsCovered: number;
-  proctoringFlags: number;
+
   recommendation: string;
   recommendationColor: "green" | "amber" | "red" | "blue";
   fitPercent: number;
   fitLabel: string;
   isFallback: boolean;
   technical: { percent: number; questions: number; tag: "GOOD" | "AVERAGE" | "WEAK"; scores?: { overall: number; engagement: number; communication: number; domain_knowledge: number; role_fit: number; problem_solving: number; ownership_credibility: number; demonstrated_knowledge: number; technical: number; dimensions: { name: string; score: number; evidence: string }[] } };
-  comm: { pronunciation: number; grammar: number; fluency: number; confidence: number; vocabulary: number; minimalFiller: number; tag: string; commSummary: string; hasNewSchema: boolean };
+
   verdictSummary: string;
+  verdictScore: number | null;
   verdictRecommendationReason: string;
   aiBullets: string[];
   integritySignals: IntelSignalRow[];
@@ -93,12 +94,10 @@ export type SreevaAIInterviewViewModel = {
   }[];
   proctoringEventsFull: { time: string; eventType: string; reason: string; severity: string; elapsedSeconds: number }[];
   answerScores: { question: string; answer: string; depth: number; clarity: number; specificity: number; grounding: number; overall: number; signals: string[] }[];
+  avgResponseTimeSec: number | null;
+  reportNotGenerated?: boolean;
 };
-function formatDurationM(totalSeconds: number) {
-  const m = Math.floor((totalSeconds || 0) * 0.0166666);
-  const s = Math.floor((totalSeconds || 0) % 60);
-  return `${m}:${s.toString().padStart(2, "0")} min`;
-}
+
 function inferVideoMimeType(url: string, mimeType?: string | null): string {
   const explicit = String(mimeType || "").trim().toLowerCase();
   if (explicit === "video/webm" || explicit === "video/mp4") return explicit;
@@ -170,49 +169,20 @@ export function fitLabelFromPct(p: number) {
   if (p >= 40) return "BORDERLINE FIT";
   return "LOW FIT";
 }
-const _ARC_LEN = Math.PI * 80;
-export function SemicircleGauge({ value, fitLabel }: { value: number; fitLabel: string }) {
-  const pct = Math.max(0, Math.min(100, value));
-  const visible = (pct / 100) * _ARC_LEN;
-  const rest = Math.max(0.01, _ARC_LEN - visible);
-  return (
-    <div className="relative flex h-28 w-44 flex-col items-center justify-end">
-      <svg viewBox="0 0 200 100" className="h-24 w-44">
-        <defs>
-          <linearGradient id="gSreevaAI" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#E53935" />
-            <stop offset="50%" stopColor="#F6C344" />
-            <stop offset="100%" stopColor="#1E9D55" />
-          </linearGradient>
-        </defs>
-        <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="#E4E6EA" strokeWidth="14" strokeLinecap="round" />
-        <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="url(#gSreevaAI)" strokeWidth="14" strokeLinecap="round" strokeDasharray={`${visible} ${rest}`} />
-      </svg>
-      <p className="text-center text-[10px] font-bold uppercase leading-tight text-[#5C6370]">
-        {pct}%<br /><span className="text-xs font-extrabold text-[#1A1D22]">{fitLabel}</span>
-      </p>
-    </div>
-  );
-}
+
 function recommendationFromAI(aiRec: string, pct: number): { label: string; color: "green" | "amber" | "red" | "blue" } {
   const r = String(aiRec || "").toLowerCase().trim();
-  if (r === "strong yes") return { label: "Strong Hire", color: "green" };
-  if (r === "yes") return { label: "Hire", color: "green" };
-  if (r === "maybe") return { label: "Review", color: "amber" };
-  if (r === "no") return { label: "No Hire", color: "red" };
+  if (r === "strong yes" || r === "strong hire") return { label: "Strong Hire", color: "green" };
+  if (r === "yes" || r === "hire") return { label: "Hire", color: "green" };
+  if (r === "maybe" || r === "hold" || r === "review") return { label: "Hold", color: "amber" };
+  if (r === "no" || r === "reject" || r === "no hire") return { label: "Reject", color: "red" };
   // Fallback to pct-based
   if (pct >= 80) return { label: "Strong Hire", color: "green" };
   if (pct >= 60) return { label: "Hire", color: "green" };
-  if (pct >= 40) return { label: "Review", color: "amber" };
-  return { label: "No Hire", color: "red" };
+  if (pct >= 40) return { label: "Hold", color: "amber" };
+  return { label: "Reject", color: "red" };
 }
-const BADGE_PILL: Record<IntelBadgeTone, string> = {
-  rose: "border-rose-200/90 bg-rose-100 text-rose-800",
-  sky: "border-sky-200/90 bg-sky-100 text-sky-800",
-  amber: "border-amber-200/90 bg-amber-100 text-amber-900",
-  emerald: "border-emerald-200/90 bg-emerald-100 text-emerald-800",
-  slate: "border-slate-200/90 bg-slate-100 text-slate-700",
-};
+
 const PROCTORING_DISPLAY: Record<string, { title: string; why: string; risk: string }> = {
   face_absence: { title: "Face not visible", why: "Camera detected no face during the interview. The candidate may have looked away, turned off the camera, or left the frame.", risk: "High - indicates the candidate was not actively present in front of the camera." },
   multiple_faces: { title: "Multiple faces detected", why: "More than one person was detected in the camera frame, suggesting someone else may have been present or assisting.", risk: "High - potential coaching or collaboration violation." },
@@ -231,7 +201,7 @@ function SkillRatingsList({ skills }: { skills: SreevaAIInterviewViewModel["skil
           <button
             type="button"
             onClick={() => setOpen(open === idx ? null : idx)}
-            className="w-full flex items-center justify-between gap-2 text-left"
+            className="w-full flex items-center justify-between gap-2 text-left cursor-pointer outline-none"
           >
             <span className="text-[12px] font-semibold text-[#374151] truncate">{skill.name}</span>
             <div className="flex items-center gap-1.5 shrink-0">
@@ -335,11 +305,13 @@ export function buildSreevaAIInterviewViewModel(i: {
   communicationStatus: string;
   signalTimeline: { elapsed_sec: number; signal_name: string; signal_layer: string; evidence: string; score_delta: number; turn: number; recruiter_visible: boolean }[];
   proctoringEventsFull?: { time: string; eventType: string; reason: string; severity: string; elapsedSeconds: number }[];
-  answerScoresParsed?: { question: string; answer: string; depth: number; clarity: number; specificity: number; grounding: number; overall: number; signals: string[] }[];
+  answerScoresParsed?: { question: string; answer: string; depth: number; clarity: number; specificity: number; grounding: number; overall: number; signals: string[]; response_latency_sec?: number }[];
   integrityScore?: number;
   integrityBand?: string;
   skillsEvaluated?: string[];
   skillRatingsList?: { skill: string; score: number; status: string; evidence?: string; gaps?: string }[];
+  avgResponseTimeSec?: number | null;
+  reportNotGenerated?: boolean;
 }): SreevaAIInterviewViewModel {
   const c = i.candidate;
   const com = i.interviewReportCommunication || {};
@@ -380,45 +352,7 @@ export function buildSreevaAIInterviewViewModel(i: {
   })();
   const questionsAsked = Math.max(1, (i.interviewQaRows?.length || i.interviewSessionRows.length) || 1);
   const techTag: "GOOD" | "AVERAGE" | "WEAK" = technicalPct >= 70 ? "GOOD" : technicalPct >= 45 ? "AVERAGE" : "WEAK";
-  // a"a" Derive comm scores from transcript when AI report values are missing a"a"
-  const derivedComm = (() => {
-    const answers = i.interviewSessionRows.map((r) => r.answer).filter(Boolean);
-    if (answers.length === 0) return null;
-    const fullText = answers.join(" ");
-    const words = fullText.split(/\s+/).filter(Boolean);
-    const totalWords = words.length;
-    if (totalWords < 10) return null;
-    const fillerMatches = fullText.match(/\b(um|uh|like|you know|basically|literally|right\?|sort of|kind of|i mean)\b/gi) || [];
-    const fillerRatio = fillerMatches.length / totalWords;
-    const sentences = fullText.split(/[.!?]+/).map((s) => s.trim()).filter((s) => s.length > 4);
-    const avgWordsPerSentence = sentences.length > 0 ? totalWords / sentences.length : totalWords;
-    const uniqueWords = new Set(words.map((w) => w.toLowerCase().replace(/[^a-z]/g, ""))).size;
-    const ttr = uniqueWords / totalWords;
-    const hedgeMatches = fullText.match(/\b(maybe|i think|i guess|not sure|i believe|probably|might|could be|i suppose)\b/gi) || [];
-    const hedgeRatio = hedgeMatches.length / Math.max(1, sentences.length);
-    const sentenceLenScore = avgWordsPerSentence >= 8 && avgWordsPerSentence <= 30 ? 100
-      : avgWordsPerSentence < 4 ? 45 : avgWordsPerSentence > 45 ? 60 : 75;
-    const clarityScore = Math.round(sentenceLenScore * (1 - fillerRatio * 0.4));
-    const fragmentRatio = sentences.filter((s) => s.split(/\s+/).length < 4).length / Math.max(1, sentences.length);
-    const grammarScore = Math.round(Math.max(35, 90 - fragmentRatio * 50 - fillerRatio * 30));
-    const fluencyScore = Math.round(Math.max(30, Math.min(95, 100 - fillerRatio * 200)));
-    const vocabScore = Math.round(Math.min(85, Math.max(30, ttr * 150)));
-    const confidenceScore = Math.round(Math.max(30, Math.min(90, 85 - hedgeRatio * 20)));
-    return { clarityScore, grammarScore, fluencyScore, vocabScore, confidenceScore };
-  })();
-  const commFallback = commScore > 0 ? commScore : 50;
-  const comm = {
-    pronunciation: toPct(com.pronunciation, derivedComm?.clarityScore ?? commFallback),
-    grammar: toPct(com.grammar, derivedComm?.grammarScore ?? commFallback),
-    fluency: toPct(com.fluency, derivedComm?.fluencyScore ?? commFallback),
-    confidence: toPct(com.confidence, derivedComm?.confidenceScore ?? commFallback),
-    vocabulary: toPct(com.vocabulary, derivedComm?.confidenceScore ?? commFallback),
-    minimalFiller: toPct(com.fluency, derivedComm?.fluencyScore ?? commFallback),
-    tag: commScore >= 70 ? "STRONG" : commScore >= 45 ? "AVERAGE" : "WEAK",
-    commSummary: cleanAiText(String(com.summary || "").trim()),
-    hasNewSchema: false,
-  };
-  const commAvg = commScore > 0 ? commScore : commFallback;
+
   // a"a" Proctoring rows a"a"
   const proctoringRows: { key: string; label: string; value: string; bad: boolean }[] =
     (i.groupedProctoringSignals || []).slice(0, 8).map((g) => ({
@@ -585,9 +519,9 @@ export function buildSreevaAIInterviewViewModel(i: {
   });
 
   // 🎯 Recommendation from AI verdict (not from fitPct) 🎯
-  const { label: recommendation, color: recommendationColor } = recommendationFromAI(verdict.recommendation, fitPct);
+  const { label: recommendation, color: recommendationColor } = recommendationFromAI(verdict.decision || verdict.recommendation, fitPct);
   // 🎯 Verdict summary - generate a sharp 1-2 sentence decision note 🎯
-  const rawVerdictSummary = String(verdict.summary || i.interviewReportSummary || i.interviewAiSummary || "").trim();
+  const rawVerdictSummary = String(verdict.justification || verdict.summary || (typeof i.interviewReportSummary === 'string' ? i.interviewReportSummary : "") || i.interviewAiSummary || "").trim();
   // Build a crisp 1-2 line decision note from data when AI summary is absent
   const buildDecisionNote = () => {
     const rec = recommendation.toLowerCase();
@@ -597,8 +531,9 @@ export function buildSreevaAIInterviewViewModel(i: {
     if (topS) return `${fitPct}% fit - ${topS.toLowerCase()}.`;
     return `${fitPct}% overall fit for the role. ${rec === "hire" ? "Recommend proceeding." : rec === "reject" ? "Not recommended." : "Review carefully before deciding."}`;
   };
+  // Preserve the full justification (it's now 3 sharp bullets — don't truncate)
   const verdictSummaryText = rawVerdictSummary
-    ? rawVerdictSummary.replace(/\*{1,2}/g, "").replace(/\n{3,}/g, "\n\n").split(".").slice(0, 2).map(s => s.trim()).filter(Boolean).join(". ") + "."
+    ? rawVerdictSummary.replace(/\*{1,2}/g, "").replace(/\n{3,}/g, "\n\n").trim()
     : buildDecisionNote();
   const verdictRecommendationReason = cleanAiText(String(verdict.recommendation_reason || "").trim());
   const aiSummaryConcise = String((verdict as any).ai_summary_concise || "").trim();
@@ -660,18 +595,14 @@ export function buildSreevaAIInterviewViewModel(i: {
     : c.createdAt && i.mounted
       ? new Date(c.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
       : "--";
-  const totalTime = (i.recordingDurationSec ? (i.formatDuration || formatDurationM)(i.recordingDurationSec) : i.interviewTranscript
-    ? `${Math.max(1, Math.round((i.wordCount / 150) * 5))} mins (est.)` : "--");
+
   return {
     backHref: i.backHref || "/admin/candidates",
     fullName: c.fullName || "Candidate",
     displayAvatar: i.displayAvatar,
     roleLabel: String(c.drive?.role || c.drive?.title || "").trim() || "Role",
     interviewedOn,
-    totalTime,
-    questionsAsked,
-    skillsCovered: skills.length,
-    proctoringFlags: flagCount,
+
     recommendation,
     recommendationColor,
     fitPercent: fitPct,
@@ -695,8 +626,9 @@ export function buildSreevaAIInterviewViewModel(i: {
         dimensions: _dims,
       },
     },
-    comm,
+
     verdictSummary: verdictSummaryText,
+    verdictScore: typeof verdict.score === 'number' ? Math.round(verdict.score) : null,
     verdictRecommendationReason,
     aiBullets,
     integritySignals,
@@ -716,11 +648,14 @@ export function buildSreevaAIInterviewViewModel(i: {
       .sort((a, b) => a.elapsed_sec - b.elapsed_sec),
     proctoringEventsFull: i.proctoringEventsFull || [],
     answerScores: i.answerScoresParsed || [],
+    avgResponseTimeSec: i.avgResponseTimeSec ?? null,
+    reportNotGenerated: i.reportNotGenerated || false,
   };
 }
 /* a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-
    SUB-COMPONENTS
 a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a- */
+
 function ScrollFade({ children, className, style }: { children: React.ReactNode; className?: string; style?: React.CSSProperties }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [canScrollDown, setCanScrollDown] = useState(false);
@@ -757,6 +692,7 @@ function ScrollFade({ children, className, style }: { children: React.ReactNode;
     </div>
   );
 }
+
 /* Compact signal analysis — each point truncates to 1 line with dropdown to expand */
 function SignalAnalysisPanelCompact({ analysis }: { analysis: Record<string, any> }) {
   const [openIdx, setOpenIdx] = useState<number | null>(null);
@@ -774,18 +710,20 @@ function SignalAnalysisPanelCompact({ analysis }: { analysis: Record<string, any
         const { title, description } = parseBulletCard(text);
         const isOpen = openIdx === idx;
         return (
-          <li key={idx} className="py-1.5">
+          <li key={idx} className="py-2">
             <button
               type="button"
-              className="flex items-start gap-2 w-full text-left hover:bg-[#F8F9FA] rounded-lg px-1 py-0.5 transition-colors"
+              className="group flex items-start gap-2.5 w-full text-left transition-colors outline-none cursor-pointer"
               onClick={() => setOpenIdx(isOpen ? null : idx)}
             >
-              <span className="mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500" />
-              <p className={cn("text-[10.5px] font-medium text-[#1A1D22] leading-snug flex-1", !isOpen ? "truncate" : "")}>{title}</p>
-              <ChevronDown className={cn("h-3 w-3 text-[#9AA0AC] shrink-0 mt-0.5 transition-transform", isOpen ? "rotate-180" : "")} />
+              <span className="mt-[5px] h-[6px] w-[6px] shrink-0 rounded-full bg-[#3B82F6]" />
+              <p className={cn("text-[12px] font-medium text-[#111827] leading-relaxed flex-1", !isOpen && "truncate")}>{title}</p>
+              <ChevronDown className={cn("h-3.5 w-3.5 text-[#9CA3AF] shrink-0 mt-[3px] transition-transform duration-200", isOpen && "rotate-180")} />
             </button>
             {isOpen && description && (
-              <p className="text-[10px] leading-relaxed text-[#4B5563] mt-1 pl-5 pr-2">{description}</p>
+              <div className="overflow-hidden animate-in slide-in-from-top-1 fade-in-50 duration-200">
+                <p className="text-[11px] leading-relaxed text-[#4B5563] mt-1.5 pl-[19px] pr-4">{description}</p>
+              </div>
             )}
           </li>
         );
@@ -794,11 +732,11 @@ function SignalAnalysisPanelCompact({ analysis }: { analysis: Record<string, any
   );
 }
 const DIMENSION_CONFIG = [
-  { key: "communication",          label: "Communication",    color: "#6366F1" },
-  { key: "technical_knowledge",    label: "Tech & Knowledge", color: "#0EA5E9" },
-  { key: "resume_credibility",     label: "Resume Cred.",     color: "#8B5CF6" },
-  { key: "problem_solving",        label: "Problem Solving",  color: "#10B981" },
-  { key: "clarity_of_thought",     label: "Clarity",          color: "#F59E0B" },
+  { key: "jd_knowledge", label: "JD Knowledge", color: "#0EA5E9", desc: "Role alignment vs JD requirements" },
+  { key: "problem_solving", label: "Problem Solving", color: "#10B981", desc: "Reasoning, trade-offs, adaptability" },
+  { key: "experience_credibility", label: "Experience", color: "#8B5CF6", desc: "Do their live answers match their claims?" },
+  { key: "communication", label: "Communication", color: "#6366F1", desc: "Clarity, structure, directness" },
+  { key: "ownership", label: "Ownership", color: "#F59E0B", desc: "Evidence of personal responsibility" },
 ] as const;
 export function EvaluationScoresCard({
   scores,
@@ -813,26 +751,33 @@ export function EvaluationScoresCard({
   const dims: { name: string; score: number; evidence: string }[] =
     Array.isArray(scores?.dimensions) ? scores.dimensions : [];
   const DIM_KEYWORDS: Record<string, string> = {
-    communication:         "communication",
-    technical_knowledge:   "technical",
-    resume_credibility:    "resume",
-    problem_solving:       "problem",
-    clarity_of_thought:    "clarity",
+    jd_knowledge: "jd knowledge",
+    problem_solving: "problem",
+    experience_credibility: "experience",
+    communication: "communication",
+    ownership: "ownership",
+    technical_knowledge: "technical",
+    resume_credibility: "resume",
+    clarity_of_thought: "clarity",
   };
   const getValue = (key: string): number => {
     const kw = DIM_KEYWORDS[key] ?? key;
-    const d = dims.find((d) => d.name.toLowerCase().includes(kw));
+    const kwParts = kw.split(" ");
+    const d = dims.find((d) => kwParts.every((part) => d.name.toLowerCase().includes(part)))
+      ?? dims.find((d) => d.name.toLowerCase().includes(kwParts[0]));
     if (d) return Math.max(0, Math.min(100, Math.round(d.score)));
     return Math.max(0, Math.min(100, Math.round(Number((scores as any)?.[key] ?? 0))));
   };
   const getEvidence = (key: string): string => {
     const kw = DIM_KEYWORDS[key] ?? key;
-    return dims.find((d) => d.name.toLowerCase().includes(kw))?.evidence ?? "";
+    const kwParts = kw.split(" ");
+    const d = dims.find((d) => kwParts.every((part) => d.name.toLowerCase().includes(part)));
+    return d?.evidence ?? "";
   };
   const values = DIMENSION_CONFIG.map((d) => getValue(d.key));
   const N = DIMENSION_CONFIG.length;
-  const PAD = 64;
-  const R = 60;
+  const PAD = 68; // Increased padding to prevent label clipping
+  const R = 70;
   const SIZE = R * 2 + PAD * 2;
   const cx = SIZE / 2;
   const cy = SIZE / 2;
@@ -841,163 +786,153 @@ export function EvaluationScoresCard({
     x: cx + r * Math.cos(angle(i)),
     y: cy + r * Math.sin(angle(i)),
   });
-  const rings = [50, 100];
+  const RING_LEVELS = [0.33, 0.66, 1.0]; // 3 rings like the screenshot
   const shapePoints = values
     .map((v, i) => point(i, (v / 100) * R))
     .map((p) => `${p.x},${p.y}`)
     .join(" ");
-  const hoveredEvidence = hovered ? getEvidence(hovered) : null;
   const hoveredDim = hovered ? DIMENSION_CONFIG.find((d) => d.key === hovered) ?? null : null;
   const hoveredVal = hovered ? getValue(hovered) : null;
-  const tag = (v: number) => v >= 70 ? "STRONG" : v >= 45 ? "AVERAGE" : v > 0 ? "WEAK" : null;
-  const tagCls = (v: number) => v >= 70
-    ? "bg-emerald-100 text-emerald-700"
-    : v >= 45 ? "bg-amber-100 text-amber-700"
-      : "bg-rose-100 text-rose-700";
+  const hoveredEvidence = hovered ? getEvidence(hovered) : null;
+
   const handleEnter = (key: string, e: React.MouseEvent) => {
     setHovered(key);
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (rect) setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    setMousePos({ x: e.clientX, y: e.clientY });
   };
   const handleMove = (e: React.MouseEvent) => {
     if (!hovered) return;
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (rect) setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    setMousePos({ x: e.clientX, y: e.clientY });
   };
   const handleLeave = () => { setHovered(null); setMousePos(null); };
+
   // Position tooltip: clamp inside container bounds
-  const tooltipStyle = (() => {
-    if (!mousePos || !containerRef.current) return {};
-    const containerW = containerRef.current.offsetWidth;
-    const containerH = containerRef.current.offsetHeight;
-    const tipW = 224;
-    const tipH = 160; // approx
+  const tooltipStyle: React.CSSProperties = (() => {
+    if (!mousePos || typeof window === "undefined") return {};
+    const tipW = 240;
     let left = mousePos.x + 16;
-    if (left + tipW > containerW) left = mousePos.x - tipW - 16;
-    if (left < 0) left = 4;
-    let top = mousePos.y - 20;
-    if (top + tipH > containerH) top = containerH - tipH - 4;
-    if (top < 0) top = 4;
-    return { top, left };
+    if (left + tipW > window.innerWidth) left = mousePos.x - tipW - 16;
+
+    if (mousePos.y > window.innerHeight / 2) {
+      return { bottom: window.innerHeight - mousePos.y + 16, left };
+    }
+    return { top: mousePos.y + 16, left };
   })();
+
   return (
-    <div ref={containerRef} className="relative w-full flex flex-col items-center gap-4" onMouseMove={handleMove}>
-      {/* ── Radar SVG ── */}
-      <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} className="shrink-0 drop-shadow-sm">
-        <defs>
-          <radialGradient id="evalRadarGrad" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="#6366F1" stopOpacity="0.22" />
-            <stop offset="100%" stopColor="#818CF8" stopOpacity="0.04" />
-          </radialGradient>
-          <filter id="radarGlow">
-            <feGaussianBlur stdDeviation="2.5" result="blur" />
-            <feComposite in="SourceGraphic" in2="blur" operator="over" />
-          </filter>
-        </defs>
-        {/* Grid rings — 4 levels */}
-        {[25, 50, 75, 100].map((pct) => {
-          const r = (pct / 100) * R;
+    <div ref={containerRef} className="relative w-full flex flex-col items-center" onMouseMove={handleMove}>
+      {/* ── Radar SVG — clean, matches screenshot ── */}
+      <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} className="shrink-0 overflow-visible">
+        {/* Grid rings — 3 levels, no fill, light gray stroke */}
+        {RING_LEVELS.map((frac, ri) => {
+          const r = frac * R;
           const pts = Array.from({ length: N }, (_, i) => point(i, r)).map((p) => `${p.x},${p.y}`).join(" ");
           return (
-            <polygon key={pct} points={pts} fill={pct === 25 ? "#F8F9FF" : "none"}
-              stroke={pct === 100 ? "#C7D2FE" : "#E0E7FF"}
-              strokeWidth={pct === 100 ? "1.2" : "0.8"}
-              strokeDasharray={pct < 100 ? "3 3" : undefined}
+            <polygon
+              key={ri}
+              points={pts}
+              fill="none"
+              stroke="#D1D5DB"
+              strokeWidth="1"
             />
           );
         })}
-        {/* Spokes */}
-        {DIMENSION_CONFIG.map((dim, i) => {
+        {/* Spokes — light gray, from center to outermost ring */}
+        {DIMENSION_CONFIG.map((_, i) => {
           const o = point(i, R);
-          return <line key={i} x1={cx} y1={cy} x2={o.x} y2={o.y} stroke="#C7D2FE" strokeWidth="0.8" />;
+          return <line key={i} x1={cx} y1={cy} x2={o.x} y2={o.y} stroke="#D1D5DB" strokeWidth="1" />;
         })}
-        {/* Glow layer behind shape */}
-        <polygon points={shapePoints} fill="url(#evalRadarGrad)" stroke="none" filter="url(#radarGlow)" opacity="0.6" />
-        {/* Main data shape */}
-        <polygon points={shapePoints} fill="url(#evalRadarGrad)" stroke="url(#radarStroke)" strokeWidth="2" strokeLinejoin="round" />
-        <defs>
-          <linearGradient id="radarStroke" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#6366F1" />
-            <stop offset="100%" stopColor="#8B5CF6" />
-          </linearGradient>
-        </defs>
-        {/* Dots on data points */}
+        {/* Data shape — light blue fill, solid blue border, exactly like screenshot */}
+        <polygon
+          points={shapePoints}
+          fill="rgba(56,189,248,0.18)"
+          stroke="#38BDF8"
+          strokeWidth="2.5"
+          strokeLinejoin="round"
+        />
+        {/* Data points (invisible hover targets) */}
         {values.map((v, i) => {
           const p = point(i, (v / 100) * R);
           const dim = DIMENSION_CONFIG[i];
-          const isHov = hovered === dim.key;
           return (
-            <g key={dim.key}>
-              {isHov && <circle cx={p.x} cy={p.y} r="10" fill={dim.color} opacity="0.15" />}
-              <circle cx={p.x} cy={p.y}
-                r={isHov ? 5.5 : 4}
-                fill={dim.color} stroke="white" strokeWidth="2"
-                className="cursor-pointer" style={{ transition: "r 0.15s, opacity 0.15s", filter: isHov ? `drop-shadow(0 0 4px ${dim.color}88)` : "none" }}
-                onMouseEnter={(e) => handleEnter(dim.key, e)}
-                onMouseLeave={handleLeave}
-              />
-            </g>
+            <circle
+              key={`dot-${dim.key}`}
+              cx={p.x} cy={p.y} r="16"
+              fill="transparent"
+              className="cursor-pointer"
+              onMouseEnter={(e) => handleEnter(dim.key, e)}
+              onMouseLeave={handleLeave}
+            />
           );
         })}
-        {/* Axis labels */}
+        {/* Axis labels — simple gray, outside ring */}
         {DIMENSION_CONFIG.map((dim, i) => {
-          const lp = point(i, R + 28);
+          const isRight = Math.cos(angle(i)) > 0.1;
+          const isLeft = Math.cos(angle(i)) < -0.1;
+          const anchor = isRight ? "start" : isLeft ? "end" : "middle";
+          // If anchor is middle (top/bottom), we can split into two lines
+          // If it's start/end (sides), single line looks better and doesn't clash with height
+          const lp = point(i, R + (anchor === "middle" ? 24 : 16));
           const isHov = hovered === dim.key;
-          const words = dim.label.split(" ");
-          // Split into two lines: first word(s) on line 1, rest on line 2
-          const mid = Math.ceil(words.length / 2);
-          const line1 = words.slice(0, mid).join(" ");
-          const line2 = words.slice(mid).join(" ");
-          const multiLine = words.length > 1;
+
+          let line1: string = dim.label;
+          let line2: string = "";
+          let multiLine = false;
+          if (anchor === "middle" && dim.label.includes(" ")) {
+            const words = dim.label.split(" ");
+            const mid = Math.ceil(words.length / 2);
+            line1 = words.slice(0, mid).join(" ");
+            line2 = words.slice(mid).join(" ");
+            multiLine = true;
+          }
+
           return (
-            <g key={dim.key} className="cursor-pointer"
+            <g
+              key={dim.key}
+              className="cursor-pointer"
               onMouseEnter={(e) => handleEnter(dim.key, e)}
-              onMouseLeave={handleLeave}>
-              <circle cx={point(i, R + 14).x} cy={point(i, R + 14).y} r="24" fill="transparent" />
-              <text x={lp.x} y={multiLine ? lp.y - 5 : lp.y}
-                textAnchor="middle"
-                fontSize={isHov ? "9.5" : "8.5"}
-                fontWeight={isHov ? "700" : "600"}
+              onMouseLeave={handleLeave}
+            >
+              {/* Invisible large circle to make hovering easier */}
+              <circle cx={lp.x} cy={lp.y} r="22" fill="transparent" />
+              <text
+                x={lp.x}
+                y={multiLine ? lp.y - 5 : lp.y}
+                textAnchor={anchor}
+                dominantBaseline="middle"
+                fontSize="11"
+                fontWeight={isHov ? "700" : "500"}
                 style={{
-                  fill: isHov ? dim.color : "#64748B",
+                  fill: isHov ? "#0EA5E9" : "#6B7280",
                   fontFamily: "var(--font-geist-sans, system-ui, sans-serif)",
-                  letterSpacing: "0.03em",
-                  transition: "fill 0.15s, font-size 0.1s",
                 }}
               >
-                <tspan x={lp.x} dy="0">{line1}</tspan>
-                {line2 && <tspan x={lp.x} dy="11">{line2}</tspan>}
+                {multiLine ? (
+                  <>
+                    <tspan x={lp.x} dy="0">{line1}</tspan>
+                    <tspan x={lp.x} dy="12">{line2}</tspan>
+                  </>
+                ) : (
+                  dim.label
+                )}
               </text>
             </g>
           );
         })}
       </svg>
+
       {/* ── Hover tooltip ── */}
       {hoveredDim && hoveredVal !== null && mousePos && (
-        <div className="pointer-events-none absolute z-50 rounded-2xl border bg-white shadow-2xl overflow-hidden"
-          style={{ ...tooltipStyle, width: 220, borderColor: hoveredDim.color + "40" }}>
-          <div className="px-3.5 py-2.5 border-b" style={{ borderColor: hoveredDim.color + "25", background: hoveredDim.color + "08" }}>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: hoveredDim.color }} />
-                <span className="text-[12px] font-bold text-[#0F172A]">{hoveredDim.label}</span>
-              </div>
-              <span className="text-[16px] font-extrabold tabular-nums" style={{ color: hoveredDim.color }}>
-                {hoveredVal}<span className="text-[9px] font-medium text-[#94A3B8]">/100</span>
-              </span>
-            </div>
-            {tag(hoveredVal) && (
-              <span className={cn("inline-block rounded-full px-2 py-0.5 text-[9px] font-bold uppercase mt-1.5", tagCls(hoveredVal))}>
-                {tag(hoveredVal)}
-              </span>
-            )}
+        <div
+          className="pointer-events-none fixed z-[99999] w-56 rounded-xl border border-[#E2E8F0] bg-white px-3.5 py-2.5 shadow-xl"
+          style={tooltipStyle}
+        >
+          <div className="flex items-center justify-between mb-1 border-b border-[#F1F5F9] pb-1.5">
+            <span className="text-[12px] font-semibold text-[#1A1D22]">{hoveredDim.label}</span>
+            <span className="text-[12px] font-bold text-[#0EA5E9] tabular-nums">{hoveredVal}<span className="text-[9px] font-normal text-[#94A3B8]">/100</span></span>
           </div>
-          <div className="px-3.5 py-2.5">
-            {hoveredEvidence
-              ? <p className="text-[11px] leading-relaxed text-[#334155]">{hoveredEvidence}</p>
-              : <p className="text-[11px] text-[#94A3B8] italic">No evidence recorded.</p>
-            }
-          </div>
+          <p className="text-[11px] leading-relaxed text-[#6B7280] pt-1">
+            {hoveredEvidence || hoveredDim.desc}
+          </p>
         </div>
       )}
     </div>
@@ -1044,11 +979,11 @@ function QuestionAnalysisCard({ transcript, questions, answerScores, onTranscrip
       return answerScoresSafe.map((s, idx) => ({
         question: s.question,
         answer: s.answer,
-        depth: s.depth,
-        clarity: s.clarity,
-        specificity: s.specificity,
-        grounding: s.grounding,
-        overall: s.overall,
+        depth: Math.round((s.depth || 0) * 10) / 10,
+        clarity: Math.round((s.clarity || 0) * 10) / 10,
+        specificity: Math.round((s.specificity || 0) * 10) / 10,
+        grounding: Math.round((s.grounding || 0) * 10) / 10,
+        overall: Math.round((s.overall || 0) * 10) / 10,
         signals: s.signals,
         reasoning: questionsSafe[idx]?.reasoning || "",
         tags: questionsSafe[idx]?.tags || [],
@@ -1063,7 +998,7 @@ function QuestionAnalysisCard({ transcript, questions, answerScores, onTranscrip
         clarity: q.scoreBreakdown?.clarity ?? 0,
         specificity: q.scoreBreakdown?.technical_accuracy ?? 0,
         grounding: q.scoreBreakdown?.practical_application ?? 0,
-        overall: parseFloat(q.score.replace(/[^\d.]/g, "")) || 0,
+        overall: Math.round(parseFloat(q.score.replace(/[^\d.]/g, "")) || 0),
         signals: [],
         reasoning: q.reasoning,
         tags: q.tags,
@@ -1201,22 +1136,14 @@ function QuestionAnalysisCard({ transcript, questions, answerScores, onTranscrip
     </div>
   );
 }
-function TabStrip({ value, onChange }: { value: IntelId; onChange: (v: IntelId) => void }) {
-  const base = "flex-1 rounded-full py-1 text-[10px] font-semibold transition-colors flex items-center justify-center";
-  return (
-    <div className="flex w-full rounded-full bg-[#F3F4F6] p-1">
-      <button type="button" onClick={() => onChange("raw_signals")} className={cn(base, value === "raw_signals" ? "bg-white text-[#1A1D22] shadow-sm" : "text-[#6B7079] hover:text-[#1A1D22]")}>Raw Signals</button>
-      <button type="button" onClick={() => onChange("signal_analysis")} className={cn(base, value === "signal_analysis" ? "bg-white text-[#1A1D22] shadow-sm" : "text-[#6B7079] hover:text-[#1A1D22]")}>Analysis</button>
-    </div>
-  );
-}
+// TabStrip removed
 export const SREEVAAI_REPORT_PAGE_BG = "bg-[#EEF0F3]";
 export const SREEVAAI_REPORT_CARD = "rounded-2xl border border-[#DDE1E5] bg-white shadow-sm";
 const bgPage = SREEVAAI_REPORT_PAGE_BG;
 const REC_COLOR: Record<string, string> = {
-  green: "border-emerald-200 bg-emerald-50 text-emerald-800",
-  amber: "border-amber-200 bg-amber-50 text-amber-800",
-  red: "border-rose-200 bg-rose-50 text-rose-800",
+  green: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  amber: "bg-amber-50 text-amber-700 border-amber-200",
+  red: "bg-red-50 text-red-700 border-red-200",
   blue: "border-blue-200 bg-blue-50 text-blue-800",
 };
 /* a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-
@@ -1232,10 +1159,9 @@ export function InterviewReportSreevaAI({
   headerActions?: React.ReactNode;
 }) {
   const plyrRef = useRef<any>(null);
-  const [intel, setIntel] = useState<IntelId>("raw_signals");
   const [expandedVerdict, setExpandedVerdict] = useState(false);
-  const [openStrengths, setOpenStrengths] = useState(false);
-  const [openRisks, setOpenRisks] = useState(false);
+  const [openStrengths, setOpenStrengths] = useState(true);
+  const [openRisks, setOpenRisks] = useState(true);
   useEffect(() => {
     document.body.classList.add("reports-mode");
     return () => {
@@ -1313,7 +1239,7 @@ export function InterviewReportSreevaAI({
     }
   };
   return (
-    <div className={cn("w-full h-screen flex flex-col overflow-hidden bg-[#F3F4F6] font-[family-name:var(--font-geist-sans,var(--font-inter,system-ui,sans-serif))]", bgPage)}>
+    <div className={cn("w-full h-screen flex flex-col overflow-hidden bg-[#FAFBFC] font-[family-name:var(--font-geist-sans,var(--font-inter,system-ui,sans-serif))]")}>
       {/* a"a" Fallback Banner a"a" */}
       {model.isFallback && (
         <div className="shrink-0 flex items-start gap-3 border-b border-amber-200 bg-amber-50 px-6 py-3.5 z-10">
@@ -1329,7 +1255,7 @@ export function InterviewReportSreevaAI({
       )}
       {/* a"a" Header a"a" */}
       {showHeader && (
-        <div className="shrink-0 flex flex-wrap items-center justify-between gap-3 border-b border-[#DDE1E5] px-4 py-2 bg-white z-10 shadow-sm">
+        <div className="shrink-0 flex flex-wrap items-center justify-between gap-3 border-b border-[#E4E7EB] px-6 py-3 bg-white z-10 shadow-sm">
           <div className="flex flex-wrap items-center gap-3">
             <Link href={model.backHref} className="mt-2 inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#DDE1E5] bg-white px-3 text-[11px] font-medium text-[#0D4D2E] shadow-sm hover:bg-[#F7FAF8]">
               <ArrowLeft className="h-4 w-4" />
@@ -1340,237 +1266,240 @@ export function InterviewReportSreevaAI({
           </div>
         </div>
       )}
-      {/* 3-column report layout */}
-      <div className="flex-1 overflow-hidden p-3 lg:p-4">
-        <div className="mx-auto max-w-[1600px] h-full grid grid-cols-1 lg:grid-cols-3 gap-3 lg:gap-4 items-stretch">
-          {/* ── COL 1 · Candidate · Verdict · Radar · Summary ── single card */}
-          <div className="col-span-1 flex flex-col min-h-0 overflow-y-auto" style={{ scrollbarWidth: "thin", scrollbarColor: "#E4E7EB transparent" }}>
-            <div className="rounded-2xl bg-white border border-[#E4E7EB] shadow-sm overflow-visible">
-              {/* Candidate Profile section */}
-              <div className="px-5 py-4">
-                <div className="flex items-center gap-4">
-                  <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-black/5 shadow-sm">
-                    {model.displayAvatar && <img src={model.displayAvatar} alt="" className="h-full w-full object-cover" />}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-start justify-between gap-2 mb-1">
-                      <h2 className="text-[16px] font-bold tracking-tight text-[#111827] leading-tight truncate">{model.fullName}</h2>
-                      <span className={cn("inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[9.5px] font-bold shrink-0", REC_COLOR[model.recommendationColor] || "bg-gray-100 text-gray-700")}>
-                        <CheckCircle className="h-3 w-3" />
-                        {model.recommendation}
-                      </span>
+
+      {/* Main Scrollable Content */}
+      <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: "thin", scrollbarColor: "#CBD5E1 transparent" }}>
+        <div className="mx-auto w-full px-4 py-4 lg:px-6 space-y-4">
+          
+          {/* ===================== SECTION 1 ===================== */}
+          <div className="space-y-4">
+            
+            {/* Header: Profile + Verdict + Hiring Note */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-stretch justify-between gap-6 bg-white p-6 rounded-2xl " style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
+              <div className="flex items-center gap-5 shrink-0">
+                <div className="h-16 w-16 shrink-0 overflow-hidden rounded-full border-2 border-[#E2E8F0] shadow-sm bg-white">
+                  {model.displayAvatar ? (
+                    <img src={model.displayAvatar} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center bg-[#F8FAFC] text-xl font-bold text-[#4B5563]">
+                      {model.fullName.charAt(0)}
                     </div>
-                    <p className="text-[12.5px] text-[#6B7280] truncate mb-1">{model.roleLabel}</p>
-                    <p className="text-[11px] text-[#9CA3AF] flex items-center gap-1.5">
-                      <Calendar className="h-3 w-3 shrink-0" />
-                      {model.interviewedOn}
-                    </p>
+                  )}
+                </div>
+                <div className="space-y-1.5">
+                  <h1 className="text-2xl font-semibold text-[#111827] tracking-tight leading-none">{model.fullName}</h1>
+                  <div className="flex items-center gap-4 text-[12px] text-[#6B7280] font-medium">
+                    <span className="flex items-center gap-1.5"><Calendar className="h-3.5 w-3.5" />{model.interviewedOn}</span>
+                    <span className="flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" />{Math.ceil((model.recordingDurationSec || 0) / 60)} mins</span>
+                    <span className="flex items-center gap-1.5"><Globe className="h-3.5 w-3.5" />English</span>
                   </div>
                 </div>
               </div>
-              {/* Hiring Verdict section */}
-              {!model.isFallback && (() => {
-                const isHire = model.recommendationColor === "green";
-                const isNo = model.recommendationColor === "red";
-                const bgCls = isHire ? "bg-[#F0FDF4] border-[#86EFAC]" : isNo ? "bg-rose-50 border-rose-200" : "bg-amber-50 border-amber-200";
-                const textCls = isHire ? "text-[#166534]" : isNo ? "text-rose-800" : "text-amber-800";
-                const iconCls = isHire ? "text-[#22C55E]" : isNo ? "text-rose-500" : "text-amber-500";
-                const summary = model.verdictSummary || model.verdictRecommendationReason || "";
-                return (
-                  <div className="px-5 py-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <p className="text-[13px] font-bold text-[#111827]">Hiring Note</p>
-                      <span className="rounded-full bg-[#F3F4F6] px-2.5 py-0.5 text-[9.5px] font-bold text-[#4B5563]">Verdict</span>
-                    </div>
-                    <div className={cn("rounded-xl border px-4 py-3.5", bgCls)}>
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          {isHire ? <CheckCircle className={cn("h-[18px] w-[18px]", iconCls)} /> : isNo ? <XCircle className={cn("h-[18px] w-[18px]", iconCls)} /> : <AlertTriangle className={cn("h-[18px] w-[18px]", iconCls)} />}
-                          <span className={cn("text-[14px] font-black uppercase tracking-wide", textCls)}>{model.recommendation}</span>
-                        </div>
-                        <div className={cn("flex items-center justify-center h-8 px-2.5 rounded-full border-2 shrink-0", isHire ? "border-[#22C55E]" : isNo ? "border-rose-400" : "border-amber-400")}>
-                          <span className={cn("text-[12px] font-bold tabular-nums", textCls)}>
-                            {model.fitPercent}<span className="text-[9.5px] font-semibold opacity-70">/100</span>
-                          </span>
-                        </div>
-                      </div>
-                      {summary && (
-                        <div className="pt-1 relative">
-                          <p className={cn("text-[12px] leading-relaxed whitespace-pre-line pr-7", textCls, !expandedVerdict && "line-clamp-2")}>{summary}</p>
-                          <button 
-                            type="button" 
-                            onClick={() => setExpandedVerdict(!expandedVerdict)}
-                            className={cn("absolute right-0 top-0.5 p-1 hover:bg-black/5 rounded transition-colors", textCls)}
-                          >
-                            <ChevronDown className={cn("h-4 w-4 transition-transform", expandedVerdict ? "rotate-180" : "")} />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })()}
-              <div className="border-t border-[#F0F1F3]" />
-              {/* Competency Radar section */}
-              <div className="px-5 py-4">
-                <p className="text-[13px] font-bold text-[#111827] mb-3">Evaluation Radar Chart</p>
-                <div className="flex justify-center">
-                  <EvaluationScoresCard scores={model.technical.scores} overall={model.technical.percent} />
+              
+              <div className="flex-1 bg-rose-50/50 rounded-xl border border-rose-100 p-4 mx-2 flex flex-col justify-center relative">
+                <button
+                  type="button"
+                  onClick={() => setExpandedVerdict(!expandedVerdict)}
+                  className="absolute right-3 top-3 text-rose-400 hover:text-rose-600 transition-colors cursor-pointer outline-none"
+                >
+                  <ChevronDown className={cn("h-4 w-4 transition-transform", expandedVerdict && "rotate-180")} />
+                </button>
+                <div className="flex items-center gap-2 mb-1.5 shrink-0 pr-6">
+                  <User className="h-3.5 w-3.5 text-rose-500" />
+                  <span className="text-[11px] font-bold uppercase tracking-widest text-rose-700">Hiring Note</span>
                 </div>
+                <p className={cn("text-[12px] leading-snug text-rose-900 font-medium", !expandedVerdict && "line-clamp-3")}>
+                  {model.reportNotGenerated ? "This report hasn't been generated." : (model.verdictSummary || model.verdictRecommendationReason || "No specific hiring note provided.")}
+                </p>
               </div>
-              <div className="border-t border-[#F0F1F3]" />
-              {/* AI Summary section */}
-              <div className="px-5 py-4">
-                <p className="text-[13px] font-bold text-[#111827] mb-2.5">Summary</p>
-                {model.isFallback ? (
-                  <p className="text-[12px] leading-relaxed text-[#9CA3AF]">AI analysis pending.</p>
-                ) : (
-                  <ul className="space-y-2.5">
-                    {model.aiBullets.slice(0, 3).map((b, i) => (
-                      <li key={i} className="flex items-start gap-2.5">
-                        <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-[#D1D5DB]" />
-                        <p className="text-[12px] font-medium leading-relaxed text-[#374151]">
-                          {b.replace(/^[-\*]\s*/, "").replace(/^\*\*[^*]+\*\*[:.]?\s*/, "").trim()}
-                        </p>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+
+              <div className="flex flex-col items-end justify-center gap-2 shrink-0">
+                <span className={cn("inline-flex items-center gap-1.5 rounded-full border px-4 py-1.5 text-[11px] font-bold uppercase tracking-widest", REC_COLOR[model.recommendationColor] || "bg-gray-100 text-gray-700")}>
+                  {model.recommendationColor === "green" ? <CheckCircle className="h-4 w-4" /> : model.recommendationColor === "red" ? <XCircle className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+                  {model.recommendation}
+                </span>
+                <div className="flex items-baseline gap-1">
+                  <span className="text-[28px] font-black text-[#111827] tracking-tight">{model.verdictScore !== null ? model.verdictScore : model.fitPercent}</span>
+                  <span className="text-[14px] font-bold text-[#9CA3AF]">/ 100</span>
+                </div>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-[#9CA3AF] bg-[#F3F4F6] px-2 py-0.5 rounded">Verdict</span>
               </div>
             </div>
-          </div>
-          {/* ── COL 2 · Highlights · Skills · Integrity ── single card */}
-          <div className="col-span-1 flex flex-col min-h-0 overflow-y-auto" style={{ scrollbarWidth: "thin", scrollbarColor: "#E4E7EB transparent" }}>
-            <div className="rounded-2xl bg-white border border-[#E4E7EB] shadow-sm overflow-visible">
-              {/* Interview Highlights section */}
-              <div className="px-5 py-4">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-[#6B7280] mb-3">Interview Highlights</p>
-                <div className="flex flex-col gap-1">
-                  <div className="flex flex-col">
-                    <button
-                      type="button"
-                      onClick={() => setOpenStrengths(!openStrengths)}
-                      className="flex items-center justify-between w-full text-left py-1.5 hover:bg-emerald-50/60 rounded-lg -mx-1.5 px-1.5 transition-colors"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="text-[12px] font-bold text-emerald-800">✨ Strengths</span>
-                      </div>
-                      <ChevronDown className={cn("h-3.5 w-3.5 text-emerald-600 transition-transform", openStrengths ? "rotate-180" : "")} />
-                    </button>
-                    {openStrengths && (
-                      <div className="mt-1 mb-2 pl-2">
-                        {model.topStrengths.length > 0 ? (
-                          <ul className="space-y-2">
-                            {model.topStrengths.map((item, idx) => (
-                              <li key={idx} className="flex items-start gap-2.5">
-                                <span className="mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" />
-                                <p className="text-[11.5px] leading-relaxed text-[#374151]">{typeof item === "string" ? item.replace(/\*\*/g, "") : item}</p>
-                              </li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <p className="text-[11.5px] text-[#9CA3AF]">No specific strengths identified.</p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  <div className="h-px bg-[#F3F4F6] my-1" />
-                  <div className="flex flex-col">
-                    <button
-                      type="button"
-                      onClick={() => setOpenRisks(!openRisks)}
-                      className="flex items-center justify-between w-full text-left py-1.5 hover:bg-red-50/60 rounded-lg -mx-1.5 px-1.5 transition-colors"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="text-[12px] font-bold text-red-800">⚠️ Risks</span>
-                      </div>
-                      <ChevronDown className={cn("h-3.5 w-3.5 text-red-600 transition-transform", openRisks ? "rotate-180" : "")} />
-                    </button>
-                    {openRisks && (
-                      <div className="mt-1 mb-1 pl-2">
-                        {model.topRisks.length > 0 ? (
-                          <ul className="space-y-2">
-                            {model.topRisks.map((item, idx) => (
-                              <li key={idx} className="flex items-start gap-2.5">
-                                <span className="mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
-                                <p className="text-[11.5px] leading-relaxed text-[#374151]">{typeof item === "string" ? item.replace(/\*\*/g, "") : item}</p>
-                              </li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <p className="text-[11.5px] text-[#9CA3AF]">No specific risks flagged.</p>
-                        )}
-                      </div>
-                    )}
-                  </div>
+
+            {/* Row 2: Summary + Integrity Signals */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 h-[240px]">
+              <div className="rounded-2xl bg-[#F8FAFC]  p-6 flex flex-col h-full min-h-0" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
+                <div className="flex items-center gap-2 mb-3 shrink-0">
+                  <Sparkles className="h-4 w-4 text-[#7C3AED]" />
+                  <h3 className="text-[14px] font-bold text-[#111827]">Summary</h3>
                 </div>
-              </div>
-              {/* Divider */}
-              <div className="border-t border-[#F0F1F3]" />
-              {/* Skill Ratings section */}
-              <div className="px-5 py-4">
-                <p className="text-[13px] font-bold text-[#111827] mb-3">Skill Ratings</p>
-                {model.skills.length > 0 ? (
-                  <SkillRatingsList skills={model.skills} />
-                ) : (
-                  <p className="text-[12px] text-[#9CA3AF]">No skills evaluated.</p>
-                )}
-              </div>
-              {/* Divider */}
-              <div className="border-t border-[#F0F1F3]" />
-              {/* Integrity Signals section */}
-              <div className="px-5 py-4">
-                <div className="flex items-center justify-between mb-3">
-                  <p className="text-[13px] font-bold text-[#111827]">Integrity Signals</p>
-                  {model.integrityScore > 0 && (
-                    <span className={cn(
-                      "text-[11px] font-bold tabular-nums rounded-full border px-2.5 py-0.5",
-                      model.integrityScore >= 70 ? "border-emerald-200 bg-emerald-50 text-emerald-700" : model.integrityScore >= 45 ? "border-amber-200 bg-amber-50 text-amber-700" : "border-rose-200 bg-rose-50 text-rose-700"
-                    )}>{model.integrityScore}/100</span>
-                  )}
-                </div>
-                <div className="mb-3">
-                  <TabStrip value={intel} onChange={setIntel} />
-                </div>
-                <div className="flex flex-col">
-                  {intel === "raw_signals" && (
-                    model.integritySignals.length === 1 && model.integritySignals[0].id === "clean" ? (
-                      <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 px-3.5 py-3 flex items-start gap-2.5">
-                        <span className="mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
-                        <div>
-                          <p className="text-[12px] font-bold text-[#111827] mb-0.5">No flags detected</p>
-                          <p className="text-[11.5px] font-medium leading-relaxed text-[#374151]">Candidate completed the interview without any proctoring or integrity flags.</p>
-                        </div>
-                      </div>
+                <div className="flex-1 overflow-y-auto pr-2" style={{ scrollbarWidth: "thin" }}>
+                  <ul className="space-y-2.5">
+                    {model.reportNotGenerated ? (
+                      <p className="text-[13px] text-[#6B7280]">This report hasn't been generated.</p>
+                    ) : model.isFallback ? (
+                      <p className="text-[13px] text-[#6B7280]">AI analysis pending.</p>
                     ) : (
-                      <div className="flex flex-wrap gap-2">
-                        {model.integritySignals.filter(r => r.id !== "clean").map((row) => (
-                          <div key={row.id} className={cn(
-                            "flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-medium",
-                            row.tone === "rose" ? "border-rose-200 bg-rose-50 text-rose-700"
-                              : row.tone === "amber" ? "border-amber-200 bg-amber-50 text-amber-700"
-                                : "border-emerald-200 bg-emerald-50 text-emerald-700"
-                          )}>
-                            <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", row.tone === "rose" ? "bg-rose-500" : row.tone === "amber" ? "bg-amber-400" : "bg-emerald-500")} />
-                            {row.label}
-                          </div>
-                        ))}
-                      </div>
-                    )
+                      model.aiBullets.slice(0, 3).map((b, i) => (
+                        <li key={i} className="flex items-start gap-2.5">
+                          <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-[#94A3B8]" />
+                          <p className="text-[13px] font-medium leading-relaxed text-[#374151]">
+                            {b.replace(/^[-\*]\s*/, "").replace(/^\*\*[^*]+\*\*[:.]?\s*/, "").trim()}
+                          </p>
+                        </li>
+                      ))
+                    )}
+                  </ul>
+                </div>
+              </div>
+
+              <div className="rounded-2xl bg-white  p-6 flex flex-col h-full min-h-0" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
+                <div className="flex items-center justify-between mb-3 shrink-0">
+                  <h3 className="flex items-center gap-2 text-[14px] font-bold text-[#111827]">
+                    <ShieldCheck className="h-4 w-4 text-[#7C3AED]" />
+                    Integrity Signals
+                  </h3>
+                  {model.integrityScore > 0 && (
+                    <span className="text-[12px] font-bold text-[#10B981]">{model.integrityScore} / 100</span>
                   )}
-                  {intel === "signal_analysis" && (
+                </div>
+                <div className="flex-1 overflow-y-auto pr-2" style={{ scrollbarWidth: "thin" }}>
+                  {model.integritySignals.length === 1 && model.integritySignals[0].id === "clean" ? (
+                    <div className="flex items-start gap-2.5">
+                      <span className="mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
+                      <p className="text-[12px] font-medium leading-relaxed text-[#374151]">Candidate completed the interview without any proctoring or integrity flags.</p>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-3">
+                      {model.integritySignals.filter(r => r.id !== "clean").map((row) => (
+                        <div key={row.id} className="flex items-start gap-2">
+                          <span className={cn("mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full", row.tone === "rose" ? "bg-rose-500" : row.tone === "amber" ? "bg-amber-400" : "bg-emerald-500")} />
+                          <p className="text-[12px] font-medium leading-relaxed text-[#374151]">{row.label}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Row 3: Evaluation Radar + Skills + Behavioral Analysis */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-stretch h-[320px]">
+              <div className="rounded-2xl bg-white  p-6 flex flex-col h-full min-h-0" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
+                <h3 className="text-[14px] font-bold text-[#111827] mb-6 shrink-0">Evaluation Radar</h3>
+                <div className="flex-1 flex items-center justify-center -mt-4 min-h-0">
+                  {model.reportNotGenerated ? (
+                    <p className="text-[13px] text-[#6B7280]">This report hasn't been generated.</p>
+                  ) : (
+                    <EvaluationScoresCard scores={model.technical.scores} overall={model.technical.percent} />
+                  )}
+                </div>
+              </div>
+              
+              <div className="rounded-2xl bg-white  p-6 flex flex-col h-full min-h-0" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
+                <h3 className="text-[14px] font-bold text-[#111827] mb-5 shrink-0">Skill Ratings</h3>
+                <div className="flex-1 overflow-y-auto pr-2" style={{ scrollbarWidth: "thin" }}>
+                  {model.reportNotGenerated ? (
+                    <p className="text-[13px] text-[#6B7280]">This report hasn't been generated.</p>
+                  ) : model.skills.length > 0 ? (
+                    <SkillRatingsList skills={model.skills} />
+                  ) : (
+                    <p className="text-[13px] text-[#9CA3AF]">No skills evaluated.</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-2xl bg-white  p-6 flex flex-col h-full min-h-0" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
+                <div className="flex items-center justify-between mb-3 shrink-0">
+                  <h3 className="flex items-center gap-2 text-[14px] font-bold text-[#111827]">
+                    <Sparkles className="h-4 w-4 text-[#7C3AED]" />
+                    Behavioral Analysis
+                  </h3>
+                </div>
+                <div className="flex-1 overflow-y-auto pr-2" style={{ scrollbarWidth: "thin" }}>
+                  {model.reportNotGenerated ? (
+                    <p className="text-[13px] text-[#6B7280]">This report hasn't been generated.</p>
+                  ) : (
                     <SignalAnalysisPanelCompact analysis={model.signalAnalysis} />
                   )}
                 </div>
               </div>
             </div>
           </div>
-          {/* ── COL 3 · Recording · Transcript ── single card */}
-          <div className="col-span-1 flex flex-col min-h-0 overflow-hidden">
-            <div className="rounded-2xl bg-white border border-[#E4E7EB] shadow-sm flex flex-col overflow-hidden flex-1 min-h-0">
-              {/* Recording section */}
-              <div className="px-5 py-4 shrink-0">
-                <p className="text-[13px] font-bold text-[#111827] mb-3">Recording</p>
+
+          {/* ===================== SECTION 2 ===================== */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch h-[600px]">
+            
+            {/* Column 1: Strengths & Risks */}
+            <div className="lg:col-span-4 flex flex-col gap-4 min-h-0">
+              <div className="rounded-2xl bg-white  p-5 flex-1 flex flex-col min-h-0" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
+                <div className="flex items-center gap-2 mb-4 shrink-0">
+                  <div className="h-6 w-6 rounded-full bg-emerald-100 flex items-center justify-center">
+                    <Star className="h-3.5 w-3.5 text-emerald-600 fill-emerald-600" />
+                  </div>
+                  <h3 className="text-[14px] font-bold text-[#111827]">Strengths</h3>
+                </div>
+                <div className="flex-1 overflow-y-auto pr-2" style={{ scrollbarWidth: "thin" }}>
+                  {model.reportNotGenerated ? (
+                    <p className="text-[13px] text-[#6B7280]">This report hasn't been generated.</p>
+                  ) : model.topStrengths.length > 0 ? (
+                    <ul className="space-y-3">
+                      {model.topStrengths.map((item, idx) => (
+                        <li key={idx} className="flex items-start gap-2.5">
+                          <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" />
+                          <p className="text-[12px] leading-relaxed text-[#374151] font-medium">{typeof item === "string" ? item.replace(/\*\*/g, "") : item}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-[12px] text-[#9CA3AF]">No specific strengths identified.</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-2xl bg-white  p-5 flex-1 flex flex-col min-h-0" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
+                <div className="flex items-center gap-2 mb-4 shrink-0">
+                  <div className="h-6 w-6 rounded-full bg-orange-100 flex items-center justify-center">
+                    <AlertTriangle className="h-3.5 w-3.5 text-orange-600 fill-orange-600" />
+                  </div>
+                  <h3 className="text-[14px] font-bold text-[#111827]">Risks</h3>
+                </div>
+                <div className="flex-1 overflow-y-auto pr-2" style={{ scrollbarWidth: "thin" }}>
+                  {model.reportNotGenerated ? (
+                    <p className="text-[13px] text-[#6B7280]">This report hasn't been generated.</p>
+                  ) : model.topRisks.length > 0 ? (
+                    <ul className="space-y-3">
+                      {model.topRisks.map((item, idx) => (
+                        <li key={idx} className="flex items-start gap-2.5">
+                          <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-orange-400" />
+                          <p className="text-[12px] leading-relaxed text-[#374151] font-medium">{typeof item === "string" ? item.replace(/\*\*/g, "") : item}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-[12px] text-[#9CA3AF]">No specific risks flagged.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Column 2: Transcript + Question Analysis */}
+            <div className="lg:col-span-4 flex flex-col min-h-0">
+              <div className="rounded-2xl bg-white  flex flex-col flex-1 min-h-0" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
+                <div className="px-5 py-4 shrink-0 border-b border-[#F0F1F3]">
+                  <h3 className="text-[14px] font-bold text-[#111827]">Interview Transcript</h3>
+                </div>
+                <div className="flex-1 min-h-0">
+                  <QuestionAnalysisCard transcript={model.transcript} questions={model.questionAnalysis} answerScores={model.answerScores} onTranscriptSeek={handleSeek} recordingDurationSec={model.recordingDurationSec} />
+                </div>
+              </div>
+            </div>
+
+            {/* Column 3: Recording & Side Info */}
+            <div className="lg:col-span-4 flex flex-col gap-4 min-h-0">
+              {/* Recording Player */}
+              <div className="rounded-2xl bg-white  p-4 shrink-0" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}>
+                <h3 className="text-[14px] font-bold text-[#111827] mb-3">Recording</h3>
                 <div className="overflow-hidden rounded-xl bg-black shadow-sm" style={{ aspectRatio: "16/9", width: "100%" }}>
                   {model.videoUrl ? (
                     <Plyr
@@ -1588,13 +1517,43 @@ export function InterviewReportSreevaAI({
                   )}
                 </div>
               </div>
-              <div className="border-t border-[#F0F1F3]" />
-              {/* Transcript section */}
-              <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-                <QuestionAnalysisCard transcript={model.transcript} questions={model.questionAnalysis} answerScores={model.answerScores} onTranscriptSeek={handleSeek} recordingDurationSec={model.recordingDurationSec} />
+
+              {/* Info Stack */}
+              <div className="rounded-2xl bg-white  p-5 flex-1 flex flex-col overflow-y-auto" style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)", scrollbarWidth: "thin" }}>
+                <div className="mb-6">
+                  <h3 className="text-[13px] font-bold text-[#111827] mb-3 flex items-center gap-2"><BarChart2 className="h-4 w-4" /> At a Glance</h3>
+                  <div className="space-y-3">
+                    <div className="flex justify-between text-[12px]">
+                      <span className="text-[#6B7280]">Total Questions Asked</span>
+                      <span className="font-bold text-[#111827]">{model.answerScores?.length || 0}</span>
+                    </div>
+                    <div className="flex justify-between text-[12px]">
+                      <span className="text-[#6B7280]">Avg. Response Time</span>
+                      <span className="font-bold text-[#111827]">
+                        {model.avgResponseTimeSec != null && model.avgResponseTimeSec > 0
+                          ? `${model.avgResponseTimeSec}s`
+                          : "--"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-[12px]">
+                      <span className="text-[#6B7280]">Recording Length</span>
+                      <span className="font-bold text-[#111827]">{model.recordingDurationSec ? `${Math.floor(model.recordingDurationSec / 60)}:${String(model.recordingDurationSec % 60).padStart(2, "00")}` : "--:--"}</span>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="mb-6">
+                  <h3 className="text-[13px] font-bold text-[#111827] mb-3 flex items-center gap-2"><Folder className="h-4 w-4" /> Drive</h3>
+                  <div className="rounded-lg bg-[#F8FAFC] px-3 py-2 text-[12px] font-medium text-[#4B5563]">
+                    {model.roleLabel}
+                  </div>
+                </div>
               </div>
+
             </div>
+
           </div>
+
         </div>
       </div>
     </div>

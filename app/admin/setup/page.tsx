@@ -15,7 +15,7 @@ function Field({ label, required, children, hint }: { label: string; required?: 
     return (
         <div className="space-y-1.5">
             <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
-                {label}{required && <span className="text-orange-500 ml-0.5">*</span>}
+                {label}{required && <span className="text-violet-500 ml-0.5">*</span>}
             </label>
             {children}
             {hint && <p className="text-[11px] text-gray-400">{hint}</p>}
@@ -30,7 +30,7 @@ function InputIcon({ icon, ...props }: { icon: React.ReactNode } & React.InputHT
                 {...props}
                 className={cn(
                     "h-10 w-full rounded-lg border bg-white pl-9 pr-3 text-[13px] font-medium text-gray-900 transition-colors outline-none",
-                    "border-gray-200 hover:border-gray-300 focus:border-orange-400 focus:ring-2 focus:ring-orange-100",
+                    "border-gray-200 hover:border-gray-300 focus:border-violet-400 focus:ring-2 focus:ring-violet-100",
                     props.disabled && "bg-gray-50 text-gray-400 cursor-not-allowed border-gray-100",
                     props.className
                 )}
@@ -105,16 +105,16 @@ export default function OnboardingPage() {
     };
     const canActivate = !!(company.name);
     if (isLoading) return (
-        <div className="h-screen flex items-center justify-center bg-gray-50">
-            <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
+        <div className="h-screen flex items-center justify-center">
+            <Loader2 className="h-8 w-8 animate-spin text-violet-500" />
         </div>
     );
     return (
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4 font-sans">
+        <div className="min-h-screen flex items-center justify-center p-4 font-sans">
             <div className="w-full max-w-4xl">
                 {/* Header */}
                 <div className="text-center mb-8">
-                    <div className="inline-flex items-center justify-center h-14 w-14 rounded-2xl bg-orange-500 shadow-lg shadow-orange-200 mb-4">
+                    <div className="inline-flex items-center justify-center h-14 w-14 rounded-2xl bg-violet-500 shadow-lg shadow-orange-200 mb-4">
                         <Building2 className="h-7 w-7 text-white" />
                     </div>
                     <h1 className="text-2xl font-bold text-gray-900">Set up your workspace</h1>
@@ -124,8 +124,8 @@ export default function OnboardingPage() {
                     {/* LEFT — Password Management */}
                     <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
                         <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-3">
-                            <div className="h-8 w-8 rounded-lg bg-orange-50 flex items-center justify-center">
-                                <KeyRound className="h-4 w-4 text-orange-500" />
+                            <div className="h-8 w-8 rounded-lg bg-violet-50 flex items-center justify-center">
+                                <KeyRound className="h-4 w-4 text-violet-500" />
                             </div>
                             <div>
                                 <p className="text-sm font-semibold text-gray-900">Login Credentials</p>
@@ -143,7 +143,7 @@ export default function OnboardingPage() {
                                         placeholder="••••••••"
                                         value={passwords.current}
                                         onChange={e => setPasswords({ ...passwords, current: e.target.value })}
-                                        className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 pr-9 text-[13px] font-medium text-gray-900 outline-none hover:border-gray-300 focus:border-orange-400 focus:ring-2 focus:ring-orange-100 transition-colors placeholder:text-gray-300"
+                                        className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 pr-9 text-[13px] font-medium text-gray-900 outline-none hover:border-gray-300 focus:border-violet-400 focus:ring-2 focus:ring-violet-100 transition-colors placeholder:text-gray-300"
                                     />
                                     <button type="button" onClick={() => setShowPw(p => ({ ...p, current: !p.current }))} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
                                         {showPw.current ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
@@ -157,7 +157,7 @@ export default function OnboardingPage() {
                                         placeholder="Min. 8 characters"
                                         value={passwords.next}
                                         onChange={e => setPasswords({ ...passwords, next: e.target.value })}
-                                        className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 pr-9 text-[13px] font-medium text-gray-900 outline-none hover:border-gray-300 focus:border-orange-400 focus:ring-2 focus:ring-orange-100 transition-colors placeholder:text-gray-300"
+                                        className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 pr-9 text-[13px] font-medium text-gray-900 outline-none hover:border-gray-300 focus:border-violet-400 focus:ring-2 focus:ring-violet-100 transition-colors placeholder:text-gray-300"
                                     />
                                     <button type="button" onClick={() => setShowPw(p => ({ ...p, next: !p.next }))} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
                                         {showPw.next ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
@@ -170,8 +170,8 @@ export default function OnboardingPage() {
                     {/* RIGHT — Company */}
                     <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
                         <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-3">
-                            <div className="h-8 w-8 rounded-lg bg-orange-50 flex items-center justify-center">
-                                <Building2 className="h-4 w-4 text-orange-500" />
+                            <div className="h-8 w-8 rounded-lg bg-violet-50 flex items-center justify-center">
+                                <Building2 className="h-4 w-4 text-violet-500" />
                             </div>
                             <div>
                                 <p className="text-sm font-semibold text-gray-900">Company</p>
@@ -213,7 +213,7 @@ export default function OnboardingPage() {
                         className={cn(
                             "flex items-center gap-2 px-6 h-10 rounded-xl font-semibold text-[13px] transition-all",
                             canActivate && !isSaving
-                                ? "bg-orange-500 text-white hover:bg-orange-600 shadow-md shadow-orange-200 active:scale-95"
+                                ? "bg-violet-500 text-white hover:bg-violet-600 shadow-md shadow-orange-200 active:scale-95"
                                 : "bg-gray-100 text-gray-400 cursor-not-allowed"
                         )}
                     >
@@ -232,7 +232,7 @@ export default function OnboardingPage() {
                             className="w-full max-w-sm bg-white rounded-2xl border border-gray-100 shadow-2xl overflow-hidden"
                         >
                             <div className="p-8 text-center space-y-4">
-                                <div className="h-16 w-16 rounded-2xl bg-orange-50 flex items-center justify-center mx-auto text-orange-500">
+                                <div className="h-16 w-16 rounded-2xl bg-violet-50 flex items-center justify-center mx-auto text-violet-500">
                                     <Sparkles className="h-8 w-8" />
                                 </div>
                                 <div>

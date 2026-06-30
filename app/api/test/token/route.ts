@@ -1,0 +1,122 @@
+import { AccessToken, AgentDispatchClient, RoomServiceClient } from "livekit-server-sdk";
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { getSession, isSuperAdminRole } from "@/lib/auth";
+import { FIXED_INTERVIEW_DURATION_MINUTES } from "@/lib/drive-limits";
+
+const TEST_KEY = process.env.TEST_PAGE_KEY || process.env.NEXT_PUBLIC_TEST_KEY || "1285";
+
+export async function POST(request: Request) {
+    try {
+        const { applicationId, skipReport = false, key } = await request.json();
+
+        if (key !== TEST_KEY) {
+            return NextResponse.json({ error: "Invalid test key" }, { status: 403 });
+        }
+
+        if (!applicationId) {
+            return NextResponse.json({ error: "applicationId required" }, { status: 400 });
+        }
+
+        const application = await prisma.application.findUnique({
+            where: { id: applicationId },
+            include: {
+                drive: { include: { organization: { select: { id: true, name: true } } } },
+                interview: true,
+            },
+        });
+
+        if (!application) {
+            return NextResponse.json({ error: "Application not found" }, { status: 404 });
+        }
+
+        // Create or reset interview row for test
+        const interviewId = `test_${applicationId}_${Date.now()}`;
+        await prisma.interview.upsert({
+            where: { applicationId },
+            create: {
+                id: interviewId,
+                applicationId,
+                status: "PENDING",
+                isTest: true,
+                testBillingMetrics: { skipReport, llmCost: 0, ttsCost: 0, sttCost: 0 },
+            },
+            update: {
+                status: "PENDING",
+                isTest: true,
+                startedAt: null,
+                completedAt: null,
+                interviewTranscript: null,
+                questionByQuestionAnalysis: [],
+                scoreBreakdown: {},
+                interviewSummary: {},
+                skillRatings: [],
+                testBillingMetrics: { skipReport, llmCost: 0, ttsCost: 0, sttCost: 0 },
+            },
+        });
+
+        const roomName = `interview_${applicationId}`;
+        const participantIdentity = `candidate_${applicationId}`;
+        const durationSeconds = Math.floor(FIXED_INTERVIEW_DURATION_MINUTES * 60);
+        const serverUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL || process.env.LIVEKIT_URL;
+        const agentName = process.env.LIVEKIT_AGENT_NAME || "ai_interviewer";
+
+        void (async () => {
+            try {
+                const apiKey = process.env.LIVEKIT_API_KEY;
+                const apiSecret = process.env.LIVEKIT_API_SECRET;
+                const rawUrl = process.env.LIVEKIT_URL;
+                if (!apiKey || !apiSecret || !rawUrl) return;
+
+                const host = `https://${rawUrl.trim().replace(/^(wss?|https?):\/\//, "")}`;
+                const roomClient = new RoomServiceClient(host, apiKey, apiSecret);
+                const dispatchClient = new AgentDispatchClient(host, apiKey, apiSecret);
+
+                try {
+                    await roomClient.createRoom({ name: roomName, emptyTimeout: 10 * 60, departureTimeout: 60 });
+                } catch (e) {
+                    const msg = e instanceof Error ? e.message.toLowerCase() : "";
+                    if (!msg.includes("already exists")) console.error("[TEST_TOKEN] Room creation failed:", e);
+                }
+
+                try {
+                    const existing = await dispatchClient.listDispatch(roomName);
+                    for (const d of existing) await dispatchClient.deleteDispatch(d.id, roomName).catch(() => {});
+                } catch {}
+
+                await dispatchClient.createDispatch(roomName, agentName, {
+                    metadata: JSON.stringify({
+                        applicationId,
+                        candidateName: application.fullName,
+                        roleLabel: application.drive?.role || application.drive?.title || "Interview",
+                        timeLimitMins: FIXED_INTERVIEW_DURATION_MINUTES,
+                        isTest: true,
+                        skipReport,
+                    }),
+                });
+            } catch (e) {
+                console.error("[TEST_TOKEN] Dispatch error:", e);
+            }
+        })();
+
+        const at = new AccessToken(
+            process.env.LIVEKIT_API_KEY,
+            process.env.LIVEKIT_API_SECRET,
+            { identity: participantIdentity, ttl: "2h" }
+        );
+        at.addGrant({ roomJoin: true, room: roomName, canPublish: true, canPublishData: true, canSubscribe: true });
+
+        return NextResponse.json({
+            token: await at.toJwt(),
+            url: serverUrl,
+            duration: durationSeconds,
+            roleLabel: application.drive?.role || application.drive?.title || "Interview",
+            candidateName: application.fullName,
+            applicationId,
+            proctoringSignals: [],
+        });
+    } catch (error) {
+        console.error("[TEST_TOKEN] Error:", error);
+        return NextResponse.json({ error: "Failed to generate test token" }, { status: 500 });
+    }
+}

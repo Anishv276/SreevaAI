@@ -89,7 +89,7 @@ export function PremiumMonthPicker({ label, value, onChange, placeholder = "Sele
                                 className={`h-10 rounded-xl text-[11px] font-inter font-black uppercase tracking-widest transition-all ${
                                     isSelected 
                                         ? "bg-gray-900 text-white shadow-lg" 
-                                        : "text-gray-500 hover:bg-orange-50 hover:text-[#F97316]"
+                                        : "text-gray-500 hover:bg-violet-50 hover:text-[#7C3AED]"
                                 }`}
                             >
                                 {m}
@@ -108,12 +108,12 @@ export function PremiumMonthPicker({ label, value, onChange, placeholder = "Sele
                 type="button"
                 disabled={disabled}
                 onClick={handleOpen}
-                className={`flex h-12 w-full items-center justify-between rounded-2xl border border-gray-100 px-4 text-sm font-medium transition-all focus:ring-4 focus:ring-orange-500/10 placeholder:text-gray-300 ${
-                    disabled ? "bg-gray-50 text-gray-300 opacity-50 cursor-not-allowed" : "bg-gray-50/30 hover:border-orange-200"
+                className={`flex h-12 w-full items-center justify-between rounded-2xl border border-gray-100 px-4 text-sm font-medium transition-all focus:ring-4 focus:ring-violet-1000/10 placeholder:text-gray-300 ${
+                    disabled ? "bg-gray-50 text-gray-300 opacity-50 cursor-not-allowed" : "bg-gray-50/30 hover:border-violet-200"
                 }`}
             >
                 <div className="flex items-center gap-3">
-                    <Calendar className={`h-4 w-4 ${displayValue ? "text-[#F97316]" : "text-gray-300"}`} />
+                    <Calendar className={`h-4 w-4 ${displayValue ? "text-[#7C3AED]" : "text-gray-300"}`} />
                     <span className={cn("font-inter", displayValue ? "text-gray-900 font-bold" : "text-gray-400")}>
                         {displayValue || placeholder}
                     </span>

@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import { putObject } from "@/lib/s3";
 import { getSession, isAdminRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { logResumeUploadError } from "@/lib/slack-error-logger";
 
 const RESUME_BUCKET = process.env.R2_RESUMES_BUCKET || "resumes";
 
@@ -14,6 +15,8 @@ function sanitizeFileName(name: string) {
 // Uploads a single PDF to R2 and returns the public URL.
 // Used by AddCandidateDrawer in interview-only mode.
 export async function POST(request: Request) {
+    let driveTitle: string | undefined;
+    let orgName: string | undefined;
     try {
         const session = await getSession();
         if (!session || !isAdminRole(session.role)) {
@@ -30,11 +33,13 @@ export async function POST(request: Request) {
         // Verify drive belongs to org
         const drive = await prisma.drive.findUnique({
             where: { id: driveId },
-            select: { orgId: true, organization: { select: { slug: true } } },
+            select: { title: true, orgId: true, organization: { select: { name: true, slug: true } } },
         });
         if (!drive || drive.orgId !== session.orgId) {
             return NextResponse.json({ error: "Drive not found" }, { status: 404 });
         }
+        driveTitle = drive.title;
+        orgName = drive.organization?.name;
 
         const orgSlug = drive.organization?.slug || "org";
         const safeName = sanitizeFileName(file.name);
@@ -46,6 +51,12 @@ export async function POST(request: Request) {
         return NextResponse.json({ url });
     } catch (err) {
         console.error("[upload-resume] error:", err);
+        await logResumeUploadError({
+            orgName: orgName || "unknown",
+            driveName: driveTitle || "unknown",
+            error: err instanceof Error ? err.message : String(err),
+            reason: "Resume upload to storage failed",
+        });
         return NextResponse.json({ error: "Upload failed" }, { status: 500 });
     }
 }

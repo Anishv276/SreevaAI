@@ -1,37 +1,47 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
 import {
-    Users, Briefcase, Video, UserCheck,
-    Clock, Target, Radio, Star
+    Users, Briefcase, ClipboardCheck, Star,
+    XCircle, TrendingUp
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
 import type { DateRange } from "./date-filter";
+
 interface StatsData {
     activeDrives: number;
     totalCandidates: number;
     applicationsToday: number;
     appTrendDelta: number;
+    interviewedDelta: number;
+    shortlistedDelta: number;
+    rejectedDelta: number;
     interviewed: number;
     shortlisted: number;
-    shortlistPassRate: number;
-    liveInterviews: number;
-    avgRating: number;
+    rejected: number;
+    avgScore: number;
 }
 interface StatsGridProps {
     dateRange: DateRange;
+    initialData?: StatsData | null;
 }
 function buildUrl(range: DateRange) {
     const base = "/api/admin/stats";
     if (range.type === "custom") return `${base}?range=custom&from=${range.from}&to=${range.to}`;
     return `${base}?range=${range.type}`;
 }
-export function StatsGrid({ dateRange }: StatsGridProps) {
+export function StatsGrid({ dateRange, initialData }: StatsGridProps) {
     const [stats, setStats] = useState<StatsData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [retryKey, setRetryKey] = useState(0);
     useEffect(() => {
+        if (initialData) {
+            setStats(initialData);
+            setLoading(false);
+            setError(null);
+            return;
+        }
         const controller = new AbortController();
         const { signal } = controller;
         const loadStats = async () => {
@@ -69,69 +79,89 @@ export function StatsGrid({ dateRange }: StatsGridProps) {
     }
     if (loading || !stats) {
         return (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                {[...Array(8)].map((_, i) => (
+            <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4">
+                {[...Array(6)].map((_, i) => (
                     <div key={i} className="h-28 rounded-2xl bg-gray-100 animate-pulse" />
                 ))}
             </div>
         );
     }
     const s = stats;
+
+    function deltaSub(delta: number | undefined, unit = "") {
+        if (delta == null) return "No previous data";
+        const abs = Math.abs(delta);
+        const up = delta >= 0;
+        const arrow = up ? "\u2191" : "\u2193";
+        const label = `${arrow} ${abs}${unit} vs prior period`;
+        return label;
+    }
+    function deltaColor(delta: number | undefined, isInverted = false) {
+        if (delta == null || delta === 0) return "text-gray-400";
+        const positive = delta > 0;
+        return (positive !== isInverted) ? "text-green-500" : "text-red-500";
+    }
+
     const cards = [
         {
             label: "Active Jobs",
             value: s.activeDrives,
-            sub: "Open positions",
+            sub: "All non-deleted drives",
             icon: Briefcase,
-            color: "text-gray-700",
-            iconBg: "bg-gray-100",
+            iconStyle: { background: "#F3E8FF" },
+            iconColor: "text-purple-600",
+            valueColor: "text-gray-900",
+            subColor: "text-gray-400",
         },
         {
-            label: "Uploaded",
+            label: "Total Candidates",
             value: s.totalCandidates,
-            sub: `+${s.applicationsToday} today`,
+            sub: deltaSub(s.appTrendDelta),
             icon: Users,
-            color: "text-blue-700",
-            iconBg: "bg-blue-50",
-            badge: s.appTrendDelta !== 0
-                ? { label: `${s.appTrendDelta > 0 ? "+" : ""}${s.appTrendDelta}`, up: s.appTrendDelta >= 0 }
-                : undefined,
+            iconStyle: { background: "#E0F2FE" },
+            iconColor: "text-blue-500",
+            valueColor: "text-gray-900",
+            subColor: deltaColor(s.appTrendDelta),
         },
         {
-            label: "Live Now",
-            value: s.liveInterviews,
-            sub: "Active sessions",
-            icon: Radio,
-            color: "text-indigo-700",
-            iconBg: "bg-indigo-50",
-            pulse: s.liveInterviews > 0,
-        },
-        {
-            label: "Interviewed",
+            label: "Interviews Completed",
             value: s.interviewed,
-            sub: s.totalCandidates
-                ? `${Math.round((s.interviewed / s.totalCandidates) * 100)}% of uploaded`
-                : "of uploaded",
-            icon: Video,
-            color: "text-violet-700",
-            iconBg: "bg-violet-50",
+            sub: deltaSub(s.interviewedDelta),
+            icon: ClipboardCheck,
+            iconStyle: { background: "#DCFCE7" },
+            iconColor: "text-green-500",
+            valueColor: "text-gray-900",
+            subColor: deltaColor(s.interviewedDelta),
         },
         {
             label: "Shortlisted",
             value: s.shortlisted,
-            sub: `${s.shortlistPassRate}% pass rate`,
-            icon: Target,
-            color: "text-pink-700",
-            iconBg: "bg-pink-50",
-        },
-
-        {
-            label: "Candidate Rating",
-            value: s.avgRating > 0 ? s.avgRating.toFixed(1) : "—",
-            sub: s.avgRating > 0 ? "Avg. experience (1–5)" : "No ratings yet",
+            sub: deltaSub(s.shortlistedDelta),
             icon: Star,
-            color: "text-amber-700",
-            iconBg: "bg-amber-50",
+            iconStyle: { background: "#FEF3C7" },
+            iconColor: "text-amber-500",
+            valueColor: "text-gray-900",
+            subColor: deltaColor(s.shortlistedDelta),
+        },
+        {
+            label: "Rejected",
+            value: s.rejected || 0,
+            sub: deltaSub(s.rejectedDelta),
+            icon: XCircle,
+            iconStyle: { background: "#FEE2E2" },
+            iconColor: "text-red-500",
+            valueColor: "text-gray-900",
+            subColor: deltaColor(s.rejectedDelta, true),
+        },
+        {
+            label: "Avg. Interview Score",
+            value: `${s.avgScore || 0}%`,
+            sub: "Across completed interviews",
+            icon: TrendingUp,
+            iconStyle: { background: "#F3E8FF" },
+            iconColor: "text-purple-600",
+            valueColor: "text-gray-900",
+            subColor: "text-gray-400",
         },
     ];
     return (
@@ -139,43 +169,44 @@ export function StatsGrid({ dateRange }: StatsGridProps) {
             initial="hidden"
             animate="show"
             variants={{ hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.06 } } }}
-            className="grid grid-cols-2 sm:grid-cols-4 gap-4"
+            className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4"
         >
             {cards.map((card, idx) => (
                 <motion.div
                     key={idx}
                     variants={{ hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.16, 1, 0.3, 1] as any } } }}
-                    className="bg-white rounded-2xl border border-gray-200 p-5 flex flex-col gap-3 hover:border-gray-300 hover:shadow-sm transition-all duration-200"
+                    className="bg-white rounded-2xl p-5 flex flex-col justify-between min-h-[120px] transition-all duration-200"
+                    style={{ border: "1px solid #E9E7FF", boxShadow: "0 1px 3px rgba(124,58,237,0.04)" }}
+                    onMouseEnter={e => {
+                        (e.currentTarget as HTMLElement).style.borderColor = "#C4B5FD";
+                        (e.currentTarget as HTMLElement).style.boxShadow = "0 4px 16px rgba(124,58,237,0.08)";
+                        (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)";
+                    }}
+                    onMouseLeave={e => {
+                        (e.currentTarget as HTMLElement).style.borderColor = "#E9E7FF";
+                        (e.currentTarget as HTMLElement).style.boxShadow = "0 1px 3px rgba(124,58,237,0.04)";
+                        (e.currentTarget as HTMLElement).style.transform = "translateY(0)";
+                    }}
                 >
-                    <div className="flex items-start justify-between">
-                        <div className={cn("h-9 w-9 rounded-xl flex items-center justify-center", card.iconBg)}>
-                            <card.icon className={cn("h-4 w-4", card.color)} />
+                    {/* Top row: icon + badge/pulse */}
+                    <div className="flex items-start justify-between mb-3">
+                        <div className="h-9 w-9 rounded-xl flex items-center justify-center flex-shrink-0" style={card.iconStyle}>
+                            <card.icon className={cn("h-4 w-4", card.iconColor)} strokeWidth={1.75} />
                         </div>
                         <div className="flex items-center gap-2">
-                            {card.pulse && (
-                                <span className="relative flex h-2 w-2">
-                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75" />
-                                    <span className="relative inline-flex h-2 w-2 rounded-full bg-indigo-500" />
-                                </span>
-                            )}
-                            {card.badge && (
-                                <span className={cn(
-                                    "text-[10px] font-bold px-1.5 py-0.5 rounded-md",
-                                    card.badge.up ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"
-                                )}>
-                                    {card.badge.label}
-                                </span>
-                            )}
                         </div>
                     </div>
+                    {/* Bottom: value + label + sub */}
                     <div>
-                        <p className={cn("text-2xl font-bold tabular-nums tracking-tight", card.color)}>
+                        <div className="flex items-center gap-2 mb-1.5">
+                            <p className="text-xs font-semibold text-gray-500 leading-tight">
+                                {card.label}
+                            </p>
+                        </div>
+                        <p className={cn("text-3xl font-bold tabular-nums tracking-tight leading-none mb-2", card.valueColor)}>
                             {card.value}
                         </p>
-                        <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">
-                            {card.label}
-                        </p>
-                        <p className="text-xs text-gray-400 mt-1">{card.sub}</p>
+                        <p className={cn("text-[11px] font-medium leading-tight", card.subColor)}>{card.sub}</p>
                     </div>
                 </motion.div>
             ))}

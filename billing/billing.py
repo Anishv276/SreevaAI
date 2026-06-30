@@ -186,8 +186,8 @@ _USAGE_TYPE_TO_BUCKET: dict[str, str] = {
 #
 # Single canonical function for pulling token counts from any OpenAI completion
 # object. Previously duplicated in:
-#   - extraction_resume_JD_score_report/parser.py
-#   - extraction_resume_JD_score_report/reporter.py
+#   - extraction_resume_JD_score_report_v2/parser.py
+#   - extraction_resume_JD_score_report_v2/reporter.py
 #   - interview/agent_scoring.py
 #   - interview/interview_brief.py
 #

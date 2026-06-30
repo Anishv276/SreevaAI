@@ -55,14 +55,14 @@ export function SuperAdminHiringFunnel() {
                 <div className="text-right">
                     <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Conversion</p>
                     <div className="flex items-center justify-end gap-1.5">
-                        <TrendingUp className="h-4 w-4 text-[#F97316]" />
-                        <span className="text-2xl font-black text-[#F97316] tracking-tighter">{conversionRate}%</span>
+                        <TrendingUp className="h-4 w-4 text-[#7C3AED]" />
+                        <span className="text-2xl font-black text-[#7C3AED] tracking-tighter">{conversionRate}%</span>
                     </div>
                 </div>
             </div>
             {loading ? (
                 <div className="flex-1 flex items-center justify-center py-12">
-                    <Loader2 className="h-8 w-8 text-orange-500 animate-spin" />
+                    <Loader2 className="h-8 w-8 text-violet-500 animate-spin" />
                 </div>
             ) : (
                 <div className="flex-1 space-y-5">

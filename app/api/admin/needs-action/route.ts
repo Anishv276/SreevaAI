@@ -13,8 +13,9 @@ export async function GET() {
         const orgId = session.orgId;
         const awaitingReview = await prisma.application.findMany({
             where: {
-                drive: { orgId },
-                interview: { status: "COMPLETED" },
+                isDeleted: false,
+                drive: { orgId, isDeleted: false },
+                interview: { status: "COMPLETED", isDeleted: false },
                 resumeStatus: { notIn: ["SHORTLISTED", "shortlisted", "REJECTED", "rejected"] },
             },
             select: {
@@ -26,14 +27,14 @@ export async function GET() {
                 interview: { select: { completedAt: true } },
             },
             orderBy: { updatedAt: "asc" },
-            take: 5,
         });
         const inviteNotSent = await prisma.application.findMany({
             where: {
-                drive: { orgId },
+                isDeleted: false,
+                drive: { orgId, isDeleted: false },
                 OR: [
                     { interview: null },
-                    { interview: { inviteSentAt: null, status: "PENDING" } },
+                    { interview: { inviteSentAt: null, status: "PENDING", isDeleted: false } },
                 ],
                 resumeStatus: { notIn: ["REJECTED", "rejected"] },
             },
@@ -44,11 +45,11 @@ export async function GET() {
                 drive: { select: { title: true, role: true } },
             },
             orderBy: { createdAt: "asc" },
-            take: 5,
         });
         const shortlistedNoDecision = await prisma.application.findMany({
             where: {
-                drive: { orgId },
+                isDeleted: false,
+                drive: { orgId, isDeleted: false },
                 resumeStatus: { in: ["SHORTLISTED", "shortlisted"] },
             },
             select: {
@@ -58,8 +59,38 @@ export async function GET() {
                 drive: { select: { title: true, role: true } },
             },
             orderBy: { updatedAt: "asc" },
-            take: 5,
         });
+
+        const drivesExpiringSoon = await prisma.drive.count({
+            where: {
+                orgId,
+                isDeleted: false,
+                deadline: {
+                    gte: new Date(),
+                    lte: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+                },
+            },
+        });
+        
+        const candidatesYetToStart = await prisma.interview.count({
+            where: {
+                application: { drive: { orgId } },
+                isDeleted: false,
+                status: "PENDING",
+                inviteSentAt: { not: null },
+            },
+        });
+
+        const invitesSentLast24h = await prisma.interview.count({
+            where: {
+                application: { drive: { orgId } },
+                isDeleted: false,
+                inviteSentAt: {
+                    gte: new Date(Date.now() - 24 * 60 * 60 * 1000),
+                },
+            },
+        });
+
         return NextResponse.json({
             awaitingReview: awaitingReview.map((a) => ({
                 id: a.id,
@@ -83,6 +114,12 @@ export async function GET() {
                 driveTitle: a.drive.title,
                 daysWaiting: daysSince(a.updatedAt),
             })),
+            upcomingActivity: {
+                reportsReadyForReview: awaitingReview.length, // now full count, no take() cap
+                candidatesYetToStart,
+                drivesExpiringSoon,
+                invitesSentLast24h,
+            }
         }, {
             headers: { "Cache-Control": "private, max-age=60" },
         });
