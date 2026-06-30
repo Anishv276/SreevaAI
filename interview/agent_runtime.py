@@ -172,6 +172,19 @@ class CoveredTopics:
     def keys(self) -> set[str]:
         return set(self._store.keys())
 
+    def coverage_rows(self) -> list[dict]:
+        """Plain-dict snapshot of every covered topic, for debug/report rendering."""
+        return [
+            {
+                "display_title": rec.display_title,
+                "source": rec.source.value,
+                "gist": rec.gist,
+                "via_topic": rec.via_topic,
+                "questions_asked": list(rec.questions_asked),
+            }
+            for rec in self._store.values()
+        ]
+
     def get_memory_block(self, *, limit: int = 10) -> str:
         """
         Returns a formatted block for LLM directive injection.
@@ -3090,6 +3103,7 @@ async def entrypoint(ctx: JobContext):
                     # the queued MOVE_ON opener can be spoken first, before any
                     # PROBE directive overwrites it.
                     agent._move_on_opener_pending = True
+                    _qr["directive_text"] = _directive  # ponytail: debug report needs the literal injected text
                     logger.info("[AGENT] turn=%d | MOVE_ON directive injected (LLM) | new_topic=%r", turn_snapshot, _active_topic)
                     logger.debug("[MOVE_ON_DIRECTIVE] turn=%d:\n%s", turn_snapshot, _directive)
                 else:
@@ -3124,6 +3138,7 @@ async def entrypoint(ctx: JobContext):
                     )
                     remove_system_messages_multi(chat_ctx, ("[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT"))
                     chat_ctx.add_message(role="system", content=_directive)
+                    _qr["directive_text"] = _directive  # ponytail: debug report needs the literal injected text
                     if _scoring_topic_log and _scoring_topic_log != "?":
                         _ts_for_rotation = _topic_states.get(_normalize_topic_key(_scoring_topic_log))
                         if isinstance(_ts_for_rotation, dict):
@@ -4067,6 +4082,17 @@ async def entrypoint(ctx: JobContext):
                         app_id, _llm_cost, _tts_cost, _stt_cost)
         except Exception as _tb_err:
             logger.warning("[TEST_BILLING] Failed to save metrics: %s", _tb_err)
+        # Local test session -- push a full per-turn debug PDF to Slack for bug triage.
+        from interview.debug_report import generate_and_send_debug_report
+        await generate_and_send_debug_report(
+            app_id=app_id,
+            candidate_name=candidate_name,
+            job_title=job_title,
+            answer_scores=list(answer_scores),
+            topic_pool=list(_interview_brief.topic_pool),
+            covered_topics=_covered_topic_keys.coverage_rows(),
+            topic_records=list(_topic_records),
+        )
     # Cancel any leftover fire-and-forget work so job teardown is instant.
     if background_tasks:
         logger.debug(f"[SHUTDOWN] Cancelling {len(background_tasks)} background task(s)")

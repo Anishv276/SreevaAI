@@ -336,7 +336,11 @@
       "Bash(curl -s \"http://localhost:3000/super-admin/orgs\")",
       "Bash(curl -s http://localhost:3000/super-admin/orgs/test)",
       "Bash(git show *)",
-      "Bash(xargs grep -l \"usageMetrics\\\\|billing.*orgs\")"
+      "Bash(xargs grep -l \"usageMetrics\\\\|billing.*orgs\")",
+      "Bash(pip install *)",
+      "Bash(python -m py_compile interview/agent_runtime.py interview/eval_pipeline.py interview/debug_report.py)",
+      "Bash(python \"C:\\\\Users\\\\vamsi\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-vamsi-OneDrive-Documents-SreevaAI\\\\b50fb2b3-e804-451b-82d3-f1f55f7ce9e9\\\\scratchpad\\\\gen_tulasi_report.py\")",
+      "Bash(python -m py_compile interview/agent_runtime.py interview/debug_report.py)"
     ],
     "additionalDirectories": [
       "c:\\Users\\vamsi\\OneDrive\\Desktop\\HR-updates\\scratch",

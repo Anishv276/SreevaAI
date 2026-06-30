@@ -401,6 +401,13 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         "topic_saturation_score":  sat_score,
         "topic_saturation_threshold": sat_threshold,
         "response_latency_sec":    p.response_latency_sec,  # time from AI question to candidate reply
+        # ponytail: debug-report fields — cheap to stash here, avoids reconstructing later
+        "action":                  action,
+        "band":                    p.band,
+        "is_saturated":            is_saturated,
+        "weak_exit":               _weak_exit,
+        "dry_topic":               _dry_topic,
+        "topic_follow_ups":        _follow_up_count,
     }
 
     logger.info("[RESULT] turn=%d action=%s quality=%.2f/%s signal=%s sat=%.1f/%.1f",
