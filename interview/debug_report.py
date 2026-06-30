@@ -215,12 +215,13 @@ async def post_pdf_to_slack(pdf_bytes: bytes, filename: str, title: str) -> None
         async with session.post(upload_url, data=form) as resp:
             await resp.read()
 
+        message = f"```\n=======\n```\n{title}\n```\n=======\n```"
         async with session.post(
             "https://slack.com/api/files.completeUploadExternal",
             json={
                 "files": [{"id": file_id, "title": title}],
                 "channel_id": SLACK_DEBUG_CHANNEL,
-                "initial_comment": title,
+                "initial_comment": message,
             },
         ) as resp:
             complete = await resp.json()

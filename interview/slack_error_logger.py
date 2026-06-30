@@ -67,7 +67,8 @@ def _build_error_message(
     emoji = TYPE_EMOJIS.get(error_type, "❌")
     timestamp = _format_timestamp()
 
-    details = f"{emoji} **{error_type.upper()} ERROR**\n"
+    details = f"```\n=======\n```\n"
+    details += f"{emoji} **{error_type.upper()} ERROR**\n"
     details += f"_{timestamp}_\n\n"
 
     if org_name:
@@ -89,6 +90,8 @@ def _build_error_message(
         for key, value in context.items():
             val = json.dumps(value) if isinstance(value, dict) else str(value)
             details += f"• **{key}:** {val}\n"
+
+    details += f"\n```\n=======\n```\n"
 
     return details
 

@@ -64,7 +64,8 @@ function buildErrorMessage(alert: ErrorAlert): string {
   const errorMsg = alert.error instanceof Error ? alert.error.message : String(alert.error);
   const errorStack = alert.error instanceof Error ? alert.error.stack : '';
 
-  let details = `${emoji} **${alert.type.toUpperCase()} ERROR**\n`;
+  let details = `\`\`\`\n=======\n\`\`\`\n`;
+  details += `${emoji} **${alert.type.toUpperCase()} ERROR**\n`;
   details += `_${timestamp}_\n\n`;
 
   if (alert.orgName) details += `🏢 **Org:** ${alert.orgName}\n`;
@@ -89,6 +90,8 @@ function buildErrorMessage(alert: ErrorAlert): string {
   if (errorStack && errorStack.length < 500) {
     details += `\n**Stack Trace:**\n\`\`\`\n${errorStack.split('\n').slice(0, 5).join('\n')}\n\`\`\`\n`;
   }
+
+  details += `\n\`\`\`\n=======\n\`\`\`\n`;
 
   return details;
 }

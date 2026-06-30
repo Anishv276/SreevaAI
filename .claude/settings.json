@@ -341,7 +341,8 @@
       "Bash(python -m py_compile interview/agent_runtime.py interview/eval_pipeline.py interview/debug_report.py)",
       "Bash(python \"C:\\\\Users\\\\vamsi\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-vamsi-OneDrive-Documents-SreevaAI\\\\b50fb2b3-e804-451b-82d3-f1f55f7ce9e9\\\\scratchpad\\\\gen_tulasi_report.py\")",
       "Bash(python -m py_compile interview/agent_runtime.py interview/debug_report.py)",
-      "Bash(python -m py_compile interview/agent_runtime.py interview/eval_pipeline.py interview/report_pipeline.py interview/slack_error_logger.py interview/debug_report.py)"
+      "Bash(python -m py_compile interview/agent_runtime.py interview/eval_pipeline.py interview/report_pipeline.py interview/slack_error_logger.py interview/debug_report.py)",
+      "Bash(curl -X POST https://hooks.slack.com/services/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 -H 'Content-Type: application/json' -d '{\"text\":\"Test message from error alerter\"}')"
     ],
     "additionalDirectories": [
       "c:\\Users\\vamsi\\OneDrive\\Desktop\\HR-updates\\scratch",
