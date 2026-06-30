@@ -1,148 +1,299 @@
 """
 probe_strategy.py
-One probe definition per signal. When a signal fires, the probe tells the
-directive LLM exactly what happened and what to do — no families, no mapping.
+One probe per signal. Tells the interview LLM what fired, what it means,
+and how to frame the follow-up — without scripting the exact question.
 
-get_probe_context() returns the full context block injected into the directive.
-The directive LLM writes ANGLE + INTENT from it.
-The interview LLM generates the actual question from the conversation.
-
-Signal names here MUST exactly match SIGNAL_DEFINITIONS keys in agent_scoring.py:
-  ownership_ambiguous, example_evaded, answer_hollow,
-  functional_claim_unverified, claim_not_demonstrated
+Signal names MUST match SIGNAL_DEFINITIONS keys in agent_scoring.py:
+  example_evaded, depth_ceiling_hit, ownership_ambiguous, explanation_shallow,
+  tool_named_not_used, tech_choice_unjustified, scenario_untested
 """
 from __future__ import annotations
 
 
 # ---------------------------------------------------------------------------
-# Signal probes — one per signal, sharp and direct.
-# Signal names MUST match SIGNAL_DEFINITIONS in agent_scoring.py exactly.
-# Each entry:
-#   signal   — what fired (matches SIGNAL_DEFINITIONS key in agent_scoring.py)
-#   what     — what the candidate did that triggered this (1 line)
-#   goal     — what you are trying to find out (1 line)
-#   ask      — how to shape the question (2-3 sharp points, no examples)
-#   skip     — what NOT to do (1-2 hard rules)
+# HOW THESE PROBES WORK
+#
+# Each probe has:
+#   what          — what the candidate did (1 line, factual)
+#   goal          — the ONE thing the next question is trying to surface
+#   question_type — the cognitive demand placed on the candidate
+#   principles    — HOW to frame the question (not what to say — principles)
+#   voice_note    — how a real human interviewer would sound asking this
+#   skip          — hard rules on what NOT to do
+#
+# The interview LLM reads these and writes its OWN question grounded in
+# the candidate's actual words. The probes teach the framing principle,
+# not the script.
 # ---------------------------------------------------------------------------
+
 SIGNAL_PROBES: dict[str, dict] = {
 
-    "ownership_ambiguous": {
-        "signal":  "ownership_ambiguous",
-        "what":    "Candidate used 'we/team/they' without saying what THEY personally did.",
-        "goal":    "Find the one thing that was specifically theirs — their action, decision, or deliverable.",
-        "ask": [
-            "Anchor to something concrete they mentioned and ask what THEIR part in it was.",
-            "Make it impossible to answer with 'we' — ask for their specific action or output.",
-            "Ask what would have been different if they hadn't been on this.",
-        ],
-        "skip":    "Do not ask 'what was your role' — that got you here. Do not ask about the team.",
-    },
-
     "example_evaded": {
-        "signal":  "example_evaded",
-        "what":    "Asked for a real story or instance. Got theory or 'usually I...' instead.",
-        "goal":    "Get one specific real moment — not a type of thing, one actual time.",
-        "ask": [
-            "Force a memory: ask about a specific time, not how they generally do it.",
-            "Push for an imperfect detail — what happened, what went wrong, what surprised them.",
-            "Something only someone who lived it would know.",
+        "what":          "They gave a general rule or habit when a real story was asked for.",
+        "goal":          "Get one specific moment that actually happened — a real time, not a type of time.",
+        "question_type": "MEMORY RETRIEVAL",
+        "principles": [
+            "Pin it to a specific moment — 'one time', 'a specific project', 'that one instance'.",
+            "Name something they said and ask when that actually happened.",
+            "Invite imperfection — real memories have friction. Ask what went wrong or surprised them.",
+            "Make it impossible to answer with 'usually' again — force a time and place.",
         ],
-        "skip":    "Do not ask 'can you give an example' — too easy to dodge again. Force specificity.",
+        "voice_note":    "Sound curious, not accusatory. You want the story, not to catch them out. "
+                         "A real interviewer might say: 'Give me one specific time that happened — not generally, one real instance.'",
+        "skip":          "Never ask 'can you give me an example' — too easy to dodge again with another pattern. "
+                         "Never repeat the original question. Force specificity, not more explanation.",
     },
 
-    "answer_hollow": {
-        "signal":  "answer_hollow",
-        "what":    "Candidate said WHAT they did. No HOW, no WHY, no real operational detail.",
-        "goal":    "Get the mechanics — one real decision, step, or reason behind what they did.",
-        "ask": [
-            "Ask HOW one specific thing they named actually worked.",
-            "Push for the decision behind it — why that way and not another.",
-            "If they named a tool or output, ask what building or doing it actually involved.",
+    "depth_ceiling_hit": {
+        "what":          "They tried to answer but hit the edge of their knowledge and ran out.",
+        "goal":          "Find the floor — the smallest, most concrete thing they DO know on this topic.",
+        "question_type": "FLOOR FINDER",
+        "principles": [
+            "Don't push on the exact thing they ran out on — there's nothing there.",
+            "Narrow down to the smallest adjacent thing they might have touched.",
+            "Give them an easy entry: 'even the smallest step you ran yourself is fine'.",
+            "Accept the limit gracefully — don't make them feel punished for not knowing.",
         ],
-        "skip":    "Do not ask 'can you tell me more' — too open. Pick one thing and ask about its mechanics.",
+        "voice_note":    "Warm and low-pressure. A real interviewer might say: 'No worries — what part of this did you actually get your hands on, even briefly?'",
+        "skip":          "Never re-ask the same question at a different angle — they have nothing more there. "
+                         "Never make it feel like a test they are failing.",
     },
 
-    "functional_claim_unverified": {
-        "signal":  "functional_claim_unverified",
-        "what":    "Named a specific tool, method, or skill but described it vaguely or generically.",
-        "goal":    "Find out if they actually used it — a real user has at least one concrete memory.",
-        "ask": [
-            "Ask what they specifically BUILT, CONFIGURED, or DID with it — not what it is.",
-            "Ask about something that requires hands-on knowledge to answer.",
-            "What did they actually set up, connect, run, or write with it?",
+    "ownership_ambiguous": {
+        "what":          "'We/team/they' throughout — their personal contribution is invisible.",
+        "goal":          "Isolate the ONE thing that was specifically theirs — their action, decision, or output.",
+        "question_type": "PERSONAL ISOLATION",
+        "principles": [
+            "Pick one specific thing they mentioned and ask what THEIR part in that was.",
+            "Frame it so 'we' is not a valid answer — ask for their specific action or output.",
+            "Tie the question to the topic and context, not a generic 'what did you do'.",
+            "If they mentioned a deliverable, ask what they personally contributed to it.",
         ],
-        "skip":    "Do not ask what the tool is or why they chose it. Focus on what they DID with it.",
+        "voice_note":    "Direct but not aggressive. A real interviewer might say: 'Out of everything you described, what was the piece that was specifically yours?'",
+        "skip":          "Never ask 'what was your role' — that is what got you here. "
+                         "Never ask about the team again. Never use a generic anchor like 'what did you build' — "
+                         "ground it in something specific from their actual answer.",
     },
 
-    "claim_not_demonstrated": {
-        "signal":  "claim_not_demonstrated",
-        "what":    "Made a strong claim about themselves with nothing concrete to back it up.",
-        "goal":    "Get one real example that proves the claim — specific enough that a fake answer shows.",
-        "ask": [
-            "Ask for one real instance where that claim was actually tested.",
-            "Push for something specific — a time, a project, an outcome.",
-            "If they claim X, ask when X actually mattered and what happened.",
+    "explanation_shallow": {
+        "what":          "They claimed strong personal ownership or ability but the explanation is hollow — describes it like an outsider would.",
+        "goal":          "Get them inside the thing they claimed — one real decision they made, one constraint they hit, one thing that was hard.",
+        "question_type": "TEACH-BACK / OPEN THE BOX",
+        "principles": [
+            "Ask them to go inside the thing they claimed — a real builder can describe the internals.",
+            "Ask about something that would only exist if they actually did it: a decision point, a tradeoff, something that didn't work at first.",
+            "A teach-back works well: ask how they'd explain this to someone new — real understanding shows in simplification.",
+            "Tie the question directly to their specific claim — not a generic 'how did it work'.",
         ],
-        "skip":    "Do not accept 'I always do X' or another general statement. Push for one real moment.",
+        "voice_note":    "Curious and open. A real interviewer might say: 'You said you built the whole thing — what was the trickiest part to get right?' "
+                         "Or: 'If you were walking a new teammate through it, where would you start?'",
+        "skip":          "Never ask 'what did you build' or 'what was your role' — they already claimed everything. "
+                         "The gap is depth of understanding, not ownership. Don't ask them to claim it again — ask them to prove it.",
+    },
+
+    "tool_named_not_used": {
+        "what":          "A specific tool, method, or framework was named — then defined or abandoned. No evidence of using it.",
+        "goal":          "Get ONE concrete memory of operating it — something only someone who actually used it would know.",
+        "question_type": "HANDS-ON VERIFICATION",
+        "principles": [
+            "Pick the ONE most central tool they named and go deep on only that one.",
+            "Ask what they did WITH it — a step they ran, something they built, a problem it caused.",
+            "Ask something that requires hands-on knowledge to answer — a real user has at least one specific memory.",
+            "If they named multiple tools, pick the one most relevant to the topic and anchor on that.",
+        ],
+        "voice_note":    "Specific and grounded. A real interviewer might say: 'You mentioned [tool] — what did you actually do with it in the project?' "
+                         "Or: 'Walk me through one thing you built or ran using [tool].'",
+        "skip":          "Never ask what the tool IS — that just invites another definition. "
+                         "Never ask about all named tools at once — one tool, one deep question. "
+                         "Never ask why they chose it — that is a different signal.",
+    },
+
+    "tech_choice_unjustified": {
+        "what":          "They clearly used the tool/method (real usage shown) but never explained WHY that one over alternatives.",
+        "goal":          "Surface the decision behind the choice — was it deliberate, a default, or someone else's call?",
+        "question_type": "COMPARATIVE RATIONALE",
+        "principles": [
+            "Name a real alternative to what they used and ask why they chose theirs over that one.",
+            "Push for the deciding factor — what specifically made them pick this over the obvious other option.",
+            "If it might not have been their decision, ask who made the call and what the reason was.",
+            "Make the comparison concrete — 'why X instead of Y' is far sharper than 'why X'.",
+        ],
+        "voice_note":    "Genuinely curious. A real interviewer might say: 'You went with [tool] — why that one over [real alternative]?' "
+                         "Or: 'What made you pick [method] here instead of [other approach]?'",
+        "skip":          "Never ask what the tool does — they already showed they used it. "
+                         "Always name a specific real alternative — an open 'why did you choose it' is too easy to deflect.",
+    },
+
+    "scenario_untested": {
+        "what":          "Gave a correct textbook description — accurate but frictionless, no lived edge case or failure.",
+        "goal":          "Stress-test whether the knowledge is real by presenting a scenario only a practitioner could handle.",
+        "question_type": "SCENARIO STRESS-TEST",
+        "principles": [
+            "Present a realistic failure or edge case grounded in what they described.",
+            "Ask what they'd do or check first — not to explain the concept again, but to solve a real problem.",
+            "Pick something from their answer that could go wrong and ask what happens when it does.",
+            "A good scenario question is one that textbook knowledge alone cannot answer correctly.",
+        ],
+        "voice_note":    "Conversational and real-world. A real interviewer might say: 'Say your similarity search started returning irrelevant results — what would you check first?' "
+                         "Or: 'What happens if a lead goes cold right before close — how do you handle that?'",
+        "skip":          "Never ask them to repeat or expand the flow — they already gave the textbook version. "
+                         "The scenario must connect to what they specifically described, not a generic hypothetical.",
     },
 
 }
 
 # Fallback probe when signal is null or unrecognised
 _DEFAULT_PROBE = {
-    "what":  "Candidate answered but something specific is missing or unresolved.",
-    "goal":  "Find the most concrete or interesting thing in what they said and pull that thread.",
-    "ask": [
-        "Pick the most specific or unexpected thing they mentioned and ask about that.",
-        "Push for one real detail — a name, a number, a decision, what happened next.",
+    "what":          "Candidate answered, but something specific is still missing or unresolved.",
+    "goal":          "Find the most concrete or interesting thread in what they said and pull it.",
+    "question_type": "OPEN PULL",
+    "principles": [
+        "Pick the most specific or unexpected thing they mentioned and ask only about that.",
+        "Push for one real detail — a number, a decision, a name, what happened next.",
+        "Don't ask them to elaborate generally — pick one thing and go deep on it.",
     ],
-    "skip":  "Do not ask a generic follow-up. Something in their answer is worth pulling — find it.",
+    "voice_note":    "Curious and specific. Don't ask them to 'tell you more' — find the one thing worth digging into.",
+    "skip":          "Never ask a generic 'tell me more'. Something in their answer is worth pulling — find it and name it.",
 }
 
 
 # ---------------------------------------------------------------------------
 # Band overlays — per-signal, per-band.
-# Each entry: SIGNAL -> BAND -> one sharp note line for the directive LLM.
-# Only populated where the band meaningfully changes what to probe for.
+# Adjusts the depth and stakes of the probe based on seniority.
 # ---------------------------------------------------------------------------
 _BAND_OVERLAYS: dict[str, dict[str, str]] = {
 
-    "ownership_ambiguous": {
-        "fresher":     "Fresher: ask what their specific task was — a single concrete action. Keep it low-stakes.",
-        "mid":         "Mid-level: ask what decision or outcome was specifically theirs — not just the task.",
-        "experienced": "Experienced: ask which part of this they owned end-to-end and what that required of them.",
-        "senior":      "Senior: ask what decision was theirs to make — probe leadership ownership, not just task execution.",
-    },
-
     "example_evaded": {
-        "fresher":     "Fresher: ask about a real moment from college, internship, or a side project — lower bar is fine.",
-        "mid":         "Mid-level: push for a real work moment — something from a project they owned.",
-        "experienced": "Experienced: the example must come from real work. Push for the moment, not the category.",
-        "senior":      "Senior: the example should show a decision with real stakes. Push for what was on the line.",
+        "fresher":     "A real moment from a college project, internship, or side project counts — keep the bar accessible.",
+        "mid":         "Push for a real work moment — a specific project or client situation, not a classroom exercise.",
+        "experienced": "The instance must come from real professional work. Push for the moment, not the category.",
+        "senior":      "Push for an instance with real stakes — a decision that had real consequences for the business or team.",
     },
-
-    "answer_hollow": {
-        "fresher":     "Fresher: ask HOW they did it step by step — don't push for tradeoffs or strategic rationale.",
-        "mid":         "Mid-level: ask what decision they made and why — one real choice behind the work.",
-        "experienced": "Experienced: push for the constraint or tradeoff that shaped the approach.",
-        "senior":      "Senior: ask what tradeoffs they weighed and why they chose this approach over another.",
+    "depth_ceiling_hit": {
+        "fresher":     "Accept the limit quickly — redirect to the smallest adjacent thing they may have touched.",
+        "mid":         "One gentle redirect to a related area before moving on.",
+        "experienced": "Note the ceiling — a knowledge gap here is meaningful at this level. Move on cleanly.",
+        "senior":      "A ceiling hit at senior level is a significant signal — acknowledge it and move on without dwelling.",
     },
-
-    "functional_claim_unverified": {
-        "fresher":     "Fresher: ask what they actually did or tried with it — even in a small project or exercise.",
-        "mid":         "Mid-level: ask what they built or configured with it in a real work context.",
-        "experienced": "Experienced: push for a specific problem it solved and what hands-on work that involved.",
-        "senior":      "Senior: ask where it fit into a larger system or decision — proof of real depth, not surface use.",
+    "ownership_ambiguous": {
+        "fresher":     "Ask for their single concrete task — one action they personally did is enough.",
+        "mid":         "Ask what decision or deliverable was specifically theirs in that work.",
+        "experienced": "Ask which part they owned end-to-end and what that required of them personally.",
+        "senior":      "Ask what decision was theirs to make — probe leadership ownership, not just task execution.",
     },
-
-    "claim_not_demonstrated": {
-        "fresher":     "Fresher: ask for one real moment — could be from studies, internship, or a project. Keep stakes low.",
-        "mid":         "Mid-level: the example must be from real work. Push for a specific project or moment.",
-        "experienced": "Experienced: push for an example with real stakes and a measurable outcome.",
-        "senior":      "Senior: the claim should be backed by a decision with org-level impact. Ask for that specifically.",
+    "explanation_shallow": {
+        "fresher":     "Ask HOW they did it step by step — don't push for tradeoffs or architectural rationale.",
+        "mid":         "Ask what the hardest part was and what they did about it.",
+        "experienced": "Ask about a design or process decision — why it's built or structured the way it is.",
+        "senior":      "Ask what tradeoffs they weighed and what they'd do differently if they rebuilt it now.",
     },
-
+    "tool_named_not_used": {
+        "fresher":     "Even a tutorial or small exercise counts — ask what they ran or tried with it.",
+        "mid":         "Ask what they built or configured with it in a real project context.",
+        "experienced": "Push for a specific problem it solved and what the hands-on work actually involved.",
+        "senior":      "Ask how it fit into the larger system and what the integration or adoption decision looked like.",
+    },
+    "tech_choice_unjustified": {
+        "fresher":     "They may not have had a choice — ask if they considered anything else at all, even briefly.",
+        "mid":         "Expect a simple reason — performance, ease of use, prior familiarity.",
+        "experienced": "Expect a real tradeoff — what they gave up by choosing this over the alternative.",
+        "senior":      "Expect a considered decision with second-order consequences — why this at scale, not just in a small project.",
+    },
+    "scenario_untested": {
+        "fresher":     "Keep the scenario simple — a basic failure they would have hit in a student or side project.",
+        "mid":         "A realistic operational problem — something that comes up in real work.",
+        "experienced": "A failure at scale or an edge case requiring real operational experience to handle.",
+        "senior":      "A systemic or architectural failure — what breaks at scale and how would they design around it.",
+    },
 }
+
+
+# ---------------------------------------------------------------------------
+# Intent-based reactions.
+# The opener ("filler") must match the INTENT of what the candidate just said,
+# not a fixed "Mm". The signal that fired encodes that intent — so we map each
+# signal to a reaction TONE plus example openers. The model is told to react in
+# that tone and ground it in a specific word they used, so openers vary
+# naturally turn to turn instead of defaulting to "Mm".
+# ---------------------------------------------------------------------------
+_SIGNAL_REACTIONS: dict[str, dict] = {
+    "example_evaded": {
+        "tone": "gently redirecting — you accept the general point but want the real instance",
+        "openers": ["Sure, generally —", "Okay, in general terms —", "Right, but specifically —"],
+    },
+    "depth_ceiling_hit": {
+        "tone": "warm and reassuring — make it safe that they ran out",
+        "openers": ["No worries —", "That's alright —", "Fair enough —"],
+    },
+    "ownership_ambiguous": {
+        "tone": "neutral and matter-of-fact — you noticed it was a team effort",
+        "openers": ["Right, the team —", "Okay, so collectively —", "Got it, a group effort —"],
+    },
+    "explanation_shallow": {
+        "tone": "lightly impressed then probing — acknowledge the claim, then test it",
+        "openers": ["That's a big claim —", "Okay, the whole thing —", "Strong statement —"],
+    },
+    "tool_named_not_used": {
+        "tone": "curious — pick up the specific tool name they dropped",
+        "openers": ["Okay, [tool] —", "[tool], right —", "Ah, you mentioned [tool] —"],
+    },
+    "tech_choice_unjustified": {
+        "tone": "genuinely interested in the decision",
+        "openers": ["Interesting choice —", "Okay, [tool] —", "Makes sense you used it —"],
+    },
+    "scenario_untested": {
+        "tone": "engaged and conversational — you followed the flow",
+        "openers": ["Right, that flow makes sense —", "Okay, I follow —", "Mm, clean process —"],
+    },
+}
+
+
+def get_reaction_hint(signal: str | None, prev_answer: str) -> str:
+    """
+    Returns a one-line reaction directive matching the INTENT of the answer
+    (via the fired signal), so the opener varies and fits what they said.
+    """
+    r = _SIGNAL_REACTIONS.get(signal or "")
+    if not r:
+        return ("REACTION: open with a short, specific beat that reacts to a real word they used "
+                "(not a generic 'Mm'). 2-4 words, then your question.")
+    return (
+        f"REACTION TONE: {r['tone']}.\n"
+        f"  Example openers (adapt — replace [tool] with the real thing they named, vary the wording): "
+        f"{' / '.join(r['openers'])}\n"
+        f"  Make it specific to what they actually said. Do NOT default to a bland 'Mm' or 'Hmm'."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Question-generation system prompt — injected into the interview LLM.
+# This is what makes Ishita sound like a real human interviewer.
+# ---------------------------------------------------------------------------
+QUESTION_GENERATION_SYSTEM = """\
+You are Ishita, a sharp and warm AI interviewer. You are conducting a real interview — not filling out a form.
+
+Your job this turn: ask ONE follow-up question based on what the candidate just said.
+
+OPEN WITH A REACTION THAT FITS WHAT THEY SAID:
+- The PROBE DIRECTIVE includes a REACTION TONE. Open with a 2-4 word beat in that tone.
+- Ground the reaction in a SPECIFIC word they used — a tool they named, a claim they made, the team they credited.
+- NEVER default to a bland 'Mm' or 'Hmm' every time. The opener should be different each turn because
+  it reacts to different content. A bold claim gets a different beat than someone who ran out of answers.
+- Never say 'Great!', 'Awesome!', 'That's interesting!' — hollow filler.
+
+THEN ASK ONE QUESTION:
+- ONE question mark only. Never two questions in one turn.
+- Reference something specific they actually said — never ask in a vacuum.
+- Short is better. 1-2 sentences. The question should land, not explain itself.
+- This is voice — write like you'd speak it, not like you'd type it.
+- Never say 'Can you' or 'Could you' — form-filler phrases.
+
+MATCH THE QUESTION TYPE:
+The PROBE DIRECTIVE tells you the gap detected, the goal, and the QUESTION TYPE
+(memory retrieval / floor finder / personal isolation / teach-back / hands-on verification /
+comparative rationale / scenario stress-test). Your question must match that type —
+but the words are yours, grounded in what they said. Never copy template phrases from the directive.
+"""
 
 
 def get_probe_context(
@@ -155,9 +306,9 @@ def get_probe_context(
     prev_answer: str,
 ) -> str:
     """
-    Returns the probe context block injected into the directive prompt.
-    Sharp and direct — tells the directive LLM what fired, what it means,
-    and exactly what kind of question to generate.
+    Returns the probe context block injected into the directive.
+    Tells the interview LLM what fired, what it means, and how to frame
+    the next question — without scripting the exact words.
     """
     lines: list[str] = []
 
@@ -171,17 +322,16 @@ def get_probe_context(
         lines += [
             "SIGNAL: candidate_denial",
             "WHAT: Candidate said they don't know, forgot, or can't explain this.",
-            "GOAL: Accept it and pivot — don't push on what they can't answer.",
-            "ASK:",
-            "  - One short acknowledgement ('No worries.' / 'Fair enough.'), then move.",
-            "  - Pivot to what they DO remember, even vaguely.",
-            "  - Or ask about something related they mentioned elsewhere in this thread.",
-            "SKIP: Never ask them to reflect on what they should have done differently here.",
-            "      Never re-ask what they forgot from a different angle.",
+            "GOAL: Accept it cleanly and pivot — don't push on what they can't answer.",
+            "QUESTION TYPE: ACKNOWLEDGEMENT + PIVOT",
+            "PRINCIPLES:",
+            "  - One short acknowledgement, then redirect to something adjacent they might know.",
+            "  - Give them an easy out — find the related thing they CAN speak to.",
+            "VOICE: Warm and low-pressure. 'No worries — what part of this did you actually touch?'",
+            "SKIP: Never re-ask the same thing. Never make them feel punished for not knowing.",
         ]
         return "\n".join(lines)
 
-    # Signal-based probe
     probe = SIGNAL_PROBES.get(signal or "", None) if signal else None
     if probe is None:
         probe = _DEFAULT_PROBE
@@ -189,23 +339,24 @@ def get_probe_context(
     lines.append(f"SIGNAL: {signal or 'none'}")
     lines.append(f"WHAT: {probe['what']}")
     if signal_reason:
-        lines.append(f"TRIGGER: \"{signal_reason}\"")
+        lines.append(f"TRIGGER (their exact words): \"{signal_reason}\"")
     lines.append(f"GOAL: {probe['goal']}")
-    lines.append("ASK:")
-    for point in probe["ask"]:
-        lines.append(f"  - {point}")
+    lines.append(f"QUESTION TYPE: {probe['question_type']}")
+    lines.append("PRINCIPLES (how to frame — not what to say):")
+    for p in probe["principles"]:
+        lines.append(f"  - {p}")
+    lines.append(f"VOICE: {probe['voice_note']}")
     lines.append(f"SKIP: {probe['skip']}")
+    lines.append(get_reaction_hint(signal, prev_answer))
 
-    # Band overlay — signal-specific, band-specific
     _band_note = _BAND_OVERLAYS.get(signal or "", {}).get(band)
     if _band_note:
-        lines.append(f"BAND NOTE: {_band_note}")
+        lines.append(f"BAND ({band}): {_band_note}")
 
-    # First-probe note
     if topic_follow_ups <= 1:
         lines += [
-            "NOTE: First probe on this topic. Pull the most interesting thing from their answer.",
-            "      Not generic — find the specific detail worth digging into.",
+            "NOTE: First probe on this topic — pull the most specific thing from their answer.",
+            "      Don't open generically. Find the one thread worth pulling and name it.",
         ]
 
     return "\n".join(lines)

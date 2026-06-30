@@ -18,7 +18,7 @@ from typing import Any, Optional
 
 logger = logging.getLogger("interview-agent")
 from interview.agent_runtime_support import EVAL_TEMPERATURE
-_EVAL_DEFAULT = "gpt-4.1-nano"  # ponytail: fallback — callers pass org's llmInterviewEval
+_EVAL_DEFAULT = "gpt-4.1-mini"  # ponytail: fallback — callers pass org's llmInterviewEval. nano scored 6/10 on signal-detection A/B test, mini scored 7/10 — see tests/test_signal_ab.py
 
 
 # ---------------------------------------------------------------------------
@@ -26,84 +26,210 @@ _EVAL_DEFAULT = "gpt-4.1-nano"  # ponytail: fallback — callers pass org's llmI
 # Used here to train the scoring LLM. Also imported by probe_strategy.py.
 # ---------------------------------------------------------------------------
 SIGNAL_DEFINITIONS = {
-    "ownership_ambiguous": {
-        "description": "Candidate described work using 'we/team/they' throughout without ever saying what THEY specifically did. Their personal contribution is unclear.",
-        "example": "We built the pipeline, the team decided on the architecture, they handled deployment.",
-        "not_this": "Candidate said 'I designed X' or 'my role was Y' — that's clear ownership, do NOT fire.",
-    },
+
+    # PATTERN: answer is a rule/habit, not a real event
     "example_evaded": {
-        "description": "Question asked for a specific real example, story, or instance — from any type of question (behavioral or open). Candidate responded with a general habit, theory, or pattern ('usually I...', 'typically we...', 'I always...') instead of describing one real moment that actually happened.",
-        "example": "Q: Tell me about a time you handled a difficult client. A: I usually stay calm and try to understand their perspective and then work through it.",
-        "not_this": "Do NOT fire if the candidate gave a real specific instance, even if briefly told or imperfectly worded. Only fire when the answer is clearly a general pattern, not a real event.",
+        "trigger": "Question asked for ONE real past instance. Answer describes how they GENERALLY operate — a rule, not a memory.",
+        "pattern": "The shape is 'usually I...', 'normally...', 'I always...', 'typically we...' — a description of a type of behaviour, not one specific event that happened.",
+        "examples": [
+            # tech — describes habit not event
+            "Q: Tell me about a time your model gave wrong results. A: Usually I check the training data first and retrain.",
+            # sales — describes approach not incident
+            "Q: Tell me about a deal you almost lost. A: I always follow up quickly and stay persistent with the client.",
+            # HR — describes process not moment
+            "Q: Describe a time you handled a difficult hire. A: Normally I involve the team and keep the process structured.",
+        ],
+        "not_this": "NOT this if they gave any real specific instance, even briefly or imperfectly — then null or a different signal. "
+                    "NOT this if they tried to recall and ran dry — that is depth_ceiling_hit. "
+                    "ONLY fire when they clearly HAVE substance but chose the generic version over the real one.",
     },
-    "answer_hollow": {
-        "description": "The answer described WHAT the candidate did but gave no HOW, no WHY, and no real operational detail. There is nothing in the answer that could not have been said by someone who only read about this type of work. This covers both: (a) missing reasoning — no decisions, no mechanics explained; and (b) missing texture — no numbers, no constraints, no real outcome. Fire this when both are absent together.",
-        "example": "I built a lead qualification system using n8n and it worked well for the client. / I handled the onboarding process and it went smoothly.",
-        "not_this": "Do NOT fire if the candidate explained even one real decision, one real constraint they hit, one real number, or one specific outcome. Only fire when the answer is hollow on ALL fronts — no HOW, no WHY, no operational detail.",
+
+    # PATTERN: tried to answer, visibly ran out
+    "depth_ceiling_hit": {
+        "trigger": "They engaged and tried, then visibly ran out of knowledge — partial start that trails off, one-word non-denial, or 'I don't have much idea' after attempting.",
+        "pattern": "Not dodging, not giving a habit — just empty. They reached the edge of what they know and stopped. The answer starts with intent but has no landing.",
+        "examples": [
+            # tech — started, ran out
+            "I've used FAISS but I don't really have a lot of idea about how the indexing actually works.",
+            # sales — started, ran out
+            "I've done territory planning but the forecasting side... yeah, I'm not too sure how that part worked.",
+            # HR — one word after a real question
+            "Q: Walk me through how you structured the interview panel. A: Okay.",
+        ],
+        "not_this": "NOT this if it is a flat 'I don't know' with zero attempt — that is a denial, return null. "
+                    "NOT this if they gave a general habit — that is example_evaded. "
+                    "Fire only when they attempted and then ran empty.",
     },
-    "functional_claim_unverified": {
-        "description": "Candidate named a specific tool, technology, method, framework, or capability — from ANY domain (technical, sales, HR, ops) — but gave no evidence of real hands-on usage. The name was dropped but nothing they said shows they actually worked with it. This applies equally to: tech tools (n8n, Salesforce), sales methods (MEDDIC, SPIN), HR practices (structured hiring, competency frameworks), or any claimed skill ('I'm strong at data analysis', 'I run structured processes').",
-        "example": "Tech: 'I used n8n for the automation — n8n is basically a workflow tool that connects things.' / Sales: 'I use SPIN selling in my discovery calls.' / HR: 'I always run structured interviews using competency frameworks.'",
-        "not_this": "Do NOT fire if they described what they actually DID with it — even one real operational detail, one thing they built, one problem they solved using it. Only fire when the name or claim is present but all description of actual usage is absent or hollow.",
+
+    # PATTERN: team language, personal contribution invisible
+    "ownership_ambiguous": {
+        "trigger": "'We/team/they' throughout — no 'I did', 'I decided', 'I built' anywhere. Contribution is invisible.",
+        "pattern": "The work sounds real but collective. Every verb is plural. You cannot tell what this one person specifically did, decided, or delivered.",
+        "examples": [
+            # tech — all team verbs
+            "We built the retrieval pipeline, the team set up the vector store, they handled the deployment.",
+            # sales — team credit
+            "Our team closed the deal, we handled the negotiation together, the account manager did the follow-up.",
+            # HR — collective ownership
+            "The hiring team ran the process, we interviewed together, and the decision was made as a group.",
+        ],
+        "not_this": "NOT this if they said 'I did X' or 'my part was Y' anywhere — ownership is clear. "
+                    "NOT this if they claim to have personally done everything but can't explain it — that is explanation_shallow. "
+                    "ownership_ambiguous = too little 'I'; explanation_shallow = too much 'I', nothing behind it.",
     },
-    "claim_not_demonstrated": {
-        "description": "Candidate made a strong self-characterization ('I'm great at X', 'I always do Y', 'I owned the whole Z', 'I'm known for...') but nothing in the answer supports it. No example, no number, no outcome — just the assertion.",
-        "example": "I'm really strong with data analysis and I always make data-driven decisions. [Nothing in the answer demonstrates this — no dataset mentioned, no metric, no decision described.]",
-        "not_this": "Do NOT fire if the candidate backed the claim with at least one real, relevant example OR one concrete operational detail that is specific to that claim. A vague example ('I once built a dashboard') does NOT satisfy this — the example must be relevant to the specific claim and contain at least one real operational detail.",
+
+    # PATTERN: loud personal claim, hollow explanation
+    "explanation_shallow": {
+        "trigger": "Strong personal ownership claim ('I built it all', 'I'm really strong at X', 'entire thing by me') + description that reads like an outsider's — no internals, no decisions, no friction.",
+        "pattern": "Ownership is asserted loudly; understanding is absent. A real owner can open the box. This person describes the label. Works across every domain — the claim can be about a technical build, a sales skill, or an HR process.",
+        "examples": [
+            # tech — ownership claim + no internals
+            "Entire functionality is completely built by me. It's a RAG-based system. [Claims it all, explains none of it.]",
+            # sales — ability claim + no substance
+            "I'm really strong at closing deals. I always know what the client needs and I close it. [Bold claim, zero example or mechanic.]",
+            # HR — process claim + no detail
+            "I designed the whole onboarding programme myself. It covers everything a new hire needs. [Owns it, can't describe any of it.]",
+        ],
+        "not_this": "NOT this if they only named a tool or method without a personal strength/ownership claim — that is tool_named_not_used. "
+                    "NOT this if they used 'we/team' language — that is ownership_ambiguous. "
+                    "ONLY fires when the personal claim is strong AND the explanation is hollow. "
+                    "IMPORTANT: 'I'm really strong at X', 'I'm great at Y', 'I always do best' are personal ability claims → fire this, not example_evaded.",
+    },
+
+    # PATTERN: name dropped, nothing behind it
+    "tool_named_not_used": {
+        "trigger": "A specific tool / method / framework / process is NAMED — then immediately defined, listed, or abandoned. Zero operational memory of using it.",
+        "pattern": "The name appears but there is no 'I did X with it', no step they ran, no problem it caused or solved. Could be a tech tool, a sales methodology, an HR framework — any named thing with no usage shown.",
+        "examples": [
+            # tech — list of names
+            "Vector database — ChromaDB, FAISS, Pinecone. [Three names, zero usage behind any of them.]",
+            # sales — methodology named, defined, not used
+            "I use SPIN selling. It stands for Situation, Problem, Implication, Need-payoff. [Names and defines it, never shows using it.]",
+            # HR — framework named, defined, not applied
+            "We used a competency framework. It's a structured way to evaluate candidates against defined criteria. [Names it, describes what it is, not what they did with it.]",
+        ],
+        "not_this": "NOT this if they showed real usage — 'I stored embeddings in ChromaDB', 'I ran discovery calls using SPIN', 'I scored candidates against the framework' — that is tech_choice_unjustified. "
+                    "NOT this if they described a general correct flow with no tool name — that is scenario_untested. "
+                    "CRITICAL: if they said what they DID with it (any operational verb), do not fire this — check SIGNAL 6.",
+    },
+
+    # PATTERN: used it, never said why that one
+    "tech_choice_unjustified": {
+        "trigger": "Real usage IS shown — they operated it, built with it, ran it — but never said WHY that tool/method over alternatives.",
+        "pattern": "Usage is evident; the decision behind the choice is absent. You can't tell if they chose it deliberately or just defaulted to it. Applies to any domain — tech stack, sales method, HR process — wherever a choice was made but not reasoned.",
+        "examples": [
+            # tech — used it, no why
+            "I stored the embeddings in ChromaDB and queried them through LangChain. It worked fine. [Clear usage — but why ChromaDB over FAISS or Pinecone?]",
+            # sales — used it, no why
+            "I ran discovery calls and used SPIN to structure my questions. It went well with most clients. [Used it — but why SPIN over MEDDIC or BANT?]",
+            # HR — used it, no why
+            "I ran structured interviews using a scorecard for every candidate. [Clear process — but why a scorecard over panel discussion or work sample?]",
+        ],
+        "not_this": "NOT this if there is no evidence they used it — that is tool_named_not_used. "
+                    "NOT this if they gave even a simple reason ('easier to set up', 'team was familiar with it') — then null. "
+                    "tech_choice_unjustified = operational verb present, rationale absent.",
+    },
+
+    # PATTERN: correct textbook flow, no lived friction
+    "scenario_untested": {
+        "trigger": "Correct, complete, process-level description — technically accurate, no specific tool to chase, no personal claim — but reads memorised not lived. No edge case, no failure, no friction.",
+        "pattern": "The answer is right but frictionless. It is the version from the documentation or a training course, not from having actually done it. A practitioner would remember something that was hard or broke — this person has only the clean flow.",
+        "examples": [
+            # tech — correct flow, zero texture
+            "Embedding goes into chunks, chunks become vectors, vectors go into the store, similarity search retrieves top results. [Correct — but no lived friction anywhere in this.]",
+            # sales — correct process, no friction
+            "You qualify the lead, do discovery, present the solution, handle objections, then close. [Textbook sales process — no real deal, no real friction.]",
+            # HR — correct sequence, no texture
+            "You define the role, write the JD, post it, screen CVs, do interviews, then make an offer. [Correct sequence — but anyone who read an HR guide could say this.]",
+        ],
+        "not_this": "NOT this if a specific named tool is the center of the answer with no usage — that is tool_named_not_used. "
+                    "NOT this if they claimed personal ownership but explained it shallowly — that is explanation_shallow. "
+                    "scenario_untested = correct + generic + no tool to chase + no personal claim.",
     },
 }
 
+# ---------------------------------------------------------------------------
+# SIGNAL DETECTION — direct classification.
+#
+# Tested against a feature-extraction + code-resolver alternative (see
+# tests/test_signal_ab.py): direct classification won on both gpt-4.1-nano
+# (6/10 vs 4/10) and gpt-4.1-mini (7/10 vs 6/10). Splitting the judgment into
+# 11 boolean features gave the model 11 chances to be wrong instead of 1 —
+# worse, not better. Keeping it as a single classification call.
+# ---------------------------------------------------------------------------
+
 def _build_signal_prompt_block() -> str:
     return """\
--- SIGNAL DETECTION --
-Your job: find the ONE most important gap in this answer and name it with a signal.
+-- SIGNAL DETECTION (GATE CHECK) --
+Do NOT jump to a signal. First answer the discriminating facts in order. The FIRST gate that
+fires decides the signal — STOP there. Fill "gate_check" with your answers, THEN the signal.
 
-MANDATORY REASONING SEQUENCE — follow this order before picking any signal:
+The gates are ordered MOST-OBJECTIVE-FIRST on purpose. Team pronouns and named tools are objective
+facts — they are checked BEFORE the softer "was this an example or a habit" judgment.
 
-STEP 1 — What did the question actually ask for?
-  Was it asking for: a specific real example? personal ownership? how/why something worked?
-  proof of hands-on experience with a tool/method? the outcome of the work?
+Write gate_check in EXACTLY this format (yes/no + the words that prove each).
+Do NOT put the signal name inside gate_check — the signal goes in the SEPARATE "signal" field.
 
-STEP 2 — Check each gap in this exact order. Fire the FIRST one that matches:
+  "G1 ran_out=<y/n>; G2 team_only=<y/n>; G3 bold_claim=<y/n> has_substance=<y/n>;
+   G4 tool_named=<y/n> usage_shown=<y/n> reason_given=<y/n>;
+   G5 wanted_instance=<y/n> general_habit=<y/n>; G6 correct_but_generic=<y/n>"
 
-  GAP A — Did they answer the actual question or dodge it with a general habit/pattern?
-    If the question asked for a real instance and they responded with "usually I..." or
-    "I always..." or described a type of behavior instead of a real event → fire: example_evaded
-    DO NOT FIRE if they gave a real specific instance, even if vague or short.
+After gate_check, put the resolved signal in the "signal" field (the NEXT field in the JSON).
 
-  GAP B — Is their personal contribution invisible? Did they use "we/team/they" throughout
-    with zero mention of what they personally did, decided, or owned?
-    → fire: ownership_ambiguous
-    DO NOT FIRE if they said "I did X" or "my role was Y" anywhere.
+ANSWER EACH GATE LITERALLY — quote the words that decide it:
 
-  GAP C — Did they make a strong self-claim ('I'm great at X', 'I owned the whole Y',
-    'I always do Z') with NOTHING in the answer to support it — no example, no number,
-    no outcome, no relevant detail?
-    → fire: claim_not_demonstrated
-    DO NOT FIRE if they backed the claim with even one real, relevant operational detail.
+  G1 — ran_out: did they try to answer then trail off, give a one-word reply, or say "I don't have
+       much idea" AFTER attempting? (NOT a flat "I don't know" with zero attempt.)
+       → if yes: SIGNAL = depth_ceiling_hit. STOP.
 
-  GAP D — Did they name a specific tool, method, framework, or skill but show ZERO evidence
-    of having actually used it? Applies to any domain: tech tools, sales methods, HR practices,
-    any named capability. The name was mentioned but nothing they said proves they worked with it.
-    → fire: functional_claim_unverified
-    DO NOT FIRE if they described even one real thing they did with it — a problem it solved,
-    a specific step they ran, a real outcome it produced.
+  G2 — team_only: is EVERY action verb "we / team / they / teammates / our group / the committee",
+       with NO "I did / I built / I handled / I decided / I ran"? Look at WHO did each action.
+       ("I didn't know X" is NOT a personal contribution — team_only can still be yes.)
+       → if team_only=yes AND no bold "I built it all" claim: SIGNAL = ownership_ambiguous. STOP.
+       THIS GATE OUTRANKS the example/habit gate (G5). A "we did it together" answer is
+       ownership_ambiguous, NOT example_evaded — even if it also sounds vague or generic.
+       This includes team ACHIEVEMENT answers — "we doubled the leads", "the team hit quota",
+       "we crushed the quarter" — those are collective credit with no personal action = ownership_ambiguous.
 
-  GAP E — Is the answer hollow overall? No HOW, no WHY, no real operational detail anywhere.
-    Nothing a person couldn't say after reading one article. No decision explained, no constraint
-    mentioned, no real number, no specific outcome. The answer is correct but completely empty.
-    → fire: answer_hollow
-    DO NOT FIRE if they gave even one real decision, one real constraint, one real number,
-    or one specific outcome. Only fire when hollow on ALL fronts.
+  G3 — bold_claim: a loud personal claim — "I built it all", "entire thing by me", "I'm really strong
+       at X", "I always do the best Y", "I single-handedly...", "I never lose...".
+       has_substance: is it backed by even ONE real internal — a decision, constraint, number,
+       mechanism, or real outcome?
+       → if bold_claim=yes AND has_substance=no: SIGNAL = explanation_shallow. STOP.
 
-STEP 3 — If none of the above gaps exist, the answer is sufficient. Return signal: null.
+  G4 — tool_named: is a specific tool / method / framework / process named (PyTorch, Salesforce,
+       MEDDIC, HubSpot, AARRR, Greenhouse, a named framework)?
+       usage_shown: is there an OPERATIONAL VERB tying THEM to it — "I trained/stored/queried/ran/built/
+       configured/tracked/sourced/deployed X with it"? (A pure definition "X is a framework that..." or
+       a bare list "we used A, B, C" = usage_shown NO.)
+       reason_given: did they say WHY that tool over alternatives?
+       → if tool_named=yes AND usage_shown=no: SIGNAL = tool_named_not_used. STOP.
+       → if tool_named=yes AND usage_shown=yes AND reason_given=no: SIGNAL = tech_choice_unjustified. STOP.
+       → if tool_named=yes AND usage_shown=yes AND reason_given=yes: continue to G5.
+
+  G5 — wanted_instance: did the QUESTION ask for a specific past time/example/story
+       ("tell me about a time", "a specific deal", "a time a candidate...")?
+       general_habit: is the ANSWER FIRST-PERSON habit language — "I usually...", "I normally...",
+       "I always...", "I just..." — describing what THEY personally tend to do?
+       → if BOTH yes AND no real instance given: SIGNAL = example_evaded. STOP.
+       NOTE: an impersonal recipe ("you do X, then Y, then Z") is NOT first-person habit — that is G6.
+       NOTE: a team-credit answer ("we doubled the leads", "the team hit quota") is G2, already handled above.
+
+  G6 — correct_but_generic: is the answer an impersonal, technically-correct process recipe — a "you do
+       X, then Y, then Z" list, or a clean textbook flow — with no named tool to chase, no first-person
+       personal claim, and no real specific event?
+       (e.g. "you prospect, qualify, do discovery, present, handle objections, then close" /
+        "you define the audience, set the goal, create content, launch, measure ROI")
+       → if yes: SIGNAL = scenario_untested. STOP.
+
+  If no gate fired → SIGNAL = null.
+
+THE SIGNAL YOU OUTPUT MUST EQUAL THE ONE YOUR GATE CHECK LANDED ON. No exceptions.
 
 SIGNAL REASON RULE:
-  signal_reason must be a SHORT EXACT QUOTE (3-12 words) from the candidate's actual answer
-  that is the clearest evidence the signal is firing.
-  GOOD: "we built the pipeline, the team decided"  ← their actual words
-  BAD:  "candidate used team language throughout"  ← your description, not their words
-  If signal is null → signal_reason must also be null.\
+  signal_reason = ONE short exact quote (3-12 words) from their actual words that proves the signal.
+  GOOD: "we built the pipeline, the team decided"   BAD: "used team language throughout"
+  If signal is null → signal_reason is null.\
 """
 
 
@@ -122,6 +248,7 @@ async def evaluate_answer(
     topic_tag: str = "RESUME_TOPIC",
     topic_probe_focus: list | None = None,
     job_title: str = "",
+    signals_already_fired: list | None = None,
 ) -> dict:
     """
     Single merged LLM call: scores answer quality + detects one signal with reason.
@@ -137,13 +264,15 @@ async def evaluate_answer(
         return {
             "clarity": 0, "depth": 0, "specificity": 0, "grounding": 0, "overall": 0.0,
             "is_warmup": True,
-            "action": "MOVE_ON", "signal": None, "signal_reason": None, "reason": "warmup turn",
+            "action": "MOVE_ON", "forced_action": True,
+            "signal": None, "signal_reason": None, "reason": "warmup turn",
         }
 
     if not candidate_answer or not candidate_answer.strip():
         return {
             "clarity": 0, "depth": 0, "specificity": 0, "grounding": 0, "overall": 0.0,
-            "action": "MOVE_ON", "signal": None, "signal_reason": None, "reason": "empty answer",
+            "action": "MOVE_ON", "forced_action": True,
+            "signal": None, "signal_reason": None, "reason": "empty answer",
         }
 
     # Denial detection — two distinct cases:
@@ -170,7 +299,8 @@ async def evaluate_answer(
         logger.info("[EVAL] short-circuit: pure denial (%r)", candidate_answer[:60])
         return {
             "clarity": 0, "depth": 0, "specificity": 0, "grounding": 0, "overall": 0.0,
-            "action": "MOVE_ON", "signal": None, "signal_reason": None, "reason": "explicit denial",
+            "action": "MOVE_ON", "forced_action": True,
+            "signal": None, "signal_reason": None, "reason": "explicit denial",
         }
     # Denial + continuation: let eval score it, but cap scores so a "I don't know but..."
     # answer can't accidentally saturate a topic — the agent will keep probing.
@@ -183,21 +313,11 @@ async def evaluate_answer(
     _band_note = {
         "fresher": (
             "FRESHER — score generously on grounding (limited work history).\n"
-            "MOVE_ON if they showed they understand WHY they made a choice, even simply.\n"
             "Do NOT expect tradeoffs, scale, or architecture depth."
         ),
-        "mid": (
-            "MID-LEVEL — expect clear ownership and at least one real decision.\n"
-            "MOVE_ON if they named what was specifically theirs and gave one concrete detail."
-        ),
-        "experienced": (
-            "EXPERIENCED — expect depth, specifics, and real tradeoffs.\n"
-            "Do NOT MOVE_ON on vague answers. MOVE_ON only when you have a real tradeoff or metric."
-        ),
-        "senior": (
-            "SENIOR — expect strategic judgment and high-stakes decisions.\n"
-            "MOVE_ON only when you have evidence of real judgment under pressure."
-        ),
+        "mid": "MID-LEVEL — expect clear ownership and at least one real decision.",
+        "experienced": "EXPERIENCED — expect depth, specifics, and real tradeoffs. Do not score vague answers high.",
+        "senior": "SENIOR — expect strategic judgment and high-stakes decisions.",
     }.get(candidate_band, "Probe for real ownership and specific decisions.")
 
     _signal_block = _build_signal_prompt_block()
@@ -209,19 +329,28 @@ async def evaluate_answer(
             "You know the difference between someone who did the work and someone who read about it.\n"
             "Output ONLY valid JSON:\n"
             '{"clarity":0-10,"depth":0-10,"specificity":0-10,"grounding":0-10,'
-            '"action":"PROBE" or "MOVE_ON",'
-            '"signal": one of exactly ["ownership_ambiguous","example_evaded","answer_hollow",'
-            '"functional_claim_unverified","claim_not_demonstrated"] or null,'
+            '"gate_check":"<fill in each gate result, then the signal it leads to — see GATE CHECK below>",'
+            '"signal": one of exactly ["example_evaded","depth_ceiling_hit","ownership_ambiguous",'
+            '"explanation_shallow","tool_named_not_used","tech_choice_unjustified","scenario_untested"] or null,'
             '"signal_reason":"<3-12 word exact quote from their answer>" or null,'
             '"reason":"<one phrase from their answer that drove your call>"}\n\n'
-            "CRITICAL: signal must be one of the 5 names above or null. "
-            "Never invent a new signal name. Never put the candidate's words as the signal.\n\n"
+            "CRITICAL: signal must be one of the 7 names above or null. "
+            "Never invent a new signal name. Never put the candidate's words as the signal.\n"
+            "CRITICAL: gate_check MUST be filled in BEFORE signal — it forces you to look at the\n"
+            "discriminating facts. The signal MUST match the gate that fired in your gate_check.\n\n"
 
             f"Role: {job_title or 'not specified'} | Topic: {active_topic or 'general'}"
             f" | Tag: {topic_tag} | Importance: {topic_importance}\n"
         )
         if topic_probe_focus:
             ctx += f"Probe focus: {', '.join(topic_probe_focus)}\n"
+        if signals_already_fired:
+            ctx += (
+                f"Signals already fired on this topic, in order: {', '.join(signals_already_fired)}.\n"
+                "Do not fire the same signal again unless this answer has a genuinely NEW instance of that "
+                "gap distinct from what already fired. Prefer a different signal from the 7 available — "
+                "each fires on a different answer shape, so a repeat usually means you should look harder.\n"
+            )
         ctx += (
             "Tag context: RESUME_TOPIC = they claimed this experience, hold them to it. "
             "JD_TOPIC = they may be learning, credit honest partial exposure. "
@@ -230,8 +359,7 @@ async def evaluate_answer(
             "This is voice-transcribed speech — score the meaning, not the grammar.\n\n"
             + (
                 "PARTIAL DENIAL NOTE: The candidate started with 'I don't know' or 'I forgot' "
-                "but then added some content. Score what content exists, but cap all scores at 5 max. "
-                "Action must be PROBE — do not MOVE_ON on a partial denial.\n\n"
+                "but then added some content. Score what content exists, but cap all scores at 5 max.\n\n"
                 if _is_partial_denial else ""
             ) +
             "BEFORE YOU SCORE: Read the answer as a real interviewer would.\n"
@@ -297,16 +425,6 @@ async def evaluate_answer(
             f"{'EXPERIENCED: expect organisational texture and real constraints. Smooth polished story with no friction = 4 max.' if candidate_band == 'experienced' else ''}"
             f"{'SENIOR: expect reflection or judgment under uncertainty. A perfect linear story with no tradeoff = 3 max.' if candidate_band == 'senior' else ''}\n\n"
 
-            "── ROUTING ─────────────────────────────────────\n"
-            "PROBE or MOVE_ON — decide as an interviewer, not by checking score thresholds.\n"
-            "The question is: do you have enough evidence to form a real judgment about this candidate on this topic?\n"
-            "PROBE when something is missing that matters — they described WHAT but not HOW, "
-            "they made a claim with nothing behind it, they gave a plausible answer with no real evidence in it, "
-            "or on a RESUME_TOPIC the answer felt rehearsed rather than lived.\n"
-            "MOVE_ON when you have enough — the question was answered, their role was clear, "
-            "at least one real decision or constraint or outcome was credibly described, "
-            "and asking again would not surface anything new.\n"
-            "MOVE_ON also when: the candidate genuinely has no experience here — probing only confirms the gap.\n\n"
         )
         ctx += _signal_block
         return ctx
@@ -321,7 +439,7 @@ async def evaluate_answer(
             client.chat.completions.create(
                 model=llm_model,
                 temperature=EVAL_TEMPERATURE,
-                max_tokens=200,
+                max_tokens=320,  # gate_check reasoning (~60 tok) is emitted before signal — needs headroom
                 stream=True,
                 messages=[
                     {
@@ -386,10 +504,8 @@ async def evaluate_answer(
             + grounding * 0.25
         )
 
-        action = str(data.get("action", "PROBE")).upper()
-        if action not in ("PROBE", "MOVE_ON"):
-            action = "PROBE"
-
+        # Routing (PROBE/MOVE_ON) is no longer asked of the model -- saturation/
+        # weak_exit/dry_topic in eval_pipeline.py decide that. This call only scores.
         # Validate signal against our 5 defined signals
         raw_signal = data.get("signal")
         signal = str(raw_signal).strip() if raw_signal else None
@@ -400,18 +516,18 @@ async def evaluate_answer(
         signal_reason = str(data.get("signal_reason") or "").strip() or None
         if signal is None:
             signal_reason = None
-        if action == "MOVE_ON":
-            signal = None
-            signal_reason = None
 
         reason = str(data.get("reason", ""))[:120]
+        gate_check = str(data.get("gate_check", ""))[:300]
 
         logger.info(
-            "[EVAL] [OK] action=%s signal=%s | clarity=%d depth=%d spec=%d ground=%d | reason=%s",
-            action, signal or "none",
+            "[EVAL] [OK] signal=%s | clarity=%d depth=%d spec=%d ground=%d | reason=%s",
+            signal or "none",
             int(clarity), int(depth), int(specificity), int(grounding),
             repr(reason),
         )
+        if gate_check:
+            logger.info("[EVAL] gate_check=%r", gate_check)
         if signal:
             logger.info("[EVAL] signal_reason=%r", signal_reason)
 
@@ -419,7 +535,7 @@ async def evaluate_answer(
             "clarity": clarity, "depth": depth,
             "specificity": specificity, "grounding": grounding,
             "overall": overall,
-            "action": action,
+            "action": "PROBE",
             "signal": signal,
             "signal_reason": signal_reason,
             "reason": reason,

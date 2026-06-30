@@ -342,7 +342,13 @@
       "Bash(python \"C:\\\\Users\\\\vamsi\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-vamsi-OneDrive-Documents-SreevaAI\\\\b50fb2b3-e804-451b-82d3-f1f55f7ce9e9\\\\scratchpad\\\\gen_tulasi_report.py\")",
       "Bash(python -m py_compile interview/agent_runtime.py interview/debug_report.py)",
       "Bash(python -m py_compile interview/agent_runtime.py interview/eval_pipeline.py interview/report_pipeline.py interview/slack_error_logger.py interview/debug_report.py)",
-      "Bash(curl -X POST https://hooks.slack.com/services/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 -H 'Content-Type: application/json' -d '{\"text\":\"Test message from error alerter\"}')"
+      "Bash(curl -X POST https://hooks.slack.com/services/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 -H 'Content-Type: application/json' -d '{\"text\":\"Test message from error alerter\"}')",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('interview/eval_pipeline.py'\\).read\\(\\)\\); ast.parse\\(open\\('interview/agent_runtime.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('interview/agent_runtime.py', encoding='utf-8'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('interview/eval_pipeline.py'\\).read\\(\\)\\); print\\('eval_pipeline OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('interview/agent_runtime.py', encoding='utf-8'\\).read\\(\\)\\); print\\('agent_runtime OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('interview/agent_runtime.py', encoding='utf-8'\\).read\\(\\)\\); print\\('agent_runtime.py OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('interview/agent_scoring.py', encoding='utf-8'\\).read\\(\\)\\); print\\('agent_scoring.py OK'\\)\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\vamsi\\OneDrive\\Desktop\\HR-updates\\scratch",

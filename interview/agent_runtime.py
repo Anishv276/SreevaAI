@@ -2777,7 +2777,6 @@ async def entrypoint(ctx: JobContext):
                     "test_event_eval_done"
                 )
                 # -- Unpack eval result ----------------------------------------
-                _action_from_eval   = str(_eval_result_inline.get("action", "PROBE")).upper()
                 _eval_signal        = _eval_result_inline.get("signal")         # str | None
                 _eval_signal_reason = _eval_result_inline.get("signal_reason")  # str | None
                 _saturation   = _eval_result_inline.get("saturation") or {}
@@ -2793,19 +2792,15 @@ async def entrypoint(ctx: JobContext):
                 _is_saturated = _saturation.get("is_saturated", False)
                 _weak_exit    = _saturation.get("weak_exit", False)
                 _dry_topic    = _saturation.get("dry_topic", False)
-                # Agent applies its own action logic on top of eval's recommendation.
-                # dry_topic = consecutive low-yield answers hit cap -> always move on.
-                _action = "PROBE"
-                if _weak_exit or _is_saturated or _dry_topic:
-                    _action = "MOVE_ON"
-                elif _action_from_eval == "MOVE_ON":
-                    _action = "MOVE_ON"
-                # else: PROBE (default)
+                # Move-on is decided purely by saturation/weak_exit/dry_topic —
+                # the LLM judge's action is no longer consulted (it kept buffering without context).
+                # weak_exit itself now includes the turn-3/turn-5 saturation checkpoints.
+                _action = "MOVE_ON" if (_weak_exit or _is_saturated or _dry_topic) else "PROBE"
                 logger.info(
                     "[AGENT] turn=%d | decision_logic: sat=%.1f/%.1f saturated=%s weak=%s dry=%s "
-                    "eval_action=%s -> agent_action=%s",
+                    "-> agent_action=%s",
                     turn_snapshot, _sat_after, _sat_thresh, _is_saturated, _weak_exit, _dry_topic,
-                    _action_from_eval, _action
+                    _action
                 )
                 # Test events: log decision
                 if _action == "MOVE_ON":
@@ -2875,12 +2870,13 @@ async def entrypoint(ctx: JobContext):
                                     if _tok:
                                         _tech_skills.append(_tok)
                             # Determine exit reason from saturation flags
+                            # (weak_exit / is_saturated / dry_topic are the only ways
+                            # _action becomes MOVE_ON below, besides explicit_denial)
                             _exit_reason = (
                                 "explicit_denial" if _old_key in _covered_topic_keys
                                 else "weak_exit"  if _weak_exit
                                 else "saturated"  if _is_saturated
-                                else "dry_topic"  if _dry_topic
-                                else "eval_moveon"
+                                else "dry_topic"
                             )
                             # Compute avg scores across all turns on this topic
                             _topic_normed_key = re.sub(r"[^a-z0-9]+", " ", _old_key.lower()).strip()
@@ -3316,10 +3312,14 @@ async def entrypoint(ctx: JobContext):
                     f"Start the interview. Topic: {_anchor_title}.\n"
                     f"Context: {_anchor_ctx}\n\n"
                     "Say ONE short thing (3-6 words max) then ask your first question — topic name built into it.\n"
-                    "Examples of good openers:\n"
-                    f"  'So, {_anchor_title} — what did you personally build there?'\n"
-                    f"  'Let's talk about {_anchor_title}. What was specifically yours?'\n"
-                    f"  'Alright — the {_anchor_title}. Where did you start?'\n"
+                    "The first question must be OPEN and topic-specific — invite them to show what they know.\n"
+                    "Do NOT default to 'what did you build' every time — vary based on the topic context above.\n"
+                    "Examples of good openers (pick the one that fits the topic):\n"
+                    f"  'So, {_anchor_title} — walk me through what you built there.'\n"
+                    f"  'Let's talk about {_anchor_title}. What was the core problem you were solving?'\n"
+                    f"  'Alright — {_anchor_title}. What was specifically yours in that?'\n"
+                    f"  'The {_anchor_title} — where did you start and what did you own?'\n"
+                    f"  'Tell me about your work on {_anchor_title} — what was the most technically interesting part?'\n"
                     "Do NOT say 'let's dive in', 'just to set the stage', 'so moving forward', or any preamble.\n"
                     "Do NOT say 'Great!' or 'Perfect!' or any hollow reaction to their warmup answer.\n"
                     "Do NOT explain the interview process or list what you'll cover.\n"

@@ -18,7 +18,7 @@ from openai import AsyncOpenAI
 
 from interview.agent_scoring import evaluate_answer
 from interview.slack_error_logger import log_llm_error
-_EVAL_DEFAULT = "gpt-4.1-nano"  # ponytail: fallback — callers pass org's llmInterviewEval
+_EVAL_DEFAULT = "gpt-4.1-mini"  # ponytail: fallback — callers pass org's llmInterviewEval. mini beat nano on signal-detection accuracy — see tests/test_signal_ab.py
 
 logger = logging.getLogger("interview-agent")
 
@@ -76,52 +76,61 @@ class TopicState:
         self.opened_at_turn = 0
         self.signals_fired: list[str] = []
 
-        # Dry-topic exit: consecutive low-yield turns before forcing MOVE_ON
+        # Dry-topic exit tracking.
+        # consecutive_low_yield: resets on any good answer — catches "I don't know" streaks.
+        # total_low_yield: never resets — catches game-players who slip one decent answer in
+        #   between repeated weak answers to avoid the consecutive streak firing.
+        # cap = 2 for all bands (fresher included: research says freshers need MORE leeway, not less).
         self.consecutive_low_yield = 0
-        self.dry_topic_cap = 1 if band == "fresher" else 2
+        self.total_low_yield = 0
+        self.dry_topic_cap = 2
 
-        # Per-turn scores for trajectory detection
-        self.per_turn_scores: list[float] = []
-        self.last_turn_new_tech: bool = False  # positive signal — suppress weak_exit
-
-        self.progress_check_turns = 3
-        self.progress_check_pct = {
-            "fresher":    {"CRITICAL": 0.75, "HIGH": 0.80, "MEDIUM": 0.90, "LOW": 0.90},
-            "mid":        {"CRITICAL": 0.45, "HIGH": 0.45, "MEDIUM": 0.80, "LOW": 0.65},
-            "experienced":{"CRITICAL": 0.28, "HIGH": 0.30, "MEDIUM": 0.45, "LOW": 0.60},
-            "senior":     {"CRITICAL": 0.20, "HIGH": 0.22, "MEDIUM": 0.35, "LOW": 0.50},
-        }.get(band, {"CRITICAL": 0.45, "HIGH": 0.45, "MEDIUM": 0.80, "LOW": 0.65}).get(importance, 0.45)
+    # Weak-exit checkpoints per importance: (turn3_floor, turn5_floor).
+    # CRITICAL topics need stronger evidence before early exit (more behavioral data points required
+    # for role-defining competencies). LOW topics can exit sooner — less decision weight.
+    # Source: structured-interview research (Google re:Work, competency-based interview scoring).
+    _WEAK_EXIT_BY_IMPORTANCE: dict[str, tuple[float, float]] = {
+        "CRITICAL": (0.60, 0.85),
+        "HIGH":     (0.55, 0.80),
+        "MEDIUM":   (0.50, 0.75),
+        "LOW":      (0.40, 0.65),
+    }
 
     def is_weak_candidate_exit(self) -> bool:
-        if self.follow_up_turns < self.progress_check_turns:
+        if self.saturation_threshold <= 0:
             return False
-        raw_base = self.base_turn_credit * self.follow_up_turns
-        effective = max(self.saturation_score, raw_base)
-        if effective >= self.saturation_threshold * self.progress_check_pct:
-            return False
-        if len(self.per_turn_scores) >= 2 and self.per_turn_scores[-1] > self.per_turn_scores[-2]:
-            return False
-        if self.last_turn_new_tech:
-            return False
-        return True
+        sat_pct = self.saturation_score / self.saturation_threshold
+        turn3_floor, turn5_floor = self._WEAK_EXIT_BY_IMPORTANCE.get(
+            self.importance, self._WEAK_EXIT_BY_IMPORTANCE["HIGH"]
+        )
+        return (
+            (self.follow_up_turns >= 3 and sat_pct < turn3_floor) or
+            (self.follow_up_turns >= 5 and sat_pct < turn5_floor)
+        )
 
     def is_dry_topic(self) -> bool:
         if self.follow_up_turns < self.dry_topic_cap:
             return False
-        return self.consecutive_low_yield >= self.dry_topic_cap
+        # Two ways to fire:
+        # 1. Consecutive streak: 2 bad answers back-to-back → clearly stuck, exit now.
+        # 2. Total burden: 3+ total weak answers regardless of order → game-play (bad/decent/bad/decent/bad)
+        #    is caught here even when the streak keeps resetting.
+        return (
+            self.consecutive_low_yield >= self.dry_topic_cap or
+            self.total_low_yield >= 3
+        )
 
     def add_contribution(self, weighted: float, signal: str | None, turn: int | None = None) -> None:
         contribution = max(0.0, _score_to_contribution(weighted))
         effective_base = self.base_turn_credit if contribution > 0.0 else 0.0
         self.saturation_score += effective_base + contribution
         self.follow_up_turns += 1
-        self.per_turn_scores.append(weighted)
         self.is_saturated = self.saturation_score >= self.saturation_threshold
-        self.last_turn_new_tech = (signal == "new_tech_thread")
         if signal:
             self.signals_fired.append(signal)
         if weighted <= 1.0:
             self.consecutive_low_yield += 1
+            self.total_low_yield += 1
         else:
             self.consecutive_low_yield = 0
         if turn is not None:
@@ -136,12 +145,11 @@ class TopicState:
             "saturation_score":    round(self.saturation_score, 2),
             "follow_up_turns":     self.follow_up_turns,
             "base_turn_credit":    self.base_turn_credit,
-            "progress_check_turns":self.progress_check_turns,
-            "progress_check_pct":  self.progress_check_pct,
             "signals_fired":       self.signals_fired,
             "is_saturated":        self.is_saturated,
             "updated_turn":        self.updated_turn,
             "consecutive_low_yield":self.consecutive_low_yield,
+            "total_low_yield":     self.total_low_yield,
             "dry_topic_cap":       self.dry_topic_cap,
         }
 
@@ -159,17 +167,13 @@ class TopicState:
         obj.signals_fired       = list(d.get("signals_fired", []) or [])
         obj.opened_at_turn      = int(d.get("opened_at_turn", 0) or 0)
         obj.consecutive_low_yield = int(d.get("consecutive_low_yield", 0) or 0)
-        obj.per_turn_scores     = []
+        obj.total_low_yield       = int(d.get("total_low_yield", 0) or 0)
         if "dry_topic_cap" in d:
             obj.dry_topic_cap = int(d["dry_topic_cap"])
         if "saturation_threshold" in d:
             obj.saturation_threshold = float(d["saturation_threshold"])
         if "base_turn_credit" in d:
             obj.base_turn_credit = float(d["base_turn_credit"])
-        if "progress_check_turns" in d:
-            obj.progress_check_turns = int(d["progress_check_turns"])
-        if "progress_check_pct" in d:
-            obj.progress_check_pct = float(d["progress_check_pct"])
         return obj
 
 
@@ -310,6 +314,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
                 topic_tag=p.topic_tag,
                 topic_probe_focus=p.topic_probe_focus,
                 job_title=p.job_title,
+                signals_already_fired=current_topic_state.signals_fired if current_topic_state else [],
             ),
             timeout=10.0,
         )
@@ -341,6 +346,9 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     action: str = str(raw.get("action", "PROBE")).upper()
     if action not in ("PROBE", "MOVE_ON"):
         action = "PROBE"
+    # forced_action = deterministic short-circuit (warmup/empty/explicit-denial), not
+    # the LLM's free-choice judgment -- only this can move on outside dry/weak/saturated.
+    _forced_move_on = bool(raw.get("forced_action")) and action == "MOVE_ON"
 
     signal: str | None = raw.get("signal")
     signal_reason: str | None = raw.get("signal_reason")
@@ -377,19 +385,21 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
                     pct_done, sat_score, remaining,
                     current_topic_state.importance if current_topic_state else "?")
 
-    # -- Decision (priority order) --------------------------------------------
-    if _dry_topic:
+    # -- Decision (priority order; LLM's free-choice judgment no longer used) ----
+    if _forced_move_on:
         action = "MOVE_ON"
-        logger.info("[DECISION] MOVE_ON reason=dry_topic (low_yield=%d>=cap=%d) turn=%d",
-                    current_topic_state.consecutive_low_yield, current_topic_state.dry_topic_cap, p.turn)
+        logger.info("[DECISION] MOVE_ON reason=%s turn=%d", raw.get("reason", "forced"), p.turn)
+    elif _dry_topic:
+        action = "MOVE_ON"
+        logger.info("[DECISION] MOVE_ON reason=dry_topic (consecutive=%d total=%d cap=%d) turn=%d",
+                    current_topic_state.consecutive_low_yield, current_topic_state.total_low_yield,
+                    current_topic_state.dry_topic_cap, p.turn)
     elif _weak_exit:
         action = "MOVE_ON"
         logger.info("[DECISION] MOVE_ON reason=weak_exit turn=%d", p.turn)
     elif is_saturated:
         action = "MOVE_ON"
         logger.info("[DECISION] MOVE_ON reason=saturated turn=%d", p.turn)
-    elif action == "MOVE_ON":
-        logger.info("[DECISION] MOVE_ON reason=llm_judge turn=%d", p.turn)
     else:
         action = "PROBE"
 
