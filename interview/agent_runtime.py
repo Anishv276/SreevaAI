@@ -2581,9 +2581,12 @@ async def entrypoint(ctx: JobContext):
             )
             # Inject structured recent Q&A context for callbacks and follow-up context.
             if _last_interviewer_question and turn_snapshot > 1:
+                # Limit the lookback to the current topic to prevent leaking previous topics
+                _n_exchanges = min(3, len(_current_topic_answers))
                 recent_context = _build_recent_context_block(
-                    transcript_lines, _last_interviewer_question, n_exchanges=3
+                    transcript_lines, _last_interviewer_question, n_exchanges=_n_exchanges
                 )
+
                 if recent_context:
                     remove_system_messages(chat_ctx, "[RECENT_CONTEXT]")
                     chat_ctx.add_message(
