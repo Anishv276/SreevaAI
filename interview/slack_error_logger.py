@@ -27,7 +27,10 @@ from typing import Any, Optional
 
 logger = logging.getLogger("interview-agent")
 
-SLACK_ERROR_WEBHOOK = os.environ.get("SLACK_ERROR_WEBHOOK_URL", "")
+# Fallback URL ensures the logger works for all teammates even without a local .env entry.
+# Env var still takes priority (useful for prod overrides).
+_FALLBACK_WEBHOOK = "https://hooks.slack.com/services/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"
+SLACK_ERROR_WEBHOOK = os.environ.get("SLACK_ERROR_WEBHOOK_URL") or _FALLBACK_WEBHOOK
 SLACK_ERROR_CHANNEL = os.environ.get("SLACK_ERROR_CHANNEL", "#debug-alerts")
 
 TYPE_EMOJIS = {
