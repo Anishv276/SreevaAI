@@ -4156,16 +4156,20 @@ async def entrypoint(ctx: JobContext):
         except Exception as _tb_err:
             logger.warning("[TEST_BILLING] Failed to save metrics: %s", _tb_err)
         # Local test session -- push a full per-turn debug PDF to Slack for bug triage.
-        from interview.debug_report import generate_and_send_debug_report
-        await generate_and_send_debug_report(
-            app_id=app_id,
-            candidate_name=candidate_name,
-            job_title=job_title,
-            answer_scores=list(answer_scores),
-            topic_pool=list(_interview_brief.topic_pool),
-            covered_topics=_covered_topic_keys.coverage_rows(),
-            topic_records=list(_topic_records),
-        )
+        logger.info("[DEBUG_REPORT] Test session complete — generating and sending debug PDF to Slack...")
+        try:
+            from interview.debug_report import generate_and_send_debug_report
+            await generate_and_send_debug_report(
+                app_id=app_id,
+                candidate_name=candidate_name,
+                job_title=job_title,
+                answer_scores=list(answer_scores),
+                topic_pool=list(_interview_brief.topic_pool),
+                covered_topics=_covered_topic_keys.coverage_rows(),
+                topic_records=list(_topic_records),
+            )
+        except Exception as _pdf_err:
+            logger.error("[DEBUG_REPORT] Outer exception sending debug PDF: %s", _pdf_err, exc_info=True)
     # Cancel any leftover fire-and-forget work so job teardown is instant.
     if background_tasks:
         logger.debug(f"[SHUTDOWN] Cancelling {len(background_tasks)} background task(s)")
