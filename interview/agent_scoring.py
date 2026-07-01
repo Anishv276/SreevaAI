@@ -282,7 +282,7 @@ async def evaluate_answer(
     _denial_phrases_re = re.compile(
         r"\b(don'?t|do not|can'?t|cannot|didn'?t|did not|never|haven'?t|have not)\s+"
         r"(remember|recall|know|used|worked|tried|built|done|do|create|make|work on)?\b"
-        r"|\bI forgot\b|\bno idea\b|\bnot sure\b",
+        r"|\bI forgot\b|\bno idea\b|\bno clue\b|\bnot (so |too |really |quite |entirely )?sure\b|\bunsure\b|\bno knowledge\b",
         re.IGNORECASE,
     )
     _answer_stripped = candidate_answer.strip()
@@ -290,12 +290,13 @@ async def evaluate_answer(
     _has_denial = bool(_denial_phrases_re.search(_answer_stripped))
     # "continuation" = meaningful words after the denial phrase (conjunction + more content)
     _continuation_re = re.compile(
-        r"\b(but|however|although|though|except|actually|what i|what we|i did|i built|i used|i worked)\b",
+        r"\b(but|however|although|though|except|actually|what i|what we|i built|i used|i worked)\b",
+
         re.IGNORECASE,
     )
     _has_continuation = bool(_continuation_re.search(_answer_stripped))
     # Pure denial: short answer, denial present, no real continuation
-    if _has_denial and not _has_continuation and len(_answer_words) <= 15:
+    if _has_denial and not _has_continuation and len(_answer_words) <= 30:
         logger.info("[EVAL] short-circuit: pure denial (%r)", candidate_answer[:60])
         return {
             "clarity": 0, "depth": 0, "specificity": 0, "grounding": 0, "overall": 0.0,
