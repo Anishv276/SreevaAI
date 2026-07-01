@@ -161,11 +161,15 @@ SIGNAL_DEFINITIONS = {
 def _build_signal_prompt_block() -> str:
     return """\
 -- SIGNAL DETECTION (GATE CHECK) --
-Do NOT jump to a signal. First answer the discriminating facts in order. The FIRST gate that
-fires decides the signal — STOP there. Fill "gate_check" with your answers, THEN the signal.
+Work through EACH gate in ORDER G1→G2→G3→G4→G5→G6. The FIRST gate that fires decides the
+signal — STOP there and do NOT check later gates. Fill "gate_check" with your yes/no answers
+for ALL gates you checked, then put the resolved signal in the SEPARATE "signal" field.
 
-The gates are ordered MOST-OBJECTIVE-FIRST on purpose. Team pronouns and named tools are objective
-facts — they are checked BEFORE the softer "was this an example or a habit" judgment.
+CRITICAL GATE PRIORITY: G1 through G5 OUTRANK G6. If ANY of G1-G5 fires, you MUST use that
+signal. G6 (scenario_untested) is ONLY reachable when G1=no AND G2=no AND G3 bold_claim=no
+AND G4 tool_named=no AND G5 wanted_instance=no or general_habit=no. If you find yourself
+writing G6=yes while an earlier gate also has evidence, you have made an error — go back and
+check the earlier gate again. scenario_untested is NOT a fallback for "vague" answers.
 
 Write gate_check in EXACTLY this format (yes/no + the words that prove each).
 Do NOT put the signal name inside gate_check — the signal goes in the SEPARATE "signal" field.
@@ -180,12 +184,12 @@ ANSWER EACH GATE LITERALLY — quote the words that decide it:
 
   G1 — ran_out: did they try to answer then trail off, give a one-word reply, or say "I don't have
        much idea" AFTER attempting? (NOT a flat "I don't know" with zero attempt.)
-       → if yes: SIGNAL = depth_ceiling_hit. STOP.
+       → if yes: SIGNAL = depth_ceiling_hit. STOP. Do NOT check G2-G6.
 
   G2 — team_only: is EVERY action verb "we / team / they / teammates / our group / the committee",
        with NO "I did / I built / I handled / I decided / I ran"? Look at WHO did each action.
        ("I didn't know X" is NOT a personal contribution — team_only can still be yes.)
-       → if team_only=yes AND no bold "I built it all" claim: SIGNAL = ownership_ambiguous. STOP.
+       → if team_only=yes AND no bold "I built it all" claim: SIGNAL = ownership_ambiguous. STOP. Do NOT check G3-G6.
        THIS GATE OUTRANKS the example/habit gate (G5). A "we did it together" answer is
        ownership_ambiguous, NOT example_evaded — even if it also sounds vague or generic.
        This includes team ACHIEVEMENT answers — "we doubled the leads", "the team hit quota",
@@ -195,7 +199,7 @@ ANSWER EACH GATE LITERALLY — quote the words that decide it:
        at X", "I always do the best Y", "I single-handedly...", "I never lose...".
        has_substance: is it backed by even ONE real internal — a decision, constraint, number,
        mechanism, or real outcome?
-       → if bold_claim=yes AND has_substance=no: SIGNAL = explanation_shallow. STOP.
+       → if bold_claim=yes AND has_substance=no: SIGNAL = explanation_shallow. STOP. Do NOT check G4-G6.
 
   G4 — tool_named: is a specific tool / method / framework / process named (PyTorch, Salesforce,
        MEDDIC, HubSpot, AARRR, Greenhouse, a named framework)?
@@ -203,28 +207,30 @@ ANSWER EACH GATE LITERALLY — quote the words that decide it:
        configured/tracked/sourced/deployed X with it"? (A pure definition "X is a framework that..." or
        a bare list "we used A, B, C" = usage_shown NO.)
        reason_given: did they say WHY that tool over alternatives?
-       → if tool_named=yes AND usage_shown=no: SIGNAL = tool_named_not_used. STOP.
-       → if tool_named=yes AND usage_shown=yes AND reason_given=no: SIGNAL = tech_choice_unjustified. STOP.
+       → if tool_named=yes AND usage_shown=no: SIGNAL = tool_named_not_used. STOP. Do NOT check G5-G6.
+       → if tool_named=yes AND usage_shown=yes AND reason_given=no: SIGNAL = tech_choice_unjustified. STOP. Do NOT check G5-G6.
        → if tool_named=yes AND usage_shown=yes AND reason_given=yes: continue to G5.
 
   G5 — wanted_instance: did the QUESTION ask for a specific past time/example/story
        ("tell me about a time", "a specific deal", "a time a candidate...")?
        general_habit: is the ANSWER FIRST-PERSON habit language — "I usually...", "I normally...",
        "I always...", "I just..." — describing what THEY personally tend to do?
-       → if BOTH yes AND no real instance given: SIGNAL = example_evaded. STOP.
+       → if BOTH yes AND no real instance given: SIGNAL = example_evaded. STOP. Do NOT check G6.
        NOTE: an impersonal recipe ("you do X, then Y, then Z") is NOT first-person habit — that is G6.
        NOTE: a team-credit answer ("we doubled the leads", "the team hit quota") is G2, already handled above.
 
-  G6 — correct_but_generic: is the answer an impersonal, technically-correct process recipe — a "you do
-       X, then Y, then Z" list, or a clean textbook flow — with no named tool to chase, no first-person
-       personal claim, and no real specific event?
+  G6 — correct_but_generic: ONLY check this gate if G1=no AND G2=no AND G3 bold_claim=no AND
+       G4 tool_named=no AND G5 fired=no. Is the answer an impersonal, technically-correct process
+       recipe — a "you do X, then Y, then Z" list, or a clean textbook flow — with no named tool,
+       no first-person personal claim, and no real specific event?
        (e.g. "you prospect, qualify, do discovery, present, handle objections, then close" /
         "you define the audience, set the goal, create content, launch, measure ROI")
-       → if yes: SIGNAL = scenario_untested. STOP.
+       → if yes (AND all earlier gates were no): SIGNAL = scenario_untested. STOP.
 
   If no gate fired → SIGNAL = null.
 
 THE SIGNAL YOU OUTPUT MUST EQUAL THE ONE YOUR GATE CHECK LANDED ON. No exceptions.
+If G6 fires but an earlier gate could also have fired, go back and use the earlier gate's signal.
 
 SIGNAL REASON RULE:
   signal_reason = ONE short exact quote (3-12 words) from their actual words that proves the signal.
@@ -347,9 +353,11 @@ async def evaluate_answer(
         if signals_already_fired:
             ctx += (
                 f"Signals already fired on this topic, in order: {', '.join(signals_already_fired)}.\n"
+                "IMPORTANT: You must still work through the gate check in order (G1\u2192G2\u2192G3\u2192G4\u2192G5\u2192G6). "
                 "Do not fire the same signal again unless this answer has a genuinely NEW instance of that "
-                "gap distinct from what already fired. Prefer a different signal from the 7 available — "
-                "each fires on a different answer shape, so a repeat usually means you should look harder.\n"
+                "gap distinct from what already fired. If the same gate fires again, look harder at the OTHER "
+                "gates — each fires on a different answer shape. "
+                "Do NOT skip directly to scenario_untested just because earlier signals have already fired.\n"
             )
         ctx += (
             "Tag context: RESUME_TOPIC = they claimed this experience, hold them to it. "
@@ -439,7 +447,7 @@ async def evaluate_answer(
             client.chat.completions.create(
                 model=llm_model,
                 temperature=EVAL_TEMPERATURE,
-                max_tokens=320,  # gate_check reasoning (~60 tok) is emitted before signal — needs headroom
+                max_tokens=400,  # gate_check reasoning (~80 tok) is emitted before signal — raised from 320 to prevent truncation cutting off signal field
                 stream=True,
                 messages=[
                     {
