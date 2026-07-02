@@ -190,8 +190,6 @@ class CoveredTopics:
             }
             for rec in self._store.values()
         ]
-
-    def get_memory_block(self, *, limit: int = 10) -> str:
         """
         Returns a formatted block for LLM directive injection.
 
@@ -499,7 +497,11 @@ def _build_probe_directive(
 
     # Filler guidance — classify prev answer intent so Ishita's reaction is connected
     _prev_lower = (prev_answer or "").lower().strip()
-    if not _prev_lower or any(p in _prev_lower for p in ("i don't know", "i forgot", "i don't remember", "not sure", "can't recall")):
+    _is_clarification_ask = any(p in _prev_lower for p in ("are you asking", "you're asking", "do you mean", "what do you mean", "which", "can you clarify"))
+
+    if _is_clarification_ask:
+        _filler_hint = "CLARIFICATION DETECTED: They didn't understand your question. Rephrase it MORE SIMPLY and anchor the topic name explicitly."
+    elif not _prev_lower or any(p in _prev_lower for p in ("i don't know", "i forgot", "i don't remember", "not sure", "can't recall")):
         _filler_hint = "FILLER: 'No worries.' or 'Fair enough.' — they couldn't recall."
     elif len(_prev_lower.split()) <= 8:
         _filler_hint = "FILLER: 'Hmm, okay.' or 'Right.' — short answer, acknowledge briefly."
@@ -540,12 +542,24 @@ def _build_probe_directive(
     if coverage_memory:
         parts_out.append(coverage_memory)
 
+    if _is_clarification_ask:
+        parts_out += [
+            "REPHRASE REQUIRED: They asked for clarification — your question was unclear.",
+            f"Ask the SAME thing but MUCH SIMPLER. Lead with '{_topic_short}' explicitly so there's no confusion.",
+            "Example: Instead of 'How did you handle X?', say: 'With {topic_short}, what's one thing you actually did yourself?'",
+            "One short phrase to acknowledge, then the simpler question.",
+            "",
+        ]
+    else:
+        parts_out += [
+            "NOW: React to what they said (one short phrase), then ask your follow-up question.",
+            "One question mark. Never two questions in one turn.",
+            "The question can have 1-3 sentences of natural setup before the actual question — that's fine.",
+            "Grounded in what they just told you. Never 'Can you' or 'Could you'. Never 'Great!' or 'Awesome!'.",
+            "",
+        ]
+
     parts_out += [
-        "NOW: React to what they said (one short phrase), then ask your follow-up question.",
-        "One question mark. Never two questions in one turn.",
-        "The question can have 1-3 sentences of natural setup before the actual question — that's fine.",
-        "Grounded in what they just told you. Never 'Can you' or 'Could you'. Never 'Great!' or 'Awesome!'.",
-        "",
         f"ANCHOR: Mention '{_topic_short}' by name somewhere in your question so the candidate knows exactly what you're asking about.",
         f"Do NOT ask about it without anchoring the topic name — they need context to understand.",
         "",
@@ -2211,8 +2225,7 @@ async def entrypoint(ctx: JobContext):
         """Single entry point for all topic completion — covered, denied, skipped, all go here.
 
         questions_asked: the questions Ishita asked on THIS topic. They are stored on the
-        CoverageRecord and surfaced in get_memory_block() as GLOBAL forbidden questions, so
-        the same concept is never re-asked under a later topic.
+        stored in CoveredTopics._store for report rendering only.
         """
         if not topic:
             return
@@ -2820,6 +2833,15 @@ async def entrypoint(ctx: JobContext):
                     logger.info(
                         "[SIGNAL] turn=%d | fired=%r | reason=%r",
                         turn_snapshot, _eval_signal, _eval_signal_reason or ""
+                    )
+                    spawn_background_task(
+                        log_test_event(
+                            app_id, 
+                            "signal_fired", 
+                            f"Signal: {_eval_signal}", 
+                            {"reason": _eval_signal_reason or "No reason provided"}
+                        ),
+                        "test_event_signal"
                     )
                 else:
                     logger.debug("[SIGNAL] turn=%d | none fired", turn_snapshot)
@@ -3716,7 +3738,9 @@ async def entrypoint(ctx: JobContext):
             is_agent_speaking = False
             if first_agent_turn_committed_at is None:
                 first_agent_turn_committed_at = time.monotonic()
-            logger.debug("[NUDGE] AI finished speaking; waiting for assistant prompt commit")
+            # Start inactivity countdown immediately when AI finishes speaking
+            reset_inactivity_clock(start_waiting=True, preserve_nudge_flags=False)
+            logger.debug("[NUDGE] AI finished speaking; inactivity countdown started")
     # Wait for participant to join so we have their identity for tracking.
     # Keep waiting during hardware check and handle room-disconnect gracefully.
     async def wait_for_human_participant(max_wait_seconds: int = 600):
