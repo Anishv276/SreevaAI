@@ -4027,22 +4027,28 @@ async def entrypoint(ctx: JobContext):
             if awaiting_candidate_response and awaiting_candidate_since is not None
             else 0.0
         )
-        # NOTE: deliberately does NOT check agent._waiting_for_eval. That gate is
-        # pre-closed the instant any interview question is delivered (see
-        # "[LLM_GATE] Pre-cleared after interview question delivery" / turn_count==2
-        # warmup gate) -- BEFORE the candidate has said anything, in anticipation of an
-        # eval call that only starts once they actually speak. If the candidate stays
-        # silent, that gate never gets released (nothing triggers eval), so gating
-        # nudges on it meant inactivity nudges/warning/end never fired during real
-        # silence -- exactly the "inactivity not firing" symptom. Nudges are delivered
-        # via a separate session.say() path (_deliver_nudge) that doesn't touch
-        # _directive_ready/_waiting_for_eval, so there's no actual conflict with a
-        # genuinely in-flight eval call to guard against here.
+        # agent._waiting_for_eval is closed in two different situations that must be
+        # told apart:
+        #   1. A question was just delivered and the candidate hasn't answered yet
+        #      (pre-closed defensively so llm_node can't race ahead -- see
+        #      "[LLM_GATE] Pre-cleared after interview question delivery"). Here
+        #      _candidate_turn_since_last_assistant is False (no reply since the AI
+        #      last spoke) -- nudges MUST still fire on real candidate silence, or the
+        #      "inactivity never fires" bug comes back.
+        #   2. The candidate JUST answered and eval/probe-directive generation is
+        #      genuinely in flight (_candidate_turn_since_last_assistant is True, set
+        #      the moment their turn was processed). Here is_agent_speaking is still
+        #      False (TTS hasn't started -- the LLM is still generating the reply
+        #      text), so without this check a nudge can fire in that processing gap
+        #      even though the candidate did answer and a reply is on its way.
+        # Only situation 2 should block nudges.
+        _eval_in_flight_after_reply = agent._waiting_for_eval and _candidate_turn_since_last_assistant
         _silence_active = (
             not is_agent_speaking
             and not is_candidate_speaking
             and awaiting_candidate_response
             and inactivity_elapsed >= INACTIVITY_NUDGE_SECS
+            and not _eval_in_flight_after_reply
         )
         # Log timing every 5 seconds so we can verify nudge schedule
         if int(inactivity_elapsed) % 5 == 0 and inactivity_elapsed >= 5:

@@ -229,17 +229,26 @@ If G0a-G0e = NO: continue to G1.
 
 ---- CONTENT-LEVEL GATES (G1-G6) — only if G0 fires = NO ----
 
-G1 — DEPTH_CEILING_HIT: Did they TRY to answer but run out of knowledge?
-     Not a flat "I don't know" — they ATTEMPTED then trailed off.
+G1 — DEPTH_CEILING_HIT: Did they name a SPECIFIC technical/procedural detail (a tool,
+     a step, a mechanism) and THEN run out of knowledge partway through explaining it?
+     Not a flat "I don't know" — they ATTEMPTED then trailed off mid-explanation.
      "I used FAISS but I don't really have a lot of idea how indexing works"
+     NOT this if the answer is only a bare ownership/effort claim with ZERO specific
+     technical detail — "I did everything on my own" / "I built it all myself" /
+     "I handled everything" name no tool, step, or mechanism at all, so there is
+     nothing to have "run out of" mid-explanation. That is G3, not G1, even if it
+     sounds like a stop/trail-off in tone. G1 requires real substance BEFORE the gap.
      → YES: SIGNAL = depth_ceiling_hit. STOP.
 
 G2 — OWNERSHIP_AMBIGUOUS: Is EVERY action "we/team/they" with NO "I did/decided/built"?
      "We built the pipeline, the team set up the store, they handled deployment"
      → YES: SIGNAL = ownership_ambiguous. STOP.
 
-G3 — EXPLANATION_SHALLOW: Loud personal claim + hollow explanation?
+G3 — EXPLANATION_SHALLOW: Loud personal claim + hollow explanation, including a bare
+     repeated ownership assertion with no technical detail at all?
      "I built it all, it's a RAG system" [claims everything, explains nothing]
+     "I did everything on my own" / "I handled everything myself" [claims ownership,
+     names zero tools/steps/mechanisms — this is G3, not depth_ceiling_hit]
      → YES: SIGNAL = explanation_shallow. STOP.
 
 G4 — TOOL_NAMED_NOT_USED: Named a specific tool but ZERO evidence of using it?
