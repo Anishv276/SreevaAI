@@ -3254,6 +3254,11 @@ async def entrypoint(ctx: JobContext):
         # Warmup ends when the candidate signals they are ready to begin.
         # We detect this by checking their response for readiness markers.
         # This fires from turn 2 onward — greeting (turn 1) is never a readiness signal.
+        # Close the gate immediately so llm_node cannot race ahead and generate the
+        # next turn before we've decided completing_warmup and injected the directive.
+        if not warmup_complete:
+            agent._waiting_for_eval = True
+            agent._directive_ready.clear()
         _warmup_readiness_markers = (
             "yes", "yeah", "yep", "ready", "let's go", "lets go", "go ahead",
             "sure", "ok", "okay", "absolutely", "of course", "let's begin",
@@ -3287,6 +3292,25 @@ async def entrypoint(ctx: JobContext):
             # The LLM will open with the anchor topic on the next turn.
             chat_ctx.add_message(role="system", content=interview_directive_cached)
             logger.info("[WARMUP] First interview directive injected at turn=%d | ready to ask anchor topic", turn_snapshot)
+            agent._waiting_for_eval = False
+            agent._directive_ready.set()
+        elif not warmup_complete:
+            # Candidate answered the warmup question but didn't signal readiness yet
+            # (e.g. "I'm doing great" instead of "yes"/"ready"). Ishita should ask a
+            # natural follow-up / re-confirm readiness rather than staying silent —
+            # release the gate we closed above so the LLM can respond to what they said.
+            remove_system_messages(chat_ctx, "[PHASE_STATUS]")
+            chat_ctx.add_message(
+                role="system",
+                content=(
+                    "[PHASE_STATUS -- DO NOT SAY ALOUD]\n"
+                    "GREETING: DONE. WARMUP QUESTION: ALREADY ASKED.\n"
+                    "The candidate replied but did not clearly confirm they're ready to begin.\n"
+                    "React briefly and naturally to what they said, then ask if they're ready to start.\n"
+                    "Do NOT re-introduce yourself or repeat the full warmup question verbatim."
+                ),
+            )
+            logger.info("[WARMUP] Candidate answered but did not signal readiness at turn=%d — re-prompting", turn_snapshot)
             agent._waiting_for_eval = False
             agent._directive_ready.set()
     agent._completed_user_turn_handler = _handle_completed_user_turn
