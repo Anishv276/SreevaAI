@@ -4,7 +4,7 @@ Scores the candidate's answer on the current topic.
 Returns: scores, one signal + reason, saturation state, action (PROBE/MOVE_ON).
 
 Architecture:
-  evaluate_answer()   — single LLM call: scores + detects ONE signal with reason
+  evaluate_answer()   — two parallel LLM calls: scores answer, detects ONE signal with reason
   TopicState          — per-topic saturation tracking
   run_eval_and_build_directive() — orchestrates everything, returns result dict to agent
 """
@@ -76,14 +76,11 @@ class TopicState:
         self.opened_at_turn = 0
         self.signals_fired: list[str] = []
 
-        # Dry-topic exit tracking.
-        # consecutive_low_yield: resets on any good answer — catches "I don't know" streaks.
-        # total_low_yield: never resets — catches game-players who slip one decent answer in
-        #   between repeated weak answers to avoid the consecutive streak firing.
-        # cap = 2 for all bands (fresher included: research says freshers need MORE leeway, not less).
-        self.consecutive_low_yield = 0
-        self.total_low_yield = 0
-        self.dry_topic_cap = 2
+        # Dry-topic: if two consecutive answers score 0, candidate is stuck on this topic.
+        self.last_score = None
+
+        # Response signal tracking: if clarification_request fires twice, escalate to MOVE_ON
+        self.clarification_request_count = 0
 
     # Weak-exit checkpoints per importance: (turn3_floor, turn5_floor).
     # CRITICAL topics need stronger evidence before early exit (more behavioral data points required
@@ -109,16 +106,8 @@ class TopicState:
         )
 
     def is_dry_topic(self) -> bool:
-        if self.follow_up_turns < self.dry_topic_cap:
-            return False
-        # Two ways to fire:
-        # 1. Consecutive streak: 2 bad answers back-to-back → clearly stuck, exit now.
-        # 2. Total burden: 3+ total weak answers regardless of order → game-play (bad/decent/bad/decent/bad)
-        #    is caught here even when the streak keeps resetting.
-        return (
-            self.consecutive_low_yield >= self.dry_topic_cap or
-            self.total_low_yield >= 3
-        )
+        # Two consecutive answers with score 0 → candidate is stuck, move on.
+        return self.last_score == 0.0 and self.follow_up_turns >= 2
 
     def add_contribution(self, weighted: float, signal: str | None, turn: int | None = None) -> None:
         contribution = max(0.0, _score_to_contribution(weighted))
@@ -128,11 +117,8 @@ class TopicState:
         self.is_saturated = self.saturation_score >= self.saturation_threshold
         if signal:
             self.signals_fired.append(signal)
-        if weighted <= 1.0:
-            self.consecutive_low_yield += 1
-            self.total_low_yield += 1
-        else:
-            self.consecutive_low_yield = 0
+        # Track last score for dry_topic detection (two consecutive 0s)
+        self.last_score = weighted
         if turn is not None:
             self.updated_turn = turn
 
@@ -148,9 +134,8 @@ class TopicState:
             "signals_fired":       self.signals_fired,
             "is_saturated":        self.is_saturated,
             "updated_turn":        self.updated_turn,
-            "consecutive_low_yield":self.consecutive_low_yield,
-            "total_low_yield":     self.total_low_yield,
-            "dry_topic_cap":       self.dry_topic_cap,
+            "last_score":          self.last_score,
+            "clarification_request_count": self.clarification_request_count,
         }
 
     @classmethod
@@ -166,10 +151,8 @@ class TopicState:
         obj.is_saturated        = bool(d.get("is_saturated", False))
         obj.signals_fired       = list(d.get("signals_fired", []) or [])
         obj.opened_at_turn      = int(d.get("opened_at_turn", 0) or 0)
-        obj.consecutive_low_yield = int(d.get("consecutive_low_yield", 0) or 0)
-        obj.total_low_yield       = int(d.get("total_low_yield", 0) or 0)
-        if "dry_topic_cap" in d:
-            obj.dry_topic_cap = int(d["dry_topic_cap"])
+        obj.last_score          = float(d.get("last_score")) if d.get("last_score") is not None else None
+        obj.clarification_request_count = int(d.get("clarification_request_count", 0) or 0)
         if "saturation_threshold" in d:
             obj.saturation_threshold = float(d["saturation_threshold"])
         if "base_turn_credit" in d:
@@ -285,14 +268,18 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     logger.info("[QA] turn=%d  Q: %s\n              A: %s",
                 p.turn, (p.question or "")[:200], (p.answer or "")[:200])
 
-    # -- Run scoring (single LLM call: scores + signal) -----------------------
+    # -- Run scoring (two parallel LLM calls: score + signal) -----------------
     _captured_usage: list[dict] = []
 
     async def _score_and_capture(**kwargs):
         result = await evaluate_answer(**kwargs)
         usage = result.pop("_llm_usage", None)
-        if usage and (usage.get("inputTokens") or usage.get("outputTokens")):
-            _captured_usage.append(usage)
+        # evaluate_answer returns a list of up to 2 usage dicts (score call + signal
+        # call) on the success path, or a single dict/None on the short-circuit paths.
+        usages = usage if isinstance(usage, list) else ([usage] if usage else [])
+        for u in usages:
+            if u.get("inputTokens") or u.get("outputTokens"):
+                _captured_usage.append(u)
         return result
 
     _follow_up_count = (current_topic_state.follow_up_turns + 1) if current_topic_state else 0
@@ -344,11 +331,13 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
     quality = {k: raw.get(k, 0.0) for k in ("clarity", "depth", "specificity", "grounding")}
     _weighted = _weighted_score(quality)
     action: str = str(raw.get("action", "PROBE")).upper()
-    if action not in ("PROBE", "MOVE_ON"):
+    valid_actions = ("PROBE", "MOVE_ON", "REPHRASE", "REDIRECT", "ACCEPT_REPHRASE", "CAP_SCORES")
+    if action not in valid_actions:
         action = "PROBE"
-    # forced_action = deterministic short-circuit (warmup/empty/explicit-denial), not
-    # the LLM's free-choice judgment -- only this can move on outside dry/weak/saturated.
-    _forced_move_on = bool(raw.get("forced_action")) and action == "MOVE_ON"
+    # forced_action = deterministic short-circuit (response signals: pure_denial/clarification_request/etc)
+    # Response signals override saturation logic (don't need to check dry_topic/weak_exit if pure_denial fires).
+    forced_action = bool(raw.get("forced_action"))
+    _forced_response_signal = forced_action and action in ("MOVE_ON", "REPHRASE", "REDIRECT", "ACCEPT_REPHRASE")
 
     signal: str | None = raw.get("signal")
     signal_reason: str | None = raw.get("signal_reason")
@@ -364,6 +353,14 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
                 p.turn, action, signal or "none", _weighted)
     if signal:
         logger.info("[SIGNAL] %s | reason=%r", signal, signal_reason)
+
+    # -- Track response signal patterns -----------------------------------------------
+    # If clarification_request fires twice, escalate to MOVE_ON (question is unclear or candidate confused)
+    if current_topic_state and signal == "clarification_request":
+        current_topic_state.clarification_request_count += 1
+    elif current_topic_state and signal != "clarification_request":
+        # Reset counter on any other signal
+        current_topic_state.clarification_request_count = 0
 
     # -- Update saturation state ----------------------------------------------
     if current_topic_state:
@@ -385,15 +382,23 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
                     pct_done, sat_score, remaining,
                     current_topic_state.importance if current_topic_state else "?")
 
-    # -- Decision (priority order; LLM's free-choice judgment no longer used) ----
-    if _forced_move_on:
+    # -- Decision (priority order; response signals override saturation) ----
+    # Response signals (pure_denial, clarification_request, etc) fire immediately with forced_action=True.
+    # They override saturation logic entirely — no need to check dry_topic/weak_exit/saturated.
+    # ESCALATION: if clarification_request or rephrase_request fires 2+ times, upgrade to MOVE_ON
+    _escalate_to_move_on = False
+    if _forced_response_signal and current_topic_state:
+        if action == "REPHRASE" and current_topic_state.clarification_request_count >= 2:
+            action = "MOVE_ON"
+            _escalate_to_move_on = True
+            logger.info("[DECISION] MOVE_ON reason=clarification_escalation (asked 2x) turn=%d", p.turn)
+        else:
+            logger.info("[DECISION] %s (forced response signal) reason=%s turn=%d", action, raw.get("reason", "forced"), p.turn)
+    elif _forced_response_signal:
+        logger.info("[DECISION] %s (forced response signal) reason=%s turn=%d", action, raw.get("reason", "forced"), p.turn)
+    elif not _escalate_to_move_on and _dry_topic:
         action = "MOVE_ON"
-        logger.info("[DECISION] MOVE_ON reason=%s turn=%d", raw.get("reason", "forced"), p.turn)
-    elif _dry_topic:
-        action = "MOVE_ON"
-        logger.info("[DECISION] MOVE_ON reason=dry_topic (consecutive=%d total=%d cap=%d) turn=%d",
-                    current_topic_state.consecutive_low_yield, current_topic_state.total_low_yield,
-                    current_topic_state.dry_topic_cap, p.turn)
+        logger.info("[DECISION] MOVE_ON reason=dry_topic (two consecutive zero scores) turn=%d", p.turn)
     elif _weak_exit:
         action = "MOVE_ON"
         logger.info("[DECISION] MOVE_ON reason=weak_exit turn=%d", p.turn)

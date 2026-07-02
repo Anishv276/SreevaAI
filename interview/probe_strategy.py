@@ -3,9 +3,10 @@ probe_strategy.py
 One probe per signal. Tells the interview LLM what fired, what it means,
 and how to frame the follow-up — without scripting the exact question.
 
-Signal names MUST match SIGNAL_DEFINITIONS keys in agent_scoring.py:
-  example_evaded, depth_ceiling_hit, ownership_ambiguous, explanation_shallow,
-  tool_named_not_used, tech_choice_unjustified, scenario_untested
+Signal names match two types:
+  RESPONSE signals (fired by G0 gates): pure_denial, denial_with_continuation, clarification_request, rephrase_request, off_topic
+  CONTENT signals (fired by G1-G7 gates): example_evaded, depth_ceiling_hit, ownership_ambiguous, explanation_shallow,
+                                            tool_named_not_used, tech_choice_unjustified, scenario_untested
 """
 from __future__ import annotations
 
@@ -28,20 +29,94 @@ from __future__ import annotations
 
 SIGNAL_PROBES: dict[str, dict] = {
 
+    # ---- RESPONSE-LEVEL SIGNALS (G0) ----
+    # pure_denial fires: automatic MOVE_ON, no probe needed
+    # clarification_request and rephrase_request: LLM needs to know what to ask
+
+    "clarification_request": {
+        "what":          "Candidate asked you to clarify or rephrase the question.",
+        "goal":          "Ask the same question again, but in simpler, clearer language.",
+        "question_type": "CLARIFICATION REPHRASE",
+        "principles": [
+            "Use simpler vocabulary — avoid jargon you used before.",
+            "Break the question into smaller parts if it was complex.",
+            "Give a concrete example or context to anchor it.",
+            "Make it obvious what you're asking for — be direct.",
+        ],
+        "voice_note":    "Helpful and patient. A real interviewer might say: 'Sure, let me rephrase that. What I meant was...'",
+        "skip":          "Never ask the exact same question again. Never sound frustrated or annoyed. "
+                         "Never explain why they didn't understand the first time.",
+    },
+
+    "rephrase_request": {
+        "what":          "Candidate asked to restart or correct their own answer.",
+        "goal":          "Listen to their new answer instead of the first one. Treat this as their real answer.",
+        "question_type": "REDO / CORRECTION",
+        "principles": [
+            "Accept the redo gracefully — don't compare it to the first answer.",
+            "Score this new answer fresh, not against what they said before.",
+            "If the new answer is better, use it. If it's the same, that's fine too.",
+            "Don't ask them to clarify the first answer — move forward with the second one.",
+        ],
+        "voice_note":    "Encouraging and open. A real interviewer might say: 'Of course, go ahead. Take your time.'",
+        "skip":          "Never say 'you said X before, but now you're saying Y'. "
+                         "Never judge them for changing their answer. "
+                         "This is about them getting it right, not catching inconsistencies.",
+    },
+
+    "off_topic": {
+        "what":          "Candidate answered a different question than what you asked.",
+        "goal":          "Redirect them back to your original question clearly.",
+        "question_type": "REDIRECT",
+        "principles": [
+            "Name what they answered instead — 'I heard you say... but I was asking about...'",
+            "Re-ask your original question, word-for-word if needed.",
+            "Make it clear you value what they said, but need to stay on track.",
+            "Don't make them feel bad for the pivot — it happens.",
+        ],
+        "voice_note":    "Warm and direct. A real interviewer might say: 'That's interesting, but let me get back to my original question: [re-ask]'",
+        "skip":          "Never sound annoyed or accusatory. Never dismiss what they said. "
+                         "Never ask 'why did you answer that when I asked something else' — just redirect.",
+    },
+
+    "denial_with_continuation": {
+        "what":          "Candidate started with denial ('I don't...') but then added substantive content.",
+        "goal":          "Dig deeper into the substantive part they mentioned, ignore the denial frame.",
+        "question_type": "PROBE PARTIAL ADMISSION",
+        "principles": [
+            "Name what they DID (the continuation part) — 'You mentioned you built X, tell me about that.'",
+            "Ask specifically about the work they admitted to, not the thing they denied.",
+            "Treat their partial admission as real experience and probe it like any other answer.",
+            "Don't dwell on the denial — move straight to what they actually did.",
+        ],
+        "voice_note":    "Direct and forward-looking. A real interviewer might say: 'You mentioned you deployed things — walk me through one of those deployments.'",
+        "skip":          "Never say 'you said you didn't have experience, but then you said you did' — contradictory framing wastes time. "
+                         "Never make them defend the contradiction. Just ask about what they actually did.",
+    },
+
+    # ---- CONTENT-LEVEL SIGNALS (G1-G7) ----
+
     "example_evaded": {
         "what":          "They gave a general rule or habit when a real story was asked for.",
         "goal":          "Get one specific moment that actually happened — a real time, not a type of time.",
         "question_type": "MEMORY RETRIEVAL",
         "principles": [
-            "Pin it to a specific moment — 'one time', 'a specific project', 'that one instance'.",
+            "FIRST PROBE: Pin it to a specific moment — 'one time', 'a specific project', 'that one instance'.",
             "Name something they said and ask when that actually happened.",
             "Invite imperfection — real memories have friction. Ask what went wrong or surprised them.",
             "Make it impossible to answer with 'usually' again — force a time and place.",
+            "ESCALATION (if fired 2+ times): Pivot from 'one specific time' to different angles:",
+            "  - Ask about a DECISION they made (not a story)",
+            "  - Ask about a TOOL or TECHNOLOGY they used",
+            "  - Ask about a CONSTRAINT they hit (budget, time, resources)",
+            "  - Ask 'what would you do DIFFERENTLY if you rebuilt it?' (reflection, not memory)",
         ],
         "voice_note":    "Sound curious, not accusatory. You want the story, not to catch them out. "
-                         "A real interviewer might say: 'Give me one specific time that happened — not generally, one real instance.'",
+                         "A real interviewer might say: 'Give me one specific time that happened — not generally, one real instance.' "
+                         "OR if they keep evading: 'Forget the story. What was ONE DECISION you personally made on that? "
+                         "Or what broke? Or what tool did you have to use?'",
         "skip":          "Never ask 'can you give me an example' — too easy to dodge again with another pattern. "
-                         "Never repeat the original question. Force specificity, not more explanation.",
+                         "Never repeat the same angle 3+ times — pivot to decision/tool/constraint/reflection angles instead.",
     },
 
     "depth_ceiling_hit": {
@@ -68,10 +143,20 @@ SIGNAL_PROBES: dict[str, dict] = {
             "Frame it so 'we' is not a valid answer — ask for their specific action or output.",
             "Tie the question to the topic and context, not a generic 'what did you do'.",
             "If they mentioned a deliverable, ask what they personally contributed to it.",
+            "VARY the angle each time this fires — never fall back to the same canned "
+            "'what was specifically yours?' line. Rotate between: naming a piece they mentioned and "
+            "asking what they did on it; asking which decision in the process was theirs to make; "
+            "asking what they'd have done differently if they'd been alone on it; asking what part "
+            "they'd be able to rebuild from scratch without the team.",
         ],
-        "voice_note":    "Direct but not aggressive. A real interviewer might say: 'Out of everything you described, what was the piece that was specifically yours?'",
+        "voice_note":    "Direct but not aggressive. Examples of DIFFERENT angles a real interviewer might use "
+                         "(pick whichever fits their actual answer, don't default to the first one every time): "
+                         "'Out of everything you described, which piece did you personally drive end to end?' / "
+                         "'If the team wasn't there, what part could you have built alone?' / "
+                         "'Which of those decisions was actually yours to make?'",
         "skip":          "Never ask 'what was your role' — that is what got you here. "
-                         "Never ask about the team again. Never use a generic anchor like 'what did you build' — "
+                         "Never ask about the team again. Never use a generic anchor like 'what did you build', "
+                         "and never repeat the exact same probe wording twice in one interview — "
                          "ground it in something specific from their actual answer.",
     },
 

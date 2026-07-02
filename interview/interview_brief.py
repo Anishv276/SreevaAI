@@ -114,13 +114,11 @@ No raw JSON. No parsing needed. Your jobs:
 If a resume skill appears in the JD must-haves → tag=RESUME_TOPIC, is_jd_must_have=true (resume wins)
 If a JD requirement is not on the resume → tag=JD_TOPIC
 
-━━━ TOPIC COUNT ━━━
-Every project → TopicItem. Every work entry → TopicItem.
-Every resume skill → TopicItem (unless already in skill_coverage_map for a listed project).
-Every JD must-have → TopicItem (merge with resume item if same concept).
-ROLE_TOPIC count: EXACTLY 2. No more, no fewer. Pick the 2 most important role-depth
-checks for this role — the concepts that best separate a strong hire from a weak one.
-Return all resume and JD topics, but exactly 2 ROLE_TOPICs.
+━━━ TOPIC COUNT — HARD CAP ━━━
+topic_pool must contain 10–12 TopicItems TOTAL (including anchor + role topics).
+This is a hard ceiling, not a suggestion. If more candidate material exists
+than fits, DROP the lowest-relevance items — do not exceed 12.
+ROLE_TOPIC count: exactly 2, always included in the 10-12 total (not additional).
 
 ━━━ BAND CALIBRATION ━━━
 Each band changes: probing depth, question difficulty, what counts as a "good" answer,
@@ -161,6 +159,38 @@ SENIOR (8+ years):
     Ask what they'd do differently at the org level. Press on polished answers — something always went wrong.
     Topic count should be fewer but each explored at greater depth.
 
+━━━ BAND-DRIVEN SOURCE MIX (governs WHICH topics make the cut) ━━━
+Band changes not just depth but WHICH sources fill the 10-12 topic budget.
+Apply this priority order when selecting which extracted items become
+TopicItems (highest priority filled first, budget allows ~8-10 non-role slots):
+
+FRESHER:
+  Priority: JD topics (skills + role responsibilities) FIRST, then 2-3 resume items.
+  Take ALL JD must-haves as JD_TOPIC (merge with resume if candidate has matching
+  project/skill — then tag RESUME_TOPIC, is_jd_must_have=true).
+  Take ONLY the 2-3 strongest resume projects/skills — pick by relevance to role,
+  not recency. Do not include every resume skill; freshers list many trivial skills.
+  Mix target: ~60% JD-sourced, ~30% resume (2-3 items), ~2 role topics.
+
+MID:
+  Priority order: 1) work history (all real roles) 2) JD must-have skills
+  3) strongest 2-3 projects 4) remaining resume skills only if budget allows.
+  Work history entries are the backbone — a mid-level candidate's ownership
+  lives in their job roles, not side projects.
+  Mix target: ~40% work history, ~30% JD skills, ~20% projects, ~10% resume skills.
+
+EXPERIENCED / SENIOR:
+  Priority order: 1) work history (every real role, especially most recent/senior)
+  2) JD must-have skills reframed as judgment/architecture questions 3) role topics.
+  De-prioritize: standalone resume skill lists (skip unless it's a genuinely
+  distinguishing/rare skill), toy/personal projects (skip unless flagship).
+  Only include a project if it was a flagship initiative with org-level impact —
+  not a resume bullet.
+  Mix target: ~55% work history, ~30% JD skills (as judgment topics), ~15% role/flagship.
+
+This priority order determines what gets CUT when there is more material than
+the 10-12 budget allows — always cut from the lowest-priority source first.
+
 ━━━ ROLE_TOPIC GENERATION (critical — this is where the interview gets depth) ━━━
 Generate ROLE_TOPICs from your expert knowledge of the role. These are conceptual areas that
 every competent person in this role should know — regardless of what is on the resume or JD.
@@ -186,21 +216,34 @@ Examples by role (pick the 2 strongest for the actual role):
   Product Manager:  Discovery process and user research, Prioritization frameworks (RICE, MoSCoW), Stakeholder alignment,
                     Metrics and success definitions, Trade-off decisions under constraints
 
-━━━ DEDUP ━━━
-Resume and JD may overlap. If they name the same concept → ONE TopicItem, tag=RESUME_TOPIC, is_jd_must_have=true.
-A skill already covered by a project → add to skill_coverage_map, still create a TopicItem.
-Never two TopicItems for the same concept.
+━━━ DEDUP — NO CONCEPT MAY APPEAR TWICE ━━━
+Before finalizing topic_pool, verify: no two TopicItems test the same
+underlying concept/skill/technology, even under different titles.
+  - A "Python" resume skill entry and a resume project that used Python →
+    ONE TopicItem only (the project, with tech_stack containing "Python").
+    Do NOT also create a standalone "Python" skill topic.
+  - A JD must-have skill and a resume project/work entry that demonstrates it →
+    ONE TopicItem, tag=RESUME_TOPIC, is_jd_must_have=true (never two).
+  - Two work entries that both used the same primary tech → keep both only if
+    they represent genuinely different ownership/scope; otherwise merge.
+  - Record every skill folded into a project/work topic in skill_coverage_map
+    (skill_key -> [topic_id]) so downstream code knows it's covered, but do
+    NOT emit a separate TopicItem for it.
+This rule overrides "every project/skill -> topic" instincts. Concept coverage,
+not item count, is what matters.
 
 ━━━ MANDATORY ━━━
-  - Every project → TopicItem (topic_type="project", tag="RESUME_TOPIC")
-  - Every work entry → TopicItem (topic_type="work", tag="RESUME_TOPIC")
-  - Every resume skill → TopicItem (topic_type="skill", tag="RESUME_TOPIC") unless merged with JD
-  - Every JD must-have not on resume → TopicItem (topic_type="skill", tag="JD_TOPIC")
-  - Every JD requirement not covered above → TopicItem (topic_type="role_topic", tag="JD_TOPIC")
-  - EXACTLY 2 role-based topics from expert knowledge → TopicItems (topic_type="role_topic", tag="ROLE_TOPIC")
-  - Custom questions → TopicItems (topic_type="role_topic", tag="ROLE_TOPIC") — these are separate from the 2 ROLE_TOPICs above
-  - anchor_topic must also be the FIRST item in topic_pool
-  - topic_pool = all resume topics + all JD topics + exactly 2 ROLE_TOPICs + any custom questions
+  - Apply BAND-DRIVEN SOURCE MIX to choose which extracted items become topics.
+  - Apply DEDUP so no concept repeats across two TopicItems.
+  - Correctly tag every topic: RESUME_TOPIC (from resume), JD_TOPIC (from JD,
+    no resume match), ROLE_TOPIC (from your expert knowledge only — never
+    resume/JD content mislabeled as ROLE_TOPIC).
+  - EXACTLY 2 ROLE_TOPICs from expert knowledge, included within the 10-12 cap.
+  - Custom questions (if provided) are ALWAYS included, counted within the cap,
+    tagged ROLE_TOPIC, topic_type="role_topic" — take priority over lower-band-
+    priority resume/skill items if the cap is tight.
+  - anchor_topic must also be the FIRST item in topic_pool.
+  - topic_pool size: 10-12 TopicItems total. Hard cap, verify count before output.
   - Return ONLY valid JSON. No markdown. No explanation.
 
 Schema:

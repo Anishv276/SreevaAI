@@ -77,90 +77,41 @@ async def _validate_sarvam_api_key(api_key: str) -> bool:
 # These are words Sarvam's engine consistently mispronounces even with
 # enable_preprocessing on. Human-curated, rarely changes.
 _BASE_PRONUNCIATIONS: dict[str, str] = {
-    # Infrastructure
+    # Critical infrastructure
     "kubernetes":    "koo ber neh teez",
-    "kubectl":       "kube control",
-    "nginx":         "engine x",
-    "traefik":       "traf ik",
-    "istio":         "iss tee oh",
     "kafka":         "kaf kah",
-    "rabbitmq":      "rabbit M Q",
     "prometheus":    "proh mee thee us",
-    "grafana":       "grah fah nah",
-    "kibana":        "kih bah nah",
     "terraform":     "terra form",
-    "ansible":       "ann sih bul",
-    # Databases
+    # Essential databases
     "postgresql":    "post gres Q L",
-    "mysql":         "my S Q L",
-    "sqlite":        "S Q lite",
     "mongodb":       "mongo D B",
-    "couchdb":       "couch D B",
     "dynamodb":      "dynamo D B",
-    "supabase":      "soo pah base",
-    "prisma":        "priz mah",
-    # ML / AI libraries
+    # ML / AI core
     "pytorch":       "pie torch",
-    "scipy":         "sigh pie",
     "numpy":         "num pie",
-    "matplotlib":    "mat plot lib",
     "sklearn":       "S K learn",
-    "scikit":        "sigh kit",
-    "spacy":         "spay see",
-    "tesseract":     "tess er act",
-    "lora":          "low rah",
-    "qlora":         "Q low rah",
-    # Frameworks / libraries
+    "langchain":     "lang chain",
+    "openai":        "open A I",
+    # Popular frameworks
     "fastapi":       "fast A P I",
     "django":        "jango",
     "nextjs":        "next J S",
-    "nuxtjs":        "nuxt J S",
     "nestjs":        "nest J S",
     "vuejs":         "vue J S",
-    "svelte":        "svelt",
-    "langchain":     "lang chain",
-    "langgraph":     "lang graph",
-    "llamaindex":    "llama index",
-    "openai":        "open A I",
-    "huggingface":   "hugging face",
-    "shadcn":        "shad C N",
-    "tailwindcss":   "tailwind C S S",
-    # Tools / platforms
+    # Key platforms
     "vercel":        "ver sel",
-    "netlify":       "net lih fy",
     "heroku":        "heh roh koo",
     "datadog":       "data dog",
     "jira":          "jee rah",
-    "confluence":    "con floo ence",
-    "swagger":       "swag er",
-    "webpack":       "web pack",
-    "vite":          "veet",
-    "esbuild":       "E S build",
-    "turborepo":     "turbo repo",
-    "pnpm":          "P N P M",
-    "livekit":       "live kit",
-    "twilio":        "twil ee oh",
-    "zapier":        "zay pee er",
-    "notion":        "no shun",
-    "heyreach":      "hey reach",
-    # Protocols / formats
+    # Formats / protocols
     "graphql":       "graph Q L",
-    "grpc":          "G R P C",
     "oauth":         "oh auth",
     "yaml":          "yam ul",
-    "toml":          "tom ul",
-    # Common tech words Sarvam gets wrong
-    "pipeline":      "pipe line",
-    "nosql":         "no sequel",
+    # Common tech terms
     "devops":        "dev ops",
-    "devsecops":     "dev sec ops",
-    "vscode":        "V S code",
-    "nvim":          "N vim",
-    "regex":         "reg ex",
-    "cron":          "kron",
     "n8n":           "n eight n",
-    "make.com":      "make dot com",
-    "n8n.io":        "n eight n dot io",
+    "vscode":        "V S code",
+    "regex":         "reg ex",
     # Cloud
     "azure":         "ay zhur",
     "lambda":        "lam dah",
@@ -424,6 +375,7 @@ async def get_or_create_base_dict_id(api_key: str) -> Optional[str]:
 
     The base dict contains universal tech terms shared across all sessions.
     It is created once and reused indefinitely (env var cached).
+    If account is at dict limit, skip creation — session dicts will handle it.
     """
     existing = os.environ.get(_BASE_ENV_KEY, "").strip()
     if existing:
@@ -435,6 +387,13 @@ async def get_or_create_base_dict_id(api_key: str) -> Optional[str]:
         return None
 
     try:
+        # Check if account is at dict limit before trying to create
+        existing_ids = await _list_dicts(api_key)
+        if len(existing_ids) >= 10:
+            logger.info("[SARVAM_DICT] Account at 10-dict limit (%d dicts) — skipping base dict creation, will use session dicts",
+                       len(existing_ids))
+            return None
+
         dict_id = await _create_dict(api_key, _BASE_PRONUNCIATIONS)
         os.environ[_BASE_ENV_KEY] = dict_id
         logger.info("[SARVAM_DICT] Created base dict %s (%d words)", dict_id, len(_BASE_PRONUNCIATIONS))

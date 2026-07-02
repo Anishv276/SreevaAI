@@ -87,6 +87,18 @@ def build_interview_directive(
         f"Your ANALYST BRIEF (above) contains the exact OPENING ANGLE for this session.\n"
         f"Follow it. Open on: {anchor_name}.\n"
         f"{_first_q_rule}\n"
+        f"HOW TO WRITE THE OPENING QUESTION:\n"
+        f"  1. Read the ANCHOR CONTEXT description above and find ONE concrete detail in it — a "
+        f"specific problem it solved, a specific mechanism, a specific number/scale, a specific "
+        f"user or workflow it touched. Generic project-shaped questions ('where did you start', "
+        f"'what did you own', 'walk me through it') are BANNED — they fit any project and produce "
+        f"a small, low-content answer, which is exactly the failure mode you must avoid.\n"
+        f"  2. Build the question around that ONE concrete detail. {anchor_name} is a reference for "
+        f"you to identify the topic — mention it naturally in the question so they know what you're asking about.\n"
+        f"  3. Ask exactly ONE thing. Do not stack two questions into one turn "
+        f"(e.g. 'where did X and what did you Y' is two questions — pick one).\n"
+        f"  4. The question should be answerable ONLY by someone who actually did this specific "
+        f"work — if the same question could open literally any interview on any project, rewrite it.\n"
         f"ONE question only. Stay on {anchor_name} until a [NEXT_TURN_DIRECTIVE] tells you to move."
     )
     cq_block = _build_custom_questions_block(custom_questions)
@@ -169,99 +181,16 @@ def build_interview_directive(
             )
         else:
             skills_block = ""
-    # Band-aware coverage goals and mandatory quota.
-    # Research basis: as seniority increases, interviews shift from breadth -> depth.
-    # Fresher: cover many topics lightly (5-6), understand how they think.
-    # Mid: balance breadth + depth (4-5 topics), push ownership.
-    # Experienced: fewer topics (3-4), probe architecture/tradeoffs deeply.
-    # Senior: 2-3 critical topics, deep probing, challenge strategic judgment.
-    # NOTE: Situational and behavioral questions are NOT listed here.
-    # The probe system handles them automatically via the "pressure" family --
-    # it fires when a story is too clean, no friction, or a hard moment is needed.
-    # Listing them as a quota creates noise: the LLM tries to manually schedule them
-    # instead of letting them emerge naturally from the conversation flow.
-    coverage_goals, mandatory_quota, how_to_move_extra = {
-        "fresher": (
-            (
-                "  PHASE 1 -- PROJECTS (start here, cover all):\n"
-                "    - Open with the anchor project. 2-3 follow-ups, then move on.\n"
-                "    - Cover every other resume project in order. 2-3 follow-ups each.\n"
-                "    - If they don't remember or didn't build it -- one redirect, then move on immediately.\n"
-                "  PHASE 2 -- SKILLS (after projects):\n"
-                "    - Probe resume skills and JD skills listed in SKILLS TO COVER above.\n"
-                "    - Ask about real usage: 'Where have you actually used X?' not 'Do you know X?'\n"
-                "    - Skip any skill that already came up naturally during a project discussion.\n"
-                "  PHASE 3 -- WORK HISTORY (after skills, if time remains):\n"
-                "    - Cover work history roles. Ask what they actually owned day-to-day.\n"
-                "    - Keep it brief -- 1-2 follow-ups per role."
-            ),
-            (
-                "  ☐ All resume projects covered (anchor first, then the rest).\n"
-                "  ☐ Resume skills + JD skills probed for real usage.\n"
-                "  ☐ Work history touched if time allows.\n"
-                "  ☐ At least 1 situational question woven in naturally (e.g. 'What would you do if...').\n"
-                "  ☐ At least 1 behavioral question woven in naturally (e.g. 'Tell me about a time...')."
-            ),
-            "  -> BREADTH FIRST -- 2-3 follow-ups per topic. Move on when you have signal.\n"
-            "  -> Accept incomplete answers -- they're learning. Note gaps, don't dwell.\n"
-            "  -> If they don't know or don't remember -- one redirect, then move immediately.\n"
-            "  -> Follow the phase order: projects → skills → work history.\n",
-        ),
-        "mid": (
-            (
-                "  1) Start with the anchor. Ask what they personally owned, not what the team did.\n"
-                "  2) Cover resume items (work roles + projects) -- push past 'we' language.\n"
-                "  3) Probe JD skills as time allows -- real usage in production."
-            ),
-            (
-                "  ☐ Anchor + other resume roles/projects -- their specific contribution each time.\n"
-                "  ☐ JD skills -- probe as many as time allows, no fixed minimum.\n"
-                "  ☐ At least 1 situational or behavioral question woven in naturally."
-            ),
-            "  -> BALANCED -- 3-4 follow-ups per topic. Move on when you have clear ownership signal.\n"
-            "  -> If they say 'we', always ask: 'What was specifically yours in that?'\n"
-            "  -> If one area runs dry, move immediately to the next topic.\n",
-        ),
-        "experienced": (
-            (
-                "  1) Start with the anchor. Expect end-to-end ownership -- probe tradeoffs immediately.\n"
-                "  2) Cover key roles/projects deeply -- architecture decisions, scale, consequences.\n"
-                "  3) Probe JD must-have skills as time allows -- real production depth."
-            ),
-            (
-                "  ☐ Anchor + other major roles/projects -- deep ownership each time.\n"
-                "  ☐ JD skills -- probe as many as time allows, architecture-level."
-            ),
-            "  -> DEPTH OVER BREADTH -- 4-5 follow-ups per topic. Vague = probe harder, not move on.\n"
-            "  -> If an answer is too clean, ask what went wrong or what they'd do differently.\n",
-        ),
-        "senior": (
-            (
-                "  1) Start with the anchor initiative. Probe strategic judgment -- why, what risk, what outcome.\n"
-                "  2) Go deep on critical areas -- org impact, architecture at scale, high-stakes calls.\n"
-                "  3) Challenge their decisions directly -- seniors should defend them with confidence.\n"
-                "  4) Probe JD skills as time allows -- only where they intersect with strategic decisions."
-            ),
-            (
-                "  ☐ Anchor initiative probed deeply -- strategic reasoning, org impact, what they'd change.\n"
-                "  ☐ At least 1 other critical area -- architectural judgment or leadership decision."
-            ),
-            "  -> DEPTH ONLY -- 5-6 follow-ups on critical topics. Breadth is secondary.\n"
-            "  -> Peer-level conversation -- challenge reasoning directly, not with softeners.\n"
-            "  -> If they give a polished answer, press: 'What would have happened if you were wrong?'\n",
-        ),
-    }.get(band, (
-        (
-            "  1) Start with the anchor. Probe ownership and decisions.\n"
-            "  2) Cover resume projects and work history.\n"
-            "  3) Probe JD skills as time allows."
-        ),
-        (
-            "  ☐ Anchor + resume items as time allows.\n"
-            "  ☐ JD skills -- probe as many as time allows."
-        ),
-        "",
-    ))
+    # Band-aware follow-up pacing note. Coverage itself (which topics, in what
+    # order, situational/behavioral weaving) comes from interview_brief.topic_pool
+    # and interview_brief.interview_strategy — both already candidate- and
+    # role-specific, so it isn't re-derived generically here per band.
+    _pacing_note = {
+        "fresher":     "  -> BREADTH FIRST -- 2-3 follow-ups per topic. Move on when you have signal. Accept incomplete answers, they're learning.\n",
+        "mid":         "  -> BALANCED -- 3-4 follow-ups per topic. Move on when you have clear ownership signal.\n",
+        "experienced": "  -> DEPTH OVER BREADTH -- 4-5 follow-ups per topic. Vague = probe harder, not move on.\n",
+        "senior":      "  -> DEPTH ONLY -- 5-6 follow-ups on critical topics. Breadth is secondary. Peer-level conversation.\n",
+    }.get(band, "  -> 3-4 follow-ups per topic. Move on when you have clear signal.\n")
     _dry_run_questions = {
         "fresher": (
             "  'What are you learning or building right now outside of work?'\n"
@@ -297,19 +226,15 @@ def build_interview_directive(
         f"[DO NOT SAY ALOUD]\n\n"
         f"GOAL: In the next ~19 minutes, understand who this candidate really is --\n"
         f"what they built, what they own, how they think, and how deep their skills go.\n\n"
-        f"COVERAGE GOALS (background plan -- a [NEXT_TURN_DIRECTIVE] always overrides this):\n"
-        f"{coverage_goals}\n\n"
         f"IMPORTANT: If a [NEXT_TURN_DIRECTIVE] or [TOPIC_LOCK] appears in this context, follow it\n"
-        f"EXACTLY and IMMEDIATELY -- it is a real-time routing decision and overrides the coverage plan above.\n\n"
-        f"MANDATORY QUOTA (complete all before wrap-up -- track quietly, never announce):\n"
-        f"{mandatory_quota}\n\n"
+        f"EXACTLY and IMMEDIATELY -- it is a real-time routing decision and overrides everything below.\n\n"
         f"OPENING MOVE: {opening}\n\n"
         f"{skills_block}"
         f"{cq_block}\n"
         f"HOW TO MOVE:\n"
         f"  -> Always follow the [NEXT_TURN_DIRECTIVE] when present -- it overrides everything below.\n"
         f"  -> Start with the anchor. Follow what they say -- a tool, a decision, something that broke.\n"
-        f"{how_to_move_extra}"
+        f"{_pacing_note}"
         f"  -> When a skill comes up naturally in a project story, drill into it right there -- no need to wait.\n"
         f"  -> Do NOT wrap up or say goodbye until the system signals you to.\n\n"
         f"IF TOPICS RUN DRY -- keep going with adaptive questions (pick what fits for {band.upper()}):\n"

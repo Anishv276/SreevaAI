@@ -13,7 +13,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import re
 from typing import Any, Optional
 
 logger = logging.getLogger("interview-agent")
@@ -25,6 +24,32 @@ _EVAL_DEFAULT = "gpt-4.1-mini"  # ponytail: fallback — callers pass org's llmI
 # Signal definitions — what each signal means and what it maps to.
 # Used here to train the scoring LLM. Also imported by probe_strategy.py.
 # ---------------------------------------------------------------------------
+
+# Response-level signals (G0) — fire if candidate's response type is special
+RESPONSE_SIGNALS = {
+    "pure_denial": {
+        "description": "Answer is ONLY denial, zero attempt, nothing substantive.",
+        "action": "MOVE_ON (forced)",
+    },
+    "denial_with_continuation": {
+        "description": "Starts with denial but adds substantive content (partial admission).",
+        "action": "CONTINUE (score normally, cap at 5 to prevent saturation)",
+    },
+    "clarification_request": {
+        "description": "Candidate asks to clarify/rephrase the question.",
+        "action": "REPHRASE (ask question again, clearer)",
+    },
+    "rephrase_request": {
+        "description": "Candidate asks to restart their own answer.",
+        "action": "ACCEPT_REPHRASE (listen to new answer instead)",
+    },
+    "off_topic": {
+        "description": "Answered a different question than what was asked.",
+        "action": "REDIRECT (re-ask the original question)",
+    },
+}
+
+# Content-level signals (G1-G6) — fire based on answer quality/pattern
 SIGNAL_DEFINITIONS = {
 
     # PATTERN: answer is a rule/habit, not a real event
@@ -161,81 +186,72 @@ SIGNAL_DEFINITIONS = {
 def _build_signal_prompt_block() -> str:
     return """\
 -- SIGNAL DETECTION (GATE CHECK) --
-Work through EACH gate in ORDER G1→G2→G3→G4→G5→G6. The FIRST gate that fires decides the
-signal — STOP there and do NOT check later gates. Fill "gate_check" with your yes/no answers
-for ALL gates you checked, then put the resolved signal in the SEPARATE "signal" field.
+Work through EACH gate in STRICT ORDER: G0a→G0b→G0c→G0d→G0e→G1→G2→G3→G4→G5→G6
+The FIRST gate that fires decides the signal — STOP and return that signal.
+CRITICAL: ALWAYS fire exactly ONE signal. NEVER return null.
 
-CRITICAL GATE PRIORITY: G1 through G5 OUTRANK G6. If ANY of G1-G5 fires, you MUST use that
-signal. G6 (scenario_untested) is ONLY reachable when G1=no AND G2=no AND G3 bold_claim=no
-AND G4 tool_named=no AND G5 wanted_instance=no or general_habit=no. If you find yourself
-writing G6=yes while an earlier gate also has evidence, you have made an error — go back and
-check the earlier gate again. scenario_untested is NOT a fallback for "vague" answers.
+If no gate fires, SIGNAL = "no_signal_found" (report this — the LLM must always find a signal).
 
-Write gate_check in EXACTLY this format (yes/no + the words that prove each).
-Do NOT put the signal name inside gate_check — the signal goes in the SEPARATE "signal" field.
+---- RESPONSE-LEVEL GATES (G0) — check these FIRST ----
 
-  "G1 ran_out=<y/n>; G2 team_only=<y/n>; G3 bold_claim=<y/n> has_substance=<y/n>;
-   G4 tool_named=<y/n> usage_shown=<y/n> reason_given=<y/n>;
-   G5 wanted_instance=<y/n> general_habit=<y/n>; G6 correct_but_generic=<y/n>"
+G0a — PURE_DENIAL: Is the ENTIRE answer ONLY a flat denial, nothing substantive?
+      Examples: "I don't know" | "I don't remember" | "I haven't done that" | "No experience"
+      → YES: SIGNAL = pure_denial. STOP.
 
-After gate_check, put the resolved signal in the "signal" field (the NEXT field in the JSON).
+G0b — DENIAL_WITH_CONTINUATION: Starts with denial BUT adds substantive content?
+      "...but I built X" | "...however I deployed Y" | "...I tried Z"
+      → YES: SIGNAL = denial_with_continuation. STOP.
 
-ANSWER EACH GATE LITERALLY — quote the words that decide it:
+G0c — CLARIFICATION_REQUEST: Is candidate asking YOU to clarify/rephrase the question?
+      "What do you mean?" | "Can you rephrase?" | "Can you repeat?"
+      → YES: SIGNAL = clarification_request. STOP.
 
-  G1 — ran_out: did they try to answer then trail off, give a one-word reply, or say "I don't have
-       much idea" AFTER attempting? (NOT a flat "I don't know" with zero attempt.)
-       → if yes: SIGNAL = depth_ceiling_hit. STOP. Do NOT check G2-G6.
+G0d — REPHRASE_REQUEST: Is candidate asking to RESTART or correct THEIR OWN answer?
+      "Let me say that again" | "I misspoke, what I meant..." | "Sorry, I said that wrong"
+      → YES: SIGNAL = rephrase_request. STOP.
 
-  G2 — team_only: is EVERY action verb "we / team / they / teammates / our group / the committee",
-       with NO "I did / I built / I handled / I decided / I ran"? Look at WHO did each action.
-       ("I didn't know X" is NOT a personal contribution — team_only can still be yes.)
-       → if team_only=yes AND no bold "I built it all" claim: SIGNAL = ownership_ambiguous. STOP. Do NOT check G3-G6.
-       THIS GATE OUTRANKS the example/habit gate (G5). A "we did it together" answer is
-       ownership_ambiguous, NOT example_evaded — even if it also sounds vague or generic.
-       This includes team ACHIEVEMENT answers — "we doubled the leads", "the team hit quota",
-       "we crushed the quarter" — those are collective credit with no personal action = ownership_ambiguous.
+G0e — OFF_TOPIC: Did candidate answer a DIFFERENT question than what was asked?
+      Q: "Kubernetes scaling?" A: "I love React" | Q: "Failed project?" A: "I don't fail"
+      → YES: SIGNAL = off_topic. STOP.
 
-  G3 — bold_claim: a loud personal claim — "I built it all", "entire thing by me", "I'm really strong
-       at X", "I always do the best Y", "I single-handedly...", "I never lose...".
-       has_substance: is it backed by even ONE real internal — a decision, constraint, number,
-       mechanism, or real outcome?
-       → if bold_claim=yes AND has_substance=no: SIGNAL = explanation_shallow. STOP. Do NOT check G4-G6.
+If G0a-G0e = NO: continue to G1.
 
-  G4 — tool_named: is a specific tool / method / framework / process named (PyTorch, Salesforce,
-       MEDDIC, HubSpot, AARRR, Greenhouse, a named framework)?
-       usage_shown: is there an OPERATIONAL VERB tying THEM to it — "I trained/stored/queried/ran/built/
-       configured/tracked/sourced/deployed X with it"? (A pure definition "X is a framework that..." or
-       a bare list "we used A, B, C" = usage_shown NO.)
-       reason_given: did they say WHY that tool over alternatives?
-       → if tool_named=yes AND usage_shown=no: SIGNAL = tool_named_not_used. STOP. Do NOT check G5-G6.
-       → if tool_named=yes AND usage_shown=yes AND reason_given=no: SIGNAL = tech_choice_unjustified. STOP. Do NOT check G5-G6.
-       → if tool_named=yes AND usage_shown=yes AND reason_given=yes: continue to G5.
+---- CONTENT-LEVEL GATES (G1-G6) — only if G0 fires = NO ----
 
-  G5 — wanted_instance: did the QUESTION ask for a specific past time/example/story
-       ("tell me about a time", "a specific deal", "a time a candidate...")?
-       general_habit: is the ANSWER FIRST-PERSON habit language — "I usually...", "I normally...",
-       "I always...", "I just..." — describing what THEY personally tend to do?
-       → if BOTH yes AND no real instance given: SIGNAL = example_evaded. STOP. Do NOT check G6.
-       NOTE: an impersonal recipe ("you do X, then Y, then Z") is NOT first-person habit — that is G6.
-       NOTE: a team-credit answer ("we doubled the leads", "the team hit quota") is G2, already handled above.
+G1 — DEPTH_CEILING_HIT: Did they TRY to answer but run out of knowledge?
+     Not a flat "I don't know" — they ATTEMPTED then trailed off.
+     "I used FAISS but I don't really have a lot of idea how indexing works"
+     → YES: SIGNAL = depth_ceiling_hit. STOP.
 
-  G6 — correct_but_generic: ONLY check this gate if G1=no AND G2=no AND G3 bold_claim=no AND
-       G4 tool_named=no AND G5 fired=no. Is the answer an impersonal, technically-correct process
-       recipe — a "you do X, then Y, then Z" list, or a clean textbook flow — with no named tool,
-       no first-person personal claim, and no real specific event?
-       (e.g. "you prospect, qualify, do discovery, present, handle objections, then close" /
-        "you define the audience, set the goal, create content, launch, measure ROI")
-       → if yes (AND all earlier gates were no): SIGNAL = scenario_untested. STOP.
+G2 — OWNERSHIP_AMBIGUOUS: Is EVERY action "we/team/they" with NO "I did/decided/built"?
+     "We built the pipeline, the team set up the store, they handled deployment"
+     → YES: SIGNAL = ownership_ambiguous. STOP.
 
-  If no gate fired → SIGNAL = null.
+G3 — EXPLANATION_SHALLOW: Loud personal claim + hollow explanation?
+     "I built it all, it's a RAG system" [claims everything, explains nothing]
+     → YES: SIGNAL = explanation_shallow. STOP.
 
-THE SIGNAL YOU OUTPUT MUST EQUAL THE ONE YOUR GATE CHECK LANDED ON. No exceptions.
-If G6 fires but an earlier gate could also have fired, go back and use the earlier gate's signal.
+G4 — TOOL_NAMED_NOT_USED: Named a specific tool but ZERO evidence of using it?
+     "ChromaDB, FAISS, Pinecone" [three names, zero usage shown]
+     Usage shown = operational verb: "I trained/stored/queried/deployed X with it"
+     → YES: SIGNAL = tool_named_not_used. STOP.
 
-SIGNAL REASON RULE:
-  signal_reason = ONE short exact quote (3-12 words) from their actual words that proves the signal.
-  GOOD: "we built the pipeline, the team decided"   BAD: "used team language throughout"
-  If signal is null → signal_reason is null.\
+G5 — TECH_CHOICE_UNJUSTIFIED: Used tool (usage shown) BUT never said WHY that one?
+     "I stored embeddings in ChromaDB. It worked fine." [used it, no why]
+     → YES: SIGNAL = tech_choice_unjustified. STOP.
+
+G6 — EXAMPLE_EVADED: Question asked for ONE real past instance, answer gives habit?
+     Q: "Tell me about a time..." A: "Usually I check the data and retrain"
+     → YES: SIGNAL = example_evaded. STOP.
+
+G7 — SCENARIO_UNTESTED: Correct textbook flow but ZERO lived friction/edge case?
+     "Chunks become vectors, vectors go into store, search retrieves results"
+     [Correct but memorized, not practiced]
+     → YES: SIGNAL = scenario_untested. STOP.
+
+If ALL gates = NO: This should NEVER happen. Signal the closest gate or report "no_signal_found".
+
+Output exactly ONE signal. Never null, never multiple.\
 """
 
 
@@ -278,40 +294,8 @@ async def evaluate_answer(
         return {
             "clarity": 0, "depth": 0, "specificity": 0, "grounding": 0, "overall": 0.0,
             "action": "MOVE_ON", "forced_action": True,
-            "signal": None, "signal_reason": None, "reason": "empty answer",
+            "signal": "pure_denial", "signal_reason": None, "reason": "empty answer",
         }
-
-    # Denial detection — two distinct cases:
-    #   pure denial  : answer is ONLY a denial phrase, nothing substantive follows → zero + MOVE_ON
-    #   denial + continuation : candidate starts with "I don't know" but then adds real content
-    #                           → score normally, don't short-circuit
-    _denial_phrases_re = re.compile(
-        r"\b(don'?t|do not|can'?t|cannot|didn'?t|did not|never|haven'?t|have not)\s+"
-        r"(remember|recall|know|used|worked|tried|built|done|do|create|make|work on)?\b"
-        r"|\bI forgot\b|\bno idea\b|\bno clue\b|\bnot (so |too |really |quite |entirely )?sure\b|\bunsure\b|\bno knowledge\b",
-        re.IGNORECASE,
-    )
-    _answer_stripped = candidate_answer.strip()
-    _answer_words = _answer_stripped.split()
-    _has_denial = bool(_denial_phrases_re.search(_answer_stripped))
-    # "continuation" = meaningful words after the denial phrase (conjunction + more content)
-    _continuation_re = re.compile(
-        r"\b(but|however|although|though|except|actually|what i|what we|i built|i used|i worked)\b",
-
-        re.IGNORECASE,
-    )
-    _has_continuation = bool(_continuation_re.search(_answer_stripped))
-    # Pure denial: short answer, denial present, no real continuation
-    if _has_denial and not _has_continuation and len(_answer_words) <= 30:
-        logger.info("[EVAL] short-circuit: pure denial (%r)", candidate_answer[:60])
-        return {
-            "clarity": 0, "depth": 0, "specificity": 0, "grounding": 0, "overall": 0.0,
-            "action": "MOVE_ON", "forced_action": True,
-            "signal": None, "signal_reason": None, "reason": "explicit denial",
-        }
-    # Denial + continuation: let eval score it, but cap scores so a "I don't know but..."
-    # answer can't accidentally saturate a topic — the agent will keep probing.
-    _is_partial_denial = _has_denial and _has_continuation
 
     word_count = len(candidate_answer.strip().split())
     recent_context = "\n".join(transcript_lines[-6:]) if transcript_lines else ""
@@ -336,15 +320,15 @@ async def evaluate_answer(
             "You know the difference between someone who did the work and someone who read about it.\n"
             "Output ONLY valid JSON:\n"
             '{"clarity":0-10,"depth":0-10,"specificity":0-10,"grounding":0-10,'
-            '"gate_check":"<fill in each gate result, then the signal it leads to — see GATE CHECK below>",'
-            '"signal": one of exactly ["example_evaded","depth_ceiling_hit","ownership_ambiguous",'
-            '"explanation_shallow","tool_named_not_used","tech_choice_unjustified","scenario_untested"] or null,'
-            '"signal_reason":"<3-12 word exact quote from their answer>" or null,'
+            '"gate_check":"<G0a=y/n; G0b=y/n; ... G1=y/n; ... follow the gates in order>",'
+            '"signal": one of exactly ["pure_denial","denial_with_continuation","clarification_request",'
+            '"rephrase_request","off_topic","depth_ceiling_hit","ownership_ambiguous",'
+            '"explanation_shallow","tool_named_not_used","tech_choice_unjustified","example_evaded","scenario_untested"] or "no_signal_found",'
+            '"signal_reason":"<3-12 word exact quote from their answer>",'
             '"reason":"<one phrase from their answer that drove your call>"}\n\n'
-            "CRITICAL: signal must be one of the 7 names above or null. "
-            "Never invent a new signal name. Never put the candidate's words as the signal.\n"
-            "CRITICAL: gate_check MUST be filled in BEFORE signal — it forces you to look at the\n"
-            "discriminating facts. The signal MUST match the gate that fired in your gate_check.\n\n"
+            "CRITICAL: signal MUST be ONE of the 12 names above or 'no_signal_found'. NEVER null.\n"
+            "CRITICAL: gate_check MUST be filled in showing your path through gates (G0→G1→etc).\n"
+            "CRITICAL: The signal MUST match the FIRST gate that fired. Never skip a gate.\n\n"
 
             f"Role: {job_title or 'not specified'} | Topic: {active_topic or 'general'}"
             f" | Tag: {topic_tag} | Importance: {topic_importance}\n"
@@ -366,11 +350,6 @@ async def evaluate_answer(
             "ROLE_TOPIC = conceptual check, one grounded answer is enough.\n\n"
 
             "This is voice-transcribed speech — score the meaning, not the grammar.\n\n"
-            + (
-                "PARTIAL DENIAL NOTE: The candidate started with 'I don't know' or 'I forgot' "
-                "but then added some content. Score what content exists, but cap all scores at 5 max.\n\n"
-                if _is_partial_denial else ""
-            ) +
             "BEFORE YOU SCORE: Read the answer as a real interviewer would.\n"
             "Ask yourself: does this person sound like they actually did this work?\n"
             "Strip away fluency and polish. Look for the substance underneath.\n\n"
@@ -513,12 +492,33 @@ async def evaluate_answer(
             + grounding * 0.25
         )
 
-        # Routing (PROBE/MOVE_ON) is no longer asked of the model -- saturation/
-        # weak_exit/dry_topic in eval_pipeline.py decide that. This call only scores.
-        # Validate signal against our 5 defined signals
+        # Parse signal and determine action
         raw_signal = data.get("signal")
         signal = str(raw_signal).strip() if raw_signal else None
-        if signal and signal not in SIGNAL_DEFINITIONS:
+
+        # ponytail: handle response signals (G0) — fire first, override routing
+        _response_signals = {
+            "pure_denial": ("MOVE_ON", True),           # forced_action=True, scores=0
+            "denial_with_continuation": ("CAP_SCORES", False),  # mark for scoring cap at 5
+            "clarification_request": ("REPHRASE", True),       # forced_action=True, scores=0
+            "rephrase_request": ("ACCEPT_REPHRASE", True),     # forced_action=True, don't score this answer
+            "off_topic": ("REDIRECT", True),                   # forced_action=True, scores=0
+        }
+
+        action = "PROBE"
+        forced_action = False
+        cap_scores_at_5 = False
+        zero_scores = False  # pure_denial, clarification_request, off_topic
+
+        if signal in _response_signals:
+            action, forced_action = _response_signals[signal]
+            if signal == "denial_with_continuation":
+                cap_scores_at_5 = True
+            elif signal in ("pure_denial", "clarification_request", "off_topic", "rephrase_request"):
+                zero_scores = True
+
+        # Validate content-level signals against defined signals
+        if signal not in _response_signals and signal not in SIGNAL_DEFINITIONS and signal is not None:
             logger.warning("[EVAL] unknown signal %r — ignoring", signal)
             signal = None
 
@@ -529,9 +529,25 @@ async def evaluate_answer(
         reason = str(data.get("reason", ""))[:120]
         gate_check = str(data.get("gate_check", ""))[:300]
 
+        # Apply score logic for response signals
+        if zero_scores:
+            clarity = 0.0
+            depth = 0.0
+            specificity = 0.0
+            grounding = 0.0
+            overall = 0.0
+            reason = f"{signal} — no scoring"
+        elif cap_scores_at_5:
+            clarity = min(clarity, 5.0)
+            depth = min(depth, 5.0)
+            specificity = min(specificity, 5.0)
+            grounding = min(grounding, 5.0)
+            overall = min(overall, 5.0)
+            reason = "denial with continuation — scores capped at 5"
+
         logger.info(
-            "[EVAL] [OK] signal=%s | clarity=%d depth=%d spec=%d ground=%d | reason=%s",
-            signal or "none",
+            "[EVAL] [OK] signal=%s action=%s | clarity=%d depth=%d spec=%d ground=%d | reason=%s",
+            signal or "none", action,
             int(clarity), int(depth), int(specificity), int(grounding),
             repr(reason),
         )
@@ -544,7 +560,8 @@ async def evaluate_answer(
             "clarity": clarity, "depth": depth,
             "specificity": specificity, "grounding": grounding,
             "overall": overall,
-            "action": "PROBE",
+            "action": action,
+            "forced_action": forced_action if action != "PROBE" else False,
             "signal": signal,
             "signal_reason": signal_reason,
             "reason": reason,

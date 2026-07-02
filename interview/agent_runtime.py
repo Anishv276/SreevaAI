@@ -2040,7 +2040,8 @@ async def entrypoint(ctx: JobContext):
     _asked_questions_log: collections.deque = collections.deque(maxlen=6)  # EC-3: deque(maxlen) makes append atomic — no pop() race
 
     _first_interview_question_asked: bool = False  # True after first post-warmup AI question fires
-    _awaiting_first_interview_question: bool = False  # warmup confirmed; next assistant turn must open interview
+    _awaiting_first_interview_question: bool = False  # DEPRECATED: no longer used, kept for future cleanup
+    _interview_has_started: bool = False  # True when warmup ends and interview directive is injected
     # Per-topic ground-truth records built at MOVE_ON time — replaces end-of-session
     # LLM transcript re-reading for skill extraction. Each entry is appended when the
     # agent closes a topic so eval scores, probe count, exit reason, and candidate
@@ -2581,20 +2582,19 @@ async def entrypoint(ctx: JobContext):
                 logger.info("[EVAL_GUARD] turn=%d skipped eval -- not EOT (is_final_eot=%s, content=%r)", turn_snapshot, is_final_eot, (content or "")[:40])
                 return
 
-            # warmup_complete is set by _handle_completed_user_turn when candidate
-            # signals readiness. Start eval only after warmup has fully finished.
-            # Warmup = turns 1-2, interview starts at turn 3, so first eval fires at turn 3.
+            # Eval runs after interview has started (warmup complete + directive injected).
+            # This allows the first interview question to be evaluated immediately after delivery.
+            # _interview_has_started is set when warmup ends and the interview directive is injected.
             _can_eval_turn = bool(
-                warmup_complete
+                _interview_has_started
                 and turn_snapshot > 2
                 and question_snap
-                and _first_interview_question_asked
             )
             _gate_reason = (
                 "PASS" if _can_eval_turn
                 else (
-                    f"BLOCK(warmup={warmup_complete},turn={turn_snapshot}>2={turn_snapshot>2},"
-                    f"question={'Y' if question_snap else 'EMPTY'},opener={_first_interview_question_asked})"
+                    f"BLOCK(interview_started={_interview_has_started},turn={turn_snapshot}>2={turn_snapshot>2},"
+                    f"question={'Y' if question_snap else 'EMPTY'})"
                 )
             )
             logger.info("[EVAL_GATE] turn=%d -> %s", turn_snapshot, _gate_reason)
@@ -3222,7 +3222,7 @@ async def entrypoint(ctx: JobContext):
     )
     async def _handle_completed_user_turn(_turn_ctx, new_message) -> None:
         nonlocal _answer_received_at, _candidate_turn_since_last_assistant, \
-            warmup_complete, _awaiting_first_interview_question
+            warmup_complete, _awaiting_first_interview_question, _interview_has_started
         content = (getattr(new_message, "text_content", "") or "").strip()
         if not content:
             logger.debug("[USER_TURN] completed turn had no text; releasing gate without reply directive")
@@ -3291,6 +3291,7 @@ async def entrypoint(ctx: JobContext):
         if completing_warmup:
             warmup_complete = True
             _first_interview_question_asked = False
+            _interview_has_started = True
             logger.info("[WARMUP] warmup_complete=True at turn=%d (candidate signalled readiness)", turn_snapshot)
             remove_system_messages(chat_ctx, "[WARMUP PHASE]")
             remove_system_messages(chat_ctx, "[PHASE_STATUS]")
@@ -3358,11 +3359,11 @@ async def entrypoint(ctx: JobContext):
                 if _is_interview_turn:
                     # Fix #2: Reset nudge flags when a new question is asked.
                     # This ensures nudges can fire independently for each question, not just the first.
-                    nonlocal inactivity_nudge_sent_for_current_prompt, inactivity_warning_sent_for_current_prompt, inactivity_end_sent_for_current_prompt
+                    nonlocal inactivity_nudge_sent_for_current_prompt, inactivity_warning_sent_for_current_prompt, inactivity_end_sent_for_current_prompt, awaiting_candidate_since
                     inactivity_nudge_sent_for_current_prompt = False
                     inactivity_warning_sent_for_current_prompt = False
                     inactivity_end_sent_for_current_prompt = False
-                    reset_inactivity_clock(start_waiting=True, preserve_nudge_flags=False)
+                    awaiting_candidate_since = time.monotonic()
                     logger.debug("[NUDGE] Nudge flags reset for new question at turn=%d", turn_count)
                     # Prefer ?-terminated sentence; fall back to last sentence of 20+ chars.
                     # Final fallback: use entire clean_content so question_snap is never empty.
