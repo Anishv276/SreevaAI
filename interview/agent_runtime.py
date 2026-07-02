@@ -195,22 +195,15 @@ class CoveredTopics:
         """
         Returns a formatted block for LLM directive injection.
 
-        Two sections:
-          1. TOPICS ALREADY COVERED — what was discussed and the gist of the answer
-          2. FORBIDDEN QUESTIONS  — every question already asked on any covered topic.
-             These are blocked GLOBALLY: never re-asked under any topic or framing.
-             This is what stops "How did you use LangGraph?" from firing again when
-             LangGraph was already discussed inside the Internship topic.
+        Always provides two sections:
+          1. TOPICS ALREADY COVERED — topic titles + candidate gist, so the
+             AI knows what ground has been covered.
+          2. FORBIDDEN QUESTIONS — every question asked on any covered topic,
+             blocked globally so the same concept is never re-asked under
+             any topic or any framing.
 
-        Example output:
-          [COVERAGE MEMORY — HARD RULES, NO EXCEPTIONS]
-          TOPICS ALREADY COVERED (do not re-open any of these):
-          - DataFlow Project — candidate said: built Kafka pipeline, Python primary tech
-          - python (covered inside DataFlow Project): skip standalone question
-
-          FORBIDDEN QUESTIONS (already asked — NEVER ask again under any topic or framing):
-            • "What did you build in DataFlow?" (asked during DataFlow Project)
-            • "How did Kafka fit into the pipeline?" (asked during DataFlow Project)
+        Injected into BOTH PROBE and MOVE_ON directives so the hard boundary
+        between uncovered (pool) and covered topics is enforced at every turn.
         """
         if not self._store:
             return ""
@@ -227,14 +220,22 @@ class CoveredTopics:
             else:
                 gist_part = f" — candidate said: {rec.gist}" if rec.gist else ""
                 topic_lines.append(f"- {rec.display_title}{gist_part}")
-            # Every question asked on this topic becomes a GLOBAL forbidden question.
+            # Every question asked on this topic becomes a GLOBAL forbidden question —
+            # injected into every subsequent directive so no covered-topic concept
+            # can be re-asked under a different topic or framing.
             for q in (rec.questions_asked or []):
-                forbidden_lines.append(f'    • "{q}" (asked during {rec.display_title})')
+                forbidden_lines.append(f'    \u2022 "{q}" (asked during {rec.display_title})')
         body = "\n".join(topic_lines)
+        closed_names = "\n".join(
+            f"  \u2717 {rec.display_title}"
+            for rec in list(self._store.values())[-limit:]
+        )
         block = (
             "[COVERAGE MEMORY — HARD RULES, NO EXCEPTIONS]\n"
             "TOPICS ALREADY COVERED (do not re-open any of these):\n"
             f"{body}\n"
+            "\nCLOSED TOPICS — DO NOT ASK ANYTHING ABOUT THESE, IN ANY FORM OR FRAMING:\n"
+            f"{closed_names}\n"
         )
         if forbidden_lines:
             block += (
@@ -507,10 +508,19 @@ def _build_probe_directive(
     else:
         _filler_hint = "FILLER: 'Ah, makes sense.' or 'Right.' or 'Okay.' — substantive answer."
 
+    # Short display label for the HARD STOP line — prefer structured topic title,
+    # fall back to the first segment of the full active_topic context string.
+    _topic_short = (
+        topic_item.title if topic_item
+        else (active_topic.split(" — ")[0].split(" - ")[0].split("|")[0].strip()[:60])
+    )
+
     parts_out = [
         f"[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]",
         f"",
-        f"You are still on {active_topic}. Dig deeper.",
+        f"ACTIVE TOPIC LOCK: {active_topic}",
+        f"You are ON this topic ONLY. Every question you ask must be about this topic and nothing else.",
+        f"If you ask about any other topic, you are breaking the interview protocol.",
         f"",
         f"WHAT THE CANDIDATE JUST SAID:",
         _thread,
@@ -523,7 +533,7 @@ def _build_probe_directive(
     ]
     if _asked:
         parts_out += [
-            "DO NOT ask these again (already covered):",
+            "DO NOT ask these again (already covered on this topic):",
             _asked,
             "",
         ]
@@ -535,6 +545,9 @@ def _build_probe_directive(
         "One question mark. Never two questions in one turn.",
         "The question can have 1-3 sentences of natural setup before the actual question — that's fine.",
         "Grounded in what they just told you. Never 'Can you' or 'Could you'. Never 'Great!' or 'Awesome!'.",
+        "",
+        f"HARD STOP: Your question MUST be about '{_topic_short}' only.",
+        "Any question about a different topic — even slightly related — is WRONG. Stay locked on the active topic.",
     ]
 
     directive = "\n".join(parts_out)
@@ -2082,6 +2095,9 @@ async def entrypoint(ctx: JobContext):
     # Snapshotted into CoverageRecord.questions_asked when the topic is closed, so they become
     # GLOBAL forbidden questions — preventing the same concept being re-asked under a later topic.
     _current_topic_questions: list[str] = []
+    # Index into transcript_lines where the CURRENT topic began. Reset on MOVE_ON so that
+    # probe directives only see the current topic's Q&A thread, not old-topic conversations.
+    _topic_start_line_idx: int = 0
     # Lock protecting all shared session state that is written by background tasks.
     _session_state_lock = asyncio.Lock()
     # -- Agent-side topic tracker ----------------------------------------------
@@ -2518,7 +2534,7 @@ async def entrypoint(ctx: JobContext):
             _awaiting_first_interview_question, \
             _asked_questions_log, \
             _last_question_topic, _topic_records, _current_topic_answers, \
-            _current_topic_questions
+            _current_topic_questions, _topic_start_line_idx
         try:
             if not content or role != "user":
                 return
@@ -2925,6 +2941,14 @@ async def entrypoint(ctx: JobContext):
                             # Reset per-topic question buffer too — already snapshotted into
                             # the CoverageRecord via _closing_topic_questions above.
                             _current_topic_questions = []
+                            # MOVE_ON: clear the short-term asked-questions deque so that
+                            # old-topic questions NEVER appear in the new topic's probe
+                            # directive. Global forbidden questions are already preserved
+                            # in CoveredTopics.get_memory_block() (coverage_memory), so
+                            # nothing is lost — they still show up as FORBIDDEN in every
+                            # subsequent directive. This is the primary fix for the bug
+                            # where Ishita kept asking old-topic questions after MOVE_ON.
+                            _asked_questions_log.clear()
                             logger.info(
                                 "[TOPIC_RECORD] turn=%d | recorded topic=%r exit=%s probes=%d avg_overall=%.1f answers=%d q_forbidden=%d",
                                 turn_snapshot, _old_key, _exit_reason, _probe_count, _avg_overall, len(_topic_records),
@@ -3009,6 +3033,9 @@ async def entrypoint(ctx: JobContext):
                         return
                     async with _session_state_lock:
                         _active_topic = _next_topic
+                        # Reset the transcript window so probe directives for the new
+                        # topic only see this topic's Q&A, not old-topic conversation.
+                        _topic_start_line_idx = len(transcript_lines)
                     _next_brief_item = next(
                         (t for t in _interview_brief.topic_pool
                          if _topic_short_key_for_ordering(t.title).lower() == _topic_short_key(_active_topic or "").lower()),
@@ -3178,9 +3205,13 @@ async def entrypoint(ctx: JobContext):
                         None,
                     )
                     # Build the conversation thread for this topic from the live
-                    # transcript. Take the last 8 lines so the probe LLM sees the
-                    # full back-and-forth, not just the most recent exchange.
-                    _topic_thread_lines = lines_snap_eval[-8:] if lines_snap_eval else []
+                    # transcript. Scope to only lines since the current topic began
+                    # (_topic_start_line_idx) so old-topic Q&A never bleeds into the
+                    # probe context after a MOVE_ON. Take at most 8 lines.
+                    _topic_thread_lines = (
+                        lines_snap_eval[_topic_start_line_idx:][-8:]
+                        if lines_snap_eval else []
+                    )
                     _directive = _build_probe_directive(
                         signal=_eval_signal,
                         signal_reason=_eval_signal_reason,

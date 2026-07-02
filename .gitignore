@@ -36,7 +36,8 @@ last_transcript.txt
 # env files (can opt-in for committing if needed)
 .env
 .env*
-# ...but DO track the blank template (no secrets in it)
+# ...but DO track the blank templates (no secrets in them)
+!.env.example
 !.env.production.example
 
 # vercel
