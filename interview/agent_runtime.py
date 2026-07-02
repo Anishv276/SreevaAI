@@ -429,18 +429,23 @@ def _build_probe_directive(
 
     # Filler guidance — classify prev answer intent so Ishita's reaction is connected
     _prev_lower = (prev_answer or "").lower().strip()
-    _is_clarification_ask = any(p in _prev_lower for p in ("are you asking", "you're asking", "do you mean", "what do you mean", "which", "can you clarify"))
+    _is_connection_check = any(p in _prev_lower for p in ("can you hear", "are you there", "hello?", "you there?"))
+    _is_clarification_ask = _is_connection_check or any(
+        p in _prev_lower for p in ("are you asking", "you're asking", "do you mean", "what do you mean", "which", "can you clarify")
+    )
 
-    if _is_clarification_ask:
+    if _is_connection_check:
+        _filler_hint = "CONNECTION CHECK: They asked if you can hear them, not answered the question. Briefly confirm you can hear them, then re-ask the SAME question (don't move to a new topic or skip it as if it were answered)."
+    elif _is_clarification_ask:
         _filler_hint = "CLARIFICATION DETECTED: They didn't understand your question. Rephrase it MORE SIMPLY and anchor the topic name explicitly."
     elif not _prev_lower or any(p in _prev_lower for p in ("i don't know", "i forgot", "i don't remember", "not sure", "can't recall")):
-        _filler_hint = "FILLER: 'No worries.' or 'Fair enough.' — they couldn't recall."
+        _filler_hint = "FILLER: they couldn't recall — vary it, e.g. 'No worries.' / 'Fair enough.' / 'That's alright.' Don't reuse recent turns' wording."
     elif len(_prev_lower.split()) <= 8:
-        _filler_hint = "FILLER: 'Hmm, okay.' or 'Right.' — short answer, acknowledge briefly."
+        _filler_hint = "FILLER: short answer, acknowledge briefly — vary it, e.g. 'Hmm, okay.' / 'Right.' / 'Got it.' Don't reuse recent turns' wording."
     elif any(p in _prev_lower for p in ("i think", "probably", "maybe", "i believe", "kind of", "sort of")):
-        _filler_hint = "FILLER: 'Hmm, okay.' or 'Mm.' — they hedged, don't praise it."
+        _filler_hint = "FILLER: they hedged, don't praise it — vary it, e.g. 'Hmm, okay.' / 'Mm.' / 'Alright.' Don't reuse recent turns' wording."
     else:
-        _filler_hint = "FILLER: 'Ah, makes sense.' or 'Right.' or 'Okay.' — substantive answer."
+        _filler_hint = "FILLER: substantive answer — vary it, e.g. 'Ah, makes sense.' / 'Got it.' / 'That tracks.' Don't reuse recent turns' wording."
 
     # Short display label for the HARD STOP line — prefer structured topic title,
     # fall back to the first segment of the full active_topic context string.
@@ -486,19 +491,6 @@ def _build_probe_directive(
             f"THEY ASKED FOR CLARIFICATION: Ask SIMPLER, mention '{_topic_short}' upfront.",
         ]
     parts_out += [""]
-
-    parts_out += [
-        f"ANCHOR REQUIREMENT — CRITICAL:",
-        f"Your question MUST START with or INCLUDE the topic name '{_topic_short}' word-for-word.",
-        f"Pattern: 'With {_topic_short}, [your question]' or 'In {_topic_short}, [your question]'",
-        f"",
-        f"EXAMPLES using the probe focus above:",
-        f"  ✓ 'With {_topic_short}, what was your specific role or the part you personally built?'",
-        f"  ✓ 'In {_topic_short}, what was the trickiest part to get working?'",
-        f"  ✗ WRONG: 'What did you build?' (no topic name - candidate won't know what you're asking)",
-        f"",
-        f"HARD STOP: If your question doesn't mention '{_topic_short}', you're breaking protocol.",
-    ]
 
     directive = "\n".join(parts_out)
     import logging as _logging
@@ -781,23 +773,24 @@ async def _generate_move_on_directive(
             # Classify the candidate's answer intent so the filler is contextually correct
             _prev_lc = _prev_trimmed.lower()
             if not _prev_lc or any(p in _prev_lc for p in ("i don't know", "i forgot", "i don't remember", "not sure", "can't recall")):
-                _intent_hint = "They couldn't recall or said they don't know → use 'No worries.' or 'Fair enough.'"
+                _intent_hint = "They couldn't recall or said they don't know → e.g. 'No worries.' / 'Fair enough.' / 'That's alright.' / 'Understood.'"
             elif len(_prev_lc.split()) <= 8:
-                _intent_hint = "Very short answer, possibly surface-level → use 'Hmm, okay.' or 'Right.'"
+                _intent_hint = "Very short answer, possibly surface-level → e.g. 'Hmm, okay.' / 'Right.' / 'Got it.' / 'I see.'"
             elif any(p in _prev_lc for p in ("i think", "probably", "maybe", "i believe", "kind of", "sort of")):
-                _intent_hint = "They hedged or were vague → use 'Hmm, okay.' or 'Mm.' to acknowledge without validating"
+                _intent_hint = "They hedged or were vague → e.g. 'Hmm, okay.' / 'Mm.' / 'Alright.' / 'I see.' to acknowledge without validating"
             else:
-                _intent_hint = "Substantive answer → use 'Ah, makes sense.' or 'Right.' or 'Okay.'"
+                _intent_hint = "Substantive answer → e.g. 'Ah, makes sense.' / 'Got it.' / 'That tracks.' / 'Interesting.'"
             _filler_instruction = (
                 f"\n\nOPENING REACTION — must respond to what the candidate actually said:\n"
                 f"THEIR LAST ANSWER: \"{_prev_trimmed}\"\n"
                 f"ANSWER INTENT: {_intent_hint}\n"
-                "Pick ONE micro-reaction (3-8 words) that matches the intent above.\n"
+                "The examples above are illustrative, not a fixed list — invent your own short, natural "
+                "micro-reaction (3-8 words) that fits the intent. Do not default to picking only from the examples.\n"
                 "The reaction and the new question must feel like one connected turn — "
                 "not a reaction to silence followed by an unrelated question.\n"
                 "NEVER say 'Great!', 'Awesome!', 'Fantastic!', 'Amazing!', or any hollow praise.\n"
                 "NEVER say 'Thanks for sharing' or any 'thanks for [verb]ing' phrase.\n"
-                "NEVER use the same reaction as the previous turn.\n"
+                "NEVER reuse the same reaction word/phrase you've used in recent turns of this interview.\n"
                 f"NEVER reference the old topic '{old_topic_title}' — it is closed.\n"
                 "DO NOT wrap up, say goodbye, or add any closing phrase.\n"
             )
@@ -1572,7 +1565,12 @@ async def entrypoint(ctx: JobContext):
     )
     chat_ctx = llm.ChatContext()
     chat_ctx.add_message(role="system", content=system_prompt)
-    chat_ctx.add_message(role="system", content=interview_directive_cached)
+    # interview_directive_cached (anchor topic, resume/JD content) is intentionally
+    # NOT added here. Adding it before warmup completes gives the LLM interview
+    # question material to draw on during greeting/warmup, which lets it jump
+    # straight to a resume-specific question instead of waiting for the candidate's
+    # warmup answer. It is injected once warmup_complete is set (see
+    # _handle_completed_user_turn_locked's "completing_warmup" branch below).
     logger.info("[FLOW] System prompt ready  greeting  interview")
     logger.debug("[SYSTEM_PROMPT] Full system prompt:\n%s", system_prompt)
     logger.debug("[INTERVIEW_DIRECTIVE] Content:\n%s", interview_directive_cached)
@@ -2003,6 +2001,10 @@ async def entrypoint(ctx: JobContext):
     interview_marked_finished = False
     turn_count = 0
     warmup_complete = False  # True after candidate confirms the short readiness check
+    _user_turn_lock = asyncio.Lock()  # serializes _handle_completed_user_turn -- prevents
+    # two rapid LiveKit end-of-turn detections (e.g. candidate pauses mid-answer) from
+    # firing eval/probe/warmup logic twice for what is really one answer
+    _last_evaluated_turn_snapshot = -1  # dedupes a repeat end-of-turn for the same turn_count
     # Interview state
     _closing_triggered = False           # True when <= 20s remain -- blocks eval + signals
     _candidate_turn_since_last_assistant = True
@@ -2738,11 +2740,6 @@ async def entrypoint(ctx: JobContext):
                 # a real, topic-advancing result with a serialized topic_state_dict.
                 # The agent therefore has NO fallback path -- it trusts eval's return.
                 _eval_result_inline: dict = await run_eval_and_build_directive(payload, _eval_openai_client)
-                # Test event: eval done
-                spawn_background_task(
-                    log_test_event(app_id, "eval_done", f"Eval complete | action={_eval_result_inline.get('action', 'PROBE')}"),
-                    "test_event_eval_done"
-                )
                 # -- Unpack eval result ----------------------------------------
                 _eval_signal        = _eval_result_inline.get("signal")         # str | None
                 _eval_signal_reason = _eval_result_inline.get("signal_reason")  # str | None
@@ -2777,10 +2774,26 @@ async def entrypoint(ctx: JobContext):
                 _is_saturated = _saturation.get("is_saturated", False)
                 _weak_exit    = _saturation.get("weak_exit", False)
                 _dry_topic    = _saturation.get("dry_topic", False)
-                # Move-on is decided purely by saturation/weak_exit/dry_topic —
-                # the LLM judge's action is no longer consulted (it kept buffering without context).
-                # weak_exit itself now includes the turn-3/turn-5 saturation checkpoints.
-                _action = "MOVE_ON" if (_weak_exit or _is_saturated or _dry_topic) else "PROBE"
+                # eval_pipeline.run_eval_and_build_directive already computes the correct,
+                # priority-ordered decision: forced response signals (pure_denial ->
+                # MOVE_ON, clarification_request/rephrase_request -> REPHRASE, off_topic ->
+                # REDIRECT, with 2x-clarification escalation to MOVE_ON) override
+                # saturation math entirely; only once no forced signal fired does it fall
+                # through to dry_topic/weak_exit/saturated/PROBE. Recomputing a bare
+                # saturation-only MOVE_ON/PROBE split here (as before) discarded that
+                # forced-signal priority, so e.g. a first-time clarification_request could
+                # coincidentally read as MOVE_ON from saturation alone, or a pure_denial
+                # could get stuck in PROBE if saturation checkpoints hadn't been hit yet.
+                # REPHRASE/REDIRECT/ACCEPT_REPHRASE all mean "stay on this topic, ask
+                # again differently" -- only agent_runtime's own PROBE/MOVE_ON branches
+                # exist downstream, and probe_strategy.get_probe_context already has
+                # dedicated guidance for each of these signals, so they collapse to PROBE.
+                _eval_action = _eval_result_inline.get("action") or "PROBE"
+                _action = "MOVE_ON" if _eval_action == "MOVE_ON" else "PROBE"
+                spawn_background_task(
+                    log_test_event(app_id, "eval_done", f"Eval complete | action={_eval_action}"),
+                    "test_event_eval_done"
+                )
                 logger.info(
                     "[AGENT] turn=%d | decision_logic: sat=%.1f/%.1f saturated=%s weak=%s dry=%s "
                     "-> agent_action=%s",
@@ -2789,8 +2802,25 @@ async def entrypoint(ctx: JobContext):
                 )
                 # Test events: log decision
                 if _action == "MOVE_ON":
+                    _reason = "Unknown"
+                    if _eval_signal == "pure_denial":
+                        _reason = "pure_denial signal"
+                    elif _is_saturated:
+                        _reason = "topic saturated"
+                    elif _weak_exit:
+                        _reason = "weak exit (low depth/denial)"
+                    elif _dry_topic:
+                        _reason = "dry topic (no substantive answers)"
+                    elif _eval_action == "MOVE_ON":
+                        _reason = "evaluator forced move_on"
+
                     spawn_background_task(
-                        log_test_event(app_id, "move_on", f"Moving to next topic | sat={_sat_after:.1f}/{_sat_thresh:.1f}"),
+                        log_test_event(
+                            app_id, 
+                            "move_on", 
+                            f"Moving to next topic | sat={_sat_after:.1f}/{_sat_thresh:.1f}",
+                            {"reason": _reason}
+                        ),
                         "test_event_move_on"
                     )
                 else:
@@ -3209,8 +3239,23 @@ async def entrypoint(ctx: JobContext):
         "what you've worked on and how you think about things. Are you all set to begin?"
     )
     async def _handle_completed_user_turn(_turn_ctx, new_message) -> None:
+        # Interview already ended (time limit or inactivity timeout) -- the closing
+        # line was already spoken and termination signaled. Speech that arrives late
+        # (e.g. the candidate replies right as/after the goodbye plays) must not be
+        # evaluated or trigger a new question; the session is shutting down.
+        if interview_marked_finished or disconnect_event.is_set():
+            logger.info("[USER_TURN] ignored -- interview already marked finished")
+            return
+        # Flux's native end-of-turn detection (eot_threshold/eot_timeout_ms, see
+        # agent_runtime_utils.AgentConfig) owns turn boundaries. A candidate's mid-thought
+        # pause is Flux's problem to wait out at the STT layer, not something to patch
+        # around here with an application-level debounce/merge buffer -- that just adds
+        # latency to every turn and still fails on pauses longer than the buffer window.
+        async with _user_turn_lock:
+            await _handle_completed_user_turn_locked(_turn_ctx, new_message)
+    async def _handle_completed_user_turn_locked(_turn_ctx, new_message) -> None:
         nonlocal _answer_received_at, _candidate_turn_since_last_assistant, \
-            warmup_complete, _interview_has_started
+            warmup_complete, _interview_has_started, _last_evaluated_turn_snapshot
         content = (getattr(new_message, "text_content", "") or "").strip()
         if not content:
             logger.debug("[USER_TURN] completed turn had no text; releasing gate without reply directive")
@@ -3223,6 +3268,19 @@ async def entrypoint(ctx: JobContext):
             logger.info("[GATE] Candidate spoke before greeting  blocked")
             return
         turn_snapshot = turn_count
+        if turn_snapshot == _last_evaluated_turn_snapshot:
+            # LiveKit fired a second end-of-turn for the same candidate turn (e.g. a
+            # pause mid-answer was detected as EOT, then more speech followed before
+            # Ishita replied). turn_count only advances on assistant turns, so this
+            # would otherwise re-run eval/warmup/probe a second time for one answer.
+            logger.info(
+                "[USER_TURN] duplicate end-of-turn for turn=%d ignored (text=%r)",
+                turn_snapshot, content[:80],
+            )
+            agent._waiting_for_eval = False
+            agent._directive_ready.set()
+            return
+        _last_evaluated_turn_snapshot = turn_snapshot
         # Turn 1 = candidate's reply to the greeting. Deliver fixed warmup via session.say()
         # so the LLM never generates this line (it was producing unpredictable filler).
         if turn_snapshot == 1 and not warmup_complete:
@@ -3230,14 +3288,37 @@ async def entrypoint(ctx: JobContext):
             agent._directive_ready.clear()
             await _process_user_conversation_item(content, "user", turn_snapshot, is_final_eot=True)
             _append_with_elapsed("Candidate", content)
+            # If the candidate reciprocated the "how are you doing?" greeting (asked
+            # Ishita back), a bare scripted warmup line ignoring that reads as rude.
+            # Prepend a short fixed reciprocal reply — still scripted (no LLM filler
+            # variance), just acknowledges the question was heard.
+            _content_lc_greet = content.lower()
+            _asked_back = bool(re.search(r"\b(and you|how about you|you\?|how are you|and yourself)\b", _content_lc_greet))
+            _warmup_text_to_say = (
+                ("I'm doing well, thanks for asking! " + _FIXED_WARMUP_TEXT)
+                if _asked_back else _FIXED_WARMUP_TEXT
+            )
             try:
-                await session.say(_FIXED_WARMUP_TEXT, allow_interruptions=False)
-                _append_with_elapsed("Interviewer", _FIXED_WARMUP_TEXT)
+                await session.say(_warmup_text_to_say, allow_interruptions=False)
+                _append_with_elapsed("Interviewer", _warmup_text_to_say)
                 logger.info("[WARMUP] Fixed warmup delivered via session.say()")
             except Exception as _w_err:
                 logger.warning("[WARMUP] session.say() warmup failed: %s", _w_err)
+                # session.say() never delivered the assistant message, so
+                # on_conversation_item_added's turn_count==2 branch will never fire to
+                # close the gate for us -- release it here so the LLM isn't stuck
+                # waiting the full 11s timeout for nothing.
+                agent._waiting_for_eval = False
+                agent._directive_ready.set()
             finally:
-                # Update phase status and release gate — candidate will answer warmup next
+                # Do NOT touch agent._waiting_for_eval / _directive_ready here.
+                # await session.say() above synchronously drives on_conversation_item_added
+                # for the assistant message before returning, which (since turn_count
+                # reaches 2, not warmup_complete) is the authoritative gate-closer for
+                # "wait for the candidate's warmup answer" (see the turn_count==2 branch
+                # below). Unconditionally releasing the gate here raced with and undid
+                # that close, letting the LLM generate a real interview question before
+                # the candidate ever answered the warmup prompt.
                 remove_system_messages(chat_ctx, "[PHASE_STATUS]")
                 chat_ctx.add_message(
                     role="system",
@@ -3247,8 +3328,6 @@ async def entrypoint(ctx: JobContext):
                         "Wait silently for candidate's answer. DO NOT say anything until [NEXT_TURN_DIRECTIVE] arrives."
                     ),
                 )
-                agent._waiting_for_eval = False
-                agent._directive_ready.set()
             return
         # Dynamic warmup (Option B): LLM decides readiness, not a fixed turn count.
         # Warmup ends when the candidate signals they are ready to begin.
@@ -3357,10 +3436,17 @@ async def entrypoint(ctx: JobContext):
                 if inactivity_nudge_speaking:
                     logger.debug("[TURN_GUARD] Skipping nudge message — not an interview turn")
                     return
-                # Greeting (turn 1 AI) and warmup (turn 2 AI) must never overwrite this
-                # because their text ("How are you doing?", "All good on your end?") would
-                # pollute eval context if the candidate gives a slow answer on turn 3+.
-                _is_interview_turn = warmup_complete and turn_count > 2
+                # Greeting and warmup-confirmation assistant messages must never overwrite
+                # this because their text ("How are you doing?", "Are you all set to begin?")
+                # would pollute eval context. warmup_complete alone is the right gate: it's
+                # already True by the time this handler runs for the first interview
+                # question (set synchronously in _handle_completed_user_turn_locked before
+                # the LLM generates that question), so it correctly excludes greeting/warmup
+                # messages without an extra turn_count check. The previous `turn_count > 2`
+                # check used the pre-increment value (turn_count is bumped further below)
+                # and was off by one, so the very first interview question was never tracked
+                # as _last_interviewer_question -- silently skipping turn 3's scoring.
+                _is_interview_turn = warmup_complete
                 # Save Ishita's line to transcript
                 _append_with_elapsed("Interviewer", clean_content)
                 if _is_interview_turn:
@@ -3647,22 +3733,28 @@ async def entrypoint(ctx: JobContext):
             # This ensures they get a full 10 seconds of silence before a nudge fires.
             if awaiting_candidate_response:
                 reset_inactivity_clock(start_waiting=True, preserve_nudge_flags=False)
+    _last_speaking_turn_was_nudge = False
     @session.on("agent_state_changed")
     def on_agent_state_changed(event):
-        nonlocal is_agent_speaking, first_agent_turn_committed_at
+        nonlocal is_agent_speaking, first_agent_turn_committed_at, _last_speaking_turn_was_nudge
         if event.new_state == "speaking":
             is_agent_speaking = True
             if inactivity_nudge_speaking:
+                _last_speaking_turn_was_nudge = True
                 logger.debug("[NUDGE] Scripted inactivity prompt speaking; preserving countdown")
             else:
+                _last_speaking_turn_was_nudge = False
                 reset_inactivity_clock(start_waiting=False)
                 logger.debug("[NUDGE] AI started speaking; old inactivity countdown cleared")
         elif event.new_state == "listening":
             is_agent_speaking = False
             if first_agent_turn_committed_at is None:
                 first_agent_turn_committed_at = time.monotonic()
-            # Start inactivity countdown immediately when AI finishes speaking
-            reset_inactivity_clock(start_waiting=True, preserve_nudge_flags=False)
+            # Start inactivity countdown immediately when AI finishes speaking.
+            # If the turn that just ended was a nudge, preserve the sent-flags so
+            # the schedule escalates (7s -> 15s -> 25s) instead of the same nudge
+            # re-firing every ~7s forever.
+            reset_inactivity_clock(start_waiting=True, preserve_nudge_flags=_last_speaking_turn_was_nudge)
             logger.debug("[NUDGE] AI finished speaking; inactivity countdown started")
     # Wait for participant to join so we have their identity for tracking.
     # Keep waiting during hardware check and handle room-disconnect gracefully.
@@ -3838,6 +3930,10 @@ async def entrypoint(ctx: JobContext):
         # Scripted speech should not behave like a new interview question. Preserve
         # the original silence timer across the nudge audio so 10/20/30/50/60s
         # thresholds are measured from the candidate's first chance to answer.
+        # Also preserve the "already sent" flags across the nudge's own
+        # agent_state_changed speaking->listening transition (below), otherwise
+        # each nudge wipes its own sent-flag and re-fires forever every ~7s
+        # instead of escalating to the 15s warning / 25s end.
         nonlocal awaiting_candidate_response, awaiting_candidate_since, inactivity_nudge_speaking
         inactivity_nudge_speaking = True
         try:
@@ -3931,12 +4027,22 @@ async def entrypoint(ctx: JobContext):
             if awaiting_candidate_response and awaiting_candidate_since is not None
             else 0.0
         )
+        # NOTE: deliberately does NOT check agent._waiting_for_eval. That gate is
+        # pre-closed the instant any interview question is delivered (see
+        # "[LLM_GATE] Pre-cleared after interview question delivery" / turn_count==2
+        # warmup gate) -- BEFORE the candidate has said anything, in anticipation of an
+        # eval call that only starts once they actually speak. If the candidate stays
+        # silent, that gate never gets released (nothing triggers eval), so gating
+        # nudges on it meant inactivity nudges/warning/end never fired during real
+        # silence -- exactly the "inactivity not firing" symptom. Nudges are delivered
+        # via a separate session.say() path (_deliver_nudge) that doesn't touch
+        # _directive_ready/_waiting_for_eval, so there's no actual conflict with a
+        # genuinely in-flight eval call to guard against here.
         _silence_active = (
             not is_agent_speaking
             and not is_candidate_speaking
             and awaiting_candidate_response
             and inactivity_elapsed >= INACTIVITY_NUDGE_SECS
-            and not agent._waiting_for_eval
         )
         # Log timing every 5 seconds so we can verify nudge schedule
         if int(inactivity_elapsed) % 5 == 0 and inactivity_elapsed >= 5:
@@ -3992,6 +4098,10 @@ async def entrypoint(ctx: JobContext):
     # --- Grace Period: Wait for final STT results to arrive (Deepgram/LiveKit tail) ---
     logger.info(
         f"Interview ended (finished={finished_task.done()}, time_expired={time_expired}). Waiting 2s for final transcripts..."
+    )
+    spawn_background_task(
+        log_test_event(app_id, "session_ended", "Session ended"),
+        "test_event_session_ended"
     )
     await asyncio.sleep(2)
     # Ã¢ Final definitive save - Phase 5 includes proctoring report + answer scores

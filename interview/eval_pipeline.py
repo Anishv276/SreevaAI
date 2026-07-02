@@ -78,6 +78,7 @@ class TopicState:
 
         # Dry-topic: if two consecutive answers score 0, candidate is stuck on this topic.
         self.last_score = None
+        self.consecutive_zero_scores = 0
 
         # Response signal tracking: if clarification_request fires twice, escalate to MOVE_ON
         self.clarification_request_count = 0
@@ -106,15 +107,28 @@ class TopicState:
         )
 
     def is_dry_topic(self) -> bool:
-        # Two consecutive answers with score 0 → candidate is stuck, move on.
-        return self.last_score == 0.0 and self.follow_up_turns >= 2
+        # Two CONSECUTIVE answers with score 0 -> candidate is stuck, move on.
+        # consecutive_zero_scores tracks a real streak (reset to 0 the moment any
+        # answer scores above 0) -- checking last_score alone only knows the single
+        # most recent score, so a single zero at turn >= 2 (after prior non-zero
+        # answers) incorrectly looked like two-in-a-row and forced a premature MOVE_ON.
+        return self.consecutive_zero_scores >= 2
 
     def add_contribution(self, weighted: float, signal: str | None, turn: int | None = None) -> None:
         contribution = max(0.0, _score_to_contribution(weighted))
-        effective_base = self.base_turn_credit if contribution > 0.0 else 0.0
+        # Only a hard-zeroed answer (pure_denial/off_topic/clarification_request, which
+        # arrive here as weighted == 0.0) should get zero credit entirely. A weak but
+        # present answer (0 < weighted < 2.0) still used up a turn and should accrue
+        # base_turn_credit even though it's below the contribution floor — otherwise it's
+        # indistinguishable from a denial and the topic can never leave sat=0.0.
+        effective_base = self.base_turn_credit if weighted > 0.0 else 0.0
         self.saturation_score += effective_base + contribution
         self.follow_up_turns += 1
         self.is_saturated = self.saturation_score >= self.saturation_threshold
+        if weighted == 0.0:
+            self.consecutive_zero_scores += 1
+        else:
+            self.consecutive_zero_scores = 0
         if signal:
             self.signals_fired.append(signal)
         # Track last score for dry_topic detection (two consecutive 0s)
@@ -136,6 +150,7 @@ class TopicState:
             "updated_turn":        self.updated_turn,
             "last_score":          self.last_score,
             "clarification_request_count": self.clarification_request_count,
+            "consecutive_zero_scores": self.consecutive_zero_scores,
         }
 
     @classmethod
@@ -153,6 +168,7 @@ class TopicState:
         obj.opened_at_turn      = int(d.get("opened_at_turn", 0) or 0)
         obj.last_score          = float(d.get("last_score")) if d.get("last_score") is not None else None
         obj.clarification_request_count = int(d.get("clarification_request_count", 0) or 0)
+        obj.consecutive_zero_scores = int(d.get("consecutive_zero_scores", 0) or 0)
         if "saturation_threshold" in d:
             obj.saturation_threshold = float(d["saturation_threshold"])
         if "base_turn_credit" in d:
@@ -173,11 +189,13 @@ class TopicImportanceClassifier:
 
 
 def _weighted_score(quality: dict) -> float:
+    # Weights must match the "overall" formula in agent_scoring.py — kept in sync
+    # so the logged/scored value and the saturation-driving value never diverge.
     return (
         quality.get("clarity", 0.0) * 0.20
         + quality.get("depth", 0.0) * 0.35
-        + quality.get("specificity", 0.0) * 0.30
-        + quality.get("grounding", 0.0) * 0.15
+        + quality.get("specificity", 0.0) * 0.20
+        + quality.get("grounding", 0.0) * 0.25
     )
 
 

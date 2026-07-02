@@ -194,16 +194,27 @@ If no gate fires, SIGNAL = "no_signal_found" (report this — the LLM must alway
 
 ---- RESPONSE-LEVEL GATES (G0) — check these FIRST ----
 
-G0a — PURE_DENIAL: Is the ENTIRE answer ONLY a flat denial, nothing substantive?
+G0a — PURE_DENIAL: Is the ENTIRE answer ONLY a flat denial about the CANDIDATE'S OWN
+      knowledge/experience, nothing substantive?
       Examples: "I don't know" | "I don't remember" | "I haven't done that" | "No experience"
+      NOT this if they're saying they didn't understand the QUESTION rather than denying they
+      have the answer — "I didn't get you" / "I don't get it" / "I don't understand" are about
+      not following the question, not about lacking knowledge. That is G0c, not G0a.
+      NOT this if they're checking the connection or whether you can hear them — "Can you hear
+      me?" / "Are you there?" is not an attempt to deny knowledge, it's not addressing the
+      question at all. That is also G0c, not G0a.
       → YES: SIGNAL = pure_denial. STOP.
 
 G0b — DENIAL_WITH_CONTINUATION: Starts with denial BUT adds substantive content?
       "...but I built X" | "...however I deployed Y" | "...I tried Z"
       → YES: SIGNAL = denial_with_continuation. STOP.
 
-G0c — CLARIFICATION_REQUEST: Is candidate asking YOU to clarify/rephrase the question?
-      "What do you mean?" | "Can you rephrase?" | "Can you repeat?"
+G0c — CLARIFICATION_REQUEST: Is candidate asking YOU to clarify/rephrase the question,
+      saying they didn't understand/follow the question, OR checking the connection/
+      whether you can hear them (not answering the question at all, just checking in)?
+      "What do you mean?" | "Can you rephrase?" | "Can you repeat?" | "I didn't get you" |
+      "I don't get it" | "I don't understand" | "Sorry, can you repeat that?" |
+      "Hey, can you hear me?" | "Are you there?" | "Hello? Can you hear me?"
       → YES: SIGNAL = clarification_request. STOP.
 
 G0d — REPHRASE_REQUEST: Is candidate asking to RESTART or correct THEIR OWN answer?

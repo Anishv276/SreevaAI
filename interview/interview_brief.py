@@ -114,10 +114,15 @@ No raw JSON. No parsing needed. Your jobs:
 If a resume skill appears in the JD must-haves → tag=RESUME_TOPIC, is_jd_must_have=true (resume wins)
 If a JD requirement is not on the resume → tag=JD_TOPIC
 
-━━━ TOPIC COUNT — HARD CAP ━━━
-topic_pool must contain 10–12 TopicItems TOTAL (including anchor + role topics).
-This is a hard ceiling, not a suggestion. If more candidate material exists
-than fits, DROP the lowest-relevance items — do not exceed 12.
+━━━ TOPIC COUNT — HARD RANGE (10-12, BOTH BOUNDS MANDATORY) ━━━
+topic_pool must contain BETWEEN 10 AND 12 TopicItems TOTAL (including anchor + role topics).
+Neither bound is a suggestion:
+  - Fewer than 10 is INVALID. If your selected items total under 10, you MUST add
+    more — pull in additional JD requirements, resume skills, or work/project detail
+    splits (e.g. a work entry's two distinct ownership areas) until you reach 10.
+  - More than 12 is INVALID. If over 12, DROP the lowest-relevance items down to 12.
+Before returning JSON, COUNT topic_pool. If count < 10 or count > 12, add or remove
+items and recount. Do not submit an output outside 10-12.
 ROLE_TOPIC count: exactly 2, always included in the 10-12 total (not additional).
 
 ━━━ BAND CALIBRATION ━━━
@@ -243,7 +248,8 @@ not item count, is what matters.
     tagged ROLE_TOPIC, topic_type="role_topic" — take priority over lower-band-
     priority resume/skill items if the cap is tight.
   - anchor_topic must also be the FIRST item in topic_pool.
-  - topic_pool size: 10-12 TopicItems total. Hard cap, verify count before output.
+  - topic_pool size: 10-12 TopicItems total, BOTH bounds mandatory. Count before
+    output; if under 10, add more items; if over 12, cut the weakest.
   - Return ONLY valid JSON. No markdown. No explanation.
 
 Schema:

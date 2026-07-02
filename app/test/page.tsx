@@ -134,16 +134,16 @@ function useLiveTranscript() {
 
 type TestEvent = {
     timestamp: number;
-    type: "response_received" | "eval_start" | "eval_done" | "probe" | "saturate" | "move_on" | "llm_generating" | "llm_done" | "signal_fired";
+    type: "response_received" | "eval_start" | "eval_done" | "probe" | "saturate" | "move_on" | "llm_generating" | "llm_done" | "signal_fired" | "session_ended";
     message: string;
     data?: Record<string, unknown>;
 };
 
 // ─── Simulation Viewer ──────────────────────────────────────────────────────────
 function SimulationViewer({ 
-    lines, events, elapsedSeconds, isConnected, timerStarted
+    lines, events, elapsedSeconds, isConnected, timerStarted, sessionEnded
 }: {
-    lines: TranscriptLine[]; events: TestEvent[]; elapsedSeconds: number; isConnected: boolean; timerStarted: boolean;
+    lines: TranscriptLine[]; events: TestEvent[]; elapsedSeconds: number; isConnected: boolean; timerStarted: boolean; sessionEnded: boolean;
 }) {
     const transcriptEndRef = useRef<HTMLDivElement>(null);
 
@@ -176,8 +176,14 @@ function SimulationViewer({
                 {/* Timer Badge */}
                 {timerStarted && (
                     <div className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/80 backdrop-blur-sm border border-[#E9E7FF] shadow-sm">
-                        <div className={cn("w-2 h-2 rounded-full", isConnected ? "bg-violet-500 animate-pulse" : "bg-gray-400")} />
-                        <span className="font-mono text-sm font-bold text-gray-900">{formatTime(elapsedSeconds)}</span>
+                        {sessionEnded ? (
+                            <div className="w-2 h-2 rounded-full bg-red-500" />
+                        ) : (
+                            <div className={cn("w-2 h-2 rounded-full", isConnected ? "bg-violet-500 animate-pulse" : "bg-gray-400")} />
+                        )}
+                        <span className="font-mono text-sm font-bold text-gray-900">
+                            {formatTime(elapsedSeconds)} {sessionEnded && <span className="text-red-500 ml-1 text-[10px] uppercase tracking-wider">Ended</span>}
+                        </span>
                     </div>
                 )}
             </div>
@@ -191,7 +197,13 @@ function SimulationViewer({
                 ) : (
                     <>
                         {(() => {
-                            // Compute which events are "attached" (between prev human and each AI bubble)
+                            // Compute which events are "attached" (between prev human and each AI bubble).
+                            // Each event can only attach to ONE AI line -- without excluding
+                            // attachedEventIds from the filter, consecutive AI lines sharing the same
+                            // prevHumanTs (e.g. repeated inactivity nudges with no candidate reply in
+                            // between) all re-match the same old event window, so the same
+                            // signal_fired/eval_done/probe block appeared to "re-fire" under every
+                            // nudge even though the backend only logged it once.
                             const attachedEventIds = new Set<number>();
                             const lineEventMap: TestEvent[][] = lines.map((line, i) => {
                                 if (line.speaker !== "AI" || i === 0) return [];
@@ -199,7 +211,9 @@ function SimulationViewer({
                                 for (let j = i - 1; j >= 0; j--) {
                                     if (lines[j].speaker === "Human") { prevHumanTs = lines[j].ts; break; }
                                 }
-                                const evs = events.filter(e => e.timestamp >= prevHumanTs && e.timestamp <= line.ts);
+                                const evs = events.filter(e =>
+                                    e.timestamp >= prevHumanTs && e.timestamp <= line.ts && !attachedEventIds.has(e.timestamp)
+                                );
                                 evs.forEach(e => attachedEventIds.add(e.timestamp));
                                 return evs;
                             });
@@ -215,11 +229,16 @@ function SimulationViewer({
                                 type === "saturate" ? "text-orange-600" :
                                 type === "move_on" ? "text-purple-600" :
                                 type === "signal_fired" ? "text-red-600" :
+                                type === "session_ended" ? "text-red-500 bg-red-50" :
                                 type === "llm_generating" ? "text-cyan-600" : "text-cyan-700";
 
+                            const baselineTs = lines.length > 0 ? lines[0].ts : (events.length > 0 ? events[0].timestamp : Date.now());
                             const fmtTs = (ts: number) => {
-                                const d = new Date(ts);
-                                return `${d.getHours().toString().padStart(2,"0")}:${d.getMinutes().toString().padStart(2,"0")}`;
+                                const elapsedMs = Math.max(0, ts - baselineTs);
+                                const totalSeconds = Math.floor(elapsedMs / 1000);
+                                const mins = Math.floor(totalSeconds / 60);
+                                const secs = totalSeconds % 60;
+                                return `${mins.toString().padStart(2,"0")}:${secs.toString().padStart(2,"0")}`;
                             };
 
                             const EventRow = ({ event, j, prefix }: { event: TestEvent; j: number; prefix: string }) => (
@@ -283,26 +302,39 @@ function SimulationViewer({
 }
 
 // ─── Interview Room ──────────────────────────────────────────────────────────
-function InterviewRoom({ applicationId, onUpdate }: { applicationId: string; onUpdate: (state: any) => void }) {
+function InterviewRoom({ applicationId, onUpdate, timerStartedAtRef }: { applicationId: string; onUpdate: (state: any) => void; timerStartedAtRef: React.MutableRefObject<number | null> }) {
     const connectionState = useConnectionState();
     const lines = useLiveTranscript();
-    const [timerStarted, setTimerStarted] = useState(false);
-    const [elapsedSeconds, setElapsedSeconds] = useState(0);
+    // timerStartedAtRef is owned by the parent (SimulationTestPage), which stays
+    // mounted across LiveKitRoom reconnects. InterviewRoom itself gets unmounted and
+    // remounted fresh whenever the headless <LiveKitRoom> reconnects (isActive flips),
+    // which previously reset local elapsedSeconds/timerStarted state back to 0 mid-session
+    // -- the "timer keeps resetting" bug. Deriving elapsedSeconds from a ref-held start
+    // timestamp survives that remount.
+    const [timerStarted, setTimerStarted] = useState(timerStartedAtRef.current !== null);
+    const [elapsedSeconds, setElapsedSeconds] = useState(
+        timerStartedAtRef.current !== null ? Math.floor((Date.now() - timerStartedAtRef.current) / 1000) : 0
+    );
     const [events, setEvents] = useState<TestEvent[]>([]);
 
     useEffect(() => {
-        if (!timerStarted && lines.some(l => l.speaker === "AI")) {
+        if (timerStartedAtRef.current === null && lines.some(l => l.speaker === "AI")) {
+            timerStartedAtRef.current = Date.now();
             setTimerStarted(true);
         }
-    }, [lines, timerStarted]);
+    }, [lines, timerStartedAtRef]);
+
+    const hasEnded = events.some(e => e.type === "session_ended");
 
     useEffect(() => {
-        if (!timerStarted) return;
+        if (!timerStarted || hasEnded) return;
         const interval = setInterval(() => {
-            setElapsedSeconds(s => s + 1);
+            if (timerStartedAtRef.current !== null) {
+                setElapsedSeconds(Math.floor((Date.now() - timerStartedAtRef.current) / 1000));
+            }
         }, 1000);
         return () => clearInterval(interval);
-    }, [timerStarted]);
+    }, [timerStarted, hasEnded, timerStartedAtRef]);
 
     useEffect(() => {
         const interval = setInterval(async () => {
@@ -322,8 +354,8 @@ function InterviewRoom({ applicationId, onUpdate }: { applicationId: string; onU
     const isConnected = connectionState === ConnectionState.Connected;
 
     useEffect(() => {
-        onUpdate({ lines, events, elapsedSeconds, timerStarted, isConnected });
-    }, [lines, events, elapsedSeconds, timerStarted, isConnected, onUpdate]);
+        onUpdate({ lines, events, elapsedSeconds, timerStarted, isConnected, sessionEnded: hasEnded });
+    }, [lines, events, elapsedSeconds, timerStarted, isConnected, hasEnded, onUpdate]);
 
     // We just return the audio renderer; UI is handled by parent now.
     return <RoomAudioRenderer />;
@@ -357,8 +389,12 @@ function TestPageContent() {
         events: [] as TestEvent[],
         elapsedSeconds: 0,
         timerStarted: false,
-        isConnected: false
+        isConnected: false,
+        sessionEnded: false,
     });
+    // Owned here (parent survives LiveKitRoom/InterviewRoom remounts on reconnect) so
+    // the interview timer keeps counting from its real start instead of resetting to 0.
+    const timerStartedAtRef = useRef<number | null>(null);
 
     const handleUpdate = useCallback((state: any) => {
         setDisplayState(state);
@@ -410,7 +446,8 @@ function TestPageContent() {
             timerStarted: false,
             isConnected: false
         });
-        
+        timerStartedAtRef.current = null;
+
         try {
             // Clear backend events for this candidate
             await fetch(`/api/test/events?applicationId=${selectedCandidate.id}`, { method: "DELETE" });
@@ -633,6 +670,7 @@ function TestPageContent() {
                         elapsedSeconds={displayState.elapsedSeconds} 
                         isConnected={displayState.isConnected} 
                         timerStarted={displayState.timerStarted} 
+                        sessionEnded={displayState.sessionEnded}
                     />
                 </div>
 
@@ -647,7 +685,7 @@ function TestPageContent() {
                             video={false}
                             onDisconnected={handleEnd}
                         >
-                            <InterviewRoom applicationId={selectedCandidate?.id || ""} onUpdate={handleUpdate} />
+                            <InterviewRoom applicationId={selectedCandidate?.id || ""} onUpdate={handleUpdate} timerStartedAtRef={timerStartedAtRef} />
                         </LiveKitRoom>
                     </div>
                 )}
