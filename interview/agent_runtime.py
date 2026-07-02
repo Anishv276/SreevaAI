@@ -260,10 +260,6 @@ _GREETING_ECHO_RE = re.compile(
     r"^\s*(?:hi|hello|hey|okay|ok|yeah|yes|yep|mmhmm|mhm|good morning|good afternoon)\s*$",
     re.IGNORECASE,
 )
-_ACK_ONLY_ASSISTANT_RE = re.compile(
-    r"^\s*(?:okay|ok|got it|sure|right|yeah|yes|thanks|thank you|makes sense|that makes sense)[,.\s]*$",
-    re.IGNORECASE,
-)
 _MEANINGFUL_SHORT_ANSWERS = {
     "no",
     "yes",
@@ -316,12 +312,6 @@ def _clean_stt_text(raw_text: str) -> str:
             continue
         cleaned_tokens.append(token)
     return _STT_WHITESPACE_RE.sub(" ", " ".join(cleaned_tokens)).strip()
-def _is_ack_only_assistant_fragment(text: str) -> bool:
-    """True for interrupted assistant acknowledgements that are not a question."""
-    clean = _STT_WHITESPACE_RE.sub(" ", (text or "").strip())
-    if not clean or "?" in clean:
-        return False
-    return bool(_ACK_ONLY_ASSISTANT_RE.fullmatch(clean)) or len(clean.split()) <= 2
 def _normalized_short_answer(text: str) -> str:
     return re.sub(r"[^a-z0-9/]+", "", (text or "").strip().lower())
 def _is_tiny_fragment(text: str) -> bool:
@@ -2040,7 +2030,6 @@ async def entrypoint(ctx: JobContext):
     _asked_questions_log: collections.deque = collections.deque(maxlen=6)  # EC-3: deque(maxlen) makes append atomic — no pop() race
 
     _first_interview_question_asked: bool = False  # True after first post-warmup AI question fires
-    _awaiting_first_interview_question: bool = False  # DEPRECATED: no longer used, kept for future cleanup
     _interview_has_started: bool = False  # True when warmup ends and interview directive is injected
     # Per-topic ground-truth records built at MOVE_ON time — replaces end-of-session
     # LLM transcript re-reading for skill extraction. Each entry is appended when the
@@ -2476,7 +2465,6 @@ async def entrypoint(ctx: JobContext):
             warmup_complete, _last_depth_decay_turn, \
             _active_topic, _covered_topic_keys, _topic_states, \
             _last_applied_eval_turn, _topic_score_histories, \
-            _awaiting_first_interview_question, \
             _asked_questions_log, \
             _last_question_topic, _topic_records, _current_topic_answers, \
             _current_topic_questions, _topic_start_line_idx
@@ -3222,7 +3210,7 @@ async def entrypoint(ctx: JobContext):
     )
     async def _handle_completed_user_turn(_turn_ctx, new_message) -> None:
         nonlocal _answer_received_at, _candidate_turn_since_last_assistant, \
-            warmup_complete, _awaiting_first_interview_question, _interview_has_started
+            warmup_complete, _interview_has_started
         content = (getattr(new_message, "text_content", "") or "").strip()
         if not content:
             logger.debug("[USER_TURN] completed turn had no text; releasing gate without reply directive")
@@ -3315,7 +3303,7 @@ async def entrypoint(ctx: JobContext):
         nonlocal turn_count, _last_interviewer_question, _question_asked_at, \
             _candidate_turn_since_last_assistant, warmup_complete, \
             _answer_received_at, _first_interview_question_asked, \
-            _last_question_topic, _awaiting_first_interview_question
+            _last_question_topic
         try:
             item = event.item
             role = getattr(item, "role", None)
@@ -3348,12 +3336,7 @@ async def entrypoint(ctx: JobContext):
                 # Greeting (turn 1 AI) and warmup (turn 2 AI) must never overwrite this
                 # because their text ("How are you doing?", "All good on your end?") would
                 # pollute eval context if the candidate gives a slow answer on turn 3+.
-                # After warmup, we have a transient "acknowledgement only" phase before
-                # the first real interview question. Don't count it as an interview turn.
-                _is_interview_turn = warmup_complete and not _awaiting_first_interview_question and turn_count > 2
-                if _is_ack_only_assistant_fragment(clean_content) and (_awaiting_first_interview_question or not warmup_complete):
-                    logger.warning("[TURN_GUARD] Ignoring acknowledgement-only assistant fragment: %r", clean_content)
-                    return
+                _is_interview_turn = warmup_complete and turn_count > 2
                 # Save Ishita's line to transcript
                 _append_with_elapsed("Interviewer", clean_content)
                 if _is_interview_turn:
@@ -3499,7 +3482,6 @@ async def entrypoint(ctx: JobContext):
                     # overrides that instruction once the opener has been delivered.
                     if not _first_interview_question_asked:
                         _first_interview_question_asked = True
-                        _awaiting_first_interview_question = False
                         remove_system_messages(chat_ctx, "[PHASE_STATUS]")
                         chat_ctx.add_message(
                             role="system",
