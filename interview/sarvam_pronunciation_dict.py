@@ -43,6 +43,36 @@ logger = logging.getLogger(__name__)
 
 _BASE_URL = "https://api.sarvam.ai/text-to-speech/pronunciation-dictionary"
 
+
+async def _validate_sarvam_api_key(api_key: str) -> bool:
+    """Test if the Sarvam API key is valid by doing a lightweight request."""
+    if not api_key or len(api_key) < 10:
+        logger.warning("[SARVAM_DICT] API key missing or too short (len=%d)", len(api_key or ""))
+        return False
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            # Try a simple GET to the list endpoint — doesn't require a dict, just validates auth
+            resp = await client.get(
+                _BASE_URL,
+                headers={"api-subscription-key": api_key},
+            )
+            if resp.status_code == 200:
+                logger.info("[SARVAM_DICT] API key validated (200 OK)")
+                return True
+            elif resp.status_code == 401:
+                logger.error("[SARVAM_DICT] API key is invalid or expired (401 Unauthorized)")
+                return False
+            elif resp.status_code == 400:
+                logger.warning("[SARVAM_DICT] API key validation returned 400 — might be quota/plan limit")
+                return False  # ponytail: 400 on list = auth or quota issue
+            else:
+                logger.warning("[SARVAM_DICT] API key validation returned %d (unexpected)", resp.status_code)
+                return False
+    except Exception as e:
+        logger.error("[SARVAM_DICT] API key validation failed: %s", e)
+        return False
+
 # ── Base dictionary: universal tech terms all interviews share ─────────────────
 # These are words Sarvam's engine consistently mispronounces even with
 # enable_preprocessing on. Human-curated, rarely changes.
@@ -304,20 +334,41 @@ async def _list_dicts(api_key: str) -> list[str]:
         data = resp.json()
         # Response is either {"dictionaries": [...]} or a list directly
         if isinstance(data, list):
-            return [d.get("dictionary_id") or d.get("id") or "" for d in data]
+            # List of dicts with {id/dictionary_id} or list of strings
+            return [
+                (d.get("dictionary_id") or d.get("id") or "") if isinstance(d, dict) else str(d)
+                for d in data
+            ]
         dicts = data.get("dictionaries", [])
-        return [d.get("dictionary_id") or d.get("id") or "" for d in dicts]
+        return [
+            (d.get("dictionary_id") or d.get("id") or "") if isinstance(d, dict) else str(d)
+            for d in dicts
+        ]
 
 
 async def _create_dict(api_key: str, pronunciations: dict[str, str]) -> str:
+    """Create a pronunciation dict using multipart (Sarvam's required format)."""
     payload = _build_payload(pronunciations)
     async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(
-            _BASE_URL,
-            headers={"api-subscription-key": api_key},
-            files={"file": ("pronunciations.json", io.BytesIO(payload), "application/json")},
+        logger.debug(
+            "[SARVAM_DICT_DEBUG] Creating dict with %d pronunciations | payload_size=%d bytes",
+            len(pronunciations), len(payload)
         )
-        resp.raise_for_status()
+        try:
+            # ponytail: Sarvam requires multipart form-data, not raw JSON.
+            # POST returns 400 with JSON content-type; 200 with form upload.
+            resp = await client.post(
+                _BASE_URL,
+                headers={"api-subscription-key": api_key},
+                files={"file": ("pronunciations.json", io.BytesIO(payload), "application/json")},
+            )
+            logger.debug("[SARVAM_DICT_DEBUG] POST (multipart) status=%d", resp.status_code)
+            resp.raise_for_status()
+        except Exception as e:
+            logger.error("[SARVAM_DICT] POST failed: %s | status=%s | body=%s",
+                        e, getattr(resp, 'status_code', '?'), getattr(resp, 'text', '')[:500])
+            raise
+
         data = resp.json()
         # Sarvam API returns either {"dictionary_id": "..."} or {"id": "..."}
         if isinstance(data, dict):
@@ -330,15 +381,28 @@ async def _create_dict(api_key: str, pronunciations: dict[str, str]) -> str:
 
 
 async def _update_dict(api_key: str, dict_id: str, pronunciations: dict[str, str]) -> None:
+    """Update a pronunciation dict using multipart (Sarvam's required format)."""
     payload = _build_payload(pronunciations)
     async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.put(
-            _BASE_URL,
-            params={"dict_id": dict_id},
-            headers={"api-subscription-key": api_key},
-            files={"file": ("pronunciations.json", io.BytesIO(payload), "application/json")},
+        logger.debug(
+            "[SARVAM_DICT_DEBUG] Updating dict %s with %d pronunciations",
+            dict_id, len(pronunciations)
         )
-        resp.raise_for_status()
+        try:
+            # ponytail: Sarvam requires multipart form-data, not raw JSON.
+            # PUT returns 400 with JSON content-type; 200 with form upload.
+            resp = await client.put(
+                _BASE_URL,
+                params={"dict_id": dict_id},
+                headers={"api-subscription-key": api_key},
+                files={"file": ("pronunciations.json", io.BytesIO(payload), "application/json")},
+            )
+            logger.debug("[SARVAM_DICT_DEBUG] PUT (multipart) status=%d", resp.status_code)
+            resp.raise_for_status()
+        except Exception as e:
+            logger.error("[SARVAM_DICT] PUT failed: %s | status=%s | body=%s",
+                        e, getattr(resp, 'status_code', '?'), getattr(resp, 'text', '')[:500])
+            raise
 
 
 async def _delete_dict(api_key: str, dict_id: str) -> None:
@@ -364,13 +428,20 @@ async def get_or_create_base_dict_id(api_key: str) -> Optional[str]:
     existing = os.environ.get(_BASE_ENV_KEY, "").strip()
     if existing:
         return existing
+
+    # Validate API key first
+    if not await _validate_sarvam_api_key(api_key):
+        logger.warning("[SARVAM_DICT] API key validation failed — skipping base dict creation")
+        return None
+
     try:
         dict_id = await _create_dict(api_key, _BASE_PRONUNCIATIONS)
         os.environ[_BASE_ENV_KEY] = dict_id
         logger.info("[SARVAM_DICT] Created base dict %s (%d words)", dict_id, len(_BASE_PRONUNCIATIONS))
         return dict_id
     except Exception as exc:
-        logger.warning("[SARVAM_DICT] Failed to create base dict: %s — interviews continue without pronunciation dict", exc)
+        logger.warning("[SARVAM_DICT] Failed to create base dict: %s (type=%s) — interviews continue without pronunciation dict",
+                      exc, type(exc).__name__, exc_info=True)
         return None
 
 
@@ -440,7 +511,7 @@ async def get_session_dict_id(
         return dict_id
 
     except Exception as exc:
-        logger.warning("[SARVAM_DICT] Session dict failed (%s) — falling back to base dict", exc)
+        logger.warning("[SARVAM_DICT] Session dict failed: %s (exc_type=%s) — falling back to base dict", exc, type(exc).__name__, exc_info=True)
         return base_dict_id
 
 

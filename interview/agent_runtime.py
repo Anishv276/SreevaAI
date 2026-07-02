@@ -546,6 +546,9 @@ def _build_probe_directive(
         "The question can have 1-3 sentences of natural setup before the actual question — that's fine.",
         "Grounded in what they just told you. Never 'Can you' or 'Could you'. Never 'Great!' or 'Awesome!'.",
         "",
+        f"ANCHOR: Mention '{_topic_short}' by name somewhere in your question so the candidate knows exactly what you're asking about.",
+        f"Do NOT ask about it without anchoring the topic name — they need context to understand.",
+        "",
         f"HARD STOP: Your question MUST be about '{_topic_short}' only.",
         "Any question about a different topic — even slightly related — is WRONG. Stay locked on the active topic.",
     ]
@@ -2078,6 +2081,7 @@ async def entrypoint(ctx: JobContext):
     _last_applied_eval_turn: int = 0             # monotonic guard against stale eval results
     _question_asked_at: float = 0.0
     _answer_received_at: float = 0.0
+    _candidate_started_speaking_at: float = 0.0  # true reaction-time endpoint (VAD speech-start, not EOT)
     _custom_q_reminder_fired: bool = False
     _covered_topic_keys = CoveredTopics()  # single source of truth — normalized lowercase keys
     _asked_questions_log: collections.deque = collections.deque(maxlen=6)  # EC-3: deque(maxlen) makes append atomic — no pop() race
@@ -2215,7 +2219,6 @@ async def entrypoint(ctx: JobContext):
         k = _topic_short_key(topic)
         if not k:
             return
-        topic_title = topic.split(" - ")[0].strip()
         _covered_topic_keys.record(
             topic,
             source=CoverageSource.EXPLICIT,
@@ -2226,18 +2229,6 @@ async def entrypoint(ctx: JobContext):
         # and the pool never re-surfaces a finished topic even if _covered_topic_keys lookup fails.
         _topic_pool[:] = [t for t in _topic_pool if _topic_short_key(t) != k]
         logger.info("[COVERED] topic done: %r  (pool_remaining=%d covered=%d)", k, len(_topic_pool), len(_covered_topic_keys))
-        # Auto-cover skills the brief says are already covered by this topic
-        topic_key_lc = k.lower()
-        for skill_id, covering_topic_ids in _interview_brief.skill_coverage_map.items():
-            if any(_topic_short_key_for_ordering(tid).lower() == topic_key_lc for tid in covering_topic_ids):
-                skill_key = _topic_short_key_for_ordering(skill_id).lower()
-                if skill_key and skill_key not in _covered_topic_keys:
-                    _covered_topic_keys.record(
-                        skill_id,
-                        source=CoverageSource.AUTO_SKILL,
-                        via_topic=topic_title,
-                    )
-                    logger.info("[SKILL_DEDUP] auto-covered %r via %r", skill_key, topic_title)
 
     # Stopwords that carry no identity -- ignored when measuring topic overlap.
     _OVERLAP_STOPWORDS = frozenset({
@@ -2524,6 +2515,7 @@ async def entrypoint(ctx: JobContext):
         content: str,
         role: str,
         turn_snapshot: int,
+        is_final_eot: bool = False,  # ponytail: True only when called from _handle_completed_user_turn (real EOT)
     ) -> None:
         nonlocal proctoring_events, _last_interviewer_question, \
             answer_scores, \
@@ -2630,9 +2622,15 @@ async def entrypoint(ctx: JobContext):
                         "is_warmup": True,
                     })
                 logger.info("[WARMUP] Warmup turn detected - will be included in transcript (turn=%d)", turn_snapshot)
+            # ponytail: Deepgram Flux sends partial transcripts as separate chunks.
+            # We ONLY eval at true end-of-turn (is_final_eot=True from _handle_completed_user_turn).
+            # Skip eval on intermediate chunks to avoid double-scoring and hallucination.
+            if not is_final_eot:
+                logger.info("[EVAL_GUARD] turn=%d skipped eval -- not EOT (is_final_eot=%s, content=%r)", turn_snapshot, is_final_eot, (content or "")[:40])
+                return
+
             # warmup_complete is set by _handle_completed_user_turn when candidate
-            # signals readiness. _process_user_conversation_item only records the turn.
-            # Start eval only after warmup has fully finished.
+            # signals readiness. Start eval only after warmup has fully finished.
             # Warmup = turns 1-2, interview starts at turn 3, so first eval fires at turn 3.
             _can_eval_turn = bool(
                 warmup_complete
@@ -2654,9 +2652,19 @@ async def entrypoint(ctx: JobContext):
                     if _last_depth_decay_turn >= 0
                     else 999
                 )
+                # Reaction time = question delivered -> candidate started speaking (VAD speech-start),
+                # NOT question delivered -> candidate finished speaking. The latter (old behavior)
+                # included the entire duration of their spoken answer, inflating latency for anyone
+                # who gave a long answer instantly. Falls back to end-of-turn timestamp if the
+                # speech-start event never fired (e.g. STT-only path with no VAD state).
+                _latency_end = (
+                    _candidate_started_speaking_at
+                    if _candidate_started_speaking_at > _question_asked_at
+                    else _answer_received_at
+                )
                 response_latency_snap: Optional[float] = (
-                    round(_answer_received_at - _question_asked_at, 3)
-                    if _question_asked_at > 0 and _answer_received_at > _question_asked_at
+                    round(_latency_end - _question_asked_at, 3)
+                    if _question_asked_at > 0 and _latency_end > _question_asked_at
                     else None
                 )
                 # ---------------------------------------------------------------
@@ -2806,6 +2814,15 @@ async def entrypoint(ctx: JobContext):
                 _rotation_idx = int((_new_topic_state_dict_pre or {}).get("probe_rotation_index", 0) or 0)
                 _qr           = _eval_result_inline.get("quality_record") or {}
                 _signals      = [_eval_signal] if _eval_signal else []
+
+                # Signal detection logging for debug/test visibility
+                if _eval_signal:
+                    logger.info(
+                        "[SIGNAL] turn=%d | fired=%r | reason=%r",
+                        turn_snapshot, _eval_signal, _eval_signal_reason or ""
+                    )
+                else:
+                    logger.debug("[SIGNAL] turn=%d | none fired", turn_snapshot)
                 _sat_after    = _saturation.get("score", 0.0)
                 _sat_thresh   = _saturation.get("threshold", 0.0)
                 _is_saturated = _saturation.get("is_saturated", False)
@@ -2857,6 +2874,13 @@ async def entrypoint(ctx: JobContext):
                 if _action == "MOVE_ON":
                     # -- Agent picks the next topic ----------------------------
                     _old_topic = _active_topic
+                    # Determine exit reason from saturation flags BEFORE marking,
+                    # so we capture the true reason (not masked by post-mark checks)
+                    _exit_reason = (
+                        "weak_exit"  if _weak_exit
+                        else "saturated"  if _is_saturated
+                        else "dry_topic"
+                    )
                     # Snapshot the questions asked on the topic we are leaving BEFORE the
                     # per-topic buffer is reset below, so they are recorded as GLOBAL
                     # forbidden questions and never re-asked under a later topic.
@@ -2888,15 +2912,6 @@ async def entrypoint(ctx: JobContext):
                                     _tok = _tok.strip()
                                     if _tok:
                                         _tech_skills.append(_tok)
-                            # Determine exit reason from saturation flags
-                            # (weak_exit / is_saturated / dry_topic are the only ways
-                            # _action becomes MOVE_ON below, besides explicit_denial)
-                            _exit_reason = (
-                                "explicit_denial" if _old_key in _covered_topic_keys
-                                else "weak_exit"  if _weak_exit
-                                else "saturated"  if _is_saturated
-                                else "dry_topic"
-                            )
                             # Compute avg scores across all turns on this topic
                             _topic_normed_key = re.sub(r"[^a-z0-9]+", " ", _old_key.lower()).strip()
                             _overall_hist = _topic_score_histories.get(_topic_normed_key, [])
@@ -2972,12 +2987,6 @@ async def entrypoint(ctx: JobContext):
                             _pre_next_item.tag if _pre_next_item else "RESUME_TOPIC"
                         )
                         _pre_old_title = _topic_short_title(_old_topic or "")
-                        # Coverage memory + cross-ref rule for the PRE-FIRED directive.
-                        # Previously these were "" — so the pre-fired directive (used in
-                        # ~90% of MOVE_ONs) had zero knowledge of what was already covered,
-                        # letting it re-ask concepts from earlier topics. Now it carries the
-                        # full forbidden-question list and the tag-appropriate cross-ref rule.
-                        _pre_memory_block = _covered_topic_keys.get_memory_block()
                         _pre_cross_ref = _build_cross_ref_rule(_pre_next_src)
                         _move_on_directive_task = asyncio.ensure_future(
                             _generate_move_on_directive(
@@ -2986,7 +2995,7 @@ async def entrypoint(ctx: JobContext):
                                 new_topic_title=_topic_short_title(_next_topic),
                                 source=_pre_next_src,
                                 band=candidate_band,
-                                memory_block=_pre_memory_block,
+                                memory_block="",
                                 cross_ref_rule=_pre_cross_ref,
                                 client=_eval_openai_client,
                                 llm_model=analysis_model,
@@ -3060,7 +3069,6 @@ async def entrypoint(ctx: JobContext):
                     # Build MOVE_ON directive -- LLM generates it, not agent verbatim script
                     _old_topic_title = _topic_short_title(_old_topic or "")
                     _new_topic_title = _topic_short_title(_active_topic or "")
-                    _memory_block = _covered_topic_keys.get_memory_block()
                     # Cross-reference rule -- keyed on the topic TAG (RESUME_TOPIC /
                     # JD_TOPIC / ROLE_TOPIC). This is the ONLY place that handles how to
                     # treat a topic the candidate may already have touched. The source
@@ -3102,7 +3110,7 @@ async def entrypoint(ctx: JobContext):
                             new_topic_title=_new_topic_title,
                             source=_src,
                             band=candidate_band,
-                            memory_block=_memory_block,
+                            memory_block="",
                             cross_ref_rule=_cross_ref_rule,
                             client=_eval_openai_client,
                             llm_model=analysis_model,
@@ -3134,7 +3142,6 @@ async def entrypoint(ctx: JobContext):
                             "Use the FULL CONTEXT above to make it concrete and grounded. "
                             "One short acknowledgement first, then the question. "
                             "NEVER say 'Thanks for sharing'. ONE question only."
-                            f"{_memory_block}"
                             f"{_cross_ref_rule}"
                         )
                     # CRITICAL: Update _last_question_topic NOW (before LLM fires) so eval sees the NEW topic
@@ -3222,7 +3229,7 @@ async def entrypoint(ctx: JobContext):
                         prev_answer=_prev_a,
                         topic_follow_ups=_topic_follow_ups,
                         topic_denied=_topic_short_key(_active_topic or "").lower() in _covered_topic_keys,
-                        coverage_memory=_covered_topic_keys.get_memory_block(),
+                        coverage_memory="",
                         asked_questions_log=list(_asked_questions_log),
                         topic_transcript=_topic_thread_lines,
                     )
@@ -3272,7 +3279,7 @@ async def entrypoint(ctx: JobContext):
         if turn_snapshot == 1 and not warmup_complete:
             agent._waiting_for_eval = True
             agent._directive_ready.clear()
-            await _process_user_conversation_item(content, "user", turn_snapshot)
+            await _process_user_conversation_item(content, "user", turn_snapshot, is_final_eot=True)
             append_transcript_line("Candidate", content)
             try:
                 await session.say(_FIXED_WARMUP_TEXT, allow_interruptions=False)
@@ -3317,7 +3324,7 @@ async def entrypoint(ctx: JobContext):
             content[:100],
             completing_warmup,
         )
-        await _process_user_conversation_item(content, "user", turn_snapshot)
+        await _process_user_conversation_item(content, "user", turn_snapshot, is_final_eot=True)
         if completing_warmup:
             warmup_complete = True
             _awaiting_first_interview_question = True
@@ -3345,15 +3352,17 @@ async def entrypoint(ctx: JobContext):
                     "[NEXT_TURN_DIRECTIVE - DO NOT SAY ALOUD]\n"
                     f"Start the interview. Topic: {_anchor_title}.\n"
                     f"Context: {_anchor_ctx}\n\n"
-                    "Say ONE short thing (3-6 words max) then ask your first question — topic name built into it.\n"
-                    "The first question must be OPEN and topic-specific — invite them to show what they know.\n"
-                    "Do NOT default to 'what did you build' every time — vary based on the topic context above.\n"
-                    "Examples of good openers (pick the one that fits the topic):\n"
-                    f"  'So, {_anchor_title} — walk me through what you built there.'\n"
-                    f"  'Let's talk about {_anchor_title}. What was the core problem you were solving?'\n"
-                    f"  'Alright — {_anchor_title}. What was specifically yours in that?'\n"
-                    f"  'The {_anchor_title} — where did you start and what did you own?'\n"
-                    f"  'Tell me about your work on {_anchor_title} — what was the most technically interesting part?'\n"
+                    "Say ONE short thing (3-6 words max) then ask your first question.\n"
+                    "HOW TO WRITE IT — read the topic context above and pull out ONE concrete detail: a "
+                    "specific problem it solved, a specific mechanism, a specific number/scale, a specific "
+                    "user or workflow it touched. Build the question around that ONE detail.\n"
+                    "BANNED: generic project-shaped questions that would fit literally any topic — "
+                    "'what did you build', 'where did you start and what did you own', "
+                    "'what was specifically yours in that', 'walk me through it'. These produce a small, "
+                    "low-content answer, which is exactly the failure mode to avoid.\n"
+                    "Ask exactly ONE thing — do not stack two questions into one turn.\n"
+                    "The topic name is a reference for you to identify what to ask about — use it naturally "
+                    "wherever it fits the sentence, or not at all; there is no required script.\n"
                     "Do NOT say 'let's dive in', 'just to set the stage', 'so moving forward', or any preamble.\n"
                     "Do NOT say 'Great!' or 'Perfect!' or any hollow reaction to their warmup answer.\n"
                     "Do NOT explain the interview process or list what you'll cover.\n"
@@ -3679,9 +3688,14 @@ async def entrypoint(ctx: JobContext):
             logger.debug("[NUDGE] Inactivity clock cleared")
     @session.on("user_state_changed")
     def on_user_state_changed(event):
-        nonlocal is_candidate_speaking
+        nonlocal is_candidate_speaking, _candidate_started_speaking_at
         if event.new_state == "speaking":
             is_candidate_speaking = True
+            # First speech-start after a question is the true reaction-time endpoint --
+            # response_latency_sec must measure "time to start answering", not "time to
+            # finish answering" (which is what end-of-turn timestamps give you).
+            if _question_asked_at > 0 and _candidate_started_speaking_at < _question_asked_at:
+                _candidate_started_speaking_at = time.perf_counter()
         elif event.new_state == "listening":
             is_candidate_speaking = False
             # Restart the inactivity clock from 0 every time the candidate stops speaking.
