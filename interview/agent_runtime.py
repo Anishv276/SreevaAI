@@ -541,14 +541,10 @@ async def _generate_move_on_directive(
             parts.append(f"CONTEXT: {topic_item.full_description}")
         if topic_item.tech_stack:
             parts.append(f"TECH STACK: {', '.join(topic_item.tech_stack)}")
-        if topic_item.why_relevant:
-            parts.append(f"WHY RELEVANT: {topic_item.why_relevant}")
         if topic_item.probe_focus:
-            parts.append(f"PROBE FOCUS: {', '.join(topic_item.probe_focus)}")
+            parts.append(f"PROBE FOCUS (build the opening question around ONE of these): {', '.join(topic_item.probe_focus)}")
         if topic_item.probe_avoid:
             parts.append(f"PROBE AVOID: {', '.join(topic_item.probe_avoid)}")
-        if topic_item.impact:
-            parts.append(f"IMPACT: {topic_item.impact}")
         _brief_context = "\n".join(parts)
     # Attribution guard: a STANDALONE / personal project must NEVER be tied to an
     # employer. The candidate's resume lists the project as standalone (the topic
@@ -591,27 +587,27 @@ async def _generate_move_on_directive(
             "skill":   "a skill they listed on their resume",
         }.get(_topic_type_hint, "something from their resume")
         _band_depth = {
-            "fresher":    "Establish what they personally built and what their specific role was. Surface-level is fine.",
-            "mid":        "Push past team language — ask what was specifically their own call or ownership.",
+            "fresher":    "Surface-level is fine — a concrete detail, not a scaling or architecture answer.",
+            "mid":        "Push for what was specifically their own call, not team language.",
             "experienced":"Skip setup. Go straight to a tradeoff, design decision, or what broke.",
             "senior":     "Probe strategic judgment — what it changed, what the stakes were, what they'd do differently.",
-        }.get(band, "Ask what they personally owned and what decisions were theirs.")
+        }.get(band, "Ask at a depth appropriate to their level.")
         _angle_guide = (
             f"SOURCE: RESUME_TOPIC — {_type_context}.\n"
             f"{_standalone_note}"
-            f"The candidate HAS done this. We know it from their resume. We are not checking if they did it.\n"
-            f"Your job: set clear context for the candidate so they know exactly which project/role/skill "
-            f"is being discussed, then ask ONE question that goes into depth.\n\n"
-            f"CONTEXT-SETTING PRINCIPLE:\n"
-            f"The candidate is on a voice call. They need to know what you're asking about before they can answer. "
-            f"Reference the topic naturally in the question itself — not with a formulaic opener, "
-            f"but by building the topic name into a real question. "
-            f"For a project: ask about something specific to that project. "
-            f"For a work role: ask about something specific to that company or role. "
-            f"For a skill: ask about a real scenario where they used it.\n\n"
+            f"The candidate HAS done this. We know it from their resume. We are not checking if they did it — "
+            f"never ask generic ownership questions like 'what did you build' or 'what did you personally own'.\n\n"
+            f"HOW TO BUILD THE QUESTION — combine all four of these, don't pick just one:\n"
+            f"  TITLE: {topic_item.title if topic_item else new_topic_title} — name it naturally so they know what you mean.\n"
+            f"  DESCRIPTION: {(topic_item.full_description if topic_item else '') or '(none)'} — pull ONE concrete "
+            f"detail from this (a mechanism, a number, a specific step) to ground the question.\n"
+            f"  TECH STACK: {', '.join(topic_item.tech_stack) if (topic_item and topic_item.tech_stack) else '(none)'} "
+            f"— use a specific tool/technology by name if it sharpens the question.\n"
+            f"  PROBE FOCUS (MANDATORY angle — the question must dig into ONE of these, not generic ownership): "
+            f"{_probe_focus_str or 'a specific decision or mechanism from the description'}\n\n"
             f"DEPTH TARGET ({band.upper()}): {_band_depth}\n"
             f"FORBIDDEN: 'do you have experience', 'why did you work there', 'what drew you to X', "
-            f"'tell me about your background' — these are generic and give the candidate no context."
+            f"'tell me about your background', 'what did you build/own/do' with no specific angle attached."
         )
     elif source in ("JD_TOPIC", "jd_skill"):
         _band_jd = {
@@ -623,12 +619,15 @@ async def _generate_move_on_directive(
         _angle_guide = (
             f"SOURCE: JD_TOPIC — this is required by the job description.\n"
             f"The candidate has NOT claimed this on their resume. We do not know if they've used it.\n"
-            f"Your job: make it clear to the candidate WHY you're asking — tell them the role needs this — "
-            f"then ask ONE question that checks their exposure without assuming they have any.\n\n"
-            f"CONTEXT-SETTING PRINCIPLE:\n"
-            f"The candidate needs to understand the question's origin: this is a role requirement, not a resume claim. "
-            f"Make that clear naturally in the question — e.g. frame it as 'this role involves a lot of X' "
-            f"before asking what their exposure is. Don't just ask 'have you used X?' with no context.\n\n"
+            f"Make it clear to the candidate WHY you're asking — the role needs this — "
+            f"then ask ONE question that checks exposure without assuming they have any.\n\n"
+            f"HOW TO BUILD THE QUESTION — combine all four of these, don't pick just one:\n"
+            f"  TITLE: {topic_item.title if topic_item else new_topic_title} — name it naturally.\n"
+            f"  DESCRIPTION: {(topic_item.full_description if topic_item else '') or '(none)'} — use it to explain "
+            f"why this matters for the role, in one short phrase.\n"
+            f"  TECH STACK: {', '.join(topic_item.tech_stack) if (topic_item and topic_item.tech_stack) else '(none)'} "
+            f"— name the specific tool/technology rather than speaking generically.\n"
+            f"  PROBE FOCUS (MANDATORY angle): {_probe_focus_str or 'their exposure or approach to this'}\n\n"
             f"DEPTH TARGET ({band.upper()}): {_band_jd}\n"
             f"FORBIDDEN: 'you listed', 'on your resume', 'walk me through your experience with' (assumes experience), "
             f"grilling them if they say they haven't used it."
@@ -645,15 +644,15 @@ async def _generate_move_on_directive(
             f"SOURCE: ROLE_TOPIC — this comes from expert domain knowledge of the role.\n"
             f"It is NOT on the candidate's resume and NOT in the job description. "
             f"We have no idea if they've worked with this.\n"
-            f"Your job: introduce the topic clearly so the candidate understands what's being asked — "
-            f"then ask ONE question that checks their thinking or approach, not their experience history.\n\n"
-            f"CONTEXT-SETTING PRINCIPLE:\n"
-            f"The candidate has no anchor for this question. Give them one — explain in one short phrase "
-            f"why this matters for the role before asking. Something like 'for a role like this, X matters a lot' "
-            f"or 'one thing that comes up a lot in this work is X'. Then ask your question.\n\n"
+            f"Ask ONE question that checks their thinking or approach, not their experience history.\n\n"
+            f"HOW TO BUILD THE QUESTION — combine all four of these, don't pick just one:\n"
+            f"  TITLE: {topic_item.title if topic_item else new_topic_title} — name it naturally.\n"
+            f"  DESCRIPTION: {_role_desc or '(none)'} — use it to explain in one short phrase why this matters "
+            f"for the role before asking.\n"
+            f"  TECH STACK: {', '.join(topic_item.tech_stack) if (topic_item and topic_item.tech_stack) else '(none)'}\n"
+            f"  PROBE FOCUS (MANDATORY angle): "
+            f"{_probe_focus_str or 'their understanding, reasoning, how they would approach it'}\n\n"
             f"DEPTH TARGET ({band.upper()}): {_band_role}\n"
-            f"CONTEXT FROM BRIEF: {_role_desc}\n"
-            f"PROBE ANGLES: {_probe_focus_str or 'their understanding, reasoning, how they would approach it'}\n"
             f"FORBIDDEN: 'what was your experience with X' (assumes experience), 'why did you work with X', "
             f"'what do you know about X?' (generic), framing it as if it's on their resume."
         )
@@ -683,6 +682,11 @@ async def _generate_move_on_directive(
         "  JD requirement: 'This role deals with Kubernetes a lot — what's your experience with it so far?'\n"
         "  ROLE topic: 'One thing that matters a lot in this kind of role is observability — how do you think about it?'\n"
         "Notice: the topic name is in the question. The candidate immediately knows the context.\n\n"
+
+        "━━━ PROBE FOCUS RULE (MANDATORY, every MOVE_ON) ━━━\n"
+        "The angle guidance below always includes a PROBE FOCUS list. Your OPENING ANGLE "
+        "must be built around ONE of those items — never a generic ownership question "
+        "('what did you build', 'what did you personally do') when a more specific angle is given.\n\n"
 
         "━━━ SOURCE TAG RULES ━━━\n"
         "  RESUME_TOPIC → Candidate did this. We know it. Never ask if they did it.\n"

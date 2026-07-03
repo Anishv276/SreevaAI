@@ -221,6 +221,34 @@ Examples by role (pick the 2 strongest for the actual role):
   Product Manager:  Discovery process and user research, Prioritization frameworks (RICE, MoSCoW), Stakeholder alignment,
                     Metrics and success definitions, Trade-off decisions under constraints
 
+━━━ PROBE_FOCUS GENERATION (critical — this is what MOVE_ON questions are built from) ━━━
+probe_focus is not a summary of the topic — it is the set of concrete angles an interviewer
+will interrogate. Every MOVE_ON question is synthesized directly from these items, so vague or
+generic probe_focus produces vague, generic questions (e.g. falling back to "what did you build").
+
+Rules:
+  - Each of the 3 items must be a DIFFERENT kind of angle, not 3 phrasings of the same theme:
+      1. A concrete MECHANISM or DECISION specific to this topic (not "workflow design" —
+         name the actual thing: "channel-to-CRM routing logic", "lead scoring criteria").
+      2. A FAILURE / TRADEOFF / CONSTRAINT angle (what could break, what they had to choose between,
+         what the limiting factor was).
+      3. An OUTCOME / METRIC angle (what changed, what was measured, what the result was) —
+         for JD_TOPIC/ROLE_TOPIC with no known outcome, use an approach/judgment angle instead.
+  - Ground every item in the topic's own full_description — never a generic GTM/eng/PM phrase
+    that could apply to any candidate's version of this topic.
+  - If a red_flag applies to this topic, at least one probe_focus item must be the exact angle
+    that would surface it. Example: red_flag "Cannot explain lead qualification logic" requires
+    a probe_focus item like "lead scoring criteria used", not a generic "workflow design".
+
+GOOD vs BAD example (topic: multi-channel lead capture unifying Instagram/Facebook/email):
+  BAD:  ["workflow design", "automation logic", "lead qualification criteria"]
+        — three overlapping phrasings of "how the system works", no failure/outcome angle,
+        forces the interviewer back onto generic "what did you build/own".
+  GOOD: ["channel-to-CRM routing rule", "what happens on a duplicate lead across channels",
+         "booking reminder open/response rate"]
+        — one mechanism, one edge-case/failure angle, one outcome angle. Each is answerable
+        only by someone who actually built this exact system.
+
 ━━━ DEDUP — NO CONCEPT MAY APPEAR TWICE ━━━
 Before finalizing topic_pool, verify: no two TopicItems test the same
 underlying concept/skill/technology, even under different titles.
@@ -283,7 +311,9 @@ TopicItem schema:
 OUTPUT SIZE RULES:
   - full_description: 1–2 sentences. Specific enough to ground a question.
   - why_relevant: 1 short phrase.
-  - probe_focus: max 3 items, 3–5 words each.
+  - probe_focus: max 3 items, 3–5 words each. Follow PROBE_FOCUS GENERATION rules above —
+    one mechanism/decision, one failure/tradeoff, one outcome/metric angle. Never 3 overlapping
+    restatements of the same theme.
   - probe_avoid: max 2 items, 3–5 words each.
   - interview_strategy: 3–5 sentences. Must be specific to this role, band, and candidate — not generic.
   - candidate_summary: 1–2 sentences.
