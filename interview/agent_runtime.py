@@ -4294,8 +4294,10 @@ async def entrypoint(ctx: JobContext):
         )
     except Exception as e:
         logger.error(f"[USAGE] Failed to persist interview billing snapshot for {app_id}: {e}")
-        raise
-    await flush_pending_manual_billing(org_id)
+    try:
+        await flush_pending_manual_billing(org_id)
+    except Exception as e:
+        logger.error(f"[USAGE] flush_pending_manual_billing failed for {app_id}: {e}")
     # For test sessions: write cost metrics to testBillingMetrics column
     if _is_test_session:
         try:

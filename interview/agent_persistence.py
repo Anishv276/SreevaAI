@@ -37,11 +37,24 @@ class DatabasePool:
     _pool: ClassVar[asyncpg.Pool | None] = None
     _init_task: ClassVar[asyncio.Task | None] = None
     _lock: ClassVar[asyncio.Lock | None] = None
+    _loop: ClassVar[asyncio.AbstractEventLoop | None] = None
     @classmethod
     def _get_lock(cls) -> asyncio.Lock:
         if cls._lock is None:
             cls._lock = asyncio.Lock()
         return cls._lock
+    @classmethod
+    def _reset(cls) -> None:
+        """Forcefully discard the current pool state. Safe to call without awaiting."""
+        if cls._pool is not None:
+            try:
+                cls._pool.terminate()
+            except Exception:
+                pass
+        cls._pool = None
+        cls._init_task = None
+        cls._lock = None
+        cls._loop = None
     @classmethod
     def normalize_dsn(cls, conn_str: str) -> str:
         if conn_str.startswith("postgres://"):
@@ -79,6 +92,17 @@ class DatabasePool:
     @classmethod
     async def get(cls) -> asyncpg.Pool:
         global _DB_POOL, _DB_POOL_INIT_TASK
+        # asyncpg pools are bound to the event loop they were created on. LiveKit runs
+        # each job in a fresh event loop within the same process, so when a second job
+        # arrives the old pool is stale. Detect this early and reset before any acquire()
+        # attempt, which would otherwise raise "Future attached to a different loop".
+        try:
+            current_loop = asyncio.get_running_loop()
+            if cls._loop is not None and cls._loop is not current_loop:
+                logger.info("[DB_POOL] Event loop changed — resetting pool for new job")
+                cls._reset()
+        except RuntimeError:
+            pass
         if cls._pool is not None and not cls._pool._closed:
             return cls._pool
         async with cls._get_lock():
@@ -91,7 +115,7 @@ class DatabasePool:
                     pass
                 cls._pool = None
                 cls._init_task = None
-                cls._lock = None  # reset for current event loop
+                cls._lock = None
             if cls._init_task is not None and not cls._init_task.done():
                 cls._pool = await cls._init_task
                 return cls._pool
@@ -99,7 +123,8 @@ class DatabasePool:
             cls._init_task = asyncio.create_task(cls._create())
             try:
                 cls._pool = await cls._init_task
-                set_db_pool(cls._pool)  # keep module-level ref in sync
+                cls._loop = asyncio.get_running_loop()
+                set_db_pool(cls._pool)
                 return cls._pool
             except Exception:
                 cls._init_task = None
@@ -203,9 +228,9 @@ async def get_interview_context(app_id: str) -> dict:
             logger.error(f"Database error during context fetch (attempt {attempt}/5): {e}")
             if "no interview context found in db" in str(e).lower():
                 break
-            if "executor shutdown" in str(e).lower():
-                DatabasePool._pool = None
-                DatabasePool._init_task = None
+            _err_s = str(e).lower()
+            if "executor shutdown" in _err_s or "different loop" in _err_s or "closed in the middle" in _err_s:
+                DatabasePool._reset()
             if attempt < 5:
                 await asyncio.sleep(0.4 * attempt)
     raise RuntimeError(f"Failed to fetch interview context from DB: {last_error}")
@@ -378,10 +403,9 @@ async def persist_question_by_question_analysis(app_id: str, answer_scores: list
             logger.warning(
                 f"[SCORE] DB write attempt {attempt}/3 failed for {app_id}: {e}"
             )
-            if "executor shutdown" in str(e).lower():
-                # Pool is dead; force recreation before next attempt
-                DatabasePool._pool = None
-                DatabasePool._init_task = None
+            _err_s = str(e).lower()
+            if "executor shutdown" in _err_s or "different loop" in _err_s or "closed in the middle" in _err_s:
+                DatabasePool._reset()
             if attempt < 3:
                 await asyncio.sleep(0.5 * attempt)   # 0.5s then 1.0s
     # All 3 attempts exhausted — raise so spawn_background_task logs the exception

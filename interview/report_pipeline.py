@@ -1135,7 +1135,8 @@ async def _node_llm_calls(state: ReportState) -> dict:
         )
     )
 
-    # Persist billing for all 3 calls concurrently
+    # Persist billing for all 3 calls concurrently — non-fatal so a DB blip
+    # doesn't take down the entire report and cause a silent "[REPORT] Failed".
     if org_id:
         billing_tasks = [
             _persist_billing(
@@ -1149,7 +1150,10 @@ async def _node_llm_calls(state: ReportState) -> dict:
                 for bu in beh_usages
             ],
         ]
-        await asyncio.gather(*billing_tasks)
+        try:
+            await asyncio.gather(*billing_tasks)
+        except Exception as _bill_err:
+            logger.error("[BILLING] interviewReport billing failed (non-fatal): %s", _bill_err)
 
     # Parse and validate
     try:
@@ -1470,14 +1474,17 @@ async def generate_interview_summary(
         )
 
         if org_id:
-            await asyncio.gather(
-                _persist_billing(
-                    org_id, "interviewReport", _llm.usage_dict(summary_usage, _LLM_DEFAULT)
-                ),
-                _persist_billing(
-                    org_id, "interviewReport", _llm.usage_dict(verdict_usage, _LLM_DEFAULT)
-                ),
-            )
+            try:
+                await asyncio.gather(
+                    _persist_billing(
+                        org_id, "interviewReport", _llm.usage_dict(summary_usage, _LLM_DEFAULT)
+                    ),
+                    _persist_billing(
+                        org_id, "interviewReport", _llm.usage_dict(verdict_usage, _LLM_DEFAULT)
+                    ),
+                )
+            except Exception as _bill_err:
+                logger.error("[BILLING] interviewReport summary billing failed (non-fatal): %s", _bill_err)
 
         if not summary_text and not verdict_text:
             logger.warning("[SUMMARY] Both outputs empty for %s â€” skipping save", app_id)

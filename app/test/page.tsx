@@ -444,7 +444,8 @@ function TestPageContent() {
             events: [],
             elapsedSeconds: 0,
             timerStarted: false,
-            isConnected: false
+            isConnected: false,
+            sessionEnded: false,
         });
         timerStartedAtRef.current = null;
 

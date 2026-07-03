@@ -26,6 +26,13 @@ _CARTESIA_DEFAULT_MODEL = "cartesia/sonic-3"
 _CARTESIA_DEFAULT_VOICE = "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"
 _ELEVENLABS_DEFAULT_MODEL = "eleven_turbo_v2_5"
 _ELEVENLABS_DEFAULT_VOICE = "EXAVITQu4vr4xnSDxMaL"  # ElevenLabs Rachel
+_SARVAM_DEFAULT_SPEAKER = "priya"
+_SARVAM_VALID_SPEAKERS = frozenset({
+    "shubh", "ritu", "rahul", "pooja", "simran", "kavya", "amit", "ratan",
+    "rohan", "dev", "ishita", "shreya", "manan", "sumit", "priya", "aditya",
+    "kabir", "neha", "varun", "roopa", "aayan", "ashutosh", "advait",
+    "amelia", "sophia",
+})
 _PROVIDER_DEFAULTS: dict[str, Any] = {
     "cartesia_speed":          1.0,
     "sarvam_pace":             1.2,
@@ -96,6 +103,14 @@ def build_sarvam_tts(
             f"Expected at least 10 characters. "
             f"Verify your key at: https://console.sarvam.ai/settings/api-keys"
         )
+    # Reject UUID-format IDs (Cartesia/ElevenLabs voices) or unknown speaker names
+    # that leaked from the org's voiceId DB field when switching TTS providers.
+    if not voice_id or "-" in voice_id or voice_id.lower() not in _SARVAM_VALID_SPEAKERS:
+        logger.warning(
+            "[SARVAM_TTS] Speaker %r is not a valid Sarvam speaker — falling back to %r",
+            voice_id, _SARVAM_DEFAULT_SPEAKER,
+        )
+        voice_id = _SARVAM_DEFAULT_SPEAKER
     logger.info(
         f"[SARVAM_TTS] Initializing TTS: model={model} language={language} voice={voice_id} "
         f"api_key_len={len(api_key)}"

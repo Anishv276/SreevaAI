@@ -166,6 +166,40 @@ export async function GET(request: Request) {
         const interviewsTotal = org.interviewQuotaTotal || 300;
         const interviewsUsed = org.interviewQuotaUsed || 0;
 
+        // Build consumption hub from usageMetrics.billing
+        const usageMetrics = (org.usageMetrics && typeof org.usageMetrics === "object")
+            ? (org.usageMetrics as Record<string, any>)
+            : {};
+        const billing = (usageMetrics.billing && typeof usageMetrics.billing === "object")
+            ? (usageMetrics.billing as Record<string, any>)
+            : {};
+        const consumptionFeatures = [
+            "interview", "interviewBrief", "interviewLLMGeneration",
+            "interviewReport", "resumeExtraction", "jdExtraction", "resumeReport",
+        ];
+        const consumptionHub: Record<string, any> = {};
+        for (const feat of consumptionFeatures) {
+            const b = billing[feat] ?? {};
+            consumptionHub[feat] = {
+                runs:         Number(b.runs || 0),
+                inputTokens:  Number(b.inputTokens || 0),
+                outputTokens: Number(b.outputTokens || 0),
+                costUsd:      Number(b.costUsd || 0),
+                ttsCharacters: Number(b.ttsCharacters || 0),
+                ttsCostUsd:   Number(b.ttsCostUsd || 0),
+                sttAudioSeconds: Number(b.sttAudioSeconds || 0),
+                sttCostUsd:   Number(b.sttCostUsd || 0),
+                byModel:      b.byModel ?? {},
+                ttsByModel:   b.ttsByModel ?? {},
+                sttByModel:   b.sttByModel ?? {},
+            };
+        }
+        const totalLlmCost = consumptionFeatures.reduce(
+            (s, f) => s + Number(consumptionHub[f]?.costUsd || 0), 0
+        );
+        const totalTtsCost = Number(consumptionHub.interview?.ttsCostUsd || 0);
+        const totalSttCost = Number(consumptionHub.interview?.sttCostUsd || 0);
+
         return NextResponse.json({
             plan: {
                 name: org.plan || "Starter",
@@ -183,7 +217,15 @@ export async function GET(request: Request) {
                 usageVsLastMonth,
                 timeVsLastMonth,
                 trend,
-            }
+            },
+            consumptionHub,
+            totalCosts: {
+                llmCostUsd: Math.round(totalLlmCost * 1e6) / 1e6,
+                ttsCostUsd: Math.round(totalTtsCost * 1e6) / 1e6,
+                sttCostUsd: Math.round(totalSttCost * 1e6) / 1e6,
+                totalCostUsd: Math.round((totalLlmCost + totalTtsCost + totalSttCost) * 1e6) / 1e6,
+            },
+            creditsUsed: Number(org.creditsUsed || 0),
         });
     } catch (error) {
         console.error("Super-admin billing error:", error);
