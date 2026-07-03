@@ -83,15 +83,20 @@ class TopicState:
         # Response signal tracking: if clarification_request fires twice, escalate to MOVE_ON
         self.clarification_request_count = 0
 
+        # Sub-concept rotation: advances by 1 each PROBE turn so consecutive follow-ups
+        # on this topic hit DIFFERENT items from the topic's probe_focus list. Persisted
+        # so the agent can pick probe_focus[index % len(probe_focus)] each turn.
+        self.probe_rotation_index = 0
+
     # Weak-exit checkpoints per importance: (turn3_floor, turn5_floor).
-    # CRITICAL topics need stronger evidence before early exit (more behavioral data points required
-    # for role-defining competencies). LOW topics can exit sooner — less decision weight.
-    # Source: structured-interview research (Google re:Work, competency-based interview scoring).
+    # Uniform 50% floor at turn 3: after 3 probes, if the candidate hasn't reached
+    # half the threshold, they're not going to. Cap at 5 probes per topic (turn5_floor
+    # = 1.0 forces MOVE_ON at turn 5 regardless of progress).
     _WEAK_EXIT_BY_IMPORTANCE: dict[str, tuple[float, float]] = {
-        "CRITICAL": (0.60, 0.85),
-        "HIGH":     (0.55, 0.80),
-        "MEDIUM":   (0.50, 0.75),
-        "LOW":      (0.40, 0.65),
+        "CRITICAL": (0.50, 1.00),
+        "HIGH":     (0.50, 1.00),
+        "MEDIUM":   (0.50, 1.00),
+        "LOW":      (0.50, 1.00),
     }
 
     def is_weak_candidate_exit(self) -> bool:
@@ -114,12 +119,38 @@ class TopicState:
         # answers) incorrectly looked like two-in-a-row and forced a premature MOVE_ON.
         return self.consecutive_zero_scores >= 2
 
+    # Signals where Ishita is re-asking / rephrasing / redirecting the SAME question
+    # instead of asking a new follow-up. The candidate has not yet had a real attempt,
+    # so this turn must not count toward follow_up_turns, saturation, dry_topic, or
+    # the fired-signals variety ban. Score contribution is zero regardless.
+    _NON_FOLLOWUP_SIGNALS = frozenset({
+        "clarification_request",
+        "rephrase_request",
+        "off_topic",
+    })
+
     def add_contribution(self, weighted: float, signal: str | None, turn: int | None = None) -> None:
+        # Re-ask turns (candidate asked to rephrase, restarted their own answer, or
+        # answered a different question) don't count as a real follow-up. Skip all
+        # scoring/counter updates so the candidate isn't penalised for asking us to
+        # repeat the question. The turn still fires an [SIGNAL] event upstream — we
+        # just don't debit their 3-question budget for it.
+        if signal in self._NON_FOLLOWUP_SIGNALS:
+            # Track the last turn for logging continuity, but nothing else changes.
+            if turn is not None:
+                self.updated_turn = turn
+            return
+
         contribution = max(0.0, _score_to_contribution(weighted))
-        # base_turn_credit only awarded when weighted >= 3.0 — a genuine attempt at the question.
-        # weighted=0.0 means the LLM judged the answer irrelevant or a non-answer (answers_question=false,
-        # off_topic, pure_denial, etc). Zero score = zero saturation advance, no exceptions.
-        effective_base = self.base_turn_credit if weighted >= 3.0 else 0.0
+        # Base credit ramps smoothly with answer quality so mid-quality answers still advance
+        # saturation. weighted < 1.0 = no credit (essentially a non-answer). weighted 1.0-3.0
+        # scales linearly from 0 to full base. weighted >= 3.0 = full base credit.
+        if weighted >= 3.0:
+            effective_base = self.base_turn_credit
+        elif weighted >= 1.0:
+            effective_base = self.base_turn_credit * (weighted - 1.0) / 2.0
+        else:
+            effective_base = 0.0
         self.saturation_score += effective_base + contribution
         self.follow_up_turns += 1
         self.is_saturated = self.saturation_score >= self.saturation_threshold
@@ -149,6 +180,7 @@ class TopicState:
             "last_score":          self.last_score,
             "clarification_request_count": self.clarification_request_count,
             "consecutive_zero_scores": self.consecutive_zero_scores,
+            "probe_rotation_index": self.probe_rotation_index,
         }
 
     @classmethod
@@ -167,6 +199,7 @@ class TopicState:
         obj.last_score          = float(d.get("last_score")) if d.get("last_score") is not None else None
         obj.clarification_request_count = int(d.get("clarification_request_count", 0) or 0)
         obj.consecutive_zero_scores = int(d.get("consecutive_zero_scores", 0) or 0)
+        obj.probe_rotation_index = int(d.get("probe_rotation_index", 0) or 0)
         if "saturation_threshold" in d:
             obj.saturation_threshold = float(d["saturation_threshold"])
         if "base_turn_credit" in d:

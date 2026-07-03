@@ -389,13 +389,27 @@ def get_probe_context(
     topic_follow_ups: int,
     topic_denied: bool,
     prev_answer: str,
+    signals_history: list[str] | None = None,
+    active_topic: str = "",
 ) -> str:
     """
     Returns the probe context block injected into the directive.
     Tells the interview LLM what fired, what it means, and how to frame
     the next question — without scripting the exact words.
+
+    signals_history: full ordered list of signals fired on this topic INCLUDING
+      the current one. Used to detect when the same signal has fired 2+ times
+      so the probe can pivot to a different section of the topic instead of
+      asking another follow-up on the same angle.
     """
     lines: list[str] = []
+    _signals_history = signals_history or []
+    _same_signal_repeated = (
+        len(_signals_history) >= 2
+        and signal is not None
+        and _signals_history[-1] == signal
+        and _signals_history[-2] == signal
+    )
 
     # Denial override — always highest priority
     _prev_lower = prev_answer.lower()
@@ -442,6 +456,29 @@ def get_probe_context(
         lines += [
             "NOTE: First probe on this topic — pull the most specific thing from their answer.",
             "      Don't open generically. Find the one thread worth pulling and name it.",
+        ]
+
+    if _same_signal_repeated:
+        _topic_label = (active_topic.split(" — ")[0].split(" - ")[0].split("|")[0].strip()[:60]
+                        or "this topic")
+        lines += [
+            "",
+            "ANGLE PIVOT (MANDATORY):",
+            f"  The signal '{signal}' has fired 2 times in a row on '{_topic_label}'.",
+            f"  Follow-up probing on the same angle is not surfacing anything new.",
+            f"  STOP asking follow-ups on the current thread. Instead, ask a fresh,",
+            f"  GENERAL question that targets a DIFFERENT section of '{_topic_label}' —",
+            f"  a different sub-concept, mechanism, or dimension inside the topic.",
+            f"  Do NOT reference or build on their last answer. Do NOT probe the same",
+            f"  detail they've been dodging. Open a NEW angle on the topic entirely.",
+            f"  Example pivots (adapt to the topic):",
+            f"    - if you've been asking HOW something was built → ask about a DIFFERENT",
+            f"      component or step in the same system",
+            f"    - if you've been asking WHY they chose X → ask about a completely",
+            f"      different decision they made on the topic",
+            f"    - if you've been asking about mechanism → ask about outcome, failure,",
+            f"      or an edge case they hit",
+            f"  This is a fresh general question, not a follow-up.",
         ]
 
     return "\n".join(lines)

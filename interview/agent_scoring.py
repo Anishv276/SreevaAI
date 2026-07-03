@@ -1,4 +1,4 @@
-"""
+﻿"""
 agent_scoring.py
 Single LLM call per turn: scores the answer AND detects ONE signal with a reason.
 The signal is LLM-detected — it reads the full conversation and understands context,
@@ -185,9 +185,46 @@ SIGNAL_DEFINITIONS = {
 
 def _build_signal_prompt_block() -> str:
     return """\
--- SIGNAL DETECTION (GATE CHECK) --
-Work through EACH gate in STRICT ORDER: G0a→G0b→G0c→G0d→G0e→G1→G2→G3→G4→G5→G6
-The FIRST gate that fires decides the signal — STOP and return that signal.
+-- SIGNAL DETECTION (EVIDENCE-WEIGHTED GATE CHECK) --
+
+You are a signal classifier. Your job is to pick the ONE signal that BEST describes
+the SPECIFIC GAP in this answer. This is NOT a first-match-wins check — it is a
+best-match check. Read the answer, then look at every gate, then pick the gate whose
+trigger pattern is MOST STRONGLY present in the answer.
+
+STEP 0 — RESPONSE-LEVEL GATES (G0). Only these are first-match-wins.
+G0 gates describe the SHAPE of the reply itself (denial, clarification ask, off-topic).
+If any G0 gate fires, return that signal immediately. CANDIDATE for this signal.
+
+STEP 1 — CONTENT-LEVEL GATES (G1-G7). NOT first-match-wins.
+Every content gate is checked. For each one, ask: "How strongly does THIS answer match
+this pattern?" Then pick the gate with the STRONGEST match.
+
+STEP 2 — VARIETY RULE (HARD). If the sidebar shows signals already fired on THIS topic,
+those signals are BANNED for this turn unless literally no other content gate matches
+the answer at all. Pick the STRONGEST gate that has NOT already fired on this topic.
+This is a hard requirement — even if depth_ceiling_hit looks like the "best" fit, if it
+already fired, choose the second-best gate. Every content signal has a real interpretation
+of nearly every answer — find it.
+  - Depth-ceiling-hit already fired? → look for tool_named_not_used, scenario_untested,
+    ownership_ambiguous, explanation_shallow, tech_choice_unjustified, example_evaded.
+  - Scenario_untested already fired? → look for tool_named_not_used, tech_choice_unjustified,
+    ownership_ambiguous, explanation_shallow, depth_ceiling_hit, example_evaded.
+  - Explanation_shallow already fired? → look for tool_named_not_used, tech_choice_unjustified,
+    ownership_ambiguous, scenario_untested, depth_ceiling_hit, example_evaded.
+  The point of variety is that a fresh signal produces a fresh probe angle.
+  Firing the same signal again produces the same question and wastes a turn.
+
+STEP 3 — REINTERPRET RULE. Because gates overlap, the SAME answer can honestly fit
+multiple content gates. Use the variety rule to break ties:
+  - "I built the whole RAG pipeline" could be explanation_shallow OR scenario_untested
+    OR tool_named_not_used (if 'RAG' is treated as a named tool). Pick the one that
+    HASN'T fired yet.
+  - "We used ChromaDB and it worked well" could be ownership_ambiguous OR
+    tech_choice_unjustified OR tool_named_not_used. Pick the one that hasn't fired yet.
+  - "Chunks become vectors, vectors go into the store" could be scenario_untested OR
+    explanation_shallow OR tool_named_not_used. Pick the one that hasn't fired yet.
+Reinterpretation is not cheating — it is picking a different lens on the same gap.
 
 ---- RESPONSE-LEVEL GATES (G0) — check these FIRST ----
 
@@ -200,7 +237,7 @@ G0a — PURE_DENIAL: Is the ENTIRE answer ONLY a flat denial about the CANDIDATE
       NOT this if they're checking the connection or whether you can hear them — "Can you hear
       me?" / "Are you there?" is not an attempt to deny knowledge, it's not addressing the
       question at all. That is also G0c, not G0a.
-      → YES: SIGNAL = pure_denial. STOP.
+      → YES: SIGNAL = pure_denial. STOP (G0 gates ARE first-match).
 
 G0b — DENIAL_WITH_CONTINUATION: Starts with denial BUT adds substantive content?
       "...but I built X" | "...however I deployed Y" | "...I tried Z"
@@ -218,53 +255,71 @@ G0d — REPHRASE_REQUEST: Is candidate asking to RESTART or correct THEIR OWN an
       "Let me say that again" | "I misspoke, what I meant..." | "Sorry, I said that wrong"
       → YES: SIGNAL = rephrase_request. STOP.
 
-G0e — OFF_TOPIC: Did candidate answer a DIFFERENT question than what was asked?
+G0e — OFF_TOPIC: Did candidate answer a COMPLETELY DIFFERENT question — one that has
+      NOTHING to do with the topic or question asked?
       Q: "Kubernetes scaling?" A: "I love React" | Q: "Failed project?" A: "I don't fail"
       → YES: SIGNAL = off_topic. STOP.
+      NOT this if they attempted to address the topic but gave a vague, shallow, or
+      generic answer — "I built the pipeline, loaders, chunking, retrieval" is ON-TOPIC
+      even if it lacks detail. Vague answers that attempt the question → fall through to
+      G1-G6 (explanation_shallow, tool_named_not_used, scenario_untested, etc).
+      NOT this if the signal_reason would be "vague", "lacks detail", "not specific",
+      "generic", or similar — those are content-level signal reasons, not off_topic.
+      off_topic ONLY fires when the subject matter itself is unrelated to what was asked.
 
-If G0a-G0e = NO: continue to G1.
+If G0a-G0e = NO: evaluate ALL of G1-G7 and pick the STRONGEST match.
 
----- CONTENT-LEVEL GATES (G1-G6) — only if G0 fires = NO ----
+---- CONTENT-LEVEL GATES (G1-G7) — only if no G0 fired ----
+For each gate: rate how strongly the answer matches (strong / weak / not-present).
+DO NOT stop at the first strong match — check every gate, then pick the strongest
+overall that has NOT already fired on this topic (variety rule).
 
 G1 — DEPTH_CEILING_HIT: Did they name a SPECIFIC technical/procedural detail (a tool,
-     a step, a mechanism) and THEN run out of knowledge partway through explaining it?
-     Not a flat "I don't know" — they ATTEMPTED then trailed off mid-explanation.
-     "I used FAISS but I don't really have a lot of idea how indexing works"
+     a step, a mechanism) AND EXPLICITLY admit they don't know more about it?
+     REQUIRES BOTH: (1) real named substance BEFORE the gap AND (2) an explicit
+     "I don't know / not sure / no idea / can't recall" acknowledgement about it.
+     "I used FAISS but I don't really have a lot of idea how indexing works" ✓ (both present)
+     "I've used embeddings but I'm not too sure how they're generated internally" ✓
+     NOT this if the answer is just vague, shallow, or generic without an explicit
+     "I don't know" admission — vague explanations of a mechanism fall through to
+     G3/G4/G5/G7 (they explained hollowly, they named tools without using them, they
+     gave a textbook flow, etc). "The chunks become vectors and vectors go into store"
+     is NOT depth_ceiling_hit — it's scenario_untested (G7). "I built the pipeline
+     with loaders, chunking, and retrieval" is NOT depth_ceiling_hit — it's
+     explanation_shallow (G3) or scenario_untested (G7) depending on shape.
      NOT this if the answer is only a bare ownership/effort claim with ZERO specific
-     technical detail — "I did everything on my own" / "I built it all myself" /
-     "I handled everything" name no tool, step, or mechanism at all, so there is
-     nothing to have "run out of" mid-explanation. That is G3, not G1, even if it
-     sounds like a stop/trail-off in tone. G1 requires real substance BEFORE the gap.
-     → YES: SIGNAL = depth_ceiling_hit. STOP.
+     technical detail — "I did everything on my own" / "I built it all myself" is G3.
+     G1 requires: real named substance + explicit "I don't know / not sure" about it.
+     → YES: SIGNAL = depth_ceiling_hit. CANDIDATE for this signal.
 
 G2 — OWNERSHIP_AMBIGUOUS: Is EVERY action "we/team/they" with NO "I did/decided/built"?
      "We built the pipeline, the team set up the store, they handled deployment"
-     → YES: SIGNAL = ownership_ambiguous. STOP.
+     → YES: SIGNAL = ownership_ambiguous. CANDIDATE for this signal.
 
 G3 — EXPLANATION_SHALLOW: Loud personal claim + hollow explanation, including a bare
      repeated ownership assertion with no technical detail at all?
      "I built it all, it's a RAG system" [claims everything, explains nothing]
      "I did everything on my own" / "I handled everything myself" [claims ownership,
      names zero tools/steps/mechanisms — this is G3, not depth_ceiling_hit]
-     → YES: SIGNAL = explanation_shallow. STOP.
+     → YES: SIGNAL = explanation_shallow. CANDIDATE for this signal.
 
 G4 — TOOL_NAMED_NOT_USED: Named a specific tool but ZERO evidence of using it?
      "ChromaDB, FAISS, Pinecone" [three names, zero usage shown]
      Usage shown = operational verb: "I trained/stored/queried/deployed X with it"
-     → YES: SIGNAL = tool_named_not_used. STOP.
+     → YES: SIGNAL = tool_named_not_used. CANDIDATE for this signal.
 
 G5 — TECH_CHOICE_UNJUSTIFIED: Used tool (usage shown) BUT never said WHY that one?
      "I stored embeddings in ChromaDB. It worked fine." [used it, no why]
-     → YES: SIGNAL = tech_choice_unjustified. STOP.
+     → YES: SIGNAL = tech_choice_unjustified. CANDIDATE for this signal.
 
 G6 — EXAMPLE_EVADED: Question asked for ONE real past instance, answer gives habit?
      Q: "Tell me about a time..." A: "Usually I check the data and retrain"
-     → YES: SIGNAL = example_evaded. STOP.
+     → YES: SIGNAL = example_evaded. CANDIDATE for this signal.
 
 G7 — SCENARIO_UNTESTED: Correct textbook flow but ZERO lived friction/edge case?
      "Chunks become vectors, vectors go into store, search retrieves results"
      [Correct but memorized, not practiced]
-     → YES: SIGNAL = scenario_untested. STOP.
+     → YES: SIGNAL = scenario_untested. CANDIDATE for this signal.
 
 Output exactly ONE signal. Never null, never multiple.\
 """
@@ -276,21 +331,30 @@ async def _classify_signal_from_answer(
     last_question: str,
     client: Any,
     llm_model: str = _EVAL_DEFAULT,
+    signals_already_fired: list | None = None,
 ) -> str:
     """
     Fallback: compare the answer against every content-level signal definition
     and return the one that best matches. Called only when the main eval LLM
     failed to return a valid signal.
+
+    Respects the variety rule: banned signals (already fired on this topic) are
+    excluded from the candidate set.
     """
+    _fired = set(signals_already_fired or [])
+    _remaining = [name for name in SIGNAL_DEFINITIONS if name not in _fired]
+    if not _remaining:
+        _remaining = list(SIGNAL_DEFINITIONS.keys())
     _signal_descriptions = "\n".join(
-        f'"{name}": {defn["trigger"]}'
-        for name, defn in SIGNAL_DEFINITIONS.items()
+        f'"{name}": {SIGNAL_DEFINITIONS[name]["trigger"]}'
+        for name in _remaining
     )
     _system = (
         "You are a signal classifier for an interview evaluation system.\n"
         "Given a question and a candidate's answer, pick the ONE signal from the list below "
-        "that best describes the gap or pattern in the answer.\n\n"
-        f"SIGNALS:\n{_signal_descriptions}\n\n"
+        "that best describes the gap or pattern in the answer.\n"
+        "Signals already fired on this topic have been EXCLUDED — pick only from the list.\n\n"
+        f"SIGNALS (choose exactly one):\n{_signal_descriptions}\n\n"
         "Output ONLY valid JSON: {\"signal\": \"<signal_name>\", \"reason\": \"<one short phrase>\"}\n"
         "signal MUST be exactly one of the signal names listed above. Nothing else."
     )
@@ -312,11 +376,21 @@ async def _classify_signal_from_answer(
         raw = resp.choices[0].message.content or ""
         result = json.loads(raw)
         chosen = str(result.get("signal", "")).strip()
+        if chosen in _remaining:
+            return chosen
         if chosen in SIGNAL_DEFINITIONS:
             return chosen
     except Exception as exc:
-        logger.warning("[EVAL] _classify_signal_from_answer failed (%s) — falling back to explanation_shallow", exc)
-    return "explanation_shallow"
+        logger.warning("[EVAL] _classify_signal_from_answer failed (%s) — rotating fallback", exc)
+    # Deterministic rotation across banned/unfired signals — never always the same one.
+    _rotation_order = [
+        "tool_named_not_used", "tech_choice_unjustified", "ownership_ambiguous",
+        "example_evaded", "scenario_untested", "explanation_shallow", "depth_ceiling_hit",
+    ]
+    for name in _rotation_order:
+        if name in _remaining:
+            return name
+    return _rotation_order[len(_fired) % len(_rotation_order)]
 
 
 async def evaluate_answer(
@@ -380,13 +454,19 @@ async def evaluate_answer(
             '"reason":"<one phrase from their answer that drove your call>"}\n\n'
             "STEP 1 — answers_question: Did the candidate's answer actually address the question that was asked?\n"
             "  true  = they engaged with the question, even partially or weakly.\n"
-            "  false = the answer has nothing to do with the question — off-topic, pure social filler,\n"
-            "          a completely unrelated topic, or zero attempt at what was asked.\n"
+            "  false = the answer has NOTHING to do with the question — completely unrelated topic,\n"
+            "          pure social filler ('Yeah I am ready'), or zero attempt at what was asked.\n"
+            "  IMPORTANT: A vague, shallow, or generic attempt is still answers_question=TRUE.\n"
+            "  'I built the pipeline with loaders, chunking, and retrieval' is true even if it\n"
+            "  lacks depth. Score it low on depth/specificity — do NOT set answers_question=false.\n"
+            "  answers_question=false is ONLY for answers where the subject matter is completely\n"
+            "  unrelated (candidate talks about a different topic entirely, or says only 'I am ready').\n"
             "  If answers_question = false, you MUST set clarity=0, depth=0, specificity=0, grounding=0.\n"
             "  No score at all for an answer that does not address the question.\n\n"
             "STEP 2 — Score normally (only if answers_question = true).\n\n"
             "CRITICAL: signal MUST be ONE of the 12 names above. NEVER null.\n"
-            "CRITICAL: The signal MUST match the FIRST gate that fired. Never skip a gate.\n\n"
+            "CRITICAL: For content gates (G1-G7), do NOT stop at the first match. Evaluate every gate,\n"
+            "then pick the STRONGEST match that respects the VARIETY RULE (banned signals list below).\n\n"
 
             f"Role: {job_title or 'not specified'} | Topic: {active_topic or 'general'}"
             f" | Tag: {topic_tag} | Importance: {topic_importance}\n"
@@ -394,13 +474,51 @@ async def evaluate_answer(
         if topic_probe_focus:
             ctx += f"Probe focus: {', '.join(topic_probe_focus)}\n"
         if signals_already_fired:
+            _off_topic_was_fired = "off_topic" in signals_already_fired
+            # Content-level signals that already fired on this topic. G0 response
+            # signals (pure_denial, clarification_request, etc) are excluded from
+            # the ban because they legitimately re-fire on new denial/clarify turns.
+            _CONTENT_SIGNALS = {
+                "depth_ceiling_hit", "ownership_ambiguous", "explanation_shallow",
+                "tool_named_not_used", "tech_choice_unjustified", "example_evaded",
+                "scenario_untested",
+            }
+            _fired_content = [s for s in signals_already_fired if s in _CONTENT_SIGNALS]
+            _banned = sorted(set(_fired_content))
+            _remaining = sorted(_CONTENT_SIGNALS - set(_fired_content))
+            _special_note = (
+                "SPECIAL NOTE: off_topic already fired on a previous turn (likely a non-answer like 'I am ready'). "
+                "The candidate is now actually attempting to answer. If this answer is AT ALL related to the "
+                "topic -- even vaguely, even shallowly -- do NOT re-fire off_topic. Score it on content gates "
+                "(G1-G7) instead: explanation_shallow, tool_named_not_used, scenario_untested, etc.\n"
+            ) if _off_topic_was_fired else ""
+            if _banned and _remaining:
+                _hard_ban_note = (
+                    f"HARD VARIETY RULE — CONTENT SIGNALS ALREADY FIRED ON THIS TOPIC: {', '.join(_banned)}.\n"
+                    f"These signals are BANNED for this turn. Every content signal has a real interpretation "
+                    f"of almost any substantive answer — YOU MUST pick one from the REMAINING set:\n"
+                    f"  {', '.join(_remaining)}\n"
+                    f"Reinterpret the answer through a different lens: if it looks like {_banned[0]}, ask what "
+                    f"OTHER gap could describe the SAME words — a tool named without operational memory "
+                    f"(tool_named_not_used), a decision without a why (tech_choice_unjustified), "
+                    f"missing personal ownership (ownership_ambiguous), a textbook flow (scenario_untested), "
+                    f"a habit instead of an instance (example_evaded), etc.\n"
+                    f"Firing a banned signal is a HARD FAILURE — the follow-up will be a duplicate question.\n"
+                )
+            elif _banned and not _remaining:
+                # All content signals have fired. Rare; fall back to the least-recently-used.
+                _lru = _fired_content[0]
+                _hard_ban_note = (
+                    f"ALL content signals have fired on this topic: {', '.join(_banned)}.\n"
+                    f"The least-recently-used content signal is {_lru!r} — pick this one, or the strongest\n"
+                    f"among all G1-G7 gates. Variety is impossible; proceed with the best fit.\n"
+                )
+            else:
+                _hard_ban_note = ""
             ctx += (
-                f"Signals already fired on this topic, in order: {', '.join(signals_already_fired)}.\n"
-                "IMPORTANT: You must still work through the gate check in order (G1\u2192G2\u2192G3\u2192G4\u2192G5\u2192G6). "
-                "Do not fire the same signal again unless this answer has a genuinely NEW instance of that "
-                "gap distinct from what already fired. If the same gate fires again, look harder at the OTHER "
-                "gates — each fires on a different answer shape. "
-                "Do NOT skip directly to scenario_untested just because earlier signals have already fired.\n"
+                f"Signals already fired on this topic, in order: {', '.join(signals_already_fired) or '(none content)'}.\n"
+                + _hard_ban_note
+                + _special_note
             )
         ctx += (
             "Tag context: RESUME_TOPIC = they claimed this experience, hold them to it. "
@@ -594,12 +712,41 @@ async def evaluate_answer(
                 last_question=last_question,
                 client=client,
                 llm_model=llm_model,
+                signals_already_fired=signals_already_fired,
             )
             logger.info("[EVAL] signal was None — best-match classification selected %r", signal)
 
         signal_reason = str(data.get("signal_reason") or "").strip() or None
         if signal is None:
             signal_reason = None
+
+        # Post-hoc variety enforcement: even if the eval LLM ignored the ban above,
+        # rewrite banned content-signals to an unfired one. Response signals (G0)
+        # legitimately re-fire — only content signals are ever banned.
+        _CONTENT = {
+            "depth_ceiling_hit", "ownership_ambiguous", "explanation_shallow",
+            "tool_named_not_used", "tech_choice_unjustified", "example_evaded",
+            "scenario_untested",
+        }
+        _already = set(signals_already_fired or [])
+        _fired_content = _already & _CONTENT
+        if signal in _CONTENT and signal in _fired_content:
+            _remaining = _CONTENT - _fired_content
+            if _remaining:
+                _reroll = await _classify_signal_from_answer(
+                    candidate_answer=candidate_answer,
+                    last_question=last_question,
+                    client=client,
+                    llm_model=llm_model,
+                    signals_already_fired=list(_fired_content),
+                )
+                if _reroll and _reroll != signal:
+                    logger.info(
+                        "[EVAL] variety-enforcement: LLM picked banned %r on topic — rerolled to %r",
+                        signal, _reroll,
+                    )
+                    signal = _reroll
+                    signal_reason = None  # reason no longer matches the new signal
 
         reason = str(data.get("reason", ""))[:120]
 

@@ -387,6 +387,8 @@ def _build_probe_directive(
     coverage_memory: str,
     asked_questions_log: list[str],
     topic_transcript: list[str],
+    signals_history: list[str] | None = None,
+    probe_rotation_index: int = 0,
 ) -> str:
     """
     Builds the probe directive synchronously — no LLM call.
@@ -394,15 +396,44 @@ def _build_probe_directive(
     The interview LLM (Ishita) reads this and generates her own question.
 
     Eliminates the middle directive LLM call, collapsing 3 calls/turn → 2.
+
+    probe_rotation_index: rotates the mandatory sub-concept across probe turns so
+    consecutive follow-ups on the same topic hit DIFFERENT sub-concepts from the
+    topic's probe_focus list — never asking about the same sub-concept twice on
+    one topic when other sub-concepts are still un-probed.
     """
     from interview.probe_strategy import get_probe_context
 
-    # Topic brief block
+    # Determine the mandatory sub-concept for THIS turn by rotating through the
+    # probe_focus list. This forces "chunking" then "embeddings" then "retrieval"
+    # instead of every turn defaulting to the first item.
+    _focus_list: list[str] = list(topic_item.probe_focus) if (topic_item and topic_item.probe_focus) else []
+    _mandatory_subconcept: str = ""
+    _remaining_subconcepts: list[str] = []
+    if _focus_list:
+        _idx = max(0, int(probe_rotation_index)) % len(_focus_list)
+        _mandatory_subconcept = _focus_list[_idx]
+        _remaining_subconcepts = [f for i, f in enumerate(_focus_list) if i != _idx]
+
+    # Topic brief block — highlight the MANDATORY sub-concept for this turn so
+    # the LLM doesn't keep asking about the first angle every time.
     if topic_item is not None:
         parts = [f"TOPIC: {topic_item.title}"]
         if topic_item.full_description:
             parts.append(f"WHAT THIS IS: {topic_item.full_description}")
-        if topic_item.probe_focus:
+        if _mandatory_subconcept:
+            parts.append(
+                f"MANDATORY SUB-CONCEPT FOR THIS TURN: {_mandatory_subconcept}\n"
+                f"  Your question this turn MUST be about '{_mandatory_subconcept}' — NOT about "
+                f"any other sub-concept of this topic. This rotates each probe turn so you cover "
+                f"the whole topic instead of asking about the same thing repeatedly."
+            )
+        if _remaining_subconcepts:
+            parts.append(
+                f"OTHER SUB-CONCEPTS (do NOT probe these this turn — they are covered in later turns): "
+                f"{', '.join(_remaining_subconcepts)}"
+            )
+        if not _focus_list and topic_item.probe_focus:
             parts.append(f"INTERESTING ANGLES: {', '.join(topic_item.probe_focus)}")
         if topic_item.probe_avoid:
             parts.append(f"SKIP: {', '.join(topic_item.probe_avoid)}")
@@ -425,6 +456,8 @@ def _build_probe_directive(
         topic_follow_ups=topic_follow_ups,
         topic_denied=topic_denied,
         prev_answer=prev_answer,
+        signals_history=signals_history or [],
+        active_topic=active_topic,
     )
 
     # Filler guidance — classify prev answer intent so Ishita's reaction is connected
@@ -461,6 +494,9 @@ def _build_probe_directive(
         f"You are ON this topic ONLY. Every question you ask must be about this topic and nothing else.",
         f"If you ask about any other topic, you are breaking the interview protocol.",
         f"",
+        f"TOPIC BRIEF:",
+        _topic_ctx,
+        f"",
         f"WHAT THE CANDIDATE JUST SAID:",
         _thread,
         f"",
@@ -486,6 +522,15 @@ def _build_probe_directive(
         "Grounded in what they just told you. Never 'Can you' or 'Could you'. Never 'Great!' or 'Awesome!'.",
         "",
     ]
+    if _mandatory_subconcept:
+        parts_out += [
+            f"CRITICAL SUB-CONCEPT LOCK: This turn's question MUST be about '{_mandatory_subconcept}' — "
+            f"not about any other sub-concept of '{topic_item.title if topic_item else active_topic}'. ",
+            f"If you previously probed '{_mandatory_subconcept}' already, dig deeper INTO IT (an internal "
+            f"mechanism, an edge case, a decision) — never pivot to a different sub-concept mid-turn.",
+            f"Do NOT ask a generic overview question about the topic. Do NOT ask about a different sub-concept.",
+            "",
+        ]
     if _is_clarification_ask:
         parts_out += [
             f"THEY ASKED FOR CLARIFICATION: Ask SIMPLER, mention '{_topic_short}' upfront.",
@@ -3202,6 +3247,9 @@ async def entrypoint(ctx: JobContext):
                         lines_snap_eval[_topic_start_line_idx:][-8:]
                         if lines_snap_eval else []
                     )
+                    _signals_history_this_topic = list(
+                        (_new_topic_state_dict or {}).get("signals_fired", []) or []
+                    )
                     _directive = _build_probe_directive(
                         signal=_eval_signal,
                         signal_reason=_eval_signal_reason,
@@ -3215,6 +3263,8 @@ async def entrypoint(ctx: JobContext):
                         coverage_memory="",
                         asked_questions_log=list(_asked_questions_log),
                         topic_transcript=_topic_thread_lines,
+                        signals_history=_signals_history_this_topic,
+                        probe_rotation_index=_rotation_idx,
                     )
                     remove_system_messages_multi(chat_ctx, ("[NEXT_TURN_DIRECTIVE", "[TOPIC_LOCK", "[RECENT_CONTEXT"))
                     chat_ctx.add_message(role="system", content=_directive)
@@ -3223,11 +3273,16 @@ async def entrypoint(ctx: JobContext):
                         _ts_for_rotation = _topic_states.get(_normalize_topic_key(_scoring_topic_log))
                         if isinstance(_ts_for_rotation, dict):
                             _ts_for_rotation["probe_rotation_index"] = _rotation_idx + 1
+                    _sub_concepts_all = list((_probe_brief_item.probe_focus or [])) if _probe_brief_item else []
+                    _sub_concept_this_turn = (
+                        _sub_concepts_all[_rotation_idx % len(_sub_concepts_all)]
+                        if _sub_concepts_all else "-"
+                    )
                     logger.info(
-                        "[PROBE] turn=%d | signal=%s | topic=%r | sat=%.1f/%.1f | brief_probe=%s brief_avoid=%s",
+                        "[PROBE] turn=%d | signal=%s | topic=%r | sat=%.1f/%.1f | sub_concept=%r (idx=%d of %d) | brief_avoid=%s",
                         turn_snapshot, _eval_signal or "none", _scoring_topic_log,
                         _sat_after, _sat_thresh,
-                        ",".join((_probe_brief_item.probe_focus or [])[:3]) if _probe_brief_item else "-",
+                        _sub_concept_this_turn, _rotation_idx, len(_sub_concepts_all),
                         ",".join((_probe_brief_item.probe_avoid or [])[:2]) if _probe_brief_item else "-",
                     )
                     logger.debug("[PROBE_DIRECTIVE] turn=%d:\n%s", turn_snapshot, _directive)
