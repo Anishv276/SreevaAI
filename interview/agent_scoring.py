@@ -1,8 +1,9 @@
 ﻿"""
 agent_scoring.py
-Single LLM call per turn: scores the answer AND detects ONE signal with a reason.
-The signal is LLM-detected — it reads the full conversation and understands context,
-not pattern-matching on "we" tokens or word counts.
+Two dedicated LLM calls per turn: one scores the answer, one classifies the signal.
+Splitting the calls eliminates conjunctive-logic collapse — the scoring call focuses
+purely on quality dimensions, and the signal call gets its own reasoning budget
+(400-600 tokens, chain-of-thought allowed) to pick the ONE best-fit signal.
 
 Returns:
   quality scores  : clarity, depth, specificity, grounding, overall
@@ -332,10 +333,10 @@ async def _classify_signal_from_answer(
     client: Any,
     llm_model: str = _EVAL_DEFAULT,
     signals_already_fired: list | None = None,
-) -> str:
+) -> tuple[str, str | None]:
     """
     Fallback: compare the answer against every content-level signal definition
-    and return the one that best matches. Called only when the main eval LLM
+    and return (signal, signal_reason). Called only when the main eval LLM
     failed to return a valid signal.
 
     Respects the variety rule: banned signals (already fired on this topic) are
@@ -355,7 +356,7 @@ async def _classify_signal_from_answer(
         "that best describes the gap or pattern in the answer.\n"
         "Signals already fired on this topic have been EXCLUDED — pick only from the list.\n\n"
         f"SIGNALS (choose exactly one):\n{_signal_descriptions}\n\n"
-        "Output ONLY valid JSON: {\"signal\": \"<signal_name>\", \"reason\": \"<one short phrase>\"}\n"
+        "Output ONLY valid JSON: {\"signal\": \"<signal_name>\", \"signal_reason\": \"<3-12 word exact quote from their answer>\"}\n"
         "signal MUST be exactly one of the signal names listed above. Nothing else."
     )
     _user = f"QUESTION: {last_question}\n\nANSWER: {candidate_answer}"
@@ -364,7 +365,7 @@ async def _classify_signal_from_answer(
             client.chat.completions.create(
                 model=llm_model,
                 temperature=0.0,
-                max_tokens=60,
+                max_tokens=80,
                 messages=[
                     {"role": "system", "content": _system},
                     {"role": "user", "content": _user},
@@ -376,10 +377,13 @@ async def _classify_signal_from_answer(
         raw = resp.choices[0].message.content or ""
         result = json.loads(raw)
         chosen = str(result.get("signal", "")).strip()
+        reason = str(result.get("signal_reason") or "").strip() or None
+        if not reason and chosen in SIGNAL_DEFINITIONS:
+            reason = SIGNAL_DEFINITIONS[chosen]["trigger"]
         if chosen in _remaining:
-            return chosen
+            return chosen, reason
         if chosen in SIGNAL_DEFINITIONS:
-            return chosen
+            return chosen, reason
     except Exception as exc:
         logger.warning("[EVAL] _classify_signal_from_answer failed (%s) — rotating fallback", exc)
     # Deterministic rotation across banned/unfired signals — never always the same one.
@@ -389,69 +393,39 @@ async def _classify_signal_from_answer(
     ]
     for name in _rotation_order:
         if name in _remaining:
-            return name
-    return _rotation_order[len(_fired) % len(_rotation_order)]
+            return name, SIGNAL_DEFINITIONS[name]["trigger"]
+    _fallback = _rotation_order[len(_fired) % len(_rotation_order)]
+    return _fallback, SIGNAL_DEFINITIONS[_fallback]["trigger"]
 
 
-async def evaluate_answer(
+async def _call_scoring(
+    *,
     candidate_answer: str,
     last_question: str,
     topic_follow_up_count: int,
-    transcript_lines: list,
-    client,
-    org_id: Optional[str] = None,
-    llm_model: str = _EVAL_DEFAULT,
-    is_warmup: bool = False,
-    candidate_band: str = "mid",
-    active_topic: str = "",
-    topic_importance: str = "HIGH",
-    topic_tag: str = "RESUME_TOPIC",
-    topic_probe_focus: list | None = None,
-    job_title: str = "",
-    signals_already_fired: list | None = None,
-) -> dict:
+    recent_context: str,
+    client: Any,
+    llm_model: str,
+    org_id: str,
+    candidate_band: str,
+    active_topic: str,
+    topic_importance: str,
+    topic_tag: str,
+    topic_probe_focus: list | None,
+    job_title: str,
+) -> tuple[dict, dict]:
     """
-    Single merged LLM call: scores answer quality + detects one signal with reason.
-
-    Returns:
-      clarity, depth, specificity, grounding, overall  — quality scores
-      action       — PROBE | MOVE_ON
-      signal       — one signal name, never null
-      signal_reason — exact quote from their answer that triggered it, or null
-      reason       — short phrase for the routing decision
+    Call 1 — quality scoring only (no signal logic).
+    Returns (parsed_data_dict, llm_usage_dict).
     """
-    if is_warmup:
-        return {
-            "clarity": 0, "depth": 0, "specificity": 0, "grounding": 0, "overall": 0.0,
-            "is_warmup": True,
-            "action": "MOVE_ON", "forced_action": True,
-            "signal": None, "signal_reason": None, "reason": "warmup turn",
-        }
-
-    if not candidate_answer or not candidate_answer.strip():
-        return {
-            "clarity": 0, "depth": 0, "specificity": 0, "grounding": 0, "overall": 0.0,
-            "action": "MOVE_ON", "forced_action": True,
-            "signal": "pure_denial", "signal_reason": None, "reason": "empty answer",
-        }
-
-    word_count = len(candidate_answer.strip().split())
-    recent_context = "\n".join(transcript_lines[-6:]) if transcript_lines else ""
-
-    _signal_block = _build_signal_prompt_block()
-
-    def _build_system_prompt() -> str:
+    def _build_scoring_system_prompt() -> str:
         ctx = (
             "You are an experienced interviewer scoring a candidate's answer.\n"
             "Think like a senior hiring manager who has interviewed hundreds of people.\n"
             "You know the difference between someone who did the work and someone who read about it.\n"
             "Output ONLY valid JSON:\n"
             '{"answers_question":true/false,"clarity":0-10,"depth":0-10,"specificity":0-10,"grounding":0-10,'
-            '"signal": one of exactly ["pure_denial","denial_with_continuation","clarification_request",'
-            '"rephrase_request","off_topic","depth_ceiling_hit","ownership_ambiguous",'
-            '"explanation_shallow","tool_named_not_used","tech_choice_unjustified","example_evaded","scenario_untested"],'
-            '"signal_reason":"<3-12 word exact quote from their answer>",'
-            '"reason":"<one phrase from their answer that drove your call>"}\n\n'
+            '"reason":"<one phrase from their answer that drove your scoring call>"}\n\n'
             "STEP 1 — answers_question: Did the candidate's answer actually address the question that was asked?\n"
             "  true  = they engaged with the question, even partially or weakly.\n"
             "  false = the answer has NOTHING to do with the question — completely unrelated topic,\n"
@@ -464,62 +438,11 @@ async def evaluate_answer(
             "  If answers_question = false, you MUST set clarity=0, depth=0, specificity=0, grounding=0.\n"
             "  No score at all for an answer that does not address the question.\n\n"
             "STEP 2 — Score normally (only if answers_question = true).\n\n"
-            "CRITICAL: signal MUST be ONE of the 12 names above. NEVER null.\n"
-            "CRITICAL: For content gates (G1-G7), do NOT stop at the first match. Evaluate every gate,\n"
-            "then pick the STRONGEST match that respects the VARIETY RULE (banned signals list below).\n\n"
-
             f"Role: {job_title or 'not specified'} | Topic: {active_topic or 'general'}"
             f" | Tag: {topic_tag} | Importance: {topic_importance}\n"
         )
         if topic_probe_focus:
             ctx += f"Probe focus: {', '.join(topic_probe_focus)}\n"
-        if signals_already_fired:
-            _off_topic_was_fired = "off_topic" in signals_already_fired
-            # Content-level signals that already fired on this topic. G0 response
-            # signals (pure_denial, clarification_request, etc) are excluded from
-            # the ban because they legitimately re-fire on new denial/clarify turns.
-            _CONTENT_SIGNALS = {
-                "depth_ceiling_hit", "ownership_ambiguous", "explanation_shallow",
-                "tool_named_not_used", "tech_choice_unjustified", "example_evaded",
-                "scenario_untested",
-            }
-            _fired_content = [s for s in signals_already_fired if s in _CONTENT_SIGNALS]
-            _banned = sorted(set(_fired_content))
-            _remaining = sorted(_CONTENT_SIGNALS - set(_fired_content))
-            _special_note = (
-                "SPECIAL NOTE: off_topic already fired on a previous turn (likely a non-answer like 'I am ready'). "
-                "The candidate is now actually attempting to answer. If this answer is AT ALL related to the "
-                "topic -- even vaguely, even shallowly -- do NOT re-fire off_topic. Score it on content gates "
-                "(G1-G7) instead: explanation_shallow, tool_named_not_used, scenario_untested, etc.\n"
-            ) if _off_topic_was_fired else ""
-            if _banned and _remaining:
-                _hard_ban_note = (
-                    f"HARD VARIETY RULE — CONTENT SIGNALS ALREADY FIRED ON THIS TOPIC: {', '.join(_banned)}.\n"
-                    f"These signals are BANNED for this turn. Every content signal has a real interpretation "
-                    f"of almost any substantive answer — YOU MUST pick one from the REMAINING set:\n"
-                    f"  {', '.join(_remaining)}\n"
-                    f"Reinterpret the answer through a different lens: if it looks like {_banned[0]}, ask what "
-                    f"OTHER gap could describe the SAME words — a tool named without operational memory "
-                    f"(tool_named_not_used), a decision without a why (tech_choice_unjustified), "
-                    f"missing personal ownership (ownership_ambiguous), a textbook flow (scenario_untested), "
-                    f"a habit instead of an instance (example_evaded), etc.\n"
-                    f"Firing a banned signal is a HARD FAILURE — the follow-up will be a duplicate question.\n"
-                )
-            elif _banned and not _remaining:
-                # All content signals have fired. Rare; fall back to the least-recently-used.
-                _lru = _fired_content[0]
-                _hard_ban_note = (
-                    f"ALL content signals have fired on this topic: {', '.join(_banned)}.\n"
-                    f"The least-recently-used content signal is {_lru!r} — pick this one, or the strongest\n"
-                    f"among all G1-G7 gates. Variety is impossible; proceed with the best fit.\n"
-                )
-            else:
-                _hard_ban_note = ""
-            ctx += (
-                f"Signals already fired on this topic, in order: {', '.join(signals_already_fired) or '(none content)'}.\n"
-                + _hard_ban_note
-                + _special_note
-            )
         ctx += (
             "Tag context: RESUME_TOPIC = they claimed this experience, hold them to it. "
             "JD_TOPIC = they may be learning, credit honest partial exposure. "
@@ -588,68 +511,278 @@ async def evaluate_answer(
             f"{'MID: expect at least one friction point or specific outcome. Clean perfect narrative = 4 max.' if candidate_band == 'mid' else ''}"
             f"{'EXPERIENCED: expect organisational texture and real constraints. Smooth polished story with no friction = 4 max.' if candidate_band == 'experienced' else ''}"
             f"{'SENIOR: expect reflection or judgment under uncertainty. A perfect linear story with no tradeoff = 3 max.' if candidate_band == 'senior' else ''}\n\n"
-
         )
-        ctx += _signal_block
         return ctx
 
+    stream = await asyncio.wait_for(
+        client.chat.completions.create(
+            model=llm_model,
+            temperature=EVAL_TEMPERATURE,
+            max_tokens=120,
+            stream=True,
+            messages=[
+                {"role": "system", "content": _build_scoring_system_prompt()},
+                {
+                    "role": "user",
+                    "content": (
+                        f"QUESTION: {last_question}\n\n"
+                        f"ANSWER: {candidate_answer}\n\n"
+                        f"FOLLOW-UPS ON THIS TOPIC SO FAR: {topic_follow_up_count}\n\n"
+                        f"RECENT CONVERSATION (last 3 exchanges):\n{recent_context}"
+                    ),
+                },
+            ],
+            response_format={"type": "json_object"},
+            stream_options={"include_usage": True},
+            store=True,
+            metadata={
+                "call_type": "eval_scoring",
+                "band": candidate_band,
+                "topic_importance": topic_importance,
+                "org_id": org_id or "",
+            },
+        ),
+        timeout=8.0,
+    )
+
+    raw = ""
+    _usage = None
+    async for chunk in stream:
+        if chunk.choices and chunk.choices[0].delta.content:
+            raw += chunk.choices[0].delta.content
+        if chunk.usage:
+            _usage = chunk.usage
+
+    from billing.billing import extract_usage as _extract_usage  # noqa: PLC0415
+    _llm_usage = _extract_usage(_usage, llm_model) if _usage else {
+        "model": llm_model, "inputTokens": 0, "outputTokens": 0, "cachedInputTokens": 0,
+    }
+    return json.loads(raw), _llm_usage
+
+
+async def _call_signal_classification(
+    *,
+    candidate_answer: str,
+    last_question: str,
+    recent_context: str,
+    client: Any,
+    llm_model: str,
+    org_id: str,
+    active_topic: str,
+    topic_importance: str,
+    topic_tag: str,
+    signals_already_fired: list | None,
+) -> tuple[str | None, str | None, dict]:
+    """
+    Call 2 — signal classification only, with its own 400-600 token reasoning budget.
+    Brief chain-of-thought is allowed before the final JSON to reduce conjunctive-logic
+    collapse that occurred when scoring and signal detection shared 200 tokens.
+
+    Returns (signal, signal_reason, llm_usage_dict).
+    """
+    _CONTENT_SIGNALS = {
+        "depth_ceiling_hit", "ownership_ambiguous", "explanation_shallow",
+        "tool_named_not_used", "tech_choice_unjustified", "example_evaded",
+        "scenario_untested",
+    }
+    _fired = set(signals_already_fired or [])
+    _fired_content = _fired & _CONTENT_SIGNALS
+    _remaining_content = _CONTENT_SIGNALS - _fired_content
+
+    def _build_signal_system_prompt() -> str:
+        _off_topic_was_fired = "off_topic" in _fired
+
+        ban_block = ""
+        if _fired_content and _remaining_content:
+            ban_block = (
+                f"\nHARD VARIETY RULE — CONTENT SIGNALS ALREADY FIRED ON THIS TOPIC: {', '.join(sorted(_fired_content))}.\n"
+                f"These signals are BANNED for this turn. You MUST pick from the REMAINING set:\n"
+                f"  {', '.join(sorted(_remaining_content))}\n"
+                f"Reinterpret the answer through a different lens — every content signal has a valid\n"
+                f"reading of almost any substantive answer. Find the one that has NOT fired yet.\n"
+                f"Firing a banned signal is a HARD FAILURE.\n"
+            )
+        elif _fired_content and not _remaining_content:
+            _lru = next(iter(s for s in (signals_already_fired or []) if s in _CONTENT_SIGNALS), None)
+            ban_block = (
+                f"\nALL content signals have fired on this topic: {', '.join(sorted(_fired_content))}.\n"
+                f"Variety is impossible. Pick the best fit among all G1-G7 gates; prefer the least-recently-used"
+                + (f" ({_lru!r}).\n" if _lru else ".\n")
+            )
+
+        special_note = ""
+        if _off_topic_was_fired:
+            special_note = (
+                "\nSPECIAL NOTE: off_topic already fired on a previous turn (likely a non-answer like 'I am ready'). "
+                "The candidate is now actually attempting to answer. If this answer is AT ALL related to the "
+                "topic — even vaguely, even shallowly — do NOT re-fire off_topic. Score it on content gates "
+                "(G1-G7) instead: explanation_shallow, tool_named_not_used, scenario_untested, etc.\n"
+            )
+
+        return (
+            "You are a signal classifier for an interview evaluation system.\n"
+            "Your ONLY job is to identify ONE signal that best describes the gap in the candidate's answer.\n\n"
+            "You may reason briefly (2-4 sentences) before giving your final answer, but your final output\n"
+            "MUST end with valid JSON on its own line:\n"
+            '{"signal": "<signal_name>", "signal_reason": "<3-12 word exact quote from their answer>"}\n\n'
+            "signal MUST be exactly one of the 12 valid signal names listed below. NEVER null.\n"
+            f"Topic: {active_topic or 'general'} | Tag: {topic_tag} | Importance: {topic_importance}\n"
+            + ban_block
+            + special_note
+            + "\n"
+            + _build_signal_prompt_block()
+        )
+
+    resp = await asyncio.wait_for(
+        client.chat.completions.create(
+            model=llm_model,
+            temperature=0.0,
+            max_tokens=500,
+            messages=[
+                {"role": "system", "content": _build_signal_system_prompt()},
+                {
+                    "role": "user",
+                    "content": (
+                        f"QUESTION: {last_question}\n\n"
+                        f"ANSWER: {candidate_answer}\n\n"
+                        f"RECENT CONVERSATION (last 3 exchanges):\n{recent_context}"
+                    ),
+                },
+            ],
+            store=True,
+            metadata={
+                "call_type": "eval_signal",
+                "topic_importance": topic_importance,
+                "org_id": org_id or "",
+            },
+        ),
+        timeout=6.0,
+    )
+
+    raw = resp.choices[0].message.content or ""
+
+    from billing.billing import extract_usage as _extract_usage  # noqa: PLC0415
+    _llm_usage = _extract_usage(resp, llm_model) if resp else {
+        "model": llm_model, "inputTokens": 0, "outputTokens": 0, "cachedInputTokens": 0,
+    }
+
+    # Extract the last JSON object from the response (chain-of-thought comes first)
+    signal: str | None = None
+    signal_reason: str | None = None
+    import re as _re
+    _json_matches = _re.findall(r'\{[^{}]+\}', raw)
+    for _candidate_json in reversed(_json_matches):
+        try:
+            _parsed = json.loads(_candidate_json)
+            _sig = str(_parsed.get("signal", "")).strip()
+            _reason = str(_parsed.get("signal_reason") or "").strip() or None
+            if _sig:
+                signal = _sig
+                if not _reason:
+                    _defn = SIGNAL_DEFINITIONS.get(_sig) or RESPONSE_SIGNALS.get(_sig)
+                    _reason = _defn.get("trigger") or _defn.get("description") if _defn else None
+                signal_reason = _reason
+                break
+        except (json.JSONDecodeError, ValueError):
+            continue
+
+    return signal, signal_reason, _llm_usage
+
+
+async def evaluate_answer(
+    candidate_answer: str,
+    last_question: str,
+    topic_follow_up_count: int,
+    transcript_lines: list,
+    client,
+    org_id: Optional[str] = None,
+    llm_model: str = _EVAL_DEFAULT,
+    is_warmup: bool = False,
+    candidate_band: str = "mid",
+    active_topic: str = "",
+    topic_importance: str = "HIGH",
+    topic_tag: str = "RESUME_TOPIC",
+    topic_probe_focus: list | None = None,
+    job_title: str = "",
+    signals_already_fired: list | None = None,
+) -> dict:
+    """
+    Two dedicated LLM calls: Call 1 scores the answer, Call 2 classifies the signal.
+
+    Returns:
+      clarity, depth, specificity, grounding, overall  — quality scores
+      action       — PROBE | MOVE_ON
+      signal       — one signal name, never null
+      signal_reason — exact quote from their answer that triggered it, or null
+      reason       — short phrase for the routing decision
+    """
+    if is_warmup:
+        return {
+            "clarity": 0, "depth": 0, "specificity": 0, "grounding": 0, "overall": 0.0,
+            "is_warmup": True,
+            "action": "MOVE_ON", "forced_action": True,
+            "signal": None, "signal_reason": None, "reason": "warmup turn",
+        }
+
+    if not candidate_answer or not candidate_answer.strip():
+        return {
+            "clarity": 0, "depth": 0, "specificity": 0, "grounding": 0, "overall": 0.0,
+            "action": "MOVE_ON", "forced_action": True,
+            "signal": "pure_denial", "signal_reason": None, "reason": "empty answer",
+        }
+
+    word_count = len(candidate_answer.strip().split())
+    recent_context = "\n".join(transcript_lines[-6:]) if transcript_lines else ""
+
     logger.info(
-        "[EVAL] > evaluate_answer | model=%s words=%d follow_ups=%d topic=%s",
+        "[EVAL] > evaluate_answer (2-call) | model=%s words=%d follow_ups=%d topic=%s",
         llm_model, word_count, topic_follow_up_count, active_topic or "?",
     )
 
+    _common_kwargs = dict(
+        candidate_answer=candidate_answer,
+        last_question=last_question,
+        recent_context=recent_context,
+        client=client,
+        llm_model=llm_model,
+        org_id=org_id or "",
+        active_topic=active_topic,
+        topic_importance=topic_importance,
+        topic_tag=topic_tag,
+    )
+
     try:
-        stream = await asyncio.wait_for(
-            client.chat.completions.create(
-                model=llm_model,
-                temperature=EVAL_TEMPERATURE,
-                max_tokens=200,
-                stream=True,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": _build_system_prompt(),
-                    },
-                    {
-                        "role": "user",
-                        "content": (
-                            f"QUESTION: {last_question}\n\n"
-                            f"ANSWER: {candidate_answer}\n\n"
-                            f"FOLLOW-UPS ON THIS TOPIC SO FAR: {topic_follow_up_count}\n\n"
-                            f"RECENT CONVERSATION (last 3 exchanges):\n{recent_context}"
-                        ),
-                    },
-                ],
-                response_format={"type": "json_object"},
-                stream_options={"include_usage": True},
-                store=True,
-                metadata={
-                    "call_type": "eval_scoring",
-                    "band": candidate_band,
-                    "topic_importance": topic_importance,
-                    "org_id": org_id or "",
-                },
-            ),
-            timeout=8.0,
+        # Fire both calls concurrently — scoring and signal classification are independent.
+        (scoring_data, _scoring_usage), (raw_signal, signal_reason, _signal_usage) = (
+            await asyncio.gather(
+                _call_scoring(
+                    **_common_kwargs,
+                    topic_follow_up_count=topic_follow_up_count,
+                    candidate_band=candidate_band,
+                    topic_probe_focus=topic_probe_focus,
+                    job_title=job_title,
+                ),
+                _call_signal_classification(
+                    **_common_kwargs,
+                    signals_already_fired=signals_already_fired,
+                ),
+            )
         )
 
-        raw = ""
-        _usage = None
-        async for chunk in stream:
-            if chunk.choices and chunk.choices[0].delta.content:
-                raw += chunk.choices[0].delta.content
-            if chunk.usage:
-                _usage = chunk.usage
-
-        from billing.billing import extract_usage as _extract_usage  # noqa: PLC0415
-        # _usage is chunk.usage (not the full completion), so pass it as the
-        # completion arg — extract_usage reads .prompt_tokens/.completion_tokens
-        # directly when .usage is absent (falls back to the object itself).
-        _eval_llm_usage = _extract_usage(_usage, llm_model) if _usage else {
-            "model": llm_model, "inputTokens": 0, "outputTokens": 0, "cachedInputTokens": 0,
+        _eval_llm_usage = {
+            "model": llm_model,
+            "inputTokens": (
+                _scoring_usage.get("inputTokens", 0) + _signal_usage.get("inputTokens", 0)
+            ),
+            "outputTokens": (
+                _scoring_usage.get("outputTokens", 0) + _signal_usage.get("outputTokens", 0)
+            ),
+            "cachedInputTokens": (
+                _scoring_usage.get("cachedInputTokens", 0) + _signal_usage.get("cachedInputTokens", 0)
+            ),
         }
 
-        data: dict[str, Any] = json.loads(raw)
+        data = scoring_data
 
         def _clamp(v: Any, lo: float = 0.0, hi: float = 10.0) -> float:
             try:
@@ -675,8 +808,7 @@ async def evaluate_answer(
                 + grounding * 0.25
             )
 
-        # Parse signal and determine action
-        raw_signal = data.get("signal")
+        # Normalise signal from the dedicated signal call
         signal = str(raw_signal).strip() if raw_signal else None
 
         _response_signals = {
@@ -707,7 +839,7 @@ async def evaluate_answer(
         # If signal is still None, compare the answer against all content-level signal
         # definitions and pick the best match — never fall back to the default probe.
         if signal is None and not zero_scores and not cap_scores_at_5:
-            signal = await _classify_signal_from_answer(
+            signal, signal_reason = await _classify_signal_from_answer(
                 candidate_answer=candidate_answer,
                 last_question=last_question,
                 client=client,
@@ -716,7 +848,8 @@ async def evaluate_answer(
             )
             logger.info("[EVAL] signal was None — best-match classification selected %r", signal)
 
-        signal_reason = str(data.get("signal_reason") or "").strip() or None
+        # signal_reason comes from the dedicated signal call (already extracted)
+        signal_reason = str(signal_reason or "").strip() or None
         if signal is None:
             signal_reason = None
 
@@ -733,7 +866,7 @@ async def evaluate_answer(
         if signal in _CONTENT and signal in _fired_content:
             _remaining = _CONTENT - _fired_content
             if _remaining:
-                _reroll = await _classify_signal_from_answer(
+                _reroll, _reroll_reason = await _classify_signal_from_answer(
                     candidate_answer=candidate_answer,
                     last_question=last_question,
                     client=client,
@@ -746,7 +879,7 @@ async def evaluate_answer(
                         signal, _reroll,
                     )
                     signal = _reroll
-                    signal_reason = None  # reason no longer matches the new signal
+                    signal_reason = _reroll_reason
 
         reason = str(data.get("reason", ""))[:120]
 
