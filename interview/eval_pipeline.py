@@ -116,12 +116,10 @@ class TopicState:
 
     def add_contribution(self, weighted: float, signal: str | None, turn: int | None = None) -> None:
         contribution = max(0.0, _score_to_contribution(weighted))
-        # Only a hard-zeroed answer (pure_denial/off_topic/clarification_request, which
-        # arrive here as weighted == 0.0) should get zero credit entirely. A weak but
-        # present answer (0 < weighted < 2.0) still used up a turn and should accrue
-        # base_turn_credit even though it's below the contribution floor — otherwise it's
-        # indistinguishable from a denial and the topic can never leave sat=0.0.
-        effective_base = self.base_turn_credit if weighted > 0.0 else 0.0
+        # base_turn_credit only awarded when weighted >= 3.0 — a genuine attempt at the question.
+        # weighted=0.0 means the LLM judged the answer irrelevant or a non-answer (answers_question=false,
+        # off_topic, pure_denial, etc). Zero score = zero saturation advance, no exceptions.
+        effective_base = self.base_turn_credit if weighted >= 3.0 else 0.0
         self.saturation_score += effective_base + contribution
         self.follow_up_turns += 1
         self.is_saturated = self.saturation_score >= self.saturation_threshold
@@ -368,7 +366,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         quality["specificity"], quality["grounding"], _weighted, depth_signal,
     )
     logger.info("[EVAL] turn=%d action=%s signal=%s weighted=%.2f",
-                p.turn, action, signal or "none", _weighted)
+                p.turn, action, signal, _weighted)
     if signal:
         logger.info("[SIGNAL] %s | reason=%r", signal, signal_reason)
 
@@ -446,8 +444,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         "topic":                   p.active_topic or "general",
         "topic_saturation_score":  sat_score,
         "topic_saturation_threshold": sat_threshold,
-        "response_latency_sec":    p.response_latency_sec,  # time from AI question to candidate reply
-        # ponytail: debug-report fields — cheap to stash here, avoids reconstructing later
+        "response_latency_sec":    p.response_latency_sec,
         "action":                  action,
         "band":                    p.band,
         "is_saturated":            is_saturated,
@@ -458,7 +455,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
 
     logger.info("[RESULT] turn=%d action=%s quality=%.2f/%s signal=%s sat=%.1f/%.1f",
                 p.turn, action, _weighted, depth_signal,
-                signal or "none", sat_score, sat_threshold)
+                signal, sat_score, sat_threshold)
 
     return {
         "action":        action,

@@ -7,7 +7,7 @@ not pattern-matching on "we" tokens or word counts.
 Returns:
   quality scores  : clarity, depth, specificity, grounding, overall
   routing         : action (PROBE/MOVE_ON)
-  signal          : one signal name + the exact reason it fired (or null if none)
+  signal          : one signal name + the exact reason it fired (never null)
 """
 from __future__ import annotations
 import asyncio
@@ -188,9 +188,6 @@ def _build_signal_prompt_block() -> str:
 -- SIGNAL DETECTION (GATE CHECK) --
 Work through EACH gate in STRICT ORDER: G0a→G0b→G0c→G0d→G0e→G1→G2→G3→G4→G5→G6
 The FIRST gate that fires decides the signal — STOP and return that signal.
-CRITICAL: ALWAYS fire exactly ONE signal. NEVER return null.
-
-If no gate fires, SIGNAL = "no_signal_found" (report this — the LLM must always find a signal).
 
 ---- RESPONSE-LEVEL GATES (G0) — check these FIRST ----
 
@@ -269,10 +266,57 @@ G7 — SCENARIO_UNTESTED: Correct textbook flow but ZERO lived friction/edge cas
      [Correct but memorized, not practiced]
      → YES: SIGNAL = scenario_untested. STOP.
 
-If ALL gates = NO: This should NEVER happen. Signal the closest gate or report "no_signal_found".
-
 Output exactly ONE signal. Never null, never multiple.\
 """
+
+
+async def _classify_signal_from_answer(
+    *,
+    candidate_answer: str,
+    last_question: str,
+    client: Any,
+    llm_model: str = _EVAL_DEFAULT,
+) -> str:
+    """
+    Fallback: compare the answer against every content-level signal definition
+    and return the one that best matches. Called only when the main eval LLM
+    failed to return a valid signal.
+    """
+    _signal_descriptions = "\n".join(
+        f'"{name}": {defn["trigger"]}'
+        for name, defn in SIGNAL_DEFINITIONS.items()
+    )
+    _system = (
+        "You are a signal classifier for an interview evaluation system.\n"
+        "Given a question and a candidate's answer, pick the ONE signal from the list below "
+        "that best describes the gap or pattern in the answer.\n\n"
+        f"SIGNALS:\n{_signal_descriptions}\n\n"
+        "Output ONLY valid JSON: {\"signal\": \"<signal_name>\", \"reason\": \"<one short phrase>\"}\n"
+        "signal MUST be exactly one of the signal names listed above. Nothing else."
+    )
+    _user = f"QUESTION: {last_question}\n\nANSWER: {candidate_answer}"
+    try:
+        resp = await asyncio.wait_for(
+            client.chat.completions.create(
+                model=llm_model,
+                temperature=0.0,
+                max_tokens=60,
+                messages=[
+                    {"role": "system", "content": _system},
+                    {"role": "user", "content": _user},
+                ],
+                response_format={"type": "json_object"},
+            ),
+            timeout=5.0,
+        )
+        raw = resp.choices[0].message.content or ""
+        result = json.loads(raw)
+        chosen = str(result.get("signal", "")).strip()
+        if chosen in SIGNAL_DEFINITIONS:
+            return chosen
+    except Exception as exc:
+        logger.warning("[EVAL] _classify_signal_from_answer failed (%s) — falling back to explanation_shallow", exc)
+    return "explanation_shallow"
 
 
 async def evaluate_answer(
@@ -298,7 +342,7 @@ async def evaluate_answer(
     Returns:
       clarity, depth, specificity, grounding, overall  — quality scores
       action       — PROBE | MOVE_ON
-      signal       — one of the 5 signal names, or null
+      signal       — one signal name, never null
       signal_reason — exact quote from their answer that triggered it, or null
       reason       — short phrase for the routing decision
     """
@@ -320,17 +364,6 @@ async def evaluate_answer(
     word_count = len(candidate_answer.strip().split())
     recent_context = "\n".join(transcript_lines[-6:]) if transcript_lines else ""
 
-    _followup_cutoff = {"fresher": 2, "mid": 3, "experienced": 5, "senior": 6}.get(candidate_band, 3)
-    _band_note = {
-        "fresher": (
-            "FRESHER — score generously on grounding (limited work history).\n"
-            "Do NOT expect tradeoffs, scale, or architecture depth."
-        ),
-        "mid": "MID-LEVEL — expect clear ownership and at least one real decision.",
-        "experienced": "EXPERIENCED — expect depth, specifics, and real tradeoffs. Do not score vague answers high.",
-        "senior": "SENIOR — expect strategic judgment and high-stakes decisions.",
-    }.get(candidate_band, "Probe for real ownership and specific decisions.")
-
     _signal_block = _build_signal_prompt_block()
 
     def _build_system_prompt() -> str:
@@ -339,15 +372,20 @@ async def evaluate_answer(
             "Think like a senior hiring manager who has interviewed hundreds of people.\n"
             "You know the difference between someone who did the work and someone who read about it.\n"
             "Output ONLY valid JSON:\n"
-            '{"clarity":0-10,"depth":0-10,"specificity":0-10,"grounding":0-10,'
-            '"gate_check":"<G0a=y/n; G0b=y/n; ... G1=y/n; ... follow the gates in order>",'
+            '{"answers_question":true/false,"clarity":0-10,"depth":0-10,"specificity":0-10,"grounding":0-10,'
             '"signal": one of exactly ["pure_denial","denial_with_continuation","clarification_request",'
             '"rephrase_request","off_topic","depth_ceiling_hit","ownership_ambiguous",'
-            '"explanation_shallow","tool_named_not_used","tech_choice_unjustified","example_evaded","scenario_untested"] or "no_signal_found",'
+            '"explanation_shallow","tool_named_not_used","tech_choice_unjustified","example_evaded","scenario_untested"],'
             '"signal_reason":"<3-12 word exact quote from their answer>",'
             '"reason":"<one phrase from their answer that drove your call>"}\n\n'
-            "CRITICAL: signal MUST be ONE of the 12 names above or 'no_signal_found'. NEVER null.\n"
-            "CRITICAL: gate_check MUST be filled in showing your path through gates (G0→G1→etc).\n"
+            "STEP 1 — answers_question: Did the candidate's answer actually address the question that was asked?\n"
+            "  true  = they engaged with the question, even partially or weakly.\n"
+            "  false = the answer has nothing to do with the question — off-topic, pure social filler,\n"
+            "          a completely unrelated topic, or zero attempt at what was asked.\n"
+            "  If answers_question = false, you MUST set clarity=0, depth=0, specificity=0, grounding=0.\n"
+            "  No score at all for an answer that does not address the question.\n\n"
+            "STEP 2 — Score normally (only if answers_question = true).\n\n"
+            "CRITICAL: signal MUST be ONE of the 12 names above. NEVER null.\n"
             "CRITICAL: The signal MUST match the FIRST gate that fired. Never skip a gate.\n\n"
 
             f"Role: {job_title or 'not specified'} | Topic: {active_topic or 'general'}"
@@ -447,7 +485,7 @@ async def evaluate_answer(
             client.chat.completions.create(
                 model=llm_model,
                 temperature=EVAL_TEMPERATURE,
-                max_tokens=400,  # gate_check reasoning (~80 tok) is emitted before signal — raised from 320 to prevent truncation cutting off signal field
+                max_tokens=200,
                 stream=True,
                 messages=[
                     {
@@ -501,22 +539,28 @@ async def evaluate_answer(
             except (TypeError, ValueError):
                 return 0.0
 
-        clarity     = _clamp(data.get("clarity", 0))
-        depth       = _clamp(data.get("depth", 0))
-        specificity = _clamp(data.get("specificity", 0))
-        grounding   = _clamp(data.get("grounding", 0))
-        overall = (
-            clarity * 0.20
-            + depth * 0.35
-            + specificity * 0.20
-            + grounding * 0.25
-        )
+        # answers_question=false means the answer did not address the question at all.
+        # Force all scores to 0 immediately — no saturation credit for irrelevant answers.
+        answers_question = data.get("answers_question", True)
+        if answers_question is False:
+            logger.info("[EVAL] answers_question=false — forcing all scores to 0")
+            clarity = depth = specificity = grounding = overall = 0.0
+        else:
+            clarity     = _clamp(data.get("clarity", 0))
+            depth       = _clamp(data.get("depth", 0))
+            specificity = _clamp(data.get("specificity", 0))
+            grounding   = _clamp(data.get("grounding", 0))
+            overall = (
+                clarity * 0.20
+                + depth * 0.35
+                + specificity * 0.20
+                + grounding * 0.25
+            )
 
         # Parse signal and determine action
         raw_signal = data.get("signal")
         signal = str(raw_signal).strip() if raw_signal else None
 
-        # ponytail: handle response signals (G0) — fire first, override routing
         _response_signals = {
             "pure_denial": ("MOVE_ON", True),           # forced_action=True, scores=0
             "denial_with_continuation": ("CAP_SCORES", False),  # mark for scoring cap at 5
@@ -528,7 +572,7 @@ async def evaluate_answer(
         action = "PROBE"
         forced_action = False
         cap_scores_at_5 = False
-        zero_scores = False  # pure_denial, clarification_request, off_topic
+        zero_scores = False
 
         if signal in _response_signals:
             action, forced_action = _response_signals[signal]
@@ -542,14 +586,24 @@ async def evaluate_answer(
             logger.warning("[EVAL] unknown signal %r — ignoring", signal)
             signal = None
 
+        # If signal is still None, compare the answer against all content-level signal
+        # definitions and pick the best match — never fall back to the default probe.
+        if signal is None and not zero_scores and not cap_scores_at_5:
+            signal = await _classify_signal_from_answer(
+                candidate_answer=candidate_answer,
+                last_question=last_question,
+                client=client,
+                llm_model=llm_model,
+            )
+            logger.info("[EVAL] signal was None — best-match classification selected %r", signal)
+
         signal_reason = str(data.get("signal_reason") or "").strip() or None
         if signal is None:
             signal_reason = None
 
         reason = str(data.get("reason", ""))[:120]
-        gate_check = str(data.get("gate_check", ""))[:300]
 
-        # Apply score logic for response signals
+        # Apply score zeroing/capping for response signals (overrides answers_question zeroing if both fire)
         if zero_scores:
             clarity = 0.0
             depth = 0.0
@@ -567,13 +621,11 @@ async def evaluate_answer(
 
         logger.info(
             "[EVAL] [OK] signal=%s action=%s | clarity=%d depth=%d spec=%d ground=%d | reason=%s",
-            signal or "none", action,
+            signal, action,
             int(clarity), int(depth), int(specificity), int(grounding),
             repr(reason),
         )
-        if gate_check:
-            logger.info("[EVAL] gate_check=%r", gate_check)
-        if signal:
+        if signal_reason:
             logger.info("[EVAL] signal_reason=%r", signal_reason)
 
         return {
