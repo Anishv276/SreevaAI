@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { Bot, Mic, AudioLines, Users, ChevronRight, Check, Loader2, Brain, Search, ChevronDown } from "lucide-react";
 import { toast } from "@/components/ui/toast-custom";
-import { LLM_MODELS, TTS_MODELS, ALL_VOICES, getVoicesForProvider, getTtsModelsForProvider, type TtsProvider } from "@/lib/ai-models-config";
+import { LLM_MODELS, TTS_MODELS, ALL_VOICES, getTtsModelsForProvider, type TtsProvider } from "@/lib/ai-models-config";
 
 const STT_OPTIONS = [
   { id: "flux-general-en",    label: "Flux English",        description: "Best for English-only interviews" },
@@ -84,12 +84,17 @@ export default function ModelsPage() {
   const [config, setConfig] = useState<OrgConfig | null>(null);
   const [dirty, setDirty] = useState<Partial<OrgConfig & { allowedVoices: string[] }>>({});
   const [saving, setSaving] = useState(false);
+  const [selectableVoices, setSelectableVoices] = useState<typeof ALL_VOICES>(ALL_VOICES);
 
   useEffect(() => {
     fetch("/api/super-admin/models")
       .then(r => r.json())
       .then(d => { setOrgs(d.orgs ?? []); setLoading(false); })
       .catch(() => setLoading(false));
+    fetch("/api/super-admin/voices")
+      .then(r => r.json())
+      .then(d => { if (Array.isArray(d.selectableVoices)) setSelectableVoices(d.selectableVoices); })
+      .catch(() => {});
   }, []);
 
   const selectOrg = useCallback(async (orgId: string) => {
@@ -149,7 +154,7 @@ export default function ModelsPage() {
   const hasDirty = Object.keys(dirty).length > 0;
   const currentTtsProvider = (config?.ttsProvider ?? "ELEVENLABS") as TtsProvider;
   const ttsModelsForProvider = getTtsModelsForProvider(currentTtsProvider);
-  const voicesForProvider = getVoicesForProvider(currentTtsProvider);
+  const voicesForProvider = selectableVoices.filter(v => v.provider === currentTtsProvider);
   const selectedVoiceIds: string[] = config?.allowedVoices ?? [];
 
   return (
@@ -369,7 +374,6 @@ export default function ModelsPage() {
                           <span className={`text-sm font-semibold truncate ${isSelected ? "text-violet-700" : "text-gray-800"}`}>{v.name}</span>
                           {isSelected && <Check className="h-3 w-3 text-violet-600 ml-auto flex-shrink-0" />}
                         </div>
-                        <p className="text-[11px] text-gray-400 mt-1 leading-tight">{v.description}</p>
                         {(v.tags ?? []).length > 0 && (
                           <div className="flex flex-wrap gap-1 mt-1.5">
                             {(v.tags ?? []).slice(0, 2).map(tag => (
