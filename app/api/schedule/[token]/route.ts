@@ -81,8 +81,8 @@ export async function GET(
             return NextResponse.json(result);
         }
 
-        // Only show slots that are at least 30 minutes from now
-        const allSlots = generateSlots(dateIST).filter(s => s.getTime() > Date.now() + 30 * 60 * 1000);
+        // Only show slots that are at least 5 minutes from now
+        const allSlots = generateSlots(dateIST).filter(s => s.getTime() > Date.now() + 5 * 60 * 1000);
 
         // Count booked interviews per slot window for this org
         const orgId = org?.id;
