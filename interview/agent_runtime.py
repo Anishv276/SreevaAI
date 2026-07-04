@@ -1066,12 +1066,12 @@ class InterviewAgent(Agent):
             n = 0
             is_elevenlabs = type(tts_engine).__module__.startswith("livekit.plugins.elevenlabs")
             async for chunk in text:
-                buf += chunk
                 if is_elevenlabs:
-                    # Buffer by sentence for ElevenLabs — pushing raw tokens causes it to
-                    # synthesize mid-word (e.g. "Multi" before "Channel") producing garbled
-                    # audio. Fall through to the same sentence-buffer logic used for Sarvam.
-                    pass
+                    self._record_tts_text(chunk)
+                    tts_stream.push_text(chunk)
+                    n += 1
+                    continue
+                buf += chunk
                 while True:
                     m = _TTS_SENT_END_RE.search(buf)
                     if m:
@@ -1833,7 +1833,7 @@ async def entrypoint(ctx: JobContext):
                 backchannel_boundary=(1.0, 3.5),
             ),
         ),
-        "use_tts_aligned_transcript": org_tts_provider == "ELEVENLABS",
+        "use_tts_aligned_transcript": False,
         # Client-side acronym transform:
         # - Cartesia: needs it (no server-side normalization)
         # - ElevenLabs: apply_text_normalization='auto' handles it server-side — skip

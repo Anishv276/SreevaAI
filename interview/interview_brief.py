@@ -359,37 +359,50 @@ async def generate_interview_brief(
 
     # stream=True: keeps HTTP connection alive during generation, prevents idle-connection
     # timeouts. temperature=0: deterministic + marginally faster (no sampling).
-    stream = await openai_client.chat.completions.create(
-        model=llm_model,
-        temperature=0,
-        response_format={"type": "json_object"},
-        max_tokens=5000,
-        stream=True,
-        stream_options={"include_usage": True},
-        messages=[
-            {"role": "system", "content": _BRIEF_SYSTEM},
-            {"role": "user", "content": user_prompt},
-        ],
-        timeout=30,
-    )
+    # ponytail: one retry at a higher token cap if the response gets truncated mid-JSON;
+    # raise if it still fails, no infinite backoff loop.
+    raw = ""
+    for max_tokens in (5000, 8000):
+        stream = await openai_client.chat.completions.create(
+            model=llm_model,
+            temperature=0,
+            response_format={"type": "json_object"},
+            max_tokens=max_tokens,
+            stream=True,
+            stream_options={"include_usage": True},
+            messages=[
+                {"role": "system", "content": _BRIEF_SYSTEM},
+                {"role": "user", "content": user_prompt},
+            ],
+            timeout=30,
+        )
 
-    chunks: list[str] = []
-    usage_data = None
-    async for chunk in stream:
-        if chunk.choices and chunk.choices[0].delta.content:
-            chunks.append(chunk.choices[0].delta.content)
-        if hasattr(chunk, "usage") and chunk.usage:
-            usage_data = chunk.usage
+        chunks: list[str] = []
+        usage_data = None
+        async for chunk in stream:
+            if chunk.choices and chunk.choices[0].delta.content:
+                chunks.append(chunk.choices[0].delta.content)
+            if hasattr(chunk, "usage") and chunk.usage:
+                usage_data = chunk.usage
 
-    if usage_sink is not None and usage_data is not None:
-        from billing.billing import extract_usage  # noqa: PLC0415
-        usage_sink(extract_usage(usage_data, llm_model))
+        if usage_sink is not None and usage_data is not None:
+            from billing.billing import extract_usage  # noqa: PLC0415
+            usage_sink(extract_usage(usage_data, llm_model))
 
-    raw = "".join(chunks).strip()
-    if not raw:
-        raise ValueError("[BRIEF] empty response from LLM")
+        raw = "".join(chunks).strip()
+        if not raw:
+            raise ValueError("[BRIEF] empty response from LLM")
 
-    brief = InterviewBrief.model_validate(json.loads(raw))
+        try:
+            parsed = json.loads(raw)
+            break
+        except json.JSONDecodeError:
+            logger.warning("[BRIEF] truncated JSON at max_tokens=%d, retrying", max_tokens)
+            continue
+    else:
+        raise ValueError(f"[BRIEF] LLM response still truncated after retry: {raw[-200:]!r}")
+
+    brief = InterviewBrief.model_validate(parsed)
 
     logger.info(
         "[BRIEF] LLM brief generated: %d topics | anchor=%r | band=%s",

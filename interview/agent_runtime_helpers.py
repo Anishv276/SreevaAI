@@ -50,10 +50,24 @@ def _normalize_for_elevenlabs(text: str) -> str:
     return text
 
 
+_TTS_SENT_END_RE = re.compile(r'(?<=[.?!…])\s+|(?<=—)\s+')
+
+
 async def _elevenlabs_normalize_transform(text_stream):
     """Pre-normalize text for ElevenLabs flash_v2_5 before synthesis."""
+    buf = ""
     async for chunk in text_stream:
-        yield _normalize_for_elevenlabs(chunk)
+        buf += chunk
+        while True:
+            m = _TTS_SENT_END_RE.search(buf)
+            if m:
+                sentence = buf[:m.end()].strip()
+                buf = buf[m.end():]
+                yield _normalize_for_elevenlabs(sentence)
+            else:
+                break
+    if buf.strip():
+        yield _normalize_for_elevenlabs(buf.strip())
 
 # ── LLM TTS rewrite prompt ────────────────────────────────────────────────────
 # Used by make_sarvam_llm_rewrite_transform(). Kept here so it's easy to tune.
