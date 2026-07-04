@@ -139,14 +139,24 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const [launchTimeoutCheck, setLaunchTimeoutCheck] = useState(0);
     const [launchRecoveryMessage, setLaunchRecoveryMessage] = useState<string | null>(null);
     const [returnCountdown, setReturnCountdown] = useState<number | null>(null);
-    const [isTabViolation, setIsTabViolation] = useState(false);
-    const [isFullscreenViolation, setIsFullscreenViolation] = useState(false);
-    const [tabSwitchCount, setTabSwitchCount] = useState(0);
-    const [tabViolationElapsed, setTabViolationElapsed] = useState<string | null>(null);
+    // One violation state per signal -- tab_switch, fullscreen_exit, window_focus_loss
+    // are independent signals with independent toggles, counts, and toasts.
+    type FocusSignalKind = "tab_switch" | "fullscreen_exit" | "window_focus_loss";
+    const [activeFocusViolation, setActiveFocusViolation] = useState<FocusSignalKind | null>(null);
+    const [focusSignalCounts, setFocusSignalCounts] = useState<Record<FocusSignalKind, number>>({
+        tab_switch: 0,
+        fullscreen_exit: 0,
+        window_focus_loss: 0,
+    });
+    const [focusViolationElapsed, setFocusViolationElapsed] = useState<string | null>(null);
     const tabViolationTimerRef = useRef<number | null>(null);
-    // Prevents blur + visibilitychange from double-firing on the same tab-switch event
-    const tabSwitchInFlightRef = useRef(false);
-    // Timestamp (ms) when interview phase started — used to compute elapsed time in proctoring events
+    // Guards against the same physical action firing more than one signal type -- 
+    // e.g. exiting fullscreen via Esc also blurs the window and can hide the tab
+    // in some browsers. Whichever listener claims the transition first wins;
+    // the others skip. Cleared as soon as focus/visibility/fullscreen is restored.
+    const focusEventInFlightRef = useRef(false);
+    const fingerprintIntervalRef = useRef<number | null>(null);
+    // Timestamp (ms) when interview phase started -- used to compute elapsed time in proctoring events
     const interviewStartedAtRef = useRef<number | null>(null);
     //  AI Face Proctoring 
     const [referenceSnapshotUrl, setReferenceSnapshotUrl] = useState<string | null>(null);
@@ -181,6 +191,8 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const organizationName = searchParams.get("orgName")?.trim() || "";
     const requireInterviewToken = isInterviewTokenRequired();
     const isTabSwitchEnabled = Boolean(proctoringSignals.tab_switch);
+    const isFullscreenExitEnabled = Boolean(proctoringSignals.fullscreen_exit);
+    const isWindowFocusLossEnabled = Boolean(proctoringSignals.window_focus_loss);
     const isCameraDisabledEnabled = Boolean(proctoringSignals.camera_disabled);
     const isMicrophoneDisabledEnabled = Boolean(proctoringSignals.microphone_disabled);
     const isConnectionLostEnabled = Boolean(proctoringSignals.connection_lost);
@@ -193,15 +205,47 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             ref.current = null;
         }
     }, []);
+    const collectFingerprint = useCallback(() => {
+        const c = document.createElement("canvas");
+        c.width = 256; c.height = 256;
+        const ctx = c.getContext("2d");
+        let canvasHash = "";
+        if (ctx) {
+            ctx.fillStyle = "rgb(255,255,255)";
+            ctx.fillRect(0, 0, 256, 256);
+            ctx.fillStyle = "rgb(0,0,0)";
+            ctx.font = "14px Arial";
+            ctx.fillText("SreevaAI", 10, 50);
+            ctx.fillText(navigator.userAgent, 10, 80);
+            canvasHash = c.toDataURL().slice(-32);
+        }
+        return {
+            screen: `${screen.width}x${screen.height}x${screen.colorDepth}`,
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            language: navigator.language,
+            platform: navigator.platform,
+            userAgent: navigator.userAgent,
+            hardwareConcurrency: navigator.hardwareConcurrency ?? null,
+            deviceMemory: (navigator as Record<string, unknown>).deviceMemory ?? null,
+            canvasHash,
+            sessionId: (() => { try { return sessionStorage.getItem("fp_session_id") || ""; } catch { return ""; } })(),
+            collectedAt: Date.now(),
+        };
+    }, []);
     // Load reference snapshot from sessionStorage (set by HardwareCheck after camera capture)
     useEffect(() => {
         try {
             const snap = sessionStorage.getItem("proctor_ref_snapshot");
             if (snap) setReferenceSnapshotUrl(snap);
         } catch { }
+        try {
+            if (!sessionStorage.getItem("fp_session_id")) {
+                sessionStorage.setItem("fp_session_id", crypto.randomUUID());
+            }
+        } catch { }
     }, []);
     const [isInitiallyLocked, setIsInitiallyLocked] = useState(false);
-    // scheduledAt from API — used for the slot countdown gate
+    // scheduledAt from API -- used for the slot countdown gate
     const [scheduledAt, setScheduledAt] = useState<Date | null>(null);
     // Seconds until button unlocks (2 min before slot)
     const [slotCountdownSecs, setSlotCountdownSecs] = useState<number | null>(null);
@@ -218,7 +262,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 if (!active) return;
                 if (!res.ok && data.error) {
                     if (data.code === "TOO_EARLY" && data.scheduledAt) {
-                        // Waiting room opened — show hardware check but gate the Begin button
+                        // Waiting room opened -- show hardware check but gate the Begin button
                         const slot = new Date(data.scheduledAt);
                         setScheduledAt(slot);
                         setSlotCountdownSecs(Math.ceil((slot.getTime() - BUTTON_UNLOCK_BEFORE_MS - Date.now()) / 1000));
@@ -246,7 +290,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         return () => { active = false; };
     }, [id, interviewToken]);
 
-    // Countdown tick — counts down to (slot - 2 min); when <= 0, button unlocks
+    // Countdown tick -- counts down to (slot - 2 min); when <= 0, button unlocks
     useEffect(() => {
         if (!scheduledAt || slotCountdownSecs === null) return;
         if (slotCountdownSecs <= 0) return; // already unlocked
@@ -430,7 +474,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             window.removeEventListener("pagehide", handleExit);
         };
     }, [id, phase]);
-    // Single condition: agent ready — slot time is checked by token API
+    // Single condition: agent ready -- slot time is checked by token API
     // (Server won't issue token if outside ±5 min window, so we know slot time is OK here)
     useEffect(() => {
         if (phase !== "launching") return;
@@ -562,7 +606,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             const rfs = elem.requestFullscreen || elem.webkitRequestFullscreen || elem.mozRequestFullScreen || elem.msRequestFullscreen;
             if (rfs) {
                 await rfs.call(elem);
-                setIsFullscreenViolation(false);
+                setActiveFocusViolation((prev) => (prev === "fullscreen_exit" ? null : prev));
             }
         } catch (err) {
             console.warn("Fullscreen request failed:", err);
@@ -781,16 +825,22 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         })();
     };
     useEffect(() => {
-        if (phase !== "interview" || !isTabSwitchEnabled) {
-            setIsTabViolation(false);
+        const anyFocusSignalEnabled = isTabSwitchEnabled || isFullscreenExitEnabled || isWindowFocusLossEnabled;
+        if (phase !== "interview" || !anyFocusSignalEnabled) {
+            setActiveFocusViolation(null);
             clearDelayedViolation(tabViolationTimerRef);
-            tabSwitchInFlightRef.current = false;
+            focusEventInFlightRef.current = false;
             return;
         }
-        // Log a tab-switch violation. visibilitychange is the authoritative source;
-        // blur is a fallback for browsers/VMs that don't fire visibilitychange reliably.
-        // tabSwitchInFlightRef prevents the same physical event from logging twice.
-        const logTabSwitchViolation = (reason: string, severity: "medium" | "high") => {
+        // Logs exactly one of tab_switch / fullscreen_exit / window_focus_loss per physical
+        // action. focusEventInFlightRef ensures only the first listener to see a given
+        // focus-loss transition logs it -- the others (which may fire for the same DOM
+        // transition, e.g. exiting fullscreen also blurs the window) skip.
+        const logFocusViolation = (
+            kind: FocusSignalKind,
+            reason: string,
+            severity: "medium" | "high",
+        ) => {
             if (tabViolationTimerRef.current !== null) return;
             // Capture elapsed time at the moment the event fires, before the grace delay.
             const detectedAt = Date.now();
@@ -799,18 +849,18 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             // for <500ms and self-resolve. Only fire after sustained focus loss.
             tabViolationTimerRef.current = window.setTimeout(() => {
                 tabViolationTimerRef.current = null;
-                tabSwitchInFlightRef.current = false;
+                focusEventInFlightRef.current = false;
                 const elapsedSeconds = elapsedMs !== null ? Math.floor(elapsedMs / 1000) : null;
                 const elapsedLabel = elapsedSeconds !== null
                     ? `${Math.floor(elapsedSeconds / 60)}m ${elapsedSeconds % 60}s into interview`
                     : null;
-                setTabViolationElapsed(elapsedLabel);
-                setTabSwitchCount(prev => {
-                    const newCount = prev + 1;
+                setFocusViolationElapsed(elapsedLabel);
+                setFocusSignalCounts(prev => {
+                    const next = { ...prev, [kind]: prev[kind] + 1 };
                     if (SHOW_TAB_FULLSCREEN_ALERTS) {
-                        setIsTabViolation(true);
+                        setActiveFocusViolation(kind);
                     }
-                    return newCount;
+                    return next;
                 });
                 fetch("/api/interview/proctoring", {
                     method: "POST",
@@ -819,7 +869,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                         applicationId: id,
                         interviewToken: interviewToken,
                         events: [{
-                            eventType: "tab_switch",
+                            eventType: kind,
                             severity,
                             timestamp: detectedAt,
                             reason: elapsedLabel ? `${reason} (${elapsedLabel})` : reason,
@@ -832,60 +882,73 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 }).catch(() => { });
             }, 1500);
         };
+        // Fullscreen exit fires immediately (no grace window -- leaving fullscreen is a
+        // deliberate action), no grace window; the immediate-fire below happens inline.
+        const logFullscreenExit = () => {
+            focusEventInFlightRef.current = true;
+            const fsDetectedAt = Date.now();
+            const fsElapsedMs = interviewStartedAtRef.current ? fsDetectedAt - interviewStartedAtRef.current : null;
+            const fsElapsedSec = fsElapsedMs !== null ? Math.floor(fsElapsedMs / 1000) : null;
+            const fsElapsedLabel = fsElapsedSec !== null
+                ? `${Math.floor(fsElapsedSec / 60)}m ${fsElapsedSec % 60}s into interview`
+                : undefined;
+            fetch("/api/interview/proctoring", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    applicationId: id,
+                    interviewToken: interviewToken,
+                    events: [{
+                        eventType: "fullscreen_exit",
+                        severity: "high",
+                        timestamp: fsDetectedAt,
+                        reason: fsElapsedLabel ? `Fullscreen Exited (${fsElapsedLabel})` : "Fullscreen Exited",
+                        metadata: {
+                            elapsedSeconds: fsElapsedSec ?? null,
+                            elapsedLabel: fsElapsedLabel ?? null,
+                        },
+                    }]
+                })
+            }).catch(() => { });
+            setFocusSignalCounts(prev => ({ ...prev, fullscreen_exit: prev.fullscreen_exit + 1 }));
+            if (SHOW_TAB_FULLSCREEN_ALERTS) {
+                setFocusViolationElapsed(fsElapsedLabel ?? null);
+                setActiveFocusViolation("fullscreen_exit");
+            }
+        };
         const onVisibilityChange = () => {
             if (document.hidden) {
-                tabSwitchInFlightRef.current = true;
-                logTabSwitchViolation("Tab Switched", "medium");
+                // fullscreenchange fires first for an Esc/F11 exit and already claimed
+                // the transition -- don't double-count it as a tab switch too.
+                if (focusEventInFlightRef.current) return;
+                if (!isTabSwitchEnabled) return;
+                focusEventInFlightRef.current = true;
+                logFocusViolation("tab_switch", "Tab Switched", "medium");
             } else {
-                tabSwitchInFlightRef.current = false;
+                focusEventInFlightRef.current = false;
                 clearDelayedViolation(tabViolationTimerRef);
             }
         };
         const onWindowBlur = () => {
-            // Skip if visibilitychange already handled this event
-            if (tabSwitchInFlightRef.current) return;
-            tabSwitchInFlightRef.current = true;
-            logTabSwitchViolation("Window Lost Focus", "medium");
+            // Skip if visibilitychange or fullscreenchange already handled this transition -- 
+            // window_focus_loss is the catch-all fallback, lowest priority of the three.
+            if (focusEventInFlightRef.current) return;
+            if (!isWindowFocusLossEnabled) return;
+            focusEventInFlightRef.current = true;
+            logFocusViolation("window_focus_loss", "Window Lost Focus", "medium");
         };
         const onWindowFocus = () => {
-            tabSwitchInFlightRef.current = false;
+            focusEventInFlightRef.current = false;
             clearDelayedViolation(tabViolationTimerRef);
         };
         const onFullscreenChange = () => {
             const isFS = !!(document.fullscreenElement || (document as any).webkitFullscreenElement || (document as any).mozFullScreenElement || (document as any).msFullscreenElement);
             if (!isFS) {
-                setIsFullscreenViolation(true);
-                // Fullscreen exit is deliberate — no grace window, high severity, logged separately
-                const fsDetectedAt = Date.now();
-                const fsElapsedMs = interviewStartedAtRef.current ? fsDetectedAt - interviewStartedAtRef.current : null;
-                const fsElapsedSec = fsElapsedMs !== null ? Math.floor(fsElapsedMs / 1000) : null;
-                const fsElapsedLabel = fsElapsedSec !== null
-                    ? `${Math.floor(fsElapsedSec / 60)}m ${fsElapsedSec % 60}s into interview`
-                    : undefined;
-                fetch("/api/interview/proctoring", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        applicationId: id,
-                        interviewToken: interviewToken,
-                        events: [{
-                            eventType: "tab_switch",
-                            severity: "high",
-                            timestamp: fsDetectedAt,
-                            reason: fsElapsedLabel ? `Fullscreen Exited (${fsElapsedLabel})` : "Fullscreen Exited",
-                            metadata: {
-                                elapsedSeconds: fsElapsedSec ?? null,
-                                elapsedLabel: fsElapsedLabel ?? null,
-                            },
-                        }]
-                    })
-                }).catch(() => { });
-                if (SHOW_TAB_FULLSCREEN_ALERTS) {
-                    setTabViolationElapsed(fsElapsedLabel ?? null);
-                    setIsTabViolation(true);
+                if (isFullscreenExitEnabled) {
+                    logFullscreenExit();
                 }
             } else {
-                setIsFullscreenViolation(false);
+                focusEventInFlightRef.current = false;
                 clearDelayedViolation(tabViolationTimerRef);
             }
         };
@@ -905,9 +968,44 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             document.removeEventListener("mozfullscreenchange", onFullscreenChange);
             document.removeEventListener("MSFullscreenChange", onFullscreenChange);
             clearDelayedViolation(tabViolationTimerRef);
-            tabSwitchInFlightRef.current = false;
+            focusEventInFlightRef.current = false;
         };
-    }, [phase, id, clearDelayedViolation, isTabSwitchEnabled]);
+    }, [phase, id, clearDelayedViolation, isTabSwitchEnabled, isFullscreenExitEnabled, isWindowFocusLossEnabled]);
+    // Fingerprint re-check every 120s during interview
+    useEffect(() => {
+        if (phase !== "interview") {
+            if (fingerprintIntervalRef.current !== null) {
+                clearInterval(fingerprintIntervalRef.current);
+                fingerprintIntervalRef.current = null;
+            }
+            return;
+        }
+        const send = () => {
+            const fingerprint = collectFingerprint();
+            fetch("/api/interview/proctoring", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    applicationId: id,
+                    interviewToken,
+                    events: [{
+                        eventType: "ip_registered",
+                        severity: "low",
+                        timestamp: Date.now(),
+                        metadata: { fingerprint },
+                    }],
+                }),
+            }).catch(() => {});
+        };
+        send();
+        fingerprintIntervalRef.current = window.setInterval(send, 120_000);
+        return () => {
+            if (fingerprintIntervalRef.current !== null) {
+                clearInterval(fingerprintIntervalRef.current);
+                fingerprintIntervalRef.current = null;
+            }
+        };
+    }, [phase, id, interviewToken, collectFingerprint]);
     useEffect(() => {
         if (phase !== "completed" && phase !== "finalizing") return;
         void exitFullscreenMode();
@@ -1234,50 +1332,70 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 </div>
             )}
             <AnimatePresence>
-                {SHOW_TAB_FULLSCREEN_ALERTS && isTabViolation && phase === "interview" && (
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-[200] bg-zinc-950/90 backdrop-blur-sm flex items-center justify-center p-6"
-                    >
-                        <div className="max-w-md w-full bg-zinc-900 border border-zinc-800 rounded-3xl p-8 shadow-2xl text-center space-y-6">
-                            <div className={`mx-auto w-20 h-20 rounded-2xl flex items-center justify-center ${tabSwitchCount >= 3 ? "bg-red-500/10" : "bg-violet-500/10"}`}>
-                                <ShieldAlert className={`w-10 h-10 ${tabSwitchCount >= 3 ? "text-red-500" : "text-violet-500"}`} />
-                            </div>
-                            <div className="space-y-2">
-                                <h2 className="text-2xl font-black text-white uppercase tracking-tight">
-                                    {isFullscreenViolation ? "Fullscreen Exited" : "Focus Lost"}
-                                </h2>
-                                <p className="text-zinc-400 text-sm font-medium leading-relaxed">
-                                    {isFullscreenViolation
-                                        ? "You exited fullscreen mode. Please stay in fullscreen during the interview."
-                                        : tabSwitchCount === 1
-                                            ? "You switched away from this tab. This incident has been logged for review."
-                                            : `You have switched away ${tabSwitchCount} times. Repeated incidents are flagged for recruiter review.`}
-                                </p>
-                            </div>
-                            <div className="pt-4 flex flex-col gap-3">
-                                <Button
-                                    onClick={() => setIsTabViolation(false)}
-                                    className={`w-full text-white font-black uppercase tracking-widest py-6 rounded-2xl transition-all active:scale-95 ${tabSwitchCount >= 3
-                                        ? "bg-red-500 hover:bg-red-600 shadow-[0_10px_20px_-10px_rgba(239,68,68,0.5)]"
-                                        : "bg-violet-500 hover:bg-violet-600 shadow-[0_10px_20px_-10px_rgba(124,58,237,0.5)]"}`}
-                                >
-                                    I Understand & Continue
-                                </Button>
-                                <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
-                                    Incident {tabSwitchCount > 1 ? `${tabSwitchCount} of session` : "logged"} · Under review
+                {SHOW_TAB_FULLSCREEN_ALERTS && activeFocusViolation && phase === "interview" && (() => {
+                    const kind = activeFocusViolation;
+                    const count = focusSignalCounts[kind];
+                    const isHighSeverity = kind === "fullscreen_exit" || count >= 3;
+                    const COPY: Record<FocusSignalKind, { title: string; body: string }> = {
+                        tab_switch: {
+                            title: "Focus Lost",
+                            body: count === 1
+                                ? "You switched away from this tab. This incident has been logged for review."
+                                : `You have switched tabs ${count} times. Repeated incidents are flagged for recruiter review.`,
+                        },
+                        fullscreen_exit: {
+                            title: "Fullscreen Exited",
+                            body: "You exited fullscreen mode. Please stay in fullscreen during the interview.",
+                        },
+                        window_focus_loss: {
+                            title: "Window Focus Lost",
+                            body: count === 1
+                                ? "Your browser window lost focus. This incident has been logged for review."
+                                : `Your browser window has lost focus ${count} times. Repeated incidents are flagged for recruiter review.`,
+                        },
+                    };
+                    const copy = COPY[kind];
+                    return (
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="fixed inset-0 z-[200] bg-zinc-950/90 backdrop-blur-sm flex items-center justify-center p-6"
+                        >
+                            <div className="max-w-md w-full bg-zinc-900 border border-zinc-800 rounded-3xl p-8 shadow-2xl text-center space-y-6">
+                                <div className={`mx-auto w-20 h-20 rounded-2xl flex items-center justify-center ${isHighSeverity ? "bg-red-500/10" : "bg-violet-500/10"}`}>
+                                    <ShieldAlert className={`w-10 h-10 ${isHighSeverity ? "text-red-500" : "text-violet-500"}`} />
                                 </div>
-                                {tabViolationElapsed && (
-                                    <div className="text-[10px] font-medium text-zinc-600 uppercase tracking-widest">
-                                        Detected at {tabViolationElapsed}
+                                <div className="space-y-2">
+                                    <h2 className="text-2xl font-black text-white uppercase tracking-tight">
+                                        {copy.title}
+                                    </h2>
+                                    <p className="text-zinc-400 text-sm font-medium leading-relaxed">
+                                        {copy.body}
+                                    </p>
+                                </div>
+                                <div className="pt-4 flex flex-col gap-3">
+                                    <Button
+                                        onClick={() => setActiveFocusViolation(null)}
+                                        className={`w-full text-white font-black uppercase tracking-widest py-6 rounded-2xl transition-all active:scale-95 ${isHighSeverity
+                                            ? "bg-red-500 hover:bg-red-600 shadow-[0_10px_20px_-10px_rgba(239,68,68,0.5)]"
+                                            : "bg-violet-500 hover:bg-violet-600 shadow-[0_10px_20px_-10px_rgba(124,58,237,0.5)]"}`}
+                                    >
+                                        I Understand & Continue
+                                    </Button>
+                                    <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
+                                        Incident {count > 1 ? `${count} of session` : "logged"} · Under review
                                     </div>
-                                )}
+                                    {focusViolationElapsed && (
+                                        <div className="text-[10px] font-medium text-zinc-600 uppercase tracking-widest">
+                                            Detected at {focusViolationElapsed}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
-                        </div>
-                    </motion.div>
-                )}
+                        </motion.div>
+                    );
+                })()}
             </AnimatePresence>
             {/*  AI Proctoring Violation Alert (face / pose)  */}
             <AnimatePresence>
@@ -1729,7 +1847,7 @@ function InterviewRoomContent({
     // Agent readiness in launch phase is gated by:
     // 1) room connection + agent presence
     // 2) explicit backend signal that prefetch + greeting prerequisites are ready
-    // 3) assistant state MUST be "speaking" — this means greeting audio has actually
+    // 3) assistant state MUST be "speaking" -- this means greeting audio has actually
     //    arrived at the browser. Do NOT include "listening" here: the agent briefly
     //    enters listening state between session start and the first TTS audio chunk,
     //    which would fire the transition before any audio plays (causing 10-15s of
