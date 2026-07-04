@@ -1269,9 +1269,9 @@ async def _node_llm_calls(state: ReportState) -> dict:
     asyncio.gather runs all three LLM calls concurrently, cutting wall-clock
     time from ~15s sequential to ~7s parallel.
     """
-    llm_model           = state.get("_LLM_DEFAULT") or state.get("llm_model")
-    if not llm_model:
-        raise ValueError("llm_model not provided in report state — fetch from DB org config")
+    llmInterviewReport  = state.get("_LLM_DEFAULT") or state.get("llmInterviewReport")
+    if not llmInterviewReport:
+        raise ValueError("llmInterviewReport not provided in report state — fetch from DB org config")
     job_title        = state.get("job_title", "")
     org_id           = state.get("org_id") or ""
     app_id           = state.get("app_id", "")
@@ -1349,7 +1349,7 @@ async def _node_llm_calls(state: ReportState) -> dict:
     _answer_integrity_task = (
         _answer_integrity_analyzer.analyze(
             transcript_lines=transcript_lines,
-            _LLM_DEFAULT=llm_model,
+            _LLM_DEFAULT=llmInterviewReport,
             org_id=org_id,
             app_id=app_id,
         )
@@ -1374,7 +1374,7 @@ async def _node_llm_calls(state: ReportState) -> dict:
                 call_type="report_eval",
                 org_id=org_id,
                 app_id=app_id,
-                _LLM_DEFAULT=llm_model,
+                _LLM_DEFAULT=llmInterviewReport,
             )),
             _llm.call(LLMCallSpec(
                 system=skills_system,
@@ -1385,14 +1385,14 @@ async def _node_llm_calls(state: ReportState) -> dict:
                 call_type="report_skills",
                 org_id=org_id,
                 app_id=app_id,
-                _LLM_DEFAULT=llm_model,
+                _LLM_DEFAULT=llmInterviewReport,
             )),
             _behavioral_analyzer.analyze(
                 transcript_lines=transcript_lines,
                 answer_scores=interview_scores,
                 duration_sec=session_duration,
                 behavioral_signals=behavioral_signals,
-                _LLM_DEFAULT=llm_model,
+                _LLM_DEFAULT=llmInterviewReport,
                 org_id=org_id,
                 app_id=app_id,
             ),
@@ -1661,20 +1661,21 @@ _REPORT_GRAPH = _build_report_graph()
 # â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-
 
 async def generate_interview_report(
-    app_id:          str,
-    transcript_lines: list,
-    answer_scores:   list,
-    job_title:       str,
-    llm_model:       str,
-    proctoring_data: Optional[dict] = None,
-    org_id:          Optional[str]  = None,
-    jd_json:         Optional[dict] = None,
-    topic_records:   Optional[list] = None,
-    candidate_name:  str = "",
+    app_id:                str,
+    transcript_lines:      list,
+    answer_scores:         list,
+    job_title:             str,
+    llmInterviewReport:    str,
+    proctoring_data:       Optional[dict] = None,
+    org_id:                Optional[str]  = None,
+    jd_json:               Optional[dict] = None,
+    topic_records:         Optional[list] = None,
+    candidate_name:        str = "",
     answer_integrity_enabled: bool = False,
 ) -> Optional[dict]:
     """Run the full report pipeline.
 
+    Requires org.llmInterviewReport from DB — fail fast if missing.
     Returns scores_context dict (input to generate_interview_summary), or None
     on failure. Caller should run generate_interview_summary() afterwards.
     """
@@ -1684,8 +1685,8 @@ async def generate_interview_report(
     if not os.environ.get("OPENAI_API_KEY"):
         logger.warning("[REPORT] Skipping: missing OPENAI_API_KEY")
         return None
-    if not llm_model:
-        logger.error("[REPORT] Missing llm_model (llmInterviewReport) from org config for %s", app_id)
+    if not llmInterviewReport:
+        logger.error("[REPORT] Missing org.llmInterviewReport from DB for app=%s", app_id)
         return None
 
     interview_scores = [s for s in answer_scores if not s.get("is_warmup", False)]
@@ -1725,16 +1726,17 @@ async def generate_interview_report(
 
 
 async def generate_interview_summary(
-    app_id:          str,
-    transcript_lines: list,
-    job_title:       str,
-    llm_model:       str,
-    org_id:          Optional[str]  = None,
-    scores_context:  Optional[dict] = None,
-    candidate_name:  str = "",
+    app_id:              str,
+    transcript_lines:    list,
+    job_title:           str,
+    llmInterviewEval:    str,
+    org_id:              Optional[str]  = None,
+    scores_context:      Optional[dict] = None,
+    candidate_name:      str = "",
 ) -> None:
     """Generate summary bullets + verdict and write to Interview.interviewSummary.
 
+    Requires org.llmInterviewEval from DB — fail fast if missing.
     Runs summary and verdict LLM calls in parallel. Does NOT use the full
     transcript — only the structured scores_context, for faster, cheaper calls.
     """
@@ -1783,6 +1785,10 @@ async def generate_interview_summary(
         f"CONCERNS FLAGGED:\n{concerns_block}"
     )
 
+    if not llmInterviewEval:
+        logger.error("[SUMMARY] Missing org.llmInterviewEval from DB for app=%s", app_id)
+        return
+
     try:
         (summary_text, summary_usage), (verdict_text, verdict_usage) = await asyncio.gather(
             _llm.call(LLMCallSpec(
@@ -1795,7 +1801,7 @@ async def generate_interview_summary(
                 call_type="report_summary",
                 org_id=org_id or "",
                 app_id=app_id,
-                _LLM_DEFAULT=llm_model,
+                _LLM_DEFAULT=llmInterviewEval,
             )),
             _llm.call(LLMCallSpec(
                 system=_VERDICT_SYSTEM,
@@ -1807,17 +1813,17 @@ async def generate_interview_summary(
                 call_type="report_verdict",
                 org_id=org_id or "",
                 app_id=app_id,
-                _LLM_DEFAULT=llm_model,
+                _LLM_DEFAULT=llmInterviewEval,
             )),
         )
 
         if org_id:
             await asyncio.gather(
                 _persist_billing(
-                    org_id, "interviewReport", _llm.usage_dict(summary_usage, llm_model)
+                    org_id, "interviewReport", _llm.usage_dict(summary_usage, llmInterviewEval)
                 ),
                 _persist_billing(
-                    org_id, "interviewReport", _llm.usage_dict(verdict_usage, llm_model)
+                    org_id, "interviewReport", _llm.usage_dict(verdict_usage, llmInterviewEval)
                 ),
             )
 
