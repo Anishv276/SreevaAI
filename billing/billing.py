@@ -475,6 +475,9 @@ class UsageSummarizer:
             model     = str(getattr(item, "model",    "") or "").strip()
             if not provider or not model:
                 raise ValueError(f"[BILLING] Cannot summarize {kind} usage — provider or model missing")
+            # Normalize OpenAI base-URL variants (e.g. "API.OPENAI.COM") → "OPENAI"
+            if "OPENAI" in provider or provider in ("API", "API.OPENAI.COM"):
+                provider = "OPENAI"
             key    = f"{provider}:{model}"
             bucket = summary[kind]
             bucket["sessions"] = 1

@@ -231,6 +231,8 @@ export default function OrgsPage() {
             const inr = usd * usdToInr;
             return `₹${inr.toFixed(0)}`;
         }
+        if (usd === 0) return "$0.00";
+        if (usd < 0.005) return `$${usd.toFixed(4)}`;
         return `$${usd.toFixed(2)}`;
     };
     const fmtHistory = (usd: number | null | undefined) => usd == null ? "-" : fmt(Number(usd || 0));
@@ -469,7 +471,7 @@ export default function OrgsPage() {
                                     <th className="px-4 py-3 text-center font-semibold text-xs text-gray-400 uppercase tracking-wider">Admins</th>
                                     <th className="px-4 py-3 text-center font-semibold text-xs text-gray-400 uppercase tracking-wider">Jobs</th>
                                     <th className="px-4 py-3 text-center font-semibold text-xs text-gray-400 uppercase tracking-wider">Candidates</th>
-                                    <th className="px-4 py-3 text-center font-semibold text-xs text-gray-400 uppercase tracking-wider">Credits Used</th>
+                                    <th className="px-4 py-3 text-center font-semibold text-xs text-gray-400 uppercase tracking-wider">Mins Used</th>
                                     <th className="px-4 py-3 text-center font-semibold text-xs text-gray-400 uppercase tracking-wider">Remaining</th>
                                     <th className="px-4 py-3 text-center font-semibold text-xs text-gray-400 uppercase tracking-wider">Done</th>
                                     <th className="px-4 py-3 text-center font-semibold text-xs text-gray-400 uppercase tracking-wider">Status</th>
@@ -703,8 +705,8 @@ export default function OrgsPage() {
                                 </h2>
                                 <div className="flex items-center gap-5 mt-2">
                                     <div className="flex items-center gap-1.5">
-                                        <span className="text-xs font-medium text-gray-400">Credits Used:</span>
-                                        <span className="text-sm font-semibold text-gray-900 tabular-nums">{fmt(Number(metricsOrg.creditsUsed || 0))}</span>
+                                        <span className="text-xs font-medium text-gray-400">Minutes Used:</span>
+                                        <span className="text-sm font-semibold text-gray-900 tabular-nums">{Number(metricsOrg.creditsUsed || 0).toFixed(2)} min</span>
                                     </div>
                                     <div className="w-px h-3" style={{ background: "#E9E7FF" }} />
                                     <div className="flex items-center gap-1.5">
@@ -783,19 +785,20 @@ export default function OrgsPage() {
                                                     </thead>
                                                     <tbody className="divide-y divide-gray-100">
                                                         {[
-                                                            { label: "Resume Extraction", key: "resumeExtraction" },
-                                                            { label: "JD Extraction", key: "jdExtraction" },
-                                                            { label: "Interview Report", key: "interviewReport" },
-                                                            { label: "Resume Report", key: "resumeReport" },
-                                                            { label: "Interview Evaluation", key: "interviewEvaluation" },
-                                                            { label: "Interview LLM Generation", key: "interviewLLMGeneration" },
-                                                            { label: "Interview Brief", key: "interviewBrief" },
+                                                            { label: "Resume Extraction", key: "resumeExtraction", costKey: "resumeExtraction" },
+                                                            { label: "JD Extraction", key: "jdExtraction", costKey: "jdExtraction" },
+                                                            { label: "Interview Report", key: "interviewReport", costKey: "interviewReport" },
+                                                            { label: "Resume Report", key: "resumeReport", costKey: "resumeReport" },
+                                                            // Eval costs go to billing.interview in Python, not interviewEvaluation
+                                                            { label: "Interview Evaluation", key: "interviewEvaluation", costKey: "interview" },
+                                                            { label: "Interview LLM Generation", key: "interviewLLMGeneration", costKey: "interviewLLMGeneration" },
+                                                            { label: "Interview Brief", key: "interviewBrief", costKey: "interviewBrief" },
                                                         ].map((row) => {
                                                             const feature = billingAggregates?.[row.key as string] || {};
                                                             const totalTokens = Number(feature.inputTokens || 0) + Number(feature.outputTokens || 0);
                                                             const model = feature.model || "-";
                                                             const runs = Number(feature.runs || 0);
-                                                            const cost = Number(feature.costUsd || 0);
+                                                            const cost = Number(billingAggregates?.[row.costKey as string]?.costUsd || 0);
                                                             return (
                                                                 <tr key={row.label} className="hover:bg-gray-50/50">
                                                                     <td className="px-6 py-4 text-sm font-bold text-gray-900">{row.label}</td>
@@ -818,7 +821,11 @@ export default function OrgsPage() {
                                                 <div className="text-center">
                                                     <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Brief + Evaluation + LLM Generation</div>
                                                     <div className="mt-3 text-4xl font-bold text-violet-600">
-                                                        {fmt(Number(billingAggregates?.interview?.costUsd || 0))}
+                                                        {fmt(
+                                                            Number(billingAggregates?.interview?.costUsd || 0) +
+                                                            Number(billingAggregates?.interviewBrief?.costUsd || 0) +
+                                                            Number(billingAggregates?.interviewLLMGeneration?.costUsd || 0)
+                                                        )}
                                                     </div>
                                                 </div>
                                             </div>
@@ -961,7 +968,7 @@ export default function OrgsPage() {
                                                             <div className="text-[28px] font-bold text-gray-900 tabular-nums">{totalTokens.toLocaleString()}</div>
                                                         </div>
                                                         <div className="space-y-1.5">
-                                                            <div className="text-xs font-medium text-gray-400 uppercase tracking-wider">Audio Mins</div>
+                                                            <div className="text-xs font-medium text-gray-400 uppercase tracking-wider">STT Mins</div>
                                                             <div className="text-[28px] font-bold text-gray-900 tabular-nums">
                                                                 {Number(feature.sessionDuration || 0) > 0
                                                                     ? (Number(feature.sessionDuration || 0) / 60).toFixed(1)
