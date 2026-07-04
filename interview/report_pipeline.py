@@ -1698,7 +1698,7 @@ async def generate_interview_report(
         "job_title":        job_title,
         "proctoring_data":  proctoring_data or {},
         "org_id":           org_id,
-        "_LLM_DEFAULT":        _LLM_DEFAULT,
+        "_LLM_DEFAULT":        llmInterviewReport,
         "jd_json":          jd_json,
         "topic_records":    topic_records or [],
         "answer_integrity_enabled": answer_integrity_enabled,
