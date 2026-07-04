@@ -75,7 +75,7 @@ class AgentConfig:
 
         # Database & Storage
         self._database_url = os.environ.get("DATABASE_URL", "").strip()
-        self._agent_name = os.environ.get("LIVEKIT_AGENT_NAME", "ai_interviewer").strip()
+        self._agent_name = os.environ.get("LIVEKIT_AGENT_NAME", "sreeva_agent").strip()
         self._app_base_url = (
             os.environ.get("APP_URL", "")
             or os.environ.get("NEXT_PUBLIC_APP_URL", "")
