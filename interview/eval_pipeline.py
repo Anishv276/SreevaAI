@@ -56,7 +56,7 @@ _BAND_SATURATION: dict[str, dict[str, dict]] = {
 
 
 # ---------------------------------------------------------------------------
-# TopicState — per-topic saturation tracking
+# TopicState -- per-topic saturation tracking
 # ---------------------------------------------------------------------------
 class TopicState:
     def __init__(self, topic_name: str, importance: str, updated_turn: int = 0, band: str = "mid"):
@@ -133,7 +133,7 @@ class TopicState:
         # Re-ask turns (candidate asked to rephrase, restarted their own answer, or
         # answered a different question) don't count as a real follow-up. Skip all
         # scoring/counter updates so the candidate isn't penalised for asking us to
-        # repeat the question. The turn still fires an [SIGNAL] event upstream — we
+        # repeat the question. The turn still fires an [SIGNAL] event upstream -- we
         # just don't debit their 3-question budget for it.
         if signal in self._NON_FOLLOWUP_SIGNALS:
             # Track the last turn for logging continuity, but nothing else changes.
@@ -220,7 +220,7 @@ class TopicImportanceClassifier:
 
 
 def _weighted_score(quality: dict) -> float:
-    # Weights must match the "overall" formula in agent_scoring.py — kept in sync
+    # Weights must match the "overall" formula in agent_scoring.py -- kept in sync
     # so the logged/scored value and the saturation-driving value never diverge.
     return (
         quality.get("clarity", 0.0) * 0.20
@@ -250,6 +250,7 @@ class EvaluationPayload(BaseModel):
     score_history: List[Any] = Field(default_factory=list)
     turns_since_decay: int = 999
     response_latency_sec: Optional[float] = None
+    question_asked_at_wall_ms: int = 0  # epoch ms; correlates proctoring events to the active question
     signal_toggles: Dict[str, Any] = Field(default_factory=dict)
     org_id: str = ""
     llm_model: str = _EVAL_DEFAULT
@@ -433,7 +434,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
 
     # -- Decision (priority order; response signals override saturation) ----
     # Response signals (pure_denial, clarification_request, etc) fire immediately with forced_action=True.
-    # They override saturation logic entirely — no need to check dry_topic/weak_exit/saturated.
+    # They override saturation logic entirely -- no need to check dry_topic/weak_exit/saturated.
     # ESCALATION: if clarification_request or rephrase_request fires 2+ times, upgrade to MOVE_ON
     _escalate_to_move_on = False
     if _forced_response_signal and current_topic_state:
@@ -478,6 +479,7 @@ async def run_eval_and_build_directive(payload: dict, client: AsyncOpenAI) -> di
         "topic_saturation_score":  sat_score,
         "topic_saturation_threshold": sat_threshold,
         "response_latency_sec":    p.response_latency_sec,
+        "question_asked_at_wall_ms": p.question_asked_at_wall_ms,
         "action":                  action,
         "band":                    p.band,
         "is_saturated":            is_saturated,

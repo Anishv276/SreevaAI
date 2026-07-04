@@ -1,36 +1,33 @@
-﻿"""
+"""
 report_pipeline.py
 ==================
 Self-contained post-interview report pipeline.
 
 Architecture:
-  â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
-  â”‚  Domain Models   (Pydantic)  â€” typed contracts for all I/O      â”‚
-  â”‚  IntegrityEngine (OOP)       â€” deterministic signal scorer      â”‚
-  â”‚  BehavioralAnalyzer (OOP)    â€” LLM narrative from signals       â”‚
-  â”‚  ReportLLMClient (OOP)       â€” singleton AsyncOpenAI + retry    â”‚
-  â”‚  LangGraph Pipeline          â€” fan-out DAG: 3 nodes, 2 parallel â”‚
-  â”‚  Public API                  â€” generate_interview_report()      â”‚
-  â”‚                                generate_interview_summary()     â”‚
-  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+  - Domain Models   (Pydantic)  -- typed contracts for all I/O
+  - IntegrityEngine (OOP)       -- deterministic signal scorer
+  - BehavioralAnalyzer (OOP)    -- LLM narrative from signals
+  - ReportLLMClient (OOP)       -- singleton AsyncOpenAI + retry
+  - LangGraph Pipeline          -- fan-out DAG: 3 nodes, 2 parallel
+  - Public API                  -- generate_interview_report()
+                                   generate_interview_summary()
 
 LangGraph execution order:
-  [signals]  â†’  [llm_calls + behavioral]  â†’  [assemble + persist]
-      â†‘                    â†‘                          â†‘
-  deterministic        parallel asyncio.gather    writes to DB
+  [signals] -> [llm_calls + behavioral] -> [assemble + persist]
+  deterministic -> parallel asyncio.gather -> writes to DB
 
 DSA choices:
-  - Counter (O(n)) for signal aggregation          â€” no nested loops
-  - frozenset for tool-keyword noise filter        â€” O(1) membership
-  - dict.fromkeys for ordered dedup                â€” O(n), stable order
-  - heapq / sorted with key for topic ranking      â€” O(n log n)
-  - all state is TypedDict (structural subtyping)  â€” zero runtime overhead
+  - Counter (O(n)) for signal aggregation          -- no nested loops
+  - frozenset for tool-keyword noise filter        -- O(1) membership
+  - dict.fromkeys for ordered dedup                -- O(n), stable order
+  - heapq / sorted with key for topic ranking      -- O(n log n)
+  - all state is TypedDict (structural subtyping)  -- zero runtime overhead
 
 OOP choices:
   - IntegrityEngine: encapsulates weight tables + scoring formula
   - BehavioralAnalyzer: encapsulates prompt builder + LLM call
   - ReportLLMClient: singleton pattern, exponential retry, streaming
-  - LLMCallSpec: dataclass â€” immutable call descriptor passed to client
+  - LLMCallSpec: dataclass -- immutable call descriptor passed to client
 """
 from __future__ import annotations
 
@@ -39,6 +36,7 @@ import json
 import logging
 import os
 import re
+import time
 from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any, Literal, Optional
@@ -50,20 +48,15 @@ from typing_extensions import TypedDict
 
 from interview.agent_utils import truncate_to_tokens
 from interview.agent_runtime_support import logger, DATABASE_URL
-_LLM_DEFAULT = "gpt-4.1-mini"  # ponytail: fallback only â€” callers should pass org's llmInterviewReport
+_LLM_DEFAULT = "gpt-4.1-mini"  # ponytail: fallback only — callers should pass org's llmInterviewReport
 
-# ---------------------------------------------------------------------------
-# Re-import DB pool from persistence layer (no circular dep â€” persistence
-# does NOT import report_pipeline)
-# ---------------------------------------------------------------------------
-from interview.agent_persistence import DatabasePool
 from billing.billing import record_external_billing_usage as _persist_billing
 from interview.slack_error_logger import log_llm_error
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# SECTION 1 â€” Domain Models (Pydantic)
+# â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-
+# SECTION 1 — Domain Models (Pydantic)
 # All LLM response shapes and shared data contracts live here.
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-
 
 class LLMEvalDimension(BaseModel):
     score:    int = Field(default=0, ge=0, le=100)
@@ -106,13 +99,13 @@ class LLMSkillsResponse(BaseModel):
     skills: list[LLMSkillEntry] = Field(default_factory=list)
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# SECTION 2 â€” LangGraph State
+# â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-
+# SECTION 2 — LangGraph State
 # TypedDict = zero runtime cost, full static typing, LangGraph-native.
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-
 
 class ReportState(TypedDict, total=False):
-    # â”€â”€ Inputs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # -- Inputs --------------------------------------------------------------
     app_id:            str
     transcript_lines:  list[str]
     interview_scores:  list[dict]   # warmup filtered out before graph entry
@@ -123,44 +116,50 @@ class ReportState(TypedDict, total=False):
     llm_model:         str
     jd_json:           dict | None
     topic_records:     list[dict]   # per-topic MOVE_ON ground-truth from agent
-    # â”€â”€ Computed by node: signals â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    answer_integrity_enabled: bool  # org toggle — gates the AnswerIntegrityAnalyzer LLM call
+    # -- Computed by node: signals --------------------------------------------
     integrity_result:  dict
     signal_context:    str
     jd_context:        str
     behavioral_signals: list[dict]
-    # â”€â”€ Computed by node: llm_calls â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # -- Computed by node: llm_calls -----------------------------------------
     eval_result:       LLMEvalResponse
     skills_result:     LLMSkillsResponse
     behavioral_analysis: dict
-    # â”€â”€ Final output â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    answer_integrity_result: dict
+    # -- Final output ---------------------------------------------------------
     scores_context:    dict | None
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# SECTION 3 â€” IntegrityEngine (OOP + DSA)
+# â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-
+# SECTION 3 — IntegrityEngine (OOP + DSA)
 #
 # Encapsulates signal weight tables and the O(n) weighted scoring formula.
 # frozenset for O(1) membership, Counter for O(n) aggregation.
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-
 
 class IntegrityEngine:
     """Deterministic integrity scorer: 0-100, band HIGH/MODERATE/LOW.
 
-    Weight tables are class-level constants â€” shared across all instances,
+    Weight tables are class-level constants — shared across all instances,
     no per-call allocation. Counter aggregation is O(n) with no nested loops.
     """
 
-    # Browser-side proctoring signals only â€” these are what integrity score measures.
+    # Browser-side proctoring signals only — these are what integrity score measures.
     # Behavioural signals (ownership_ambiguity, depth_decay, etc.) are NOT here;
     # they go to BehavioralAnalyzer, not the integrity score.
     _NEG: dict[str, float] = {
         "tab_switch":        -10.0,
+        "fullscreen_exit":   -15.0,
+        "window_focus_loss": -10.0,
         "face_absence":      -15.0,
         "multiple_faces":    -25.0,
         "camera_disabled":   -15.0,
         "microphone_disabled": -8.0,
         "identity_mismatch": -20.0,
         "connection_lost":   -12.0,
+        "answer_integrity":  -20.0,
+        "session_fingerprint": -20.0,
     }
 
     _NEG_KEYS: frozenset[str] = frozenset(_NEG)
@@ -172,14 +171,14 @@ class IntegrityEngine:
     ) -> dict:
         """O(n) integrity score from browser-side proctoring events only.
 
-        browser_signals â€” events written by the frontend during the interview
+        browser_signals — events written by the frontend during the interview
                           (tab_switch, face_absence, multiple_faces, etc.)
         Behavioural signals (ownership_ambiguity, etc.) are excluded by design.
         """
         counts: Counter[str] = Counter()
 
         for evt in browser_signals:
-            name = str(evt.get("signal_name") or evt.get("event") or "").strip()
+            name = str(evt.get("signal_name") or "").strip()
             if name:
                 counts[name] += 1
 
@@ -201,12 +200,12 @@ class IntegrityEngine:
         }
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# SECTION 4 â€” SkillFilter (DSA)
+# â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-
+# SECTION 4 — SkillFilter (DSA)
 #
 # O(n) dedup with frozenset noise filter. Keeps only domain-level skill names,
 # strips single-word tools/libraries that add no signal to the report.
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-
 
 class SkillFilter:
     _NOISE: frozenset[str] = frozenset({
@@ -242,12 +241,12 @@ class SkillFilter:
         return result
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# SECTION 5 â€” ReportLLMClient (OOP singleton + retry)
+# â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-
+# SECTION 5 — ReportLLMClient (OOP singleton + retry)
 #
 # Single AsyncOpenAI instance reused across all calls (avoids cold HTTP setup).
 # Exponential backoff on transient errors. Streaming with usage capture.
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-
 
 @dataclass(frozen=True)
 class LLMCallSpec:
@@ -363,21 +362,21 @@ class ReportLLMClient:
 
     @staticmethod
     def usage_dict(u: Any, model: str) -> dict:
-        """Extract token counts â€” delegates to billing.extract_usage()."""
+        """Extract token counts — delegates to billing.extract_usage()."""
         from billing.billing import extract_usage  # noqa: PLC0415
         return extract_usage(u, model)
 
 
-# Module-level singleton â€” instantiated once, reused for all calls.
+# Module-level singleton — instantiated once, reused for all calls.
 _llm = ReportLLMClient()
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# SECTION 6 â€” BehavioralAnalyzer (OOP)
+# â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-
+# SECTION 6 — BehavioralAnalyzer (OOP)
 #
 # Encapsulates the signal-analysis prompt builder and LLM call.
-# Moved here from behavioral_analysis.py â€” no external dependency needed.
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# Moved here from behavioral_analysis.py — no external dependency needed.
+# â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-
 
 class BehavioralAnalyzer:
     """Generates 4 plain-English behavioral analysis points for the HR team.
@@ -431,7 +430,7 @@ class BehavioralAnalyzer:
             f"Interviewer turns: {ai_turns} | Scored answers: {scored}"
         )
 
-        # Aggregate signals â€” O(n), stable topic order via dict.fromkeys
+        # Aggregate signals — O(n), stable topic order via dict.fromkeys
         if behavioral_signals:
             grouped: dict[str, list[dict]] = {}
             for ev in behavioral_signals:
@@ -450,7 +449,7 @@ class BehavioralAnalyzer:
                 )
                 line = f"  {name} x{len(evs)} {location}"
                 if reasons:
-                    line += f" â€” {reasons}"
+                    line += f" — {reasons}"
                 sig_lines.append(line)
             parts.append("BEHAVIORAL SIGNALS\n" + "\n".join(sig_lines))
         else:
@@ -471,7 +470,7 @@ class BehavioralAnalyzer:
             sig = s.get("signal")
             if sig:
                 reason = s.get("signal_reason", "")
-                block += f"\n    SIGNAL: {sig}" + (f" â€” {reason}" if reason else "")
+                block += f"\n    SIGNAL: {sig}" + (f" — {reason}" if reason else "")
             qa_lines.append(block)
 
         if qa_lines:
@@ -520,7 +519,7 @@ class BehavioralAnalyzer:
                     points = []
             except Exception:
                 points = [
-                    l.strip().lstrip("-â€¢").strip()
+                    l.strip().lstrip("-'").strip()
                     for l in raw.splitlines()
                     if len(l.strip()) > 20
                 ]
@@ -541,12 +540,180 @@ class BehavioralAnalyzer:
 _behavioral_analyzer = BehavioralAnalyzer()
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# SECTION 7 â€” Static LLM Prompts + JSON Schemas
+# â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-
+# SECTION 6b — AnswerIntegrityAnalyzer (OOP)
 #
-# System prompts are byte-identical on every call â†’ prompt cache hits.
+# The one content-layer integrity signal: a candidate can pass every
+# behavioral/environmental check (never leaves the tab, camera stays on,
+# own voice throughout) while still cheating in a way only visible in what
+# they actually SAID. Two failure modes, one analyzer, one LLM call:
+#
+#   1. Phrasing:     does any single answer sound AI-generated/read rather
+#                     than spoken (stock phrasing, essay cadence, register
+#                     mismatch vs the candidate's own casual moments)?
+#   2. Consistency:   do claims made in different turns contradict each
+#                     other (e.g. "led a team of 15" in turn 3, "just me
+#                     and 4 others" in turn 8)? This catches a candidate
+#                     reading from notes -- each individual answer sounds
+#                     natural, but the story doesn't hold together.
+#
+# Complementary failure modes: a notes-reader passes (1) but fails (2); an
+# earpiece-fed candidate fails (1) but passes (2). One combined score covers
+# both without doubling the LLM call.
+# â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-
+
+class AnswerIntegrityAnalyzer:
+    """Detects AI-generated/read phrasing AND cross-turn contradictions.
+
+    Runs once per interview (not per-turn) over the full transcript, in
+    parallel with the other report LLM calls. Returns a 0-100 overall
+    score (the higher of the two dimensions); the caller (_node_assemble)
+    turns that into a fired/not-fired integrity event at a threshold, same
+    shape as the other browser signals.
+    """
+
+    _SYSTEM = (
+        "You are checking a candidate's SPOKEN interview transcript for two independent "
+        "problems. Judge each one separately, then report an overall verdict.\n\n"
+        "You are given the full interview transcript (speech-to-text, so natural spoken "
+        "grammar is expected and normal).\n\n"
+        "DIMENSION 1 -- PHRASING (does any single answer sound read/AI-generated, not spoken?)\n"
+        "Signs of AI-generated / read phrasing:\n"
+        "- Stock LLM phrasing: 'it's worth noting that', 'in today's fast-paced environment', "
+        "'leverage synergies', 'at the end of the day', 'plays a crucial role', 'delve into'.\n"
+        "- Essay cadence in a spoken answer: 'firstly... secondly... in conclusion' — people "
+        "don't talk like this live, that's written-essay structure.\n"
+        "- Suspiciously uniform sentence construction across different answers — real spontaneous "
+        "speech is messy and varies; generated text has an unnaturally consistent smoothness.\n"
+        "- Total absence of natural speech markers (no filler words, no self-correction, no "
+        "false starts, no trailing off) especially when the answer is long and detailed — "
+        "combined with unusually polished, well-organized content for something said out loud.\n"
+        "- Vocabulary/register mismatch: precise, formal, textbook language in the 'big' answers "
+        "that doesn't match how the same candidate talks in casual moments (greeting, small talk, "
+        "clarifying questions) elsewhere in the transcript.\n"
+        "NOT a phrasing signal: a well-spoken/articulate candidate, appropriate technical jargon "
+        "used correctly, rehearsed personal stories, non-native English quirks, or answers too "
+        "short to judge either way.\n\n"
+        "DIMENSION 2 -- CONSISTENCY (do claims across different turns contradict each other?)\n"
+        "Look across ALL turns for factual contradictions about the same project/role/claim: "
+        "different numbers for the same thing (team size, timeline, budget, scale), a role or "
+        "ownership claim that changes ('I led it' vs 'I was just one of the team' about the same "
+        "project), or a technical detail that flatly contradicts an earlier turn's version of the "
+        "same story. This is the strongest signal against a candidate reading from prepared notes: "
+        "each individual answer can sound perfectly natural while still not agreeing with what they "
+        "said earlier.\n"
+        "NOT a consistency signal: reasonable elaboration or added detail on a later turn, rounding "
+        "differences ('about 10' then '12'), or discussing genuinely different projects/roles.\n\n"
+        "SCORING (0-100 for each dimension, independently):\n"
+        "0-25: No issue on this dimension.\n"
+        "26-50: A few weak indicators, plausibly innocent.\n"
+        "51-75: Multiple/clear indicators on this dimension.\n"
+        "76-100: Strong, repeated, unambiguous pattern on this dimension.\n\n"
+        "Output ONLY valid JSON matching the schema exactly. No markdown.\n"
+        "- phrasing_score: integer 0-100 as defined above for Dimension 1.\n"
+        "- phrasing_reason: one paragraph explaining the phrasing score, quoting specific phrases if any.\n"
+        "- consistency_score: integer 0-100 as defined above for Dimension 2.\n"
+        "- consistency_reason: one paragraph explaining the consistency score. If contradictions exist, "
+        "name the specific claims and which turns they came from.\n"
+        "- quotes: 0-4 short exact quotes from the transcript that most support either score (empty if none)."
+    )
+
+    @staticmethod
+    def _build_user(transcript_lines: list[str]) -> str:
+        transcript_text = truncate_to_tokens("\n".join(transcript_lines), 3500)
+        return f"Full Interview Transcript:\n{transcript_text}"
+
+    @staticmethod
+    def _empty_result() -> dict:
+        return {
+            "phrasing_score": 0, "phrasing_reason": "",
+            "consistency_score": 0, "consistency_reason": "",
+            "score": 0, "reason": "", "quotes": [],
+        }
+
+    async def analyze(
+        self,
+        transcript_lines: list[str],
+        *,
+        _LLM_DEFAULT: str = _LLM_DEFAULT,
+        org_id: str = "",
+        app_id: str = "",
+    ) -> tuple[dict, list[dict]]:
+        """Returns (result_dict, [usage_dict]). result_dict has phrasing_score,
+        phrasing_reason, consistency_score, consistency_reason, score (overall,
+        max of the two), reason (which dimension drove the overall score), quotes.
+        """
+        if not os.environ.get("OPENAI_API_KEY"):
+            logger.warning("[ANSWER_INTEGRITY] Skipping: missing OPENAI_API_KEY")
+            return self._empty_result(), []
+        if not transcript_lines:
+            return self._empty_result(), []
+
+        user = self._build_user(transcript_lines)
+        spec = LLMCallSpec(
+            system=self._SYSTEM,
+            user=user,
+            max_tokens=700,
+            timeout=45.0,
+            response_format=_ANSWER_INTEGRITY_JSON_SCHEMA,
+            call_type="report_answer_integrity",
+            org_id=org_id,
+            app_id=app_id,
+            _LLM_DEFAULT=_LLM_DEFAULT,
+        )
+        try:
+            raw, usage = await _llm.call(spec)
+            data = json.loads(raw)
+            phrasing_score = max(0, min(100, int(data.get("phrasing_score", 0))))
+            consistency_score = max(0, min(100, int(data.get("consistency_score", 0))))
+            phrasing_reason = str(data.get("phrasing_reason", "")).strip()
+            consistency_reason = str(data.get("consistency_reason", "")).strip()
+            overall_score = max(phrasing_score, consistency_score)
+            driver = "consistency" if consistency_score > phrasing_score else "phrasing"
+            overall_reason = (
+                f"Phrasing {phrasing_score}/100: {phrasing_reason} "
+                f"Consistency {consistency_score}/100: {consistency_reason} "
+                f"Overall flagged on the {driver} dimension."
+            ).strip()
+            result = {
+                "phrasing_score":      phrasing_score,
+                "phrasing_reason":     phrasing_reason,
+                "consistency_score":   consistency_score,
+                "consistency_reason":  consistency_reason,
+                "score":               overall_score,
+                "reason":              overall_reason,
+                "quotes": [str(q).strip() for q in (data.get("quotes") or []) if str(q).strip()][:4],
+            }
+            logger.info(
+                "[ANSWER_INTEGRITY] phrasing=%d consistency=%d overall=%d tokens=%d+%d",
+                phrasing_score, consistency_score, overall_score,
+                _llm.usage_dict(usage, _LLM_DEFAULT)["inputTokens"],
+                _llm.usage_dict(usage, _LLM_DEFAULT)["outputTokens"],
+            )
+            return result, [_llm.usage_dict(usage, _LLM_DEFAULT)]
+        except Exception as e:
+            logger.error("[ANSWER_INTEGRITY] LLM call failed: %s", e, exc_info=True)
+            return self._empty_result(), []
+
+
+_answer_integrity_analyzer = AnswerIntegrityAnalyzer()
+
+# Fires as an integrity event when the overall score crosses this threshold.
+_ANSWER_INTEGRITY_FLAG_THRESHOLD = 60
+
+
+async def _answer_integrity_noop() -> tuple[dict, list[dict]]:
+    """Stand-in for a disabled answer_integrity toggle -- skips the LLM call
+    and cost entirely while keeping the same gather() tuple shape."""
+    return AnswerIntegrityAnalyzer._empty_result(), []
+
+
+# â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-
+# SECTION 7 — Static LLM Prompts + JSON Schemas
+#
+# System prompts are byte-identical on every call -> prompt cache hits.
 # Compact field names (cm/tk/rc/ps/ct) reduce output tokens by ~30%.
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-
 
 _EVAL_SYSTEM = """You are a senior technical recruiter and talent evaluator. You have been handed a complete AI-conducted interview transcript and the job description the candidate applied for.
 
@@ -558,19 +725,19 @@ Before scoring anything, determine the candidate's experience level from the tra
 - EXPERIENCED: 4+ years, production systems, owns decisions, leads others
 This classification changes what "good" looks like on every dimension.
 
-STEP 1 â€” Read the transcript fully. Form your opinions before outputting anything.
+STEP 1 — Read the transcript fully. Form your opinions before outputting anything.
 
-"str": Exactly 3 genuine strengths â€” sharp, one sentence each, named to this specific candidate.
+"str": Exactly 3 genuine strengths — sharp, one sentence each, named to this specific candidate.
   Example good: "Explained exactly why they chose Kafka over RabbitMQ and stated the throughput numbers from their own load tests."
   Example bad: "Good communication throughout."
   No padding. If fewer than 3 genuine strengths exist, return fewer.
 
-"con": Exactly 3 genuine concerns â€” sharp, one sentence each, no softening.
+"con": Exactly 3 genuine concerns — sharp, one sentence each, no softening.
   Name the exact topic and what broke down (blank answer, contradicted resume, surface-level only, refused probe).
   No padding. If fewer than 3 real concerns exist, return fewer.
 
-STEP 2 â€” Score 5 dimensions. Each score requires:
-- "s": integer 0-100 (use the FULL range â€” do NOT cluster around 50-70)
+STEP 2 — Score 5 dimensions. Each score requires:
+- "s": integer 0-100 (use the FULL range — do NOT cluster around 50-70)
 - "ev": ONE sharp sentence starting with a specific action/quote from the interview. No generic praise.
   Example good: "Described the exact retry-with-backoff logic they implemented in the billing microservice when asked about failure handling."
   Example bad: "Showed good knowledge of backend systems."
@@ -583,7 +750,7 @@ SCORING PHILOSOPHY:
   81-100 = Deep and specific. Real numbers, real trade-offs, step-by-step. Held every probe including unexpected ones.
 
 ---
-DIMENSION 1 â€” jk (JD Knowledge, weight 30%)
+DIMENSION 1 — jk (JD Knowledge, weight 30%)
 Does this candidate understand the actual role they applied for? Score how well their answers align with
 the specific responsibilities, required skills, and expectations stated in the JD.
 
@@ -603,7 +770,7 @@ SCORING ANCHORS:
   81-100: Exceptional fit. Covered all major JD requirements with specific, verifiable evidence.
 
 ---
-DIMENSION 2 â€” ps (Problem Solving, weight 25%)
+DIMENSION 2 — ps (Problem Solving, weight 25%)
 This is NOT about whether the final answer was correct. It measures HOW they reason through problems:
 - Did they frame the problem before answering? (structured approach)
 - Did they name trade-offs without being prompted? (depth of thinking)
@@ -628,7 +795,7 @@ SCORING ANCHORS:
   81-100: Sophisticated. Framed independently. Named trade-offs unprompted. Showed second-order thinking.
 
 ---
-DIMENSION 3 â€” ec (Experience Credibility, weight 20%)
+DIMENSION 3 — ec (Experience Credibility, weight 20%)
 Did their live answers hold up against what they claimed on their resume or in their intro?
 This is about verifying lived experience, not testing knowledge.
 
@@ -655,9 +822,9 @@ SCORING ANCHORS:
   81-100: Fully credible. Every claim explained with evidence. Nothing contradicted.
 
 ---
-DIMENSION 4 â€” cm (Communication, weight 15%)
+DIMENSION 4 — cm (Communication, weight 15%)
 Was their communication clear, direct, and structured across the entire interview?
-This is a threshold signal â€” a score below 30 fails regardless of technical scores.
+This is a threshold signal — a score below 30 fails regardless of technical scores.
 
 FRESHER baseline: Same standard as experienced. Clear thinking is independent of seniority.
 Score based on:
@@ -675,8 +842,8 @@ SCORING ANCHORS:
   81-100: Precise and confident. Every answer structured. No wasted words. Held clarity under pressure.
 
 ---
-DIMENSION 5 â€” od (Ownership, weight 10%)
-Did they actually build, lead, or decide â€” or did they participate and observe?
+DIMENSION 5 — od (Ownership, weight 10%)
+Did they actually build, lead, or decide — or did they participate and observe?
 Do NOT score on confidence or communication style. Score ONLY on evidence of personal responsibility.
 
 FRESHER baseline: Ownership for freshers shows as:
@@ -745,9 +912,9 @@ FOR EACH CATEGORY:
   NO generic praise. NO sentences that could apply to any other candidate.
 
 SCORING ADJUSTMENTS:
-- If the candidate said "I don't know" or denied a topic â†’ cap that category at 3.
-- If they answered vaguely and couldn't give specifics when probed â†’ cap at 5.
-- If they answered confidently AND held up to 1+ follow-up probes â†’ bump up by 1.
+- If the candidate said "I don't know" or denied a topic -> cap that category at 3.
+- If they answered vaguely and couldn't give specifics when probed -> cap at 5.
+- If they answered confidently AND held up to 1+ follow-up probes -> bump up by 1.
 
 OUTPUT ONLY valid JSON matching the schema exactly. No markdown."""
 
@@ -772,10 +939,10 @@ FOR EACH CATEGORY:
   NO generic statements like "showed good understanding" without quoting what they said.
 
 SCORING RULES:
-- If they said "I don't know" â†’ score 1-2 for that category.
-- If they stayed at definitions without HOW or WHY â†’ score 4-5.
-- If they gave mechanics + 1 real example â†’ score 6-7.
-- If they gave mechanics + real example + held a probe â†’ score 8-9.
+- If they said "I don't know" -> score 1-2 for that category.
+- If they stayed at definitions without HOW or WHY -> score 4-5.
+- If they gave mechanics + 1 real example -> score 6-7.
+- If they gave mechanics + real example + held a probe -> score 8-9.
 
 OUTPUT ONLY valid JSON matching the schema exactly. No markdown."""
 
@@ -803,6 +970,26 @@ _SKILLS_JSON_SCHEMA = {
                 }
             },
             "required": ["skills"],
+            "additionalProperties": False,
+        },
+    },
+}
+
+_ANSWER_INTEGRITY_JSON_SCHEMA = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "answer_integrity_response",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "phrasing_score":     {"type": "integer", "description": "0-100 likelihood this answer reads as AI-generated/read rather than spoken"},
+                "phrasing_reason":    {"type": "string"},
+                "consistency_score":  {"type": "integer", "description": "0-100 severity of cross-turn factual contradictions"},
+                "consistency_reason": {"type": "string"},
+                "quotes": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["phrasing_score", "phrasing_reason", "consistency_score", "consistency_reason", "quotes"],
             "additionalProperties": False,
         },
     },
@@ -846,7 +1033,7 @@ DECISION RULES:
 - "Hold": score 50-69 OR strong in some areas but missing a key requirement.
 - "Reject": score < 50 OR demonstrated inability in core role requirements.
 
-JUSTIFICATION â€” Write 3 sharp bullet points starting with "-":
+JUSTIFICATION — Write 3 sharp bullet points starting with "-":
 - Bullet 1: The single strongest positive signal from the entire interview. Name the exact topic, what they said or did, and why it matters for this role.
 - Bullet 2: The single biggest gap, risk, or concern. Name the specific moment where they failed or fell short. Be blunt.
 - Bullet 3: The final verdict sentence. State the decision clearly, name the key reason, and what should happen next (move forward, hold for X reason, reject because Y).
@@ -892,15 +1079,63 @@ def _parse_eval_compact(raw: str) -> LLMEvalResponse:
     )
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# SECTION 8 â€” LangGraph Nodes
+# â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-
+# SECTION 8 — LangGraph Nodes
 #
 # Node execution order:
-#   signals  â†’  llm_calls (eval + skills + behavioral in parallel)  â†’  assemble
+#   signals  ->  llm_calls (eval + skills + behavioral in parallel)  ->  assemble
 #
-# All three parallel tasks inside llm_calls run under asyncio.gather â€” no
+# All three parallel tasks inside llm_calls run under asyncio.gather — no
 # sequential blocking. DB write happens only in assemble.
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-
+
+def _build_turn_windows(interview_scores: list[dict]) -> list[dict]:
+    """Build a per-turn timing window from answer_scores for event correlation.
+
+    Each window covers [question_asked_at_wall_ms, next_turn's question_asked_at_wall_ms)
+    so a proctoring event's timestamp can be matched to "which question was live."
+    Turns missing a wall-clock timestamp (older sessions, before this field existed)
+    are skipped -- they simply can't be correlated, not an error.
+    """
+    windows: list[dict] = []
+    dated = [
+        s for s in interview_scores
+        if not s.get("is_warmup") and s.get("question_asked_at_wall_ms")
+    ]
+    dated.sort(key=lambda s: s["question_asked_at_wall_ms"])
+    for i, s in enumerate(dated):
+        start = s["question_asked_at_wall_ms"]
+        end = dated[i + 1]["question_asked_at_wall_ms"] if i + 1 < len(dated) else start + 10 * 60 * 1000
+        windows.append({
+            "start": start,
+            "end": end,
+            "turn": s.get("turn"),
+            "question": str(s.get("question", "")).strip(),
+            "topic": str(s.get("topic", "")).strip(),
+        })
+    return windows
+
+
+def _attach_question_context(events: list[dict], windows: list[dict]) -> list[dict]:
+    """Attach during_question/during_topic to each event whose timestamp falls
+    inside a turn's window. Events with no matching window (e.g. before the
+    first question, or an older session with no wall-clock data) are left as-is.
+    """
+    if not windows:
+        return events
+    for ev in events:
+        ts = ev.get("timestamp")
+        if not isinstance(ts, (int, float)):
+            continue
+        for w in windows:
+            if w["start"] <= ts < w["end"]:
+                if w["question"]:
+                    ev["during_question"] = w["question"]
+                if w["topic"]:
+                    ev["during_topic"] = w["topic"]
+                break
+    return events
+
 
 async def _node_signals(state: ReportState) -> dict:
     """Node 1: deterministic integrity + signal context.
@@ -919,6 +1154,7 @@ async def _node_signals(state: ReportState) -> dict:
     # Fetch browser-side proctoring events written during the interview
     if app_id and DATABASE_URL:
         try:
+            from interview.agent_persistence import DatabasePool
             pool = await DatabasePool.get()
             async with pool.acquire() as conn:
                 row = await conn.fetchrow(
@@ -931,7 +1167,7 @@ async def _node_signals(state: ReportState) -> dict:
                     json.loads(raw) if isinstance(raw, str) else []
                 )
                 browser_events = [e for e in (parsed or []) if isinstance(e, dict)]
-                # Normalize eventType â†’ signal_name
+                # Normalize eventType -> signal_name
                 for ev in browser_events:
                     if "eventType" in ev and "signal_name" not in ev:
                         ev["signal_name"] = ev["eventType"]
@@ -942,9 +1178,17 @@ async def _node_signals(state: ReportState) -> dict:
         except Exception as e:
             logger.warning("[REPORT] integritySignals fetch failed for %s: %s", app_id, e)
 
+    # Attach "which question was live" to every event that has a timestamp --
+    # answers "left the tab during the Python question" instead of just "left
+    # the tab at some point." Turns without a wall-clock timestamp (sessions
+    # recorded before this field existed) are silently skipped, not an error.
+    _turn_windows = _build_turn_windows(state.get("interview_scores", []))
+    browser_events = _attach_question_context(browser_events, _turn_windows)
+    agent_events = _attach_question_context(agent_events, _turn_windows)
+
     integrity_result = IntegrityEngine.score(browser_events)
 
-    # Build signal_context string for LLM eval user prompt â€” O(n) Counter
+    # Build signal_context string for LLM eval user prompt — O(n) Counter
     all_events = agent_events + browser_events
     sig_counts: Counter[str] = Counter(
         str(ev.get("signal_name") or ev.get("signal") or ev.get("event") or "").strip()
@@ -986,7 +1230,7 @@ async def _node_signals(state: ReportState) -> dict:
             f"JOB DESCRIPTION{exp_hint}:\n{jd_str}"
         )
     else:
-        jd_context = "No JD provided â€” assess based on role title only."
+        jd_context = "No JD provided — assess based on role title only."
 
     # Extract behavioral signals from per-turn scores for downstream nodes
     interview_scores = state.get("interview_scores", [])
@@ -1020,7 +1264,7 @@ async def _node_signals(state: ReportState) -> dict:
 
 
 async def _node_llm_calls(state: ReportState) -> dict:
-    """Node 2: eval + skills + behavioral analysis â€” all three in parallel.
+    """Node 2: eval + skills + behavioral analysis — all three in parallel.
 
     asyncio.gather runs all three LLM calls concurrently, cutting wall-clock
     time from ~15s sequential to ~7s parallel.
@@ -1036,7 +1280,7 @@ async def _node_llm_calls(state: ReportState) -> dict:
     transcript_lines = state.get("transcript_lines", [])
     interview_scores = state.get("interview_scores", [])
 
-    # Build eval user prompt (dynamic vars â†’ user msg, system is static)
+    # Build eval user prompt (dynamic vars -> user msg, system is static)
     lines_to_use  = transcript_lines[4:] if len(transcript_lines) > 4 else transcript_lines
     transcript_text = truncate_to_tokens("\n".join(lines_to_use), 3500)
     eval_user = (
@@ -1047,13 +1291,13 @@ async def _node_llm_calls(state: ReportState) -> dict:
         f"Full Interview Transcript:\n{transcript_text}"
     )
 
-    # Build skills user prompt â€” prefer rich topic_records over raw QA fallback
+    # Build skills user prompt — prefer rich topic_records over raw QA fallback
     if topic_records:
         records_lines: list[str] = []
         for i, rec in enumerate(topic_records, 1):
             sc = rec.get("scores", {})
             answers_text = " | ".join(rec.get("candidate_answers", [])[:4]) or "No answers recorded."
-            tech = ", ".join(rec.get("tech_skills", [])) or "â€”"
+            tech = ", ".join(rec.get("tech_skills", [])) or "—"
             records_lines.append(
                 f"[TOPIC {i}]\n"
                 f"topic: {rec.get('topic', '')}\ntopic_type: {rec.get('topic_type', 'project')}\n"
@@ -1097,9 +1341,27 @@ async def _node_llm_calls(state: ReportState) -> dict:
         or _total_turns * 90
     )
 
+    # answer_integrity is an org-toggled signal (super-admin proctoring config) --
+    # disabled orgs skip the LLM call entirely, not just the resulting event.
+    answer_integrity_enabled = state.get("answer_integrity_enabled", False)
+    _answer_integrity_task = (
+        _answer_integrity_analyzer.analyze(
+            transcript_lines=transcript_lines,
+            _LLM_DEFAULT=_LLM_DEFAULT,
+            org_id=org_id,
+            app_id=app_id,
+        )
+        if answer_integrity_enabled
+        else _answer_integrity_noop()
+    )
 
-    # â”€â”€ Run all 3 LLM calls in parallel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    (eval_raw, eval_usage), (skills_raw, skills_usage), (behavioral_result, beh_usages) = (
+    # -- Run all 4 LLM calls in parallel ------------------------------------
+    (
+        (eval_raw, eval_usage),
+        (skills_raw, skills_usage),
+        (behavioral_result, beh_usages),
+        (answer_integrity_result, answer_integrity_usages),
+    ) = (
         await asyncio.gather(
             _llm.call(LLMCallSpec(
                 system=_EVAL_SYSTEM,
@@ -1132,10 +1394,11 @@ async def _node_llm_calls(state: ReportState) -> dict:
                 org_id=org_id,
                 app_id=app_id,
             ),
+            _answer_integrity_task,
         )
     )
 
-    # Persist billing for all 3 calls concurrently
+    # Persist billing for all 4 calls concurrently
     if org_id:
         billing_tasks = [
             _persist_billing(
@@ -1147,6 +1410,10 @@ async def _node_llm_calls(state: ReportState) -> dict:
             *[
                 _persist_billing(org_id, "interviewReport", bu)
                 for bu in beh_usages
+            ],
+            *[
+                _persist_billing(org_id, "interviewReport", au)
+                for au in answer_integrity_usages
             ],
         ]
         await asyncio.gather(*billing_tasks)
@@ -1176,6 +1443,7 @@ async def _node_llm_calls(state: ReportState) -> dict:
         "eval_result":        eval_result,
         "skills_result":      skills_result,
         "behavioral_analysis": behavioral_result,
+        "answer_integrity_result": answer_integrity_result,
     }
 
 
@@ -1183,7 +1451,7 @@ async def _node_assemble(state: ReportState) -> dict:
     """Node 3: assemble final scorecard blob and write to DB.
 
     Weighted overall score formula:
-      commÃ—0.15 + techÃ—0.30 + credÃ—0.20 + psÃ—0.25 + cotÃ—0.10
+      comm×0.15 + tech×0.30 + cred×0.20 + ps×0.25 + cot×0.10
     """
     app_id           = state["app_id"]
     org_id           = state.get("org_id")
@@ -1194,8 +1462,63 @@ async def _node_assemble(state: ReportState) -> dict:
     integrity_result = state["integrity_result"]
     behavioral_analysis = state.get("behavioral_analysis") or {"points": []}
     behavioral_signals  = state.get("behavioral_signals", [])
+    answer_integrity_result = state.get("answer_integrity_result") or AnswerIntegrityAnalyzer._empty_result()
 
-    # Dimension scores â€” new 5-dimension framework
+    # Content-layer integrity signal: fold the answer-integrity verdict into the
+    # same browser-events list that drives the deterministic integrity score,
+    # so a candidate who behaves cleanly but cheats in what they SAID (AI-read
+    # phrasing, or contradicts themselves across turns) still gets caught. Only
+    # fires as an event above the threshold; the raw score is always kept in
+    # signalAnalysis regardless, for recruiter judgment.
+    # Gated on the org toggle -- disabled orgs never fire this event even if
+    # a score happens to be present in state (defense in depth; the LLM call
+    # itself is already skipped upstream when disabled).
+    answer_integrity_enabled = state.get("answer_integrity_enabled", False)
+    answer_integrity_flagged = answer_integrity_enabled and answer_integrity_result["score"] >= _ANSWER_INTEGRITY_FLAG_THRESHOLD
+    if answer_integrity_flagged:
+        answer_integrity_event = {
+            "eventType":   "answer_integrity",
+            "signal_name": "answer_integrity",
+            "severity":    "high" if answer_integrity_result["score"] >= 80 else "medium",
+            "timestamp":   int(time.time() * 1000),
+            "score":              answer_integrity_result["score"],
+            "reason":             answer_integrity_result["reason"],
+            "phrasing_score":     answer_integrity_result["phrasing_score"],
+            "phrasing_reason":    answer_integrity_result["phrasing_reason"],
+            "consistency_score":  answer_integrity_result["consistency_score"],
+            "consistency_reason": answer_integrity_result["consistency_reason"],
+            "quotes":      answer_integrity_result["quotes"],
+        }
+        proctoring_data = {
+            **proctoring_data,
+            "events": [*proctoring_data.get("events", []), answer_integrity_event],
+        }
+        integrity_result = IntegrityEngine.score(proctoring_data["events"])
+        if app_id and DATABASE_URL:
+            try:
+                from interview.agent_persistence import DatabasePool
+                pool = await DatabasePool.get()
+                async with pool.acquire() as conn:
+                    row = await conn.fetchrow(
+                        'SELECT "integritySignals" FROM "Interview" WHERE "applicationId" = $1 LIMIT 1',
+                        app_id,
+                    )
+                    existing: list = []
+                    if row and row["integritySignals"]:
+                        raw = row["integritySignals"]
+                        existing = raw if isinstance(raw, list) else (
+                            json.loads(raw) if isinstance(raw, str) else []
+                        )
+                    await conn.execute(
+                        """UPDATE "Interview" SET "integritySignals" = $1, "updatedAt" = NOW()
+                           WHERE "applicationId" = $2""",
+                        json.dumps(existing + [answer_integrity_event]),
+                        app_id,
+                    )
+            except Exception as e:
+                logger.error("[ANSWER_INTEGRITY] Failed to persist answer_integrity event for %s: %s", app_id, e)
+
+    # Dimension scores — new 5-dimension framework
     jk  = eval_result.jd_knowledge.score
     ps  = eval_result.problem_solving.score
     ec  = eval_result.experience_credibility.score
@@ -1222,6 +1545,17 @@ async def _node_assemble(state: ReportState) -> dict:
         "points":             behavioral_analysis.get("points", []),
         "behavioral_signals": behavioral_signals,
         "proctoring_events":  proctoring_events,
+        "answer_integrity": {
+            "enabled":             answer_integrity_enabled,
+            "score":               answer_integrity_result["score"],
+            "flagged":             answer_integrity_flagged,
+            "reason":              answer_integrity_result["reason"],
+            "phrasing_score":      answer_integrity_result["phrasing_score"],
+            "phrasing_reason":     answer_integrity_result["phrasing_reason"],
+            "consistency_score":   answer_integrity_result["consistency_score"],
+            "consistency_reason":  answer_integrity_result["consistency_reason"],
+            "quotes":              answer_integrity_result["quotes"],
+        },
     }
 
     score_breakdown_report = {
@@ -1248,6 +1582,7 @@ async def _node_assemble(state: ReportState) -> dict:
     }
 
     try:
+        from interview.agent_persistence import DatabasePool
         pool = await DatabasePool.get()
         async with pool.acquire() as conn:
             # Update Interview table with scores
@@ -1294,15 +1629,15 @@ async def _node_assemble(state: ReportState) -> dict:
     return {"scores_context": scores_context}
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# SECTION 9 â€” LangGraph Pipeline (compiled once at module load)
+# â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-
+# SECTION 9 — LangGraph Pipeline (compiled once at module load)
 #
 # Graph topology:
-#   signals â”€â”€â–º llm_calls â”€â”€â–º assemble â”€â”€â–º END
+#   signals ---> llm_calls ---> assemble ---> END
 #
-# Compiled at module load â€” no rebuild per request. LangGraph's compiled graph
+# Compiled at module load — no rebuild per request. LangGraph's compiled graph
 # is coroutine-safe and can be ainvoked concurrently from multiple sessions.
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-
 
 def _build_report_graph() -> Any:
     builder = StateGraph(ReportState)
@@ -1319,9 +1654,9 @@ def _build_report_graph() -> Any:
 _REPORT_GRAPH = _build_report_graph()
 
 
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-# SECTION 10 â€” Public API
-# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-
+# SECTION 10 — Public API
+# â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-â-
 
 async def generate_interview_report(
     app_id:          str,
@@ -1334,6 +1669,7 @@ async def generate_interview_report(
     jd_json:         Optional[dict] = None,
     topic_records:   Optional[list] = None,
     candidate_name:  str = "",
+    answer_integrity_enabled: bool = False,
 ) -> Optional[dict]:
     """Run the full report pipeline.
 
@@ -1359,6 +1695,7 @@ async def generate_interview_report(
         "_LLM_DEFAULT":        _LLM_DEFAULT,
         "jd_json":          jd_json,
         "topic_records":    topic_records or [],
+        "answer_integrity_enabled": answer_integrity_enabled,
     }
     try:
         final_state = await _REPORT_GRAPH.ainvoke(initial_state)
@@ -1394,7 +1731,7 @@ async def generate_interview_summary(
     """Generate summary bullets + verdict and write to Interview.interviewSummary.
 
     Runs summary and verdict LLM calls in parallel. Does NOT use the full
-    transcript â€” only the structured scores_context, for faster, cheaper calls.
+    transcript — only the structured scores_context, for faster, cheaper calls.
     """
     if not transcript_lines or not DATABASE_URL:
         logger.warning("[SUMMARY] Skipping: missing transcript or DATABASE_URL")
@@ -1411,7 +1748,7 @@ async def generate_interview_summary(
     dimensions = ctx.get("dimensions", [])
     dimension_block = (
         "\n".join(
-            f"  {d['name']}: {d['score']}/100 â€” {d.get('evidence', '').strip()}"
+            f"  {d['name']}: {d['score']}/100 — {d.get('evidence', '').strip()}"
             for d in dimensions
         )
         if dimensions else "  Not available"
@@ -1480,7 +1817,7 @@ async def generate_interview_summary(
             )
 
         if not summary_text and not verdict_text:
-            logger.warning("[SUMMARY] Both outputs empty for %s â€” skipping save", app_id)
+            logger.warning("[SUMMARY] Both outputs empty for %s — skipping save", app_id)
             return
 
         try:
@@ -1489,6 +1826,7 @@ async def generate_interview_summary(
             # Fallback if the LLM didn't return valid JSON
             verdict_parsed = {"decision": "Hold", "score": 50, "justification": verdict_text.strip()}
 
+        from interview.agent_persistence import DatabasePool
         pool = await DatabasePool.get()
         async with pool.acquire() as conn:
             await conn.execute(
