@@ -134,6 +134,7 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
     const lkRoomRef = useRef<Room | null>(null);
     const connectionAttemptRef = useRef(0);
     const launchRecoveryTimerRef = useRef<number | null>(null);
+    const wasFullscreenRef = useRef(false);
     const [isAgentReady, setIsAgentReady] = useState(false);
     const [agentReadyLatencyMs, setAgentReadyLatencyMs] = useState<number | null>(null);
     const [launchTimeoutCheck, setLaunchTimeoutCheck] = useState(0);
@@ -607,9 +608,11 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
             if (rfs) {
                 await rfs.call(elem);
                 setActiveFocusViolation((prev) => (prev === "fullscreen_exit" ? null : prev));
+                focusEventInFlightRef.current = false;
             }
         } catch (err) {
             console.warn("Fullscreen request failed:", err);
+            focusEventInFlightRef.current = false;
         }
     }, []);
     const exitFullscreenMode = useCallback(async () => {
@@ -802,13 +805,13 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
                 setIsAgentReady(false);
                 setAgentReadyLatencyMs(null);
                 setPhase("launching");
-                void requestFullscreenMode();
-                if (lkRoomRef.current) {
-                    void lkRoomRef.current.startAudio().catch(() => { });
-                }
                 const durationSeconds = sessionDurationRef.current;
                 if (typeof durationSeconds !== "number" || !Number.isFinite(durationSeconds) || durationSeconds <= 0) {
                     throw new Error("Interview duration is not configured for this drive.");
+                }
+                await requestFullscreenMode();
+                if (lkRoomRef.current) {
+                    void lkRoomRef.current.startAudio().catch(() => { });
                 }
                 // Timer starts when interview phase begins (when greeting audio plays),
                 // not during launching. See the setPhase("interview") effect above.
@@ -943,14 +946,16 @@ function InterviewContent({ id, params }: { id: string, params: Promise<{ id: st
         };
         const onFullscreenChange = () => {
             const isFS = !!(document.fullscreenElement || (document as any).webkitFullscreenElement || (document as any).mozFullScreenElement || (document as any).msFullscreenElement);
-            if (!isFS) {
+            if (!isFS && wasFullscreenRef.current) {
                 if (isFullscreenExitEnabled) {
                     logFullscreenExit();
                 }
-            } else {
+            }
+            if (isFS) {
                 focusEventInFlightRef.current = false;
                 clearDelayedViolation(tabViolationTimerRef);
             }
+            wasFullscreenRef.current = isFS;
         };
         document.addEventListener("visibilitychange", onVisibilityChange);
         window.addEventListener("blur", onWindowBlur);

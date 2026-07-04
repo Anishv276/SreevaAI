@@ -1269,7 +1269,7 @@ async def _node_llm_calls(state: ReportState) -> dict:
     asyncio.gather runs all three LLM calls concurrently, cutting wall-clock
     time from ~15s sequential to ~7s parallel.
     """
-    _LLM_DEFAULT        = state.get("_LLM_DEFAULT", _LLM_DEFAULT)
+    _LLM_DEFAULT        = state.get("_LLM_DEFAULT", "claude-opus-4-8")
     job_title        = state.get("job_title", "")
     org_id           = state.get("org_id") or ""
     app_id           = state.get("app_id", "")
