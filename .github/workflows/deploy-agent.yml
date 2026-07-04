@@ -5,8 +5,10 @@ on:
     branches:
       - main
     paths:
-      # Only run this action if the agent code changes
+      # Only run this action if the agent code or this workflow changes
       - 'livekit-python-agent/**'
+      - '.github/workflows/deploy-agent.yml'
+  workflow_dispatch: {}
 
 jobs:
   deploy-agent:
