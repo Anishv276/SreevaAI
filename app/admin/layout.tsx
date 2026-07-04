@@ -41,7 +41,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
                 },
             });
             if (org) {
-                // Derive effective status inline — same logic as getEffectiveOrgStatus but no extra DB round-trip
+                // Derive effective status inline -- same logic as getEffectiveOrgStatus but no extra DB round-trip
                 let effectiveStatus = String(org.status || "ACTIVE").toUpperCase();
                 if (org.statusControl === "QUOTA" && org.interviewQuotaTotal > 0 && org.interviewQuotaUsed >= org.interviewQuotaTotal) {
                     effectiveStatus = "QUOTA_EXCEEDED";

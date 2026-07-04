@@ -85,7 +85,7 @@ type BillingFeatureMetrics = {
     ttsByModel?: Record<string, unknown>;
     sttByModel?: Record<string, unknown>;
 };
-// Returns the org's configured model for a billing section key — from DB, not hardcoded.
+// Returns the org's configured model for a billing section key -- from DB, not hardcoded.
 function getConfiguredModel(org: OrgDetail | null, sectionKey: string): string | null {
     if (!org) return null;
     const map: Record<string, keyof OrgDetail> = {

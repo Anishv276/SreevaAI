@@ -90,7 +90,7 @@ export async function POST(
       );
     }
 
-    // ── PHASE 1: Upload every PDF to R2, collecting successes ────────────────
+    // -- PHASE 1: Upload every PDF to R2, collecting successes ----------------
     type PreparedRow = {
       applicationId: string;
       fullName: string;
@@ -136,7 +136,7 @@ export async function POST(
       );
     }
 
-    // ── PHASE 2: Create all application rows in one transaction ──────────────
+    // -- PHASE 2: Create all application rows in one transaction --------------
     try {
       await prisma.application.createMany({
         data: prepared.map((row) => ({
@@ -165,9 +165,9 @@ export async function POST(
     const candidateIds = prepared.map((row) => row.applicationId);
     console.log(`[RESUME-UPLOAD] Persisted ${candidateIds.length} candidate(s) for drive=${driveId}`);
 
-    // ── Enqueue one screening job per resume immediately ──────────────────────
+    // -- Enqueue one screening job per resume immediately ----------------------
     // Each job is independent: the worker picks it up as soon as a concurrency
-    // slot is free. No batch IDs, no batch tables — just individual jobs.
+    // slot is free. No batch IDs, no batch tables -- just individual jobs.
     const enqueueResults = await Promise.allSettled(
       prepared.map((row) =>
         resumeQueue.add(
@@ -190,7 +190,7 @@ export async function POST(
     // Reconcile DB status with the actual enqueue outcome. A candidate row is
     // created as "waiting" BEFORE the job is enqueued; if .add() rejects, the row
     // would otherwise hang on "waiting" forever with no job backing it. So we flip
-    // any failed-to-enqueue row to "failed" immediately — the UI never hangs.
+    // any failed-to-enqueue row to "failed" immediately -- the UI never hangs.
     const failedToEnqueue: string[] = [];
     await Promise.all(
       enqueueResults.map((r, i) => {

@@ -22,7 +22,7 @@ type BulkEmailTarget = {
 // POST /api/candidates/bulk-email
 // Sends interview invite (shortlist) or rejection email to multiple candidates.
 // Status updates (shortlist/reject/hire/not_hired) are handled separately by
-// /api/candidates/bulk-action — this route only delivers emails.
+// /api/candidates/bulk-action -- this route only delivers emails.
 export async function POST(request: Request) {
     try {
         const session = await getSession();
@@ -48,7 +48,7 @@ export async function POST(request: Request) {
         if (action !== "shortlist" && action !== "reject") {
             return NextResponse.json({ error: "action must be 'shortlist' or 'reject'" }, { status: 400 });
         }
-        // ── Resolve applications (direct + resume-candidate indirection) ──────
+        // -- Resolve applications (direct + resume-candidate indirection) ------
         const directApplications = await prisma.application.findMany({
             where: { id: { in: ids }, drive: { orgId } },
             select: {
@@ -79,7 +79,7 @@ export async function POST(request: Request) {
         const orderedApplications = [...resolvedApplications.entries()]
             .sort((a, b) => (orderMap.get(a[0]) ?? Number.MAX_SAFE_INTEGER) - (orderMap.get(b[0]) ?? Number.MAX_SAFE_INTEGER))
             .map(([, app]) => app);
-        // ── Filter out apps with no email ─────────────────────────────────────
+        // -- Filter out apps with no email -------------------------------------
         const skipReasons: string[] = [];
         const eligible: BulkEmailTarget[] = [];
         for (const app of orderedApplications) {
@@ -97,12 +97,12 @@ export async function POST(request: Request) {
                 skipped: skipReasons.length,
             }, { status: 400 });
         }
-        // ── Deliver ───────────────────────────────────────────────────────────
+        // -- Deliver -----------------------------------------------------------
         let sent = 0;
         let queued = 0;
         const failures: Array<{ id: string; reason: string }> = [];
         if (action === "shortlist" || action === "reject") {
-            // Queue via BullMQ — respects the Resend rate limiter of 5/sec
+            // Queue via BullMQ -- respects the Resend rate limiter of 5/sec
             for (const app of eligible) {
                 try {
                     await invitationDeliveryQueue.add(

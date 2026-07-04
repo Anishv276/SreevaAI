@@ -6,7 +6,7 @@ import { isRateLimited } from "@/lib/rate-limit";
 import { normalizeEmail } from "@/lib/email";
 import { logLoginAttempt } from "@/lib/slack-error-logger";
 // A pre-computed bcrypt hash of a random string. We compare against this when no
-// user is found so the request spends the same time as a real bcrypt check —
+// user is found so the request spends the same time as a real bcrypt check -- 
 // removing the timing oracle that otherwise reveals which emails are registered.
 const DUMMY_BCRYPT_HASH = "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy";
 export async function POST(request: Request) {

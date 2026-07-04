@@ -380,7 +380,7 @@ export async function POST(request: Request) {
             if (resolvedSignals !== undefined) {
                 orgData.proctoringSignals = resolvedSignals;
             }
-            // AI models set to schema defaults — configured later via Super Admin → AI Models page
+            // AI models set to schema defaults -- configured later via Super Admin → AI Models page
             const userId = generateId("usr", normalizedAdminEmail.split("@")[0]);
             const org = await tx.organization.create({
                 data: orgData,

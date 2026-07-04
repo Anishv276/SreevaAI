@@ -92,7 +92,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
         let mailResult;
         if (isSchedulingGateBypassed()) {
-            // ponytail: test mode — skip slot booking, send the direct interview link
+            // ponytail: test mode -- skip slot booking, send the direct interview link
             const interviewLink = buildInterviewLink(baseUrl, applicationId, { token: interviewRecord.accessToken });
             mailResult = await sendInterviewInviteEmail({
                 email: application.email,

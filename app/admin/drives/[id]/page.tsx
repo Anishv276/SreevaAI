@@ -19,7 +19,7 @@ export default function DriveDetailPage({ params }: { params: Promise<{ id: stri
     const router = useRouter();
     const { id: driveId } = use(params);
     const { jobs } = useJobs();
-    // ⚡ Read from shared context — no fetch needed
+    // ⚡ Read from shared context -- no fetch needed
     const adminOrg = useAdminOrg();
     const quotaLocked = isInterviewQuotaLocked(adminOrg ?? {});
     const [drive, setDrive] = useState<any>(null);

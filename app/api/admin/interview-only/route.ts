@@ -8,9 +8,9 @@ import { isInterviewTokenRequired, isSchedulingGateBypassed } from "@/lib/interv
 import { resumeQueue } from "@/lib/queue";
 
 // POST /api/admin/interview-only
-// Interview Only mode — two paths:
-//   • No resume  → create candidate, send invite immediately
-//   • Resume URL → create candidate with resumeStatus="waiting", enqueue screening,
+// Interview Only mode -- two paths:
+//   - No resume  → create candidate, send invite immediately
+//   - Resume URL → create candidate with resumeStatus="waiting", enqueue screening,
 //                   worker auto-sends invite after scoring is done
 export async function POST(request: Request) {
     try {
@@ -106,7 +106,7 @@ export async function POST(request: Request) {
                 let sent = false;
                 try {
                     if (isSchedulingGateBypassed()) {
-                        // ponytail: test mode — skip slot booking, send the direct interview link
+                        // ponytail: test mode -- skip slot booking, send the direct interview link
                         const interviewLink = buildInterviewLink(baseUrl, appId, { token: interview?.accessToken });
                         await sendInterviewInviteEmail({
                             email,

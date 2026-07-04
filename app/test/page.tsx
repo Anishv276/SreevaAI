@@ -22,7 +22,7 @@ import "@livekit/components-styles";
 
 const TEST_KEY = process.env.NEXT_PUBLIC_TEST_KEY || "1285";
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+// --- Types -------------------------------------------------------------------
 type Org = { id: string; name: string; slug: string; status: string };
 type Drive = { id: string; title: string; role: string | null; status: string; _count: { applications: number } };
 type Candidate = {
@@ -32,7 +32,7 @@ type Candidate = {
 };
 type TranscriptLine = { speaker: "AI" | "Human"; text: string; ts: number };
 
-// ─── Verification modal ───────────────────────────────────────────────────────
+// --- Verification modal -------------------------------------------------------
 function KeyVerification({ onVerified }: { onVerified: () => void }) {
     const [inputKey, setInputKey] = useState("");
     const [error, setError] = useState(false);
@@ -104,7 +104,7 @@ function KeyVerification({ onVerified }: { onVerified: () => void }) {
     );
 }
 
-// ─── Live Transcript Hook ────────────────────────────────────────────────────
+// --- Live Transcript Hook ----------------------------------------------------
 function useLiveTranscript() {
     const segments = useTranscriptions();
     // Track per-segment first-seen timestamps so they don't all get the same ts
@@ -139,7 +139,7 @@ type TestEvent = {
     data?: Record<string, unknown>;
 };
 
-// ─── Simulation Viewer ──────────────────────────────────────────────────────────
+// --- Simulation Viewer ----------------------------------------------------------
 function SimulationViewer({ 
     lines, events, elapsedSeconds, isConnected, timerStarted, sessionEnded
 }: {
@@ -301,7 +301,7 @@ function SimulationViewer({
     );
 }
 
-// ─── Interview Room ──────────────────────────────────────────────────────────
+// --- Interview Room ----------------------------------------------------------
 function InterviewRoom({ applicationId, onUpdate, timerStartedAtRef }: { applicationId: string; onUpdate: (state: any) => void; timerStartedAtRef: React.MutableRefObject<number | null> }) {
     const connectionState = useConnectionState();
     const lines = useLiveTranscript();
@@ -361,7 +361,7 @@ function InterviewRoom({ applicationId, onUpdate, timerStartedAtRef }: { applica
     return <RoomAudioRenderer />;
 }
 
-// ─── Main page ───────────────────────────────────────────────────────────────
+// --- Main page ---------------------------------------------------------------
 function TestPageContent() {
     const { logout } = useAuth();
     const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -694,7 +694,7 @@ function TestPageContent() {
     );
 }
 
-// ─── Export ──────────────────────────────────────────────────────────────────
+// --- Export ------------------------------------------------------------------
 export default function TestPage() {
     return (
         <Suspense fallback={

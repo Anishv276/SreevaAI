@@ -23,7 +23,7 @@ export const metadata: Metadata = {
     shortcut: "/sreevaailogo2.png",
     apple: "/sreevaailogo2.png",
   },
-  // No root canonical — each page declares its own via page-level metadata
+  // No root canonical -- each page declares its own via page-level metadata
   openGraph: {
     title: "Sreeva AI - AI-Powered Recruitment Platform",
     description: "Automate your hiring process with AI-driven screening and interviews using adaptive intelligence.",

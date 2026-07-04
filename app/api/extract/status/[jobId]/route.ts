@@ -73,7 +73,7 @@ export async function GET(
                     if (orgId && result?.usage && !alreadyBilled) {
                         // Mark billed FIRST so concurrent polls can't race into billing again.
                         // If the billing write below fails we remove the flag so the next
-                        // poll retries — this gives exactly-once semantics under normal ops.
+                        // poll retries -- this gives exactly-once semantics under normal ops.
                         try {
                             await job.updateData({
                                 ...(job.data as Record<string, unknown> | undefined),
@@ -81,7 +81,7 @@ export async function GET(
                                 usageBilledAt: new Date().toISOString(),
                             });
                         } catch {
-                            // Redis unavailable — skip billing this poll, retry next time.
+                            // Redis unavailable -- skip billing this poll, retry next time.
                         }
                         try {
                             await recordOrgBillingUsage({
@@ -93,7 +93,7 @@ export async function GET(
                                 },
                             });
                         } catch (billingErr) {
-                            // Billing failed after we already set the flag — clear the flag
+                            // Billing failed after we already set the flag -- clear the flag
                             // so the next poll retries rather than silently dropping the charge.
                             console.error("[BILLING] jdExtraction billing failed, clearing usageBilled flag:", billingErr);
                             try {
@@ -128,7 +128,7 @@ export async function GET(
         if (resumeResult) {
             return NextResponse.json(resumeResult, { status: resumeResult.status === "failed" ? 200 : 200 });
         }
-        // BullMQ may have already evicted the completed job — check the plain Redis
+        // BullMQ may have already evicted the completed job -- check the plain Redis
         // key written by the worker immediately after extraction finished.
         const cachedResult = await getJdResultFromRedis(jobId);
         if (cachedResult) {

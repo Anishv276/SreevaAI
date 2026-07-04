@@ -13,7 +13,7 @@ function generateSlots(dateIST: string): Date[] {
         for (const minute of [0, 30]) {
             // Build ISO string as IST then convert
             const localStr = `${dateIST}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00`;
-            // Parse as IST by using Intl — simpler: offset IST = UTC+5:30
+            // Parse as IST by using Intl -- simpler: offset IST = UTC+5:30
             const utcMs = new Date(localStr + "+05:30").getTime();
             slots.push(new Date(utcMs));
         }
@@ -108,7 +108,7 @@ export async function GET(
 }
 
 // POST /api/schedule/[token]
-// Body: { slotISO: string }  — books the slot and sends interview link email
+// Body: { slotISO: string }  -- books the slot and sends interview link email
 export async function POST(
     req: Request,
     { params }: { params: Promise<{ token: string }> }

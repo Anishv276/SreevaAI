@@ -226,7 +226,7 @@ export async function POST(req: Request) {
       }
     }
     // Report generation is handled by the interview-finalization worker via Redis.
-    // No synchronous LLM call here — the candidate is not blocked and no timeout occurs.
+    // No synchronous LLM call here -- the candidate is not blocked and no timeout occurs.
   let jobId: string | number | undefined;
   try {
       const job = await interviewFinalizationQueue.add(

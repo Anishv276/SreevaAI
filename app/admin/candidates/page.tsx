@@ -30,7 +30,7 @@ import { motion } from "framer-motion";
 import { PremiumFilter } from "@/components/admin/premium-filter";
 import { useAdminOrg } from "@/context/admin-org-context";
 // ---------------------------------------------------------------------------
-// Email confirm modal (interview link / rejection — same as drive page)
+// Email confirm modal (interview link / rejection -- same as drive page)
 // ---------------------------------------------------------------------------
 function normalizeStatusKey(value?: string) {
     return String(value || "").trim().toLowerCase().replace(/[_-]+/g, " ");
@@ -243,7 +243,7 @@ export default function CandidatesPage() {
         else if (timeline.type === "custom") { startDate = timeline.from; endDate = timeline.to; }
         return { startDate, endDate };
     };
-    // Filter/search change — show skeleton, reset to page 1
+    // Filter/search change -- show skeleton, reset to page 1
     useEffect(() => {
         setIsCandidatesTableReady(false);
         const handler = setTimeout(() => {
@@ -254,7 +254,7 @@ export default function CandidatesPage() {
         return () => clearTimeout(handler);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [resumeFilter, interviewFilter, roleFilter, timeline, searchTerm]);
-    // Page size change — no skeleton, just refetch silently
+    // Page size change -- no skeleton, just refetch silently
     const pageSizeRef = useRef(pageSize);
     useEffect(() => {
         if (pageSizeRef.current === pageSize) return;

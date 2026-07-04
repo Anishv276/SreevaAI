@@ -38,7 +38,7 @@ export async function POST(request: Request) {
         if (!superAdminRecord && (!userRecord || userRecord.role !== "ADMIN")) {
             return NextResponse.json({ error: "Access denied. Only authorized accounts can reset passwords." }, { status: 403 });
         }
-        // CSPRNG — Math.random() is not cryptographically secure and made the
+        // CSPRNG -- Math.random() is not cryptographically secure and made the
         // 6-digit code predictable/brute-forceable.
         const otp = randomInt(100000, 1000000).toString();
         const expires = new Date(Date.now() + 10 * 60 * 1000);

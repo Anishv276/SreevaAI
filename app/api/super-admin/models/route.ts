@@ -12,7 +12,7 @@ function isSuperAdmin(role: string | undefined) {
   return role === "SUPER_ADMIN";
 }
 
-// GET /api/super-admin/models?orgId=xxx — returns org's current AI config
+// GET /api/super-admin/models?orgId=xxx -- returns org's current AI config
 export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session || !isSuperAdmin(session.role)) {
@@ -69,7 +69,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ org });
 }
 
-// PATCH /api/super-admin/models — update org's AI config
+// PATCH /api/super-admin/models -- update org's AI config
 export async function PATCH(req: NextRequest) {
   const session = await getSession();
   if (!session || !isSuperAdmin(session.role)) {

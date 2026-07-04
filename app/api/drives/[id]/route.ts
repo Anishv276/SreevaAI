@@ -183,7 +183,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
             updateData.extractedDetails = extractedStr;
             try {
                 const parsed = JSON.parse(extractedStr);
-                // derived fields removed — extractedDetails is source of truth
+                // derived fields removed -- extractedDetails is source of truth
             } catch { /* keep existing values if parse fails */ }
         }
         if (data.screeningThreshold !== undefined || data.screeningCriteria !== undefined) {

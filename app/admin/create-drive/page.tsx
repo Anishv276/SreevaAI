@@ -305,7 +305,7 @@ function CreateDriveForm() {
       return { ...prev, screeningThreshold: Number(next.threshold ?? 60), screeningCriteria: sanitizeScreeningCriteria(next.criteria || {}) };
     }), []);
 
-  // ── Success ──────────────────────────────────────────────────────────────
+  // -- Success --------------------------------------------------------------
   if (published) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-8 animate-in fade-in duration-500">
@@ -334,7 +334,7 @@ function CreateDriveForm() {
     );
   }
 
-  // ── Locked ───────────────────────────────────────────────────────────────
+  // -- Locked ---------------------------------------------------------------
   if (driveCreationLocked) {
     return (
       <div className="space-y-6 pb-10 animate-in fade-in duration-500">
@@ -375,7 +375,7 @@ function CreateDriveForm() {
     );
   }
 
-  // ── Main Form — two-column layout ────────────────────────────────────────
+  // -- Main Form -- two-column layout ----------------------------------------
   return (
     <div className="pb-10 animate-in fade-in duration-500">
       {/* Page header */}
@@ -566,7 +566,7 @@ function CreateDriveForm() {
   );
 }
 
-// ── Shared primitives ────────────────────────────────────────────────────────
+// -- Shared primitives --------------------------------------------------------
 
 function Card({ children }: { children: React.ReactNode }) {
   return (

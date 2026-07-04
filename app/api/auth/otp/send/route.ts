@@ -31,7 +31,7 @@ export async function POST() {
                 code: "RATE_LIMIT_EXCEEDED"
             }, { status: 429 });
         }
-        // CSPRNG — see forgot-password route; Math.random() is not secure.
+        // CSPRNG -- see forgot-password route; Math.random() is not secure.
         const otp = randomInt(100000, 1000000).toString();
         const expires = new Date(Date.now() + 10 * 60 * 1000);
         if (isSuperAdmin) {

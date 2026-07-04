@@ -62,7 +62,7 @@ export async function POST(req: Request) {
     if (authCheck) {
       const now = Date.now();
       const startedAtMs = authCheck.startedAt ? authCheck.startedAt.getTime() : null;
-      // joinWindow only blocks active sessions — not already-completed/no-show ones
+      // joinWindow only blocks active sessions -- not already-completed/no-show ones
       const joinWindowExpired = startedAtMs !== null && (now - startedAtMs) >= JOIN_WINDOW_MS;
       
       // Bypass expiration logic entirely if it's a test interview

@@ -23,7 +23,7 @@ import { DateFilter, type DateRange } from "@/components/admin/date-filter";
 import { motion } from "framer-motion";
 import { PremiumFilter } from "@/components/admin/premium-filter";
 
-// ── Types ──────────────────────────────────────────────────────────────────────
+// -- Types ----------------------------------------------------------------------
 interface Candidate {
     id: string;
     fullName: string;
@@ -48,7 +48,7 @@ interface Stats {
     interviewCompleted: number;
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────────
+// -- Helpers --------------------------------------------------------------------
 function normalizeStatusKey(v?: string | null) {
     return String(v || "").trim().toLowerCase().replace(/[_-]+/g, " ");
 }
@@ -63,7 +63,7 @@ function formatStatusLabel(v?: string | null) {
     return n.replace(/\b\w/g, ch => ch.toUpperCase());
 }
 
-// ── Stats row (same as admin) ──────────────────────────────────────────────────
+// -- Stats row (same as admin) --------------------------------------------------
 function CandidateStatsRow({ stats, isLoading }: { stats: Stats; isLoading: boolean }) {
     const kpis = [
         { label: "Shortlisted",  value: stats.shortlisted,       icon: Target,     color: "text-emerald-600", bg: "bg-emerald-50" },
@@ -103,7 +103,7 @@ function CandidateStatsRow({ stats, isLoading }: { stats: Stats; isLoading: bool
     );
 }
 
-// ── Page ───────────────────────────────────────────────────────────────────────
+// -- Page -----------------------------------------------------------------------
 export default function OrgCandidatesPage({ params }: { params: Promise<{ id: string }> }) {
     const { id: orgId } = use(params);
     const router = useRouter();
