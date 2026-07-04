@@ -2,10 +2,12 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 
+export const dynamic = "force-dynamic";
+
 // Store events in memory per interview (simple approach for testing)
 const eventStore = new Map<string, Array<{
     timestamp: number;
-    type: "response_received" | "eval_start" | "eval_done" | "probe" | "saturate" | "move_on" | "llm_generating" | "llm_done";
+    type: "response_received" | "eval_start" | "eval_done" | "probe" | "saturate" | "move_on" | "llm_generating" | "llm_done" | "signal_fired";
     message: string;
     data?: Record<string, unknown>;
 }>>();
@@ -58,6 +60,24 @@ export async function GET(request: Request) {
         return NextResponse.json({ events });
     } catch (e) {
         console.error("[TEST_EVENTS_GET]", e);
+        return NextResponse.json({ error: "Failed" }, { status: 500 });
+    }
+}
+
+export async function DELETE(request: Request) {
+    try {
+        const { searchParams } = new URL(request.url);
+        const applicationId = searchParams.get("applicationId");
+
+        if (applicationId) {
+            eventStore.delete(applicationId);
+        } else {
+            eventStore.clear();
+        }
+
+        return NextResponse.json({ ok: true });
+    } catch (e) {
+        console.error("[TEST_EVENTS_DELETE]", e);
         return NextResponse.json({ error: "Failed" }, { status: 500 });
     }
 }

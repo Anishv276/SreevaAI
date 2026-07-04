@@ -1,0 +1,77 @@
+﻿=== Context around pos 1152 (first arrow) ===
+OT a flat "I don't know" with zero attempt.)
+       ΓåÆ if yes: SIGNAL = depth_ceiling_hit. STOP.
+
+  G2 ΓÇö team_only: is EVERY action verb "we / team / t
+
+=== Full block ===
+-- SIGNAL DETECTION (GATE CHECK) --
+Do NOT jump to a signal. First answer the discriminating facts in order. The FIRST gate that
+fires decides the signal ΓÇö STOP there. Fill "gate_check" with your answers, THEN the signal.
+
+The gates are ordered MOST-OBJECTIVE-FIRST on purpose. Team pronouns and named tools are objective
+facts ΓÇö they are checked BEFORE the softer "was this an example or a habit" judgment.
+
+Write gate_check in EXACTLY this format (yes/no + the words that prove each).
+Do NOT put the signal name inside gate_check ΓÇö the signal goes in the SEPARATE "signal" field.
+
+  "G1 ran_out=<y/n>; G2 team_only=<y/n>; G3 bold_claim=<y/n> has_substance=<y/n>;
+   G4 tool_named=<y/n> usage_shown=<y/n> reason_given=<y/n>;
+   G5 wanted_instance=<y/n> general_habit=<y/n>; G6 correct_but_generic=<y/n>"
+
+After gate_check, put the resolved signal in the "signal" field (the NEXT field in the JSON).
+
+ANSWER EACH GATE LITERALLY ΓÇö quote the words that decide it:
+
+  G1 ΓÇö ran_out: did they try to answer then trail off, give a one-word reply, or say "I don't have
+       much idea" AFTER attempting? (NOT a flat "I don't know" with zero attempt.)
+       ΓåÆ if yes: SIGNAL = depth_ceiling_hit. STOP.
+
+  G2 ΓÇö team_only: is EVERY action verb "we / team / they / teammates / our group / the committee",
+       with NO "I did / I built / I handled / I decided / I ran"? Look at WHO did each action.
+       ("I didn't know X" is NOT a personal contribution ΓÇö team_only can still be yes.)
+       ΓåÆ if team_only=yes AND no bold "I built it all" claim: SIGNAL = ownership_ambiguous. STOP.
+       THIS GATE OUTRANKS the example/habit gate (G5). A "we did it together" answer is
+       ownership_ambiguous, NOT example_evaded ΓÇö even if it also sounds vague or generic.
+       This includes team ACHIEVEMENT answers ΓÇö "we doubled the leads", "the team hit quota",
+       "we crushed the quarter" ΓÇö those are collective credit with no personal action = ownership_ambiguous.
+
+  G3 ΓÇö bold_claim: a loud personal claim ΓÇö "I built it all", "entire thing by me", "I'm really strong
+       at X", "I always do the best Y", "I single-handedly...", "I never lose...".
+       has_substance: is it backed by even ONE real internal ΓÇö a decision, constraint, number,
+       mechanism, or real outcome?
+       ΓåÆ if bold_claim=yes AND has_substance=no: SIGNAL = explanation_shallow. STOP.
+
+  G4 ΓÇö tool_named: is a specific tool / method / framework / process named (PyTorch, Salesforce,
+       MEDDIC, HubSpot, AARRR, Greenhouse, a named framework)?
+       usage_shown: is there an OPERATIONAL VERB tying THEM to it ΓÇö "I trained/stored/queried/ran/built/
+       configured/tracked/sourced/deployed X with it"? (A pure definition "X is a framework that..." or
+       a bare list "we used A, B, C" = usage_shown NO.)
+       reason_given: did they say WHY that tool over alternatives?
+       ΓåÆ if tool_named=yes AND usage_shown=no: SIGNAL = tool_named_not_used. STOP.
+       ΓåÆ if tool_named=yes AND usage_shown=yes AND reason_given=no: SIGNAL = tech_choice_unjustified. STOP.
+       ΓåÆ if tool_named=yes AND usage_shown=yes AND reason_given=yes: continue to G5.
+
+  G5 ΓÇö wanted_instance: did the QUESTION ask for a specific past time/example/story
+       ("tell me about a time", "a specific deal", "a time a candidate...")?
+       general_habit: is the ANSWER FIRST-PERSON habit language ΓÇö "I usually...", "I normally...",
+       "I always...", "I just..." ΓÇö describing what THEY personally tend to do?
+       ΓåÆ if BOTH yes AND no real instance given: SIGNAL = example_evaded. STOP.
+       NOTE: an impersonal recipe ("you do X, then Y, then Z") is NOT first-person habit ΓÇö that is G6.
+       NOTE: a team-credit answer ("we doubled the leads", "the team hit quota") is G2, already handled above.
+
+  G6 ΓÇö correct_but_generic: is the answer an impersonal, technically-correct process recipe ΓÇö a "you do
+       X, then Y, then Z" list, or a clean textbook flow ΓÇö with no named tool to chase, no first-person
+       personal claim, and no real specific event?
+       (e.g. "you prospect, qualify, do discovery, present, handle objections, then close" /
+        "you define the audience, set the goal, create content, launch, measure ROI")
+       ΓåÆ if yes: SIGNAL = scenario_untested. STOP.
+
+  If no gate fired ΓåÆ SIGNAL = null.
+
+THE SIGNAL YOU OUTPUT MUST EQUAL THE ONE YOUR GATE CHECK LANDED ON. No exceptions.
+
+SIGNAL REASON RULE:
+  signal_reason = ONE short exact quote (3-12 words) from their actual words that proves the signal.
+  GOOD: "we built the pipeline, the team decided"   BAD: "used team language throughout"
+  If signal is null ΓåÆ signal_reason is null.

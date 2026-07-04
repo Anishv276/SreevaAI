@@ -1,12 +1,12 @@
 services:
   # Next.js Frontend + API
-  sreevaai-frontend:
+  frontend:
     build:
       context: .
       dockerfile: Dockerfile.frontend
-    args:
-      NEXT_PUBLIC_LIVEKIT_URL: "${NEXT_PUBLIC_LIVEKIT_URL}" # Pulls from .env (e.g. wss://your-project.livekit.cloud)
-      NEXT_PUBLIC_APP_URL: "https://www.sreevaai.com"
+      args:
+        NEXT_PUBLIC_LIVEKIT_URL: "${NEXT_PUBLIC_LIVEKIT_URL}" # Pulls from .env (e.g. wss://your-project.livekit.cloud)
+        NEXT_PUBLIC_APP_URL: "https://www.sreevaai.com"
     container_name: Frontend
     networks:
       - traefik-proxy
@@ -15,7 +15,7 @@ services:
     environment:
       LIVEKIT_URL: "${LIVEKIT_URL}"
       NEXT_PUBLIC_LIVEKIT_URL: "${NEXT_PUBLIC_LIVEKIT_URL}"
-      # REDIS_URL comes from .env (external Redis at 31.97.60.216:32768)
+      REDIS_URL: "${REDIS_URL}"
     restart: always
     dns:
       - 8.8.8.8
@@ -29,7 +29,7 @@ services:
       - "traefik.http.services.sreevaai-app.loadbalancer.server.port=3000"
 
   # Background Worker (Handles Scoring & Emails)
-  sreevaai-worker:
+  worker:
     build:
       context: .
       dockerfile: Dockerfile.frontend
@@ -40,7 +40,7 @@ services:
     environment:
       LIVEKIT_URL: "${LIVEKIT_URL}"
       NEXT_PUBLIC_LIVEKIT_URL: "${NEXT_PUBLIC_LIVEKIT_URL}"
-      # REDIS_URL comes from .env (external Redis at 31.97.60.216:32768)
+      REDIS_URL: "${REDIS_URL}"
       WORKER_QUEUES: "resume-processing,invitation-delivery-queue,interview-start,interview-finalization,interview-snapshots,interview-recording,recording-retention-cleanup,jd-upload,jd-extraction,backup-queue"
     restart: always
     networks:
@@ -50,7 +50,7 @@ services:
       - 8.8.4.4
 
   # Python AI Agent (Backend)
-  sreevaai-agent:
+  python-backend:
     build:
       context: .
       dockerfile: Dockerfile
@@ -61,11 +61,21 @@ services:
       - .env
     environment:
       LIVEKIT_URL: "${LIVEKIT_URL}"
-      # REDIS_URL comes from .env (external Redis at 31.97.60.216:32768)
+      REDIS_URL: "${REDIS_URL}"
     restart: always
     dns:
       - 8.8.8.8
       - 8.8.4.4
+
+  # Local Redis Database
+  redis:
+    image: redis:alpine
+    container_name: redis
+    restart: always
+    ports:
+      - "6379:6379"
+    networks:
+      - traefik-proxy
 
 networks:
   traefik-proxy:

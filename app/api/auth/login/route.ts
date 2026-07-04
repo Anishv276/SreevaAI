@@ -113,12 +113,11 @@ export async function POST(request: Request) {
             });
             return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
         }
-        const role = "ADMIN";
         const token = await createSession({
             userId: userProfile.id,
             email: normalizedEmail,
             name: userProfile.name || "",
-            role,
+            role: "ADMIN",
             orgId: userProfile.orgId || null,
             onboardingComplete: userProfile.organization?.onboardingComplete ?? false,
         });
@@ -130,7 +129,7 @@ export async function POST(request: Request) {
         });
         const response = NextResponse.json({
             success: true,
-            role,
+            role: "ADMIN",
             redirectTo: "/admin",
         });
         response.cookies.set("session", token, {

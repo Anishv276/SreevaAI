@@ -38,7 +38,7 @@ export async function PATCH(request: Request) {
         const body = await request.json();
         const { name, email, newPassword, currentPassword, otp } = body;
         console.log(`[Profile API] Updating profile for userId: ${session.userId}, role: ${session.role}`);
-        const updateData: any = {};
+        const updateData: { name?: string; email?: string; password?: string } = {};
         if (name !== undefined) updateData.name = name;
         if (email !== undefined && session.role === "SUPER_ADMIN") updateData.email = email;
         // 1. Password Update Logic
