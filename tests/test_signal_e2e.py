@@ -1,6 +1,6 @@
-﻿"""
+"""
 test_signal_e2e.py
-End-to-end test: 10 scripted answers â†’ signal detection â†’ follow-up question generation.
+End-to-end test: 10 scripted answers -> signal detection -> follow-up question generation.
 Uses real OpenAI calls. Prints a single table: Turn | Signal Fired | Question Asked | Answer.
 
 Run:  python -m tests.test_signal_e2e
@@ -20,12 +20,12 @@ from interview.agent_scoring import evaluate_answer, SIGNAL_DEFINITIONS
 from interview.probe_strategy import get_probe_context, QUESTION_GENERATION_SYSTEM
 
 MODEL_EVAL = "gpt-4.1-nano"
-MODEL_QG   = "gpt-4.1-mini"   # question generation â€” slightly smarter
+MODEL_QG   = "gpt-4.1-mini"   # question generation — slightly smarter
 
 client = AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
 # ---------------------------------------------------------------------------
-# 10 scripted turns â€” each designed to hit a specific signal.
+# 10 scripted turns — each designed to hit a specific signal.
 # topic, question, answer, expected_signal (for reference only, not enforced)
 # ---------------------------------------------------------------------------
 TURNS = [
@@ -44,7 +44,7 @@ TURNS = [
     {
         "topic":           "Vector Database",
         "question":        "Which vector database did you use and how did you use it?",
-        "answer":          "Vector database â€” ChromaDB, FAISS, Pinecone.",
+        "answer":          "Vector database — ChromaDB, FAISS, Pinecone.",
         "expected_signal": "tool_named_not_used",
     },
     {
@@ -55,7 +55,7 @@ TURNS = [
     },
     {
         "topic":           "ChromaDB vs FAISS",
-        "question":        "You used ChromaDB for the project â€” why ChromaDB specifically?",
+        "question":        "You used ChromaDB for the project — why ChromaDB specifically?",
         "answer":          "I stored the embeddings in ChromaDB and queried them through LangChain. It worked fine for the project.",
         "expected_signal": "tech_choice_unjustified",
     },
@@ -92,7 +92,7 @@ TURNS = [
 ]
 
 # ---------------------------------------------------------------------------
-# Question generation â€” given signal + probe context, generate a real question
+# Question generation — given signal + probe context, generate a real question
 # ---------------------------------------------------------------------------
 async def generate_question(
     topic: str,
@@ -189,7 +189,7 @@ async def run_test():
             "next_q":  next_q,
         })
 
-        print(f"  Turn {i:2d} done â€” signal: {signal} {match}")
+        print(f"  Turn {i:2d} done — signal: {signal} {match}")
 
     # ---------------------------------------------------------------------------
     # Print table
@@ -199,7 +199,7 @@ async def run_test():
     print("=" * 120)
     for r in results:
         topic  = r["topic"][:27]
-        answer = r["answer"][:40] + ("â€¦" if len(r["answer"]) > 40 else "")
+        answer = r["answer"][:40] + ("..." if len(r["answer"]) > 40 else "")
         signal = r["signal"][:24]
         qlines = textwrap.wrap(r["next_q"], width=50)
         print(f"{r['turn']:<4} {topic:<28} {answer:<42} {signal:<25} {qlines[0] if qlines else ''}")
@@ -213,7 +213,7 @@ async def run_test():
     # Summary
     correct = sum(1 for r in results if "âœ“" in r["match"])
     print(f"\nSignal accuracy: {correct}/10 matched expected")
-    print("Note: 'expected' is human judgment â€” a different valid signal is not necessarily wrong.\n")
+    print("Note: 'expected' is human judgment — a different valid signal is not necessarily wrong.\n")
 
 
 if __name__ == "__main__":

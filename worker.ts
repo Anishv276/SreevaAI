@@ -40,7 +40,7 @@ void redisConnection.connect().catch((e) => {
   });
 }); // force-connect before BullMQ workers start
 const pythonCmd = getPythonExecutable();
-// BullMQ key prefix — MUST match lib/queue.ts so this worker consumes the same
+// BullMQ key prefix -- MUST match lib/queue.ts so this worker consumes the same
 // queues the API enqueues to. Set BULLMQ_PREFIX to isolate dev/prod on shared Redis.
 const BULL_PREFIX = getBullPrefix();
 console.log(`[Worker] PID=${process.pid}`);
@@ -490,12 +490,12 @@ async function shouldSkipCronRegistration() {
   }
   return false;
 }
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // RESUME SCREENING JOB
 // Full pipeline: download → extract text → score against JD → write DB.
 // Job name: "screen-resume"
 // Job data: { applicationId, bucket, key, fileName, orgId }
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 async function processResumeScreeningJob(job: any) {
   const {
     applicationId,
@@ -515,21 +515,21 @@ async function processResumeScreeningJob(job: any) {
   const tempFilePath = join(tmpdir(), `resume_extract_${String(job.id)}_${Date.now()}${tempExt}`);
 
   try {
-    // ── 10% Upload received ────────────────────────────────────────────────
+    // -- 10% Upload received ------------------------------------------------
     await job.updateProgress(10);
     await prisma.application.update({
       where: { id: applicationId },
       data: { resumeStatus: "extracting", updatedAt: new Date() },
     }).catch((e: any) => console.warn(`[RESUME-WORKER] status update failed: ${e.message}`));
 
-    // ── 20% Download from R2 ───────────────────────────────────────────────
+    // -- 20% Download from R2 -----------------------------------------------
     await job.updateProgress(20);
     console.log(`[RESUME-WORKER] Downloading from R2: ${key}`);
     const sourceBuffer = await getObjectBuffer(bucket, key);
     await writeFile(tempFilePath, sourceBuffer);
     console.log(`[RESUME-WORKER] Downloaded ${sourceBuffer.length} bytes`);
 
-    // ── 30% Load JD config ────────────────────────────────────────────────
+    // -- 30% Load JD config ------------------------------------------------
     await job.updateProgress(30);
     await prisma.application.update({
       where: { id: applicationId },
@@ -560,7 +560,7 @@ async function processResumeScreeningJob(job: any) {
 
     console.log(`[RESUME-WORKER] Threshold from DB: ${dbThreshold} (type: ${typeof dbThreshold}), Using: ${threshold}`);
 
-    // ── 40% Extract + 60% Score (Python subprocess) ───────────────────────
+    // -- 40% Extract + 60% Score (Python subprocess) -----------------------
     await job.updateProgress(40);
     console.log(`[RESUME-WORKER] Updating status to "scoring"...`);
     await prisma.application.update({
@@ -593,7 +593,7 @@ async function processResumeScreeningJob(job: any) {
 
     if (result?.error) throw new Error(result.error);
 
-    // ── 70% Parse results ─────────────────────────────────────────────────
+    // -- 70% Parse results -------------------------------------------------
     await job.updateProgress(70);
     console.log(`[RESUME-WORKER] Python done. keys=${Object.keys(result || {}).join(",")}`);
 
@@ -603,7 +603,7 @@ async function processResumeScreeningJob(job: any) {
     const aiScore    = typeof scoreData?.score === "number" ? Math.round(scoreData.score) : null;
     const reportJson = scoreData ? JSON.stringify(scoreData) : null;
 
-    // ── Automatic ATS status: Determine based on score vs threshold ────────
+    // -- Automatic ATS status: Determine based on score vs threshold --------
     let resumeStatus = "pending";
     if (aiScore !== null) {
       const comparison = aiScore >= threshold;
@@ -613,7 +613,7 @@ async function processResumeScreeningJob(job: any) {
       console.log(`[RESUME-WORKER] No aiScore found, keeping resumeStatus as pending`);
     }
 
-    // ── 80% Write to DB ───────────────────────────────────────────────────
+    // -- 80% Write to DB ---------------------------------------------------
     await job.updateProgress(80);
     console.log(`[RESUME-WORKER] Saving to DB — applicationId=${applicationId} aiScore=${aiScore} threshold=${threshold} resumeStatus=${resumeStatus}`);
 
@@ -639,7 +639,7 @@ async function processResumeScreeningJob(job: any) {
 
     console.log(`[RESUME-WORKER] DB Update Success: app=${updateResult.id} aiScore=${updateResult.aiScore} resumeStatus=${updateResult.resumeStatus}`);
 
-    // ── 90% Billing ───────────────────────────────────────────────────────
+    // -- 90% Billing -------------------------------------------------------
     await job.updateProgress(90);
     if (orgId) {
       const usageExtract = result?.usage_extract ?? result?.usage ?? null;
@@ -676,7 +676,7 @@ async function processResumeScreeningJob(job: any) {
       }
     }
 
-    // ── 100% Done ─────────────────────────────────────────────────────────
+    // -- 100% Done ---------------------------------------------------------
     await job.updateProgress(100);
     console.log(`[RESUME-WORKER] Job ${job.id} done for ${applicationId} — score: ${aiScore ?? "n/a"}`);
     return { applicationId, aiScore, hasScore: aiScore !== null };
@@ -693,13 +693,13 @@ async function processResumeScreeningJob(job: any) {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// RESUME EXTRACTION JOB (general extraction UI — /api/extract)
+// -----------------------------------------------------------------------------
+// RESUME EXTRACTION JOB (general extraction UI -- /api/extract)
 // Extracts + parses only; result is returned to the job for the UI to poll.
-// No DB writes — the caller reads returnvalue via /api/extract/status/[jobId].
+// No DB writes -- the caller reads returnvalue via /api/extract/status/[jobId].
 // Job name: "resume-file-extract"
 // Job data: { bucket, key, fileUrl, fileName, orgId, orgOpenAIModel }
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 async function processResumeFileExtractJob(job: any) {
   const {
     bucket = process.env.R2_RESUMES_BUCKET || "resumes",
@@ -758,13 +758,13 @@ async function processResumeFileExtractJob(job: any) {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 // RESUME PROCESSING WORKER
 // Single worker, two job types:
-//   "screen-resume"      — full pipeline: extract + score + write DB (from upload routes)
+//   "screen-resume"      -- full pipeline: extract + score + write DB (from upload routes)
 //   "resume-file-extract"— extract only, result returned for UI polling (/api/extract)
 // Workers continuously poll the queue; as soon as a slot opens the next job starts.
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
 if (isQueueEnabled("resume-processing")) {
   const resumeWorker = trackWorker("resume-processing", new Worker("resume-processing", async (job) => {
     console.log(`\n=================================================`);
@@ -995,7 +995,7 @@ if (isQueueEnabled("invitation-delivery-queue")) {
       if (action === "shortlist") {
         if (!scheduleLink) throw new Error(`scheduleLink required for action=shortlist`);
         if (isSchedulingGateBypassed()) {
-          // ponytail: test mode — skip slot booking, send the direct interview link
+          // ponytail: test mode -- skip slot booking, send the direct interview link
           const interviewLink = buildInterviewLink(appUrl, applicationId, { token: interviewAccessToken });
           mailResult = await sendInterviewInviteEmail({
             email: application.email,
@@ -1173,7 +1173,7 @@ if (isQueueEnabled("recording-retention-cleanup")) {
 /**
  * INTERVIEW FINALIZATION WORKER
  * Persists recording/transcript/status updates, then generates the AI interview
- * report in the background via Redis — no timeouts, no blocking the candidate.
+ * report in the background via Redis -- no timeouts, no blocking the candidate.
  */
 if (isQueueEnabled("interview-finalization")) {
   const interviewFinalizationWorker = trackWorker("interview-finalization", new Worker(
@@ -1188,7 +1188,7 @@ if (isQueueEnabled("interview-finalization")) {
       }
       console.log(`[JOB] Finalizing interview for ${applicationId}`);
       try {
-        // ── 1. Persist transcript / recording / status ────────────────────
+        // -- 1. Persist transcript / recording / status --------------------
         const appForPolicy = await prisma.application.findUnique({
           where: { id: applicationId },
           select: {
@@ -1305,7 +1305,7 @@ if (isQueueEnabled("interview-finalization")) {
           );
         }
         console.log(`[SUCCESS] Interview finalization persisted for ${applicationId}`);
-        // ── 1b. Notify org admins that the interview is complete ──────────────
+        // -- 1b. Notify org admins that the interview is complete --------------
         if (job.data?.interviewStatus === "COMPLETED") {
           try {
             const appForNotify = await prisma.application.findUnique({
@@ -1753,7 +1753,7 @@ if (isQueueEnabled("jd-upload")) {
  * 📄 JD EXTRACTION WORKER
  * Processes jobs enqueued by /api/extract for JD files/text.
  * Calls extract_pdf.py with doc_type=JD and returns { text, data, usage }.
- * No DB writes — caller polls /api/extract/status/[jobId] for the result.
+ * No DB writes -- caller polls /api/extract/status/[jobId] for the result.
  */
 if (isQueueEnabled("jd-extraction")) {
   const jdExtractionWorker = trackWorker("jd-extraction", new Worker(
@@ -1769,10 +1769,10 @@ if (isQueueEnabled("jd-extraction")) {
       let tempFilePath: string | null = null;
 
       if (kind === "text") {
-        // URL-scraped text — already extracted, just pass as stdin-free direct call
+        // URL-scraped text -- already extracted, just pass as stdin-free direct call
         text = job.data.text || "";
       } else if (kind === "file") {
-        // Buffer was serialised by BullMQ — reconstruct it
+        // Buffer was serialised by BullMQ -- reconstruct it
         const raw = job.data.buffer;
         const buf: Buffer = Buffer.isBuffer(raw) ? raw : Buffer.from(raw?.data ?? raw);
         const ext = String(job.data.fileName || "jd.pdf").match(/\.[a-z0-9]+$/i)?.[0] || ".pdf";
@@ -1793,7 +1793,7 @@ if (isQueueEnabled("jd-extraction")) {
             orgOpenAIModel,
           ], 120_000);
         } else {
-          // text/url kind — write to a temp .txt file
+          // text/url kind -- write to a temp .txt file
           const txtPath = join(tmpdir(), `jd_text_${String(job.id)}_${Date.now()}.txt`);
           await writeFile(txtPath, text, "utf8");
           try {

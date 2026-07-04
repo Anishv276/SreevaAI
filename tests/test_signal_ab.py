@@ -54,7 +54,7 @@ TURNS = [
 
 
 # ---------------------------------------------------------------------------
-# APPROACH A — LLM classifies the signal directly
+# APPROACH A -- LLM classifies the signal directly
 # ---------------------------------------------------------------------------
 A_SYSTEM = textwrap.dedent("""
     You are an expert interviewer. Read the question and answer, then identify the ONE
@@ -88,7 +88,7 @@ async def approach_a(question: str, answer: str) -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# APPROACH B — LLM extracts features, Python resolves the signal
+# APPROACH B -- LLM extracts features, Python resolves the signal
 # ---------------------------------------------------------------------------
 B_SYSTEM = textwrap.dedent("""
     Read the question and answer, then report simple true/false observations about the ANSWER.

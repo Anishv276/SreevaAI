@@ -75,14 +75,14 @@ try:
 except ImportError:  # allow import without livekit in test / CI environments
     AgentSessionUsage = Any  # type: ignore[assignment,misc]
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 1 — Rate Tables
+# ===============================================================================
+# SECTION 1 -- Rate Tables
 # All pricing lives here. To update a price, change one line in this section.
-# ═══════════════════════════════════════════════════════════════════════════════
+# ===============================================================================
 
 _INR_PER_USD: float = float(os.environ.get("BILLING_INR_PER_USD", "83.0"))
 
-# OpenAI LLM — USD per million tokens
+# OpenAI LLM -- USD per million tokens
 _OPENAI_RATES: dict[str, dict[str, float]] = {
     "gpt-4.1-nano": {"input": 0.10,  "cached_input": 0.025, "output": 0.40},
     "gpt-4.1-mini": {"input": 0.40,  "cached_input": 0.10,  "output": 1.60},
@@ -92,7 +92,7 @@ _OPENAI_RATES: dict[str, dict[str, float]] = {
     "gpt-5.4-mini": {"input": 0.75,  "cached_input": 0.075, "output": 4.50},
 }
 
-# Cartesia TTS — USD per million characters
+# Cartesia TTS -- USD per million characters
 _CARTESIA_TTS_RATES: dict[str, float] = {
     "sonic-3":    15.0,
     "sonic-2":    15.0,
@@ -103,7 +103,7 @@ _CARTESIA_TTS_RATES: dict[str, float] = {
 }
 _CARTESIA_TTS_DEFAULT: float = float(os.environ.get("CARTESIA_TTS_USD_PER_MILLION_CHARS", "15.0"))
 
-# ElevenLabs TTS — USD per million characters
+# ElevenLabs TTS -- USD per million characters
 _ELEVENLABS_TTS_RATES: dict[str, float] = {
     "eleven_flash_v2":        50.0,
     "eleven_flash_v2_5":      50.0,
@@ -114,18 +114,18 @@ _ELEVENLABS_TTS_RATES: dict[str, float] = {
 }
 _ELEVENLABS_TTS_DEFAULT: float = float(os.environ.get("ELEVENLABS_TTS_USD_PER_MILLION_CHARS", "100.0"))
 
-# Sarvam TTS — INR per 10k characters (converted to USD at runtime)
+# Sarvam TTS -- INR per 10k characters (converted to USD at runtime)
 _SARVAM_TTS_RATES_INR: dict[str, float] = {
     "bulbul:v3": 30.0,
     "bulbul:v2": 15.0,
 }
 
-# Sarvam STT — INR per hour (converted to USD at runtime)
+# Sarvam STT -- INR per hour (converted to USD at runtime)
 _SARVAM_STT_RATES_INR: dict[str, float] = {
     "saaras:v3": 30.0,
 }
 
-# Deepgram STT — USD per minute
+# Deepgram STT -- USD per minute
 _DEEPGRAM_STT_RATES: dict[str, float] = {
     "nova-3":             0.0048,
     "nova-2":             0.0043,
@@ -133,7 +133,7 @@ _DEEPGRAM_STT_RATES: dict[str, float] = {
     "flux-general-multi": 0.0078,
 }
 
-# Valid feature names — frozenset for O(1) validation
+# Valid feature names -- frozenset for O(1) validation
 # chatbot removed: feature is no longer active in this product
 _VALID_FEATURES: frozenset[str] = frozenset({
     "interview",
@@ -181,8 +181,8 @@ _USAGE_TYPE_TO_BUCKET: dict[str, str] = {
     "interruption_usage": "interruption",
 }
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 1B — extract_usage()
+# ===============================================================================
+# SECTION 1B -- extract_usage()
 #
 # Single canonical function for pulling token counts from any OpenAI completion
 # object. Previously duplicated in:
@@ -192,7 +192,7 @@ _USAGE_TYPE_TO_BUCKET: dict[str, str] = {
 #   - interview/interview_brief.py
 #
 # All callers now import this instead of repeating the same getattr chains.
-# ═══════════════════════════════════════════════════════════════════════════════
+# ===============================================================================
 
 def extract_usage(completion: Any, model: str = "") -> dict[str, Any]:
     """Extract token counts from an OpenAI completion or usage object.
@@ -230,10 +230,10 @@ def extract_usage(completion: Any, model: str = "") -> dict[str, Any]:
     }
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 2 — Pydantic Models
+# ===============================================================================
+# SECTION 2 -- Pydantic Models
 # Typed contracts for every billing shape stored in or read from the DB.
-# ═══════════════════════════════════════════════════════════════════════════════
+# ===============================================================================
 
 class ModelBilling(BaseModel):
     """Usage + cost for one provider:model combination."""
@@ -311,12 +311,12 @@ class InterviewBillingSnapshot(BaseModel):
         return round(float(v or 0), 8)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 3 — CostStrategy (OOP: Protocol + frozen dataclasses)
+# ===============================================================================
+# SECTION 3 -- CostStrategy (OOP: Protocol + frozen dataclasses)
 #
 # Adding a new provider = add one frozen dataclass + one line in _REGISTRY.
 # No if/elif chains anywhere.
-# ═══════════════════════════════════════════════════════════════════════════════
+# ===============================================================================
 
 class CostStrategy(Protocol):
     def tts_cost(self, model: str, chars: int) -> float: ...
@@ -362,7 +362,7 @@ class _DeepgramStrategy:
         return (seconds / 60.0) * rate
 
 
-# O(1) provider dispatch — adding a provider is one line here
+# O(1) provider dispatch -- adding a provider is one line here
 _PROVIDER_REGISTRY: dict[str, CostStrategy] = {
     "SARVAM":     _SarvamStrategy(),
     "CARTESIA":   _CartesiaStrategy(),
@@ -370,12 +370,12 @@ _PROVIDER_REGISTRY: dict[str, CostStrategy] = {
     "DEEPGRAM":   _DeepgramStrategy(),
 }
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 4 — CostCalculator (OOP)
+# ===============================================================================
+# SECTION 4 -- CostCalculator (OOP)
 #
 # Centralises all cost arithmetic. Class-level compiled regex avoids
 # recompiling on every call (O(1) amortised instead of O(n) per call).
-# ═══════════════════════════════════════════════════════════════════════════════
+# ===============================================================================
 
 class CostCalculator:
     """Stateless cost calculator. All methods are classmethods — no instance needed."""
@@ -430,13 +430,13 @@ class CostCalculator:
         return strategy.stt_cost(cls._norm_stt(model), seconds) if strategy else 0.0
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 5 — UsageSummarizer (OOP)
+# ===============================================================================
+# SECTION 5 -- UsageSummarizer (OOP)
 #
 # Converts a LiveKit AgentSessionUsage object into a provider/model-keyed dict.
 # Also handles the plugin-metrics override path (plugin STT/TTS values are more
 # accurate than what LiveKit internally tracks).
-# ═══════════════════════════════════════════════════════════════════════════════
+# ===============================================================================
 
 class UsageSummarizer:
     """Converts LiveKit session usage into the canonical session_summary dict."""
@@ -555,8 +555,8 @@ class UsageSummarizer:
         return summary
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 6 — BucketMerger (OOP)
+# ===============================================================================
+# SECTION 6 -- BucketMerger (OOP)
 #
 # Merges one session's usage into a FeatureBilling bucket in-place.
 # All three component merges (LLM, TTS, STT) follow the same pattern:
@@ -564,7 +564,7 @@ class UsageSummarizer:
 #   2. Validate provider + model present (raises if missing)
 #   3. Compute cost via CostCalculator
 #   4. Accumulate into the Pydantic model (in-place mutation)
-# ═══════════════════════════════════════════════════════════════════════════════
+# ===============================================================================
 
 class BucketMerger:
     """Merges session usage into a FeatureBilling bucket.
@@ -745,15 +745,15 @@ def merge_interview_billing(
     return BucketMerger.merge_session(existing, "interview", session_summary, tts_config, stt_config)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 7 — PendingBuffer (OOP)
+# ===============================================================================
+# SECTION 7 -- PendingBuffer (OOP)
 #
 # Accumulates manual LLM usage records in memory during a session.
 # Flushed atomically to the DB at session end via BillingRepository.
 #
-# Uses defaultdict(list) — O(1) append, no key-existence check needed.
+# Uses defaultdict(list) -- O(1) append, no key-existence check needed.
 # Thread-safe for single-coroutine access (one session per agent process).
-# ═══════════════════════════════════════════════════════════════════════════════
+# ===============================================================================
 
 class PendingBuffer:
     """In-memory accumulator for manual LLM usage (report pipeline, JD extraction, etc.).
@@ -763,7 +763,7 @@ class PendingBuffer:
     accumulated here and flushed at session end.
     """
 
-    # Module-level shared buffer keyed by org_id — matches _PENDING_MANUAL_BILLING
+    # Module-level shared buffer keyed by org_id -- matches _PENDING_MANUAL_BILLING
     # in agent_runtime_support so the two views of the buffer stay in sync.
     _store: ClassVar[dict[str, list[tuple[str, dict]]]] = _PENDING_MANUAL_BILLING
 
@@ -839,12 +839,12 @@ def merge_manual_billing_usage(
     return BucketMerger.merge_session(existing, feature, session_summary)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 8 — BillingRepository (OOP)
+# ===============================================================================
+# SECTION 8 -- BillingRepository (OOP)
 #
 # Every SQL write related to billing lives here. One class, one responsibility.
 # If a DB write fails, the traceback always points to this class.
-# ═══════════════════════════════════════════════════════════════════════════════
+# ===============================================================================
 
 class BillingRepository:
     """All DB writes for billing. Stateless — no instance data, only classmethods."""
@@ -1160,12 +1160,12 @@ class BillingRepository:
             raise
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# SECTION 9 — Public API
+# ===============================================================================
+# SECTION 9 -- Public API
 #
 # These are the only functions the rest of the codebase should call.
 # Each maps to one product feature.
-# ═══════════════════════════════════════════════════════════════════════════════
+# ===============================================================================
 
 async def record_manual_usage(org_id: Optional[str], feature: str, usage: dict[str, Any]) -> None:
     """Accumulate one manual LLM usage record (report pipeline, JD/resume extraction).
